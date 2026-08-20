@@ -215,8 +215,8 @@ TEST(NullableArraySerialization, VariantNullableArrayAlternativesStreamNamesAreU
     bool has_uint16_alternative = false;
     for (const auto & stream_name : stream_names)
     {
-        has_uint8_alternative |= stream_name.find("UInt8") != String::npos;
-        has_uint16_alternative |= stream_name.find("UInt16") != String::npos;
+        has_uint8_alternative |= stream_name.contains("UInt8");
+        has_uint16_alternative |= stream_name.contains("UInt16");
     }
 
     EXPECT_EQ(stream_count, stream_names.size()) << dump_stream_names();

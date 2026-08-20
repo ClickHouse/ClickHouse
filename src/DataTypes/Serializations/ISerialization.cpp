@@ -776,8 +776,10 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
         return false;
 
     size_t last_elem = prefix_len - 1;
+    /// `NullMapHidden` is deliberately absent. It exists to hide the null map when the nested type
+    /// already exposes a `null` subcolumn of its own - `Nullable(JSON)` being the case that matters -
+    /// so listing it here would let the null map shadow that path.
     return path[last_elem].type == Substream::NullMap
-            || path[last_elem].type == Substream::NullMapHidden
             || path[last_elem].type == Substream::SparseNullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes

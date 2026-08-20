@@ -493,3 +493,75 @@ TEST(StructuredSubstreamNames, GuardNeverFiresForCurrentlyLegalTypes)
             data);
     }
 }
+
+/// ---------------------------------------------------------------------------------------------
+/// Regressions. Each of these shipped in CI because the corpus above did not reach the shape.
+/// ---------------------------------------------------------------------------------------------
+
+/// `Array(Nullable(T))` reached through a `Dynamic`/`Object` path must keep its legacy names. The
+/// path carries an array and a null map, but in the opposite nesting to `Nullable(Array(T))`, and an
+/// earlier version of the predicate matched on "array plus null map" alone. That renamed the streams
+/// of existing JSON columns holding `Array(Nullable(Int64))` dynamic paths - a silent on-disk
+/// incompatibility, caught by `03526_columns_substreams_in_wide_parts`.
+TEST(StructuredSubstreamNames, ArrayOfNullableUnderADynamicPathKeepsLegacyNames)
+{
+    ISerialization::SubstreamPath path;
+    path.push_back({ISerialization::Substream::ObjectDynamicPath});
+    path.push_back({ISerialization::Substream::ArrayElements});
+    path.push_back({ISerialization::Substream::NullMap});
+    EXPECT_FALSE(needsStructuredSubstreamNamesForPath(path));
+
+    ISerialization::SubstreamPath sizes_path;
+    sizes_path.push_back({ISerialization::Substream::ObjectDynamicPath});
+    sizes_path.push_back({ISerialization::Substream::ArraySizes});
+    EXPECT_FALSE(needsStructuredSubstreamNamesForPath(sizes_path));
+
+    /// The genuine case - a `Nullable` directly above an `Array` under the same dynamic path - still
+    /// selects structured naming.
+    ISerialization::SubstreamPath nullable_array_path;
+    nullable_array_path.push_back({ISerialization::Substream::ObjectDynamicPath});
+    nullable_array_path.push_back({ISerialization::Substream::NullableElements});
+    nullable_array_path.push_back({ISerialization::Substream::ArraySizes});
+    EXPECT_TRUE(needsStructuredSubstreamNamesForPath(nullable_array_path));
+}
+
+/// A `Nullable` whose nested type exposes a `null` subcolumn of its own hides its null map, so that
+/// the nested path wins. `Nullable(JSON).null` is the JSON path, not the `UInt8` null map. Listing
+/// `NullMapHidden` as subcolumn-bearing defeats that, which `04269_nullable_json_null_subcolumn`
+/// caught.
+TEST(StructuredSubstreamNames, HiddenNullMapDoesNotClaimTheNullSubcolumn)
+{
+    ISerialization::SubstreamPath hidden;
+    hidden.push_back({ISerialization::Substream::NullMapHidden});
+    EXPECT_FALSE(ISerialization::hasSubcolumnForPath(hidden, hidden.size()));
+
+    ISerialization::SubstreamPath visible;
+    visible.push_back({ISerialization::Substream::NullMap});
+    EXPECT_TRUE(ISerialization::hasSubcolumnForPath(visible, visible.size()));
+}
+
+/// `Nullable(Tuple(x Array(T)))` is a legal type today. Reading its subcolumns must not resolve a
+/// stream name through a path that looks like `Nullable` over `Array`, or the untyped-caller guard
+/// turns a working query into a logical error - which `03999_empty_to_equals_rewrite_for_nullable`
+/// caught.
+TEST(StructuredSubstreamNames, NullableTupleWithArrayMemberStaysLegacy)
+{
+    auto type = makeNullableAllowingArray(parseType("Tuple(x Array(UInt16))"));
+    /// Built through the array-allowing helper only because the factory still rejects the string;
+    /// `Nullable(Tuple(...))` itself is ordinary and must not select structured naming.
+    EXPECT_FALSE(needsStructuredSubstreamNames(*parseType("Tuple(x Array(UInt16))")));
+
+    auto legal = parseType("Tuple(x Array(UInt16))");
+    ISerialization::EnumerateStreamsSettings enumerate_settings;
+    auto serialization = legal->getDefaultSerialization();
+    auto data = ISerialization::SubstreamData(serialization).withType(legal);
+    serialization->enumerateStreams(
+        enumerate_settings,
+        [&](const ISerialization::SubstreamPath & path)
+        {
+            EXPECT_FALSE(pathRequiresStructuredSubstreamNames(path));
+            ISerialization::StreamFileNameSettings without_type;
+            EXPECT_NO_THROW(ISerialization::getFileNameForStream("c", path, without_type));
+        },
+        data);
+}

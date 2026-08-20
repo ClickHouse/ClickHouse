@@ -219,8 +219,15 @@ bool needsStructuredSubstreamNames(const IDataType & type)
 /// naming to preserve compatibility with existing MergeTree parts.
 bool needsStructuredSubstreamNamesForPath(const SubstreamPath & path)
 {
+    /// Covers `Dynamic` and `Object` columns, whose static type does not reveal that a runtime variant
+    /// holds a `Nullable(Array)`. The shape that matters is a `Nullable` sitting directly above an
+    /// `Array`, which `SerializationNullable` marks by pushing `NullableElements` before recursing.
+    ///
+    /// Requiring that order matters: `Array(Nullable(T))` also puts an array and a null map on the
+    /// same path, but in the opposite nesting, and it must keep its legacy names. Matching it here
+    /// renamed the streams of existing JSON columns holding `Array(Nullable(T))` dynamic paths.
     bool has_dynamic_or_object_prefix = false;
-    bool has_array_elements = false;
+    bool seen_nullable_elements = false;
 
     for (const auto & element : path)
     {
@@ -229,13 +236,14 @@ bool needsStructuredSubstreamNamesForPath(const SubstreamPath & path)
             || element.type == Substream::ObjectDynamicPath)
         {
             has_dynamic_or_object_prefix = true;
-            has_array_elements = false;
+            seen_nullable_elements = false;
         }
-        else if (element.type == Substream::ArrayElements)
+        else if (element.type == Substream::NullableElements)
         {
-            has_array_elements = true;
+            seen_nullable_elements = true;
         }
-        else if (element.type == Substream::NullMap && has_array_elements && has_dynamic_or_object_prefix)
+        else if ((element.type == Substream::ArraySizes || element.type == Substream::ArrayElements)
+                 && seen_nullable_elements && has_dynamic_or_object_prefix)
         {
             return true;
         }
