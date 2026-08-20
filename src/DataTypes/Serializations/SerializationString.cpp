@@ -30,7 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -853,8 +852,13 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
 
     settings.path.back() = Substream::Regular;
     auto * stream = settings.getter(settings.path);
+    /// A null getter means the data substream is absent; the size stream above then read nothing
+    /// either, so leave the column empty.
     if (!stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for String data.");
+    {
+        settings.path.pop_back();
+        return;
+    }
 
     if (bytes_to_read > MAX_TOTAL_STRING_SIZE)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Total size of String column is too large ({}): most likely the data is corrupted", bytes_to_read);
