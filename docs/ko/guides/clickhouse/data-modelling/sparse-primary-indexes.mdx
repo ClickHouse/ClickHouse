@@ -398,7 +398,7 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
   SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
   ```
 
-  테스트 머신에서는 `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`를 반환합니다.
+  테스트 머신에서는 `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`를 반환합니다.
 
   **2단계: user&#95;files&#95;path 가져오기**
 
@@ -406,12 +406,12 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
 
   Linux에서는 다음 명령으로 이 값이 변경되었는지도 확인할 수 있습니다: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  테스트 머신에서 이 경로는 `/Users/tomschreiber/Clickhouse/user_files/`입니다.
+  테스트 머신에서 이 경로는 `/Users/tomschreiber/ClickHouse/user_files/`입니다.
 
   **3단계: 프라이머리 인덱스 파일을 user&#95;files&#95;path로 복사하기**
 
   ```bash
-  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
   ```
 
   이제 SQL로 프라이머리 인덱스의 내용을 확인할 수 있습니다:
