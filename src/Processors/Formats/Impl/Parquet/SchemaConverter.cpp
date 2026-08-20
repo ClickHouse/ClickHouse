@@ -958,29 +958,54 @@ void SchemaConverter::processPrimitiveColumn(
         return true;
     };
 
-    auto is_output_type_decimal = [&](size_t expected_size, UInt32 expected_scale) -> bool
+    /// Decides whether min/max stats can be used when convertField produces a DecimalField with
+    /// the given value size and scale (parquet DECIMAL and timestamp/time columns).
+    /// If the output type is a Decimal/DateTime64 with the same size and scale, stats are used
+    /// directly; if size or scale differs, the Field additionally goes through
+    /// tryConvertFieldToType, which rescales it the same way as the castColumn that is applied
+    /// to the values - see PageDecoderInfo::cast_stats_to_output_type.
+    auto allow_decimal_stats = [&](size_t decoded_size, UInt32 decoded_scale)
     {
         const IDataType * output_type = type_hint ? type_hint.get() : out_inferred_type.get();
         WhichDataType which(output_type->getTypeId());
+        bool same = false;
         if (which.isDecimal())
-            return output_type->getSizeOfValueInMemory() == expected_size && getDecimalScale(*output_type) == expected_scale;
+            same = output_type->getSizeOfValueInMemory() == decoded_size && getDecimalScale(*output_type) == decoded_scale;
         else if (which.isDateTime64())
-            return 8 == expected_size && assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == expected_scale;
+        {
+            /// tryConvertFieldToType supports DateTime64 target only for Decimal64 source Field.
+            if (decoded_size != 8)
+                return;
+            same = assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == decoded_scale;
+        }
         else if (which.isTime64())
-            return 8 == expected_size && assert_cast<const DataTypeTime64 *>(output_type)->getScale() == expected_scale;
-        return false;
+        {
+            /// Same restriction as for DateTime64: tryConvertFieldToType supports a Time64 target
+            /// only for a Decimal64 source Field.
+            if (decoded_size != 8)
+                return;
+            same = assert_cast<const DataTypeTime64 *>(output_type)->getScale() == decoded_scale;
+        }
+        else
+            return;
+        out_decoder.allow_stats = true;
+        out_decoder.cast_stats_to_output_type = !same;
     };
 
-    auto is_output_type_float = [&](size_t expected_size) -> bool
+    /// Same for floats. convertField produces a Float64 Field (also for Float32 values - Field
+    /// has no separate Float32 type), so only the Float64 -> Float32 direction needs the Field
+    /// conversion (rounding to nearest, same as the castColumn that is applied to the values).
+    auto allow_float_stats = [&](size_t decoded_size)
     {
         size_t size = 0;
         switch (get_output_type_index())
         {
             case TypeIndex::Float32: size = 4; break;
             case TypeIndex::Float64: size = 8; break;
-            default: return false;
+            default: return;
         }
-        return size == expected_size;
+        out_decoder.allow_stats = true;
+        out_decoder.cast_stats_to_output_type = decoded_size == 8 && size == 4;
     };
 
     auto is_output_type_string = [&]() -> bool
@@ -991,7 +1016,7 @@ void SchemaConverter::processPrimitiveColumn(
     /// Escape hatch for reading raw plain-encoded values and bypassing data type stuff.
     /// If type FixedString is requested, and the parquet physical type is a fixed-size type of
     /// matching size, use a trivial FixedSizeConverter.
-    /// E.g. don't do Decimal endianness conversion of INT96 timestamp conversion.
+    /// E.g. don't do Decimal endianness conversion or INT96 timestamp conversion.
     if (const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type_hint.get()))
     {
         size_t size = 0;
@@ -1182,8 +1207,8 @@ void SchemaConverter::processPrimitiveColumn(
             /// hint. It's pretty important for min/max stats to work with timestamps, so we add
             /// this special case.
             ///
-            /// We could generalize it and allow arbitrary Decimal scale and signedness conversions,
-            /// but it doesn't seem worth the complexity and risk of bugs.
+            /// (cast_stats_to_output_type doesn't cover this case because tryConvertFieldToType
+            /// doesn't support Decimal64 -> DateTime conversion.)
             converter->field_timestamp_from_millis = true;
             converter->field_signed = false;
             out_decoder.allow_stats = true;
@@ -1191,7 +1216,7 @@ void SchemaConverter::processPrimitiveColumn(
         else
         {
             converter->field_decimal_scale = scale;
-            out_decoder.allow_stats = is_output_type_decimal(sizeof(Int64), scale);
+            allow_decimal_stats(sizeof(Int64), scale);
             if (converter->input_size == 4)
                 /// Can't leave Decimal32 -> DateTime64 conversion to castColumn because this
                 /// particular cast is not supported for some reason.
@@ -1422,7 +1447,7 @@ void SchemaConverter::processPrimitiveColumn(
         if (decoded_size != out_inferred_type->getSizeOfValueInMemory())
             out_decoded_type = std::move(decoded_type);
 
-        out_decoder.allow_stats = is_output_type_decimal(decoded_size, scale);
+        allow_decimal_stats(decoded_size, scale);
 
         return;
     }
@@ -1509,7 +1534,7 @@ void SchemaConverter::processPrimitiveColumn(
         {
             out_inferred_type = std::make_shared<DataTypeFloat32>();
             auto converter = std::make_shared<FloatConverter<float>>();
-            out_decoder.allow_stats = is_output_type_float(converter->input_size);
+            allow_float_stats(converter->input_size);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
@@ -1517,7 +1542,7 @@ void SchemaConverter::processPrimitiveColumn(
         {
             out_inferred_type = std::make_shared<DataTypeFloat64>();
             auto converter = std::make_shared<FloatConverter<double>>();
-            out_decoder.allow_stats = is_output_type_float(converter->input_size);
+            allow_float_stats(converter->input_size);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
