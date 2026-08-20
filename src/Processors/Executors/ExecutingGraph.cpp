@@ -295,8 +295,7 @@ ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemo
         removed_processors.erase(removed_proc);
 
     for (auto & node : nodes)
-        if (auto removed_edges = removeAffectedEdges(node, result.removed_nodes); !removed_edges.empty())
-            result.removed_edges.insert_range(removed_edges);
+        result.removed_edges.insert_range(removeAffectedEdges(node, result.removed_nodes));
 
     /// Removed processors can hold the last strong reference to data.
     /// It is too expensive to destroy them under the nodes mutex.
