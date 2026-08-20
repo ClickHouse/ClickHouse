@@ -22,7 +22,7 @@ tbl = pa.table({"i": pa.array(list(range(500)), pa.int32())})
 pq.write_table(tbl, path, compression="none")
 
 d = bytearray(open(path, "rb").read())
-# The first data page's PageHeader starts right after the 4-byte 'PAR1' magic. Corrupting it leaves
+# The first page's PageHeader starts right after the 4-byte 'PAR1' magic. Corrupting it leaves
 # the footer (and hence schema inference) intact, so the failure is on the data-read path.
 footer_len, = struct.unpack_from("<I", d, len(d) - 8)
 data_end = len(d) - 8 - footer_len
