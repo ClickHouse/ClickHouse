@@ -58,7 +58,8 @@ regardless of the directory the skill is run from.
 
 `test.sh` runs `report.sh` against a stubbed `gh` (no network) and checks the
 `bucket`→label classification, the "only `CH Inc sync` is non-green" criterion, empty
-input, `--repo` pinning, and the fail-loud-on-real-error behaviour:
+input, `--repo` pinning, the fail-loud-on-real-error behaviour, and the retry policy
+(a transient failure is retried until it succeeds, a permanent one is not retried):
 
 ```bash
 bash .claude/skills/good-prs/test.sh
@@ -84,7 +85,17 @@ bash .claude/skills/good-prs/test.sh
   `pending` / `skipping` / `cancel`), not by raw state strings, so unusual states such as
   `QUEUED`, `TIMED_OUT`, `CANCELLED`, or `STARTUP_FAILURE` are handled without a PR being
   silently dropped.
-- The script fails loudly: if a `gh` call cannot read a PR's data (an API, rate-limit, or
-  permission error, as opposed to a legitimately check-less PR), it aborts with the
-  original `gh` diagnostic rather than silently omitting that PR from the report.
+- A full report makes roughly two GraphQL calls per PR — several hundred per run — so
+  hitting at least one transient GitHub failure is close to certain. Those (`HTTP 408`,
+  `429`, any `5xx`, gateway timeouts, connection resets, secondary rate limits) are
+  retried with exponential backoff, and a primary rate-limit rejection waits for the
+  hourly window to reset. `GH_RETRIES` (default 5) and `GH_RETRY_DELAY` (default 2
+  seconds) tune this.
+- The script still fails loudly: an error that will never fix itself (auth, unknown PR,
+  bad flag) aborts on the first attempt, and a transient error that outlives every retry
+  aborts too — in both cases with the original `gh` diagnostic, rather than silently
+  omitting that PR from the report.
+- A run costs a large share of the hourly GraphQL quota (5000 points), so a few
+  back-to-back runs can exhaust it. Check with
+  `gh api rate_limit --jq .resources.graphql`.
 - The script needs `gh` authenticated and `jq` available.

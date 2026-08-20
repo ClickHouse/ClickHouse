@@ -72,7 +72,7 @@ A private load balancer provides internal access to your ClickHouse services, ac
 
 To connect using the private endpoint:
 
-1. **Enable private load balancer** (if not already enabled). Contact ClickHouse Support if you need to [enable a private load balancer](/products/bring-your-own-cloud/configuration/configurations#load-balancers) for your deployment.
+1. **Enable private load balancer** (if not already enabled) for your BYOC infrastructure in the ClickHouse Cloud console. See [Load Balancers](/products/bring-your-own-cloud/configuration/configurations#load-balancers) for details.
 2. **Ensure network connectivity**:
    - For VPC/VNet peering: Complete the peering setup (see [Private Networking Setup](/products/bring-your-own-cloud/onboarding/network))
    - For other private networks: Ensure routing is configured to reach the BYOC VPC/VNet
@@ -109,7 +109,7 @@ AWS PrivateLink, GCP Private Service Connect, and Azure Private Link provide the
 
 ### Connecting via a private endpoint {#connecting-via-privatelink}
 
-Complete the PrivateLink, Private Service Connect, or Private Link setup (see [Private Networking Setup](/products/bring-your-own-cloud/onboarding/network)). Once configured, you can connect to your ClickHouse service using a dedicated private-endpoint hostname. DNS behavior differs by provider: on AWS, enabling **Private DNS names** on the endpoint makes DNS resolution in your VPC route traffic through it automatically. GCP Private Service Connect requires creating a wildcard DNS record on your side — see the [GCP setup guide](/products/bring-your-own-cloud/onboarding/network-gcp) — and Azure Private Link likewise requires a private DNS zone with a wildcard record linked to your VNet; contact the ClickHouse team for Azure setup assistance.
+Complete the PrivateLink, Private Service Connect, or Private Link setup (see [Private Networking Setup](/products/bring-your-own-cloud/onboarding/network)). Once configured, you can connect to your ClickHouse service using a dedicated private-endpoint hostname. DNS behavior differs by provider: on AWS, enabling **Private DNS names** on the endpoint makes DNS resolution in your VPC route traffic through it automatically. GCP Private Service Connect requires creating a wildcard DNS record on your side — see the [GCP setup guide](/products/bring-your-own-cloud/onboarding/network-gcp) — and Azure Private Link likewise requires a private DNS zone with a wildcard record linked to your VNet — see the [Azure setup guide](/products/bring-your-own-cloud/onboarding/network-azure).
 
 The private-endpoint hostname is similar to the public endpoint, but adds a cloud-specific label between the service subdomain and the BYOC infrastructure subdomain — `vpce` on AWS, `p` on GCP, and `privatelink` on Azure. For example:
 
@@ -122,9 +122,11 @@ Once the endpoint is set up and allowlisted, select **PrivateLink** (**Private S
 
 ### Endpoint ID Allowlist {#endpoint-id-allowlist}
 
-In order to use PrivateLink, Private Service Connect, or Private Link, the Endpoint ID of your client connection must be explicitly allowed for each ClickHouse service. Add it yourself in the ClickHouse Cloud console: open the service's **Settings** page, click **Set up private endpoint**, and register the Endpoint ID — allowlisting is per service, so repeat this for each service you connect to (see the [AWS](/products/bring-your-own-cloud/onboarding/network-aws) and [GCP](/products/bring-your-own-cloud/onboarding/network-gcp) guides for the full flow). Contact ClickHouse Support if you need assistance.
+In order to use PrivateLink, Private Service Connect, or Private Link, the Endpoint ID of your client connection must be explicitly allowed for each ClickHouse service. You can manage the allowlist yourself in the ClickHouse Cloud console: open the service's Settings page, click **Set up private endpoint**, and enter the endpoint identifier for your cloud provider:
 
-For detailed setup instructions, see the [Private Networking Setup guide](/products/bring-your-own-cloud/onboarding/network).
+- **AWS**: the VPC Endpoint ID (see [AWS setup guide](/products/bring-your-own-cloud/onboarding/network-aws#setup-privatelink))
+- **GCP**: the PSC Connection ID (see [GCP setup guide](/products/bring-your-own-cloud/onboarding/network-gcp#setup-psc))
+- **Azure**: the Private Endpoint Resource ID (see [Azure setup guide](/products/bring-your-own-cloud/onboarding/network-azure#setup-privatelink))
 
 ## Choosing the Right Connection Method {#choosing-connection-method}
 
@@ -142,6 +144,6 @@ If you're experiencing connection issues:
 2. **Check IP filters**: For public load balancers, verify your IP address is in the allow list
 3. **Verify network connectivity**: For private connections, ensure VPC/VNet peering or the private endpoint is properly configured
 4. **Check security groups**: For private load balancers, verify security group rules allow traffic from your source network
-4. **Check security groups**: For PrivateLink, Private Service Connect, or Private Link, verify the endpoint ID has been added to the allowlist of the ClickHouse service
-5. **Review authentication**: Ensure you're using correct credentials (username and password)
-6. **Contact Support**: If issues persist, contact ClickHouse Support
+5. **Check the endpoint allowlist**: For PrivateLink, Private Service Connect, or Private Link, verify the endpoint ID has been added to the allowlist of the ClickHouse service
+6. **Review authentication**: Ensure you're using correct credentials (username and password)
+7. **Contact Support**: If issues persist, contact ClickHouse Support

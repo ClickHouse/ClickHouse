@@ -4,6 +4,7 @@
       "group": "ClickPipes для объектного хранилища",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
+        "ru/integrations/clickpipes/home",
         {
           "group": "Amazon S3",
           "icon": "/images/integrations/logos/amazon_s3_logo.svg",
@@ -30,13 +31,13 @@
             "ru/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
           ]
         }
-      ],
-      "root": "ru/integrations/clickpipes/home"
+      ]
     },
     {
       "group": "ClickPipes для Postgres",
       "icon": "/images/integrations/logos/postgresql.svg",
       "pages": [
+        "ru/integrations/clickpipes/postgres/index",
         "ru/integrations/clickpipes/postgres/deduplication",
         "ru/integrations/clickpipes/postgres/ordering-keys",
         "ru/integrations/clickpipes/postgres/toast",
@@ -76,20 +77,19 @@
             "ru/integrations/clickpipes/postgres/source/planetscale"
           ]
         }
-      ],
-      "root": "ru/integrations/clickpipes/postgres/index"
+      ]
     },
     {
       "group": "ClickPipes для Kafka",
       "icon": "/images/integrations/logos/kafka.svg",
       "pages": [
+        "ru/integrations/clickpipes/kafka/index",
         "ru/integrations/clickpipes/kafka/create-kafka-clickpipe",
         "ru/integrations/clickpipes/kafka/schema-registries",
         "ru/integrations/clickpipes/kafka/reference",
         "ru/integrations/clickpipes/kafka/best-practices",
         "ru/integrations/clickpipes/kafka/faq"
-      ],
-      "root": "ru/integrations/clickpipes/kafka/index"
+      ]
     },
     {
       "group": "ClickPipes для Kinesis",
@@ -97,8 +97,7 @@
       "pages": [
         "ru/integrations/clickpipes/kinesis/overview",
         "ru/integrations/clickpipes/kinesis/auth"
-      ],
-      "root": "ru/integrations/clickpipes/kinesis/index"
+      ]
     },
     {
       "group": "ClickPipes для GCP Pub/Sub",
@@ -106,13 +105,13 @@
       "pages": [
         "ru/integrations/clickpipes/pubsub/overview",
         "ru/integrations/clickpipes/pubsub/auth"
-      ],
-      "root": "ru/integrations/clickpipes/pubsub/index"
+      ]
     },
     {
       "group": "ClickPipes для MySQL",
       "icon": "/images/integrations/logos/mysql.svg",
       "pages": [
+        "ru/integrations/clickpipes/mysql/index",
         "ru/integrations/clickpipes/mysql/faq",
         "ru/integrations/clickpipes/mysql/datatypes",
         "ru/integrations/clickpipes/mysql/parallel-initial-load",
@@ -142,13 +141,13 @@
             "ru/integrations/clickpipes/mysql/source/generic-maria"
           ]
         }
-      ],
-      "root": "ru/integrations/clickpipes/mysql/index"
+      ]
     },
     {
       "group": "ClickPipes для MongoDB",
       "icon": "/images/integrations/logos/mongodb.svg",
       "pages": [
+        "ru/integrations/clickpipes/mongodb/index",
         "ru/integrations/clickpipes/mongodb/datatypes",
         "ru/integrations/clickpipes/mongodb/quickstart",
         "ru/integrations/clickpipes/mongodb/lifecycle",
@@ -173,8 +172,7 @@
             "ru/integrations/clickpipes/mongodb/source/documentdb"
           ]
         }
-      ],
-      "root": "ru/integrations/clickpipes/mongodb/index"
+      ]
     },
     {
       "group": "ClickPipes для BigQuery",
@@ -193,10 +191,20 @@
       ]
     },
     {
+      "group": "Сеть",
+      "icon": "network-wired",
+      "pages": [
+        "ru/integrations/clickpipes/networking/index",
+        "ru/integrations/clickpipes/networking/static-ips",
+        "ru/integrations/clickpipes/networking/aws-privatelink",
+        "ru/integrations/clickpipes/networking/gcp-psc",
+        "ru/integrations/clickpipes/networking/azure-privatelink"
+      ]
+    },
+    {
       "group": "Другое",
       "icon": "ellipsis",
       "pages": [
-        "ru/integrations/clickpipes/aws-privatelink",
         "ru/integrations/clickpipes/dynamodb",
         "ru/integrations/clickpipes/monitoring"
       ]
