@@ -38,9 +38,12 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.source VALUES (1);
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE FUNCTION constraint_udf_dependency_f AS () -> (SELECT max(id) + 1000 FROM source);
 CREATE TABLE user (x UInt64, CONSTRAINT c CHECK x < constraint_udf_dependency_f()) ENGINE = MergeTree ORDER BY tuple();
-CREATE VIEW udf_view AS SELECT constraint_udf_dependency_f();
+-- The scalar subquery gets an explicit alias: a view whose only projection is an unaliased scalar
+-- subquery cannot be read at all, and that is an unrelated pre-existing issue.
+CREATE VIEW udf_view AS SELECT constraint_udf_dependency_f() AS v;
 
 SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'user';
+SELECT create_table_query LIKE '%' || currentDatabase() || '.source%' FROM system.tables WHERE database = currentDatabase() AND name = 'udf_view';
 
 DROP TABLE source; -- { serverError HAVE_DEPENDENT_OBJECTS }
 

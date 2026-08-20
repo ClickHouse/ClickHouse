@@ -24,12 +24,11 @@ namespace DB
 
 using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & default_database, bool can_throw)
 {
-    auto global_context = context->getGlobalContext();
     chassert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
-    data.default_database = context->getCurrentDatabase();
+    data.default_database = default_database;
     data.create_query = ast;
     data.global_context = global_context;
     data.table_name = table;

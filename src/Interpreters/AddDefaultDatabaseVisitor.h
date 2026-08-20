@@ -79,9 +79,9 @@ public:
             visitChildren(*ast);
     }
 
-    /// Add the default database to table expressions without traversing scalar subquery aliases.
-    /// This is used after SQL UDF expansion, when query normalization may already have generated
-    /// aliases such as `_subquery_1` that must remain untouched.
+    /// Add the default database to table expressions only, without rewriting anything else.
+    /// This is used after SQL UDF expansion, where the rest of the query has already been
+    /// normalized and only the table names brought in by the expansion are still unqualified.
     void visitTableExpressions(IAST & ast) const
     {
         visitTableExpressionsImpl(ast);

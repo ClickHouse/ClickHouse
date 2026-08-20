@@ -99,7 +99,6 @@
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
-#include <Parsers/ASTWithAlias.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -199,25 +198,6 @@ namespace ErrorCodes
 }
 
 namespace fs = std::filesystem;
-
-namespace
-{
-
-void removeGeneratedScalarSubqueryAliases(IAST & ast)
-{
-    if (auto * with_alias = ast.as<ASTWithAlias>(); with_alias
-        && with_alias->preferAliasToColumnName()
-        && startsWith(with_alias->alias, "_subquery_"))
-    {
-        with_alias->setAlias({});
-        with_alias->setPreferAliasToColumnName(false);
-    }
-
-    for (auto & child : ast.children)
-        removeGeneratedScalarSubqueryAliases(*child);
-}
-
-}
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -1666,7 +1646,7 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
 
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context, qualified_name, query_ptr);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
     DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 }
 
@@ -1674,7 +1654,7 @@ void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create,
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context, qualified_name, query_ptr, /*can_throw*/true);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies);
 }
 
@@ -1933,11 +1913,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
-
-    /// Analysis gives scalar subqueries generated aliases on a cloned view query. Do not persist
-    /// those transient aliases after SQL UDF expansion: the view is analyzed again when read.
-    if (create.select && create.isView())
-        removeGeneratedScalarSubqueryAliases(*create.select);
 
     DatabasePtr database;
     bool need_add_to_database = !create.isTemporary();
@@ -3271,7 +3246,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     auto context = getContext();
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context, qualified_name, query_ptr);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
     auto source_uuid = source->getStorageID().uuid;
 
     /// Subscribe the view to new inserts and capture a snapshot of the existing source data together, under
