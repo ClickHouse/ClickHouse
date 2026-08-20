@@ -7423,9 +7423,8 @@ void MergeTreeData::throwIfTableSizeLimitsExceeded(
     /// parts precommitted in a single transaction, or a concurrent insert running between
     /// `renameTempPartAndAdd` and `Transaction::commit`, would be invisible to the check and the limits
     /// could be overshot by the whole precommitted batch.
-    DataPartsVector pre_active_parts(
-        getDataPartsStateRange(DataPartState::PreActive).begin(),
-        getDataPartsStateRange(DataPartState::PreActive).end());
+    auto pre_active_range = getDataPartsStateRange(DataPartState::PreActive);
+    DataPartsVector pre_active_parts(pre_active_range.begin(), pre_active_range.end());
 
     /// An active part covered by a `PreActive` part will be removed from the active set when the
     /// corresponding transaction commits, so it should not be counted twice.
