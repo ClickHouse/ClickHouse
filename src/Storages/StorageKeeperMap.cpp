@@ -1,4 +1,5 @@
 #include <memory>
+#include <optional>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/copyData.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -127,12 +128,19 @@ std::string formattedAST(const ASTPtr & ast)
 }
 
 /// Some builds persisted a single primary-key expression as `(key)`, while others wrote `key`.
-/// Parse both representations before comparing existing metadata.
-std::string canonicalPrimaryKey(const std::string & primary_key)
+/// Parse both representations before comparing existing metadata, but reject input that could
+/// only match after the parser discarded a statement terminator, comment, or other trailing text.
+std::optional<std::string> tryCanonicalPrimaryKey(const std::string & primary_key)
 {
+    if (!primary_key.ends_with('\n'))
+        return std::nullopt;
+
+    std::string_view expression(primary_key);
+    expression.remove_suffix(1);
+
     ParserExpressionList parser(/*allow_alias_without_as_keyword_=*/ false);
-    const char * pos = primary_key.data();
-    const char * end = pos + primary_key.size();
+    const char * pos = expression.data();
+    const char * end = pos + expression.size();
     std::string error_message;
 
     ASTPtr ast = tryParseQuery(
@@ -143,15 +151,21 @@ std::string canonicalPrimaryKey(const std::string & primary_key)
         /*hilite=*/ false,
         /*description=*/ "KeeperMap primary key",
         /*allow_multi_statements=*/ false,
-        DBMS_DEFAULT_MAX_QUERY_SIZE,
+        expression.size(),
         DBMS_DEFAULT_MAX_PARSER_DEPTH,
         DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
         /*skip_insignificant=*/ true);
 
     if (!ast)
-        return primary_key;
+        return std::nullopt;
 
-    return ast->formatIgnoringRedundantParentheses();
+    const auto formatted = ast->formatWithSecretsOneLine();
+    const auto canonical = ast->formatIgnoringRedundantParentheses();
+
+    if (expression != formatted && expression != canonical)
+        return std::nullopt;
+
+    return canonical;
 }
 
 void verifyTableId(const StorageID & table_id)
@@ -729,7 +743,13 @@ bool StorageKeeperMap::isMetadataStringEqual(
     auto zk_pk = zk_metadata_string.substr(zk_pk_pos + primary_key_header.size());
     auto local_pk = local_metadata_string.substr(local_pk_pos + primary_key_header.size());
 
-    bool pk_equal = zk_pk == local_pk || canonicalPrimaryKey(zk_pk) == canonicalPrimaryKey(local_pk);
+    bool pk_equal = zk_pk == local_pk;
+    if (!pk_equal)
+    {
+        const auto canonical_zk_pk = tryCanonicalPrimaryKey(zk_pk);
+        const auto canonical_local_pk = tryCanonicalPrimaryKey(local_pk);
+        pk_equal = canonical_zk_pk && canonical_local_pk && *canonical_zk_pk == *canonical_local_pk;
+    }
 
     if (columns_equal && pk_equal)
         return true;
