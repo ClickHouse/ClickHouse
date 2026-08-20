@@ -726,7 +726,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 .part = std::move(patch_for_reader),
                 .source_parts = {},
                 .source_data_version = 0,
-                .perform_alter_conversions = true});
+                .perform_alter_conversions = true,
+                .sorting_key = nullptr,
+                .stored_sorting_key_columns = {}});
         }
 
         for (auto & storage_column : global_ctx->storage_columns)
