@@ -1010,8 +1010,9 @@ ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
 SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index
 ```
 
-Every `(key, value)` pair of a row is stored as one token which also encodes the length of the key, so the boundary between the key and the value is unambiguous and both may contain arbitrary bytes.
-Unlike joining them with a separator (for example `key=value`), a key or a value that itself contains the separator character cannot produce a false match.
+Every `(key, value)` pair of a row is stored as one token, `key ‖ value ‖ length(key)`.
+The trailing length makes the boundary between the key and the value unambiguous, so both may contain arbitrary bytes: unlike joining them with a separator (for example `key=value`), a key or a value that itself contains the separator character cannot produce a false match.
+Tokens therefore sort by key and then by value, which keeps the entries of one key together in the index dictionary.
 
 The following restrictions apply:
 
