@@ -1,4 +1,8 @@
--- Tags: no-fasttest, no-ordinary-database
+-- Tags: no-fasttest, no-ordinary-database, no-old-analyzer, no-parallel-replicas
+-- no-old-analyzer: the last query uses a correlated subquery, which only the new analyzer supports.
+-- no-parallel-replicas: the test asserts that the no-rescoring optimization applies, and with
+-- parallel replicas the optimization is disabled (vector-search read hints are produced during
+-- local index analysis).
 
 -- A row policy is applied inside `ReadFromMergeTree`, so it is not represented by the explicit
 -- filter/PREWHERE node handled by the no-rescoring rewrite. When the policy consumes the vector
@@ -35,7 +39,8 @@ SETTINGS
     query_plan_optimize_lazy_materialization = 0,
     make_distributed_plan = 1,
     distributed_plan_execute_locally = 1,
-    distributed_plan_max_rows_to_broadcast = 0;
+    distributed_plan_max_rows_to_broadcast = 0,
+    use_skip_indexes_if_final = 1;
 
 -- An explicit PREWHERE is deferred after FINAL before the second optimizer pass.
 SELECT id FROM tab_vec_row_policy FINAL
@@ -48,7 +53,8 @@ SETTINGS
     make_distributed_plan = 1,
     distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0,
-    apply_prewhere_after_final = 1;
+    apply_prewhere_after_final = 1,
+    use_skip_indexes_if_final = 1;
 
 -- A row-policy DAG carries all required table columns as passthrough outputs. The no-rescoring
 -- rewrite must be disabled even when a policy does not otherwise consume the vector column.
@@ -77,7 +83,8 @@ SELECT count() FROM
 WHERE explain LIKE '%Sort description: sqrt(_distance)%'
 SETTINGS
     vector_search_with_rescoring = 0,
-    query_plan_optimize_lazy_materialization = 0;
+    query_plan_optimize_lazy_materialization = 0,
+    use_skip_indexes_if_final = 1;
 
 -- Materializing a decorrelated correlated subquery clones the common subplan. One cloned read
 -- applies the no-rescoring rewrite, while its sibling still replays the deferred row policy.
@@ -96,7 +103,8 @@ SETTINGS
     allow_experimental_correlated_subqueries = 1,
     correlated_subqueries_use_in_memory_buffer = 0,
     vector_search_with_rescoring = 0,
-    query_plan_optimize_lazy_materialization = 0;
+    query_plan_optimize_lazy_materialization = 0,
+    use_skip_indexes_if_final = 1;
 
 DROP TABLE tab_vec_row_policy_keys;
 
