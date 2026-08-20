@@ -12,4 +12,11 @@
 0
 -- a bare number is in the units of the ASOF key, here milliseconds
 1
+-- the USING form takes TOLERANCE too
+0
+-- parallel_hash honours it as well
+0
+-- two queries differing only in the bound must not answer alike
+0
+1
 -- rejections

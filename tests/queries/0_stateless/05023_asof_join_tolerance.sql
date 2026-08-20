@@ -49,7 +49,34 @@ FROM (SELECT 1 AS sym, toDateTime64('2024-01-01 10:00:00.000', 3) AS t) AS tr
 ASOF JOIN (SELECT 1 AS sym, toDateTime64('2024-01-01 09:59:58.000', 3) AS t) AS q
 ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE 5000;
 
+SELECT '-- the USING form takes TOLERANCE too';
+SELECT count()
+FROM (SELECT 1 AS sym, toDateTime64('2024-01-01 10:00:00.000', 3) AS t) AS tr
+ASOF JOIN (SELECT 1 AS sym, toDateTime64('2024-01-01 09:00:00.000', 3) AS t) AS q
+USING (sym, t) TOLERANCE INTERVAL 5 SECOND;
+
+SELECT '-- parallel_hash honours it as well';
+SELECT count()
+FROM (SELECT 1 AS sym, toDateTime64('2024-01-01 10:00:00.000', 3) AS t) AS tr
+ASOF JOIN (SELECT 1 AS sym, toDateTime64('2024-01-01 09:00:00.000', 3) AS t) AS q
+ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE INTERVAL 5 SECOND
+SETTINGS join_algorithm = 'parallel_hash';
+
+SELECT '-- two queries differing only in the bound must not answer alike';
+SELECT count()
+FROM (SELECT 1 AS sym, toDateTime64('2024-01-01 10:00:00.000', 3) AS t) AS tr
+ASOF JOIN (SELECT 1 AS sym, toDateTime64('2024-01-01 09:00:00.000', 3) AS t) AS q
+ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE INTERVAL 5 SECOND;
+SELECT count()
+FROM (SELECT 1 AS sym, toDateTime64('2024-01-01 10:00:00.000', 3) AS t) AS tr
+ASOF JOIN (SELECT 1 AS sym, toDateTime64('2024-01-01 09:00:00.000', 3) AS t) AS q
+ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE INTERVAL 2 HOUR;
+
 SELECT '-- rejections';
+-- the legacy analyzer cannot carry the bound, so it must refuse rather than ignore it
+SELECT count() FROM trades AS tr ASOF JOIN quotes AS q ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE INTERVAL 5 SECOND SETTINGS enable_analyzer = 0; -- { serverError NOT_IMPLEMENTED }
+-- only `hash` family algorithms can measure distance
+SELECT count() FROM trades AS tr ASOF JOIN quotes AS q ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE INTERVAL 5 SECOND SETTINGS join_algorithm = 'full_sorting_merge'; -- { serverError NOT_IMPLEMENTED }
 -- TOLERANCE only applies to ASOF
 SELECT * FROM (SELECT 1 AS k) AS l JOIN (SELECT 1 AS k) AS r ON l.k = r.k TOLERANCE 5; -- { serverError SYNTAX_ERROR }
 -- months are not a fixed length of time

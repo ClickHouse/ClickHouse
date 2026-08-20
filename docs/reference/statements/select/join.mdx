@@ -366,6 +366,10 @@ against a `DateTime64(3)` column, is also rejected rather than silently rounded.
 A join using `TOLERANCE` is not executed by the `full_sorting_merge` algorithm, which cannot measure
 the distance between rows. If `join_algorithm` allows another algorithm, that one is used; if it
 allows only `full_sorting_merge`, the query fails.
+
+`TOLERANCE` also requires the analyzer, and a query using it with
+[enable_analyzer](/operations/settings/settings#enable_analyzer) set to `0` fails rather than
+silently ignoring the bound.
 </Note>
 
 ## PASTE JOIN usage {#paste-join-usage}

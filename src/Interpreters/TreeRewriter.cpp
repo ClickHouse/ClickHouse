@@ -727,6 +727,13 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
 {
     chassert(tables.size() >= 2);
 
+    /// `TOLERANCE` is carried to the join implementations through the query tree, which this path does
+    /// not build. Rejecting is deliberate: accepting it here would silently return matches further
+    /// away than the query asked for, which is worse than not supporting the clause at all.
+    if (table_join.tolerance_expression)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "TOLERANCE for ASOF JOIN requires the analyzer. Set enable_analyzer = 1 to use it");
+
     if (table_join.using_expression_list)
     {
         const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
