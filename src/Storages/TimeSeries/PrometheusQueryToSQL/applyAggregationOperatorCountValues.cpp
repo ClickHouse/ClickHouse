@@ -30,6 +30,7 @@ namespace
     constexpr const char * point_index_column = "point_index";
     constexpr const char * value_label_column = "value_label";
     constexpr const char * counts_column = "counts";
+    constexpr const char * count_pairs_column = "count_pairs";
 
 bool isValidPrometheusLabelName(std::string_view label_name)
 {
@@ -181,11 +182,13 @@ SQLQueryPiece applyAggregationOperatorCountValues(
     auto & label_arg = arguments[0];
     auto & vector_arg = arguments[1];
 
-    /// If either argument is empty then the result is also empty.
-    if (label_arg.store_method == StoreMethod::EMPTY || vector_arg.store_method == StoreMethod::EMPTY)
+    /// Prometheus validates the destination label before evaluating the input vector.
+    String value_label_name = getValueLabelName(std::move(label_arg), context);
+
+    /// An empty input vector produces an empty result after the label has been validated.
+    if (vector_arg.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
 
-    String value_label_name = getValueLabelName(std::move(label_arg), context);
     vector_arg = toVectorGrid(std::move(vector_arg), context);
 
     auto res = vector_arg;
@@ -281,8 +284,8 @@ SQLQueryPiece applyAggregationOperatorCountValues(
         per_point_counts_query = builder.getSelectQuery();
     }
 
-    /// Step 4: pack sparse per-timestamp counts back onto the vector grid.
-    ASTPtr packed_counts_query;
+    /// Step 4: collect sparse per-timestamp counts as correlated index/count pairs.
+    ASTPtr paired_counts_query;
     {
         SelectQueryBuilder builder;
 
@@ -290,11 +293,41 @@ SQLQueryPiece applyAggregationOperatorCountValues(
         builder.from_table = context.subqueries.back().name;
 
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+        builder.select_list.push_back(makeASTFunction(
+            "groupArray",
+            makeASTFunction(
+                "tuple",
+                make_intrusive<ASTIdentifier>(point_index_column),
+                make_intrusive<ASTIdentifier>(ColumnNames::Value))));
+        builder.select_list.back()->setAlias(count_pairs_column);
+
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+
+        paired_counts_query = builder.getSelectQuery();
+    }
+
+    /// Step 5: turn the sparse pairs into a map keyed by the 1-based grid index.
+    ASTPtr packed_counts_query;
+    {
+        SelectQueryBuilder builder;
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(paired_counts_query), SQLSubqueryType::TABLE});
+        builder.from_table = context.subqueries.back().name;
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
         builder.select_list.push_back(makeASTFunction(
             "mapFromArrays",
-            makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(point_index_column)),
-            makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(ColumnNames::Value))));
+            makeASTFunction(
+                "arrayMap",
+                makeASTLambda(
+                    {"pair"}, makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("pair"), make_intrusive<ASTLiteral>(1u))),
+                make_intrusive<ASTIdentifier>(count_pairs_column)),
+            makeASTFunction(
+                "arrayMap",
+                makeASTLambda(
+                    {"pair"}, makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("pair"), make_intrusive<ASTLiteral>(2u))),
+                make_intrusive<ASTIdentifier>(count_pairs_column))));
         builder.select_list.back()->setAlias(counts_column);
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
@@ -302,7 +335,7 @@ SQLQueryPiece applyAggregationOperatorCountValues(
         packed_counts_query = builder.getSelectQuery();
     }
 
-    /// Step 5: rename `new_group` back to `group` and materialize NULLs where a generated series has no sample.
+    /// Step 6: rename `new_group` back to `group` and materialize NULLs where a generated series has no sample.
     {
         SelectQueryBuilder builder;
 

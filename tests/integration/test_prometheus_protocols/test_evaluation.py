@@ -31,6 +31,9 @@ node = cluster.add_instance(
 PROMETHEUS_STALE_MARKER = struct.unpack(
     "<d", struct.pack("<Q", 0x7FF0000000000002)
 )[0]
+PROMETHEUS_FORMATTING_VALUE = struct.unpack(
+    "<d", struct.pack("<Q", 0x4351A819EB006F0C)
+)[0]
 
 
 # Sends data [ ({'label_name1': 'label_value1], ...}, {timestamp1: value1, ...} ), ... ]
@@ -181,6 +184,15 @@ def send_test_data():
     )
 
     send_data([({"__name__": "stale_marker"}, {110: PROMETHEUS_STALE_MARKER})])
+
+    send_data(
+        [
+            (
+                {"__name__": "prometheus_formatting"},
+                {120: PROMETHEUS_FORMATTING_VALUE},
+            )
+        ]
+    )
 
     send_data(
         [
@@ -4064,6 +4076,13 @@ def test_aggregation_operators():
     )
 
     do_unordered_query_test(
+        'count_values("value", prometheus_formatting)',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "19879615497616430"}, "value": [120, "1"]}]}',
+        [["[('value','19879615497616430')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
         'count_values("value", stale_marker)',
         110,
         '{"resultType": "vector", "result": []}',
@@ -4086,6 +4105,13 @@ def test_aggregation_operators():
 
     do_query_test_expect_error(
         'count_values("", vector(1))',
+        120,
+        "invalid label name",
+        "invalid label name",
+    )
+
+    do_query_test_expect_error(
+        'count_values("", nonexistent_metric_name)',
         120,
         "invalid label name",
         "invalid label name",

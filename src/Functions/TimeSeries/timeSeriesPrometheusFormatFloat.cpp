@@ -3,12 +3,14 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/WhichDataType.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/DoubleConverter.h>
+
+#include <algorithm>
 #include <array>
-#include <charconv>
 #include <cmath>
-#include <system_error>
+#include <cstring>
 
 
 namespace DB
@@ -16,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -24,19 +25,69 @@ namespace ErrorCodes
 
 namespace
 {
-    String formatPrometheusFloat(Float64 value)
+    /// A fixed representation of any Float64 needs at most 327 bytes:
+    /// "-0.", 323 leading zeroes, and the shortest significant digits.
+    constexpr size_t max_formatted_size = 512;
+
+    size_t formatPrometheusFloat(Float64 value, char * output)
     {
         if (std::isnan(value))
-            return "NaN";
+        {
+            std::memcpy(output, "NaN", 3);
+            return 3;
+        }
+
         if (std::isinf(value))
-            return (value > 0) ? "+Inf" : "-Inf";
+        {
+            if (std::signbit(value))
+            {
+                std::memcpy(output, "-Inf", 4);
+                return 4;
+            }
 
-        std::array<char, 2048> buffer{};
-        auto [ptr, ec] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, std::chars_format::fixed);
-        if (ec != std::errc{})
-            throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print float or double number");
+            std::memcpy(output, "+Inf", 4);
+            return 4;
+        }
 
-        return {buffer.data(), ptr};
+        using Converter = double_conversion::DoubleToStringConverter;
+        std::array<char, Converter::kBase10MaximalLength + 1> digits{};
+        bool negative = false;
+        int digits_length = 0;
+        int decimal_point = 0;
+        Converter::DoubleToAscii(
+            value, Converter::SHORTEST, 0, digits.data(), static_cast<int>(digits.size()), &negative, &digits_length, &decimal_point);
+
+        size_t output_length = 0;
+        if (negative)
+            output[output_length++] = '-';
+
+        if (decimal_point <= 0)
+        {
+            output[output_length++] = '0';
+            output[output_length++] = '.';
+            std::fill_n(output + output_length, static_cast<size_t>(-decimal_point), '0');
+            output_length += static_cast<size_t>(-decimal_point);
+            std::memcpy(output + output_length, digits.data(), static_cast<size_t>(digits_length));
+            output_length += static_cast<size_t>(digits_length);
+        }
+        else if (decimal_point >= digits_length)
+        {
+            std::memcpy(output + output_length, digits.data(), static_cast<size_t>(digits_length));
+            output_length += static_cast<size_t>(digits_length);
+            std::fill_n(output + output_length, static_cast<size_t>(decimal_point - digits_length), '0');
+            output_length += static_cast<size_t>(decimal_point - digits_length);
+        }
+        else
+        {
+            std::memcpy(output + output_length, digits.data(), static_cast<size_t>(decimal_point));
+            output_length += static_cast<size_t>(decimal_point);
+            output[output_length++] = '.';
+            std::memcpy(output + output_length, digits.data() + decimal_point, static_cast<size_t>(digits_length - decimal_point));
+            output_length += static_cast<size_t>(digits_length - decimal_point);
+        }
+
+        chassert(output_length <= max_formatted_size);
+        return output_length;
     }
 
     template <typename T>
@@ -46,10 +97,11 @@ namespace
         if (!numbers)
             return false;
 
+        std::array<char, max_formatted_size> formatted{};
         for (const auto value : numbers->getData())
         {
-            String formatted = formatPrometheusFloat(static_cast<Float64>(value));
-            result.insertData(formatted.data(), formatted.size());
+            const size_t length = formatPrometheusFloat(static_cast<Float64>(value), formatted.data());
+            result.insertData(formatted.data(), length);
         }
         return true;
     }
@@ -86,11 +138,12 @@ public:
                 name);
         }
 
-        if (!isFloat(arguments[0].type))
+        const WhichDataType which(arguments[0].type);
+        if (!which.isFloat32() && !which.isFloat64())
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Argument of function {} must be a floating-point number (passed: {})",
+                "Argument #1 of function {} has wrong type {}, expected Float32 or Float64",
                 name,
                 arguments[0].type->getName());
         }
@@ -131,7 +184,7 @@ Formats a floating-point value using Prometheus label formatting for `count_valu
             "0.0000001\t+Inf",
         },
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
