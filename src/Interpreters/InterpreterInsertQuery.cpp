@@ -492,7 +492,8 @@ static bool selectPipelineReadsDestinationTable(const QueryPipelineBuilder & pip
 }
 
 QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
-    ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline, bool add_async_insert_queue_transform)
+    ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline, bool add_async_insert_queue_transform,
+    TableLockHolder * destination_lock)
 {
     auto context = getContext();
 
@@ -577,13 +578,23 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     /// built unconditionally and stays unfed then. Only side-effect-free destinations get here.
     if (add_async_insert_queue_transform)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        /// Only callers that hand the destination lock over may ask for this route.
+        chassert(destination_lock);
+
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
+            /// Only the main stream carries rows to divert, and only it may take the lock over. A
+            /// `WITH TOTALS` select also offers totals and extremes streams, whose blocks belong to
+            /// no insert at all.
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                return nullptr;
+
             return std::make_shared<AsyncInsertQueueTransform>(
                 in_header, context->tryGetAsynchronousInsertQueue(), context, query_ptr, insert_column_names,
                 settings[Setting::async_insert_max_data_size],
                 settings[Setting::wait_for_async_insert_timeout].totalMilliseconds(),
-                settings[Setting::wait_for_async_insert]);
+                settings[Setting::wait_for_async_insert],
+                std::move(*destination_lock));
         });
     }
 
@@ -748,7 +759,8 @@ bool InterpreterInsertQuery::queryHasOrderByAll(const ASTPtr & select)
     return false;
 }
 
-QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table, bool add_async_insert_queue_transform)
+QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
+    ASTInsertQuery & query, StoragePtr table, bool add_async_insert_queue_transform, TableLockHolder & destination_lock)
 {
     ContextPtr select_context = getContext();
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
@@ -778,7 +790,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     /// resizes to 1 stream regardless.
     select_query_sorted = queryHasOrderByAll(query.select) && pipeline.getNumStreams() <= 1;
 
-    return addInsertToSelectPipeline(query, table, pipeline, add_async_insert_queue_transform);
+    return addInsertToSelectPipeline(query, table, pipeline, add_async_insert_queue_transform, &destination_lock);
 }
 
 
@@ -789,8 +801,10 @@ std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo> Interprete
 
     auto [pipeline_builder, parallel_replicas_info]
         = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
-    /// Parallel replicas builds its own local pipeline and never routes through the async insert queue.
-    auto local_pipeline = addInsertToSelectPipeline(query, table, pipeline_builder, /* add_async_insert_queue_transform */ false);
+    /// Parallel replicas builds its own local pipeline and never routes through the async insert queue,
+    /// so it hands over no lock and the caller keeps it for the whole pipeline.
+    auto local_pipeline = addInsertToSelectPipeline(
+        query, table, pipeline_builder, /* add_async_insert_queue_transform */ false, /* destination_lock */ nullptr);
     return {std::move(local_pipeline), std::move(parallel_replicas_info)};
 }
 
@@ -1373,8 +1387,9 @@ BlockIO InterpreterInsertQuery::execute()
     if (query.partition_by && !table->supportsPartitionBy())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
 
-    /// Does not outlive the flush wait, unlike the SELECT side's own lock; that is why the queue route
-    /// is refused below for a SELECT that may read the destination.
+    /// Handed to the async insert queue transform on the queue route, which drops it once the queue has
+    /// the block, so it does not outlive the flush wait. The SELECT side's own lock does outlive it, and
+    /// that is why the queue route is refused below for a SELECT that may read the destination.
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     table->updateExternalDynamicMetadataIfExists(context);
@@ -1468,7 +1483,7 @@ BlockIO InterpreterInsertQuery::execute()
             if (!reason.empty())
                 LOG_DEBUG(logger, "INSERT ... SELECT will be executed synchronously (reason: {})", reason);
 
-            res.pipeline = buildInsertSelectPipeline(query, table, /* add_async_insert_queue_transform */ reason.empty());
+            res.pipeline = buildInsertSelectPipeline(query, table, /* add_async_insert_queue_transform */ reason.empty(), table_lock);
         }
     }
     else
@@ -1484,9 +1499,14 @@ BlockIO InterpreterInsertQuery::execute()
     /// on this: under its brief exclusive lock on the source, any concurrent `INSERT` has either
     /// already committed (and is covered by the pinned snapshot) or has not yet discovered the
     /// dependent views (and will see the newly registered view).
-    QueryPlanResourceHolder insert_resources;
-    insert_resources.table_locks.emplace_back(std::move(table_lock));
-    res.pipeline.addResources(std::move(insert_resources));
+    /// Empty when the async insert queue transform took the lock over: it commits through a separate
+    /// flush that takes its own lock, and the route is refused when any dependent view exists.
+    if (table_lock)
+    {
+        QueryPlanResourceHolder insert_resources;
+        insert_resources.table_locks.emplace_back(std::move(table_lock));
+        res.pipeline.addResources(std::move(insert_resources));
+    }
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         res.pipeline.addStorageHolder(mv->getTargetTable());
