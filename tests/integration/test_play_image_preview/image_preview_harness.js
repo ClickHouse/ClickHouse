@@ -1033,11 +1033,17 @@ async function main() {
             const explainKeywordAliasFormat = await detectExplicitFormatClause(explainKeywordAlias);
             const explainKeywordAliasFraming = await detectFramingSetting(explainKeywordAlias);
             const restored = { error: null, raw: null, updateRaw(text) { this.raw = text; }, renderError(text) { this.error = text; } };
-            renderFailedSnapshot(restored, '{"exception":"each-row failure"}\\n', 'JSONEachRow', undefined, 'each-row failure');
+            /// The last argument is the persisted provenance bit: true only for a non-OK plain
+            /// each-row response, whose exception object IS the error. A transport failure saves the
+            /// same shape as ordinary output, so it must restore as raw output with its own error.
+            renderFailedSnapshot(restored, '{"exception":"each-row failure"}\\n', 'JSONEachRow', undefined, 'each-row failure', true);
             const transportRestored = { error: null, raw: null, updateRaw(text) { this.raw = text; }, renderError(text) { this.error = text; } };
-            renderFailedSnapshot(transportRestored, '{"exception":"ordinary row"}\\n', 'JSONEachRow', undefined, 'Network error');
+            renderFailedSnapshot(transportRestored, '{"exception":"ordinary row"}\\n', 'JSONEachRow', undefined, 'Network error', false);
             const parallelWithWrite = await queryIsReadOnly('SELECT 1 PARALLEL WITH INSERT INTO t SELECT 1');
-            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload, ambiguousPostFormatSettings, withPayload, explainPayload, keywordAliasFormat, keywordAliasFraming, explainKeywordAliasFormat, explainKeywordAliasFraming, restored, transportRestored, parallelWithWrite });
+            const explainDetachFormat = await detectExplicitFormatClause('EXPLAIN AST DETACH TABLE insert FORMAT TabSeparated');
+            const withShowFormat = await detectExplicitFormatClause('WITH 1 AS x SHOW CREATE TABLE insert FORMAT TabSeparated');
+            const explainSettingsPayload = await detectExplicitFormatClause("EXPLAIN PLAN header = 1 INSERT INTO FUNCTION null('line String') FORMAT LineAsString\\nFORMAT JSONCompactColumns");
+            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload, ambiguousPostFormatSettings, withPayload, explainPayload, keywordAliasFormat, keywordAliasFraming, explainKeywordAliasFormat, explainKeywordAliasFraming, restored, transportRestored, parallelWithWrite, explainDetachFormat, withShowFormat, explainSettingsPayload });
         })()`));
         check('fallback-tokenizer', 'a setting name inside a string does not select user framing',
             !res.quoted.user_framing && !res.quoted.user_disables_framing, res);
@@ -1073,6 +1079,14 @@ async function main() {
             res.transportRestored.error === 'Network error' && res.transportRestored.raw === '{"exception":"ordinary row"}\n', res);
         check('fallback-tokenizer', '`PARALLEL WITH` is a retry and Run all barrier without WASM',
             !res.parallelWithWrite, res);
+        /// `EXPLAIN AST` is handed to the full `ParserQuery`, so any statement kind can follow it.
+        /// A table named `insert` inside one must not make the real trailing clause inline payload.
+        check('fallback-tokenizer', 'an EXPLAIN-wrapped non-INSERT statement keeps its FORMAT clause',
+            res.explainDetachFormat && res.explainDetachFormat.name === 'TabSeparated', res);
+        check('fallback-tokenizer', 'a WITH-wrapped non-INSERT statement keeps its FORMAT clause',
+            res.withShowFormat && res.withShowFormat.name === 'TabSeparated', res);
+        check('fallback-tokenizer', 'EXPLAIN settings before an INSERT do not resolve the prefix',
+            res.explainSettingsPayload === null, res);
     }
 
     /// Contract 7: `Run all` must not dispatch a later write after a prior statement reports an

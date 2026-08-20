@@ -13725,13 +13725,23 @@ function tokensBeforeInlineInsertPayload(tokens)
                 continue;
             }
             /// Once a leading `WITH` / `EXPLAIN` resolves to any other statement, a later table
-            /// or alias named `insert` cannot make it an `INSERT`. Only keep walking while the
-            /// prefix remains unresolved; this list covers the statement starters accepted after
-            /// those prefixes, including `SHOW` / `DESCRIBE` / `EXISTS`.
-            if (leading_with || leading_explain) {
-                if (new Set(['select', 'show', 'describe', 'desc', 'exists', 'create', 'alter', 'drop', 'optimize', 'kill', 'system', 'set', 'use', 'grant', 'revoke', 'check', 'rename', 'truncate', 'backup', 'restore', 'delete', 'update', 'watch']).has(lower))
-                    return tokens;
-                continue;
+            /// or alias named `insert` cannot make it an `INSERT`. Enumerating the statements that
+            /// can follow is hopeless - `ParserExplainQuery` hands `EXPLAIN AST ...` to the full
+            /// `ParserQuery`, so the surface is the whole language - so the walk instead continues
+            /// only while the prefix itself is still unresolved, and stops at the first token that
+            /// cannot belong to it. A `WITH` prefix has no such tokens left here: its aliases are
+            /// already consumed above, so any other bare word resolves the statement.
+            if (leading_explain && !leading_with) {
+                /// The `EXPLAIN` kinds of `ParserExplainQuery`, spelled as individual words:
+                /// `AST`, `SYNTAX`, `QUERY TREE`, `PIPELINE`, `PLAN`, `ESTIMATE`,
+                /// `TABLE OVERRIDE`, `CURRENT TRANSACTION`, `ANALYZE`, `WHATIF`.
+                if (EXPLAIN_KIND_WORDS.has(lower)) continue;
+                /// The optional settings list `ParserExplainQuery` accepts between the kind and the
+                /// explained query, as in `EXPLAIN PLAN header = 1 INSERT INTO t FORMAT TSV`. Each
+                /// entry is `name = value`, so a settings name is followed by `=` and a bare-word
+                /// value (`true`) is preceded by one.
+                if (tokens[i + 1] && tokens[i + 1].type === TT.Equals) continue;
+                if (tokens[i - 1] && tokens[i - 1].type === TT.Equals) continue;
             }
             return tokens;
         }
@@ -14511,6 +14521,14 @@ const SQL_KEYWORDS = new Set([
 /// nesting depth) and matched-bracket highlighting.
 const OPENING_BRACKETS = new Set([TT.OpeningRoundBracket, TT.OpeningSquareBracket, TT.OpeningCurlyBrace]);
 const CLOSING_BRACKETS = new Set([TT.ClosingRoundBracket, TT.ClosingSquareBracket, TT.ClosingCurlyBrace]);
+/// The words that make up the `EXPLAIN` kinds of `ParserExplainQuery`: `AST`, `SYNTAX`,
+/// `QUERY TREE`, `PIPELINE`, `PLAN`, `ESTIMATE`, `TABLE OVERRIDE`, `CURRENT TRANSACTION`,
+/// `ANALYZE`, `WHATIF`. Used by `tokensBeforeInlineInsertPayload` to walk an `EXPLAIN` prefix up to
+/// the statement it wraps; an unlisted word only means the walk stops earlier, treating the query
+/// as one that has no inline `INSERT` payload.
+const EXPLAIN_KIND_WORDS = new Set([
+    'ast', 'syntax', 'query', 'tree', 'pipeline', 'plan', 'estimate', 'table', 'override',
+    'current', 'transaction', 'analyze', 'whatif']);
 /// The keywords a query-level settings list may run into: the output clauses of
 /// `ParserQueryWithOutput` (`FORMAT`, `INTO OUTFILE`) and the data of an `INSERT ... SETTINGS ...
 /// VALUES ...`, or the `SELECT` source of `INSERT ... SETTINGS ...`. Used by `detectFramingSetting` to tell a real settings list that begins with a

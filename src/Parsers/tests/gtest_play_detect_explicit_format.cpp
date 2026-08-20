@@ -237,13 +237,24 @@ std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens
                 leading_explain = true;
                 continue;
             }
-            if (leading_with || leading_explain)
+            /// Enumerating the statements that can follow is hopeless - `ParserExplainQuery` hands
+            /// `EXPLAIN AST ...` to the full `ParserQuery` - so keep walking only while the prefix
+            /// itself is unresolved. A `WITH` prefix has nothing left here: its aliases are already
+            /// consumed above, so any other bare word resolves the statement.
+            if (leading_explain && !leading_with)
             {
-                static const std::vector<std::string> non_insert_statement_keywords = {
-                    "select", "show", "describe", "desc", "exists", "create", "alter", "drop", "optimize", "kill", "system", "set", "use", "grant", "revoke", "check", "rename", "truncate", "backup", "restore", "delete", "update", "watch"};
-                if (std::find(non_insert_statement_keywords.begin(), non_insert_statement_keywords.end(), lower) != non_insert_statement_keywords.end())
-                    return tokens;
-                continue;
+                /// The `EXPLAIN` kinds of `ParserExplainQuery`, spelled as individual words.
+                static const std::vector<std::string> explain_kind_words = {
+                    "ast", "syntax", "query", "tree", "pipeline", "plan", "estimate", "table", "override",
+                    "current", "transaction", "analyze", "whatif"};
+                if (std::find(explain_kind_words.begin(), explain_kind_words.end(), lower) != explain_kind_words.end())
+                    continue;
+                /// The optional settings list between the kind and the explained query: each entry
+                /// is `name = value`, so a name is followed by `=` and a bare-word value precedes one.
+                if (i + 1 < tokens.size() && tokens[i + 1].type == DB::TokenType::Equals)
+                    continue;
+                if (i > 0 && tokens[i - 1].type == DB::TokenType::Equals)
+                    continue;
             }
             return tokens;
         }
@@ -381,8 +392,19 @@ TEST(PlayDetectExplicitFormat, LeadingWithAndExplainReadOnlyStatementsDoNotBecom
     expectFormat("EXPLAIN AST DESCRIBE TABLE insert FORMAT TabSeparated", "TabSeparated");
     expectFormat("WITH 1 AS x SHOW CREATE TABLE insert FORMAT TabSeparated", "TabSeparated");
     expectFormat("WITH 1 AS x EXISTS TABLE insert FORMAT TabSeparated", "TabSeparated");
+    /// `EXPLAIN AST` is parsed by the full `ParserQuery`, so the statement it wraps can be any
+    /// kind at all. The walk must not depend on a list of statement starters.
+    expectFormat("EXPLAIN AST DETACH TABLE insert FORMAT TabSeparated", "TabSeparated");
+    expectFormat("EXPLAIN AST UNDROP TABLE insert FORMAT TabSeparated", "TabSeparated");
+    expectFormat("EXPLAIN AST ATTACH TABLE insert FORMAT TabSeparated", "TabSeparated");
     /// The true wrapped `INSERT` case is still an input format, never an output clause.
     expectFormat("EXPLAIN AST INSERT INTO t FORMAT TabSeparated", std::nullopt);
+    expectFormat("EXPLAIN INSERT INTO t FORMAT TabSeparated", std::nullopt);
+    expectFormat("WITH 1 AS x INSERT INTO t FORMAT TabSeparated", std::nullopt);
+    /// The settings list `ParserExplainQuery` accepts between the kind and the explained query
+    /// keeps the prefix unresolved.
+    expectFormat("EXPLAIN PLAN header = 1 INSERT INTO t FORMAT TabSeparated", std::nullopt);
+    expectFormat("EXPLAIN PLAN header = true INSERT INTO t FORMAT TabSeparated", std::nullopt);
 }
 
 TEST(PlayDetectExplicitFormat, QuotedFormatNameIsARealClause)
