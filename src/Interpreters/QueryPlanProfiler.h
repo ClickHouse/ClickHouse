@@ -1,22 +1,30 @@
 #pragma once
 
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 namespace DB
 {
 
 class QueryPlanProfiler
 {
 public:
-    /// Returns nullptr when capture is off, so every downstream call site is a null check.
-    static std::shared_ptr<QueryPlanProfiler> createIfEnabled(const ContextPtr & context, bool internal);
+    static bool canEnableProfiler(const ContextPtr & context, bool internal);
+
+    String renderAsciiPlan(size_t max_description_length) const;
+
+    void buildPrettyNames();
 
     void setQueryPlan(QueryPlan plan_) {
         query_plan.emplace(std::move(plan_));
     }
-    bool hasQueryPlan() const { return query_plan.has_value(); }
-    String renderAsciiPlan(size_t max_description_length) const;
+
+    QueryPlan& getQueryPlan() {
+        chassert(query_plan.has_value());
+        return query_plan.value();
+    }
 
 private:
     std::optional<QueryPlan> query_plan;
+    std::optional<PrettyNamesPerPlan> pretty_names;
 };
 }

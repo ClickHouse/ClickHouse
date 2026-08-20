@@ -69,10 +69,12 @@ void QueryPlanLogElement::appendToBlock(MutableColumns & columns) const
 }
 
 void logQueryPlan(const ContextPtr & context,
-                  const QueryPlanProfiler & profiler,
                   const QueryLogElement & elem,
                   QueryPlanLogElement::Status status)
 {
+
+    chassert(context->getPlanProfiler());
+
     auto query_plan_log = context->getQueryPlanLog();
     if (!query_plan_log)
         return;
@@ -87,7 +89,7 @@ void logQueryPlan(const ContextPtr & context,
     plan_elem.query_string = elem.query;
     plan_elem.query_duration_ms = elem.query_duration_ms;
     plan_elem.normalized_query_hash = elem.normalized_query_hash;
-    plan_elem.ascii_plan = profiler.renderAsciiPlan(max_description_length);
+    plan_elem.ascii_plan = context->getPlanProfiler()->renderAsciiPlan(max_description_length);
     plan_elem.status = status;
 
     query_plan_log->add([&](QueryPlanLogElement & element) { element = std::move(plan_elem); });

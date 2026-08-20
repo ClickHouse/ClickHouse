@@ -24,6 +24,8 @@ public:
     virtual bool ignoreQuota() const { return false; }
     virtual bool ignoreLimits() const { return false; }
 
+    virtual bool supportsPlanProfiling() const { return false; }
+
     // Fill query log element with query kind, query databases, query tables and query columns.
     void extendQueryLogElem(
         QueryLogElement & elem,

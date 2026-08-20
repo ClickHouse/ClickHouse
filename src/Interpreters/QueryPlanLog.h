@@ -46,7 +46,6 @@ public:
 };
 
 void logQueryPlan(const ContextPtr & context,
-                  const QueryPlanProfiler & profiler,
                   const QueryLogElement & elem,
                   QueryPlanLogElement::Status status);
 }

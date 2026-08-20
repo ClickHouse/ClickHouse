@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryPlanProfiler.h>
 #include <IO/WriteBufferFromString.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 namespace DB
 {
@@ -12,28 +13,37 @@ namespace Setting
 extern const SettingsBool log_query_plans;
 }
 
-std::shared_ptr<QueryPlanProfiler> QueryPlanProfiler::createIfEnabled(const ContextPtr & context, bool internal)
+void QueryPlanProfiler::buildPrettyNames() {
+    if (query_plan.has_value())
+    {
+        pretty_names.emplace(
+            QueryPlanFormat::buildPrettyNamesPerPlan(*query_plan)
+        );
+    }
+}
+
+bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, bool internal)
 {
     if (internal)
-        return nullptr;
+        return false;
 
     if (!context->getSettingsRef()[Setting::log_query_plans])
-        return nullptr;
+        return false;
 
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        return nullptr;
+        return false;
 
-    return std::make_shared<QueryPlanProfiler>();
+    return true;
 }
 
 String QueryPlanProfiler::renderAsciiPlan(size_t max_description_length) const
 {
-    if (!query_plan || !query_plan->isInitialized())
+    if (!query_plan || !query_plan->isInitialized() || !pretty_names)
         return {};
 
     String result;
     WriteBufferFromString out(result);
-    query_plan->explainPlan(out, ExplainPlanOptions{}, /*offset=*/ 0, max_description_length);
+    query_plan->explainPlan(out, ExplainPlanOptions{.pretty=true}, /*offset=*/ 0, max_description_length, &pretty_names.value());
     out.finalize();
     return result;
 }

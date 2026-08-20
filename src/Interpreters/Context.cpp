@@ -18,6 +18,7 @@
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Interpreters/QueryPlanProfiler.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
@@ -8769,6 +8770,18 @@ ServerSettings Context::getServerSettingsCopy() const
     /// (e.g. `setS3QueueDisableStreaming`, `setMessageQueueDisableInsertion`), which write under `shared->mutex`.
     SharedLockGuard lock(shared->mutex);
     return shared->server_settings;
+}
+
+void Context::enablePlanProfiler()
+{
+    query_plan_profiler = std::make_shared<QueryPlanProfiler>();
+}
+
+QueryPlanProfilerPtr Context::getPlanProfiler() const
+{
+    if (!hasQueryContext())
+        return nullptr;
+    return getQueryContext()->query_plan_profiler;
 }
 
 uint64_t HTTPContext::getMaxHstsAge() const
