@@ -17,7 +17,10 @@ decision functions in `review_threads.py` and their integration into
   `GH.post_commit_status`.
 """
 
+import json
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -44,6 +47,7 @@ from ci.jobs.scripts.workflow_hooks.review_threads import (
     record_limited_pipeline_status,
     review_threads_gate_bypassed,
     should_limit_pipeline,
+    store_gate_state,
 )
 from ci.praktika.gh import GH
 
@@ -59,6 +63,9 @@ class FakeInfo:
         self.pr_number = 12345
         self.repo_name = "ClickHouse/ClickHouse"
         self.notes = []
+
+    def store_kv_data(self, key, value):
+        self.kv[key] = value
 
     def get_kv_data(self, key=None):
         if key:
@@ -144,7 +151,8 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert 'actions/runs/$run_id/rerun' in rerun_workflow
     assert 'Failed to verify re-run of $run_id' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
-    assert 'select(.created_at >= $finish_started_at)' in retry_workflow
+    assert 'select(.created_at >= $from and .created_at <= $to)' in retry_workflow
+    assert 'finish_completed_at=$(echo "$finish_window" | cut -f2)' in retry_workflow
     pull_request_workflow = (repository_root / "ci/workflows/pull_request.py").read_text()
     assert 'can_be_merged.py --review-threads' in pull_request_workflow
     assert '"ci/jobs/scripts/workflow_hooks/can_be_merged.py --review-threads"' in (
@@ -359,3 +367,121 @@ def test_review_threads_marker_is_independent_of_another_merge_gate(monkeypatch)
 
     assert not can_be_merged.check_review_threads()
     assert posted[0]["description"] == "1 unresolved review thread(s)"
+
+
+def test_live_force_all_survives_a_failing_thread_count(monkeypatch):
+    """A rerun with `ci-force-all` must bypass filters even if the thread query fails.
+
+    `native_jobs.py` only falls back to the (stale on reruns) event payload
+    when the kv data is missing, so the label state must be recorded before
+    the independent unresolved-thread query that is allowed to fail.
+    """
+    info = FakeInfo(labels=[])
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        lambda *args, **kwargs: '{"labels": [{"name": "ci-force-all"}]}',
+    )
+
+    def failing_threads(**kwargs):
+        raise RuntimeError("GitHub API is down")
+
+    monkeypatch.setattr(GH, "list_pr_review_threads", failing_threads)
+
+    store_gate_state(info)
+
+    assert info.get_kv_data(KV_FORCE_ALL) is True
+    # The gate itself must not engage without the thread count.
+    assert info.get_kv_data(KV_UNRESOLVED_COUNT) is None
+    assert not should_limit_pipeline(
+        info.get_kv_data(KV_UNRESOLVED_COUNT) or 0,
+        bool(info.get_kv_data(KV_OVERRIDE)),
+    )
+
+    # Workflow filter hooks, changed-file filtering and the cache lookup all
+    # resolve `force_all` from this kv data, and only consult the stale event
+    # payload when it is missing.
+    native_jobs = (
+        Path(__file__).resolve().parents[2] / "ci/praktika/native_jobs.py"
+    ).read_text()
+    assert (
+        native_jobs.count(
+            'force_all_kv = Info().get_kv_data("unresolved_review_threads_force_all")'
+        )
+        == 3
+    )
+    assert native_jobs.count("if force_all_kv is None") == 3
+
+
+def test_gate_is_skipped_when_the_label_state_is_unknown(monkeypatch):
+    """Without the live labels the override may be invisible - run everything."""
+    info = FakeInfo(labels=[])
+
+    def failing_labels(*args, **kwargs):
+        raise RuntimeError("GitHub API is down")
+
+    monkeypatch.setattr(GH, "get_output_with_retries", failing_labels)
+    monkeypatch.setattr(
+        GH, "list_pr_review_threads", lambda **kwargs: [{"isResolved": False}]
+    )
+    monkeypatch.setattr(
+        GH, "post_commit_status", lambda **_: pytest.fail("must not post a marker")
+    )
+
+    store_gate_state(info)
+
+    assert info.get_kv_data(KV_UNRESOLVED_COUNT) is None
+    assert info.get_kv_data(KV_FORCE_ALL) is None
+
+
+def _retry_marker_state(statuses, started_at, completed_at):
+    """Run the retry-suppression predicate of `retry_infra_failures.yml`."""
+    workflow = (
+        Path(__file__).resolve().parents[2]
+        / ".github/workflows/retry_infra_failures.yml"
+    ).read_text()
+    anchor = 'marker_state=$(echo "$statuses" | jq -r'
+    assert anchor in workflow, "the retry suppression predicate moved - update this test"
+    jq_filter = workflow[workflow.index(anchor) :].split("'")[1]
+    result = subprocess.run(
+        ["jq", "-r", "--arg", "from", started_at, "--arg", "to", completed_at, jq_filter],
+        input=json.dumps(statuses),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_retry_suppression_only_matches_the_failed_attempt():
+    """A later status refresh must not be attributed to the failed attempt."""
+    own = {
+        "context": "Review Threads",
+        "state": "failure",
+        "created_at": "2026-08-20T10:00:30Z",
+    }
+    later = {
+        "context": "Review Threads",
+        "state": "failure",
+        "created_at": "2026-08-20T11:30:00Z",
+    }
+    earlier = {
+        "context": "Review Threads",
+        "state": "failure",
+        "created_at": "2026-08-20T09:00:00Z",
+    }
+    other = {
+        "context": "Mergeable Check",
+        "state": "failure",
+        "created_at": "2026-08-20T10:00:30Z",
+    }
+    started, completed = "2026-08-20T10:00:00Z", "2026-08-20T10:01:00Z"
+
+    assert _retry_marker_state([own], started, completed) == "failure"
+    # A status written after the failed `Finish Workflow` completed belongs to
+    # a later reconciliation, so an infra failure must still be retried.
+    assert _retry_marker_state([later], started, completed) == ""
+    assert _retry_marker_state([earlier], started, completed) == ""
+    assert _retry_marker_state([other], started, completed) == ""
+    assert _retry_marker_state([earlier, own, later], started, completed) == "failure"

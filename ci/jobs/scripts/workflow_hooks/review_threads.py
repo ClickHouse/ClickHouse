@@ -85,8 +85,8 @@ def merge_gate_verdict(config_limited, unresolved_now, override_now):
     return False, "all review threads resolved"
 
 
-def fetch_thread_state(info):
-    """(unresolved_count, override, force_all) from live GitHub state.
+def fetch_live_labels(info):
+    """The live label set of the PR. Raises on API failure.
 
     The labels are fetched fresh instead of using `info.pr_labels`: the event
     payload is stale on job re-runs (see the same pattern in `trusted.py`), and
@@ -100,7 +100,12 @@ def fetch_thread_state(info):
         verbose=True,
         strict=True,
     )
-    labels = [label["name"] for label in json.loads(output)["labels"]]
+    return [label["name"] for label in json.loads(output)["labels"]]
+
+
+def fetch_thread_state(info):
+    """(unresolved_count, override, force_all) from live GitHub state."""
+    labels = fetch_live_labels(info)
     override = review_threads_gate_bypassed(labels)
     force_all = Labels.CI_FORCE_ALL in labels
     unresolved_count = get_unresolved_review_threads_count(
@@ -124,14 +129,36 @@ def record_limited_pipeline_status(info, unresolved_count):
     )
 
 
-if __name__ == "__main__":
-    info = Info()
-    if info.pr_number <= 0:
-        print("Not a pull request run - skipping the review threads check")
-        sys.exit(0)
+def store_gate_state(info):
+    """Record the gate state for the rest of the config run.
+
+    The live label state is fetched and stored *before* the (independent)
+    unresolved-thread count: `ci-force-all` must reach the fallbacks in
+    `ci/praktika/native_jobs.py` even when the thread query fails, otherwise
+    they consult the stale event payload and can keep the workflow filter
+    hooks, the changed-file filtering and the CI cache lookup enabled on a
+    re-run that was meant to bypass all of them.
+    """
+    try:
+        labels = fetch_live_labels(info)
+    except Exception as e:
+        # There is no live label state to record: leave the kv data unset so
+        # that `native_jobs.py` falls back to the event payload, which is
+        # correct for everything but a label added after the original run.
+        print(f"WARNING: failed to fetch the live PR labels [{e}]")
+        labels = None
+    else:
+        override = review_threads_gate_bypassed(labels)
+        force_all = Labels.CI_FORCE_ALL in labels
+        # All later config decisions must use this live value. `info.pr_labels`
+        # comes from the original workflow event and is stale on GitHub reruns.
+        info.store_kv_data(KV_FORCE_ALL, force_all)
+        info.store_kv_data(KV_OVERRIDE, override)
 
     try:
-        unresolved_count, override, force_all = fetch_thread_state(info)
+        unresolved_count = get_unresolved_review_threads_count(
+            pr=info.pr_number, repo=info.repo_name
+        )
     except Exception as e:
         # Fail toward more testing: without the thread state the full suite
         # runs as before. The merge gate in can_be_merged.py re-checks at
@@ -139,7 +166,13 @@ if __name__ == "__main__":
         print(
             f"WARNING: failed to fetch the review threads state [{e}] - the full CI suite will run"
         )
-        sys.exit(0)
+        return
+
+    if labels is None:
+        # The gate cannot be evaluated without the label state - the override
+        # label may be set and invisible here. Fail toward more testing.
+        print("WARNING: the live PR labels are unknown - the full CI suite will run")
+        return
 
     print(
         f"Unresolved review threads: {unresolved_count}, "
@@ -155,10 +188,15 @@ if __name__ == "__main__":
                 "WARNING: failed to post the review-threads marker - "
                 "the full CI suite will run"
             )
-            sys.exit(0)
+            return
 
     info.store_kv_data(KV_UNRESOLVED_COUNT, unresolved_count)
-    info.store_kv_data(KV_OVERRIDE, override)
-    # All later config decisions must use this live value. `info.pr_labels`
-    # comes from the original workflow event and is stale on GitHub reruns.
-    info.store_kv_data(KV_FORCE_ALL, force_all)
+
+
+if __name__ == "__main__":
+    info = Info()
+    if info.pr_number <= 0:
+        print("Not a pull request run - skipping the review threads check")
+        sys.exit(0)
+
+    store_gate_state(info)

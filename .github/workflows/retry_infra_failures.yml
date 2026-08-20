@@ -184,15 +184,30 @@ jobs:
               failed_workflow_jobs=$(echo "$jobs_raw" | jq -r '
                 .jobs[] | select(.conclusion == "failure") | .name
               ')
-              finish_started_at=$(echo "$jobs_raw" | jq -r '
-                [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure") |
-                 .started_at] | first // empty
+              # The marker must come from the failed attempt itself: the gate
+              # posts the status from inside "Finish Workflow", so only a
+              # status created within that job's own time window belongs to
+              # it. A status created later (e.g. by a label event handled by
+              # rerun_on_review_threads.yml) says nothing about why this run
+              # failed, and must not suppress the retry of a genuine
+              # infrastructure failure.
+              finish_window=$(echo "$jobs_raw" | jq -r '
+                [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
+                first // {} | [(.started_at // ""), (.completed_at // "")] | @tsv
               ')
-              marker_state=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
-                --jq '[.[] | select(.context == "Review Threads") |
-                       select(.created_at >= $finish_started_at)] | first // {} | .state // empty' \
-                --raw-field finish_started_at="$finish_started_at") \
-                || marker_state=""
+              finish_started_at=$(echo "$finish_window" | cut -f1)
+              finish_completed_at=$(echo "$finish_window" | cut -f2)
+              marker_state=""
+              if [ -n "$finish_started_at" ] && [ -n "$finish_completed_at" ]; then
+                statuses=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
+                  | jq -s 'add // []') || statuses="[]"
+                marker_state=$(echo "$statuses" | jq -r \
+                  --arg from "$finish_started_at" --arg to "$finish_completed_at" '
+                  [.[] | select(.context == "Review Threads") |
+                   select(.created_at >= $from and .created_at <= $to)] |
+                  first // {} | .state // empty
+                ')
+              fi
               if { [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; } \
                 && [ "$failed_workflow_jobs" = "Finish Workflow" ]; then
                 should_rerun=false
