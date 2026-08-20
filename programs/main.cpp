@@ -215,7 +215,7 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 
 }
 
-static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
+static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     for (const auto & [alias, name] : clickhouse_short_names)
         if (app_suffix == name
@@ -360,7 +360,7 @@ int main(int argc_, char ** argv_)
 
     for (auto & application : clickhouse_applications)
     {
-        if (isClickhouseApp(application.first, argv))
+        if (isClickHouseApp(application.first, argv))
         {
             main_func = application.second;
             break;

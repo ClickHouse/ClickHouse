@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -519,7 +520,7 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
         std::move(merge_params),
         agg_step.getGroupingSetsParamsList(),
         /*final_=*/true,
-        memo.getEnvironment().distributed_aggregation_memory_efficient,
+        memo.getContext().distributed_aggregation_memory_efficient,
         agg_step.getTemporaryDataMergeThreads(),
         agg_step.shouldProduceResultsInBucketOrder(),
         agg_step.getMaxBlockSize(),

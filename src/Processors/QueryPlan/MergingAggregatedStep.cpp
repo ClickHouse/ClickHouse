@@ -50,7 +50,7 @@ namespace ErrorCodes
 
 /// First query-plan serialization version with the `allow_input_without_aggregated_chunk_info`
 /// flag (bit 64). Gated on both sides so a mixed-version cluster fails at plan time.
-static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO = 9;
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO = 10;
 
 static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
 {
