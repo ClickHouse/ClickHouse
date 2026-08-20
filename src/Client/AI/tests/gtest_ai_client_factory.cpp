@@ -303,7 +303,7 @@ TEST(AIClientFactory, ProviderCaseSensitivity)
     catch (const Exception & e)
     {
         // Should not contain "Unknown AI provider" if lowercase is correct
-        if (e.message().find("Unknown AI provider") != std::string::npos)
+        if (e.message().contains("Unknown AI provider"))
         {
             FAIL() << "Lowercase provider name should be recognized";
         }

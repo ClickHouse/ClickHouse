@@ -168,7 +168,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
-          ref: ${{{{ env.CHECKOUT_REF }}}}
+          ref: ${{{{ env.CHECKOUT_REF }}}}{CHECKOUT_EXTRA}
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
@@ -271,6 +271,16 @@ jobs:
     if: ${{{{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
 """
 
+        # Same as TEMPLATE_IF_EXPRESSION without the upstream-status half, for
+        # a job with `run_on_upstream_failure`: it reports on the head whatever
+        # the rest of the pipeline did, but a cache hit or the job filter
+        # (`should_skip_job`, which marks a job by adding it to
+        # `cache_success_base64`) must still skip it. Dropping straight to
+        # `!cancelled()` would run it on a `release` or `do not test` PR too.
+        TEMPLATE_IF_EXPRESSION_UPSTREAM_FAILURE_OK = """
+    if: ${{{{ !cancelled() && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
+"""
+
         TEMPLATE_IF_EXPRESSION_NOT_CANCELLED = """
     if: ${{ !cancelled() }}\
 """
@@ -370,7 +380,12 @@ class PullRequestPushYamlGen:
                 self.workflow_config.config.enable_cache
                 and job_name_normalized != config_job_name_normalized
             ):
-                if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION.format(
+                template = (
+                    YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_UPSTREAM_FAILURE_OK
+                    if job.run_on_upstream_failure
+                    else YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION
+                )
+                if_expression = template.format(
                     WORKFLOW_CONFIG_JOB_NAME=config_job_name_normalized,
                     JOB_NAME_BASE64=Utils.to_base64(job_name),
                 )
@@ -396,6 +411,14 @@ class PullRequestPushYamlGen:
                 timeout_minutes = (
                     f"\n    timeout-minutes: {math.ceil(orig_job.timeout / 60) + 5}"
                 )
+
+            # A job that runs untrusted code in the checkout opts out of the
+            # persisted checkout token (see Job.Config.checkout_persist_credentials).
+            checkout_extra = ""
+            if orig_job and not getattr(
+                orig_job, "checkout_persist_credentials", True
+            ):
+                checkout_extra = "\n          persist-credentials: false"
 
             secrets_envs = []
             for secret in job.secret_names_gh:
@@ -430,6 +453,7 @@ class PullRequestPushYamlGen:
                 JOB_NAME_NORMALIZED=job_name_normalized,
                 IF_EXPRESSION=if_expression,
                 TIMEOUT_MINUTES=timeout_minutes,
+                CHECKOUT_EXTRA=checkout_extra,
                 RUNS_ON=", ".join(job.runs_on),
                 NEEDS=needs,
                 JOB_NAME_GH=job_name.replace('"', '\\"'),

@@ -2,9 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
+#include <limits>
 #include <span>
 #include <string_view>
-#include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Defines.h>
 #include <Core/TypeId.h>
@@ -64,6 +65,39 @@ CompressionCodecPtr buildCodecForType(std::string_view expr, const IDataType & t
     throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressionCodecAdaptive must not be invoked directly: it never appears on disk");
 }
 
+/// Hands out destinations for candidate compressions over two buffers: the external one and a lazily allocated scratch.
+/// The buffer holding the current best is pinned: `takeWriteDestination` never hands it out.
+class CompressionDestinationMultiplexer
+{
+public:
+    CompressionDestinationMultiplexer(char * external_destination_, UInt32 internal_reserve_)
+        : external_destination(external_destination_)
+        , internal_reserve(internal_reserve_)
+    {
+    }
+
+    char * takeWriteDestination()
+    {
+        if (best_destination != external_destination)
+            return external_destination;
+
+        scratch.resize_exact(internal_reserve);
+        return scratch.data();
+    }
+
+    void recordCompression(char * to) { best_destination = to; }
+    void discardRecordedCompression() { best_destination = nullptr; }
+
+    /// nullptr: the best was measured only, never materialized.
+    char * getBestDestination() const { return best_destination; }
+
+private:
+    char * external_destination;
+    char * best_destination = nullptr;
+    UInt32 internal_reserve;
+    PODArray<char> scratch;
+};
+
 }
 
 Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default)
@@ -83,8 +117,8 @@ Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodec
 VectorWithMemoryTracking<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
 {
     VectorWithMemoryTracking<TypeIndex> result;
-    for (const auto & group : CANDIDATES)
-        for (const TypeIndex type_id : group.types)
+    for (const auto & [codec_expr, types] : CANDIDATES)
+        for (const TypeIndex type_id : types)
             if (std::ranges::find(result, type_id) == result.end()) /// distinct: a type may appear in more than one group
                 result.push_back(type_id);
     return result;
@@ -93,29 +127,10 @@ VectorWithMemoryTracking<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
 bool AdaptiveCodec::isCandidateType(const IDataType & type)
 {
     const TypeIndex type_id = type.getTypeId();
-    for (const auto & group : CANDIDATES)
-        if (std::ranges::find(group.types, type_id) != group.types.end())
+    for (const auto & [codec_expr, types] : CANDIDATES)
+        if (std::ranges::find(types, type_id) != types.end())
             return true;
     return false;
-}
-
-CompressionCodecPtr AdaptiveCodec::select(const Codecs & pool, const char * source, UInt32 source_size)
-{
-    chassert(!pool.empty());
-
-    PODArray<char> scratch;
-    size_t best_idx = 0;
-    UInt32 best_size = CompressedSizeCalculator::getCompressedBlockSize(*pool[0], source, source_size, scratch);
-
-    for (size_t i = 1; i < pool.size(); ++i)
-    {
-        const UInt32 size = CompressedSizeCalculator::getCompressedBlockSize(*pool[i], source, source_size, scratch);
-        const bool is_smaller = size < best_size;
-        best_idx = is_smaller ? i : best_idx;
-        best_size = is_smaller ? size : best_size;
-    }
-
-    return pool[best_idx];
 }
 
 CompressionCodecAdaptive::CompressionCodecAdaptive(const IDataType & type, const CompressionCodecPtr & deployment_default)
@@ -127,8 +142,53 @@ CompressionCodecAdaptive::CompressionCodecAdaptive(const IDataType & type, const
 
 UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_size, char * dest) const
 {
-    CompressionCodecPtr winner = AdaptiveCodec::select(pool, source, source_size);
-    return winner->compress(source, source_size, dest);
+    /// A single pass over the pool. A candidate that reports its compressed size cheaply is measured without compressing.
+    /// After the pass the winner reaches `dest` in one of three ways: a measured-only winner is compressed into it,
+    /// a winner already there needs nothing, and a winner in scratch is copied over.
+    chassert(dest != nullptr);
+    CompressionDestinationMultiplexer multiplexer(dest, getMaxCompressedDataSize(source_size));
+    const ICompressionCodec * best_codec = nullptr;
+    UInt32 best_size = std::numeric_limits<UInt32>::max();
+
+    for (const auto & codec : pool)
+    {
+        if (auto calculated = codec->tryGetCompressedSize(source, source_size))
+        {
+            const UInt32 size = getHeaderSize() + *calculated;
+            if (size < best_size)
+            {
+                best_size = size;
+                best_codec = codec.get();
+                multiplexer.discardRecordedCompression();
+            }
+        }
+        else
+        {
+            char * target = multiplexer.takeWriteDestination();
+            const UInt32 size = codec->compress(source, source_size, target);
+            if (size < best_size)
+            {
+                best_size = size;
+                best_codec = codec.get();
+                multiplexer.recordCompression(target);
+            }
+        }
+    }
+
+    char * best_compressed = multiplexer.getBestDestination();
+
+    if (!best_compressed)
+    {
+        chassert(best_codec);
+        const UInt32 size = best_codec->compress(source, source_size, dest);
+        chassert(size == best_size);
+        return size;
+    }
+
+    if (best_compressed != dest)
+        memcpy(dest, best_compressed, best_size);
+
+    return best_size;
 }
 
 UInt32 CompressionCodecAdaptive::getMaxCompressedDataSize(UInt32 uncompressed_size) const

@@ -234,13 +234,13 @@ RETURNS return_type
 * `FROM 'module_name' :: 'source_function_name'`: 読み込まれた WASM モジュール名と、使用する WASM モジュール内の関数名 (デフォルトは function&#95;name)
 * `ARGUMENTS`: 引数名と型の一覧 (名前は省略可能で、名前付きフィールドをサポートするシリアライゼーションフォーマットで使用されます)
 * `ABI`: Application Binary Interface のバージョン
-  * `ROW_DIRECT`: 直接的な型マッピング、行単位の処理
+  * `ROW_DIRECT`: 直接的な型マッピング、行ごとの処理
   * `BUFFERED_V1`: シリアライゼーションを伴うブロックベースの処理
-  * `ASSEMBLYSCRIPT`: [AssemblyScript](https://www.assemblyscript.org) コンパイラで生成されたモジュール向けの行単位処理。数値型は AssemblyScript のプリミティブにマップされ、ClickHouse `String` は AssemblyScript `string` にマップされます。
+  * `ASSEMBLYSCRIPT`: [AssemblyScript](https://www.assemblyscript.org) コンパイラで生成されたモジュール向けの行ごと処理。数値型は AssemblyScript のプリミティブにマップされ、ClickHouse `String` は AssemblyScript `string` にマップされます。
 * `DETERMINISTIC`: 関数を決定論的として宣言します。つまり、同じ入力に対して常に同じ出力を返します。指定すると、ClickHouse はすべての引数が定数である呼び出しを定数畳み込みすることがあります。関数はクエリ解析時に一度評価され、その結果がすべての行で再利用されます。
 * `SHA256_HASH`: 検証用の想定モジュールハッシュ (省略した場合は自動入力) 。異なるレプリカ間で正しい WASM モジュールが読み込まれていることを保証するために使用できます。
 * `SETTINGS`: 関数ごとの設定
-  * `serialization_format` String — ABI で必要なシリアライゼーションフォーマット。サポートされる値: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`。デフォルト: `MsgPack`。`Buffers` などのブロックベースのフォーマットでは、宣言された関数シグネチャに一致する型の単一カラムを返す必要があります。
+  * `serialization_format` String — モジュールに渡す引数ブロックのシリアライズと、返された結果の解析に使用するフォーマット。`ABI BUFFERED_V1` でのみ使用されます。サポートされる値: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`。デフォルト: `MsgPack`。`Buffers` などのブロックベースのフォーマットでは、宣言された関数シグネチャに一致する型の単一カラムを返す必要があります。
   * `webassembly_udf_enable_fuel` Bool — 関数の有限 fuel バジェットを有効にします。デフォルト: `true`。`false` の場合、この関数ではクエリレベルの設定 `webassembly_udf_max_fuel` は無視されます。fuel 制限を無効にすると、`wasmtime` engine の使用時にパフォーマンスが向上することがあります。ただし、信頼できない ゲストコード や不具合のある ゲストコード では、暴走実行のリスクが高まる可能性があります。
 
 <div id="abis-versions">
@@ -283,52 +283,162 @@ WebAssembly は符号付き引数と符号なし引数を区別せず、代わ�
 </div>
 
 <Note>
-  この ABI は実験的機能であり、今後のリリースで変更される可能性があります。
+  この ABI は実験的であり、今後のリリースで変更される可能性があります。
 </Note>
 
-WASM メモリを介した (デ) シリアライゼーションを使用して、ブロック全体を一度に処理します。任意の引数型および戻り値型をサポートします。
+WASM メモリを介して (逆) シリアライゼーションを行い、ブロック全体を一度に処理します。任意の引数型と戻り値の型をサポートします。
 
-シリアライズされたデータは wasm メモリにコピーされ、入力の行数とともに UDF 関数に渡されます。このとき、wasm メモリはバッファへのポインタ (データへのポインタとデータサイズで構成) として渡されます。したがって、wasm 側のユーザー定義関数は常に 2 つの `i32` 引数を受け取り、1 つの `i32` 値を返します。
-ゲストコードはデータを処理し、シリアライズされた結果データを含む結果バッファへのポインタを返します。
+データは WASM メモリ内のバッファを介してやり取りされます。バッファは、データへのポインタとデータサイズを保持する 8 バイトの構造体です (リトルエンディアンの `u32` 値 2 つ) 。バッファはデータ自体へのポインタではなく、この構造体へのポインタであるハンドルとして渡されます。ゲストコードは、これらのバッファを作成および破棄するための 2 つの関数をエクスポートする必要があります。
 
-ゲストコードは、これらのバッファを作成および破棄するための 2 つの関数を提供する必要があります。
+入力ブロックごとに、ClickHouse は次を実行します。
+
+1. 関数の `serialization_format` (デフォルトは `MsgPack`) を使用して、引数カラムをシリアライズします。行ベースのフォーマットでは、`ARGUMENTS` で宣言した順序で引数値を行ごとに書き込みます。名前付きフィールドを持つフォーマットでは引数名を使用するため、そのようなフォーマットを使用する場合は `ARGUMENTS` で引数名を宣言してください。
+2. モジュールがエクスポートする `clickhouse_create_buffer` を呼び出し、シリアライズされたデータを、返されたバッファが指すメモリにコピーします。
+3. 入力バッファハンドル (関数に引数がない場合は `0`) と行数の 2 つの `i32` 引数を指定して、ユーザー定義関数を呼び出します。この関数は単一の `i32`、つまりゲストコード自身が割り当てる結果バッファのハンドルを返します。`0` を返すと、クエリはエラーで失敗します。
+4. 結果バッファを読み取ります。結果バッファには、同じフォーマットでシリアライズされた、行数が完全に同じカラムがちょうど 1 つ含まれている必要があります。`JSONEachRow` などの名前付きフィールドを持つフォーマットでは、結果カラムの名前は `result` でなければなりません。
+5. 入力バッファ (存在する場合) と結果バッファの両方のハンドルに対して `clickhouse_destroy_buffer` を呼び出します。ゲストコードは結果バッファ自体を解放してはならず、入力ハンドルを結果として返してもなりません。その場合、同じバッファが 2 回破棄されます。
+
+関数は入力ブロックごとに 1 回呼び出されます。大きなクエリはクエリパイプラインによって複数のブロックに分割されます (呼び出しごとの最大行数は `webassembly_udf_max_input_block_size` 設定でさらに制限できます) 。したがって、各呼び出しで渡される行数はクエリ全体の行数ではなく、そのブロックのサイズです。
+
+<Note>
+  バッファ内の正確なバイト列は選択したフォーマットによって定義されるため、ゲストコード側でデコードおよびエンコードする必要があります。特に、`String` 値については次のとおりです。
+
+  * `MsgPack`: ClickHouse は `String` 値を `str` ファミリーではなく、`bin` 型ファミリー (`0xc4`/`0xc5`/`0xc6`) で書き込みます。結果のパース時には、どちらのファミリーも受け入れられます。
+  * `RowBinary`: 各 `String` の前には、固定幅整数ではなく、符号なし varint ([LEB128](https://en.wikipedia.org/wiki/LEB128)) としてバイト長が付加されます。
+  * `JSONEachRow`: 各結果行は、たとえば `{"result":"value"}` のように、`result` キーを持つオブジェクトである必要があります。
+</Note>
 
 ```
 (module
-  ;; 指定されたサイズの新しいバッファを割り当てる
-  ;; 戻り値: Buffer構造体へのハンドル（データへの直接ポインタではない）。データへのポインタとサイズを含む
+  ;; Allocate a new buffer of specified size
+  ;; Returns: handle to Buffer structure (not direct data pointer!) with pointer to data and size
   (func (export "clickhouse_create_buffer")
-    (param $size i32)    ;; 割り当てるデータのサイズ
-    (result i32))        ;; 十分な領域を持つバッファハンドルを返す
+    (param $size i32)    ;; Size of data to allocate
+    (result i32))        ;; Returns buffer handle with enough space
 
-  ;; ハンドルを使ってバッファを解放する
+  ;; Free a buffer by its handle
   (func (export "clickhouse_destroy_buffer")
-    (param $handle i32)  ;; 解放するバッファハンドル
-    (result))            ;; 戻り値なし
+    (param $handle i32)  ;; Buffer handle to free
+    (result))            ;; No return value
 
-    ;; ユーザー定義関数
+    ;; User-defined function
     (func (export "user_defined_function1")
-      (param $input_buffer_handle i32)  ;; 入力バッファハンドル
-      (param $n i32)                    ;; 入力の行数
-      (result i32))                     ;; 出力バッファハンドルを返す
+      (param $input_buffer_handle i32)  ;; Input buffer handle
+      (param $n i32)                    ;; Number of rows in input
+      (result i32))                     ;; Returns output buffer handle
 )
 ```
 
-C の定義例:
+フリースタンディング C による完全な例です。`str_reverse` は `serialization_format = 'RowBinary'` を使用し、各入力文字列のバイト順を反転します。モジュールインスタンスはブロック間で再利用されるため、`clickhouse_destroy_buffer` は実際にメモリを解放する必要があります。ここでは、すべてのバッファが破棄されるとアロケータがリセットされます。
 
 ```c
+#include <stdint.h>
+
 typedef struct {
     uint8_t * data;
     uint32_t size;
-} ClickhouseBuffer;
+} ClickHouseBuffer;
 
-ClickhouseBuffer * clickhouse_create_buffer(uint32_t size) { /* ... */ }
+#define HEAP_SIZE (1 << 24)
+static _Alignas(16) uint8_t heap[HEAP_SIZE];
+static uint32_t heap_pos = 0;
+static uint32_t live_buffers = 0;
 
-void clickhouse_destroy_buffer(ClickhouseBuffer * data) { /* ... */ }
+__attribute__((export_name("clickhouse_create_buffer")))
+ClickHouseBuffer * clickhouse_create_buffer(uint32_t size)
+{
+    uint32_t total = (sizeof(ClickHouseBuffer) + size + 15u) & ~15u;
+    if (heap_pos + total > HEAP_SIZE)
+        return 0; /* a zero handle makes the host fail the query with an error */
+    ClickHouseBuffer * buf = (ClickHouseBuffer *) &heap[heap_pos];
+    buf->data = &heap[heap_pos + sizeof(ClickHouseBuffer)];
+    buf->size = size;
+    heap_pos += total;
+    ++live_buffers;
+    return buf;
+}
 
-/// ユーザー定義関数の例
-ClickhouseBuffer * user_defined_function1(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
-ClickhouseBuffer * user_defined_function2(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
+__attribute__((export_name("clickhouse_destroy_buffer")))
+void clickhouse_destroy_buffer(ClickHouseBuffer * buf)
+{
+    if (--live_buffers == 0)
+        heap_pos = 0;
+}
+
+/* RowBinary prefixes each String with its byte length as an unsigned varint (LEB128) */
+static uint64_t read_varint(const uint8_t ** pp)
+{
+    uint64_t value = 0;
+    for (int shift = 0;; shift += 7)
+    {
+        uint8_t b = *(*pp)++;
+        value |= (uint64_t)(b & 0x7f) << shift;
+        if (!(b & 0x80))
+            return value;
+    }
+}
+
+static void write_varint(uint8_t ** pp, uint64_t value)
+{
+    while (value >= 0x80)
+    {
+        *(*pp)++ = (uint8_t)(value | 0x80);
+        value >>= 7;
+    }
+    *(*pp)++ = (uint8_t)value;
+}
+
+/* Reverses the bytes of each input string */
+__attribute__((export_name("str_reverse")))
+ClickHouseBuffer * str_reverse(ClickHouseBuffer * input, uint32_t num_rows)
+{
+    ClickHouseBuffer * out = clickhouse_create_buffer(input->size);
+    if (!out)
+        return 0;
+    const uint8_t * in = input->data;
+    uint8_t * o = out->data;
+    for (uint32_t row = 0; row < num_rows; ++row)
+    {
+        uint64_t len = read_varint(&in);
+        write_varint(&o, len);
+        for (uint64_t i = 0; i < len; ++i)
+            o[i] = in[len - 1 - i];
+        in += len;
+        o += len;
+    }
+    out->size = (uint32_t)(o - out->data);
+    return out;
+}
+```
+
+clang と `wasm-ld` (LLVM/lld に同梱) を使用してビルドします：
+
+```bash
+clang --target=wasm32 -ffreestanding -nostdlib -fno-builtin -c str_reverse.c
+wasm-ld --no-entry str_reverse.o -o str_reverse.wasm
+```
+
+関数はモジュールのエクスポートとして公開されている必要があります。上記のように `__attribute__((export_name("...")))` を指定するか、`wasm-ld --export-all` を使用してリンクします。`-fno-builtin` は、標準ライブラリなしでは利用できない `memcpy`/`memset` の呼び出しに、clang が単純なバイトループを変換しないようにします。
+
+モジュールをロードし、関数を作成します。
+
+```bash
+cat str_reverse.wasm | clickhouse client -q "INSERT INTO system.webassembly_modules (name, code) SELECT 'str_reverse', code FROM input('code String') FORMAT RawBlob"
+```
+
+```sql
+CREATE FUNCTION str_reverse LANGUAGE WASM ABI BUFFERED_V1
+FROM 'str_reverse' :: 'str_reverse'
+ARGUMENTS (s String) RETURNS String
+SETTINGS serialization_format = 'RowBinary';
+
+SELECT str_reverse(toString(number + 100)) FROM numbers(3);
+```
+
+```text
+001
+101
+201
 ```
 
 <div id="abi-assemblyscript">

@@ -13,10 +13,10 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 ClickHouse prend en charge plusieurs types de fonctions définies par l&#39;utilisateur (UDFs) :
 
-* [Executable UDFs](#executable-user-defined-functions) lancent un programme externe ou un script (Python, Bash, etc.) et lui transmettent des blocs de données en flux via STDIN / STDOUT. Utilisez-les pour intégrer du code ou des outils existants sans recompiler ClickHouse. Leur surcoût par appel est plus élevé que celui des options exécutées dans le processus, et elles conviennent mieux à une logique plus lourde ou aux cas où un environnement d&#39;exécution différent est nécessaire.
+* [UDFs exécutables](#executable-user-defined-functions) lancent un programme externe ou un script (Python, Bash, etc.) et lui transmettent des blocs de données en flux via STDIN / STDOUT. Utilisez-les pour intégrer du code ou des outils existants sans recompiler ClickHouse. Leur surcoût par appel est plus élevé que celui des options exécutées dans le processus, et elles conviennent mieux à une logique plus lourde ou aux cas où un environnement d&#39;exécution différent est nécessaire.
 * [SQL UDFs](#sql-user-defined-functions) sont définies avec `CREATE FUNCTION` uniquement en SQL. Elles sont intégrées/dépliées dans le plan de requête (sans passer par un processus distinct), ce qui les rend légères et idéales pour réutiliser une logique d&#39;expression ou simplifier des colonnes calculées complexes.
 * [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) exécutent du code compilé en WebAssembly dans un sandbox au sein du processus serveur. Elles offrent un surcoût par appel plus faible que les exécutables externes, avec une meilleure isolation que les extensions natives, ce qui les rend adaptées aux algorithmes personnalisés écrits dans des langages pouvant cibler WASM (par ex. C/C++/Rust).
-* [Experimental UDF exécutable basé sur un driver](#driver-based-executable-user-defined-functions) permettent à un &quot;driver&quot; fourni par l&#39;opérateur de transformer un extrait de code fourni dans `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` en une executable UDF au moment de la création de la fonction (par exemple, en le compilant). Elles s&#39;appuient sur les executable UDFs et nécessitent une configuration du driver côté serveur.
+* [Experimental UDF exécutable basé sur un driver](#driver-based-executable-user-defined-functions) permettent à un &quot;driver&quot; fourni par l&#39;opérateur de transformer un extrait de code fourni dans `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` en une UDF exécutable au moment de la création de la fonction (par exemple, en le compilant). Elles s&#39;appuient sur les UDFs exécutables et nécessitent une configuration du driver côté serveur.
 
 <div id="executable-user-defined-functions">
   ## Fonctions exécutables définies par l’utilisateur
@@ -31,7 +31,7 @@ ClickHouse prend en charge plusieurs types de fonctions définies par l&#39;util
 ClickHouse peut appeler n’importe quel programme exécutable externe ou script pour traiter les données.
 
 La configuration des fonctions exécutables définies par l’utilisateur peut être stockée dans un ou plusieurs fichiers XML.
-Le chemin d’accès à la configuration est spécifié dans le paramètre [`user_defined_executable_functions_config`](/fr/reference/settings/server-settings/settings#user_defined_executable_functions_config).
+Le chemin d’accès à la configuration est spécifié dans le paramètre [`user_defined_executable_functions_config`](/fr/reference/settings/server-settings/settings/user-defined#user_defined_executable_functions_config).
 
 Une configuration de fonction contient les paramètres suivants :
 
@@ -50,7 +50,7 @@ Une configuration de fonction contient les paramètres suivants :
 | `command_write_timeout`       | Délai d’attente pour l’écriture des données vers le stdin de la commande, en millisecondes                                                                                                                                                                                                                                                                                                                                                                                            | Facultatif  | `10000`                   |
 | `pool_size`                   | Taille du pool de commandes                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Facultatif  | `16`                      |
 | `send_chunk_header`           | Indique s’il faut envoyer le nombre de lignes avant d’envoyer un fragment de données au processus                                                                                                                                                                                                                                                                                                                                                                                     | Facultatif  | `false`                   |
-| `execute_direct`              | Si `execute_direct` = `1`, `command` est recherchée dans le dossier user&#95;scripts spécifié par [user&#95;scripts&#95;path](/fr/reference/settings/server-settings/settings#user_scripts_path). Des arguments de script supplémentaires peuvent être indiqués en les séparant par des espaces. Exemple : `script_name arg1 arg2`. Si `execute_direct` = `0`, `command` est transmise comme argument à `bin/sh -c`                                                                      | Facultatif  | `1`                       |
+| `execute_direct`              | Si `execute_direct` = `1`, `command` est recherchée dans le dossier user&#95;scripts spécifié par [user&#95;scripts&#95;path](/fr/reference/settings/server-settings/settings/user#user_scripts_path). Des arguments de script supplémentaires peuvent être indiqués en les séparant par des espaces. Exemple : `script_name arg1 arg2`. Si `execute_direct` = `0`, `command` est transmise comme argument à `bin/sh -c`                                                                 | Facultatif  | `1`                       |
 | `lifetime`                    | Intervalle de rechargement d’une fonction, en secondes. S’il est défini sur `0`, la fonction n’est pas rechargée                                                                                                                                                                                                                                                                                                                                                                      | Facultatif  | `0`                       |
 | `deterministic`               | Indique si la fonction est déterministe (renvoie le même résultat pour la même entrée)                                                                                                                                                                                                                                                                                                                                                                                                | Facultatif  | `false`                   |
 | `stderr_reaction`             | Façon de gérer la sortie stderr de la commande. Valeurs : `none` (ignorer), `log` (journaliser immédiatement toute la sortie stderr), `log_first` (journaliser les 4 premiers KiB après la fin), `log_last` (journaliser les 4 derniers KiB après la fin), `throw` (lever immédiatement une exception à la moindre sortie sur stderr). Lors de l’utilisation de `log_first` ou `log_last` avec un code de sortie non nul, le contenu de stderr est inclus dans le message d’exception | Facultatif  | `log_last`                |
@@ -524,7 +524,7 @@ SELECT my_function(10, 20);
 Pour en savoir plus, consultez la documentation sur [WebAssembly User Defined Functions](/fr/reference/functions/regular-functions/wasm_udf).
 
 <div id="driver-based-executable-user-defined-functions">
-  ## Fonctions utilisateur exécutables basées sur un driver
+  ## Fonctions définies par l’utilisateur exécutables basées sur un driver
 </div>
 
 <CloudNotSupportedBadge />
@@ -532,7 +532,7 @@ Pour en savoir plus, consultez la documentation sur [WebAssembly User Defined Fu
 <ExperimentalBadge />
 
 <Note>
-  Il s&#39;agit d&#39;une fonctionnalité expérimentale qui peut évoluer de façon non rétrocompatible dans les versions futures. Activez-la avec le paramètre serveur [`allow_experimental_executable_udf_drivers`](/fr/reference/settings/server-settings/settings#allow_experimental_executable_udf_drivers).
+  Il s&#39;agit d&#39;une fonctionnalité expérimentale qui peut évoluer de façon non rétrocompatible dans les versions futures. Activez-la avec le paramètre serveur [`allow_experimental_executable_udf_drivers`](/fr/reference/settings/server-settings/settings/allow-experimental#allow_experimental_executable_udf_drivers).
 </Note>
 
 Un *driver* est un adaptateur fourni par l&#39;opérateur qui transforme un extrait de code utilisateur en [UDF exécutable](#executable-user-defined-functions). Lorsqu&#39;une fonction est créée avec `ENGINE = DriverName(...)`, ClickHouse exécute la commande `create_command` du driver en lui transmettant la signature de la fonction et le corps du code ; le driver compile ce corps ou le traite d&#39;une autre manière, puis produit une configuration d&#39;UDF exécutable, que ClickHouse stocke et charge ensuite.
@@ -553,7 +553,7 @@ Les UDF exécutables basées sur des drivers sont désactivées par défaut. Pou
    </clickhouse>
    ```
 
-2. Faites pointer `user_defined_executable_function_drivers_config` vers un ou plusieurs fichiers de configuration de driver (les motifs glob sont pris en charge) et, si nécessaire, définissez [`dynamic_user_defined_executable_functions_path`](/fr/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path), le répertoire où sont stockées les configurations générées des UDF exécutables :
+2. Faites pointer `user_defined_executable_function_drivers_config` vers un ou plusieurs fichiers de configuration de driver (les motifs glob sont pris en charge) et, si nécessaire, définissez [`dynamic_user_defined_executable_functions_path`](/fr/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path), le répertoire où sont stockées les configurations générées des UDF exécutables :
 
    ```xml
    <clickhouse>
@@ -623,7 +623,7 @@ CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
     AS '...code body...'
 ```
 
-ClickHouse exécute le `create_command` du driver, écrit la configuration générée dans [`dynamic_user_defined_executable_functions_path`](/fr/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path), puis le chargeur existant d&#39;UDF exécutables la prend en charge. La fonction peut ensuite être appelée comme n&#39;importe quelle autre fonction.
+ClickHouse exécute le `create_command` du driver, écrit la configuration générée dans [`dynamic_user_defined_executable_functions_path`](/fr/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path), puis le chargeur existant d&#39;UDF exécutables la prend en charge. La fonction peut ensuite être appelée comme n&#39;importe quelle autre fonction.
 
 <div id="dropping-a-function-with-a-driver">
   ### Suppression d’une fonction
@@ -639,7 +639,7 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
   ### Persistance et redémarrage
 </div>
 
-La requête d’origine est conservée sous la forme d’une instruction `ATTACH FUNCTION ...` dans le répertoire des objets SQL définis par l’utilisateur, de sorte que la fonction soit conservée après un redémarrage du serveur. Au démarrage, les configurations générées dans [`dynamic_user_defined_executable_functions_path`](/fr/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path) sont chargées directement sans relancer le driver. Si une instruction `ATTACH FUNCTION` conservée n’a pas de configuration générée correspondante (par exemple, si le répertoire dynamique a été perdu), le driver est relancé pour la recréer.
+La requête d’origine est conservée sous la forme d’une instruction `ATTACH FUNCTION ...` dans le répertoire des objets SQL définis par l’utilisateur, de sorte que la fonction soit conservée après un redémarrage du serveur. Au démarrage, les configurations générées dans [`dynamic_user_defined_executable_functions_path`](/fr/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path) sont chargées directement sans relancer le driver. Si une instruction `ATTACH FUNCTION` conservée n’a pas de configuration générée correspondante (par exemple, si le répertoire dynamique a été perdu), le driver est relancé pour la recréer.
 
 <div id="driver-limitations">
   ### Limites

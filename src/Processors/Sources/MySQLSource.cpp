@@ -46,7 +46,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
+MySQLStreamSettings::MySQLStreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
     : max_read_mysql_row_nums(
           (settings[Setting::external_storage_max_read_rows]) ? settings[Setting::external_storage_max_read_rows] : settings[Setting::max_block_size])
     , max_read_mysql_bytes_size(settings[Setting::external_storage_max_read_bytes])
@@ -72,21 +72,21 @@ MySQLSource::MySQLSource(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
     const Block & sample_block,
-    const StreamSettings & settings_)
+    const MySQLStreamSettings & settings_)
     : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
     , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
-    , settings{std::make_unique<StreamSettings>(settings_)}
+    , settings{std::make_unique<MySQLStreamSettings>(settings_)}
 {
     description.init(sample_block);
     initPositionMappingFromQueryResultStructure();
 }
 
 /// For descendant MySQLWithFailoverSource
-MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
+MySQLSource::MySQLSource(const Block &sample_block_, const MySQLStreamSettings & settings_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , log(getLogger("MySQLSource"))
-    , settings(std::make_unique<StreamSettings>(settings_))
+    , settings(std::make_unique<MySQLStreamSettings>(settings_))
 {
     description.init(sample_block_);
 }
@@ -96,7 +96,7 @@ MySQLWithFailoverSource::MySQLWithFailoverSource(
     mysqlxx::PoolWithFailoverPtr pool_,
     const std::string & query_str_,
     const Block & sample_block_,
-    const StreamSettings & settings_)
+    const MySQLStreamSettings & settings_)
     : MySQLSource(sample_block_, settings_)
     , pool(pool_)
     , query_str(query_str_)

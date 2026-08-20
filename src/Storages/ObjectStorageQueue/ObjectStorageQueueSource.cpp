@@ -66,6 +66,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
+    extern const char object_storage_queue_fail_tags_fetch[];
 }
 
 namespace ErrorCodes
@@ -389,6 +390,9 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 if (num_successful_objects != new_batch.size())
                 {
+                    /// file_metadatas is empty when the keeper tryMulti above failed and
+                    /// cleared it (see the chassert below); only compact it when populated.
+                    const bool compact_file_metadatas = !file_metadatas.empty();
                     size_t batch_i = 0;
                     for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
                     {
@@ -404,10 +408,12 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
 
                         new_batch[i] = new_batch[batch_i];
-                        file_metadatas[i] = file_metadatas[batch_i];
+                        if (compact_file_metadatas)
+                            file_metadatas[i] = file_metadatas[batch_i];
                     }
                     new_batch.resize(num_successful_objects);
-                    file_metadatas.resize(num_successful_objects);
+                    if (compact_file_metadatas)
+                        file_metadatas.resize(num_successful_objects);
                 }
 
                 chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
@@ -1217,6 +1223,30 @@ Chunk ObjectStorageQueueSource::generateImpl()
             LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
 
             processed_files.emplace_back(file_metadata);
+
+            /// Tags are not fetched during listing (it lists with with_tags = false), so populate
+            /// them on demand here, once per file, only when _tags is requested. Must run after
+            /// emplace_back so a fetch failure fails the already-claimed file through the normal
+            /// commit accounting instead of leaving it orphaned.
+            if (read_from_format_info.requested_virtual_columns.contains("_tags"))
+            {
+                if (const auto & object_info_for_tags = reader.getObjectInfo())
+                {
+                    auto metadata_with_tags = object_info_for_tags->getObjectMetadata();
+                    if (metadata_with_tags && metadata_with_tags->tags.empty())
+                    {
+                        fiu_do_on(FailPoints::object_storage_queue_fail_tags_fetch, {
+                            throw Exception(
+                                ErrorCodes::UNKNOWN_EXCEPTION,
+                                "Failpoint-triggered tag fetch failure for file: {}", file_metadata->getPath());
+                        });
+
+                        metadata_with_tags->tags
+                            = object_storage->getObjectMetadata(object_info_for_tags->getPath(), /*with_tags=*/true).tags;
+                        object_info_for_tags->setObjectMetadata(*metadata_with_tags);
+                    }
+                }
+            }
         }
 
         chassert(file_metadata);
@@ -1348,6 +1378,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
                     .etag = &(object_metadata->etag),
+                    .tags = &(object_metadata->tags),
                 },
                 getContext(),
                 format_settings);

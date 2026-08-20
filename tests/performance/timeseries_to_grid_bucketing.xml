@@ -1,0 +1,71 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Benchmarks the sample-bucketing stage of the `timeSeries*ToGrid` aggregate functions (the batch add
+        path of `AggregateFunctionTimeseriesBase`): mapping each sample to its bucket and appending it there.
+        The grids are short (a few hundred points), so the grid-filling stage (`doInsertResultInto`) is cheap
+        and the bucketing dominates; `timeseries_to_grid_aggregation_functions.xml` covers the opposite,
+        grid-filling-heavy case.
+
+        Scenarios:
+          - sorted: timestamps ascend within each series (the storage order of time series tables), so
+            consecutive samples fall into the same bucket - long runs for the run-detecting kernel.
+          - rejected samples: `window < step` leaves gaps between buckets; with window 60 and step 900 about
+            93% of the samples fall into a gap and are skipped.
+          - unsorted: the storage order shuffles timestamps within each series, so bucket runs degenerate to
+            single samples - the worst case for run detection, guarding the fallback cost.
+    -->
+
+    <create_query>
+        CREATE TABLE ts_bucketing (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)
+    </create_query>
+    <create_query>
+        CREATE TABLE ts_bucketing_unsorted (id UInt64, h UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, h)
+    </create_query>
+
+    <!-- 2500 series, one sample every 15s over [0, 300000) -> 20000 samples/series, 50M rows total.
+         The value is a sawtooth counter so rate sees transitions and resets. -->
+    <fill_query>
+        INSERT INTO ts_bucketing
+        SELECT
+            number % 2500 AS id,
+            toDateTime64(intDiv(number, 2500) * 15, 3) AS timestamp,
+            (intDiv(number, 2500) % 1000)::Float64 AS value
+        FROM numbers_mt(2500 * 20000)
+    </fill_query>
+
+    <!-- Same data with timestamps shuffled within each series by the storage order. 20M rows. -->
+    <fill_query>
+        INSERT INTO ts_bucketing_unsorted
+        SELECT
+            number % 2500 AS id,
+            intHash64(number) AS h,
+            toDateTime64(intDiv(number, 2500) * 15, 3) AS timestamp,
+            (intDiv(number, 2500) % 1000)::Float64 AS value
+        FROM numbers_mt(2500 * 8000)
+    </fill_query>
+
+    <!-- Sorted, all samples accepted: step = window = 300s -> 1001 grid points, 20 samples per bucket. -->
+    <query>SELECT id, timeSeriesRateToGrid(0, 300000, 300, 300)(timestamp, value) FROM ts_bucketing GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesInstantRateToGrid(0, 300000, 300, 300)(timestamp, value) FROM ts_bucketing GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 300000, 300, 300)(timestamp, value) FROM ts_bucketing GROUP BY id FORMAT Null</query>
+
+    <!-- Sorted, most samples rejected: window 60 < step 900 -> only samples in (grid - 60, grid] contribute. -->
+    <query>SELECT id, timeSeriesRateToGrid(0, 300000, 900, 60)(timestamp, value) FROM ts_bucketing GROUP BY id FORMAT Null</query>
+
+    <!-- Split buckets: window 240 is not a multiple of step 180 -> two buckets per step. -->
+    <query>SELECT id, timeSeriesRateToGrid(0, 300000, 180, 240)(timestamp, value) FROM ts_bucketing GROUP BY id FORMAT Null</query>
+
+    <!-- Single aggregation state: the addBatchSinglePlace path over all series at once. -->
+    <query>SELECT timeSeriesRateToGrid(0, 300000, 300, 300)(timestamp, value) FROM ts_bucketing FORMAT Null</query>
+
+    <!-- Unsorted: bucket runs degenerate to single samples. -->
+    <query>SELECT id, timeSeriesRateToGrid(0, 300000, 300, 300)(timestamp, value) FROM ts_bucketing_unsorted GROUP BY id FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS ts_bucketing</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ts_bucketing_unsorted</drop_query>
+</test>

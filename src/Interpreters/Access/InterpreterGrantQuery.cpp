@@ -398,6 +398,8 @@ namespace
     /// Updates grants of a specified user or role.
     void updateFromQuery(IAccessEntity & grantee, const ASTGrantQuery & query)
     {
+        query.access_rights_elements.throwIfFilterIsNotCompilable();
+
         AccessRightsElements elements_to_grant;
         AccessRightsElements elements_to_revoke;
         collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
@@ -438,6 +440,11 @@ BlockIO InterpreterGrantQuery::execute()
             (void)StorageFactory::instance().getStorageFeatures(element.parameter);
         }
     }
+
+    /// The parser does not compile the pattern of `GRANT READ ON S3('s3://foo/.*')` - that would
+    /// put a regex engine in it - so it is validated here, and on every other path that turns an
+    /// `ASTGrantQuery` into access rights.
+    query.access_rights_elements.throwIfFilterIsNotCompilable();
 
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
