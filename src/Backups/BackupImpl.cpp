@@ -28,6 +28,9 @@
 #include <IO/Operators.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
+#if CLICKHOUSE_CLOUD && USE_SSL
+#include <Backups/BackupEncryptionSidecar.h>
+#endif
 #include <Poco/SAX/SAXParser.h>
 #include <Poco/SAX/XMLReader.h>
 
@@ -230,6 +233,10 @@ BackupImpl::~BackupImpl()
 void BackupImpl::open()
 {
     std::lock_guard lock{mutex};
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+    encryption_sidecar = std::make_unique<BackupEncryptionSidecar>(*this);
+#endif
 
     if (open_mode == OpenMode::UNLOCK)
     {
@@ -587,6 +594,9 @@ void BackupImpl::writeBackupMetadata()
     out->finalize();
 
     uncompressed_size = size_of_entries + out->count();
+#if CLICKHOUSE_CLOUD && USE_SSL
+    uncompressed_size += encryption_sidecar->getFileSize();
+#endif
 
     LOG_TRACE(log, "Backup {}: Metadata was written", backup_name_for_logging);
 }
@@ -616,6 +626,9 @@ void BackupImpl::recalculateMetadataCounters()
     });
 
     uncompressed_size = size_of_entries + writer->getFileSize(".backup");
+#if USE_SSL
+    uncompressed_size += encryption_sidecar->getFileSize();
+#endif
 }
 #endif
 
@@ -856,6 +869,17 @@ void BackupImpl::readBackupMetadata()
         throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Metadata has no <contents>", backup_name_for_logging);
 
     uncompressed_size = size_of_entries + str.size();
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+    /// A backup written with an encryption config file next to it carries the TDE key information of that
+    /// file (a backup created from this one may carry it further, see `BACKUP FROM SNAPSHOT`), and counts
+    /// the file in its sizes the same way as when it was written.
+    if (open_mode == OpenMode::READ)
+    {
+        encryption_sidecar->read();
+        uncompressed_size += encryption_sidecar->getFileSize();
+    }
+#endif
     compressed_size = uncompressed_size;
     if (!use_archive)
         setCompressedSize();
@@ -873,6 +897,10 @@ void BackupImpl::checkBackupDoesntExist() const
 
     if (writer->fileExists(file_name_to_check_existence))
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
+#if CLICKHOUSE_CLOUD && USE_SSL
+    if (encryption_sidecar->existsInDestination())
+        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
+#endif
 
     /// Check that no other backup (excluding internal backups) is writing to the same destination.
     if (!params.is_internal_backup)
@@ -1545,6 +1573,10 @@ void BackupImpl::finalizeWriting()
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
         });
+#if CLICKHOUSE_CLOUD && USE_SSL
+        if (!use_archive)
+            uncompressed_size += encryption_sidecar->write();
+#endif
 #if CLICKHOUSE_CLOUD
         /// A continued attempt whose manifest is already in the destination republishes nothing; it only
         /// recomputes the counters it reports.
@@ -1553,6 +1585,10 @@ void BackupImpl::finalizeWriting()
         else
 #endif
             writeBackupMetadata();
+#if CLICKHOUSE_CLOUD && USE_SSL
+        if (use_archive)
+            uncompressed_size += encryption_sidecar->write();
+#endif
         closeArchive(/* finalize= */ true);
         setCompressedSize();
 #if CLICKHOUSE_CLOUD
@@ -1571,6 +1607,11 @@ void BackupImpl::setCompressedSize()
 {
     if (use_archive)
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
+#if CLICKHOUSE_CLOUD && USE_SSL
+        /// The encryption config file is written outside of the archive, so its size must be added
+        /// to the size of the archive to get the physical footprint of the backup.
+        compressed_size += encryption_sidecar->getFileSize();
+#endif
     else
         compressed_size = uncompressed_size;
 }
@@ -1653,6 +1694,12 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
                     files_to_remove.push_back(file_info.data_file_name);
             });
         }
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+        /// The encryption config file is written outside of the archive, so it must be removed in both cases.
+        if (!encryption_sidecar->getKeyInfos().empty())
+            files_to_remove.push_back(encryption_sidecar->fileName());
+#endif
 
         if (!checkLockFile(false))
             return false;
