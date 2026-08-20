@@ -68,25 +68,16 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
-bool StorageAlias::isTargetAccessGranted(const TargetAccess & access_check) const
-{
-    if (!access_check.context)
-        return false;
-
-    auto access = access_check.context->getAccess();
-    if (access_check.column_names.empty())
-        return access->isGranted(access_check.access_type, target_database, target_table);
-
-    return access->isGranted(access_check.access_type, target_database, target_table, access_check.column_names);
-}
-
 bool StorageAlias::isGrantedToExposeMetadata(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
-    Names column_names;
-    if (!column_name.empty())
-        column_names.push_back(column_name);
+    if (!query_context)
+        return false;
 
-    return isTargetAccessGranted(TargetAccess{query_context, access_type, std::move(column_names)});
+    auto access = query_context->getAccess();
+    if (column_name.empty())
+        return access->isGranted(access_type, target_database, target_table);
+
+    return access->isGranted(access_type, target_database, target_table, column_name);
 }
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline

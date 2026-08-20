@@ -114,8 +114,11 @@ protected:
                 const auto table = tables_it.table();
                 if (!table)
                     continue;
+
+                /// Database-level shortcuts can bypass a table-specific catalog lookup in `ContextAccess`.
                 if (!table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {}))
                     continue;
+
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;

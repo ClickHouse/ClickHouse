@@ -16,7 +16,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -27,7 +26,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int SYNTAX_ERROR;
     extern const int THERE_IS_NO_QUERY;
     extern const int BAD_ARGUMENTS;
@@ -157,13 +155,6 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
 
         if (!create_query)
             create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
-
-        if (!is_dictionary)
-        {
-            auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-            if (table && !table->isGrantedToExposeMetadata(getContext(), AccessType::SHOW_COLUMNS, {}))
-                throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to show metadata exposed by {}", table_id.getNameForLogs());
-        }
 
         auto & ast_create_query = create_query->as<ASTCreateQuery &>();
         if (query_ptr->as<ASTShowCreateViewQuery>())

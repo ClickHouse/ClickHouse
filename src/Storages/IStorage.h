@@ -242,9 +242,8 @@ public:
         return metadata.get();
     }
 
-    /// Some metadata accessors, such as `totalBytesUncompressed`, do not accept a `ContextPtr` and cannot check
-    /// the current user's access. Proxy storages such as `Alias` can override this hook so callers with a query
-    /// context can validate access before exposing metadata forwarded from an underlying storage.
+    /// Returns true if the current user has permission to access metadata exposed by this storage.
+    /// An empty `column_name` represents table-level metadata.
     /// No default argument is used because clang-tidy's `google-default-arguments` prohibits it on virtual methods.
     virtual bool isGrantedToExposeMetadata(ContextPtr, AccessType, const String &) const { return true; }
 

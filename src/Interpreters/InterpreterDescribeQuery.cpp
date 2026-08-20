@@ -29,7 +29,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataTypes/NestedUtils.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -46,7 +45,6 @@ namespace Setting
 namespace ErrorCodes
 {
 
-extern const int ACCESS_DENIED;
 extern const int UNSUPPORTED_METHOD;
 extern const int UNKNOWN_FUNCTION;
 
@@ -250,9 +248,6 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
-
-    if (!table->isGrantedToExposeMetadata(query_context, AccessType::SHOW_COLUMNS, {}))
-        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
 
     if (auto * storage_view = table->as<StorageView>())
     {

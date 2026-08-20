@@ -146,10 +146,9 @@ protected:
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
             SerializationInfoByName serialization_hints{{}};
-            StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-            bool needs_column_metadata = false;
 
             {
+                StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
 
                 if (table_lock == nullptr)
@@ -161,7 +160,9 @@ protected:
                 const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 columns = metadata_snapshot->getColumns();
 
-                needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[21];
+                /// Size and serialization accessors run before per-column filtering and do not receive a context.
+                /// Check the actual storage first because the per-column `ContextAccess` filtering happens below.
+                const bool needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[21];
                 bool can_expose_any_column_metadata = !needs_column_metadata;
                 if (needs_column_metadata)
                 {
@@ -209,9 +210,6 @@ protected:
             {
                 ++position;
                 if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
-                    continue;
-
-                if (!storage->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, column.name))
                     continue;
 
                 size_t src_index = 0;

@@ -557,8 +557,6 @@ protected:
 
                     for (auto & table : external_tables)
                     {
-                        const bool can_expose_metadata
-                            = table.second->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -611,7 +609,7 @@ protected:
                         if (columns_mask[src_index++])
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-                            ASTPtr ast = can_expose_metadata && temp_db
+                            ASTPtr ast = temp_db
                                 ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context)
                                 : nullptr;
                             res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
@@ -627,13 +625,12 @@ protected:
                             if (src_index == 14 && columns_mask[src_index])
                             {
                                 // parameterized view parameters
-                                fillParametralizedViewData(res_columns, can_expose_metadata ? table.second : nullptr, res_index);
+                                fillParametralizedViewData(res_columns, table.second, res_index);
                             }
                             // skipping_indices_types
                             else if (src_index == 20 && columns_mask[src_index])
                             {
-                                const auto metadata_snapshot
-                                    = can_expose_metadata ? table.second->getInMemoryMetadataPtr(context, false) : nullptr;
+                                const auto metadata_snapshot = table.second->getInMemoryMetadataPtr(context, false);
                                 fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
                             }
                             else if (src_index == 22 && columns_mask[src_index])
@@ -731,6 +728,8 @@ protected:
                 /// whole system.tables scan. Every metadata-dependent column below is guarded on
                 /// `table` being non-null.
 
+                /// Database-level access shortcuts can skip the table-specific check in `ContextAccess`. Check the
+                /// actual storage as well before exposing metadata forwarded by proxy storages such as `Alias`.
                 const bool can_expose_metadata = table && table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {});
 
                 TableLockHolder lock;

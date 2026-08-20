@@ -292,8 +292,6 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
 protected:
-    bool isTargetAccessGranted(const TargetAccess & access_check) const;
-
     String target_database;
     String target_table;
 };

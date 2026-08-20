@@ -10,6 +10,7 @@
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Databases/DatabaseFactory.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -89,6 +90,116 @@ namespace
 
     template <typename... OtherArgs>
     std::string_view getDatabase(std::string_view arg1, const OtherArgs &...) { return arg1; }
+
+    /// Global access does not identify a storage, so no storage permission can be checked.
+    bool isGrantedByStorage(const ContextPtr &, const AccessFlags &)
+    {
+        return true;
+    }
+
+    /// Database-level access does not identify a table, so no storage permission can be checked.
+    bool isGrantedByStorage(const ContextPtr &, const AccessFlags &, std::string_view)
+    {
+        return true;
+    }
+
+    /// Resolves the table only for metadata permissions that can require storage-specific authorization.
+    StoragePtr tryGetStorageForMetadataAccess(
+        const ContextPtr & context,
+        const AccessFlags & flags,
+        std::string_view database,
+        std::string_view table)
+    {
+        /// Some metadata accessors do not receive a context, so additional storage-specific permissions
+        /// are checked here. Other access types are authorized by their corresponding execution paths.
+        static const AccessFlags metadata_access_flags = AccessType::SHOW_TABLES | AccessType::SHOW_COLUMNS;
+        if (!(flags & metadata_access_flags))
+            return {};
+
+        return DatabaseCatalog::instance().tryGetTable(
+            StorageID(String{database}, String{table}), context);
+    }
+
+    /// Checks storage permissions for table- or column-level metadata.
+    bool isGrantedByStorage(
+        const ContextPtr & context,
+        const AccessFlags & flags,
+        std::string_view database,
+        std::string_view table,
+        std::string_view column)
+    {
+        auto storage = tryGetStorageForMetadataAccess(context, flags, database, table);
+        if (!storage)
+            return true;
+
+        if ((flags & AccessType::SHOW_TABLES)
+            && !storage->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {}))
+            return false;
+
+        return !(flags & AccessType::SHOW_COLUMNS)
+            || storage->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, String{column});
+    }
+
+    /// Uses an empty column name for table-level metadata.
+    bool isGrantedByStorage(
+        const ContextPtr & context,
+        const AccessFlags & flags,
+        std::string_view database,
+        std::string_view table)
+    {
+        return isGrantedByStorage(context, flags, database, table, std::string_view{});
+    }
+
+    /// Reuses one resolved storage when checking permissions for multiple columns.
+    template <typename Columns>
+    bool isGrantedByStorageForColumns(
+        const ContextPtr & context,
+        const AccessFlags & flags,
+        std::string_view database,
+        std::string_view table,
+        const Columns & columns)
+    {
+        auto storage = tryGetStorageForMetadataAccess(context, flags, database, table);
+        if (!storage)
+            return true;
+
+        if ((flags & AccessType::SHOW_TABLES)
+            && !storage->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {}))
+            return false;
+
+        if (!(flags & AccessType::SHOW_COLUMNS))
+            return true;
+
+        if (columns.empty())
+            return storage->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, {});
+
+        for (const auto & column : columns)
+        {
+            if (!storage->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, String{column}))
+                return false;
+        }
+        return true;
+    }
+
+    bool isGrantedByStorage(
+        const ContextPtr & context,
+        const AccessFlags & flags,
+        std::string_view database,
+        std::string_view table,
+        const std::vector<std::string_view> & columns)
+    {
+        return isGrantedByStorageForColumns(context, flags, database, table, columns);
+    }
+
+    bool isGrantedByStorage(
+        const ContextPtr & context,
+        const AccessFlags & flags,
+        std::string_view database,
+        std::string_view table,
+        const Strings & columns)
+    {
+        return isGrantedByStorageForColumns(context, flags, database, table, columns);
+    }
 }
 
 
@@ -852,6 +963,13 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         if (flags & precalc.introspection_flags)
             return access_denied(ErrorCodes::FUNCTION_NOT_ALLOWED, "{}: Introspection functions are disabled, "
                                  "because setting 'allow_introspection_functions' is set to 0");
+    }
+
+    if constexpr (!grant_option && !wildcard)
+    {
+        if (!isGrantedByStorage(context, flags, args...))
+            return access_denied(
+                ErrorCodes::ACCESS_DENIED, "{}: Not enough privileges to access metadata exposed by the storage");
     }
 
     return access_granted();
