@@ -31,6 +31,17 @@ namespace ErrorCodes
 namespace ColumnsHashing
 {
 
+template <typename Method>
+struct IsWideOneNumberHashMethod : std::false_type
+{
+};
+
+template <typename Value, typename Mapped, typename FieldType, bool use_cache, bool need_offset, bool nullable>
+struct IsWideOneNumberHashMethod<HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset, nullable>>
+    : std::bool_constant<(sizeof(FieldType) > sizeof(UInt64))>
+{
+};
+
 /// Cache stores dictionaries and saved_hash per dictionary key.
 class LowCardinalityDictionaryCache : public HashMethodContext
 {
@@ -83,6 +94,8 @@ template <typename SingleColumnMethod, typename Mapped, bool use_cache>
 struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 {
     using Base = SingleColumnMethod;
+    static constexpr bool use_raw_positions = IsWideOneNumberHashMethod<Base>::value;
+    using Positions = std::conditional_t<use_raw_positions, const char *, const IColumn *>;
 
     enum class VisitValue : uint8_t
     {
@@ -105,7 +118,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     ColumnRawPtrs key_columns;
-    const IColumn * positions = nullptr;
+    Positions positions = nullptr;
     size_t size_of_index_type = 0;
 
     /// saved hash is from current column or from cache. Dictionary positions outside it have no
@@ -204,7 +217,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         visit_cache.assign(key_columns[0]->size(), VisitValue::Empty);
 
         size_of_index_type = column->getSizeOfIndexType();
-        positions = column->getIndexesPtr().get();
+        if constexpr (use_raw_positions)
+            positions = column->getIndexes().getRawData().data();
+        else
+            positions = column->getIndexesPtr().get();
     }
 
     ALWAYS_INLINE void resetCache()
@@ -224,10 +240,26 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     {
         switch (size_of_index_type)
         {
-            case sizeof(UInt8): return assert_cast<const ColumnUInt8 *>(positions)->getElement(row);
-            case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(positions)->getElement(row);
-            case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(positions)->getElement(row);
-            case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(positions)->getElement(row);
+            case sizeof(UInt8):
+                if constexpr (use_raw_positions)
+                    return unalignedLoad<UInt8>(positions + row * sizeof(UInt8));
+                else
+                    return assert_cast<const ColumnUInt8 *>(positions)->getElement(row);
+            case sizeof(UInt16):
+                if constexpr (use_raw_positions)
+                    return unalignedLoad<UInt16>(positions + row * sizeof(UInt16));
+                else
+                    return assert_cast<const ColumnUInt16 *>(positions)->getElement(row);
+            case sizeof(UInt32):
+                if constexpr (use_raw_positions)
+                    return unalignedLoad<UInt32>(positions + row * sizeof(UInt32));
+                else
+                    return assert_cast<const ColumnUInt32 *>(positions)->getElement(row);
+            case sizeof(UInt64):
+                if constexpr (use_raw_positions)
+                    return unalignedLoad<UInt64>(positions + row * sizeof(UInt64));
+                else
+                    return assert_cast<const ColumnUInt64 *>(positions)->getElement(row);
             default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
         }
     }
@@ -263,7 +295,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 return EmplaceResult(false);
         }
 
-        auto key_holder = getKeyHolder(row_, pool);
+        auto key_holder = Base::getKeyHolder(row, pool);
         auto key = keyHolderGetKey(key_holder);
 
         bool inserted = false;
@@ -318,7 +350,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 return FindResult(visit_cache[row] == VisitValue::Found, 0);
         }
 
-        auto key_holder = getKeyHolder(row_, pool);
+        auto key_holder = Base::getKeyHolder(row, pool);
 
         typename Data::LookupResult it;
         if (row < saved_hash.size())
