@@ -27,7 +27,7 @@ ctest --test-dir tmp/build-wasm --output-on-failure
 
 `ctest` runs two tests: `parser-cases` drives the module through `test.mjs` with `node`, and
 `parser-size` asserts the byte ceiling for the configuration that was built. Both, in the two
-extreme configurations, are what `tests/integration/test_wasm_parser` runs in CI, inside the
+extreme configurations, are what the `Build (wasm_parser)` job runs in CI, inside the
 `clickhouse/wasm-builder` image.
 
 The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
@@ -59,6 +59,23 @@ its own translation unit, outside the LTO unit: run on LTO-merged bitcode, the l
 links without complaint and produces a module whose `longjmp` escapes as an uncaught
 WebAssembly exception. `wasm_sjlj.c` is that translation unit and holds nothing else; every
 frame in between is still compiled and optimized as part of the whole.
+
+## Downloading it from CI
+
+`Build (wasm_parser)` publishes both configurations it builds as the `CH_WASM_PARSER_BIN`
+artifact, so a consumer does not have to build anything:
+
+```
+https://clickhouse-builds.s3.amazonaws.com/REFs/master/<sha>/build_wasm_parser/parser.wasm
+https://clickhouse-builds.s3.amazonaws.com/REFs/master/<sha>/build_wasm_parser/parser-no-formatting-no-dcl.wasm
+
+https://clickhouse-builds.s3.amazonaws.com/PRs/<pr>/<sha>/build_wasm_parser/parser.wasm
+```
+
+There is nothing else to download. Unlike the Emscripten build of the whole server
+(`Build (wasm64)`), this one emits no JavaScript sidecar: a consumer instantiates the `.wasm`
+itself and supplies the WASI preview1 imports - `node:wasi` under Node.js, as `test.mjs` does, or
+a shim in a browser.
 
 ## What it costs
 

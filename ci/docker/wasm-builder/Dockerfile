@@ -1,10 +1,13 @@
 # docker build -t clickhouse/wasm-builder .
 # Toolchain for the standalone WebAssembly build of the SQL parser - see utils/wasm-parser.
-# Used by tests/integration/test_wasm_parser, which builds the module inside this image and then
-# drives it with the Node.js that the base image already provides.
+# Used by the `Build (wasm_parser)` job, which builds the module inside this image, drives it with
+# the Node.js that the base image already provides, and publishes the result as an artifact.
 
 FROM node:22-bookworm-slim
 
+# `python3` is here because praktika runs the job script (ci/jobs/build_wasm_parser.py) inside this
+# image; `python3-minimal` would not do, since the praktika modules it imports reach across the
+# standard library that the minimal package leaves out.
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates \
@@ -12,6 +15,7 @@ RUN apt-get update \
         curl \
         gzip \
         ninja-build \
+        python3 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
