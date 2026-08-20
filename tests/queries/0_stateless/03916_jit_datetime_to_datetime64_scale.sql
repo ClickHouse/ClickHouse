@@ -52,4 +52,25 @@ SELECT multiIf(
     number = 1, toTime64('02:00:00.5', 1),
     toTime64('12:00:00.250', 3)
 ) FROM numbers(3);
+
+SELECT '--- Time-family if is compiled, not interpreted ---';
+
+SELECT if(number % 2 = 0, toTime('01:00:00'), toTime64('12:00:00.250', 3)) FROM numbers(2)
+    SETTINGS log_comment = '03916_time_shape' FORMAT Null;
+
+-- Control: compiles in any build that has the embedded compiler, so the comparison below
+-- pins that the Time shape is compiled wherever anything is, without a no-msan tag.
+SELECT if(number % 2 = 0, number + 1, number + 2) FROM numbers(2)
+    SETTINGS log_comment = '03916_control_shape' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    (SELECT ProfileEvents['CompiledFunctionExecute'] > 0 FROM system.query_log
+        WHERE current_database = currentDatabase() AND log_comment = '03916_time_shape' AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC LIMIT 1)
+    = (SELECT ProfileEvents['CompiledFunctionExecute'] > 0 FROM system.query_log
+        WHERE current_database = currentDatabase() AND log_comment = '03916_control_shape' AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC LIMIT 1);
+
 DROP TABLE IF EXISTS t;
