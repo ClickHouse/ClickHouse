@@ -1,3 +1,4 @@
+#include <Processors/Formats/Impl/Parquet/AlpEncoding.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <arrow/util/key_value_metadata.h>
@@ -917,10 +918,15 @@ void writeColumnImpl(
     size_t num_values = s.max_def > 0 ? s.def.size() : s.primitive_column->size();
     auto encoding = options.encoding;
 
+    constexpr bool is_float_type = std::is_same_v<ParquetDType, parquet::FloatType>
+                                || std::is_same_v<ParquetDType, parquet::DoubleType>;
+    const bool use_alp = options.output_float_as_alp && is_float_type;
+    if (use_alp) { encoding = static_cast<parq::Encoding::type>(10); }   // ALP = 10
+
     typename Converter::Statistics page_statistics;
     typename Converter::Statistics total_statistics;
 
-    bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
+    bool use_dictionary = options.use_dictionary_encoding && !s.is_bool && !use_alp;
 
     /// For some readers filter pushdown implementations it's inconvenient if a row straddles pages,
     /// so let's be nice to them and avoid that. This matches arrow's logic.
@@ -955,10 +961,16 @@ void writeColumnImpl(
     /// ColumnLowCardinality instead. It would work basically the same way as what this function
     /// currently does: add values to the ColumnRowCardinality (instead of `encoder`) in batches,
     /// checking dictionary size after each batch. That might be faster.
-    auto encoder = parquet::MakeTypedEncoder<ParquetDType>(
-        // ignored if using dictionary
-        static_cast<parquet::Encoding::type>(encoding),
-        use_dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
+//    auto encoder = parquet::MakeTypedEncoder<ParquetDType>(
+//        // ignored if using dictionary
+//        static_cast<parquet::Encoding::type>(encoding),
+//        use_dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
+
+    std::unique_ptr<parquet::TypedEncoder<ParquetDType>> encoder;
+    if (!use_alp)
+        encoder = parquet::MakeTypedEncoder<ParquetDType>(
+            static_cast<parquet::Encoding::type>(encoding), use_dictionary, fixed_string_descr ? &*fixed_string_descr: nullptr);
+    std::vector<typename ParquetDType::c_type> alp_values;   // buffered per page
 
     struct PageData
     {
@@ -1011,11 +1023,25 @@ void writeColumnImpl(
                 ++s.column_chunk.meta_data.size_statistics.definition_level_histogram[s.def[i]];
         }
 
-        std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
+//        std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
 
-        encoded.resize(encoded.size() + values->size());
-        memcpy(encoded.data() + encoded.size() - values->size(), values->data(), values->size());
-        values.reset();
+//        encoded.resize(encoded.size() + values->size());
+//        memcpy(encoded.data() + encoded.size() - values->size(), values->data(), values->size());
+//        values.reset();
+        if (use_alp) {
+            if constexpr (is_float_type){
+                std::vector<UInt8> b;
+                DB::Parquet::ALP::Codec<typename ParquetDType::c_type>::encodePage(alp_values.data(), alp_values.size(), b);
+                encoded.insert(encoded.end(), reinterpret_cast<const char*>(b.data()),
+                                          reinterpret_cast<const char*>(b.data()) + b.size());
+                alp_values.clear();
+            }
+        } else {
+            std::shared_ptr<parquet::Buffer> values = encoder->FlushValues();
+            encoded.resize(encoded.size() + values->size());
+            memcpy(encoded.data() + encoded.size() - values->size(), values->data(), values->size());
+            values.reset();
+        }
 
         if (encoded.size() > INT32_MAX)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Uncompressed page is too big: {}", encoded.size());
@@ -1197,7 +1223,10 @@ void writeColumnImpl(
                     s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += converted[i].len;
             }
 
-            encoder->Put(converted, static_cast<int>(data_count));
+            //encoder->Put(converted, static_cast<int>(data_count));
+
+            if (use_alp) alp_values.insert(alp_values.end(), converted, converted + data_count);
+            else         encoder->Put(converted, static_cast<int>(data_count));
 
             next_def_offset += def_count;
             next_data_offset += data_count;
@@ -1235,8 +1264,11 @@ void writeColumnImpl(
                 break;
             }
 
-            if (next_def_offset == num_values ||
-                static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= options.data_page_size)
+//            if (next_def_offset == num_values ||
+//                static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= options.data_page_size)
+            const size_t est = use_alp ? alp_values.size() * sizeof(typename ParquetDType::c_type)
+                                       : static_cast<size_t>(encoder->EstimatedDataEncodedSize());
+            if (next_def_offset == num_values || est >= options.data_page_size)
             {
                 flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
                 break;
@@ -1342,13 +1374,13 @@ void writeColumnChunkBody(
 
         #undef N
 
-        case TypeIndex::Float32:
+        case TypeIndex::Float32: //// here
             writeColumnImpl<parquet::FloatType>(
                 s, options, out, ConverterNumeric<ColumnVector<Float32>, Float32, Float32>(
                     s.primitive_column));
             break;
 
-        case TypeIndex::Float64:
+        case TypeIndex::Float64: /// here
             writeColumnImpl<parquet::DoubleType>(
                 s, options, out, ConverterNumeric<ColumnVector<Float64>, Float64, Float64>(
                     s.primitive_column));

@@ -43,6 +43,7 @@ struct WriteOptions
     /// If using dictionary, this encoding is used as a fallback when dictionary gets too big.
     /// Otherwise, this is used for everything.
     parq::Encoding::type encoding = parq::Encoding::PLAIN;
+    bool output_float_as_alp = false;
 
     bool write_column_chunk_statistics = true;
     bool write_page_statistics = true;

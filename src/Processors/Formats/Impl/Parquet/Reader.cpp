@@ -2621,12 +2621,16 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
     switch (header.type)
     {
         case parq::PageType::DATA_PAGE:
-            checkThriftEnum(header.data_page_header.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+//            checkThriftEnum(header.data_page_header.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+            if (header.data_page_header.encoding != ALP_ENCODING)
+                checkThriftEnum(header.data_page_header.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
             checkThriftEnum(header.data_page_header.definition_level_encoding, parq::_Encoding_VALUES_TO_NAMES, "definition level encoding");
             checkThriftEnum(header.data_page_header.repetition_level_encoding, parq::_Encoding_VALUES_TO_NAMES, "repetition level encoding");
             break;
         case parq::PageType::DATA_PAGE_V2:
-            checkThriftEnum(header.data_page_header_v2.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+//            checkThriftEnum(header.data_page_header_v2.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+            if (header.data_page_header_v2.encoding != ALP_ENCODING)
+                checkThriftEnum(header.data_page_header_v2.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
             break;
         case parq::PageType::DICTIONARY_PAGE:
             checkThriftEnum(header.dictionary_page_header.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");

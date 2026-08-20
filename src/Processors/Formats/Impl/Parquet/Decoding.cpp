@@ -1,3 +1,4 @@
+#include <Processors/Formats/Impl/Parquet/AlpEncoding.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
 #include <base/arithmeticOverflow.h>
@@ -1026,6 +1027,64 @@ void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, Field
         chassert(false);
 }
 
+struct AlpDecoder : public PageDecoder
+{
+    std::shared_ptr<FixedSizeConverter> converter;
+    PaddedPODArray<char> decoded;      // whole page, raw T bytes
+    PaddedPODArray<char> temp_buffer;  // filtered compaction
+    size_t value_size = 0;
+    size_t pos = 0;                    // values already served
+
+    AlpDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_, parq::Type::type physical_type)
+        : PageDecoder(data_), converter(std::move(converter_))
+    {
+        if (physical_type == parq::Type::DOUBLE) decodeAll<Float64>(data_);
+        else                                     decodeAll<Float32>(data_);
+    }
+
+    template <typename T> void decodeAll(std::span<const char> d)
+    {
+        std::vector<T> out;
+        DB::Parquet::ALP::Codec<T>::decodePage(reinterpret_cast<const UInt8*>(d.data()), out);
+        value_size = sizeof(T);
+        decoded.resize(out.size() * sizeof(T));
+        if (!out.empty())
+            memcpy(decoded.data(), out.data(), out.size() * sizeof(T));
+    }
+
+    void skip(size_t num_values) override { pos += num_values; }
+
+    void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
+    {
+        const char * src = decoded.data() + pos * value_size;
+        pos += num_values;
+
+        if (!filter)
+        {
+            if (converter->isTrivial())
+                memcpy(col.insertRawUninitialized(num_values).data(), src, num_values * value_size);
+            else
+                converter->convertColumn(std::span(src, num_values * value_size), num_values, col);
+            return;
+        }
+
+        size_t pass_count = 0;
+        for (size_t i = 0; i < num_values; ++i) pass_count += filter[filter_offset + i];
+        if (pass_count == 0) return;
+
+        temp_buffer.resize(pass_count * value_size);
+        size_t out_idx = 0;
+        for (size_t i = 0; i < num_values; ++i)
+            if (filter[filter_offset + i])
+                memcpy(temp_buffer.data() + out_idx++ * value_size, src + i * value_size, value_size);
+
+        if (converter->isTrivial())
+            memcpy(col.insertRawUninitialized(pass_count).data(), temp_buffer.data(), pass_count * value_size);
+        else
+            converter->convertColumn(std::span(temp_buffer.data(), pass_count * value_size), pass_count, col);
+    }
+};
+
 std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
     parq::Encoding::type encoding, std::span<const char> data) const
 {
@@ -1088,6 +1147,10 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             /// any fixed-size types, so we do the same just in case.
             if (fixed_size_converter)
                 return std::make_unique<ByteStreamSplitDecoder>(data, fixed_size_converter);
+            break;
+        case ALP_ENCODING:
+            if (physical_type == parq::Type::FLOAT || physical_type == parq::Type::DOUBLE)
+                return std::make_unique<AlpDecoder>(data, fixed_size_converter, physical_type);
             break;
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }
