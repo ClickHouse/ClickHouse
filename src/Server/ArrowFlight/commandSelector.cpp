@@ -10,6 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -30,13 +31,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Setting
-{
-    extern const SettingsBool output_format_arrow_unsupported_types_as_binary;
-}
-
 namespace ArrowFlight
 {
+
+CHColumnToArrowColumn::Settings arrowConversionSettings(const ContextPtr & context)
+{
+    return {
+        .output_string_as_string = true,
+        .output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef()),
+        .format_settings = getFormatSettings(context)};
+}
 
 static arrow::Result<std::shared_ptr<arrow::Table>> commandGetSqlInfo(const arrow::flight::protocol::sql::CommandGetSqlInfo & command, bool schema_only)
 {
@@ -547,7 +551,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             }
             auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(
                 table_columns, "Arrow", nullptr,
-                {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+                arrowConversionSettings(query_context));
             auto serialized_res = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool());
             if (!serialized_res.ok())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to serialize Arrow schema: {}", serialized_res.status().ToString());

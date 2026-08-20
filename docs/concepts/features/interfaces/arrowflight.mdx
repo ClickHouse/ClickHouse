@@ -396,7 +396,17 @@ for endpoint in info.endpoints:
 
 All data is transferred in Apache Arrow IPC format. Only the `Arrow` format is supported — specifying other ClickHouse formats (e.g., `FORMAT JSON`, `FORMAT CSV`) results in an error.
 
-ClickHouse data types are mapped to Arrow types during serialization. The setting `output_format_arrow_unsupported_types_as_binary` controls whether unsupported ClickHouse types are serialized as binary blobs.
+ClickHouse data types are mapped to Arrow types during serialization. A type with no Arrow equivalent, such as `JSON`, `Dynamic`, `QBit` or `AggregateFunction`, is handled according to the setting [`output_format_arrow_unsupported_types`](/reference/settings/formats/output-format#output_format_arrow_unsupported_types):
+
+| Value              | Behavior                                                                                          |
+|--------------------|---------------------------------------------------------------------------------------------------|
+| `throw`            | The query is rejected.                                                                              |
+| `text`             | One value per row in its text form, as an Arrow `Utf8` column — what `CAST(col AS String)` returns. |
+| `binary` (default) | One value per row in its binary form, as an Arrow `Binary` column — the encoding `RowBinary` uses.  |
+
+Such a column is otherwise indistinguishable from a genuine `Utf8`/`Binary` one, so it is declared an Arrow extension type: the field metadata holds `ARROW:extension:name` = `clickhouse.opaque` and the original ClickHouse type name in `ARROW:extension:metadata`. A client that does not recognize the extension name sees the plain storage type, as the Arrow specification prescribes. Nested columns are tagged on their own field, so the child of an `Array(JSON)` carries the tag rather than the array itself.
+
+The older boolean `output_format_arrow_unsupported_types_as_binary` still works and is equivalent to `throw` when `0` and `binary` when `1`. It is only consulted while `output_format_arrow_unsupported_types` is left at its default.
 
 ## Compatibility {#compatibility}
 

@@ -577,8 +577,101 @@ def test_doget_cmd_select_arrow_format():
     assert actual.column("name").equals(expected_names)
 
 
+# A type with no Arrow mapping (here `JSON`) is served as an opaque column holding one serialized value
+# per row, per `output_format_arrow_unsupported_types` (`binary` by default), so that a `SELECT *` over a
+# table carrying such a column still succeeds. The field carries the `clickhouse.opaque` extension name and
+# the ClickHouse type name, so a client can tell it apart from a genuine binary column.
+def test_doget_unsupported_type_as_opaque_column():
+    node.query("CREATE TABLE mytable (id Int64, j JSON, plain String) ORDER BY id")
+    node.query("""INSERT INTO mytable VALUES (10, '{"a":1}', 'hello')""")
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_path("mytable")
+    flight_info = client.get_flight_info(descriptor, options)
+    ticket = flight_info.endpoints[0].ticket
+
+    reader = client.do_get(ticket, options)
+    actual = reader.read_all()
+
+    assert actual.schema.field("id").metadata is None
+    assert actual.schema.field("plain").type == pa.string()
+    assert actual.schema.field("plain").metadata is None
+
+    field = actual.schema.field("j")
+    assert field.type == pa.binary()
+    assert field.metadata[b"ARROW:extension:name"] == b"clickhouse.opaque"
+    assert field.metadata[b"ARROW:extension:metadata"] == b"JSON"
+    assert len(actual.column("j").to_pylist()[0]) > 0
+
+
+# `text` serves the same column as the string a client can display.
+def test_doget_unsupported_type_as_text_column():
+    node.query("CREATE TABLE mytable (id Int64, j JSON) ORDER BY id")
+    node.query("""INSERT INTO mytable VALUES (10, '{"a":1}')""")
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_command(
+        "SELECT j FROM mytable SETTINGS output_format_arrow_unsupported_types = 'text'"
+    )
+    flight_info = client.get_flight_info(descriptor, options)
+    ticket = flight_info.endpoints[0].ticket
+
+    reader = client.do_get(ticket, options)
+    actual = reader.read_all()
+
+    field = actual.schema.field("j")
+    assert field.type == pa.string()
+    assert field.metadata[b"ARROW:extension:name"] == b"clickhouse.opaque"
+    assert field.metadata[b"ARROW:extension:metadata"] == b"JSON"
+    assert actual.column("j").to_pylist() == ['{"a":1}']
+
+
+# An opaque type nested in a container is tagged on its own child field, so a client can recognize it
+# wherever it appears rather than only at the top level.
+def test_doget_nested_unsupported_type_is_tagged():
+    node.query("CREATE TABLE mytable (id Int64, a Array(JSON), t Tuple(j JSON)) ORDER BY id")
+    node.query("""INSERT INTO mytable VALUES (10, ['{"a":1}'], tuple('{"b":2}'))""")
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_path("mytable")
+    flight_info = client.get_flight_info(descriptor, options)
+    ticket = flight_info.endpoints[0].ticket
+
+    reader = client.do_get(ticket, options)
+    schema = reader.read_all().schema
+
+    for child in [schema.field("a").type.field(0), schema.field("t").type.field(0)]:
+        assert child.type == pa.binary()
+        assert child.metadata[b"ARROW:extension:name"] == b"clickhouse.opaque"
+        assert child.metadata[b"ARROW:extension:metadata"] == b"JSON"
+
+
+# The opaque payload is produced by the query's own format settings, so a setting that changes how a value
+# serializes is honored and the bytes are the ones `FORMAT Arrow` would write for the same query. Here
+# `output_format_binary_write_json_as_string` turns the binary encoding of `JSON` into a length-prefixed
+# string, the same encoding `RowBinary` uses.
+def test_doget_unsupported_type_honors_format_settings():
+    node.query("CREATE TABLE mytable (id Int64, j JSON) ORDER BY id")
+    node.query("""INSERT INTO mytable VALUES (10, '{"a":1}')""")
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_command(
+        "SELECT j FROM mytable SETTINGS output_format_binary_write_json_as_string = 1"
+    )
+    flight_info = client.get_flight_info(descriptor, options)
+    ticket = flight_info.endpoints[0].ticket
+
+    reader = client.do_get(ticket, options)
+    actual = reader.read_all()
+
+    assert actual.column("j").to_pylist() == [b'\x07{"a":1}']
+
+
 # Invalid queries are handled too.
-def test_doget_invalid_query():
     client, options = get_client()
 
     descriptor = flight.FlightDescriptor.for_command("BAD QUERY")

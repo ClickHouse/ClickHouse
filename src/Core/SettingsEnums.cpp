@@ -279,6 +279,11 @@ IMPLEMENT_SETTING_ENUM(ArrowCompression, ErrorCodes::BAD_ARGUMENTS,
      {"lz4_frame", FormatSettings::ArrowCompression::LZ4_FRAME},
      {"zstd", FormatSettings::ArrowCompression::ZSTD}})
 
+IMPLEMENT_SETTING_ENUM(ArrowUnsupportedTypes, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::ArrowUnsupportedTypes::THROW},
+     {"text", FormatSettings::ArrowUnsupportedTypes::TEXT},
+     {"binary", FormatSettings::ArrowUnsupportedTypes::BINARY}})
+
 IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
     {{"none", FormatSettings::ORCCompression::NONE},
      {"snappy", FormatSettings::ORCCompression::SNAPPY},

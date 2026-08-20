@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"resumable_backup_from_snapshot", false, false, "New experimental setting to enable resumable `BACKUP FROM SNAPSHOT`."},
             {"framing_output_format", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
