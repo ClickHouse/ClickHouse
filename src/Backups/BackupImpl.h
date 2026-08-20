@@ -93,9 +93,6 @@ public:
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
-#if CLICKHOUSE_CLOUD
-    bool hasPublishedMetadata() const;
-#endif
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
@@ -179,11 +176,6 @@ private:
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
-#if CLICKHOUSE_CLOUD
-    /// Whether `.backup` is already in the destination: either the attempt being continued published
-    /// it, or this one did. Only a continued attempt can find it already there.
-    bool metadata_already_published TSA_GUARDED_BY(mutex) = false;
-#endif
     String backup_id; /// Set from params on write, from the manifest on read; empty for legacy backups without the field.
     time_t timestamp = 0;
     size_t num_files = 0;

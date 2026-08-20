@@ -250,10 +250,8 @@ void BackupImpl::open()
         writing_finalized = false;
 
 #if CLICKHOUSE_CLOUD
-        metadata_already_published = false;
         if (params.resume)
-            metadata_already_published = BackupResumer(*this, *params.resume).openDestination()
-                == BackupResumer::DestinationState::MetadataPublished;
+            BackupResumer(*this, *params.resume).openDestination();
         else
 #endif
         {
@@ -588,11 +586,6 @@ void BackupImpl::writeBackupMetadata()
 
     out->finalize();
 
-#if CLICKHOUSE_CLOUD
-    if (params.resume)
-        metadata_already_published = true;
-#endif
-
     uncompressed_size = size_of_entries + out->count();
 
     LOG_TRACE(log, "Backup {}: Metadata was written", backup_name_for_logging);
@@ -600,13 +593,6 @@ void BackupImpl::writeBackupMetadata()
 
 
 #if CLICKHOUSE_CLOUD
-bool BackupImpl::hasPublishedMetadata() const
-{
-    std::lock_guard lock{mutex};
-    return metadata_already_published;
-}
-
-
 void BackupImpl::recalculateMetadataCounters()
 {
     num_files = 0;
@@ -1460,7 +1446,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         std::lock_guard lock{mutex};
 #if CLICKHOUSE_CLOUD
         /// Only a continued attempt can find the manifest already published.
-        if (metadata_already_published)
+        if (params.resume && params.resume->metadata_published())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup metadata is already published");
 #endif
         ++num_files;
@@ -1562,7 +1548,7 @@ void BackupImpl::finalizeWriting()
 #if CLICKHOUSE_CLOUD
         /// A continued attempt whose manifest is already in the destination republishes nothing; it only
         /// recomputes the counters it reports.
-        if (metadata_already_published)
+        if (params.resume && params.resume->metadata_published())
             recalculateMetadataCounters();
         else
 #endif
