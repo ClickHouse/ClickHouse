@@ -995,6 +995,15 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 ```
 
 <Note>
+Every `String` value being cast must be valid UTF-8. A value which is not raises `INCORRECT_DATA`,
+because the default JSON parser is simdjson, which rejects such values as the JSON specification requires.
+
+Setting [`allow_simdjson`](/reference/settings/session-settings/allow#allow_simdjson) to `0` selects rapidjson,
+which parses them. That also makes `JSON_VALUE`, `JSON_EXISTS` and `JSON_QUERY` unavailable, and it changes
+`JSONExtract*` from silently returning a default value for such input to returning the bytes.
+</Note>
+
+<Note>
 JSON paths are stored flattened. This means that when a JSON object is formatted from a path like `a.b.c`
 it is not possible to know whether the object should be constructed as `{ "a.b.c" : ... }` or `{ "a": { "b": { "c": ... } } }`.
 Our implementation will always assume the latter.

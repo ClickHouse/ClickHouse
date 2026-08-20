@@ -4494,6 +4494,12 @@ Reject patterns which will likely be expensive to evaluate with hyperscan (due t
 )", 0) \
     DECLARE(Bool, allow_simdjson, true, R"(
 Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.
+
+:::note
+simdjson rejects `String` values which are not valid UTF-8, as the JSON specification requires. Reading such values requires this setting disabled, so that rapidjson is used instead.
+
+Disabling it also makes `JSON_VALUE`, `JSON_EXISTS` and `JSON_QUERY` unavailable for any input: those functions have no rapidjson implementation and throw `NOT_IMPLEMENTED`.
+:::
 )", 0) \
     DECLARE(Bool, allow_introspection_functions, false, R"(
 Enables or disables [introspection functions](/reference/functions/regular-functions/introspection) for query profiling.
