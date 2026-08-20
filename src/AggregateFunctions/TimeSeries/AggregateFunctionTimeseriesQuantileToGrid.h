@@ -79,6 +79,16 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
     {
         VectorWithMemoryTracking<ValueType> values;
 
+        void add(TimestampType /*timestamp*/, ValueType value)
+        {
+            values.push_back(value);
+        }
+
+        void addMany(const TimestampType * /*timestamp_ptr*/, const ValueType * value_ptr, size_t batch_size)
+        {
+            values.insert(values.end(), value_ptr, value_ptr + batch_size);
+        }
+
         void merge(const Summary & other)
         {
             values.insert(values.end(), other.values.begin(), other.values.end());

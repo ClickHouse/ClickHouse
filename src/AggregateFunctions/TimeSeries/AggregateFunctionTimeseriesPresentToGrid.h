@@ -33,6 +33,11 @@ struct AggregateFunctionTimeseriesPresentToGridTraits
             ++count;
         }
 
+        void addMany(const TimestampType * /*timestamp_ptr*/, const ValueType * /*value_ptr*/, size_t batch_size)
+        {
+            count += batch_size;
+        }
+
         void merge(const Summary & other)
         {
             count += other.count;
