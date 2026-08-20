@@ -179,9 +179,8 @@ private:
 #elif defined(__aarch64__) && defined(__ELF__)
         __asm__ __volatile__(
             "mrs %0, tpidr_el0\n\t"
-            "add %0, %0, :tprel_hi12:FiberLocalStorageThreadStorage\n\t"
-            "add %0, %0, :tprel_lo12_nc:FiberLocalStorageThreadStorage\n\t"
-            "ldr %0, [%0, %c1]"
+            "add %0, %0, :tprel_hi12:FiberLocalStorageThreadStorage+%c1\n\t"
+            "ldr %0, [%0, :tprel_lo12_nc:FiberLocalStorageThreadStorage+%c1]"
             : "=&r"(value)
             : "i"(slot * sizeof(void *))
             : "memory");
@@ -204,9 +203,8 @@ private:
         void * address = nullptr;
         __asm__ __volatile__(
             "mrs %0, tpidr_el0\n\t"
-            "add %0, %0, :tprel_hi12:FiberLocalStorageThreadStorage\n\t"
-            "add %0, %0, :tprel_lo12_nc:FiberLocalStorageThreadStorage\n\t"
-            "str %2, [%0, %c1]"
+            "add %0, %0, :tprel_hi12:FiberLocalStorageThreadStorage+%c1\n\t"
+            "str %2, [%0, :tprel_lo12_nc:FiberLocalStorageThreadStorage+%c1]"
             : "=&r"(address)
             : "i"(slot * sizeof(void *)), "r"(value)
             : "memory");
