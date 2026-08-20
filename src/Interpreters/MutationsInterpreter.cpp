@@ -795,9 +795,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (materialized->reads_ephemeral)
             {
                 /// Warn if the mutation also updates a dependency of this MATERIALIZED column — the
-                /// on-disk value will become stale. Only when this interpreter writes the part: an
-                /// on-fly read builds one per read task and writes nothing.
-                if (settings.recalculate_dependencies_of_updated_columns
+                /// on-disk value will become stale. Not on an on-fly read, which builds an interpreter
+                /// per read task per part and writes nothing, so the warning is untrue and repeats there.
+                if (!settings.apply_on_fly_for_read
                     && std::ranges::any_of(required_columns, [&](const auto & dep) { return updated_columns.contains(dep); }))
                     LOG_WARNING(logger,
                         "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
