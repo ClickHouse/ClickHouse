@@ -1,8 +1,8 @@
 ---
 slug: /cloud/managed-postgres/monitoring/prometheus
 sidebarTitle: 'Prometheus エンドポイント'
-title: 'Managed Postgres Prometheus インテグレーション'
-description: 'Managed Postgres のメトリクスを Prometheus、Grafana、Datadog、または OpenMetrics 互換の collector にスクレイプします'
+title: 'ClickHouse Managed Postgres Prometheus インテグレーション'
+description: 'ClickHouse Managed Postgres のメトリクスを Prometheus、Grafana、Datadog、または OpenMetrics 互換の collector にスクレイプします'
 keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'メトリクス', 'openmetrics', 'オブザーバビリティ']
 doc_type: 'guide'
 ---
@@ -14,17 +14,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
 
-Managed Postgres は、[ClickHouse Cloud API][cloud-api] で
+ClickHouse Managed Postgres は、[ClickHouse Cloud API][cloud-api] で
 Prometheus 互換のメトリクス用エンドポイントを 2 つ公開しています。
 
-| Endpoint | Path                                                   | Returns                              |
-| -------- | ------------------------------------------------------ | ------------------------------------ |
-| Org      | `/v1/organizations/{orgId}/postgres/prometheus`        | 組織内のすべての Managed Postgres サービスのメトリクス |
-| Instance | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | 単一のサービスのメトリクス                        |
+| Endpoint | Path                                                   | Returns                                         |
+| -------- | ------------------------------------------------------ | ----------------------------------------------- |
+| Org      | `/v1/organizations/{orgId}/postgres/prometheus`        | 組織内のすべての ClickHouse Managed Postgres サービスのメトリクス |
+| Instance | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | 単一のサービスのメトリクス                                   |
 
 <Note>
   組織レベルのエンドポイントは、最大 100 個のサービスのメトリクスを返します。組織に
-  100 個を超える Managed Postgres サービスがある場合は、[サポートにお問い合わせください](https://clickhouse.com/support/program)。
+  100 個を超える ClickHouse Managed Postgres サービスがある場合は、[サポートにお問い合わせください](https://clickhouse.com/support/program)。
 </Note>
 
 <div id="authentication">
@@ -116,7 +116,7 @@ scrape_configs:
 
 あらかじめ用意された Grafana ダッシュボードでは、エンドポイントが公開するあらゆるメトリクスを可視化できます。これには、ソート可能なサービス一覧テーブル、CPU とメモリの使用率、閾値アラート付きのディスク使用量、状態別の接続数、トランザクションとロールバック率、Tuple のアクティビティ、I/O、データベースごとのストレージ使用量、デッドロックが含まれます。
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Managed Postgres Services の Grafana ダッシュボード" size="md" border />
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="ClickHouse Managed Postgres Services の Grafana ダッシュボード" size="md" border />
 
 <div id="import-dashboard">
   ### ダッシュボードのインポート
@@ -169,9 +169,9 @@ Grafana をプロビジョニングで運用している場合は、JSON を
 
 このエンドポイントは [ClickHouse Prometheus
 エンドポイント](/ja/products/cloud/features/monitoring/prometheus) と同じ形式のため、そこで説明されている Grafana Cloud、Grafana
-Alloy、Datadog OpenMetrics agent の設定は、ここでもそのまま利用できます。`metrics_path` は ClickHouse ではなく、Managed Postgres の 組織 または
+Alloy、Datadog OpenMetrics agent の設定は、ここでもそのまま利用できます。`metrics_path` は ClickHouse ではなく、ClickHouse Managed Postgres の組織または
 インスタンスのパスを指すようにしてください。
 
-[cloud-api]: /products/cloud/features/admin-features/api/index "Cloud API"
+[cloud-api]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "API キーの管理"
