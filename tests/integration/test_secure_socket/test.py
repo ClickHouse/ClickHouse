@@ -51,6 +51,15 @@ def started_cluster():
         cluster.shutdown()
 
 
+def assert_socket_receive_timeout(error):
+    # Only the wording common to all three settings combinations is matched, because each of
+    # them reports the timeout from a different place. 5000 ms is the receive_timeout=5 asked
+    # for in the query, so it is what distinguishes this timeout from any other one.
+    assert "Timeout exceeded while reading from socket" in error
+    assert "5000 ms" in error
+    assert "(SOCKET_TIMEOUT)" in error
+
+
 def test(started_cluster):
     NODES["node2"].replace_config(
         "/etc/clickhouse-server/users.d/users.xml",
@@ -72,31 +81,26 @@ def test(started_cluster):
 
     assert attempts < 1000
 
-    start = time.time()
-    NODES["node1"].query_and_get_error(
+    error = NODES["node1"].query_and_get_error(
         "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=0;"
     )
-    end = time.time()
-    assert end - start < 10
 
-    start = time.time()
+    assert_socket_receive_timeout(error)
+
     error = NODES["node1"].query_and_get_error(
         "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=1;"
     )
-    end = time.time()
 
-    assert end - start < 10
+    assert_socket_receive_timeout(error)
 
     # Check that exception about timeout wasn't thrown from DB::ReadBufferFromPocoSocket::nextImpl().
     assert error.find("DB::ReadBufferFromPocoSocket::nextImpl()") == -1
 
-    start = time.time()
     error = NODES["node1"].query_and_get_error(
         "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=1, async_socket_for_remote=1;"
     )
-    end = time.time()
 
-    assert end - start < 10
+    assert_socket_receive_timeout(error)
 
     # Check that exception about timeout wasn't thrown from DB::ReadBufferFromPocoSocket::nextImpl().
     assert error.find("DB::ReadBufferFromPocoSocket::nextImpl()") == -1
