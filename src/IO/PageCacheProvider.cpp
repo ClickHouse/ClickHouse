@@ -1,17 +1,17 @@
 #include <IO/PageCacheProvider.h>
 
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <base/defines.h>
 #include <algorithm>
 #include <cstring>
 
+namespace ProfileEvents
+{
+    extern const Event PageCacheReadBytes;
+}
+
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 
 PageCacheChainedBuffer::PageCacheChainedBuffer(PageCache::MappedPtr cell_)
@@ -20,44 +20,28 @@ PageCacheChainedBuffer::PageCacheChainedBuffer(PageCache::MappedPtr cell_)
 }
 
 
-PageCacheReader::PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracking<HeldCell> cells_)
+PageCacheReader::PageCacheReader(ByteRange range_in_file, PageCache::MappedPtr cell_)
     : range_member(range_in_file)
-    , cells(std::move(cells_))
+    , cell(std::move(cell_))
 {
 }
 
 ChainedBuffers PageCacheReader::read(ByteRange sub)
 {
     ChainedBuffers result;
+    if (!cell)
+        return result;
 
-    /// Clamp `sub` to this buffer's own range: a `read` outside `range_member`
-    /// would otherwise reach into a neighbouring hit's cells.
-    {
-        const size_t lo = std::max(sub.offset, range_member.offset);
-        const size_t hi = std::min(sub.end(), range_member.end());
-        if (lo >= hi)
-            return result;
-        sub = ByteRange{lo, hi - lo};
-    }
+    /// Clamp `sub` to this block's range (`range_member == cell->range`), then emit one zero-copy node
+    /// into the cell at the matching offset.
+    const size_t lo = std::max(sub.offset, range_member.offset);
+    const size_t hi = std::min(sub.end(), range_member.end());
+    if (lo >= hi)
+        return result;
 
-    /// Zero-copy nodes from the held cells overlapping `sub`.
-    for (const auto & held : cells)
-    {
-        if (!held.cell)
-            continue;
-
-        ByteRange block_range{held.byte_range.offset, held.byte_range.size};
-        if (block_range.end() <= sub.offset || block_range.offset >= sub.end())
-            continue;
-
-        size_t overlap_start = std::max(block_range.offset, sub.offset);
-        size_t overlap_end = std::min(block_range.end(), sub.end());
-        size_t offset_in_cell = overlap_start - block_range.offset;
-        size_t overlap_size = overlap_end - overlap_start;
-
-        auto buf = std::make_shared<PageCacheChainedBuffer>(held.cell);
-        result.append(ChainedBufferNode{std::move(buf), offset_in_cell, overlap_size, overlap_start});
-    }
+    auto buf = std::make_shared<PageCacheChainedBuffer>(cell);
+    result.append(ChainedBufferNode{std::move(buf), lo - range_member.offset, hi - lo, lo});
+    ProfileEvents::increment(ProfileEvents::PageCacheReadBytes, hi - lo);
     return result;
 }
 
@@ -65,18 +49,14 @@ ChainedBuffers PageCacheReader::read(ByteRange sub)
 PageCacheWriter::PageCacheWriter(
     PageCachePtr cache_,
     PageCacheFile file_,
-    size_t block_size_,
-    size_t file_size_in_bytes_,
     bool inject_eviction_,
     bool bypass_if_missing_,
-    ByteRange aligned_range_in_file)
+    ByteRange block_range)
     : cache(std::move(cache_))
     , file(std::move(file_))
-    , block_size(block_size_)
-    , file_size_in_bytes(file_size_in_bytes_)
     , inject_eviction(inject_eviction_)
     , bypass_if_missing(bypass_if_missing_)
-    , range_member(aligned_range_in_file)
+    , range_member(block_range)
 {
 }
 
@@ -86,133 +66,81 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
     if (bypass_if_missing)
         return 0;
 
-    SipHash base_hash = file.baseHash();
-
-    size_t bytes_written = 0;
-    /// Walk whole blocks of the aligned range; only act on uncommitted blocks
-    /// that `data` FULLY covers (a partially-covered block is left for a later
-    /// `write`).
-    for (size_t offset = range_member.offset; offset < range_member.end(); offset += block_size)
     {
-        /// Tail block clamped to the file's real byte length.
-        size_t this_block_size = std::min(block_size, file_size_in_bytes - offset);
-        ByteRange block_range{offset, this_block_size};
-
-        {
-            std::lock_guard lock(state_mutex);
-            if (committed_ranges.subtract(block_range).empty())
-                continue;
-        }
-
-        if (!data.covers(block_range))
-            continue;
-
-        PageCacheByteRange byte_range{block_range.offset, block_range.size};
-        UInt128 key_hash = byte_range.hash(base_hash);
-
-        /// First-writer-wins: if another thread cached this block concurrently,
-        /// `getOrSet` returns the existing cell and skips the load lambda.
-        bool loaded = false;
-        size_t loaded_bytes = 0;
-        auto cell = cache->getOrSet(
-            file,
-            byte_range,
-            /*detached_if_missing=*/false,
-            inject_eviction,
-            [&](const PageCache::MappedPtr & new_cell)
-            {
-                /// The cell expects block-relative layout: data must start at
-                /// the block boundary and have no internal gaps. Partial-at-end
-                /// (EOF) is fine.
-                ChainedBuffers slice = data.slice(block_range);
-                ByteRange covered = slice.range();
-                size_t pos = covered.size;
-                if (pos > 0)
-                {
-                    if (covered.offset != block_range.offset)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "PageCacheWriter::write: data does not start at block boundary: "
-                            "block=[{}, {}), covered=[{}, {})",
-                            block_range.offset, block_range.end(), covered.offset, covered.end());
-
-                    ByteRange to_copy{block_range.offset, pos};
-                    if (!slice.covers(to_copy))
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "PageCacheWriter::write: data has internal gaps within block [{}, {})",
-                            block_range.offset, block_range.end());
-
-                    slice.copyTo(new_cell->data(), to_copy);
-                }
-
-                if (pos < new_cell->size())
-                    std::memset(new_cell->data() + pos, 0, new_cell->size() - pos);
-
-                loaded = true;
-                loaded_bytes = pos;
-            },
-            key_hash);
-
-        /// ALWAYS adopt the returned cell (loaded by us OR an existing
-        /// first-writer cell) and mark the block committed - otherwise
-        /// `complete` never becomes true under contention. Return only the
-        /// bytes WE wrote.
-        if (cell)
-        {
-            AdoptedBlock adopted;
-            adopted.byte_range = byte_range;
-            adopted.key_hash = key_hash;
-            adopted.cell = cell;
-            {
-                std::lock_guard lock(state_mutex);
-                blocks.push_back(std::move(adopted));
-                committed_ranges.add(block_range);
-            }
-
-            if (loaded)
-            {
-                LOG_TRACE(log, "PageCacheWriter::write: populated block [{}, {})",
-                    block_range.offset, block_range.end());
-                bytes_written += loaded_bytes;
-            }
-        }
+        std::lock_guard lock(committed_mutex);
+        if (cell)  /// already committed (by us or an adopted first-writer cell)
+            return 0;
     }
 
-    return bytes_written;
+    /// Whole-block, all-or-nothing: a partially-covered block is left for a later `write`.
+    if (!data.covers(range_member))
+        return 0;
+
+    PageCacheByteRange byte_range{range_member.offset, range_member.size};
+    UInt128 key_hash = byte_range.hash(file.baseHash());
+
+    /// First-writer-wins: if another thread cached this block concurrently, `getOrSet` returns the
+    /// existing cell and skips the load lambda.
+    bool loaded = false;
+    auto got = cache->getOrSet(
+        file,
+        byte_range,
+        /*detached_if_missing=*/false,
+        inject_eviction,
+        [&](const PageCache::MappedPtr & new_cell)
+        {
+            /// `data` covers the whole block (checked above); copy it in, zero any cell padding past it.
+            data.slice(range_member).copyTo(new_cell->data(), range_member);
+            if (range_member.size < new_cell->size())
+                std::memset(new_cell->data() + range_member.size, 0, new_cell->size() - range_member.size);
+            loaded = true;
+        },
+        key_hash);
+
+    /// Adopt the returned cell (ours or the first-writer's) so `read`/`committed` see it. Return the
+    /// bytes we wrote - 0 if we lost the first-writer race.
+    if (got)
+    {
+        std::lock_guard lock(committed_mutex);
+        cell = std::move(got);
+    }
+    return loaded ? range_member.size : 0;
+}
+
+CacheWriter::Lead PageCacheWriter::claimLeadRole(ByteRange range)
+{
+    /// Re-probe read-only: if the block was cached by a concurrent query since `resolve`, adopt its cell
+    /// and report the whole block as `available`; otherwise hold the claim to fill it.
+    Lead lead;
+    lead.available = ByteRange{range.offset, 0};
+
+    if (auto got = cache->get(PageCacheByteRange{range_member.offset, range_member.size}.hash(file.baseHash()), inject_eviction))
+    {
+        std::lock_guard lock(committed_mutex);
+        cell = std::move(got);
+        lead.available = range_member;
+    }
+
+    lead.claim = makeClaim(/*held=*/lead.available.size == 0, /*release=*/nullptr);
+    return lead;
 }
 
 ChainedBuffers PageCacheWriter::read(ByteRange sub)
 {
+    std::lock_guard lock(committed_mutex);
     ChainedBuffers result;
+    if (!cell)
+        return result;
 
-    /// Clamp to this buffer's range (its adopted cells only back `range_member`).
-    {
-        const size_t lo = std::max(sub.offset, range_member.offset);
-        const size_t hi = std::min(sub.end(), range_member.end());
-        if (lo >= hi)
-            return result;
-        sub = ByteRange{lo, hi - lo};
-    }
+    /// Clamp to this block's range, then emit one zero-copy node into the cell.
+    const size_t lo = std::max(sub.offset, range_member.offset);
+    const size_t hi = std::min(sub.end(), range_member.end());
+    if (lo >= hi)
+        return result;
 
-    /// Serve the self-populated blocks overlapping `sub`, zero-copy. Under the lock:
-    /// a concurrent `write` on the same writer appends to `blocks`.
-    std::lock_guard lock(state_mutex);
-    for (const auto & block : blocks)
-    {
-        if (!block.cell)
-            continue;
-
-        ByteRange block_range{block.byte_range.offset, block.byte_range.size};
-        if (block_range.end() <= sub.offset || block_range.offset >= sub.end())
-            continue;
-
-        size_t overlap_start = std::max(block_range.offset, sub.offset);
-        size_t overlap_end = std::min(block_range.end(), sub.end());
-        size_t offset_in_cell = overlap_start - block_range.offset;
-        size_t overlap_size = overlap_end - overlap_start;
-
-        auto buf = std::make_shared<PageCacheChainedBuffer>(block.cell);
-        result.append(ChainedBufferNode{std::move(buf), offset_in_cell, overlap_size, overlap_start});
-    }
+    auto buf = std::make_shared<PageCacheChainedBuffer>(cell);
+    result.append(ChainedBufferNode{std::move(buf), lo - range_member.offset, hi - lo, lo});
+    ProfileEvents::increment(ProfileEvents::PageCacheReadBytes, hi - lo);
     return result;
 }
 
@@ -231,76 +159,44 @@ PageCacheProvider::PageCacheProvider(
     , bypass_if_missing(bypass_if_missing_)
     , file_size_in_bytes(file_size_in_bytes_)
 {
+    chassert(block_size > 0);  /// `resolve` divides by it
 }
 
-/// The page tier's residency walk. One `resolve` is a ranged block walk holding
-/// no per-call state, so a shared provider is safe to resolve from many threads
-/// (the `readBigAt` fan-out). Blocks are probed read-only (`cache->get` never
-/// creates a cell), contiguous cached blocks coalesce into one hit run - capped
-/// so a warm file does not pin unboundedly through a single reader - and an
-/// uncached block is one miss cell carrying its whole-block writer when the
-/// provider populates (bypass leaves it writer-less). The plan fills the misses
-/// through those writers.
+/// The page tier's residency walk over `range`: one resolution per whole block. It holds no per-call
+/// state, so a shared provider is safe to resolve concurrently. Each block is probed read-only
+/// (`cache->get` never creates a cell): a cached block is a hit whose reader holds that cell, an
+/// uncached block is a miss carrying its whole-block writer when the tier populates (writer-less on a
+/// bypass tier). The executor gathers consecutive misses for the fetch and serves one block per window.
 VectorWithMemoryTracking<ICacheProvider::CacheResolution> PageCacheProvider::resolve(
     const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range)
 {
     VectorWithMemoryTracking<ICacheProvider::CacheResolution> out;
-    const size_t blk = block_size;
     const size_t file_size = file_size_in_bytes;
     if (range.offset >= file_size)
         return out;
 
-    static constexpr size_t HIT_RUN_CAP = 8 * 1024 * 1024;
     SipHash base_hash = file.baseHash();
-    auto probe = [&](size_t off) -> PageCache::MappedPtr
-    {
-        const size_t sz = std::min(blk, file_size - off);
-        PageCacheByteRange byte_range{off, sz};
-        return cache->get(byte_range.hash(base_hash), inject_eviction);
-    };
-
     const size_t end_in_file = std::min(range.end(), file_size);
-    size_t pos = range.offset / blk * blk;
-    while (pos < end_in_file)
+    const size_t first_pos = range.offset / block_size * block_size;
+    out.reserve((end_in_file - first_pos + block_size - 1) / block_size);
+    for (size_t pos = first_pos; pos < end_in_file; pos += std::min(block_size, file_size - pos))
     {
-        auto cell = probe(pos);
-        if (!cell)
+        const ByteRange block{pos, std::min(block_size, file_size - pos)};
+        CacheResolution r;
+        r.range = block;
+        if (auto cell = cache->get(PageCacheByteRange{block.offset, block.size}.hash(base_hash), inject_eviction))
         {
-            CacheResolution miss;
-            miss.kind = CacheResolution::Kind::Miss;
-            miss.range = ByteRange{pos, std::min(blk, file_size - pos)};
+            r.kind = CacheResolution::Kind::Hit;
+            r.reader = std::make_unique<PageCacheReader>(block, std::move(cell));
+        }
+        else
+        {
+            r.kind = CacheResolution::Kind::Miss;
             if (populatesOnMiss())
-                miss.writer = std::make_unique<PageCacheWriter>(
-                    cache, file, blk, file_size,
-                    inject_eviction, bypass_if_missing, miss.range);
-            pos = miss.range.end();
-            out.push_back(std::move(miss));
-            continue;
+                r.writer = std::make_unique<PageCacheWriter>(
+                    cache, file, inject_eviction, bypass_if_missing, block);
         }
-
-        /// Coalesce contiguous cached blocks into one bounded hit run; one
-        /// reader holds the run's cells.
-        VectorWithMemoryTracking<PageCacheReader::HeldCell> cells;
-        const size_t run_start = pos;
-        size_t run_end = pos;
-        PageCache::MappedPtr held = std::move(cell);
-        while (true)
-        {
-            const size_t sz = std::min(blk, file_size - run_end);
-            cells.push_back(PageCacheReader::HeldCell{PageCacheByteRange{run_end, sz}, std::move(held)});
-            run_end += sz;
-            if (run_end >= file_size || run_end - run_start >= HIT_RUN_CAP)
-                break;
-            held = probe(run_end);
-            if (!held)
-                break;
-        }
-        CacheResolution hit;
-        hit.kind = CacheResolution::Kind::Hit;
-        hit.range = ByteRange{run_start, run_end - run_start};
-        hit.reader = std::make_unique<PageCacheReader>(hit.range, std::move(cells));
-        pos = run_end;
-        out.push_back(std::move(hit));
+        out.push_back(std::move(r));
     }
     return out;
 }

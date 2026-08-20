@@ -1,5 +1,4 @@
 #include <IO/PageCacheProvider.h>
-#include <IO/ResidencyIterator.h>
 #include <IO/ChainedBuffers.h>
 #include <Common/PageCache.h>
 
@@ -14,6 +13,39 @@ using namespace DB;
 
 namespace
 {
+
+/// Test-local twins of the executor's residency-walk collectors. The real
+/// `ResidencyIterator` / `probeView` land with the executor cache-chain in a
+/// later PR; here `probeView` just buckets a provider's `resolve` output into
+/// hits and misses (the provider itself coalesces contiguous cached blocks).
+struct HitEntry { ByteRange range; CacheReaderPtr reader; };
+struct MissEntry { ByteRange range; CacheWriterPtr writer; };
+
+class CacheView
+{
+public:
+    const std::vector<HitEntry> & hits() const { return hit_entries; }
+    const std::vector<MissEntry> & misses() const { return miss_entries; }
+    std::vector<HitEntry> hit_entries;
+    std::vector<MissEntry> miss_entries;
+};
+using CacheViewPtr = std::unique_ptr<CacheView>;
+
+/// Read-only one-shot: bucket the provider's ranged `resolve` output (hits with
+/// readers, misses with writers when it populates) into a view for assertions.
+CacheViewPtr probeView(
+    ICacheProvider & provider, const StoredObject & object, size_t object_file_offset, ByteRange span)
+{
+    auto view = std::make_unique<CacheView>();
+    for (auto & r : provider.resolve(object, object_file_offset, span))
+    {
+        if (r.kind == ICacheProvider::CacheResolution::Kind::Hit)
+            view->hit_entries.push_back(HitEntry{r.range, std::move(r.reader)});
+        else if (r.kind == ICacheProvider::CacheResolution::Kind::Miss)
+            view->miss_entries.push_back(MissEntry{r.range, std::move(r.writer)});
+    }
+    return view;
+}
 
 /// Test twin of the plan's open step: resolve each cell and collect its miss
 /// resolutions - the provider attaches a writer to each (one per cache block
@@ -31,8 +63,7 @@ CacheViewPtr openWriters(ICacheProvider & provider, const StoredObject & object,
 
 /// `min_size_in_bytes` is the initial per-shard capacity. Tests don't call
 /// `autoResize`, so set it equal to `max_size_in_bytes` so the shard can store
-/// entries from the get-go (same setup as the existing `PageCacheProvider` tests
-/// in `gtest_reader_executor.cpp`).
+/// entries from the get-go.
 PageCachePtr makeCache(size_t capacity = (1ull << 20))
 {
     return std::make_shared<PageCache>(
@@ -97,7 +128,8 @@ TEST(PageCacheBuffers, WriteWholeBlockThenHit)
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
     /// One openWriter over the aligned miss block.
-    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     ASSERT_NE(misses[0].writer, nullptr);
     auto & writer = *misses[0].writer;
@@ -134,7 +166,8 @@ TEST(PageCacheBuffers, WriteBufferDoublesAsReadBuffer)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
-    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
@@ -165,7 +198,8 @@ TEST(PageCacheBuffers, EofTailBlockShort)
         /*bypass_if_missing=*/false, file_size);
 
     /// The aligned miss range for the tail is clamped to the file's real length.
-    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{tail_off, tail_size}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{tail_off, tail_size}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
     EXPECT_EQ(writer.range().size, tail_size);
@@ -200,7 +234,8 @@ TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
         /*bypass_if_missing=*/true, /*file_size_in_bytes=*/block_size);
 
     /// The bypass upgrade is a no-op: the miss cell remains, the writer stays null.
-    auto view_misses = openWriters(bypass_provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(bypass_provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     EXPECT_EQ(misses[0].writer, nullptr);
 
@@ -212,8 +247,7 @@ TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
     /// A direct write on a bypass write buffer returns 0 and registers no cell.
     {
         PageCacheWriter writer(
-            cache, file, block_size, /*file_size_in_bytes=*/block_size,
-            /*inject_eviction=*/false, /*bypass_if_missing=*/true, ByteRange{0, block_size});
+            cache, file, /*inject_eviction=*/false, /*bypass_if_missing=*/true, ByteRange{0, block_size});
         size_t wrote = claimedWrite(writer, makeChain(0, block_size, 'X'));
         EXPECT_EQ(wrote, 0u);
         EXPECT_FALSE(writer.complete()) << "bypass write commits nothing";
@@ -264,9 +298,11 @@ TEST(PageCacheBuffers, FirstWriterWins)
 
     /// Open TWO writers over the still-uncached block: page `resolve` uses
     /// `cache->get`, so it creates no cell - both see a miss until a write lands.
-    auto view_first = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & first = view_first->misses();
+    auto view_first = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & first = view_first->misses();
     ASSERT_EQ(first.size(), 1u);
-    auto view_second = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & second = view_second->misses();
+    auto view_second = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & second = view_second->misses();
     ASSERT_EQ(second.size(), 1u);
 
     /// First writer populates the block with 'F'.
@@ -284,9 +320,8 @@ TEST(PageCacheBuffers, FirstWriterWins)
     EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'F'));
 }
 
-/// (g) multi-block write + read-back per block: a range spanning >= 2 blocks, one
-/// openWriter, write all, complete() true, each block round-trips (mirrors
-/// DiskCache's WriteAcrossTwoSegments).
+/// (g) multi-block write + read-back per block: a range spanning >= 2 blocks resolves to one miss per
+/// block, write each, complete() true, each block round-trips (mirrors DiskCache's WriteAcrossTwoSegments).
 TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
 {
     auto cache = makeCache();
@@ -299,7 +334,8 @@ TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, file_size);
 
-    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, span}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, span}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 2u);
     auto & w0 = *misses[0].writer;
     auto & w1 = *misses[1].writer;
@@ -315,18 +351,18 @@ TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
     EXPECT_EQ(claimedWrite(w1, makeChain(block_size, block_size, '1')), block_size);
     EXPECT_TRUE(w1.complete());
 
-    /// probeView coalesces the two adjacent hit blocks into one HitEntry.
+    /// One resolution per block: each cached block is its own hit, read from its own reader.
     auto view = probeView(provider, StoredObject{}, 0, ByteRange{0, span});
-    ASSERT_EQ(view->hits().size(), 1u) << "adjacent hit blocks coalesce into one HitEntry";
-    EXPECT_EQ(view->hits()[0].range.offset, 0u);
-    EXPECT_EQ(view->hits()[0].range.size, span);
+    ASSERT_EQ(view->hits().size(), 2u) << "one hit per cached block";
     ASSERT_EQ(view->misses().size(), 0u);
+    EXPECT_EQ(view->hits()[0].range.offset, 0u);
+    EXPECT_EQ(view->hits()[0].range.size, block_size);
+    EXPECT_EQ(view->hits()[1].range.offset, block_size);
+    EXPECT_EQ(view->hits()[1].range.size, block_size);
 
-    /// Each block round-trips through the coalesced hit reader.
-    auto & reader = *view->hits()[0].reader;
-    auto rope0 = reader.read(ByteRange{0, block_size});
+    auto rope0 = view->hits()[0].reader->read(ByteRange{0, block_size});
     EXPECT_EQ(flatten(rope0, 0, block_size), std::string(block_size, '0'));
-    auto rope1 = reader.read(ByteRange{block_size, block_size});
+    auto rope1 = view->hits()[1].reader->read(ByteRange{block_size, block_size});
     EXPECT_EQ(flatten(rope1, block_size, block_size), std::string(block_size, '1'));
 }
 
@@ -342,7 +378,8 @@ TEST(PageCacheBuffers, PartialBlockWriteIsSkipped)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
-    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & misses = view_misses->misses();
+    auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
@@ -375,7 +412,8 @@ TEST(PageCacheBuffers, HitMissInterleavedTiling)
 
     /// Populate ONLY the middle block (block 1), leaving blocks 0 and 2 cold.
     {
-        auto view_middle = openWriters(provider, StoredObject{}, 0, {ByteRange{block_size, block_size}}); const auto & middle = view_middle->misses();
+        auto view_middle = openWriters(provider, StoredObject{}, 0, {ByteRange{block_size, block_size}});
+        const auto & middle = view_middle->misses();
         ASSERT_EQ(middle.size(), 1u);
         size_t wrote = claimedWrite(*middle[0].writer, makeChain(block_size, block_size, 'M'));
         EXPECT_EQ(wrote, block_size);
@@ -418,9 +456,11 @@ TEST(PageCacheBuffers, FirstWriterWinsAcrossProviders)
 
     /// Open a writer through EACH provider over the still-uncached block (page
     /// `resolve` creates no cell, so both see a miss until a write lands).
-    auto view_first = openWriters(provider1, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & first = view_first->misses();
+    auto view_first = openWriters(provider1, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & first = view_first->misses();
     ASSERT_EQ(first.size(), 1u);
-    auto view_second = openWriters(provider2, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & second = view_second->misses();
+    auto view_second = openWriters(provider2, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & second = view_second->misses();
     ASSERT_EQ(second.size(), 1u);
 
     /// provider1 populates the block with 'F'.
@@ -436,4 +476,41 @@ TEST(PageCacheBuffers, FirstWriterWinsAcrossProviders)
     /// read returns the FIRST provider's bytes (the adopted existing cell).
     auto chain = writer.read(ByteRange{0, block_size});
     EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'F'));
+}
+
+/// (k) claimLeadRole re-probes the cache: a block populated by another writer between the openWriter
+/// (a read-only `resolve`) and the claim is adopted and reported as `available` with NO claim, so the
+/// caller serves it from cache instead of re-reading it from the source.
+TEST(PageCacheBuffers, ClaimLeadRoleAdoptsBlockCachedSinceResolve)
+{
+    auto cache = makeCache();
+    auto file = makeFile("buffers-claim-recheck");
+    constexpr size_t block_size = 4096;
+    PageCacheProvider provider(
+        cache, file, block_size, /*inject_eviction=*/false,
+        /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
+
+    /// Two writers over the still-uncached block (both saw a miss at resolve).
+    auto view_late = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & late = view_late->misses();
+    ASSERT_EQ(late.size(), 1u);
+    auto view_early = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}});
+    const auto & early = view_early->misses();
+    ASSERT_EQ(early.size(), 1u);
+
+    /// A concurrent writer populates the block with 'C'.
+    EXPECT_EQ(claimedWrite(*early[0].writer, makeChain(0, block_size, 'C')), block_size);
+
+    /// The late writer's claimLeadRole re-probes: the block is now resident, so it is reported as
+    /// available (the whole block) with no claim to fill.
+    auto & late_writer = *late[0].writer;
+    auto lead = late_writer.claimLeadRole(late_writer.range());
+    EXPECT_EQ(lead.available.offset, 0u);
+    EXPECT_EQ(lead.available.size, block_size);
+    EXPECT_FALSE(static_cast<bool>(lead.claim)) << "nothing left to fill: the block is already committed";
+    EXPECT_TRUE(late_writer.committed().subtract(ByteRange{0, block_size}).empty());
+
+    /// The late writer serves the concurrently-written bytes from cache (adopted its cell).
+    auto chain = late_writer.read(ByteRange{0, block_size});
+    EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'C'));
 }

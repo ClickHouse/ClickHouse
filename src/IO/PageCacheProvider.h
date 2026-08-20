@@ -3,7 +3,6 @@
 #include <IO/ICacheProvider.h>
 #include <IO/IntervalSet.h>
 #include <Common/PageCache.h>
-#include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <mutex>
@@ -29,77 +28,64 @@ private:
 
 /// ── Per-range buffer API (see `ICacheProvider.h`) ──
 
-/// `CacheReader` over the pinned whole-block cell(s) backing one hit range.
-/// Page cells are whole blocks, so a hit is always fully resident and there is
-/// no deferred-LRU bump.
+/// `CacheReader` for one cached block: it holds the block's cell and serves `read` as a zero-copy view.
 class PageCacheReader : public CacheReader
 {
 public:
-    struct HeldCell
-    {
-        PageCacheByteRange byte_range;
-        PageCache::MappedPtr cell;
-    };
-
-    PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracking<HeldCell> cells_);
+    PageCacheReader(ByteRange range_in_file, PageCache::MappedPtr cell_);
 
     ByteRange range() const override { return range_member; }
     ChainedBuffers read(ByteRange sub) override;
 
 private:
     ByteRange range_member;
-    VectorWithMemoryTracking<HeldCell> cells;
+    PageCache::MappedPtr cell;  /// the block's cell, kept alive by the shared_ptr
 };
 
-/// `CacheWriter` over one whole-block-aligned miss range. Cells are created
-/// lazily on `write` (`PageCache::getOrSet`, first-writer-wins) and adopted
-/// into `blocks`; the write buffer doubles as a read buffer for the
-/// self-populated blocks. No evictable in-flight segment, so `pin` keeps the
-/// default no-op.
+/// `CacheWriter` for one whole miss block, all-or-nothing. `write` creates the block's cell on demand
+/// (`PageCache::getOrSet`, first-writer-wins) and adopts it; the writer then serves `read` for it. The
+/// block is either committed (`cell` set) or not, so there is no committed-range set.
 class PageCacheWriter : public CacheWriter
 {
 public:
     PageCacheWriter(
         PageCachePtr cache_,
         PageCacheFile file_,
-        size_t block_size_,
-        size_t file_size_in_bytes_,
         bool inject_eviction_,
         bool bypass_if_missing_,
-        ByteRange aligned_range_in_file);
+        ByteRange block_range);
 
     ByteRange range() const override { return range_member; }
     IntervalSet committed() const override
     {
-        std::lock_guard lock(state_mutex);
-        return committed_ranges;
+        std::lock_guard lock(committed_mutex);
+        IntervalSet c;
+        if (cell)
+            c.add(range_member);
+        return c;
     }
     size_t write(ChainedBuffers data, const Claim & claim) override;
     ChainedBuffers read(ByteRange sub) override;
+    /// Re-probe the cache: the block may have been populated by a concurrent query since `resolve`. If
+    /// so, adopt its cell and report the whole block as `available` (already committed, served from
+    /// cache) with no claim; otherwise hold the claim to fill it.
+    Lead claimLeadRole(ByteRange range) override;
 
 private:
-    struct AdoptedBlock
-    {
-        PageCacheByteRange byte_range;
-        UInt128 key_hash{};
-        PageCache::MappedPtr cell;
-    };
-
     PageCachePtr cache;
     PageCacheFile file;
-    size_t block_size;
-    size_t file_size_in_bytes;
     bool inject_eviction;
     /// Mirrors `read_from_page_cache_if_exists_otherwise_bypass_cache`: a
     /// bypass tier populates nothing, so `write` returns 0 before any `getOrSet`.
     bool bypass_if_missing;
-    ByteRange range_member;
-    IntervalSet committed_ranges;
-    VectorWithMemoryTracking<AdoptedBlock> blocks;
-    /// Guards `committed_ranges` and `blocks`: the prefetch worker may write this writer
-    /// while the foreground reads the self-populated blocks of the same writer.
-    mutable std::mutex state_mutex;
-    LoggerPtr log = getLogger("PageCacheWriter");
+    ByteRange range_member;  /// the one block this writer covers
+    /// The block's cell once populated (by us) or adopted (a concurrent first-writer); null = not
+    /// committed.
+    PageCache::MappedPtr cell;
+    /// Guards `cell`. Per the `CacheWriter::committed` contract - and like the disk cache's
+    /// `committed_mutex` - a background prefetch and the foreground read may fill and read this writer
+    /// at the same time.
+    mutable std::mutex committed_mutex;
 };
 
 /// `ICacheProvider` wrapping PageCache. PageCache is FILE-level (one logical
@@ -136,11 +122,10 @@ public:
 private:
     PageCachePtr cache;
     PageCacheFile file;
-    size_t block_size;
+    const size_t block_size;
     bool inject_eviction;
     bool bypass_if_missing;
     size_t file_size_in_bytes;
-    LoggerPtr log = getLogger("PageCacheProvider");
 };
 
 }
