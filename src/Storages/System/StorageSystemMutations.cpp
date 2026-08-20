@@ -46,14 +46,12 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "bytes_to_do",                   std::make_shared<DataTypeUInt64>(), "The total size on disk of the data parts that need to be mutated for the mutation to complete. Byte-weighted counterpart of `parts_to_do`. "
             "On a replicated table only the parts already on this replica have a size, so this is a lower bound while the replica still has parts to fetch or merge."},
         { "progress",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
-            "The estimated fraction of the mutation's work that is finished, from 0 to 1: the on-disk size of the remaining parts relative to the size of the parts the mutation is "
-            "responsible for rewriting, including the live fraction of the parts currently being rewritten (rows of `system.merges` with `is_mutation` = 1). "
-            "A part is in that scope once its `min_block_number` precedes the mutation's block number, so a part inserted afterwards does not count towards it — unless a merge folded "
-            "that part into one that does, which the mutation then has to rewrite whole, and whose bytes therefore do reach `progress`. "
-            "Both sides are measured against the table as it stands, not against a snapshot taken when the mutation was submitted, so the value is an estimate: a regular merge can "
-            "retire pending parts at any moment, which makes `progress` jump forward. An already-rewritten part also weighs its new size while the parts still to be rewritten weigh "
-            "their old one, so `progress` is understated for a mutation that shrinks parts and overstated for one that grows them. `DELETE WHERE 1` is the worst case: each finished "
-            "part becomes an empty part, so `progress` stays near 0 until the last part is rewritten and should be read as a lower bound. "
+            "The estimated fraction of the mutation's work that is finished, from 0 to 1: the on-disk size of the remaining parts, including the live fraction of the parts currently "
+            "being rewritten (rows of `system.merges` with `is_mutation` = 1), relative to the byte weight the remaining work had when the mutation was submitted. Finished parts keep "
+            "that pre-mutation weight whatever size the rewrite left behind, so a `DELETE WHERE 1` over two equal parts reads about 0.5 once the first part is done. "
+            "The weight is kept in memory only: after a server restart, or on a replica that first sizes the mutation later, it is re-measured from what remains and `progress` "
+            "restarts as a lower bound for the leftover portion. A regular merge can fold a part inserted after the mutation into its scope; the denominator grows along with such "
+            "discovered work, and a merge can also retire pending parts at any moment, which makes `progress` jump forward. "
             "`NULL` when the remaining work is not known yet. On a replicated table that happens while a mutation that is not done waits for an in-flight INSERT whose part is not "
             "committed (`parts_to_do` = 0), and while any part it still has to rewrite has not been fetched or merged on this replica: neither has a size on disk to weigh."},
         { "parts_postpone_reasons",        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "A map of part names to reasons why they are postponed."},

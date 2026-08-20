@@ -40,6 +40,10 @@ struct MergeTreeMutationEntry
 
     UInt64 block_number = 0;
 
+    /// On-disk bytes the mutation's remaining parts had when this entry was created or loaded
+    /// (in-memory only): the denominator for byte-weighted progress in `system.mutations`.
+    UInt64 initial_bytes_to_do = 0;
+
     String latest_failed_part;
     MergeTreePartInfo latest_failed_part_info;
     time_t latest_fail_time = 0;

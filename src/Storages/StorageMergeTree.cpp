@@ -974,6 +974,13 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     /// mutex across the file I/O would block merge selection for its full duration.
     auto prepared = prepareMutationEntry(commands, query_context);
     Int64 version = prepared.version;
+    /// Snapshot the byte weight of the parts this mutation will have to rewrite; the finished
+    /// portion keeps this weight in `progress`, whatever size the rewrite leaves behind.
+    for (const auto & part : getDataPartsVectorForInternalUsage())
+    {
+        if (part->info.getDataVersion() < version)
+            prepared.entry.initial_bytes_to_do += part->getBytesOnDisk();
+    }
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
         addPreparedMutationEntry(std::move(prepared));
@@ -1356,17 +1363,9 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     std::vector<PartVersionWithName> part_versions_with_names;
     auto data_parts = getDataPartsVectorForInternalUsage();
     part_versions_with_names.reserve(data_parts.size());
-    /// Block numbers of a non-replicated table form a single sequence across all partitions,
-    /// so one accumulator sizes the scope of every mutation.
-    PartBlockBytes part_block_bytes;
-    part_block_bytes.reserve(data_parts.size());
     for (const auto & part : data_parts)
-    {
         part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk()});
-        part_block_bytes.emplace_back(part->info.min_block, part->getBytesOnDisk());
-    }
     std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
-    accumulatePartBlockBytes(part_block_bytes);
 
     /// The live fraction of the parts currently being rewritten, for byte-weighted progress.
     /// The merge list has its own mutex, no lock ordering issue with the mutex held above.
@@ -1412,12 +1411,14 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             if (auto it = mutating_part_progress.find(part_version.name); it != mutating_part_progress.end())
                 bytes_in_flight_done += static_cast<Float64>(part_version.bytes_on_disk) * it->second;
         }
-        /// Rewritten parts weigh their new size while pending ones weigh their old size, so this
-        /// understates a mutation that shrinks parts. `DELETE WHERE 1` is the worst case, see the docs.
-        UInt64 scope_bytes = getBytesBeforeBlock(part_block_bytes, static_cast<Int64>(entry.block_number));
+        /// The denominator is the byte weight the remaining work had when the mutation was created
+        /// (re-measured from what remains after a restart), so finished parts keep their
+        /// pre-mutation weight whatever size the rewrite left behind. `max` covers scope
+        /// discovered only afterwards, e.g. an in-scope part attached later.
+        UInt64 initial_bytes = std::max(entry.initial_bytes_to_do, bytes_to_do);
         Float64 progress = std::clamp(
             1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
-                / std::max<Float64>(static_cast<Float64>(scope_bytes), 1.0),
+                / std::max<Float64>(static_cast<Float64>(initial_bytes), 1.0),
             0.0, 1.0);
 
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
@@ -1583,6 +1584,23 @@ void StorageMergeTree::loadMutations()
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
                 disk->removeFile(it->path());
+            }
+        }
+    }
+
+    if (!current_mutations_by_version.empty())
+    {
+        /// Re-snapshot the denominators for byte-weighted progress from what remains: the byte
+        /// weight of the parts finished before the restart is not recoverable.
+        std::vector<std::pair<Int64, UInt64>> version_and_bytes;
+        for (const auto & part : getDataPartsVectorForInternalUsage())
+            version_and_bytes.emplace_back(part->info.getDataVersion(), part->getBytesOnDisk());
+        for (auto & mutation : current_mutations_by_version)
+        {
+            for (const auto & [data_version, bytes] : version_and_bytes)
+            {
+                if (data_version < static_cast<Int64>(mutation.first))
+                    mutation.second.initial_bytes_to_do += bytes;
             }
         }
     }

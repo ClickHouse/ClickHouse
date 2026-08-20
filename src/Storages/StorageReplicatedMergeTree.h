@@ -466,6 +466,12 @@ private:
     std::atomic<time_t> last_queue_update_finish_time{0};
 
     mutable std::mutex last_queue_update_exception_lock;
+
+    /// Mutation znode name -> byte weight of its remaining parts when this replica first sized it,
+    /// grown if more remaining work shows up: in-memory denominators for byte-weighted progress
+    /// in `system.mutations` (see getMutationsStatus()).
+    mutable std::mutex mutation_initial_bytes_mutex;
+    mutable std::unordered_map<String, UInt64> mutation_initial_bytes;
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;
 

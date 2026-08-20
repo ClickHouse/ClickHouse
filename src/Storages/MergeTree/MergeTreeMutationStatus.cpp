@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <boost/algorithm/string/join.hpp>
-#include <algorithm>
 
 namespace DB
 {
@@ -12,25 +11,6 @@ namespace ErrorCodes
 {
     extern const int UNFINISHED;
     extern const int LOGICAL_ERROR;
-}
-
-void accumulatePartBlockBytes(PartBlockBytes & parts)
-{
-    std::sort(parts.begin(), parts.end());
-
-    UInt64 running_total = 0;
-    for (auto & [block, bytes] : parts)
-    {
-        running_total += bytes;
-        bytes = running_total;
-    }
-}
-
-UInt64 getBytesBeforeBlock(const PartBlockBytes & parts, Int64 block_number)
-{
-    auto it = std::partition_point(
-        parts.begin(), parts.end(), [&](const auto & part) { return part.first < block_number; });
-    return it == parts.begin() ? 0 : std::prev(it)->second;
 }
 
 void checkMutationStatus(std::optional<MergeTreeMutationStatus> & status, const std::set<String> & mutation_ids)

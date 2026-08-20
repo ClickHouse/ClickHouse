@@ -61,18 +61,6 @@ struct MergeTreeMutationStatus
 /// NOLINTEND(readability-redundant-string-init)
 };
 
-/// Active parts as (min_block, bytes on disk), used to size the scope of a mutation.
-/// One per partition on the replicated path, where block numbers are allocated per partition.
-using PartBlockBytes = std::vector<std::pair<Int64, UInt64>>;
-
-/// Sort by `min_block` and replace each byte count with the running total, so that
-/// `getBytesBeforeBlock` can binary-search the result.
-void accumulatePartBlockBytes(PartBlockBytes & parts);
-
-/// On-disk bytes of the parts that predate `block_number`, i.e. the ones that mutation must rewrite,
-/// done or not. Parts inserted later have a higher `min_block` and were never in its scope.
-UInt64 getBytesBeforeBlock(const PartBlockBytes & parts, Int64 block_number);
-
 /// Check mutation status and throw exception in case of error during mutation
 /// (latest_fail_reason not empty) or if mutation was killed (status empty
 /// optional). mutation_ids passed separately, because status may be empty and
