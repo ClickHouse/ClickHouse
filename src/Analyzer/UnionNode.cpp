@@ -2,6 +2,8 @@
 
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -45,10 +47,18 @@ namespace Setting
     extern const SettingsBool use_variant_as_common_type;
 }
 
-UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
+UnionNode::UnionNode(
+    ContextMutablePtr context_,
+    SelectUnionMode union_mode_,
+    SettingsChanges settings_changes_,
+    std::vector<String> default_settings_,
+    NameToNameVector query_parameters_)
     : ITableExpressionNode(children_size)
     , context(std::move(context_))
     , union_mode(union_mode_)
+    , settings_changes(std::move(settings_changes_))
+    , default_settings(std::move(default_settings_))
+    , query_parameters(std::move(query_parameters_))
 {
     if (union_mode == SelectUnionMode::UNION_DEFAULT ||
         union_mode == SelectUnionMode::EXCEPT_DEFAULT ||
@@ -213,6 +223,17 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getCorrelatedColumns().dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
+    if (hasSettingsChanges())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
+        for (const auto & change : settings_changes)
+            buffer << fmt::format(" {}={}", change.name, fieldToString(change.value));
+        for (const auto & setting_name : default_settings)
+            buffer << fmt::format(" {}=DEFAULT", setting_name);
+        for (const auto & [name, value] : query_parameters)
+            buffer << fmt::format(" param_{}={}", name, quoteString(value));
+    }
+
     buffer << '\n' << std::string(indent + 2, ' ') << "QUERIES\n";
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
@@ -232,7 +253,10 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         && is_materialized == rhs_typed.is_materialized
         && is_recursive_cte == rhs_typed.is_recursive_cte
         && cte_name == rhs_typed.cte_name
-        && union_mode == rhs_typed.union_mode;
+        && union_mode == rhs_typed.union_mode
+        && settings_changes == rhs_typed.settings_changes
+        && default_settings == rhs_typed.default_settings
+        && query_parameters == rhs_typed.query_parameters;
 }
 
 void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -253,11 +277,38 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(cte_name);
 
     state.update(static_cast<size_t>(union_mode));
+
+    state.update(settings_changes.size());
+    for (const auto & change : settings_changes)
+    {
+        state.update(change.name.size());
+        state.update(change.name);
+
+        const auto & setting_change_value_dump = change.value.dump();
+        state.update(setting_change_value_dump.size());
+        state.update(setting_change_value_dump);
+    }
+
+    state.update(default_settings.size());
+    for (const auto & setting_name : default_settings)
+    {
+        state.update(setting_name.size());
+        state.update(setting_name);
+    }
+
+    state.update(query_parameters.size());
+    for (const auto & [name, value] : query_parameters)
+    {
+        state.update(name.size());
+        state.update(name);
+        state.update(value.size());
+        state.update(value);
+    }
 }
 
 QueryTreeNodePtr UnionNode::cloneImpl() const
 {
-    auto result_union_node = std::make_shared<UnionNode>(context, union_mode);
+    auto result_union_node = std::make_shared<UnionNode>(context, union_mode, settings_changes, default_settings, query_parameters);
 
     result_union_node->is_subquery = is_subquery;
     result_union_node->is_cte = is_cte;
@@ -271,6 +322,14 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
 
 ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
+    /// The union's own query-level `SETTINGS` clause is intentionally NOT serialized onto the
+    /// `ASTSelectWithUnionQuery` here. The SQL grammar has no place for it on a *nested* union: the
+    /// parser attaches a trailing `SETTINGS` clause of a union to its LAST arm (only the top-level
+    /// query gets `ASTQueryWithOutput::settings_ast`), and `QueryTreeBuilder` reads it back from
+    /// there. That last arm is a `QueryNode` which carries the very same clause and serializes it
+    /// itself, so the clause survives the query-tree -> AST -> text round trip in the one form that
+    /// can be re-parsed. Writing it to `settings_ast` instead would format a nested union as
+    /// `((SELECT ...) UNION ALL (SELECT ...) SETTINGS ...)`, which no parser accepts.
     auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;
     select_with_union_query->is_normalized = true;

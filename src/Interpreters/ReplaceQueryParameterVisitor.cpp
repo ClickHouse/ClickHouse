@@ -62,6 +62,20 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
                      query_with_output && query_with_output->settings_ast)
                      return query_with_output->settings_ast->as<ASTSetQuery>();
 
+                 /// A trailing `SETTINGS` clause of a UNION is query-level - it applies to the whole
+                 /// union - but the grammar leaves it on the LAST arm (`ASTQueryWithOutput::settings_ast`
+                 /// is filled only for the top-level query). Scope its `param_*` bindings over every arm,
+                 /// the same way `InterpreterSetQuery::applySettingsFromQuery` applies that clause to the
+                 /// whole query and `QueryTreeBuilder` applies it to the whole union; otherwise a
+                 /// placeholder in a non-last arm would be reported as an unknown query parameter.
+                 if (const auto * select_with_union = ast->as<ASTSelectWithUnionQuery>();
+                     select_with_union && select_with_union->list_of_selects && !select_with_union->list_of_selects->children.empty())
+                 {
+                     if (const auto * last_select = select_with_union->list_of_selects->children.back()->as<ASTSelectQuery>();
+                         last_select && last_select->settings())
+                         return last_select->settings()->as<ASTSetQuery>();
+                 }
+
                  return nullptr;
              }();
              settings && !settings->query_parameters.empty())
