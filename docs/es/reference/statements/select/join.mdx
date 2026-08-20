@@ -32,7 +32,7 @@ Se admiten todos los tipos estándar de [SQL JOIN](https://en.wikipedia.org/wiki
 | `LEFT OUTER JOIN`  | además de las filas coincidentes, se devuelven las filas no coincidentes de la tabla izquierda.                                                                                                                                                                                                                     |
 | `RIGHT OUTER JOIN` | además de las filas coincidentes, se devuelven las filas no coincidentes de la tabla derecha.                                                                                                                                                                                                                       |
 | `FULL OUTER JOIN`  | además de las filas coincidentes, se devuelven las filas no coincidentes de ambas tablas.                                                                                                                                                                                                                           |
-| `CROSS JOIN`       | produce el producto cartesiano de las tablas completas; no se especifican &quot;join keys&quot;.                                                                                                                                                                                                                    |
+| `CROSS JOIN`       | produce el producto cartesiano de las tablas completas; no se especifican &quot;claves de JOIN&quot;.                                                                                                                                                                                                               |
 | `NATURAL JOIN`     | une automáticamente todas las columnas con el mismo nombre en ambas tablas; cada columna común aparece una sola vez en el resultado. Admite las variantes `INNER` (predeterminada), `LEFT`, `RIGHT` y `FULL`. Equivale a `JOIN ... USING (col1, col2, ...)`, donde la lista de columnas se obtiene automáticamente. |
 
 * `JOIN` sin especificar un tipo implica `INNER`.
@@ -44,32 +44,32 @@ Los tipos de join adicionales disponibles en ClickHouse son:
 
 | Tipo                                                | Descripción                                                                                                                                                  |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | Una lista de permitidos sobre &quot;join keys&quot;, sin generar un producto cartesiano.                                                                     |
-| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | Una lista de bloqueados sobre &quot;join keys&quot;, sin generar un producto cartesiano.                                                                     |
+| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | Una lista de permitidos sobre &quot;claves de JOIN&quot;, sin generar un producto cartesiano.                                                               |
+| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | Una lista de bloqueados sobre &quot;claves de JOIN&quot;, sin generar un producto cartesiano.                                                               |
 | `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | Desactiva parcial (para el lado opuesto de `LEFT` y `RIGHT`) o completamente (para `INNER` y `FULL`) el producto cartesiano de los tipos estándar de `JOIN`. |
 | `ASOF JOIN`, `LEFT ASOF JOIN`                       | Une secuencias con una coincidencia no exacta. El uso de `ASOF JOIN` se describe a continuación.                                                             |
 | `PASTE JOIN`                                        | Realiza una concatenación horizontal de dos tablas.                                                                                                          |
 
 <Note>
-  Cuando [join&#95;algorithm](/es/reference/settings/session-settings#join_algorithm) se establece en `partial_merge`, `RIGHT JOIN` y `FULL JOIN` solo son compatibles con strictness `ALL` (`SEMI`, `ANTI`, `ANY` y `ASOF` no son compatibles).
+  Cuando [join&#95;algorithm](/es/reference/settings/session-settings/join#join_algorithm) se establece en `partial_merge`, `RIGHT JOIN` y `FULL JOIN` solo son compatibles con strictness `ALL` (`SEMI`, `ANTI`, `ANY` y `ASOF` no son compatibles).
 </Note>
 
 <div id="settings">
   ## Configuración
 </div>
 
-El tipo de JOIN predeterminado puede sobrescribirse mediante la configuración [`join_default_strictness`](/es/reference/settings/session-settings#join_default_strictness).
+El tipo de JOIN predeterminado puede sobrescribirse mediante la configuración [`join_default_strictness`](/es/reference/settings/session-settings/join#join_default_strictness).
 
-El comportamiento del servidor ClickHouse en las operaciones `ANY JOIN` depende de la configuración [`any_join_distinct_right_table_keys`](/es/reference/settings/session-settings#any_join_distinct_right_table_keys).
+El comportamiento del servidor ClickHouse en las operaciones `ANY JOIN` depende de la configuración [`any_join_distinct_right_table_keys`](/es/reference/settings/session-settings/other#any_join_distinct_right_table_keys).
 
 **Véase también**
 
-* [`join_algorithm`](/es/reference/settings/session-settings#join_algorithm)
-* [`join_any_take_last_row`](/es/reference/settings/session-settings#join_any_take_last_row)
-* [`join_use_nulls`](/es/reference/settings/session-settings#join_use_nulls)
-* [`partial_merge_join_rows_in_right_blocks`](/es/reference/settings/session-settings#partial_merge_join_rows_in_right_blocks)
-* [`join_on_disk_max_files_to_merge`](/es/reference/settings/session-settings#join_on_disk_max_files_to_merge)
-* [`any_join_distinct_right_table_keys`](/es/reference/settings/session-settings#any_join_distinct_right_table_keys)
+* [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm)
+* [`join_any_take_last_row`](/es/reference/settings/session-settings/join#join_any_take_last_row)
+* [`join_use_nulls`](/es/reference/settings/session-settings/join#join_use_nulls)
+* [`partial_merge_join_rows_in_right_blocks`](/es/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks)
+* [`join_on_disk_max_files_to_merge`](/es/reference/settings/session-settings/join#join_on_disk_max_files_to_merge)
+* [`any_join_distinct_right_table_keys`](/es/reference/settings/session-settings/other#any_join_distinct_right_table_keys)
 
 Use la configuración `cross_to_inner_join_rewrite` para definir el comportamiento cuando ClickHouse no consigue reescribir un `CROSS JOIN` como un `INNER JOIN`. El valor predeterminado es `1`, lo que permite que el JOIN continúe, aunque será más lento. Establezca `cross_to_inner_join_rewrite` en `0` si desea que se genere un error, y en `2` si no quiere ejecutar los cross joins, sino forzar la reescritura de todos los comma/cross joins. Si la reescritura falla cuando el valor es `2`, recibirá un mensaje de error que indica &quot;Please, try to simplify `WHERE` section&quot;.
 
@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## JOIN con condiciones de desigualdad para columnas de diferentes tablas
 </div>
 
-Actualmente, ClickHouse admite `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` con condiciones de desigualdad además de las condiciones de igualdad. Las condiciones de desigualdad solo se admiten con los algoritmos de join `hash` y `grace_hash`. Las condiciones de desigualdad no son compatibles con `join_use_nulls`.
+Actualmente, ClickHouse admite `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` con condiciones de desigualdad además de las condiciones de igualdad. Las condiciones de desigualdad solo se admiten con los algoritmos de join `hash`, `parallel_hash` y `grace_hash`. Una condición de no equivalencia evaluada durante el join no puede contener `arrayJoin`, ya que debe conservar el número de filas; las condiciones que se aplican a un solo lado y una clave de igualdad sobre `arrayJoin` se extraen antes del join y no se ven afectadas; una condición no disyuntiva de `ALL INNER JOIN` tampoco se ve afectada, ya que en ese caso se aplica después del join. Cuando la expansión depende de un solo lado, muévala a un `ARRAY JOIN` en una subconsulta antes del join; una condición cuyo argumento de `arrayJoin` lee columnas de ambos lados debe reestructurarse.
 
 **Ejemplo**
 
@@ -231,7 +231,7 @@ key4    f    2    3    4            0    0    \N
 ```
 
 <div id="null-values-in-join-keys">
-  ## Valores `NULL` en las claves de `JOIN`
+  ## Valores `NULL` y `NaN` en las claves de `JOIN`
 </div>
 
 `NULL` no es igual a ningún valor, incluido él mismo. Esto significa que, si una clave de `JOIN` tiene un valor `NULL` en una tabla, no coincidirá con un valor `NULL` de la otra tabla.
@@ -285,6 +285,13 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 │ Charlie │    88 │
 └─────────┴───────┘
 ```
+
+Los valores `NaN` en claves `JOIN` de tipo float no siguen la regla de `NULL` anterior.
+La comparación escalar de dos valores `NaN` (`NaN = NaN`) da como resultado `0`; sin embargo, las claves de `JOIN` no se comparan con semántica escalar, por lo que las claves `NaN` pueden coincidir.
+Que realmente coincidan es un detalle de implementación y depende del algoritmo de join, el tipo de clave y la configuración de sesión.
+No dependa de un comportamiento específico.
+Si necesita que las filas con `NaN` no coincidan, asígnelas a valores `NULL`: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
+En un `ASOF JOIN`, la columna de coincidencia más próxima se compara mediante ordenación, algo que `NaN` no admite; filtre esas filas en ambos lados.
 
 <div id="asof-join-usage">
   ## Uso de ASOF JOIN
@@ -465,7 +472,7 @@ devuelve el conjunto:
   ### Procesamiento de celdas vacías o NULL
 </div>
 
-Al unir tablas, pueden aparecer celdas vacías. La configuración [join&#95;use&#95;nulls](/es/reference/settings/session-settings#join_use_nulls) define cómo ClickHouse completa estas celdas.
+Al unir tablas, pueden aparecer celdas vacías. La configuración [join&#95;use&#95;nulls](/es/reference/settings/session-settings/join#join_use_nulls) define cómo ClickHouse completa estas celdas.
 
 Si las claves de `JOIN` son campos [Nullable](/es/reference/data-types/nullable), las filas en las que al menos una de las claves tiene el valor [NULL](/es/reference/syntax#null) no se unen.
 
@@ -507,14 +514,14 @@ Si necesita un `JOIN` para unir tablas de dimensiones (tablas relativamente pequ
   ### Limitaciones de memoria
 </div>
 
-De forma predeterminada, ClickHouse usa el algoritmo [hash join](https://en.wikipedia.org/wiki/Hash_join). ClickHouse toma la right&#95;table y crea una tabla hash para ella en la RAM. Si `join_algorithm = 'auto'` está habilitado, al superar cierto umbral de consumo de memoria, ClickHouse cambia al algoritmo [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join. Para ver la descripción de los algoritmos `JOIN`, consulte la configuración [join&#95;algorithm](/es/reference/settings/session-settings#join_algorithm).
+De forma predeterminada, ClickHouse usa el algoritmo [hash join](https://en.wikipedia.org/wiki/Hash_join). ClickHouse toma la right&#95;table y crea una tabla hash para ella en la RAM. Si `join_algorithm = 'auto'` está habilitado, al superar cierto umbral de consumo de memoria, ClickHouse cambia al algoritmo [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join. Para ver la descripción de los algoritmos `JOIN`, consulte la configuración [join&#95;algorithm](/es/reference/settings/session-settings/join#join_algorithm).
 
 Si necesita restringir el consumo de memoria de la operación `JOIN`, use la siguiente configuración:
 
-* [max&#95;rows&#95;in&#95;join](/es/reference/settings/session-settings#max_rows_in_join) — Limita el número de filas de la tabla hash.
-* [max&#95;bytes&#95;in&#95;join](/es/reference/settings/session-settings#max_bytes_in_join) — Limita el tamaño de la tabla hash.
+* [max&#95;rows&#95;in&#95;join](/es/reference/settings/session-settings/max-rows#max_rows_in_join) — Limita el número de filas de la tabla hash.
+* [max&#95;bytes&#95;in&#95;join](/es/reference/settings/session-settings/max-bytes#max_bytes_in_join) — Limita el tamaño de la tabla hash.
 
-Cuando se alcanza cualquiera de estos límites, ClickHouse actúa según lo que indique la configuración [join&#95;overflow&#95;mode](/es/reference/settings/session-settings#join_overflow_mode).
+Cuando se alcanza cualquiera de estos límites, ClickHouse actúa según lo que indique la configuración [join&#95;overflow&#95;mode](/es/reference/settings/session-settings/join#join_overflow_mode).
 
 <div id="examples">
   ## Ejemplos

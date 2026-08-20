@@ -422,8 +422,19 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     }
     else
     {
-        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
         auto fields = schema_ptr->get(f_fields).extract<Poco::JSON::Array::Ptr>();
+        /// A field name is required per the Iceberg spec, and an empty column name is not representable in ClickHouse.
+        for (size_t i = 0; i != fields->size(); ++i)
+        {
+            auto field = fields->getObject(static_cast<UInt32>(i));
+            if (field->getValue<String>(f_name).empty())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg schema with schema-id {} has a field with id {} whose name is empty",
+                    schema_id,
+                    field->getValue<Int32>(f_id));
+        }
+
         auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
         String current_full_name{};
         for (size_t i = 0; i != fields->size(); ++i)
@@ -438,6 +449,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
+        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
     }
     current_schema_id = std::nullopt;
 }
@@ -826,7 +838,7 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 sna
 }
 
 
-std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
+std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSchemaById(Int32 id)
 {
     SharedLockGuard lock(mutex);
 
@@ -836,7 +848,7 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
     return it->second;
 }
 
-bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
+bool IcebergSchemaProcessor::hasClickHouseTableSchemaById(Int32 id) const
 {
     SharedLockGuard lock(mutex);
 

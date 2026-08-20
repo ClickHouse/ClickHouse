@@ -728,7 +728,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = '{unique}_combo',
                      rabbitmq_queue_base = '{unique}_combo',
-                     rabbitmq_max_block_size = 100,
+                     rabbitmq_max_block_size = 10000,
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_num_consumers = 2,
                      rabbitmq_num_queues = 5,
@@ -3692,29 +3692,27 @@ def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique)
     connection.close()
 
 
-def test_message_queue_disable_insertion(rabbitmq_cluster, db, unique):
-    # Verify the setting defaults to false
+@pytest.mark.parametrize(
+    "setting_name",
+    ["message_queue_disable_insertion", "disable_insertion_and_mutation"],
+)
+def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_name):
     assert (
         "false"
-        == instance.query(
-            "SELECT getServerSetting('message_queue_disable_insertion')"
-        ).strip()
+        == instance.query(f"SELECT getServerSetting('{setting_name}')").strip()
     )
 
     try:
-        # Enable message_queue_disable_insertion
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "0",
-            "1",
+            f"<{setting_name}>0</{setting_name}>",
+            f"<{setting_name}>1</{setting_name}>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
         assert (
             "true"
-            == instance.query(
-                "SELECT getServerSetting('message_queue_disable_insertion')"
-            ).strip()
+            == instance.query(f"SELECT getServerSetting('{setting_name}')").strip()
         )
 
         # Create RabbitMQ table, destination table, and MV
@@ -3727,7 +3725,8 @@ def test_message_queue_disable_insertion(rabbitmq_cluster, db, unique):
                          rabbitmq_exchange_name = '{exchange}',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_flush_interval_ms = 1000,
-                         rabbitmq_queue_base = '{exchange}';
+                         rabbitmq_queue_base = '{exchange}',
+                         rabbitmq_queue_consume = 1;
             CREATE TABLE {db}.view (key UInt64, value UInt64)
                 ENGINE = MergeTree()
                 ORDER BY key;
@@ -3736,6 +3735,10 @@ def test_message_queue_disable_insertion(rabbitmq_cluster, db, unique):
         """
         )
 
+        # Disabled streaming storages must remain registered so they can be renamed.
+        instance.query(f"RENAME TABLE {db}.rabbitmq TO {db}.rabbitmq_renamed")
+        instance.query(f"RENAME TABLE {db}.rabbitmq_renamed TO {db}.rabbitmq")
+
         # Produce messages while insertion is disabled
         credentials = pika.PlainCredentials("root", "clickhouse")
         parameters = pika.ConnectionParameters(
@@ -3743,6 +3746,19 @@ def test_message_queue_disable_insertion(rabbitmq_cluster, db, unique):
         )
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
+        channel.exchange_declare(exchange=exchange, exchange_type="fanout", durable=True)
+        channel.queue_declare(queue=exchange, durable=True)
+        channel.queue_bind(exchange=exchange, queue=exchange)
+
+        error_patterns = [
+            "Insert queries are prohibited",
+            "Message queue insertion is disabled",
+            "Error while streaming to views",
+            "Failed to process data",
+        ]
+        error_counts = {
+            pattern: int(instance.count_in_log(pattern)) for pattern in error_patterns
+        }
 
         for i in range(10):
             channel.basic_publish(
@@ -3753,8 +3769,12 @@ def test_message_queue_disable_insertion(rabbitmq_cluster, db, unique):
         # Wait — no rows should appear
         time.sleep(10)
         assert 0 == int(instance.query(f"SELECT count() FROM {db}.view"))
+        queue_state = channel.queue_declare(queue=exchange, passive=True).method
+        assert 10 == queue_state.message_count
+        assert 0 == queue_state.consumer_count
 
-        assert instance.contains_in_log("Message queue insertion is disabled")
+        for pattern, count in error_counts.items():
+            assert count == int(instance.count_in_log(pattern))
 
         # Direct INSERT INTO the RabbitMQ table (producer write) must still work
         instance.query(
@@ -3765,16 +3785,14 @@ def test_message_queue_disable_insertion(rabbitmq_cluster, db, unique):
         # Re-enable insertion
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "1",
-            "0",
+            f"<{setting_name}>1</{setting_name}>",
+            f"<{setting_name}>0</{setting_name}>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
         assert (
             "false"
-            == instance.query(
-                "SELECT getServerSetting('message_queue_disable_insertion')"
-            ).strip()
+            == instance.query(f"SELECT getServerSetting('{setting_name}')").strip()
         )
 
         # Rows should flow through now (10 original + 1 from direct INSERT)
@@ -3784,7 +3802,7 @@ def test_message_queue_disable_insertion(rabbitmq_cluster, db, unique):
     finally:
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "1",
-            "0",
+            f"<{setting_name}>1</{setting_name}>",
+            f"<{setting_name}>0</{setting_name}>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()

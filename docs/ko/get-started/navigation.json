@@ -6,6 +6,7 @@
       "group": "Get started",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
+        "ko/get-started/index",
         "ko/get-started/quickstarts/home",
         {
           "expandable": true,
@@ -19,29 +20,30 @@
         },
         {
           "expanded": true,
-          "group": "사용 사례",
+          "group": "활용 사례",
           "pages": [
+            "ko/get-started/use-cases/overview",
             "ko/get-started/use-cases/real-time-analytics",
             "ko/get-started/use-cases/observability",
             "ko/get-started/use-cases/data-warehousing",
             "ko/get-started/use-cases/agentic-analytics"
-          ],
-          "root": "ko/get-started/use-cases/overview"
+          ]
         },
         "ko/get-started/about/deployment-modes"
-      ],
-      "root": "ko/get-started/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Setup",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
+        "ko/get-started/setup/install",
         "ko/get-started/setup/cloud",
         {
           "expanded": true,
           "group": "자가 관리형",
           "pages": [
+            "ko/get-started/setup/self-managed/overview",
             {
               "group": "로컬 개발",
               "pages": [
@@ -52,7 +54,7 @@
               ]
             },
             {
-              "group": "프로덕션 서버",
+              "group": "운영 서버",
               "pages": [
                 "ko/get-started/setup/self-managed/debian-ubuntu",
                 "ko/get-started/setup/self-managed/redhat",
@@ -60,17 +62,16 @@
                 "ko/get-started/setup/self-managed/other-linux"
               ]
             }
-          ],
-          "root": "ko/get-started/setup/self-managed/overview"
+          ]
         }
-      ],
-      "root": "ko/get-started/setup/install"
+      ]
     },
     {
       "expanded": true,
       "group": "샘플 데이터셋",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
+        "ko/get-started/sample-datasets/index",
         "ko/get-started/sample-datasets/playground",
         {
           "group": "벤치마크",
@@ -123,7 +124,7 @@
           ]
         },
         {
-          "group": "공공 기록 및 공개 데이터",
+          "group": "공공 기록 및 오픈 데이터",
           "pages": [
             "ko/get-started/sample-datasets/covid19",
             "ko/get-started/sample-datasets/menus",
@@ -132,14 +133,14 @@
             "ko/get-started/sample-datasets/uk-price-paid"
           ]
         }
-      ],
-      "root": "ko/get-started/sample-datasets/index"
+      ]
     },
     {
       "expanded": true,
       "group": "마이그레이션",
       "icon": "/images/caret-double-right.svg",
       "pages": [
+        "ko/get-started/migrate/overview",
         {
           "group": "PostgreSQL",
           "pages": [
@@ -153,8 +154,7 @@
               ]
             },
             "ko/get-started/migrate/postgres/appendix"
-          ],
-          "root": "ko/get-started/migrate/postgres/index"
+          ]
         },
         {
           "group": "BigQuery",
@@ -162,8 +162,7 @@
             "ko/get-started/migrate/bigquery/overview",
             "ko/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
             "ko/get-started/migrate/bigquery/loading-data"
-          ],
-          "root": "ko/get-started/migrate/bigquery/index"
+          ]
         },
         {
           "group": "Snowflake",
@@ -190,7 +189,8 @@
         {
           "group": "OSS에서 Cloud로",
           "pages": [
-            "ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+            "ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
+            "ko/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
@@ -201,8 +201,7 @@
             "ko/get-started/migrate/other-methods/object-storage-to-clickhouse"
           ]
         }
-      ],
-      "root": "ko/get-started/migrate/overview"
+      ]
     }
   ]
 }
