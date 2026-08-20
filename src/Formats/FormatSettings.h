@@ -48,6 +48,9 @@ struct FormatSettings
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
 
+    /// Cap for power-of-two growth of the JSON column's internal String buffers while materializing (0 = unlimited).
+    size_t json_max_string_column_growth_step = 0;
+
     bool try_infer_integers = true;
     bool try_infer_dates = true;
     bool try_infer_datetimes = true;
@@ -268,7 +271,11 @@ struct FormatSettings
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
         bool allow_variable_number_of_columns = true;
+        char rows_delimiter = '\n';
         Names input_field_names;
+        /// Transient state used only by the HiveText output serialization to track the current
+        /// Hive separator nesting level (see getHiveTextDelimiter). Not a user-facing setting.
+        size_t nesting_level = 1;
     } hive_text{};
 
     struct Custom
@@ -328,6 +335,7 @@ struct FormatSettings
         bool write_map_as_array_of_tuples = false;
         bool read_map_as_array_of_tuples = false;
         bool json_type_escape_dots_in_keys = false;
+        size_t max_row_size_for_json_each_row = 0;
     } json{};
 
     struct
@@ -382,6 +390,7 @@ struct FormatSettings
         UInt64 row_group_bytes = 512 * 1024 * 1024;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        bool output_wide_integer_as_decimal = false;
         bool output_datetime_as_uint32 = false;
         bool output_date_as_uint16 = false;
         bool output_enum_as_byte_array = false;
@@ -594,6 +603,9 @@ struct FormatSettings
         UInt64 width = 1024;
         UInt64 height = 1024;
         String terminal_mode;
+        UInt64 time_multiplier_seconds = 1;
+        UInt64 time_divisor_seconds = 60;
+        bool streaming_animation = false;
     } image{};
 
     struct

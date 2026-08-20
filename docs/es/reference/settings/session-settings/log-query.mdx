@@ -28,7 +28,7 @@ Registra los ajustes de consulta en `query_log` y en el registro de spans de Ope
 
 Configura el registro de los hilos de consulta.
 
-Los hilos de consulta se registran en la tabla [system.query&#95;thread&#95;log](/es/reference/system-tables/query_thread_log). Esta configuración solo surte efecto cuando [log&#95;queries](/es/reference/settings/session-settings/log-queries#log_queries) está establecido en true. Los hilos de las consultas ejecutadas por ClickHouse con esta configuración se registran según las reglas del parámetro de configuración del servidor [query&#95;thread&#95;log](/es/reference/settings/server-settings/settings#query_thread_log).
+Los hilos de consulta se registran en la tabla [system.query&#95;thread&#95;log](/es/reference/system-tables/query_thread_log). Esta configuración solo surte efecto cuando [log&#95;queries](/es/reference/settings/session-settings/log-queries#log_queries) está establecido en true. Los hilos de las consultas ejecutadas por ClickHouse con esta configuración se registran según las reglas del parámetro de configuración del servidor [query&#95;thread&#95;log](/es/reference/settings/server-settings/settings/query#query_thread_log).
 
 Posibles valores:
 
@@ -49,7 +49,7 @@ log_query_threads=1
 
 Configura el registro de las vistas de consulta.
 
-Cuando una consulta ejecutada por ClickHouse con esta configuración activada tiene vistas asociadas (materializadas o live views), estas se registran en el parámetro de configuración del servidor [query&#95;views&#95;log](/es/reference/settings/server-settings/settings#query_views_log).
+Cuando una consulta ejecutada por ClickHouse con esta configuración activada tiene vistas asociadas (materializadas o live views), estas se registran en el parámetro de configuración del servidor [query&#95;views&#95;log](/es/reference/settings/server-settings/settings/query#query_views_log).
 
 Ejemplo:
 
