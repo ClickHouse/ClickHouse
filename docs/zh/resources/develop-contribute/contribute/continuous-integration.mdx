@@ -303,6 +303,10 @@ python -m ci.praktika run "Build (amd_debug)"
 请注意，复现时必须使用正确的构建配置——某项测试可能在 AddressSanitizer 下失败，但在 Debug 下通过。
 从 [CI build checks page](/zh/get-started/setup/self-managed/advanced) 下载二进制文件，或在本地自行构建。
 
+在拉取请求中，大多数名称以 `selected tests` 结尾的 sanitizer 作业不会运行整个测试套件。
+它们只运行针对变更选定的测试：拉取请求新增或修改的测试、该拉取请求中已失败的测试，以及根据覆盖率数据库覆盖已变更代码行的测试。
+MSan/WasmEdge 作业仍会运行完整测试套件，因为现有的 Wasm UDF 测试与 MSan 不兼容。完整测试套件也会在 debug 和普通二进制配置中运行；启用 sanitizers 的构建则通过[压力测试](#stress-test)进行测试，master 分支则会在每种配置下运行完整测试套件。
+
 <div id="integration-tests">
   ## 集成测试
 </div>
