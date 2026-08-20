@@ -165,7 +165,7 @@ Setting fields:
 | `oauth_token` | OAuth token. |
 )DOCS_MD"
 #if !USE_YTSAURUS
-            "\nCurrently unavailable, because this ClickHouse build does not include YTsaurus support."
+            "\n\nCurrently unavailable, because this ClickHouse build does not include YTsaurus support."
 #endif
         ,
         .syntax = "SOURCE(YTSAURUS(http_proxy_urls 'url' cypress_path '//path' oauth_token 'token'))",

@@ -363,7 +363,7 @@ SOURCE(MYSQL(
 </Tabs>
 )DOCS_MD"
 #if !USE_MYSQL
-            "\nCurrently unavailable, because this ClickHouse build does not include MySQL support."
+            "\n\nCurrently unavailable, because this ClickHouse build does not include MySQL support."
 #endif
         ,
         .syntax = "SOURCE(MYSQL(host 'host' port 3306 user 'user' password '' db 'db' table 'table'))",

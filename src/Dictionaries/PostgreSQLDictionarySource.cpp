@@ -470,7 +470,7 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 </Note>
 )DOCS_MD"
 #if !USE_LIBPQXX
-            "\nCurrently unavailable, because this ClickHouse build does not include PostgreSQL support."
+            "\n\nCurrently unavailable, because this ClickHouse build does not include PostgreSQL support."
 #endif
         ,
         .syntax = "SOURCE(POSTGRESQL(host 'host' port 5432 user 'user' password '' db 'db' table 'table'))",

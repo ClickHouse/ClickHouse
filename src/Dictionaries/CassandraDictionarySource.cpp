@@ -115,7 +115,7 @@ The `column_family` or `where` fields cannot be used together with the `query` f
 </Note>
 )DOCS_MD"
 #if !USE_CASSANDRA
-            "\nCurrently unavailable, because this ClickHouse build does not include Cassandra support."
+            "\n\nCurrently unavailable, because this ClickHouse build does not include Cassandra support."
 #endif
         ,
         .syntax = "SOURCE(CASSANDRA(host 'host' port 9042 keyspace 'keyspace' column_family 'table'))",

@@ -198,7 +198,7 @@ Setting fields:
 [More information about the engine](/reference/engines/table-engines/integrations/mongodb)
 )DOCS_MD"
 #if !USE_MONGODB
-            "\nCurrently unavailable, because this ClickHouse build does not include MongoDB support."
+            "\n\nCurrently unavailable, because this ClickHouse build does not include MongoDB support."
 #endif
         ,
         .syntax = "SOURCE(MONGODB(host 'host' port 27017 user '' password '' db 'db' collection 'collection'))",

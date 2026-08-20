@@ -174,7 +174,7 @@ Each node has the following structure:
 - [dictGet](/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictGetAll](/reference/functions/regular-functions/ext-dict-functions#dictGetAll) — functions for querying regexp tree dictionaries
 )DOCS_MD"
 #if !USE_YAML_CPP
-            "\nCurrently unavailable, because this ClickHouse build does not include YAML support."
+            "\n\nCurrently unavailable, because this ClickHouse build does not include YAML support."
 #endif
         ,
         .syntax = "SOURCE(YAMLRegExpTree(PATH '/path/to/file.yaml'))",
