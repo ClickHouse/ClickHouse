@@ -75,8 +75,10 @@ TEST(AIQueryValidation, AllowsReadOnlyStatements)
     EXPECT_TRUE(isAllowed("SHOW TABLES FROM system"));
     EXPECT_TRUE(isAllowed("SHOW DATABASES"));
     EXPECT_TRUE(isAllowed("SHOW CREATE TABLE system.tables"));
-    EXPECT_FALSE(isAllowed("SHOW CREATE TABLE default.events"));
-    EXPECT_FALSE(isAllowed("EXISTS TABLE default.events"));
+    /// `SHOW CREATE` and `EXISTS` only read metadata and never execute the definition of a view,
+    /// so they are not held to the named-table boundary even for a non-`system` table.
+    EXPECT_TRUE(isAllowed("SHOW CREATE TABLE default.events"));
+    EXPECT_TRUE(isAllowed("EXISTS TABLE default.events"));
     EXPECT_TRUE(isAllowed("SHOW PROCESSLIST"));
     EXPECT_TRUE(isAllowed("DESCRIBE TABLE system.tables"));
     EXPECT_TRUE(isAllowed("EXPLAIN SELECT 1"));
@@ -104,6 +106,29 @@ TEST(AIQueryValidation, DisablingSchemaAccessBlocksAutonomousSchemaExploration)
     /// `DESCRIBE` infers the structure, which opens the resource, so it stays bounded by the
     /// named-table boundary even with schema access enabled.
     EXPECT_FALSE(isAllowed("DESCRIBE t"));
+}
+
+TEST(AIQueryValidation, RejectsExternalSystemTables)
+{
+    /// Most `system` tables read metadata local to the server, but some reach shared external
+    /// state when read: Keeper (znodes, the `mntr` command, the DDL and object-storage queues,
+    /// the replication state) or the object storage (the Iceberg table metadata). Those must go
+    /// through the confirmed `run_query` tool.
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.zookeeper WHERE path = '/'"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.zookeeper_connection"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.zookeeper_info"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.zookeeper_watches"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.distributed_ddl_queue"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.s3_queue_metadata"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.azure_queue_metadata"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.replicas"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.database_replicas"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.iceberg_history"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM system.iceberg_files"));
+
+    /// The log tables named alike stay local reads.
+    EXPECT_TRUE(isAllowed("SELECT * FROM system.zookeeper_log"));
+    EXPECT_TRUE(isAllowed("SELECT * FROM system.zookeeper_connection_log"));
 }
 
 TEST(AIQueryValidation, RejectsWritesAndDDL)
