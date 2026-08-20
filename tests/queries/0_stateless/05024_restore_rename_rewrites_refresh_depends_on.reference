@@ -1,0 +1,14 @@
+BACKUP_CREATED
+RESTORED
+1. inner-table view restored under a new database name:
+DST.parent		DST.parent
+2. TO-target view restored under a new database name:
+DST.parent	DST.dst	DST.parent
+3. control, dependency outside the restored set stays unchanged:
+OUT.p		DST.raw
+4. renamed dependency appears once, source database name is gone:
+1	0
+BACKUP_CREATED
+RESTORED
+5. control, table-level rename leaves a dependency that is not renamed:
+SRC.parent		SRC.parent
