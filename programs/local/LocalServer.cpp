@@ -1953,12 +1953,14 @@ void LocalServer::makeFormatOptionsPrivateToTheClient()
     /// the seed when it was copied from `global_context`, but this client renders results from its
     /// own `ClientBase::default_output_format` (`PrettyCompact` on a terminal), and a non-empty
     /// `default_format` setting overrides that display default in the per-query format resolution.
-    /// Clear the seed on the client, or interactive `clickhouse-local` prints `TSV` instead of
-    /// `PrettyCompact`. An explicit `--default_format` on the command line is left in place, and a
-    /// later `SET default_format = ...` (or an in-query `SETTINGS` clause) lands on `client_context`
+    /// Reset the seed back to the default (an empty value with the `changed` flag clear - the
+    /// session must not look like the user chose this format, e.g. in `system.settings`), or
+    /// interactive `clickhouse-local` prints `TSV` instead of `PrettyCompact`. An explicit
+    /// `--default_format` on the command line is left in place, and a later
+    /// `SET default_format = ...` (or an in-query `SETTINGS` clause) lands on `client_context`
     /// and keeps working.
     if (!cmd_settings->isChanged("default_format"))
-        client_context->setSetting("default_format", String{});
+        client_context->resetSettingsToDefaultValue({"default_format"});
 }
 
 
