@@ -4,6 +4,7 @@
 #include <Processors/ISource.h>
 #include <Storages/NATS/INATSConsumer.h>
 #include <Storages/NATS/StorageNATS.h>
+#include <Common/Logger.h>
 
 #include <optional>
 
@@ -47,6 +48,7 @@ private:
     StorageNATS & storage;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
+    LoggerPtr log;
     Names column_names;
     const size_t max_block_size;
     StreamingHandleErrorMode handle_error_mode;

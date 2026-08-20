@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/NATS/INATSConsumer.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -59,6 +60,7 @@ NATSSource::NATSSource(
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
+    , log(getLogger("NATSSource (" + storage_.getStorageID().getFullTableName() + ")"))
     , column_names(columns)
     , max_block_size(max_block_size_)
     , handle_error_mode(handle_error_mode_)
@@ -174,12 +176,17 @@ Chunk NATSSource::generateImpl()
         /// Once rows have been appended to the current output block, their JetStream ACK handles
         /// must stay in `consumed_messages` until `StorageNATS` inserts that block and acknowledges
         /// them. The next source cycle will re-subscribe before consuming anything instead.
+        /// `unsubscribe_on_destroy` keeps its previous value: a background streaming consumer must
+        /// stay subscribed when this source is destroyed, so the next streaming cycle drains the
+        /// backlog already delivered to the local queue instead of dropping it and waiting for the
+        /// server to redeliver it. Only a consumer this source subscribed from an unsubscribed
+        /// state (the direct `SELECT` case above) is unsubscribed on destroy.
         if (total_rows == 0 && consumer->needsResubscribe())
         {
+            LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing within a running query");
             consumer->unsubscribe(/*finish_queue=*/false);
             consumer->dropBuffered();
             consumer->subscribe();
-            unsubscribe_on_destroy = true;
         }
 
         if (consumer->isConsumerStopped() || !checkTimeLimit())
