@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: the test creates two replicas of a `ReplicatedMergeTree` table with an explicit ZooKeeper path, which is not allowed in a `Replicated` database
+
 {% for NULLABLE_START, NULLABLE_END in {'' : '', 'Nullable(' : ')'}.items() -%}
 SELECT '======= NULLABLE {{ NULLABLE_START }} {{ NULLABLE_END }} ===============';
 {% for ENUM_TYPE in ['Enum', 'Enum8', 'Enum16'] -%}
@@ -127,3 +130,47 @@ ALTER TABLE syntaxerrors MODIFY COLUMN x Nullable(Enum ('c')) ADD ENUM VALUES('H
 SELECT '======= ADD ENUM VALUES SYNTAX ERRORS ===============';
 ALTER TABLE syntaxerrors MODIFY COLUMN x ADD ENUM VALUES(, 'Hundred' = 100); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100,); -- { clientError SYNTAX_ERROR }
+
+-- The alter must be metadata-only on MergeTree: existing parts stay readable and no mutation is created.
+SELECT '======= MERGETREE ===============';
+CREATE OR REPLACE TABLE enum_mt (x Enum8('a' = 1), v Int32) ENGINE = MergeTree ORDER BY v;
+INSERT INTO enum_mt VALUES (1, 10);
+ALTER TABLE enum_mt MODIFY COLUMN x ADD ENUM VALUES('b' = 2);
+INSERT INTO enum_mt VALUES (2, 20);
+SELECT x, v FROM enum_mt ORDER BY v;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'enum_mt';
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 'enum_mt' AND name = 'x';
+DROP TABLE enum_mt;
+
+-- Extending an enum in the sorting key goes through the key-conversion safety check of MergeTree.
+SELECT '======= MERGETREE SORTING KEY ===============';
+CREATE OR REPLACE TABLE enum_mt_key (x Enum8('a' = 1)) ENGINE = MergeTree ORDER BY x;
+INSERT INTO enum_mt_key VALUES (1);
+ALTER TABLE enum_mt_key MODIFY COLUMN x ADD ENUM VALUES('b' = 2);
+INSERT INTO enum_mt_key VALUES (2);
+SELECT * FROM enum_mt_key ORDER BY x;
+DROP TABLE enum_mt_key;
+
+SELECT '======= MERGETREE PARTITION KEY ===============';
+CREATE OR REPLACE TABLE enum_mt_part (x Enum8('a' = 1), v Int32) ENGINE = MergeTree PARTITION BY x ORDER BY v;
+INSERT INTO enum_mt_part VALUES (1, 10);
+ALTER TABLE enum_mt_part MODIFY COLUMN x ADD ENUM VALUES('b' = 2);
+INSERT INTO enum_mt_part VALUES (2, 20);
+SELECT x, v FROM enum_mt_part ORDER BY v;
+DROP TABLE enum_mt_part;
+
+-- The new enum type must propagate through ZooKeeper metadata to the other replica.
+SELECT '======= REPLICATED MERGETREE ===============';
+DROP TABLE IF EXISTS enum_rmt1 SYNC;
+DROP TABLE IF EXISTS enum_rmt2 SYNC;
+CREATE TABLE enum_rmt1 (x Enum8('a' = 1), v Int32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04307/enum_rmt', 'r1') ORDER BY v;
+CREATE TABLE enum_rmt2 (x Enum8('a' = 1), v Int32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04307/enum_rmt', 'r2') ORDER BY v;
+INSERT INTO enum_rmt1 VALUES (1, 10);
+ALTER TABLE enum_rmt1 MODIFY COLUMN x ADD ENUM VALUES('b' = 2);
+INSERT INTO enum_rmt1 VALUES (2, 20);
+SYSTEM SYNC REPLICA enum_rmt2;
+SELECT x, v FROM enum_rmt2 ORDER BY v;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'enum_rmt1';
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 'enum_rmt2' AND name = 'x';
+DROP TABLE enum_rmt1 SYNC;
+DROP TABLE enum_rmt2 SYNC;
