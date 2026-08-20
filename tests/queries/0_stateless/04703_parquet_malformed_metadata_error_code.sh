@@ -31,6 +31,11 @@ for i in range(4, min(64, data_end)):
 open(path, "wb").write(bytes(d))
 PYEOF
 
-$CLICKHOUSE_LOCAL --query "
-    SELECT * FROM file('${TMP_DIR}/corrupt_page_header.parquet', Parquet) FORMAT Null" 2>&1 \
-    | grep -F -q 'INCORRECT_DATA' && echo 'OK' || echo 'FAIL'
+out=$($CLICKHOUSE_LOCAL --query "
+    SELECT * FROM file('${TMP_DIR}/corrupt_page_header.parquet', Parquet) FORMAT Null" 2>&1)
+
+# All three arms must read the same capture: alone, the absence arm also holds for a query that
+# failed for an unrelated reason.
+echo "$out" | grep -F -q 'Code: 117' && echo 'code 117: yes' || echo 'code 117: no'
+echo "$out" | grep -F -q 'INCORRECT_DATA' && echo 'INCORRECT_DATA: yes' || echo 'INCORRECT_DATA: no'
+echo "$out" | grep -F -q 'STD_EXCEPTION' && echo 'STD_EXCEPTION: yes' || echo 'STD_EXCEPTION: no'
