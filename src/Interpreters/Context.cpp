@@ -4219,7 +4219,6 @@ WasmModuleManager * Context::initWasmModuleManager()
     if (!shared->server_settings[ServerSetting::allow_experimental_webassembly_udf])
         return nullptr;
 
-#if USE_WASMTIME
     String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
@@ -4228,11 +4227,6 @@ WasmModuleManager * Context::initWasmModuleManager()
     shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_scripts_path_ */ "wasm", engine_name);
 
     return shared->wasm_module_manager.get();
-#else
-    throw Exception(
-        ErrorCodes::SUPPORT_IS_DISABLED,
-        "WebAssembly UDF support is disabled because ClickHouse was built without wasmtime");
-#endif
 }
 
 bool Context::hasWasmModuleManager() const
