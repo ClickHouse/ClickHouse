@@ -1,5 +1,7 @@
 AggregateFunction(1, singleValueOrNullForEach, Array(UInt64))
 AggregateFunction(1, singleValueOrNullMap, Map(String, UInt64))
 AggregateFunction(1, singleValueOrNullOrDefault, UInt64)
+AggregateFunction(1, singleValueOrNullMergeOrDefault, AggregateFunction(1, singleValueOrNull, UInt64))
 [42]
 {'key':42}
+42

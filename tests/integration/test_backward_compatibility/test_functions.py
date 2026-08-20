@@ -106,6 +106,22 @@ def test_aggregate_states(start_cluster):
 
         upstream_state = get_aggregate_state_hex(upstream, aggregate_function)
         if upstream_state != backward_state:
+            if aggregate_function == "singleValueOrNull":
+                # The current state uses version 1 and appends first_value and is_null.
+                # The old server writes version 0, so the locally generated states are expected
+                # to differ even though protocol negotiation downgrades the state for old peers.
+                if upstream_state == backward_state + "0000":
+                    logging.info("OK %s (state version changed)", aggregate_function)
+                    return "passed"
+
+                logging.error(
+                    "Failed %s, unexpected versioned state: %s (backward) != %s (upstream)",
+                    aggregate_function,
+                    backward_state,
+                    upstream_state,
+                )
+                return "failed"
+
             allowed_changes_if_result_is_the_same = ["anyHeavy"]
 
             if aggregate_function in allowed_changes_if_result_is_the_same:
