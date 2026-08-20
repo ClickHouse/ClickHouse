@@ -355,10 +355,7 @@ def main():
 
         step(name="Validate Recovery Ref", command=_require_recovery_ref)
 
-    # Both release types land their changes on master with a direct push, no PR:
-    # "patch" pushes the changelog, "new" pushes the master version bump (below).
-    # For patch, detect whether the changelog is already on master so a rerun is
-    # idempotent; the "new" bump self-checks the master version instead.
+    # patch pushes its changelog to master; detect whether it is already there so a rerun is idempotent. The "new" bump self-checks the master version instead.
     changelog_absent = False
     if args.release_type == "patch":
         if args.dry_run:
@@ -411,15 +408,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    # For a "new" release the version bump pushes the master version file
-    # directly (idempotent: it self-checks master's version), so it runs here. For
-    # a "patch" release the bump is only a direct push of the branch version file
-    # and nothing downstream depends on it; it is deferred to the very end of the
-    # run so that a rerun after any failure between the tag push and the end always
-    # sees an un-bumped branch. prepare then reads the branch tip as the
-    # just-released version, recovers the existing release, and never refuses a
-    # rerun as "out-of-order" or mints a release below the tip — all without
-    # scanning git tags. See the deferred step near the end of main.
+    # "new" bumps master here (idempotent — it self-checks master's version). "patch" defers its branch bump to the end of the run for recovery-safety; see the deferred step near the end of main.
     if args.release_type == "new":
         step(
             name="Bump CH Version and Update Contributors' List",
@@ -507,29 +496,28 @@ def main():
                 os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
                 shutil.copy2(f, dst)
             try:
-                # master moves, so retry: re-fetch its tip, re-apply artifacts, push.
-                for _ in range(5):
-                    Shell.check("git fetch --quiet origin master", strict=True)
-                    Shell.check("git checkout -f FETCH_HEAD", strict=True)
-                    for f in artifact_files:
-                        os.makedirs(os.path.dirname(f) or ".", exist_ok=True)
-                        shutil.copy2(os.path.join(backup_dir, f), f)
-                    Shell.check(
-                        "git add -- " + " ".join(shlex.quote(f) for f in artifact_files),
-                        strict=True,
-                    )
-                    # Already on master (rerun) — nothing to push.
-                    if Shell.check("git diff --cached --quiet"):
-                        print("ChangeLog already on master — nothing to push")
-                        return
-                    Shell.check(f"git commit -m {shlex.quote(commit_msg)}", strict=True)
-                    # strict=False so a non-fast-forward rejection re-fetches and loops.
-                    if Git.push(
-                        "ClickHouse/ClickHouse", "HEAD:master", strict=False, retries=3
-                    ):
-                        return
-                    print("Push to master rejected (tip moved?) — re-fetching and retrying")
-                raise RuntimeError("Failed to push changelog to master after retries")
+                Shell.check("git fetch --quiet origin master", strict=True)
+                Shell.check("git checkout -f FETCH_HEAD", strict=True)
+                for f in artifact_files:
+                    os.makedirs(os.path.dirname(f) or ".", exist_ok=True)
+                    shutil.copy2(os.path.join(backup_dir, f), f)
+                Shell.check(
+                    "git add -- " + " ".join(shlex.quote(f) for f in artifact_files),
+                    strict=True,
+                )
+                # Already on master (rerun) — nothing to push.
+                if Shell.check("git diff --cached --quiet"):
+                    print("ChangeLog already on master — nothing to push")
+                    return
+                Shell.check(f"git commit -m {shlex.quote(commit_msg)}", strict=True)
+                # rebase_retries heals a non-fast-forward when the tip moves.
+                Git.push(
+                    "ClickHouse/ClickHouse",
+                    "HEAD:refs/heads/master",
+                    strict=True,
+                    retries=3,
+                    rebase_retries=5,
+                )
             finally:
                 shutil.rmtree(backup_dir, ignore_errors=True)
 
@@ -749,10 +737,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    # Always restore git state — equivalent to `if: ${{ !cancelled() }}`, so it
-    # must run even after a failure (hence Result.from_commands_run, not step()
-    # which skips when ok is already False). But a failed restore must still
-    # block the release mutation below (the deferred bump), so fold its result into ok.
+    # Always restore git state (Result.from_commands_run, not step(), so it runs after a failure too); a failed restore folds into ok to block the deferred bump below.
     results.append(
         Result.from_commands_run(
             name="Checkout Back",
@@ -763,14 +748,7 @@ def main():
     if results[-1].status != Result.Status.OK:
         ok = False
 
-    # Deferred patch version bump. Bumping the branch version file here (rather
-    # than right after the tag push) keeps the branch tip equal to the released
-    # commit for the whole publish phase, so any rerun in that window sees an
-    # un-bumped branch and prepare recovers the existing release instead of
-    # refusing it or minting a below-tip release. `step` skips it when a prior
-    # step already failed, so a failed publish leaves the branch un-bumped and
-    # recoverable. ("new" bumps earlier, above.)
-    # `not is_bump_landed`: a recovery whose bump has not landed still completes it (skip-repo/skip-docker included); once landed, no rerun rewrites the version.
+    # Deferred to the end so a rerun before it sees an un-bumped branch and prepare recovers the release; `not is_bump_landed` completes an unfinished bump once and never rewrites a landed one.
     if not is_bump_landed and args.release_type == "patch":
         step(
             name="Bump CH Version and Update Contributors' List",
