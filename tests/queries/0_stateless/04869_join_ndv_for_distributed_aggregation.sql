@@ -25,6 +25,10 @@ SET param__internal_join_table_stat_hints = '
     "right_04869": { "cardinality": 2, "distinct_keys": { "k": 2 } }
 }';
 
+-- Keep the server-side AST fuzzer from rewriting this deterministic EXPLAIN query.
+SET ast_fuzzer_runs = 0;
+SET ast_fuzzer_any_query = 0;
+
 -- Before the fix, the plan contained 0 partial aggregation steps because the
 -- low NDV was lost. Now it contains 1 partial aggregation step.
 SELECT count()
