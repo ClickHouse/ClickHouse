@@ -17,7 +17,11 @@ DataTypePtr IAggregateFunction::getStateType() const
 {
     std::optional<size_t> version;
     if (isVersioned())
-        version = getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION);
+    {
+        const auto current_version = getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION);
+        if (current_version > getDefaultVersion())
+            version = current_version;
+    }
 
     return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters, version);
 }
