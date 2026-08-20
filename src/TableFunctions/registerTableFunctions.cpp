@@ -40,6 +40,7 @@ void registerTableFunctions()
     registerTableFunctionMergeTreeProjection(factory);
     registerTableFunctionMergeTreeTextIndex(factory);
     registerTableFunctionMergeTreeCodecBlockCounts(factory);
+    registerTableFunctionMergeTreeParts(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);
