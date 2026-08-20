@@ -3,6 +3,7 @@
     {
       "group": "データソース",
       "pages": [
+        "ja/integrations/connectors/data-sources/index",
         {
           "expanded": false,
           "group": "AWS S3",
@@ -17,6 +18,7 @@
           "expanded": false,
           "group": "Kafka",
           "pages": [
+            "ja/integrations/connectors/data-ingestion/kafka/index",
             "ja/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink",
             "ja/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud",
             "ja/integrations/connectors/data-ingestion/kafka/confluent/custom-connector",
@@ -27,32 +29,32 @@
             "ja/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http",
             "ja/integrations/connectors/data-ingestion/kafka/kafka-connect-jdbc",
             "ja/integrations/connectors/data-ingestion/kafka/kafka-table-engine-named-collections"
-          ],
-          "root": "ja/integrations/connectors/data-ingestion/kafka/index"
+          ]
         },
         "ja/integrations/connectors/data-sources/mysql",
         "ja/integrations/connectors/data-sources/cassandra",
         "ja/integrations/connectors/data-sources/gcs",
         "ja/integrations/connectors/data-ingestion/s3-minio",
+        "ja/integrations/connectors/data-ingestion/s3-tigris",
+        "ja/integrations/connectors/data-ingestion/s3-seaweedfs",
         "ja/integrations/connectors/data-ingestion/emqx/index",
         "ja/integrations/connectors/data-ingestion/insert-local-files",
-        "ja/integrations/connectors/data-ingestion/jdbc-with-clickhouse",
-        "ja/integrations/connectors/data-ingestion/odbc-with-clickhouse"
-      ],
-      "root": "ja/integrations/connectors/data-sources/index"
+        "ja/integrations/connectors/data-ingestion/jdbc-with-clickhouse"
+      ]
     },
     {
       "expanded": true,
       "group": "データ可視化",
       "pages": [
+        "ja/integrations/connectors/data-visualization/index",
         {
           "expanded": false,
           "group": "Grafana",
           "pages": [
+            "ja/integrations/connectors/data-visualization/grafana/index",
             "ja/integrations/connectors/data-visualization/grafana/query-builder",
             "ja/integrations/connectors/data-visualization/grafana/config"
-          ],
-          "root": "ja/integrations/connectors/data-visualization/grafana/index"
+          ]
         },
         "ja/integrations/connectors/data-visualization/lightdash-and-clickhouse",
         "ja/integrations/connectors/data-visualization/looker-and-clickhouse",
@@ -94,13 +96,13 @@
             "ja/integrations/connectors/data-visualization/community-integrations/holistics-and-clickhouse"
           ]
         }
-      ],
-      "root": "ja/integrations/connectors/data-visualization/index"
+      ]
     },
     {
       "expanded": true,
       "group": "データ取り込み",
       "pages": [
+        "ja/integrations/connectors/data-ingestion/index",
         "ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         "ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "ja/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
@@ -108,11 +110,11 @@
           "expanded": false,
           "group": "Apache Spark",
           "pages": [
+            "ja/integrations/connectors/data-ingestion/apache-spark/index",
             "ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector",
             "ja/integrations/connectors/data-ingestion/apache-spark/databricks",
             "ja/integrations/connectors/data-ingestion/apache-spark/spark-jdbc"
-          ],
-          "root": "ja/integrations/connectors/data-ingestion/apache-spark/index"
+          ]
         },
         "ja/integrations/connectors/data-ingestion/apache-flink",
         "ja/integrations/connectors/data-ingestion/AWS/glue",
@@ -120,11 +122,11 @@
           "expanded": false,
           "group": "Azure Data Factory",
           "pages": [
+            "ja/integrations/connectors/data-ingestion/azure/azure-data-factory/index",
             "ja/integrations/connectors/data-ingestion/azure/azure-data-factory/overview",
             "ja/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage",
             "ja/integrations/connectors/data-ingestion/azure/azure-data-factory/using-http-interface"
-          ],
-          "root": "ja/integrations/connectors/data-ingestion/azure/azure-data-factory/index"
+          ]
         },
         "ja/integrations/connectors/data-ingestion/azure/azure-synapse",
         "ja/integrations/connectors/data-ingestion/etl-tools/apache-beam",
@@ -137,7 +139,7 @@
             "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflowテンプレート",
+              "group": "Dataflow テンプレート",
               "pages": [
                 "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -150,21 +152,21 @@
           "expanded": false,
           "group": "dbt",
           "pages": [
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/index",
             "ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
             "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
             "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
             "ja/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ],
-          "root": "ja/integrations/connectors/data-ingestion/etl-tools/dbt/index"
+          ]
         },
         "ja/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
           "group": "Fivetran",
           "pages": [
+            "ja/integrations/connectors/data-ingestion/etl-tools/fivetran/index",
             "ja/integrations/connectors/data-ingestion/etl-tools/fivetran/reference",
             "ja/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting"
-          ],
-          "root": "ja/integrations/connectors/data-ingestion/etl-tools/fivetran/index"
+          ]
         },
         "ja/integrations/connectors/data-ingestion/etl-tools/nifi-and-clickhouse",
         "ja/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse",
@@ -181,49 +183,57 @@
           "group": "コミュニティインテグレーション",
           "pages": [
             "ja/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
-            "ja/integrations/connectors/data-ingestion/community-integrations/estuary"
+            "ja/integrations/connectors/data-ingestion/community-integrations/erathos",
+            {
+              "group": "Estuary",
+              "pages": [
+                "ja/integrations/connectors/data-ingestion/community-integrations/estuary",
+                "ja/integrations/connectors/data-ingestion/community-integrations/estuary-native",
+                "ja/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes"
+              ]
+            }
           ]
         }
-      ],
-      "root": "ja/integrations/connectors/data-ingestion/index"
+      ]
     },
     {
       "expanded": true,
       "group": "データインテグレーション",
       "pages": [
+        "ja/integrations/connectors/tools/data-integration-index",
         "ja/integrations/connectors/data-integrations/integrations/retool",
         "ja/integrations/connectors/data-integrations/integrations/easypanel",
         "ja/integrations/connectors/data-integrations/integrations/middleware",
         "ja/integrations/connectors/data-integrations/integrations/notion",
         "ja/integrations/connectors/data-integrations/integrations/splunk"
-      ],
-      "root": "ja/integrations/connectors/tools/data-integration-index"
+      ]
     },
     {
       "expanded": true,
       "group": "SQLクライアント",
       "pages": [
+        "ja/integrations/connectors/sql-clients/index",
         "ja/integrations/connectors/sql-clients/sql-console",
         "ja/integrations/connectors/sql-clients/datagrip",
         "ja/integrations/connectors/sql-clients/dbeaver",
         "ja/integrations/connectors/sql-clients/dbvisualizer",
         "ja/integrations/connectors/sql-clients/jupysql",
+        "ja/integrations/connectors/sql-clients/probedeck",
         "ja/integrations/connectors/sql-clients/qstudio",
         "ja/integrations/connectors/sql-clients/tablum",
-        "ja/integrations/connectors/sql-clients/marimo",
-        "ja/integrations/connectors/sql-clients/cli"
-      ],
-      "root": "ja/integrations/connectors/sql-clients/index"
+        "ja/integrations/connectors/sql-clients/marimo"
+      ]
     },
     {
       "expanded": true,
       "group": "ツール",
       "pages": [
+        "ja/integrations/connectors/tools/index",
+        "ja/integrations/connectors/tools/misc-index",
         "ja/integrations/connectors/tools/gui",
         "ja/integrations/connectors/tools/proxy",
         "ja/integrations/connectors/tools/third-party-libraries"
-      ],
-      "root": "ja/integrations/connectors/tools/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-connectors.svg",

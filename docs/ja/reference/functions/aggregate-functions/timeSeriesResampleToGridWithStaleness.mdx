@@ -18,7 +18,7 @@ doc_type: 'reference'
 Alias: `timeSeriesLastToGrid`.
 
 <Warning>
-  この関数は実験的機能です。`allow_experimental_ts_to_grid_aggregate_function=true` を設定して有効化してください。
+  この関数は実験的機能です。`allow_experimental_time_series_aggregate_functions=true` を設定して有効化してください。
 </Warning>
 
 **構文**
@@ -31,10 +31,10 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
 
 **パラメータ**
 
-* `start_timestamp` — グリッドの開始時刻を指定します。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime)
-* `end_timestamp` — グリッドの終了時刻を指定します。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime)
-* `grid_step` — グリッドの間隔を秒単位で指定します。[`UInt32`](/ja/reference/data-types/int-uint)
-* `staleness_window` — 最新のサンプルについて、許容される最大の古さを秒単位で指定します。[`UInt32`](/ja/reference/data-types/int-uint)
+* `start_timestamp` — グリッドの開始時刻を指定します。`DateTime64` のタイムスタンプ引数では、小数、数値または日時テキストを含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `end_timestamp` — グリッドの終了時刻を指定します。`DateTime64` のタイムスタンプ引数では、小数、数値または日時テキストを含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `grid_step` — グリッドの間隔を秒単位で指定します。`DateTime64` のタイムスタンプ引数では、小数、数値、または &#39;15s&#39; や &#39;1m&#39; のような期間を含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
+* `staleness_window` — 最新のサンプルについて、許容される最大の古さを秒単位で指定します。`DateTime64` のタイムスタンプ引数では、小数、数値、または &#39;15s&#39; や &#39;1m&#39; のような期間を含む文字列も指定できます。[`UInt32`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`String`](/ja/reference/data-types/string)
 
 **引数**
 

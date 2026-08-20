@@ -123,7 +123,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 Несколько замечаний о легковесных удалениях:
 
 * Эта возможность доступна только для семейства движков таблиц `MergeTree`.
-* По умолчанию легковесные удаления выполняются синхронно: операция ждёт, пока все реплики обработают удаление. Это поведение управляется [настройкой `lightweight_deletes_sync`](/ru/reference/settings/session-settings#lightweight_deletes_sync).
+* По умолчанию легковесные удаления выполняются синхронно: операция ждёт, пока все реплики обработают удаление. Это поведение управляется [настройкой `lightweight_deletes_sync`](/ru/reference/settings/session-settings/lightweight#lightweight_deletes_sync).
 
 <div className="mt-8">
   <BackToQuickstarts />
