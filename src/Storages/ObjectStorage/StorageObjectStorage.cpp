@@ -973,7 +973,9 @@ void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const
 {
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
 
-    if (configuration->partition_strategy_was_inferred
+    const auto storage_type = configuration->getType();
+    if ((storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure)
+        && configuration->partition_strategy_was_inferred
         && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
         && !configuration->getRawPath().hasGlobsIgnorePlaceholders()
         && !hasPartitionStrategyArgument(args))

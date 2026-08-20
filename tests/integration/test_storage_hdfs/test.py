@@ -504,6 +504,26 @@ def test_partition_by(started_cluster):
         fs.delete(f"/{dir}", recursive=True)
 
 
+def test_inferred_none_partition_strategy_is_not_persisted(started_cluster):
+    table_name = f"test_hdfs_inferred_none_strategy_{uuid.uuid4().hex}"
+    path = f"hdfs://hdfs1:9000/{table_name}/data.parquet"
+
+    try:
+        node1.query(
+            f"CREATE TABLE {table_name} (d Date, x UInt64) "
+            f"ENGINE = HDFS('{path}', 'Parquet') PARTITION BY d",
+            settings={"file_like_engine_default_partition_strategy": "wildcard"},
+        )
+
+        create_query = node1.query(f"SHOW CREATE TABLE {table_name}")
+        assert "partition_strategy" not in create_query
+
+        node1.query(f"DETACH TABLE {table_name}")
+        node1.query(f"ATTACH TABLE {table_name}")
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
 def test_seekable_formats(started_cluster):
 
     table_function = (
