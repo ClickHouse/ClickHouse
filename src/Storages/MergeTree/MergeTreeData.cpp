@@ -1024,13 +1024,16 @@ void MergeTreeData::checkProperties(
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
             checkSuspiciousIndices(index_function);
 
-    /// Check that the table sorting column is not compressed by a lossy codec (e.g. SZ3). Lossy codecs
-    /// lose precision and may destroy the sorting. Not on attach, so a table stored by an earlier version
-    /// stays loadable.
+    /// The sorting key, the partition id and the part minmax index are computed from the block before
+    /// compression, so a lossy codec (e.g. SZ3) on a column backing either key leaves them describing values
+    /// the data on disk no longer holds. Not on attach, so a table stored by an earlier version stays loadable.
     if (!attach)
     {
-        /// Collecting the sort key columns.
-        for (const auto & name : new_metadata.getColumnsRequiredForSortingKey())
+        Names key_columns = new_metadata.getColumnsRequiredForSortingKey();
+        const Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
+        key_columns.insert(key_columns.end(), partition_key_columns.begin(), partition_key_columns.end());
+
+        for (const auto & name : key_columns)
         {
             const auto column = new_metadata.columns.tryGetColumnDescription(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
@@ -1051,7 +1054,8 @@ void MergeTreeData::checkProperties(
 
             if (is_lossy)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Column {} is used in the sorting key, so it cannot be compressed with a lossy codec",
+                    "Column {} is used in the sorting key or the partition key, so it cannot be compressed "
+                    "with a lossy codec",
                     backQuoteIfNeed(name));
         }
     }
