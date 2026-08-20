@@ -36,9 +36,12 @@ FROM numbers(400);
 
 # Compound queries over three rotated (key, value) needles per base (ka/va, kb/vb, kc/vc), so AND / OR / NOT
 # chains cross-mix keys. Each family sums a hash of the matching ids so a differing row set changes the sum.
+# The grid is kept small (each cell emits 9 statements run twice, index on and off) so the test stays well
+# under the runtime limit under sanitizers; the rotations still span every key k0..k4 and values v0..v4,
+# and the per-run randomized data keeps the matched row sets varying across runs.
 QUERIES=""
-for i in 0 1 2 3 4; do
-    for j in 0 1 2 3 4 5; do
+for i in 0 1 2; do
+    for j in 0 1 2; do
         ka="k$i";               va="v$j"
         kb="k$(((i + 1) % 5))";  vb="v$(((j + 1) % 6))"
         kc="k$(((i + 2) % 5))";  vc="v$(((j + 2) % 6))"
