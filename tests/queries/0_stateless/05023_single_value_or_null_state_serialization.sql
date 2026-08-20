@@ -37,6 +37,8 @@ CREATE TABLE single_value_or_null_legacy_state
 ENGINE = MergeTree
 ORDER BY tuple();
 
+-- Version 0 cannot distinguish one stored value from a state that saw multiple distinct values.
+-- Keep this legacy case to ensure an ambiguous payload never becomes a concrete result.
 INSERT INTO single_value_or_null_legacy_state
 SELECT singleValueOrNullState(number)
 FROM numbers(2);
