@@ -96,6 +96,7 @@ namespace ErrorCodes
     extern const int AWS_ERROR;
     extern const int GCP_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace S3
@@ -1406,8 +1407,27 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
                         "S3 access from user queries is not allowed to use `http_client = gcp_oauth` without an "
                         "explicit Google Application Default Credentials triple (google_adc_client_id, "
                         "google_adc_client_secret, google_adc_refresh_token), because it would otherwise mint a "
-                        "token from the server's GCP metadata service. " S3_SERVER_CREDENTIALS_HINT);
+                        "token from the server's GCP metadata service (also as the source identity of an "
+                        "`impersonate_service_account` exchange). " S3_SERVER_CREDENTIALS_HINT);
             }
+        }
+        else if (!configuration.impersonate_service_account.empty() && !credentials_configuration.no_sign_request
+                 && !has_explicit_credentials)
+        {
+            /// A restricted path strips the server's `gcp_oauth` but keeps a query-supplied impersonation
+            /// target, so the target can arrive here with no source identity left to impersonate from. Report
+            /// the restriction that took the source away: the generic mismatch below would instead point at
+            /// `http_client = gcp_oauth`, which the syntax that can supply a target -- `extra_credentials` --
+            /// cannot set at all.
+            if (credentials_configuration.anonymous_fallback_for_server_credentials)
+                force_anonymous_fallback = true;
+            else
+                throw DB::Exception(
+                    DB::ErrorCodes::ACCESS_DENIED,
+                    "S3 access from user queries is not allowed to impersonate the GCP service account '{}': the "
+                    "exchange would be performed with the server's own GCP identity as the source, and this form "
+                    "cannot supply one of its own. " S3_SERVER_CREDENTIALS_HINT,
+                    configuration.impersonate_service_account);
         }
         else if (!credentials_configuration.no_sign_request && !has_explicit_credentials)
         {
@@ -1447,6 +1467,17 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
         if (credentials_configuration.forbid_implicit_credentials)
             credentials_configuration.use_environment_credentials = false;
     }
+
+    /// After the restriction, which reports the more specific cause when it is what removed the `gcp_oauth`
+    /// source; what is left here is a plain misconfiguration. Skipped once the target has been downgraded to
+    /// an anonymous client, which impersonates nothing.
+    if (!force_anonymous_fallback && !configuration.impersonate_service_account.empty()
+        && !boost::iequals(configuration.http_client, "gcp_oauth"))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "`impersonate_service_account` requires `http_client = gcp_oauth`, which provides the source identity "
+            "the target service account is impersonated from. It is the GCP counterpart of `role_arn` and cannot be "
+            "combined with AWS-style credentials.");
 
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     /// Match `gcp_oauth` case-insensitively (as PocoHTTPClientFactory does), so a differently-cased value

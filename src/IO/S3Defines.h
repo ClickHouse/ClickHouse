@@ -1,4 +1,6 @@
 #pragma once
+#include <array>
+#include <string_view>
 #include <Core/Types.h>
 
 namespace DB::S3
@@ -11,6 +13,19 @@ inline static constexpr uint64_t DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 inline static constexpr uint64_t DEFAULT_MAX_CONNECTIONS = 1024;
 inline static constexpr uint64_t DEFAULT_KEEP_ALIVE_TIMEOUT = 5;
 inline static constexpr uint64_t DEFAULT_KEEP_ALIVE_MAX_REQUESTS = 100;
+
+inline static constexpr uint64_t DEFAULT_GCP_IMPERSONATION_LIFETIME_SECONDS = 3600;
+
+/// Every GCP service account impersonation setting, in the named-collection spelling. They form one block:
+/// `impersonate_service_account` names the identity, the rest qualify it or say where the exchange is made, so
+/// code that moves them between settings objects moves all five or none.
+inline static constexpr std::array<std::string_view, 5> GCP_IMPERSONATION_SETTING_NAMES = {
+    "impersonate_service_account",
+    "impersonation_delegates",
+    "impersonation_scopes",
+    "impersonation_lifetime_seconds",
+    "iam_credentials_endpoint",
+};
 
 inline static constexpr bool DEFAULT_USE_ENVIRONMENT_CREDENTIALS = true;
 inline static constexpr bool DEFAULT_NO_SIGN_REQUEST = false;

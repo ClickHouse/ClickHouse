@@ -11,6 +11,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/GCPServiceAccountImpersonation.h>
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/HTTPRequestThrottler.h>
@@ -79,6 +80,11 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String google_adc_client_id;
     String google_adc_client_secret;
     String google_adc_refresh_token;
+    String impersonate_service_account;
+    String impersonation_delegates;
+    String impersonation_scopes;
+    UInt64 impersonation_lifetime_seconds = DEFAULT_GCP_IMPERSONATION_LIFETIME_SECONDS;
+    String iam_credentials_endpoint;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -261,10 +267,19 @@ private:
     const String google_adc_client_secret;
     const String google_adc_refresh_token;
 
+    /// When set, the source token obtained above is exchanged for a token that acts as this service account.
+    const GCPImpersonationParams impersonation;
+
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
+    /// The token of the source identity, kept only when impersonating: it is minted independently of the
+    /// impersonated token it is exchanged for, and usually outlives it by far.
+    mutable std::optional<BearerToken> source_bearer_token TSA_GUARDED_BY(mutex);
+
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
+    BearerToken requestSourceBearerToken() const;
+    BearerToken requestBearerTokenFromMetadataService() const;
     BearerToken requestBearerTokenFromADC() const;
 };
 

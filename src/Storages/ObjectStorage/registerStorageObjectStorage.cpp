@@ -50,6 +50,16 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
+
+    /// The user-query credential restriction is NOT relaxed when loading from existing metadata: a table whose
+    /// definition resolves to server-managed credentials (e.g. a named collection later re-bound to
+    /// `use_environment_credentials = 1`, or a server `<s3>` `role_arn` added afterwards) must not silently
+    /// regain the server identity on restart, since a user `CREATE`/`ATTACH` of the same definition would be
+    /// refused. Flagging the load lets `getClient` downgrade such a table to an anonymous client (so the server
+    /// still starts and the table is merely inaccessible) instead of escalating, controlled by the server
+    /// setting `s3_load_table_anonymously_if_credentials_restricted`.
+    configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode);
+
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
     // Use format settings from global server context + settings from
@@ -81,15 +91,6 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
-
-    /// The user-query credential restriction is NOT relaxed when loading from existing metadata: a table whose
-    /// definition resolves to server-managed credentials (e.g. a named collection later re-bound to
-    /// `use_environment_credentials = 1`, or a server `<s3>` `role_arn` added afterwards) must not silently
-    /// regain the server identity on restart, since a user `CREATE`/`ATTACH` of the same definition would be
-    /// refused. Flagging the load lets `getClient` downgrade such a table to an anonymous client (so the server
-    /// still starts and the table is merely inaccessible) instead of escalating, controlled by the server
-    /// setting `s3_load_table_anonymously_if_credentials_restricted`.
-    configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode);
 
     /// Only a user-issued `CREATE` may apply the `file_like_engine_default_partition_strategy`
     /// default; ATTACH / startup / RESTORE / replicated-DDL replay must load pre-existing
@@ -727,6 +728,31 @@ An optional `external_id` can also be supplied alongside `role_arn`. It is passe
 CREATE TABLE my_s3_table(name String, value UInt32)
 ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', external_id = 'my-external-id'), 'CSV')
 ```
+
+### Service account impersonation on Google Cloud Storage {#service-account-impersonation-on-google-cloud-storage}
+
+Google Cloud's counterpart of AWS STS `AssumeRole` is service account impersonation: set
+`impersonate_service_account` alongside `http_client = gcp_oauth` on a named collection, and ClickHouse exchanges
+its source identity for a short-lived access token that acts as the target service account. The source identity
+must hold the `roles/iam.serviceAccountTokenCreator` role on that target.
+
+```xml
+<named_collections>
+    <gcs_analytics>
+        <url>https://storage.googleapis.com/my-bucket/</url>
+        <http_client>gcp_oauth</http_client>
+        <impersonate_service_account>analytics-reader@my-project.iam.gserviceaccount.com</impersonate_service_account>
+    </gcs_analytics>
+</named_collections>
+```
+
+```sql
+CREATE TABLE my_gcs_table (name String, value UInt32)
+ENGINE = S3(gcs_analytics, filename = 'data/*.csv', format = 'CSV')
+```
+
+See [Impersonating a service account](/reference/functions/table-functions/s3#impersonating-a-service-account-google-cloud-storage)
+for the full list of settings.
 
 ## See also {#see-also}
 

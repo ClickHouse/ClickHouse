@@ -79,6 +79,11 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsString impersonate_service_account;
+    extern const S3AuthSettingsString impersonation_delegates;
+    extern const S3AuthSettingsString impersonation_scopes;
+    extern const S3AuthSettingsUInt64 impersonation_lifetime_seconds;
+    extern const S3AuthSettingsString iam_credentials_endpoint;
 }
 
 namespace S3RequestSetting
@@ -179,6 +184,11 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     client_configuration.google_adc_client_id = auth_settings[S3AuthSetting::google_adc_client_id];
     client_configuration.google_adc_client_secret = auth_settings[S3AuthSetting::google_adc_client_secret];
     client_configuration.google_adc_refresh_token = auth_settings[S3AuthSetting::google_adc_refresh_token];
+    client_configuration.impersonate_service_account = auth_settings[S3AuthSetting::impersonate_service_account];
+    client_configuration.impersonation_delegates = auth_settings[S3AuthSetting::impersonation_delegates];
+    client_configuration.impersonation_scopes = auth_settings[S3AuthSetting::impersonation_scopes];
+    client_configuration.impersonation_lifetime_seconds = auth_settings[S3AuthSetting::impersonation_lifetime_seconds];
+    client_configuration.iam_credentials_endpoint = auth_settings[S3AuthSetting::iam_credentials_endpoint];
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
@@ -234,6 +244,18 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
             && !client_configuration.google_adc_refresh_token.empty();
         if (boost::iequals(client_configuration.http_client, "gcp_oauth") && !has_explicit_gcp_adc)
             client_configuration.http_client.clear();
+
+        /// The impersonation target goes with the source identity: `getCredentialsProvider` rejects a target
+        /// without `gcp_oauth`, which would fail the load instead of downgrading it. Keyed on the absence of a
+        /// `gcp_oauth` source rather than on the branch above, because a restricted storage path may have
+        /// dropped the source already and left the query-supplied target in place -- that combination reaches
+        /// here with `http_client` empty and would otherwise still throw.
+        if (!boost::iequals(client_configuration.http_client, "gcp_oauth"))
+        {
+            client_configuration.impersonate_service_account.clear();
+            client_configuration.impersonation_delegates.clear();
+            client_configuration.impersonation_scopes.clear();
+        }
     }
 
     String access_key_id = auth_settings[S3AuthSetting::access_key_id];
