@@ -19,7 +19,7 @@ void StreamSubscriptionManager::registerSubscription(StreamSubscriptionPtr subsc
     subscriptions.push_back(subscription);
 }
 
-std::vector<StreamSubscriptionPtr> StreamSubscriptionManager::collectSubscriptions()
+std::vector<StreamSubscriptionPtr> StreamSubscriptionManager::takeAllSubscriptions()
 {
     std::vector<StreamSubscriptionPtr> collected;
     bool need_clean = false;
