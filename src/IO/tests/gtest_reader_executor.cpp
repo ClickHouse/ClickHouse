@@ -10,7 +10,7 @@
 #include <cstring>
 
 #include <Common/CurrentThread.h>
-#include <Common/MemoryPressureMonitor.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -483,21 +483,32 @@ TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
     constexpr size_t base_window = 8 * 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", base_window)};
 
-    /// Default thresholds are 75 / 90 / 95 percent; pick a pressure inside each band.
-    auto firstWindow = [&](double pressure) -> size_t
+    /// Drive the query's pressure level by loading its group memory tracker to a percent of a large
+    /// hard limit (kept large so the executor's own tracked reads stay well inside it). A fresh group
+    /// per call starts the cooldown clean, and snap-up is immediate, so the first window reflects the
+    /// level. Default thresholds are 75 / 90 / 95 percent.
+    auto firstWindow = [&](UInt64 pct) -> size_t
     {
-        FakeMemoryPressureMonitor fake(pressure, /*initial_now_ns=*/1'000'000'000ULL);
-        ScopedMemoryPressureMonitor scope(fake);
+        TestThreadGroup tg;
+        MemoryTracker & mt = tg.thread_group->memory_tracker;
+        constexpr Int64 limit = Int64(8) << 30;   /// 8 GiB
+        mt.setHardLimit(limit);
+        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
+        mt.adjustWithUntrackedMemory(amount);
+
         ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
             ReaderExecutor::Options{.window_size = base_window});
         ChainedBuffers w = ex.readNextWindow();
-        return w.atEnd() ? 0 : w.totalBytes();
+        const size_t got = w.atEnd() ? 0 : w.totalBytes();
+
+        mt.adjustWithUntrackedMemory(-amount);
+        return got;
     };
 
-    EXPECT_EQ(firstWindow(0.0), base_window);        /// Normal: full window
-    EXPECT_EQ(firstWindow(0.80), base_window / 4);   /// Elevated: window / 4
-    EXPECT_EQ(firstWindow(0.92), base_window / 16);  /// High: window / 16
-    EXPECT_EQ(firstWindow(0.99), 128u * 1024);       /// Critical: window / 64, floored at 128 KiB
+    EXPECT_EQ(firstWindow(50), base_window);        /// Normal: full window
+    EXPECT_EQ(firstWindow(80), base_window / 4);    /// Elevated: window / 4
+    EXPECT_EQ(firstWindow(92), base_window / 16);   /// High: window / 16
+    EXPECT_EQ(firstWindow(99), 128u * 1024);        /// Critical: window / 64, floored at 128 KiB
 }
 
 TEST_F(ReaderExecutorTest, SeekThenRead)

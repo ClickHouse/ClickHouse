@@ -1,6 +1,7 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/ProfileEvents.h>
@@ -655,7 +656,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     const size_t position_physical = toPhysical(position);
 
     /// Sample the pressure level once per window; `Normal` keeps the base sizes.
-    const MemoryPressureLevel pressure = memoryPressureMonitor().currentLevel();
+    const MemoryPressureLevel pressure = CurrentThread::getMemoryPressureMonitor().currentLevel();
     const WindowAndBlock sizes = sizesAtPressure(pressure, window_size, block_size);
 
     /// The most this window may serve: the pressure-adjusted window, clamped to the file end (when the

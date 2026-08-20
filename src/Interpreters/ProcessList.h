@@ -15,6 +15,7 @@
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/UniqueLock.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -335,6 +336,10 @@ struct ProcessListForUser
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
+
+    /// Per-user memory-pressure monitor: watches `user_memory_tracker`, escalates against the global
+    /// monitor. A query monitor is repointed onto this one when the query joins the user.
+    MemoryPressureMonitor user_memory_pressure_monitor{user_memory_tracker, memoryPressureMonitor()};
 
     TemporaryDataOnDiskScopePtr user_temp_data_on_disk;
 

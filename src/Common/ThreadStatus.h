@@ -99,9 +99,10 @@ public:
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
-    /// Cooldown state for this query's memory pressure, scoped to the group so it dies with the query
-    /// and does not leak into the next query on a pool thread. Classification stays on the global ladder.
-    PressureLevelMachine memory_pressure_machine{PressureLevelMachine::QUERY_COOLDOWN_NS};
+    /// This query's memory-pressure monitor, scoped to the group so its cooldown dies with the query
+    /// and does not leak into the next query on a pool thread. Watches the group's tracker chain and
+    /// escalates against the global monitor.
+    MemoryPressureMonitor memory_pressure_monitor{memory_tracker, memoryPressureMonitor()};
 
     struct SharedData
     {

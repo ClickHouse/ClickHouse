@@ -10,214 +10,143 @@ namespace
 {
 
 constexpr uint64_t SECOND = 1'000'000'000ULL;
-constexpr uint64_t COOLDOWN = 60 * SECOND;
 
 }
 
-TEST(MemoryPressureMonitor, NoPressureStaysAtNormal)
+TEST(MemoryPressureMonitor, ValidateRejectsInvalidThresholds)
 {
-    FakeMemoryPressureMonitor fake(/*initial_pressure=*/0.0, /*initial_now_ns=*/SECOND);
-    ScopedMemoryPressureMonitor scope(fake);
-
-    for (int i = 0; i < 10; ++i)
-        EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Normal);
-}
-
-TEST(MemoryPressureMonitor, SnapsUpImmediately)
-{
-    FakeMemoryPressureMonitor fake(0.0, SECOND);
-    ScopedMemoryPressureMonitor scope(fake);
-
-    fake.setPressure(0.80);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Elevated);
-
-    fake.setPressure(0.92);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::High);
-
-    fake.setPressure(0.97);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Critical);
-}
-
-TEST(MemoryPressureMonitor, StickyDownwardCooldown)
-{
-    FakeMemoryPressureMonitor fake(0.0, SECOND);
-    ScopedMemoryPressureMonitor scope(fake);
-
-    fake.setPressure(0.80);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Elevated);
-
-    fake.setPressure(0.10);
-    /// First sample still inside cooldown → stays Elevated.
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Elevated);
-
-    /// Advance 59 s — still inside cooldown.
-    fake.setNowNs(SECOND + 59 * SECOND);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Elevated);
-
-    /// Cross 60 s boundary — steps down to Normal.
-    fake.setNowNs(SECOND + 61 * SECOND);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Normal);
-}
-
-TEST(MemoryPressureMonitor, RecoveryFromCriticalIsThreeCooldowns)
-{
-    FakeMemoryPressureMonitor fake(0.99, SECOND);
-    ScopedMemoryPressureMonitor scope(fake);
-
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Critical);
-
-    fake.setPressure(0.0);
-
-    /// Critical → High after one cooldown.
-    fake.setNowNs(SECOND + COOLDOWN + SECOND);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::High);
-
-    /// High → Elevated after another.
-    fake.setNowNs(SECOND + 2 * COOLDOWN + 2 * SECOND);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Elevated);
-
-    /// Elevated → Normal after a third.
-    fake.setNowNs(SECOND + 3 * COOLDOWN + 3 * SECOND);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Normal);
-}
-
-TEST(MemoryPressureMonitor, OscillationPinsLevelHigh)
-{
-    FakeMemoryPressureMonitor fake(0.80, SECOND);
-    ScopedMemoryPressureMonitor scope(fake);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Elevated);
-
-    /// Bounce 70 / 80 every 10 s for 5 minutes. Pressure goes above the
-    /// Elevated threshold every other sample, so the cooldown timer never
-    /// gets to complete a clean 60 s window — level stays at Elevated.
-    uint64_t t = SECOND;
-    for (int i = 0; i < 30; ++i)
-    {
-        t += 10 * SECOND;
-        fake.setNowNs(t);
-        fake.setPressure(i & 1 ? 0.70 : 0.80);
-        EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Elevated);
-    }
-}
-
-TEST(MemoryPressureMonitor, SetThresholdsRejectsInvalid)
-{
-    FakeMemoryPressureMonitor fake(0.80, SECOND);
-    ScopedMemoryPressureMonitor scope(fake);
-
     /// Out-of-range (any single value > 100) throws.
-    EXPECT_THROW(fake.setThresholds(101, 90, 95), DB::Exception);
-    EXPECT_THROW(fake.setThresholds(75, 101, 95), DB::Exception);
-    EXPECT_THROW(fake.setThresholds(75, 90, 101), DB::Exception);
-    EXPECT_THROW(fake.setThresholds(300, 90, 95), DB::Exception);
+    EXPECT_THROW(validateMemoryPressureThresholds(101, 90, 95), DB::Exception);
+    EXPECT_THROW(validateMemoryPressureThresholds(75, 101, 95), DB::Exception);
+    EXPECT_THROW(validateMemoryPressureThresholds(75, 90, 101), DB::Exception);
+    EXPECT_THROW(validateMemoryPressureThresholds(300, 90, 95), DB::Exception);
 
     /// Non-monotonic (elevated > high etc.) throws.
-    EXPECT_THROW(fake.setThresholds(90, 75, 95), DB::Exception);
-    EXPECT_THROW(fake.setThresholds(75, 95, 90), DB::Exception);
+    EXPECT_THROW(validateMemoryPressureThresholds(90, 75, 95), DB::Exception);
+    EXPECT_THROW(validateMemoryPressureThresholds(75, 95, 90), DB::Exception);
 
     /// Valid edges accepted.
-    EXPECT_NO_THROW(fake.setThresholds(0, 0, 0));
-    EXPECT_NO_THROW(fake.setThresholds(100, 100, 100));
-    EXPECT_NO_THROW(fake.setThresholds(75, 90, 95));   // strictly increasing
-    EXPECT_NO_THROW(fake.setThresholds(75, 75, 90));   // equality allowed
+    EXPECT_NO_THROW(validateMemoryPressureThresholds(0, 0, 0));
+    EXPECT_NO_THROW(validateMemoryPressureThresholds(100, 100, 100));
+    EXPECT_NO_THROW(validateMemoryPressureThresholds(75, 90, 95));   // strictly increasing
+    EXPECT_NO_THROW(validateMemoryPressureThresholds(75, 75, 90));   // equality allowed
 }
 
-/// Reloading the ladder resets the sticky cooldown: a level classified under the
-/// old thresholds must not persist when the new ladder would classify the same
-/// pressure lower. Without the reset the old level would stay until the 60 s
-/// cooldown stepped it down, even though the active ladder no longer warrants it.
-TEST(MemoryPressureMonitor, ThresholdReloadResetsCooldown)
+TEST(MemoryPressureMonitor, ThresholdsRoundTrip)
 {
-    FakeMemoryPressureMonitor fake(0.92, SECOND);
-    ScopedMemoryPressureMonitor scope(fake);
+    MemoryPressureMonitor monitor;   /// global monitor, default 75 / 90 / 95
+    const auto def = monitor.getThresholds();
+    EXPECT_EQ(def.elevated_pct, 75u);
+    EXPECT_EQ(def.high_pct, 90u);
+    EXPECT_EQ(def.critical_pct, 95u);
 
-    /// 0.92 is High under the default 75 / 90 / 95 ladder.
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::High);
+    monitor.setThresholds(50, 70, 90);
+    const auto got = monitor.getThresholds();
+    EXPECT_EQ(got.elevated_pct, 50u);
+    EXPECT_EQ(got.high_pct, 70u);
+    EXPECT_EQ(got.critical_pct, 90u);
 
-    /// Raise the ladder so 0.92 is now below Elevated. Time does not advance, so
-    /// only the cooldown reset (not a step-down) can lower the level here.
-    fake.setThresholds(95, 96, 97);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Normal);
+    EXPECT_THROW(monitor.setThresholds(90, 75, 95), DB::Exception);
 }
 
-TEST(MemoryPressureMonitor, ScopedRestoresPriorMonitor)
+/// A scoped monitor classifies against the ROOT's thresholds, read live: a later change to the root
+/// reaches it at once (this is what lets a reload update the long-lived per-user monitor).
+TEST(MemoryPressureMonitor, ScopedReadsRootThresholdsLive)
 {
-    /// After the scope ends, `memoryPressureMonitor()` must hand back the
-    /// production singleton, not a dangling pointer to the fake. Regression
-    /// for the ASan/MSan stack-use-after-return that motivated this
-    /// interface design.
-    auto * before = &memoryPressureMonitor();
-    {
-        FakeMemoryPressureMonitor fake(0.99, SECOND);
-        ScopedMemoryPressureMonitor scope(fake);
-        EXPECT_NE(&memoryPressureMonitor(), before);
-        EXPECT_EQ(memoryPressureMonitor().currentLevel(), MemoryPressureLevel::Critical);
-    }
-    EXPECT_EQ(&memoryPressureMonitor(), before);
+    MemoryPressureMonitor root;
+    root.setThresholds(50, 70, 90);
+
+    MemoryTracker tracker(nullptr, VariableContext::Process, false);
+    MemoryPressureMonitor scoped(tracker, root);
+    EXPECT_EQ(scoped.getThresholds().elevated_pct, 50u);
+    EXPECT_EQ(scoped.getThresholds().high_pct, 70u);
+    EXPECT_EQ(scoped.getThresholds().critical_pct, 90u);
+
+    root.setThresholds(10, 20, 30);
+    EXPECT_EQ(scoped.getThresholds().elevated_pct, 10u);   /// live - read from the root, not cached
+    EXPECT_EQ(scoped.getThresholds().critical_pct, 30u);
 }
 
-/// `levelForPressure` maps a ratio to a level with no cooldown / no sticky
-/// state — each call is independent (used for transient per-query pressure).
-TEST(MemoryPressureMonitor, LevelForPressureIsStatelessThresholdMap)
+/// A scoped monitor classifies its tracker's pressure against its own thresholds. Snap-up is
+/// immediate, so a rising pressure gives the classified level on the first sample (no clock needed).
+/// The parent (a fresh global monitor over the untracked server total) contributes `Normal` here.
+TEST(MemoryPressureMonitor, ScopedMonitorClassifiesLocalPressure)
 {
-    PressureLevelMachine m; /// default thresholds 75 / 90 / 95
-    EXPECT_EQ(m.levelForPressure(0.50), MemoryPressureLevel::Normal);
-    EXPECT_EQ(m.levelForPressure(0.80), MemoryPressureLevel::Elevated);
-    EXPECT_EQ(m.levelForPressure(0.92), MemoryPressureLevel::High);
-    EXPECT_EQ(m.levelForPressure(0.98), MemoryPressureLevel::Critical);
-    /// A high reading must NOT persist into the next call (unlike `sample`).
-    EXPECT_EQ(m.levelForPressure(0.10), MemoryPressureLevel::Normal);
+    MemoryPressureMonitor parent;   /// default 75 / 90 / 95
+    MemoryTracker tracker(nullptr, VariableContext::Process, false);
+    tracker.setHardLimit(1000);
+    MemoryPressureMonitor scoped(tracker, parent);
+
+    tracker.adjustWithUntrackedMemory(500);   /// 0.50
+    EXPECT_EQ(scoped.currentLevel(), MemoryPressureLevel::Normal);
+
+    tracker.adjustWithUntrackedMemory(300);   /// 0.80
+    EXPECT_EQ(scoped.currentLevel(), MemoryPressureLevel::Elevated);
+
+    tracker.adjustWithUntrackedMemory(120);   /// 0.92
+    EXPECT_EQ(scoped.currentLevel(), MemoryPressureLevel::High);
+
+    tracker.adjustWithUntrackedMemory(70);    /// 0.99
+    EXPECT_EQ(scoped.currentLevel(), MemoryPressureLevel::Critical);
+
+    tracker.adjustWithUntrackedMemory(-1090);
 }
 
-/// The walk reacts to the query-level (`Process`) limit when it is the most constraining. Root chain
-/// at `parent == nullptr` (non-Global) so the test allocates no real global memory.
-TEST(MemoryPressureMonitor, LocalPressureUsesQueryLevelLimit)
+/// A monitor never reads below any level above it. Build the production chain (global <- user <-
+/// query); a spike on the user tracker lifts the query monitor even though the query tracker is calm.
+TEST(MemoryPressureMonitor, EscalatesThroughParentChain)
 {
-    EXPECT_DOUBLE_EQ(localMemoryPressureFromChain(nullptr), 0.0);
+    MemoryPressureMonitor global;   /// watches the untracked server total → Normal in the test
 
-    MemoryTracker user(nullptr, VariableContext::User, false);
-    MemoryTracker query(&user, VariableContext::Process, false);
-    MemoryTracker thread(&query, VariableContext::Thread, false);
+    MemoryTracker user_tracker(nullptr, VariableContext::User, false);
+    user_tracker.setHardLimit(1000);
+    MemoryPressureMonitor user_monitor(user_tracker, global);
 
-    /// No limits anywhere → no pressure.
-    EXPECT_DOUBLE_EQ(localMemoryPressureFromChain(&thread), 0.0);
+    MemoryTracker query_tracker(&user_tracker, VariableContext::Process, false);
+    query_tracker.setHardLimit(1000);
+    MemoryPressureMonitor query_monitor(query_tracker, user_monitor);
 
-    query.setHardLimit(1000);
-    thread.adjustWithUntrackedMemory(960); /// propagates up: thread=query=user=960
-    EXPECT_NEAR(localMemoryPressureFromChain(&thread), 0.96, 1e-9);
-    thread.adjustWithUntrackedMemory(-960);
+    /// User at 0.92 (High), query itself calm → the query monitor still reports High.
+    user_tracker.adjustWithUntrackedMemory(920);
+    EXPECT_EQ(query_monitor.currentLevel(), MemoryPressureLevel::High);
+    user_tracker.adjustWithUntrackedMemory(-920);
 }
 
-/// When the query level has no limit, the walk escalates to the next level
-/// that does (here, the user/`User` tracker).
-TEST(MemoryPressureMonitor, LocalPressureFallsBackToUserLevel)
+TEST(MemoryPressureMonitor, CooldownAppliesToClassifiedLevels)
 {
-    MemoryTracker user(nullptr, VariableContext::User, false);
-    MemoryTracker query(&user, VariableContext::Process, false); /// no limit
-    MemoryTracker thread(&query, VariableContext::Thread, false);
+    PressureCooldown c(/*cooldown_ns_=*/10 * SECOND);
 
-    user.setHardLimit(2000);
-    thread.adjustWithUntrackedMemory(1500); /// user = 1500 / 2000 = 0.75
-    EXPECT_NEAR(localMemoryPressureFromChain(&thread), 0.75, 1e-9);
-    thread.adjustWithUntrackedMemory(-1500);
+    EXPECT_EQ(c.apply(MemoryPressureLevel::High, SECOND), MemoryPressureLevel::High);            /// snap up
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 2 * SECOND), MemoryPressureLevel::High);      /// sticky
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 12 * SECOND), MemoryPressureLevel::Elevated); /// one step per cooldown
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 13 * SECOND), MemoryPressureLevel::Elevated); /// next step not due yet
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 23 * SECOND), MemoryPressureLevel::Normal);
 }
 
-/// The server total (`Global`) is intentionally skipped here — it is handled,
-/// with cooldown smoothing, by the separate total-pressure path. Even a
-/// near-limit Global tracker contributes nothing to the local pressure.
-TEST(MemoryPressureMonitor, LocalPressureSkipsGlobalLevel)
+TEST(MemoryPressureMonitor, CooldownReSpikeRefreshesTheClock)
 {
-    MemoryTracker total(nullptr, VariableContext::Global);
-    MemoryTracker thread(&total, VariableContext::Thread, false);
+    PressureCooldown c(/*cooldown_ns_=*/10 * SECOND);
 
-    total.setHardLimit(1000);
-    thread.adjustWithUntrackedMemory(990); /// Global at 99%, but must be ignored
-    EXPECT_DOUBLE_EQ(localMemoryPressureFromChain(&thread), 0.0);
-    thread.adjustWithUntrackedMemory(-990);
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Critical, SECOND), MemoryPressureLevel::Critical);
+    /// A re-spike at the same level refreshes the timestamp: the step-down needs sustained calm.
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Critical, 9 * SECOND), MemoryPressureLevel::Critical);
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 12 * SECOND), MemoryPressureLevel::Critical);
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 20 * SECOND), MemoryPressureLevel::High);
 }
 
-/// `MemoryTracker::getPressure` is `amount / hard_limit`, lock-free, and 0 when
-/// there is no limit or no usage.
+TEST(MemoryPressureMonitor, CooldownsAreIndependent)
+{
+    /// Two queries = two scoped cooldowns: one query's spike leaves the other's level untouched.
+    PressureCooldown query_a(PressureCooldown::QUERY_COOLDOWN_NS);
+    PressureCooldown query_b(PressureCooldown::QUERY_COOLDOWN_NS);
+
+    EXPECT_EQ(query_a.apply(MemoryPressureLevel::Critical, SECOND), MemoryPressureLevel::Critical);
+    EXPECT_EQ(query_b.apply(MemoryPressureLevel::Normal, SECOND), MemoryPressureLevel::Normal);
+    EXPECT_EQ(query_a.apply(MemoryPressureLevel::Normal, 2 * SECOND), MemoryPressureLevel::Critical);
+    EXPECT_EQ(query_b.apply(MemoryPressureLevel::Normal, 2 * SECOND), MemoryPressureLevel::Normal);
+}
+
+/// `MemoryTracker::getPressure` is `amount / hard_limit`, lock-free, and 0 when there is no limit or usage.
 TEST(MemoryPressureMonitor, MemoryTrackerGetPressure)
 {
     MemoryTracker t(nullptr, VariableContext::Process, false);
@@ -229,60 +158,4 @@ TEST(MemoryPressureMonitor, MemoryTrackerGetPressure)
     t.adjustWithUntrackedMemory(960);
     EXPECT_NEAR(t.getPressure(), 0.96, 1e-9);
     t.adjustWithUntrackedMemory(-960);
-}
-
-/// `setThresholds` publishes atomically and `levelForPressure` (lock-free) reads
-/// the new ladder; `getThresholds` round-trips the same values.
-TEST(MemoryPressureMonitor, SetThresholdsReflectedInLevelForPressure)
-{
-    PressureLevelMachine m;
-    m.setThresholds(50, 70, 90);
-
-    const auto th = m.getThresholds();
-    EXPECT_EQ(th.elevated_pct, 50u);
-    EXPECT_EQ(th.high_pct, 70u);
-    EXPECT_EQ(th.critical_pct, 90u);
-
-    EXPECT_EQ(m.levelForPressure(0.40), MemoryPressureLevel::Normal);
-    EXPECT_EQ(m.levelForPressure(0.55), MemoryPressureLevel::Elevated);
-    EXPECT_EQ(m.levelForPressure(0.75), MemoryPressureLevel::High);
-    EXPECT_EQ(m.levelForPressure(0.95), MemoryPressureLevel::Critical);
-}
-
-TEST(MemoryPressureMonitor, StickAppliesCooldownToClassifiedLevels)
-{
-    /// The query-scoped machine: classification happens elsewhere (the global
-    /// ladder); `stick` only cools down. Custom short cooldown honored.
-    PressureLevelMachine m(/*cooldown_ns_=*/10 * SECOND);
-
-    EXPECT_EQ(m.stick(2, SECOND), MemoryPressureLevel::High);           /// snap up
-    EXPECT_EQ(m.stick(0, 2 * SECOND), MemoryPressureLevel::High);      /// sticky
-    EXPECT_EQ(m.stick(0, 12 * SECOND), MemoryPressureLevel::Elevated); /// one step per cooldown
-    EXPECT_EQ(m.stick(0, 13 * SECOND), MemoryPressureLevel::Elevated); /// next step not due yet
-    EXPECT_EQ(m.stick(0, 23 * SECOND), MemoryPressureLevel::Normal);
-}
-
-TEST(MemoryPressureMonitor, StickReSpikeRefreshesTheClock)
-{
-    PressureLevelMachine m(/*cooldown_ns_=*/10 * SECOND);
-
-    EXPECT_EQ(m.stick(3, SECOND), MemoryPressureLevel::Critical);
-    /// A re-spike at the SAME level refreshes the timestamp: the step-down
-    /// needs sustained calm, not elapsed time.
-    EXPECT_EQ(m.stick(3, 9 * SECOND), MemoryPressureLevel::Critical);
-    EXPECT_EQ(m.stick(0, 12 * SECOND), MemoryPressureLevel::Critical);
-    EXPECT_EQ(m.stick(0, 20 * SECOND), MemoryPressureLevel::High);
-}
-
-TEST(MemoryPressureMonitor, GroupMachinesAreIndependent)
-{
-    /// Two queries = two ThreadGroup machines: one query's spike leaves the
-    /// other's level untouched - the leak the group scoping exists to prevent.
-    PressureLevelMachine query_a(PressureLevelMachine::QUERY_COOLDOWN_NS);
-    PressureLevelMachine query_b(PressureLevelMachine::QUERY_COOLDOWN_NS);
-
-    EXPECT_EQ(query_a.stick(3, SECOND), MemoryPressureLevel::Critical);
-    EXPECT_EQ(query_b.stick(0, SECOND), MemoryPressureLevel::Normal);
-    EXPECT_EQ(query_a.stick(0, 2 * SECOND), MemoryPressureLevel::Critical);
-    EXPECT_EQ(query_b.stick(0, 2 * SECOND), MemoryPressureLevel::Normal);
 }
