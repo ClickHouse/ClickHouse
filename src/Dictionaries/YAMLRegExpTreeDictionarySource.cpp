@@ -172,7 +172,11 @@ Each node has the following structure:
 
 - [regexp_tree dictionary layout](/reference/statements/create/dictionary/layouts/regexp-tree) — layout configuration, query examples, and matching modes
 - [dictGet](/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictGetAll](/reference/functions/regular-functions/ext-dict-functions#dictGetAll) — functions for querying regexp tree dictionaries
-)DOCS_MD",
+)DOCS_MD"
+#if !USE_YAML_CPP
+            "\nCurrently unavailable, because this ClickHouse build does not include YAML support."
+#endif
+        ,
         .syntax = "SOURCE(YAMLRegExpTree(PATH '/path/to/file.yaml'))",
         .related = {}});
 }

@@ -163,7 +163,11 @@ Setting fields:
 | `http_proxy_urls` | URL to the YTsaurus http proxy. |
 | `cypress_path` | Cypress path to the table source. |
 | `oauth_token` | OAuth token. |
-)DOCS_MD",
+)DOCS_MD"
+#if !USE_YTSAURUS
+            "\nCurrently unavailable, because this ClickHouse build does not include YTsaurus support."
+#endif
+        ,
         .syntax = "SOURCE(YTSAURUS(http_proxy_urls 'url' cypress_path '//path' oauth_token 'token'))",
         .related = {}});
 }
