@@ -537,11 +537,15 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
                 toString(nested_column->size()), toString(last_offset));
 
-        /// An empty elements column is ok for the sizes encoding: it is how a column of a Nested type
-        /// that was added by ALTER reads the parts written before that ALTER. The absolute-offsets
-        /// encoding always writes the elements next to the offsets, so there an empty elements column
-        /// means the data is corrupted and the offsets would index past the end of the elements.
-        if (!settings.position_independent_encoding)
+        /// An empty elements column with a non-zero last offset is how a column of a `Nested` type
+        /// that was added by `ALTER` reads from the parts written before that `ALTER`: the sizes
+        /// stream is shared with a sibling column and is there, the elements stream is not. That
+        /// is a valid intermediate result only for the readers that throw such a partially read
+        /// column away and fill it with defaults afterwards, i.e. the MergeTree ones - see
+        /// `IMergeTreeReader::fillMissingColumns`. For everyone else the column would reach the
+        /// query pipeline with offsets that index past the end of its elements, so the data is
+        /// rejected here instead of being read out of bounds later.
+        if (!settings.partially_read_columns_are_refilled)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Cannot read array values: elements column is empty while the last offset is {}", toString(last_offset));
     }

@@ -46,13 +46,19 @@ ColumnPtr emptyOffsets()
 
 /// Read a whole `Array(UInt8)` column: offsets from `offsets_data`, elements from `elements_data`.
 /// Both buffers are references so that temporaries passed by the caller outlive the non-owning readers.
-ColumnPtr readArrayColumn(const String & offsets_data, const String & elements_data, size_t limit, bool position_independent_encoding)
+ColumnPtr readArrayColumn(
+    const String & offsets_data,
+    const String & elements_data,
+    size_t limit,
+    bool position_independent_encoding,
+    bool partially_read_columns_are_refilled = false)
 {
     ReadBufferFromString offsets_in(offsets_data);
     ReadBufferFromString elements_in(elements_data);
 
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.position_independent_encoding = position_independent_encoding;
+    settings.partially_read_columns_are_refilled = partially_read_columns_are_refilled;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
         return path.back().type == ISerialization::Substream::ArraySizes ? &offsets_in : &elements_in;
@@ -147,11 +153,29 @@ TEST(SerializationArrayOffsets, RejectsEmptyElementsWithNonZeroLastAbsoluteOffse
     }
 }
 
-/// The sizes encoding keeps accepting an empty elements column: that is how a column of a Nested type
-/// that was added by ALTER reads the parts written before that ALTER.
-TEST(SerializationArrayOffsets, SizesEncodingAcceptsEmptyElements)
+/// The sizes encoding declares the same never-read elements, and everything that is not a MergeTree
+/// reader hands the column straight to the query pipeline, where indexing it reads out of bounds.
+TEST(SerializationArrayOffsets, RejectsEmptyElementsWithNonZeroLastOffsetInSizesEncoding)
 {
-    auto column = readArrayColumn(absoluteOffsets({1}), /*elements_data=*/"", 1, /*position_independent_encoding=*/true);
+    try
+    {
+        readArrayColumn(absoluteOffsets({1}), /*elements_data=*/"", 1, /*position_independent_encoding=*/true);
+        FAIL() << "Expected INCORRECT_DATA for an empty elements stream with a non-zero last offset";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(ErrorCodes::INCORRECT_DATA, e.code());
+    }
+}
+
+/// A reader that refills partially read columns keeps accepting an empty elements column: that is how
+/// a column of a Nested type that was added by ALTER reads the parts written before that ALTER, and
+/// `IMergeTreeReader::fillMissingColumns` replaces the column before anything else can see it.
+TEST(SerializationArrayOffsets, AcceptsEmptyElementsWhenPartiallyReadColumnsAreRefilled)
+{
+    auto column = readArrayColumn(
+        absoluteOffsets({1}), /*elements_data=*/"", 1,
+        /*position_independent_encoding=*/true, /*partially_read_columns_are_refilled=*/true);
     const auto & column_array = assert_cast<const ColumnArray &>(*column);
     ASSERT_EQ(column_array.getOffsets(), (ColumnArray::Offsets{1}));
     ASSERT_TRUE(column_array.getData().empty());

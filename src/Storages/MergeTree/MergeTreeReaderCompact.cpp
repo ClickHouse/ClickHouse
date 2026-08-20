@@ -229,6 +229,10 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+        /// A column that is only read for its shared `Nested` offsets (see `findColumnForOffsets`)
+        /// is discarded and filled with defaults by `IMergeTreeReader::fillMissingColumns`, so
+        /// deserialization may return it with an empty elements column.
+        deserialize_settings.partially_read_columns_are_refilled = true;
         deserialize_settings.get_avg_value_size_hint_callback
             = [&](const ISerialization::SubstreamPath & substream_path) -> double
         {

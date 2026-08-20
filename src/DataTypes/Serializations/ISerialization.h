@@ -548,6 +548,15 @@ public:
         /// even for streams that will be used later for data deserialization.
         bool release_all_prefixes_streams = false;
 
+        /// True when the caller throws away the columns that it could only read partially and fills
+        /// them with defaults afterwards, i.e. the MergeTree readers - see
+        /// `IMergeTreeReader::fillMissingColumns`. Only for them a column whose sizes stream is
+        /// present while its elements stream is missing - how a column of a `Nested` type added by
+        /// `ALTER` reads from the parts written before that `ALTER` - is a valid intermediate
+        /// result. Everywhere else such a column is rejected during deserialization, because its
+        /// offsets index past the end of its elements and every consumer would read out of bounds.
+        bool partially_read_columns_are_refilled = false;
+
         /// Returns true if all marks for the given substream have at most
         /// `max_transitions` distinct consecutive positions.
         /// Used by `SerializationLowCardinality` as a cheap prefilter before
