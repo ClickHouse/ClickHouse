@@ -1,0 +1,33 @@
+-- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+
+SET enable_json_type = 1;
+
+DROP TABLE IF EXISTS arraymap_tuple_04839;
+
+-- arrayMap((x, y) -> tuple(x, y), arr1, arr2) builds the tuple element-wise, so each slot must
+-- retain its own source's policy and never its sibling's.
+CREATE TABLE arraymap_tuple_04839
+(
+    id UInt64,
+    arr1 Array(JSON(max_dynamic_paths=5, SHARED REGEXP '^a_')),
+    arr2 Array(JSON(max_dynamic_paths=5, SHARED REGEXP '^b_'))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO arraymap_tuple_04839 VALUES (1, ['{"a_x":1}'], ['{"b_x":2}']);
+
+ALTER TABLE arraymap_tuple_04839
+    MODIFY COLUMN arr1 Array(JSON(max_dynamic_paths=5)),
+    MODIFY COLUMN arr2 Array(JSON(max_dynamic_paths=5));
+
+ALTER TABLE arraymap_tuple_04839
+    ADD PROJECTION p (SELECT id, arrayMap((x, y) -> tuple(x, y), arr1, arr2) AS z WHERE id > 0 ORDER BY id);
+ALTER TABLE arraymap_tuple_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+SELECT 'slots carry their own policies',
+       countIf(position(type, '^a_') > 0 AND position(type, '^b_') > 0 AND position(type, '^a_') < position(type, '^b_'))
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='arraymap_tuple_04839' AND name = 'p' AND column = 'z' AND active;
+
+DROP TABLE arraymap_tuple_04839;
