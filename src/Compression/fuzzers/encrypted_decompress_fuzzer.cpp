@@ -297,14 +297,6 @@ void XMLGenerator::generate()
 }
 
 
-/// `fmt::print(stderr, ...)` expands a bare `stderr`, which on musl is defined as
-/// `#define stderr (stderr)` (see contrib/musl/include/stdio.h) so that its address can be taken;
-/// clang's -Wdisabled-macro-expansion flags this self-referential (but valid) expansion.
-#if defined(USE_MUSL)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-#endif
-
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
     try

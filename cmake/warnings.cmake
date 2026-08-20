@@ -25,7 +25,17 @@ no_warning(c++98-compat-pedantic) # We don't care about C++98 compatibility (We 
 no_warning(c++20-compat) # Use C++20 features incompatible with older standards (consteval, constinit, implicit typename...)
 no_warning(sign-conversion) # TODO: Fix the code and enable it
 no_warning(deprecated-declarations) # TODO: Fix the code and enable it
-# -Wdisabled-macro-expansion is enabled
+if (USE_MUSL)
+    # musl defines the standard streams as self-referential macros (`#define stderr (stderr)`,
+    # see contrib/musl/include/stdio.h) so that their address can be taken; any use of a
+    # stream inside another macro (gtest death tests, fmt, ...) then trips this warning.
+    # The expansion is valid C, so under musl the warning is pure noise and per-file
+    # suppressions turned into whack-a-mole (it also broke clang-tidy-cache's preprocessing,
+    # which runs the compiler with these flags and -Werror).
+    no_warning(disabled-macro-expansion)
+else ()
+    # -Wdisabled-macro-expansion is enabled
+endif ()
 no_warning(documentation-unknown-command) # Too many false positives from contrib headers (zstd) and backslashes in comments
 # -Wdouble-promotion is enabled: avoid implicit float-to-double conversions
 no_warning(exit-time-destructors) # We intentionally use global objects with non-trivial destructors (singletons, registries)

@@ -16,14 +16,6 @@
 /// because of broken getauxval() [1].
 ///
 ///   [1]: https://github.com/ClickHouse/ClickHouse/pull/33957
-/// gtest's death-test macros expand to a bare `stderr`, which on musl is defined as
-/// `#define stderr (stderr)` (see contrib/musl/include/stdio.h) so that its address can be taken;
-/// clang's -Wdisabled-macro-expansion flags this self-referential (but valid) expansion.
-#if defined(USE_MUSL)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-#endif
-
 TEST(SanitizerDeathTest, LSan)
 {
     EXPECT_DEATH(
@@ -87,9 +79,5 @@ TEST(SanitizerDeathTest, SafeExitSkipsLeakCheckQuietly)
             testing::Not(testing::HasSubstr(SKIP_NOTICE_LINE)),
             testing::Not(testing::ContainsRegex("LeakSanitizer: detected memory leaks"))));
 }
-
-#if defined(USE_MUSL)
-#pragma clang diagnostic pop
-#endif
 
 #endif
