@@ -51,6 +51,8 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 └─────────────┘
 ```
 
+Hay una excepción: `arrayJoin`, incluido a través de su alias `unnest`, no se permite en una condición `JOIN ON` que se evalúa durante el JOIN, porque dicha condición debe conservar el número de filas y se evalúa por separado para cada lote de filas del JOIN. Una condición que se aplica solo a uno de los lados, así como una clave de igualdad basada en `arrayJoin`, se extraen antes del JOIN y no se ven afectadas. Una condición no disyuntiva de `ALL INNER JOIN` tampoco se ve afectada, ya que en ese caso la condición se aplica después del JOIN. Cuando la expansión depende solo de un lado, muévala a un `ARRAY JOIN` en una subconsulta antes del JOIN; una condición cuyo argumento de `arrayJoin` lee columnas de ambos lados debe reestructurarse.
+
 Una consulta puede usar varias funciones `arrayJoin`. En este caso, la transformación se realiza varias veces y las filas se multiplican.
 Por ejemplo:
 

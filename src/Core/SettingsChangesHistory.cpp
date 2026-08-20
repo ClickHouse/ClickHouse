@@ -44,6 +44,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"optimize_push_subcolumns_into_subqueries", false, true, "New setting to read only the requested subcolumns of columns exported by subqueries and CTEs instead of the whole columns."},
+            {"enable_alp_codec", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."},
+            {"enable_quantized_codec", false, false, "New setting to enable the experimental `Quantized` compression codec individually, without the `allow_experimental_codecs`."},
+            {"enable_sz3_codec", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."},
+            {"enable_zxc_codec", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."},
             {"resumable_backup_from_snapshot", false, false, "New experimental setting to enable resumable `BACKUP FROM SNAPSHOT`."},
             {"framing_output_format", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
@@ -1412,6 +1416,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
+            {"text_index_serialization_version", "v1_with_codec", "v2_with_positions", "Allow the 'v2_with_positions' text index format that persists token positions for phrase search. Reverts to 'v1_with_codec' under older compatibility so that newer servers keep writing the format that older servers can read during a rolling upgrade."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
@@ -1440,6 +1445,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"text_index_dictionary_block_frontcoding_compression", true, true, "New setting"},
             {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},
             {"text_index_posting_list_codec", "none", "none", "New setting"},
+            {"text_index_serialization_version", "v0_initial", "v1_with_codec", "New setting. Controls the on-disk format version of text indexes. Reverts to 'v0_initial' under older compatibility so that newer servers keep writing the previous format that older servers can read during a rolling upgrade."},
             {"materialize_projections_on_insert", true, true, "New setting"},
             {"materialize_projections_on_merge", false, false, "New setting"},
             {"shared_merge_tree_inactive_replica_cutoff_seconds", 0, 0, "New setting which controls for how long an inactive replica is taken into account by the background cleanup (0 means two ZooKeeper session timeouts)"},
