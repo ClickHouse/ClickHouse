@@ -11,3 +11,11 @@ WHERE type = 'Dictionary Source' AND name = 'file';
 SELECT position(description, '**Syntax**') = 0 AND position(description, '**Related:**') = 0
 FROM system.documentation
 WHERE type = 'Dictionary Source' AND name = 'file';
+
+-- Full-page detection also scans past MDX imports before the H1.
+SELECT
+    startsWith(description, 'import ')
+    AND position(description, '\n# YTsaurus dictionary source') > 0
+    AND position(description, '**Syntax**') = 0
+FROM system.documentation
+WHERE type = 'Dictionary Source' AND name = 'ytsaurus';
