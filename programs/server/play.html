@@ -2983,9 +2983,10 @@ class QueryResultElement extends HTMLElement
                     /* Reset the <button> chrome so it reads as a plain icon; the focus outline itself
                        is left to the browser default. Inheriting the font matters beyond the family: a
                        button otherwise keeps the browser's form-control font size, and the icon inside
-                       is sized in em. */
+                       is sized in em. The background is not cleared here: every header icon is given
+                       one further down, and clearing it after that rule is what used to leave the
+                       funnel - whose own rule comes last - as the one icon without a backdrop. */
                     font: inherit;
-                    background: none;
                     border: none;
                     padding: 0;
                     margin: 0;
@@ -3065,8 +3066,8 @@ class QueryResultElement extends HTMLElement
                     font-size: 0.8em;
                     line-height: 1;
                     /* Reset the <button> chrome so the arrow reads as a plain glyph; the focus
-                       outline itself is left to the browser default. */
-                    background: none;
+                       outline itself is left to the browser default, and the background to the shared
+                       backdrop rule below (see the pin toggle). */
                     border: none;
                     padding: 0;
                     margin: 0;
@@ -3177,9 +3178,9 @@ class QueryResultElement extends HTMLElement
                     pointer-events: none;
                     cursor: pointer;
                     line-height: 1;
-                    /* See the pin toggle: a button does not inherit the surrounding font size. */
+                    /* See the pin toggle: a button does not inherit the surrounding font size, and the
+                       background is left to the shared backdrop rule. */
                     font: inherit;
-                    background: none;
                     border: none;
                     padding: 0;
                     margin: 0;
