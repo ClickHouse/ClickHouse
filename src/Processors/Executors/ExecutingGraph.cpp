@@ -5,6 +5,11 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
+#include <QueryPipeline/printPipeline.h>
+
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
