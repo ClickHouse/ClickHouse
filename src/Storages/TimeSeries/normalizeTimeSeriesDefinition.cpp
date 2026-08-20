@@ -1107,7 +1107,8 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
             settings.loadFromQuery(*create_query.storage);
         checkTimeSeriesSettings(settings);
 
-        std::vector<ViewTarget::Kind> kinds{getTargetKinds().begin(), getTargetKinds().end()};
+        constexpr auto base_kinds = getTargetKinds();
+        std::vector<ViewTarget::Kind> kinds(base_kinds.begin(), base_kinds.end());
         if (hasHistogramsTarget(create_query, settings))
             kinds.push_back(ViewTarget::Histograms);
 

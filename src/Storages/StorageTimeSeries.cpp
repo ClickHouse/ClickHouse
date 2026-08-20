@@ -84,7 +84,8 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     }
 
     std::vector<Target> targets;
-    std::vector<ViewTarget::Kind> kinds{getTargetKinds().begin(), getTargetKinds().end()};
+    constexpr auto base_kinds = getTargetKinds();
+    std::vector<ViewTarget::Kind> kinds(base_kinds.begin(), base_kinds.end());
 
     /// The optional "histograms" target exists only when the normalized create query declares it
     /// (an external table, or inner columns added by normalizeTimeSeriesDefinition()).
