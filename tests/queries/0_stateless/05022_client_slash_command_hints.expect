@@ -77,10 +77,17 @@ send -- "/hel\t\r"
 expect "Usage: help <name>"
 
 # ─── 5. A mistake in the name of a command names the similar commands ────────
-# The input that opens the command list is also diagnosed when it is submitted.
+# A bare `/` is not diagnosed: submitted alone it is the Oracle SQL*Plus shortcut of the interactive
+# client, which repeats the last input, and that keeps working as before.
+# Each input is submitted only once the client is back at the prompt: `replxx` treats a `\r` that
+# arrives in the same read as the characters around it as a newline within one input, not as a
+# submission, and the next command would then be appended to this one.
+send -- "SELECT 6011\r"
+expect "6011"
+expect ":) "
 send -- "/\r"
-expect -ex {Unknown command `/`}
-expect -ex {Maybe you meant: ['/clear', '/help', '/man']}
+expect "6011"
+expect ":) "
 
 send -- "/hepl\r"
 expect -ex {Unknown command `/hepl`}
