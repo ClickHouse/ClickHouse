@@ -26,9 +26,9 @@ public:
     {
     }
 
-    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
+    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, bool force_merge_by_partition_age, const SimpleMergeSelector::Settings & settings)
     {
-        if (settings.enable_heuristic_to_remove_small_parts_at_right)
+        if (settings.enable_heuristic_to_remove_small_parts_at_right && !force_merge_by_partition_age)
         {
             size_t size_delta = 0;
             size_t rows_delta = 0;
@@ -149,10 +149,14 @@ bool allow(
     PartsIterator begin,
     PartsIterator end,
     const IMergeSelector::RangeFilter & range_filter,
+    bool force_merge_by_partition_age,
     const SimpleMergeSelector::Settings & settings)
 {
     if (range_filter && !range_filter({begin, end}))
         return false;
+
+    if (force_merge_by_partition_age)
+        return true;
 
     if (settings.min_age_to_force_merge && min_age >= static_cast<double>(settings.min_age_to_force_merge))
         return true;
@@ -223,6 +227,13 @@ void selectWithinPartsRange(
     size_t parts_count = parts.size();
     if (parts_count <= 1)
         return;
+
+    bool force_merge_by_partition_age = false;
+    if (settings.min_partition_age_to_force_merge && settings.partitions_stats)
+    {
+        const auto & partition_stats = settings.partitions_stats->at(parts.front().info.getPartitionId());
+        force_merge_by_partition_age = partition_stats.min_age >= static_cast<time_t>(settings.min_partition_age_to_force_merge);
+    }
 
     /// If the parts in the parts vector are sorted by block number,
     /// it may not be ideal to only select parts for merging from the first N ones.
@@ -314,6 +325,7 @@ void selectWithinPartsRange(
                     range_begin,
                     range_end,
                     range_filter,
+                    force_merge_by_partition_age,
                     settings))
                 estimator.consider(
                     range_it,
@@ -322,6 +334,7 @@ void selectWithinPartsRange(
                     sum_size,
                     sum_rows,
                     begin == 0 ? 0 : parts[begin - 1].size,
+                    force_merge_by_partition_age,
                     settings);
         }
     }
