@@ -1979,8 +1979,7 @@ Chunk StorageFileSource::generate()
 
                     current_file_index = lazy_row_index_registry->registerFile(
                         current_path,
-                        *current_file_cache_version,
-                        current_file_version_settled);
+                        *current_file_cache_version);
                 }
 
                 auto row_numbers_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
@@ -2461,12 +2460,16 @@ public:
                 if (!fileCacheVersionTokenStillHolds(path, file.file.version_token))
                     throwFileChanged(path);
 
+                /// Exactly the synthetic metadata the main pass builds - unconditionally, under the
+                /// same rules - so both passes read this file under one and the same format metadata
+                /// cache contract (e.g. the Parquet footer cache, keyed by path and this token).
+                /// Symmetry is what matters here: whatever footer the main pass interpreted the file
+                /// with when it picked the row numbers, this pass gets the very same one, so the two
+                /// passes cannot end up on different interpretations of the file. How strong the token
+                /// itself is (sub-second mtime + inode + size) is a property of every local `Parquet`
+                /// read, single-pass ones included, not something lazy materialization changes.
                 std::optional<RelativePathWithMetadata> object_with_metadata;
-                if (file.file.version_settled)
                 {
-                    /// The same synthetic metadata the main pass builds, so this read hits the same
-                    /// format metadata cache entries (e.g. the Parquet footer cache). An unsettled
-                    /// token cannot safely identify a generation on coarse-timestamp filesystems.
                     ObjectMetadata md;
                     md.size_bytes = file_stat.st_size;
                     md.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
