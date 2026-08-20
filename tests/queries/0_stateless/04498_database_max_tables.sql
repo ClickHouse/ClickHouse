@@ -76,13 +76,22 @@ DROP DATABASE max_tables_ordinary_source_04498;
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
 
 -- A failed UNDROP must leave metadata in the dropped-table queue.
+-- The drop has to be asynchronous, otherwise there is nothing to undrop.
+SET database_atomic_wait_for_drop_and_detach_synchronously = 0;
 CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Atomic SETTINGS max_tables = 1;
 CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.undrop_source (x UInt32) ENGINE = MergeTree ORDER BY x;
 DROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.undrop_source;
 CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.undrop_target (x UInt32) ENGINE = MergeTree ORDER BY x;
 UNDROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.undrop_source; -- { serverError TOO_MANY_TABLES }
 SELECT count() FROM system.dropped_tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND table = 'undrop_source';
+-- Freeing a slot makes the same `UNDROP` succeed.
+DROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.undrop_target;
+UNDROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.undrop_source;
+SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND name = 'undrop_source';
+-- `UNDROP` of a table that was never dropped reports it as unknown, even when the database is full.
+UNDROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.no_such_table; -- { serverError UNKNOWN_TABLE }
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
+SET database_atomic_wait_for_drop_and_detach_synchronously = 1;
 
 -- The setting survives detaching and re-attaching the database.
 USE {CLICKHOUSE_DATABASE:Identifier};

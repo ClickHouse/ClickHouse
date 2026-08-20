@@ -1467,9 +1467,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> throw_if_cancelled)
 {
     auto database = getDatabase(table_id.database_name);
-    if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
-        database_on_disk->checkTablesLimit();
-
     auto db_disk = database->getDisk();
 
     String latest_metadata_dropped_path;
@@ -1503,6 +1500,11 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
+        /// Check the limit before moving the metadata file: a table that cannot be attached must
+        /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
+        if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
+            database_on_disk->checkTablesLimit();
+
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 
