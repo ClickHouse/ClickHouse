@@ -31,7 +31,7 @@ namespace
         if (std::isinf(value))
             return (value > 0) ? "+Inf" : "-Inf";
 
-        std::array<char, 2048> buffer;
+        std::array<char, 2048> buffer{};
         auto [ptr, ec] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, std::chars_format::fixed);
         if (ec != std::errc{})
             throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print float or double number");

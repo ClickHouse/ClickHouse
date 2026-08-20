@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
-#include <DataTypes/WhichDataType.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -38,7 +38,7 @@ bool isValidPrometheusLabelName(std::string_view label_name)
 }
 
 void checkArgumentTypes(
-    const PQT::AggregationOperator * operator_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
 {
     const auto & operator_name = operator_node->operator_name;
 
@@ -112,7 +112,7 @@ ASTPtr makeGroupWithValueLabel(ASTPtr group, const String & value_label_name, AS
 }
 
 ASTPtr transformGroupASTForCountValues(
-    const PQT::AggregationOperator * operator_node,
+    const PrometheusQueryTree::AggregationOperator * operator_node,
     ASTPtr && group_with_value_label,
     const String & value_label_name,
     bool input_metric_name_dropped,
@@ -174,7 +174,7 @@ ASTPtr makeCountValuesArray(TimestampType start_time, TimestampType end_time, Du
 
 
 SQLQueryPiece applyAggregationOperatorCountValues(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(operator_node, arguments, context);
 
