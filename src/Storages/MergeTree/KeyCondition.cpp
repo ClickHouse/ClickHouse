@@ -2673,12 +2673,6 @@ static bool tryPrepareSetColumnsForIndex(
 /// to that Enum's name. Native integer Fields are the one cross-type case with compatible equality.
 static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_type, const DataTypePtr & key_column_type)
 {
-    /// An empty array has element type `Nothing`, so the set is empty and the atom is false for every
-    /// key value regardless of the key type. Note that `[NULL]` has element type `Nullable(Nothing)`
-    /// and is not empty, so it does not take this shortcut.
-    if (WhichDataType(*set_element_type).isNothing())
-        return true;
-
     const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
     const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
 
@@ -2712,6 +2706,7 @@ static bool areSetAndKeyTypesCompatibleForHas(
     DataTypes set_types,
     size_t key_args_count,
     const DataTypes & key_types,
+    const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping)
 {
     while (set_types.size() < key_args_count)
@@ -2742,7 +2737,16 @@ static bool areSetAndKeyTypesCompatibleForHas(
     for (size_t index = 0; index < indexes_mapping.size(); ++index)
     {
         const auto set_element_index = indexes_mapping[index].tuple_index;
-        if (set_element_index >= set_types.size() || !areTypesCompatibleForHasSetIndex(set_types[set_element_index], key_types[index]))
+        if (set_element_index >= set_types.size())
+            return false;
+
+        /// When the key is a chain of deterministic functions, the set element is pushed through the
+        /// same chain before the comparison, so it is the chain's input - the column `has` compares
+        /// against - whose equality semantics must match, not the key expression result.
+        const auto & compared_type
+            = set_transforming_dags[index].has_value() ? set_transforming_dags[index]->input_type : key_types[index];
+
+        if (!areTypesCompatibleForHasSetIndex(set_types[set_element_index], compared_type))
             return false;
     }
 
@@ -2892,9 +2896,6 @@ bool KeyCondition::tryPrepareSetIndexForHas(
 
     const DataTypePtr & array_nested_type = array_data_type->getNestedType();
 
-    if (!out.relaxed && !areSetAndKeyTypesCompatibleForHas({array_nested_type}, key_args_count, data_types, indexes_mapping))
-        return false;
-
     /// `has` uses accurate equality for array elements, while MergeTreeSetIndex compares floating-point
     /// keys with ColumnVector::compareAt. In particular, `has([nan], nan)` is false but the set index
     /// considers the two NaNs equal. Do not build a set atom for arrays with floating-point elements,
@@ -2921,6 +2922,10 @@ bool KeyCondition::tryPrepareSetIndexForHas(
         out.function = func.getFunctionName() == "has" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
         return true;
     }
+
+    if (!out.relaxed
+        && !areSetAndKeyTypesCompatibleForHas({array_nested_type}, key_args_count, data_types, set_transforming_dags, indexes_mapping))
+        return false;
 
     /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
     Columns set_columns = {array_elements};
