@@ -640,6 +640,21 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the {} column, got {}",
             TimeSeriesColumnNames::IsStaleMarker, is_stale_marker_col.column->getName());
 
+    /// A samples table without the column has nowhere to persist an explicitly provided marker;
+    /// storing it as its raw NaN value would corrupt it into an ordinary sample, so fail instead.
+    if (!is_stale_marker_type)
+    {
+        const auto & marker_flags = ts_is_stale_markers->getData();
+        for (size_t i = 0; i != marker_flags.size(); ++i)
+        {
+            if (!marker_flags.isDefaultAt(i))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Cannot store a non-zero {} flag: the \"samples\" table has no such column. "
+                    "Run ALTER TABLE <samples table> ADD COLUMN {} UInt8 to enable stale-marker storage",
+                    TimeSeriesColumnNames::IsStaleMarker, TimeSeriesColumnNames::IsStaleMarker);
+        }
+    }
+
     PaddedPODArray<UInt8> filter;
     size_t num_time_series = buildNonEmptyTagsFilter(*metric_name_col.column, tags_offsets, filter);
 

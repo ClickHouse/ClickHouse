@@ -796,14 +796,16 @@ The _samples_ table must have columns:
 | `id` | [x] | `Tuple(UInt64, UUID)` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
-| `is_stale_marker` | [x] | `UInt8` | `UInt8` | Whether this sample is a Prometheus staleness marker instead of a real value |
+| `is_stale_marker` | [ ] | `UInt8` | `UInt8` | Whether this sample is a Prometheus staleness marker instead of a real value; absent on legacy tables (see below) |
 
 Inner samples tables get `is_stale_marker UInt8 DEFAULT 0` automatically. An [external](#external-target-tables) samples
-table created without that column (for example one created before it existed) can still be attached and read with plain
-SQL, but the Prometheus remote-write and remote-read protocols and the PromQL functions
+table created without that column (for example one created before it existed) keeps working with the pre-column
+behavior: the Prometheus remote-write and remote-read protocols and the PromQL functions
 [`prometheusQuery()`](/reference/functions/table-functions/prometheusQuery) and
-[`timeSeriesSelector()`](/reference/functions/table-functions/timeSeriesSelector) reject such a table, because without it
-a staleness marker cannot be told apart from an ordinary `NaN` value.
+[`timeSeriesSelector()`](/reference/functions/table-functions/timeSeriesSelector) store and read staleness markers as
+their raw `NaN` payload and treat every stored row as non-stale, logging a warning that points at the
+`ALTER TABLE ... ADD COLUMN is_stale_marker UInt8` migration. Only an `INSERT` that passes an explicit non-zero
+`is_stale_marker` flag is rejected, because that flag has nowhere to be stored.
 
 Columns the engine creates itself get time-series compression codecs:
 `timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ZSTD(3))`. Near-monotonic timestamps barely
@@ -1055,7 +1057,7 @@ CREATE TABLE metrics_for_my_table ...
 CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
 ```
 
-The external tables' column types (`id`, `timestamp`, `value`, `is_stale_marker`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time.
+The external tables' column types (`id`, `timestamp`, `value`, `is_stale_marker`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time. An external samples table may omit `is_stale_marker` entirely; it is then attached with the warning-based compatibility behavior described in [Samples table](#samples-table).
 
 The id-generator expression for an external tags target is resolved at INSERT time in the following order: the [`id_generator`](#settings) setting (if set), then the `DEFAULT` declared on the external table's `id` column (if any), then the canonical generator derived from the `id` type. The setting therefore overrides whatever `DEFAULT` is declared on the external table — see [The `id` column](#id-column) for details.
 
