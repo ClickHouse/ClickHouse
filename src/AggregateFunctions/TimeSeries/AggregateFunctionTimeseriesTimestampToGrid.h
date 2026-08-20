@@ -54,6 +54,12 @@ struct AggregateFunctionTimeseriesTimestampToGridTraits
             }
         }
 
+        void addMany(const TimestampType * timestamps, const ValueType * values, size_t batch_size)
+        {
+            for (size_t i = 0; i < batch_size; ++i)
+                add(timestamps[i], values[i]);
+        }
+
         void merge(const Summary & other)
         {
             if (other.has_value)
