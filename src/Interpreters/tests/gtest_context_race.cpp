@@ -232,19 +232,22 @@ TEST(Context, MakeQueryContextDoesNotInheritPrivileges)
 /// Test for a data race on the Settings block between Context::getReadSettings() /
 /// Context::getWriteSettings() and a concurrent settings write.
 ///
-/// Every writer of the Settings block holds Context::mutex exclusively, but both getters read
-/// ~130 settings through the unsynchronized `getSettingsRef()` accessor. A background thread with
-/// no query context resolves free `DB::getReadSettings()` to the global context, so it reads the
-/// same block a settings write mutates. `local_filesystem_read_method` is a `SettingFieldString`,
-/// so the reader can also observe a torn `std::string`.
+/// The writers this test exercises (`Context::setSetting` -> `setSettingWithLock`) hold
+/// Context::mutex exclusively, while both getters read ~130 settings through the unsynchronized
+/// `getSettingsRef()` accessor. A background thread with no query context resolves free
+/// `DB::getReadSettings()` to the global context, so it reads the same block a settings write
+/// mutates. `local_filesystem_read_method` is a `SettingFieldString`, so the reader can also
+/// observe a torn `std::string`.
+///
+/// ThreadSanitizer reports races per memory address, so the writer mutates a setting behind every
+/// read that is expected to be synchronized: the ones the two getters read directly, and the four
+/// bandwidths the throttler getters read. Keeping all four bandwidths non-zero also makes every
+/// throttler getter take its own exclusive lock on each call, which must not overlap the settings
+/// read, or this test deadlocks.
 ///
 /// This test only carries signal on a ThreadSanitizer build, where it reports a race between
 /// `Context::getReadSettings` and `SettingsImpl::set` without the fix. On every other build it
 /// passes either way.
-///
-/// `max_local_read_bandwidth` and `max_remote_read_network_bandwidth` are non-zero so the
-/// throttler getters reach their `std::lock_guard(mutex)` branch: reading the settings and taking
-/// that exclusive lock must not overlap, or this test deadlocks.
 TEST(Context, GetReadSettingsRace)
 {
     auto context = Context::createCopy(getContext().context);
@@ -252,6 +255,8 @@ TEST(Context, GetReadSettingsRace)
 
     context->setSetting("max_local_read_bandwidth", Field(UInt64(1000000)));
     context->setSetting("max_remote_read_network_bandwidth", Field(UInt64(1000000)));
+    context->setSetting("max_local_write_bandwidth", Field(UInt64(1000000)));
+    context->setSetting("max_remote_write_network_bandwidth", Field(UInt64(1000000)));
 
     constexpr size_t num_reader_threads = 4;
     constexpr size_t num_iterations = 1000;
@@ -280,12 +285,20 @@ TEST(Context, GetReadSettingsRace)
     /// value the reader parses is well-formed unless it is torn.
     /// `s3_allow_parallel_part_upload` is read by `getWriteSettings` and not by `getReadSettings`, so
     /// each getter races against a setting only it reads.
+    /// The bandwidths alternate between two non-zero values: zero would skip the throttler getters'
+    /// exclusive branch on half the iterations.
     std::thread writer([&context, &stop]
     {
         for (size_t i = 0; i < num_iterations; ++i)
         {
             context->setSetting("local_filesystem_read_method", Field(String(i % 2 ? "pread" : "read")));
             context->setSetting("s3_allow_parallel_part_upload", Field(UInt64(i % 2)));
+
+            const UInt64 bandwidth = i % 2 ? 1000000 : 2000000;
+            context->setSetting("max_local_read_bandwidth", Field(bandwidth));
+            context->setSetting("max_remote_read_network_bandwidth", Field(bandwidth));
+            context->setSetting("max_local_write_bandwidth", Field(bandwidth));
+            context->setSetting("max_remote_write_network_bandwidth", Field(bandwidth));
         }
         stop.store(true, std::memory_order_relaxed);
     });
