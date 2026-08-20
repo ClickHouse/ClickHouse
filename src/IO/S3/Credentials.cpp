@@ -1271,8 +1271,9 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     auto sts_retry_strategy = sts_client_configuration.retry_strategy;
     sts_retry_strategy.max_retries = std::min(sts_retry_strategy.max_retries, static_cast<decltype(sts_retry_strategy.max_retries)>(3));
     sts_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(sts_retry_strategy);
-    static constexpr auto connect_cap_ms = static_cast<long>(DEFAULT_CONNECT_TIMEOUT_MS);
-    static constexpr auto request_cap_ms = static_cast<long>(DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS);
+    static constexpr auto connect_cap_ms = static_cast<decltype(sts_client_configuration.connectTimeoutMs)>(DEFAULT_CONNECT_TIMEOUT_MS);
+    static constexpr auto request_cap_ms
+        = static_cast<decltype(sts_client_configuration.requestTimeoutMs)>(DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS);
     if (sts_client_configuration.connectTimeoutMs <= 0 || sts_client_configuration.connectTimeoutMs > connect_cap_ms)
         sts_client_configuration.connectTimeoutMs = connect_cap_ms;
     if (sts_client_configuration.requestTimeoutMs <= 0 || sts_client_configuration.requestTimeoutMs > request_cap_ms)
