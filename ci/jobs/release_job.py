@@ -510,7 +510,6 @@ def main():
                     print("ChangeLog already on master — nothing to push")
                     return
                 Shell.check(f"git commit -m {shlex.quote(commit_msg)}", strict=True)
-                # rebase_retries heals a non-fast-forward when the tip moves.
                 Git.push(
                     "ClickHouse/ClickHouse",
                     "HEAD:refs/heads/master",

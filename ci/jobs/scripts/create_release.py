@@ -534,8 +534,8 @@ class ReleaseInfo:
                         "HEAD:refs/heads/master",
                         dry_run=dry_run,
                         strict=True,
-                        retries=3,  # transient workflow-scope timeout (see push_release_tag)
-                        rebase_retries=5,  # heal a non-fast-forward when the tip moves
+                        retries=3,
+                        rebase_retries=5,
                         git_prefix=GIT_PREFIX,
                     )
                     if dry_run:
