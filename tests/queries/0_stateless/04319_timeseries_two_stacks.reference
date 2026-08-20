@@ -39,3 +39,8 @@ dense average-path two-stack values match a fresh single-grid-point aggregate (a
 1
 1
 1
+signed-zero ties keep the earliest sample (1/max: -inf, -inf, -inf, inf):
+-inf
+-inf
+-inf
+inf

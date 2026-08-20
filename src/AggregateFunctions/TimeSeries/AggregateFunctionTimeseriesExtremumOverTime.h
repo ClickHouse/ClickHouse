@@ -59,7 +59,9 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
 
         void add(TimestampType timestamp, ValueType value)
         {
-            if (!has_value || isBetter(value, second))
+            /// An IEEE-equal value (e.g. -0.0 vs +0.0) keeps the earliest sample, like PromQL's
+            /// time-ordered `if v > max` scan; this makes add/merge order-independent bit-for-bit.
+            if (!has_value || isBetter(value, second) || (value == second && timestamp < first))
             {
                 first = timestamp;
                 second = value;
@@ -73,19 +75,15 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
                 add(timestamps[i], values[i]);
         }
 
-        /// Commutative and associative: keeps whichever of the two summaries holds the "better" extremum. This
-        /// is what makes max/min combinable in any order, unlike last_over_time's "most recent" which requires
-        /// buckets to be combined in time order. Combining out of arrival order can change which of two *equal*
-        /// (or, for an all-NaN run, which NaN) extrema keeps its `first` timestamp - but `first` is only used
-        /// for the per-bucket `checkTimestampsInRange` range check below (always satisfied, since it is always
-        /// one of that bucket's own sample timestamps) and is never read back out of a merged/combined summary;
-        /// `second` (the value returned to the caller) is unaffected by merge order, so the Two-Stacks
-        /// sliding-window strategy (which combines out of arrival order) is safe to use here.
+        /// Commutative and associative: strictly better value wins, an IEEE-equal value resolves to the
+        /// earliest timestamp (see add), so the Two-Stacks strategy, which combines out of arrival
+        /// order, returns bit-for-bit what a time-ordered fold returns (an all-NaN run may keep a
+        /// different NaN, whose returned value is NaN either way).
         void merge(const Summary & other)
         {
             if (!other.has_value)
                 return;
-            if (!has_value || isBetter(other.second, second))
+            if (!has_value || isBetter(other.second, second) || (other.second == second && other.first < first))
             {
                 first = other.first;
                 second = other.second;

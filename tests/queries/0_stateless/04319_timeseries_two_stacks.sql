@@ -107,3 +107,21 @@ SELECT timeSeriesMinToGrid(200, 220, 1, 15)(timestamp, value)[21]
      = timeSeriesMinToGrid(220, 220, 1, 15)(timestamp, value)[1] FROM ts_dense;
 
 DROP TABLE ts_dense;
+
+-- IEEE-equal extrema (-0.0 vs +0.0) must resolve order-independently: the earliest sample wins on
+-- the recompute path, the two-stack path, and through split -State merges alike.
+SELECT 'signed-zero ties keep the earliest sample (1/max: -inf, -inf, -inf, inf):';
+DROP TABLE IF EXISTS ts_zero;
+CREATE TABLE ts_zero (timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY timestamp;
+INSERT INTO ts_zero VALUES (100, -0.), (101, 0.);
+SELECT 1 / (timeSeriesMaxToGrid(101, 101, 1, 5)(timestamp, value))[1] FROM ts_zero;
+SELECT 1 / (timeSeriesMaxToGrid(101, 121, 1, 50)(timestamp, value))[1] FROM ts_zero;
+SELECT 1 / (timeSeriesMaxToGridMerge(101, 121, 1, 50)(s))[1]
+  FROM (SELECT timeSeriesMaxToGridState(101, 121, 1, 50)(timestamp, value) AS s
+        FROM ts_zero GROUP BY toUnixTimestamp(timestamp) % 2);
+DROP TABLE ts_zero;
+DROP TABLE IF EXISTS ts_zero2;
+CREATE TABLE ts_zero2 (timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY timestamp;
+INSERT INTO ts_zero2 VALUES (100, 0.), (101, -0.);
+SELECT 1 / (timeSeriesMaxToGrid(101, 121, 1, 50)(timestamp, value))[1] FROM ts_zero2;
+DROP TABLE ts_zero2;
