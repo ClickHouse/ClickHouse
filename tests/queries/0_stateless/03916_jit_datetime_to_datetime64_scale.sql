@@ -92,10 +92,15 @@ WITH shapes AS
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '03916_%_shape'
     GROUP BY log_comment
 )
+-- The third column keeps the multiIf pair honest: 04930_jit_compiled_if_date_to_datetime anchors
+-- if to CompiledFunctionExecute > 0, so a regression that stops compiling only multiIf leaves the
+-- if control at 1 and the multiIf control at 0 instead of collapsing both pairs to a green 0 = 0.
 SELECT
     (SELECT compiled FROM shapes WHERE log_comment = '03916_time_if_shape')
         = (SELECT compiled FROM shapes WHERE log_comment = '03916_control_if_shape'),
     (SELECT compiled FROM shapes WHERE log_comment = '03916_time_multiif_shape')
-        = (SELECT compiled FROM shapes WHERE log_comment = '03916_control_multiif_shape');
+        = (SELECT compiled FROM shapes WHERE log_comment = '03916_control_multiif_shape'),
+    (SELECT compiled FROM shapes WHERE log_comment = '03916_control_multiif_shape')
+        = (SELECT compiled FROM shapes WHERE log_comment = '03916_control_if_shape');
 
 DROP TABLE t_cond;
