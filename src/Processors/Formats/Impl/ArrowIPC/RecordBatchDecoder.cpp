@@ -30,7 +30,6 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Core/UUID.h>
 #include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/predicate.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -128,7 +127,7 @@ DataTypePtr stripHint(const DataTypePtr & type)
 {
     if (!type)
         return nullptr;
-    return removeNullable(removeLowCardinality(removeNullable(type)));
+    return removeLowCardinalityAndNullable(type);
 }
 
 DataTypePtr arrayElementHint(const DataTypePtr & hint)
@@ -145,13 +144,8 @@ DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name
         return nullptr;
     if (tuple->hasExplicitNames())
     {
-        const auto & names = tuple->getElementNames();
-        for (size_t i = 0; i < names.size(); ++i)
-        {
-            const bool match = case_insensitive ? boost::iequals(names[i], child_name) : names[i] == child_name;
-            if (match)
-                return tuple->getElements()[i];
-        }
+        if (const auto position = tuple->tryGetPositionByName(child_name, case_insensitive))
+            return tuple->getElements()[*position];
         return nullptr;
     }
     if (pos < tuple->getElements().size())
