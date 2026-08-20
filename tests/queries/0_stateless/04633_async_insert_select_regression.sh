@@ -71,3 +71,34 @@ ${CLICKHOUSE_CLIENT} \
 done
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_dedup"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_dedup"
+
+# Case 11: a query eligible for the async queue route (single small block) must not construct or
+# start the destination sink before the divert decision is made. MergeTreeSink::onStart() sleeps
+# when the destination already has too many parts (`parts_to_delay_insert`); an eagerly-started
+# sink would pay that sleep even though the block never reaches it.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_no_eager_sink"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE test_async_sel_no_eager_sink (id UInt32)
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS parts_to_delay_insert = 1, parts_to_throw_insert = 100000,
+             min_delay_to_insert_ms = 10000, max_delay_to_insert = 10
+"
+${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES test_async_sel_no_eager_sink"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO test_async_sel_no_eager_sink VALUES (1)"
+
+start_ns=$(date +%s%N)
+${CLICKHOUSE_CLIENT} --async_insert=1 --wait_for_async_insert=0 -q "
+    INSERT INTO test_async_sel_no_eager_sink SELECT 2
+"
+end_ns=$(date +%s%N)
+elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
+# A synchronously-started MergeTreeSink would sleep for at least min_delay_to_insert_ms (10000 ms)
+# here; the diverted query must return almost immediately instead.
+if [ "$elapsed_ms" -lt 6000 ]; then
+    echo "ok"
+else
+    echo "destination sink started eagerly (${elapsed_ms} ms)"
+fi
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM START MERGES test_async_sel_no_eager_sink"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_no_eager_sink"
