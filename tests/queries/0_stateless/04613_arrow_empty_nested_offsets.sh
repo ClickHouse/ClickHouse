@@ -157,7 +157,7 @@ for f in "${TMP_DIR}"/null_leaf_forged_*.arrow; do
         *CANNOT_ALLOCATE_MEMORY*|*"bad_alloc"*|*"MEMORY_LIMIT_EXCEEDED"*) oom=$((oom + 1)) ;;
     esac
     case "$err" in
-        *"references no elements but its child declares"*) guard=$((guard + 1)) ;;
+        *"but its buffer-less child declares"*) guard=$((guard + 1)) ;;
     esac
 done
 echo "DoS guard: forged-length variants that drove an allocation: ${oom}"

@@ -283,6 +283,30 @@ const InvisibleRowsMask * maskPtr(const std::optional<InvisibleRowsMask> & mask)
     return mask ? &*mask : nullptr;
 }
 
+/// Whether a field's decoded size derives from FieldNode lengths alone, with no buffer whose validated
+/// size bounds the declared row count. A `null`-typed field carries no buffers at all; a struct or
+/// fixed-size-list tree of such fields adds only validity buffers, which may legitimately be absent
+/// (0 bytes) when the nodes declare no nulls. Every other layout carries a values/offsets/type-ids/
+/// indices buffer that `checkBufferSize` validates against the declared length before any allocation
+/// (a dictionary-encoded field is physically an index array, whatever its value type is). A forged
+/// length on a buffer-less subtree must therefore be bounded by its parent BEFORE decoding it.
+bool isBufferlessSubtree(const ArrowField & field)
+{
+    if (field.dictionary)
+        return false;
+    switch (field.type.kind)
+    {
+        case TypeKind::Null:
+            return true;
+        case TypeKind::Struct:
+            return std::ranges::all_of(field.type.children, isBufferlessSubtree);
+        case TypeKind::FixedSizeList:
+            return isBufferlessSubtree(field.type.children.at(0));
+        default:
+            return false;
+    }
+}
+
 /// An invisible Array/Map row decodes as the type default — the empty range — the same way the native
 /// Parquet reader materializes a null list slot (its definition levels reference no child values at
 /// all). Keeping the spec-undefined range would resurface it as a value whenever the slot's null map
@@ -354,6 +378,35 @@ std::optional<InvisibleRowsMask> RecordBatchDecoder::buildOffsetsChildInvisibleM
             memset(mask.data() + range_begin, 0, range_end - range_begin);
     }
     return mask;
+}
+
+void RecordBatchDecoder::checkOffsetsChildDeclaredLength(const ArrowField & child, Int64 prev, const char * what) const
+{
+    const Int64 child_len = peekNextNodeLength();
+    if (isBufferlessSubtree(child))
+    {
+        /// Only child rows up to the last referenced offset can carry data; a buffer-less child longer
+        /// than that is pure metadata (a `null`-typed tail holds no information), so a huge length can
+        /// only be a forgery — or a sliced file written without truncating the unreferenced tail, which
+        /// this reader rejects the same way it rejects a non-empty child under an all-empty parent.
+        if (child_len > prev)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC {} references {} child rows but its buffer-less child declares {}", what, prev, child_len);
+    }
+    else if (rowCountExceedsBodyBits(static_cast<size_t>(std::max<Int64>(child_len, 0))))
+    {
+        /// A buffered child may legitimately be longer than the referenced range (a sliced Arrow file
+        /// keeps the full child), but its length is still physically bounded: every decodable layout
+        /// costs at least one bit per row in some buffer. A length past the whole body's bit count can
+        /// only be forged; rejecting it here keeps a buffer-less field nested deeper (e.g. a struct's
+        /// `null` field declared before its buffered siblings) from allocating before any sibling's
+        /// buffer-size check fires.
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow IPC {} child declares {} rows, more than the {}-byte message body can hold",
+            what, child_len, total_buffer_bytes);
+    }
 }
 
 RecordBatchDecoder::Slice RecordBatchDecoder::nextBuffer()
@@ -872,42 +925,33 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                     ErrorCodes::INCORRECT_DATA, "Arrow IPC fixed-size-list has a non-positive list size {}", type.list_size);
             const size_t list_size = static_cast<size_t>(type.list_size);
             const size_t expected_child = requiredBytes(rows, list_size);
-            /// When there are no rows the child is empty; reject a non-zero child FieldNode length BEFORE
-            /// decodeField so a buffer-less child type (e.g. Null) cannot drive an unbounded allocation
-            /// that the expected-child size check below could not prevent.
-            if (rows == 0)
-            {
-                const Int64 child_len = peekNextNodeLength();
-                if (child_len != 0)
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "Arrow IPC empty fixed-size-list references no elements but its child declares {} rows", child_len);
-            }
+            /// The child holds exactly `rows * list_size` elements. Reject a mismatched child FieldNode
+            /// length BEFORE decodeField: a buffer-less child type (e.g. Null) derives its size from the
+            /// length alone, so a forged-huge length would otherwise drive an unbounded null-map
+            /// allocation that a post-decode size check could not prevent.
+            const Int64 declared_child = peekNextNodeLength();
+            if (declared_child < 0 || static_cast<size_t>(declared_child) != expected_child)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC fixed-size-list child declares {} rows, expected {}", declared_child, expected_child);
             /// Every child row belongs to the slot at `j / list_size`; a child row of an invisible slot is
-            /// itself invisible. Sized to the child's declared row count (a mismatch with `expected_child`
-            /// is rejected after the decode below); the excess rows of an over-long child are unreferenced,
-            /// hence invisible. The declared count is untrusted and must not size the mask allocation past
-            /// the physical bound of the body (see `rowCountExceedsBodyBits`).
+            /// itself invisible. `expected_child` can still be huge with a tiny body when the child is
+            /// buffer-less (a fixed-size-list of `null` with a large `list_size` is pure metadata), so the
+            /// mask allocation stays bounded by the body's physical size (see `rowCountExceedsBodyBits`);
+            /// a buffer-less child decodes to all-NULL values, which need no masking.
             const std::optional<InvisibleRowsMask> child_invisible = [&]() -> std::optional<InvisibleRowsMask>
             {
-                if (!invisible_rows)
-                    return std::nullopt;
-                const size_t child_rows = peekNodeRows();
-                if (rowCountExceedsBodyBits(child_rows))
+                if (!invisible_rows || rowCountExceedsBodyBits(expected_child))
                     return std::nullopt;
                 InvisibleRowsMask mask;
-                mask.resize(child_rows);
-                for (size_t j = 0; j < child_rows; ++j)
-                    mask[j] = (j < expected_child) ? (*invisible_rows)[j / list_size] : UInt8(1);
+                mask.resize(expected_child);
+                for (size_t j = 0; j < expected_child; ++j)
+                    mask[j] = (*invisible_rows)[j / list_size];
                 return mask;
             }();
             ColumnPtr child = decodeField(
                 type.children.at(0), /*allow_low_cardinality=*/false, arrayElementHint(effective_hint), path,
                 list_depth + 1, maskPtr(child_invisible));
-            if (child->size() != expected_child)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Arrow IPC fixed-size-list child has {} rows, expected {}", child->size(), expected_child);
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
             for (size_t i = 0; i < rows; ++i)
@@ -925,18 +969,18 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             for (size_t i = 0; i < type.children.size(); ++i)
             {
                 const ArrowField & child = type.children[i];
-                /// An empty struct has no rows, so every field references zero rows; reject a non-zero
-                /// field FieldNode length BEFORE decodeField. A buffer-less field type (e.g. a Null
-                /// field) derives its size from the length alone, so a forged-huge length would
-                /// otherwise drive an unbounded allocation that the size check below could not prevent.
-                if (rows == 0)
-                {
-                    const Int64 field_len = peekNextNodeLength();
-                    if (field_len != 0)
-                        throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
-                            "Arrow IPC empty struct field '{}' declares {} rows", child.name, field_len);
-                }
+                /// Every struct field carries its own `FieldNode.length`, but they must all equal the
+                /// parent struct's row count; a malformed file can shorten one field, which would leave
+                /// a `ColumnTuple` with elements of unequal size (the Apache Arrow library reader's
+                /// `StructArray::field()` silently clamps such fields instead). Reject a mismatch BEFORE
+                /// decodeField: a buffer-less field type (e.g. a Null field) derives its size from the
+                /// length alone, so a forged-huge length would otherwise drive an unbounded null-map
+                /// allocation that a post-decode size check could not prevent.
+                const Int64 field_len = peekNextNodeLength();
+                if (field_len < 0 || static_cast<size_t>(field_len) != rows)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow IPC struct field '{}' declares {} rows, expected {}", child.name, field_len, rows);
                 /// Struct children are row-aligned with the parent, so the invisible-rows mask (which
                 /// already includes this struct's own nulls, composed in `decodeField`) passes through
                 /// unchanged: the bytes of a child slot under a null struct row are undefined per the
@@ -945,14 +989,6 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                     child, /*allow_low_cardinality=*/false,
                     tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
                     child_path(child.name), list_depth, invisible_rows);
-                /// Every struct field carries its own `FieldNode.length`, but they must all equal the
-                /// parent struct's row count. A malformed file can shorten one field (or slice a child
-                /// out of range), leaving a `ColumnTuple` with elements of unequal size. Reject it here
-                /// (the Apache Arrow library reader's `StructArray::field()` silently clamps such fields).
-                if (element->size() != rows)
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "Arrow IPC struct field '{}' has {} rows, expected {}", child.name, element->size(), rows);
                 elements.push_back(std::move(element));
             }
             return ColumnTuple::create(elements);
@@ -965,18 +1001,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             auto offsets_col = decodeListOffsets(rows, /*large=*/false, "map", "map offsets", base, prev);
             const auto & offs = offsets_col->getData();
 
-            /// An empty map references no entries, so the entries struct must also be empty. Reject a
-            /// non-zero entries FieldNode length BEFORE decodeField: a buffer-less entry type (e.g.
-            /// Map(_, Null)) derives its size from the length alone, so a forged-huge length would
-            /// otherwise drive an unbounded allocation that the later cut(0, 0) could not prevent.
-            if (rows == 0)
-            {
-                const Int64 entries_len = peekNextNodeLength();
-                if (entries_len != 0)
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "Arrow IPC empty map references no entries but its entries struct declares {} rows", entries_len);
-            }
+            /// Bound the entries struct's declared length BEFORE decodeField: a buffer-less entries type
+            /// (e.g. Map(Null, Null)) derives its size from the length alone, so a forged-huge length
+            /// would otherwise drive an unbounded allocation that the later cut() could not prevent.
+            checkOffsetsChildDeclaredLength(type.children.at(0), prev, "map");
 
             /// Entry rows that only invisible map slots reference — or that no slot references — hold
             /// undefined bytes and must not be value-validated; see `buildOffsetsChildInvisibleMask`.
@@ -1074,18 +1102,10 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
     auto offsets_col = decodeListOffsets(rows, large, "list", "list offsets", base, prev);
     const auto & offs = offsets_col->getData();
 
-    /// An empty list references no child elements, so the child subtree must also be empty. Reject a
-    /// non-zero child FieldNode length BEFORE decodeField: a buffer-less child type (e.g. List(Null))
+    /// Bound the child's declared length BEFORE decodeField: a buffer-less child type (e.g. List(Null))
     /// derives its size from the length alone, so a forged-huge length would otherwise drive an
-    /// unbounded null-map allocation that the later child->cut(0, 0) could not prevent.
-    if (rows == 0)
-    {
-        const Int64 child_len = peekNextNodeLength();
-        if (child_len != 0)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow IPC empty list references no elements but its child declares {} rows", child_len);
-    }
+    /// unbounded null-map allocation that the later child->cut() could not prevent.
+    checkOffsetsChildDeclaredLength(field.type.children.at(0), prev, "list");
 
     /// Rows of the child that only invisible slots reference — or that no slot references — hold
     /// undefined bytes and must not be value-validated; see `buildOffsetsChildInvisibleMask`.
@@ -1234,6 +1254,24 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
             continue;
         }
 
+        /// Bound the child's declared length BEFORE decodeField, so forged metadata cannot drive an
+        /// oversized allocation in a buffer-less child subtree (e.g. a struct of `null` fields, whose
+        /// null maps are sized by the FieldNode length alone). A sparse child holds exactly `rows`
+        /// values (the per-row child access below indexes it by row). A dense child's length is only
+        /// lower-bounded by the referenced offsets, but it is still physically bounded: every decodable
+        /// layout costs at least one bit per row in some buffer, so a length past the whole body's bit
+        /// count can only be forged.
+        const Int64 child_len = peekNextNodeLength();
+        if (!dense && child_len != static_cast<Int64>(rows))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC sparse union child '{}' declares {} rows, expected {}", child.name, child_len, rows);
+        if (dense && rowCountExceedsBodyBits(static_cast<size_t>(std::max<Int64>(child_len, 0))))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC dense union child '{}' declares {} rows, more than the {}-byte message body can hold",
+                child.name, child_len, total_buffer_bytes);
+
         /// Visibility of this child's rows: a child slot holds a meaningful value only when its row's
         /// type id selects this child — non-selected slots hold undefined bytes per the Arrow spec, even
         /// in a file with no nulls anywhere — and only when the row is not invisible at an ancestor
@@ -1306,21 +1344,6 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
     auto offsets = ColumnVariant::ColumnOffsets::create(rows);
     auto & discr_data = local_discriminators->getData();
     auto & off_data = offsets->getData();
-
-    /// Sparse children hold `rows` values each; validate that before the per-row access below — a
-    /// malformed file can give a child a shorter `FieldNode::length` (each child length is accepted
-    /// independently), and `insertFrom` / the child null-map lookup would then read past the child
-    /// column. Dense children are bounded by the per-row offset check in the loop instead.
-    if (!dense)
-    {
-        for (size_t l = 0; l < variant_columns.size(); ++l)
-        {
-            if (variant_columns[l]->size() != rows)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Arrow IPC sparse union child {} has {} rows, expected {}", l, variant_columns[l]->size(), rows);
-        }
-    }
 
     /// Sparse children are always compacted: each holds `rows` values of which only the selected ones
     /// are real.
@@ -1658,10 +1681,10 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
         }
     }
 
-    /// Every top-level column must decode to the batch's row count; otherwise the returned `Chunk` would
-    /// mix columns of different sizes (an internal inconsistency) instead of being rejected as bad data.
-    /// Validate this before `prepareBuffers`, so a negative length on the dictionary-batch path is rejected
-    /// before any (possibly large or compressed) buffer is allocated or decompressed from the batch metadata.
+    /// The batch length is untrusted IPC metadata; reject a negative one before `prepareBuffers`, so a
+    /// negative length on the dictionary-batch path is rejected before any (possibly large or compressed)
+    /// buffer is allocated or decompressed from the batch metadata. Each top-level column's declared row
+    /// count is then checked against this length in the loop below, before the column is decoded.
     if (batch.length() < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", batch.length());
     const size_t batch_rows = static_cast<size_t>(batch.length());
@@ -1686,6 +1709,18 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
             continue;
         }
 
+        /// Every top-level column must decode to the batch's row count; otherwise the returned `Chunk`
+        /// would mix columns of different sizes (an internal inconsistency) instead of being rejected as
+        /// bad data. Reject a mismatch BEFORE decodeField: a buffer-less column (a `null`-typed field,
+        /// or a struct/fixed-size-list tree of them) is sized by its FieldNode length alone, so a forged
+        /// length would otherwise drive an allocation of that size before any consistency check fired.
+        const Int64 declared_rows = peekNextNodeLength();
+        if (declared_rows < 0 || static_cast<size_t>(declared_rows) != batch_rows)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC top-level column '{}' declares {} rows, expected the batch length {}",
+                field.name, declared_rows, batch_rows);
+
         DecodedColumn decoded;
         decoded.name = field.name;
         decoded.type = fieldToCHType(field, settings, field.nullable, /*allow_null_type=*/true);
@@ -1705,11 +1740,6 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
         /// `fieldToCHType` did not (setting off); reconcile the reported type with the decoded column so the
         /// column/type pair stays consistent for the subsequent cast.
         decoded.type = matchColumnNullability(decoded.type, decoded.column);
-        if (decoded.column->size() != batch_rows)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Arrow IPC top-level column '{}' has {} rows, expected the batch length {}",
-                field.name, decoded.column->size(), batch_rows);
         result.push_back(std::move(decoded));
     }
 

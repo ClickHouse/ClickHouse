@@ -186,6 +186,14 @@ private:
         size_t rows, Int64 base, Int64 prev, const PaddedPODArray<UInt64> & offsets,
         const InvisibleRowsMask * invisible_rows) const;
 
+    /// Bounds the declared FieldNode length of a List/LargeList/Map child before it is decoded, so
+    /// forged metadata cannot drive an oversized allocation in a buffer-less child subtree (which is
+    /// sized by that length alone; see `isBufferlessSubtree`). `prev` is the last referenced offset —
+    /// the child row count the parent's offsets actually reference — and `what` names the parent field
+    /// in the errors ("list", "map"). Throws `INCORRECT_DATA` when a buffer-less child declares more
+    /// rows than are referenced, or when any child declares more rows than the body physically bounds.
+    void checkOffsetsChildDeclaredLength(const ArrowField & child, Int64 prev, const char * what) const;
+
     /// Consumes and decodes the offsets buffer of a List/LargeList/Map field into ClickHouse array
     /// offsets (per-slot cumulative lengths relative to the first offset), validating that the first
     /// offset is non-negative and that the sequence is monotonic non-decreasing (each offset compared
