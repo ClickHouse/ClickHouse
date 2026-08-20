@@ -56,8 +56,10 @@ SETTINGS
     apply_prewhere_after_final = 1,
     use_skip_indexes_if_final = 1;
 
--- A row-policy DAG carries all required table columns as passthrough outputs. The no-rescoring
--- rewrite must be disabled even when a policy does not otherwise consume the vector column.
+-- A row-policy DAG carries all required table columns as passthrough outputs, including the vector
+-- column. Such a passthrough is redundant - the policy does not really consume the vector column -
+-- so it is pruned and the no-rescoring rewrite still applies: the plan sorts by `_distance` and the
+-- read no longer outputs the vector column.
 DROP ROW POLICY 04907_vector_row_policy ON tab_vec_row_policy;
 CREATE ROW POLICY 04907_vector_row_policy ON tab_vec_row_policy
 USING tenant = 1 AS RESTRICTIVE TO ALL;
@@ -71,9 +73,9 @@ SELECT count() FROM
 )
 WHERE explain LIKE '%Sort description: sqrt(_distance)%';
 
--- With FINAL, this non-consuming policy is deferred and its retained `vec` passthrough is
--- replayed by `FilterTransform`. The no-rescoring rewrite must remain disabled, so the plan
--- keeps the rescoring sort over `_distance`.
+-- With `FINAL`, this non-consuming policy is deferred and replayed by `FilterTransform`. Its
+-- redundant vector-column passthrough must be pruned there as well, so the no-rescoring rewrite
+-- keeps applying and the plan still sorts by `_distance`.
 SELECT count() FROM
 (
     EXPLAIN SELECT id FROM tab_vec_row_policy FINAL
