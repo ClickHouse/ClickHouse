@@ -591,7 +591,7 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
   ## tokens
 </div>
 
-تم تقديمه في: v21.11.0
+أُضيف في: v21.11.0
 
 يقسّم سلسلة نصية إلى رموز باستخدام مُقسِّم الرموز المحدد.
 
@@ -600,6 +600,7 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 * `splitByNonAlpha` يقسّم السلاسل النصية عند محارف ASCII غير الأبجدية الرقمية (راجع أيضًا الدالة [splitByNonAlpha](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` يقسّم السلاسل النصية باستخدام سلاسل الفواصل `S` التي يحدّدها المستخدم (راجع أيضًا الدالة [splitByString](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByString)). يمكن تحديد الفواصل باستخدام معلمة اختيارية، على سبيل المثال: `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. لاحظ أن كل سلسلة يمكن أن تتكوّن من عدة محارف (`', '` في المثال). قائمة الفواصل الافتراضية، إذا لم تُحدَّد صراحةً، هي مسافة بيضاء واحدة `[' ']`.
 * `asciiCJK` يقسّم السلاسل النصية إلى رموز باستخدام قواعد حدود الكلمات في Unicode (على غرار UAX #29). وتُشكّل محارف ASCII الأبجدية الرقمية والشرطات السفلية رموزًا مع الموصلات (`:` للحروف، و`.` و`'` للمحارف من النوع نفسه). أما محارف Unicode غير التابعة لـ ASCII فتتحول إلى رموز من محرف واحد.
+* `chinese` يقسّم النص الصيني إلى كلمات باستخدام قاموس ونموذج ماركوف مخفي (تتبع الخوارزمية [jieba](https://github.com/fxsjy/jieba)؛ وتُشتق بيانات القاموس والنموذج المضمّنة من [cppjieba](https://github.com/yanyiwu/cppjieba)). وعلى خلاف `asciiCJK`، الذي يعامل كل محرف غير تابع لـ ASCII كرمز من محرف واحد، يجمع `chinese` المحارف الصينية المتتالية في كلمات، مما ينتج رموزًا أكثر معنى وجودة بحث أعلى للنص الصيني. تكون وسيطة `granularity` الاختيارية إما `coarse_grained` (الافتراضي) أو `fine_grained`؛ ويقوم الأخير أيضًا بتعداد الكلمات الفرعية المتداخلة، مما يحسّن الاستدعاء على حساب فهرس أكبر.
 * `icu(locale)` يقسّم السلاسل النصية إلى رموز كلمات باستخدام تجزئة كلمات Unicode في مكتبة ICU (UAX #29). بالنسبة إلى أنظمة الكتابة التي لا تستخدم مسافات بيضاء بين الكلمات (مثل الصينية واليابانية والتايلاندية)، تطبّق ICU تجزئة قائمة على القاموس، لذا يُقسَّم هذا النص إلى كلمات ذات معنى. تمثل `locale` الإعدادات المحلية لـ ICU التي تُمرَّر إلى المُقسِّم (يعتمد التقسيم أساسًا على نظام الكتابة والقاموس؛ وتحدد الإعدادات المحلية التخصيصات الخاصة بالإعدادات المحلية في ICU)؛ وهي إلزامية وتُمرَّر كمعامل منفصل، على سبيل المثال: `tokens(value, 'icu', 'ja')`.
 * `japanese` يقسّم النص الياباني إلى كلمات باستخدام المحلل الصرفي MeCab. يتطلب قاموسًا مُعدًا في تكوين الخادم (راجع وثائق [فهرس النص](/ar/reference/engines/table-engines/mergetree-family/textindexes)).
 * `ngrams(N)` يقسّم السلاسل النصية إلى n-grams متساوية الحجم (راجع أيضًا الدالة [ngrams](/ar/reference/functions/regular-functions/splitting-merging-functions#ngrams)). يمكن تحديد طول ngram باستخدام معلمة عددية صحيحة اختيارية بين 1 و8، على سبيل المثال: `tokens(value, 'ngrams', 3)`. حجم ngram الافتراضي، إذا لم يُحدَّد صراحةً، هو 3.
@@ -610,13 +611,14 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 وللقيام بذلك، مرّر الفواصل بترتيب تنازلي حسب الطول.
 على سبيل المثال، مع separators = `['%21', '%']` فإن السلسلة `%21abc` ستُقسَّم إلى رموز على النحو `['abc']`، بينما separators = `['%', '%21']` ستُقسَّم إلى `['21ac']` (وهو على الأرجح ليس ما أردته).
 
-**الصياغة**
+**بناء الجملة**
 
 ```sql
 tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
 tokens(value, 'asciiCJK')
+tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
 tokens(value, 'japanese')
 tokens(value, 'ngrams'[, n])
@@ -627,13 +629,14 @@ tokens(value, 'array')
 **وسيطات الدالة**
 
 * `value` — سلسلة الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring)
-* `tokenizer` — مُقسِّم الرموز المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`icu` و`japanese` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، فالقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — مُقسِّم الرموز المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`chinese` و`icu` و`japanese` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، فالقيمة الافتراضية هي `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 * `locale` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `icu`: الإعدادات المحلية الإلزامية، مثل `'ja'`. [`const String`](/ar/reference/data-types/string)
 * `n` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `ngrams`: معلمة اختيارية تحدد طول الـ ngrams. إذا لم تُحدَّد صراحةً، فالقيمة الافتراضية هي `3`. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `separators` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `split`: معلمة اختيارية تحدد سلاسل الفواصل. إذا لم تُحدَّد صراحةً، فالقيمة الافتراضية هي `[' ']`. [`const Array(String)`](/ar/reference/data-types/array)
 * `min_length` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأدنى لطول الـ gram، والقيمة الافتراضية هي 3. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `max_length` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأقصى لطول الـ gram، والقيمة الافتراضية هي 100. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `min_cutoff_length` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأدنى لطول القطع. [`const UInt8`](/ar/reference/data-types/int-uint)
+* `granularity` — ينطبق فقط إذا كانت الوسيطة `tokenizer` هي `chinese`: معلمة اختيارية، إما `coarse_grained` (الافتراضية) أو `fine_grained`، تتحكم في دقة التقسيم. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
@@ -673,16 +676,22 @@ SELECT tokens('abc def', 'ngrams', 3) AS tokens;
 (مثل محارف البدل في البداية والنهاية)، وتطبّق قواعد خاصة بكل مُقسِّم الرموز
 لاستخراج رموز ذات معنى لأغراض Pattern matching.
 
-وهي تدعم مجموعات الوسائط نفسها التي تدعمها الدالة `tokens`، باستثناء
-مُقسِّم الرموز `icu` الذي لا ينفذ تقسيم النص إلى رموز لأنماط LIKE؛ أما الوسائط الإضافية
-بعد `tokenizer` فتُفسَّر وفقًا للـ مُقسِّم الرموز
-المحدد (على سبيل المثال، `n` من أجل `ngrams`، و`separators` من أجل `splitByString`،
-و`min_length` / `max_length` [/ `min_cutoff_length`] من أجل `sparseGrams`).
+وهي تدعم مجموعات الوسائط نفسها التي تدعمها الدالة `tokens`، مع بعض
+الاستثناءات: مُقسِّما الرموز `chinese` و`icu` غير مدعومين هنا.
+لا يكون تقسيم النص إلى رموز لأنماط LIKE ذا معنى إلا لمُقسِّمات الرموز التي
+تختار صراحةً دعم دلالات LIKE (`supportsStringLike()`). يؤدي استدعاء
+`tokensForLikePattern` باستخدام مُقسِّم رموز غير مدعوم إلى ظهور `BAD_ARGUMENTS`؛
+استخدم `tokens` العادية بدلًا من ذلك.
+
+تُفسَّر الوسائط الإضافية بعد `tokenizer` وفقًا للـ مُقسِّم الرموز
+المحدد (على سبيل المثال، `n` من أجل `ngrams`، و`separators` من أجل
+`splitByString`، و`min_length` / `max_length` [/ `min_cutoff_length`]
+من أجل `sparseGrams`).
 
 هذه الدالة مخصّصة أساسًا لأغراض تصحيح الأخطاء والاختبار،
 وتُستخدم داخليًا لتحليل سلوك تقسيم النص إلى رموز لأنماط LIKE.
 
-**الصياغة**
+**بناء الجملة**
 
 ```sql
 tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
@@ -698,6 +707,7 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 * `min_length` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأدنى لطول gram، والقيمة الافتراضية هي 3. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `max_length` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأقصى لطول gram، والقيمة الافتراضية هي 100. [`const UInt8`](/ar/reference/data-types/int-uint)
 * `min_cutoff_length` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `sparseGrams`: معلمة اختيارية تحدد الحد الأدنى لطول القطع. [`const UInt8`](/ar/reference/data-types/int-uint)
+* `granularity` — يكون ذا صلة فقط إذا كانت الوسيطة `tokenizer` هي `chinese`: معلمة اختيارية، إما `coarse_grained` (الافتراضي) أو `fine_grained`، تتحكم في دقة التقسيم. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
