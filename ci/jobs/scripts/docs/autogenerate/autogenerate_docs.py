@@ -1801,6 +1801,22 @@ def reconcile_generated_artifacts(
     return drift
 
 
+def select_generators(generators, only=None):
+    """Select generators while preserving dependencies between their outputs."""
+    selected_names = {
+        generator["name"]
+        for generator in generators
+        if not only or only in generator["name"]
+    }
+    if any(name in SETTINGS_SPLIT_FAMILIES for name in selected_names):
+        selected_names.add("beta-and-experimental")
+    return [
+        generator
+        for generator in generators
+        if generator["name"] in selected_names
+    ]
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1814,7 +1830,13 @@ def main(argv=None):
                       help="fail if regenerated output differs from committed docs")
     p.add_argument("--no-remap-legacy", dest="remap", action="store_false",
                    help="emit paths/links as the SQL produces them (Mintlify-native)")
-    p.add_argument("--only", help="only run generators whose name contains this substring")
+    p.add_argument(
+        "--only",
+        help=(
+            "run generators whose name contains this substring, plus any "
+            "generators that depend on their output"
+        ),
+    )
     args = p.parse_args(argv)
 
     binary = os.path.abspath(args.binary)
@@ -1847,12 +1869,9 @@ def main(argv=None):
     for builder in remap_only_families:
         legacy_generators += builder(docs_dir, file_map)
 
-    # `--only` is a plain substring match on generator names; apply exactly that in
-    # both the fast-fail check and the final selection so the two can never disagree
-    # (a substring that targets a family, e.g. `--only newjson`, must be caught).
-    def selected(gens):
-        return [g for g in gens if not args.only or args.only in g["name"]]
-
+    # Apply the same substring selection and dependency expansion in the fast-fail
+    # check and the final selection so the two can never disagree (a substring that
+    # targets a family, e.g. `--only newjson`, must be caught).
     if args.remap:
         all_generators += legacy_generators
     else:
@@ -1872,7 +1891,10 @@ def main(argv=None):
         # So fail fast for the whole selection (a full run, or an --only that
         # matches any generator) instead of dying mid-run, or -- for an --only
         # that matches nothing -- silently generating nothing.
-        blocked = selected(all_generators) + selected(legacy_generators)
+        blocked = (
+            select_generators(all_generators, args.only)
+            + select_generators(legacy_generators, args.only)
+        )
         if blocked:
             families = sorted({g["name"].split(":", 1)[0] for g in blocked})
             raise SystemExit(
@@ -1884,14 +1906,23 @@ def main(argv=None):
                 "with --remap-legacy until the generation source is updated to "
                 "emit Mintlify-native paths.")
 
-    generators = selected(all_generators)
+    generators = select_generators(all_generators, args.only)
     # A selector that matches nothing is a mistake (a typo, or a family unavailable
     # in this mode); never report success while doing nothing.
     if args.only and not generators:
         raise SystemExit(f"error: --only '{args.only}' matched no generator; nothing to do.")
 
     drift = 0
+    selected_generator_names = {gen["name"] for gen in generators}
     generated_settings_manifests = {}
+    if "beta-and-experimental" in selected_generator_names:
+        for family_name, family in SETTINGS_SPLIT_FAMILIES.items():
+            if family_name in selected_generator_names:
+                continue
+            manifest_path = _settings_manifest_path(docs_dir, family)
+            generated_settings_manifests[family_name] = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            )
     for gen in generators:
         artifacts = generate_artifacts(
             gen,
