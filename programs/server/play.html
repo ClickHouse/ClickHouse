@@ -2878,17 +2878,18 @@ class QueryResultElement extends HTMLElement
                     background-color: var(--border-color-selected);
                 }
 
-                /* Icon at the right side of a column header to switch the color coding mode.
-                   On devices with a hovering pointer it appears only while the header is hovered,
-                   so it stays out of the way otherwise - except on a column that carries an explicit
-                   color mode, which keeps it shown as the indicator of that mode. Sits just left of
-                   the resizer. */
+                /* Icon in a column header to switch the color coding mode. On devices with a hovering
+                   pointer it appears only while the header is hovered, so it stays out of the way
+                   otherwise - except on a column that carries an explicit color mode, which keeps it
+                   shown as the indicator of that mode. Sits at the left, right next to the pin toggle:
+                   both of these only change how the result is DISPLAYED, so they form the left cluster,
+                   while the two that re-run the query - the filter and the sort - form the right one. */
                 .colorize-toggle
                 {
                     display: none;
                     position: absolute;
                     top: 50%;
-                    right: 0.35rem;
+                    left: 1.8rem;
                     transform: translateY(-50%);
                     cursor: pointer;
                     font-size: 0.9em;
@@ -2990,9 +2991,9 @@ class QueryResultElement extends HTMLElement
 
                    The group is laid out as a flex row of fixed size, so the two arrows keep their
                    places whether or not they are visible and the header does not reflow when a sort
-                   is activated. It sits where the colorize toggle normally sits; that toggle is
-                   shifted left below to make room, unconditionally for a shapeable table, so
-                   revealing the icons on hover never moves them.
+                   is activated. It sits at the right edge, with the funnel immediately to its left:
+                   the two controls that re-run the query are next to each other, apart from the pin and
+                   the colorize toggle, which only change how the result is displayed.
                    No backticks in this comment: this style block lives inside a JS template literal. */
                 .sort-toggles
                 {
@@ -3009,11 +3010,6 @@ class QueryResultElement extends HTMLElement
                 #data-table:not(.shapeable) .sort-toggles
                 {
                     display: none;
-                }
-
-                #data-table.shapeable .colorize-toggle
-                {
-                    right: 1.8rem;
                 }
 
                 /* An arrow of a direction that is not in effect stays invisible - but, being a real
@@ -3143,15 +3139,15 @@ class QueryResultElement extends HTMLElement
                 }
 
                 /* Funnel icon in a column header that opens the filter input for that column. Sits
-                   left of the colorize toggle, and behaves like the sort arrows: revealed on header
-                   hover or its own keyboard focus, always visible on a coarse pointer, and removed
-                   outright (which also takes it out of the tab order) where the query-construction
-                   settings do not apply. */
+                   immediately left of the sort arrows - the other control that re-runs the query - and
+                   behaves like them: revealed on header hover or its own keyboard focus, always visible
+                   on a coarse pointer, and removed outright (which also takes it out of the tab order)
+                   where the query-construction settings do not apply. */
                 .filter-toggle
                 {
                     position: absolute;
                     top: 50%;
-                    right: 3.25rem;
+                    right: 1.8rem;
                     transform: translateY(-50%);
                     opacity: 0;
                     pointer-events: none;
@@ -3306,13 +3302,12 @@ class QueryResultElement extends HTMLElement
                 /* Funnel icon on the selected cell, next to the copy icon, that offers the comparisons
                    that filter by this cell's value. Created only for the selected cell (see
                    _appendCellFilterButton) rather than for every cell, so a large result does not
-                   carry a hundred thousand unused buttons. Mirrors the .cell-copy geometry: above the
-                   cell, and to the side for the first body row, where the sticky header would cover it.
+                   carry a hundred thousand unused buttons. Sits above the cell, next to the copy icon.
                    No backticks in this comment: this style block lives inside a JS template literal. */
                 .cell-filter
                 {
                     position: absolute;
-                    bottom: 100%;
+                    top: 100%;
                     right: calc(1.5em + 0.25rem);
                     padding: 0.25rem;
                     width: fit-content;
@@ -3329,47 +3324,20 @@ class QueryResultElement extends HTMLElement
                     height: 1em;
                 }
 
-                thead + tbody tr:first-child .cell-filter
-                {
-                    bottom: auto;
-                    right: auto;
-                    left: 100%;
-                    top: calc(1.5em + 0.25rem);
-                }
-
-                thead + tbody tr:first-child td:last-child .cell-filter
-                {
-                    left: auto;
-                    right: 100%;
-                }
-
                 /* The comparisons offered for the selected cell's value, opened by the funnel above and
-                   anchored to it. A row of small buttons rather than a dropdown: there are at most six
-                   and every one is a single click away. */
+                   hanging under it. A row of small buttons rather than a dropdown: there are at most six
+                   and every one is a single click away. It grows leftwards from the same edge, over
+                   whatever is beside the cell - the selected cell stacks above its neighbours. */
                 .cell-filter-menu
                 {
                     display: flex;
                     position: absolute;
-                    bottom: calc(100% + 1.5em + 0.5rem);
+                    top: calc(100% + 1.5em + 0.5rem);
                     right: -1px;
                     z-index: 2;
                     border: 1px solid var(--border-color-selected);
                     background: var(--element-background-color);
                     white-space: nowrap;
-                }
-
-                thead + tbody tr:first-child .cell-filter-menu
-                {
-                    bottom: auto;
-                    right: auto;
-                    left: calc(100% + 1.5em + 0.5rem);
-                    top: calc(1.5em + 0.25rem);
-                }
-
-                thead + tbody tr:first-child td:last-child .cell-filter-menu
-                {
-                    left: auto;
-                    right: calc(100% + 1.5em + 0.5rem);
                 }
 
                 .cell-filter-op
@@ -3481,11 +3449,23 @@ class QueryResultElement extends HTMLElement
                     display: none;
                 }
 
+                /* The copy button, and the filter funnel beside it, hang off the right edge of the
+                   selected cell, just under it - unconditionally, wherever the cell is, so they are
+                   always in the same place relative to the selection.
+                   Below rather than above: above the cell they land inside the sticky header's band for
+                   the FIRST body row, where the header paints over them and they become invisible and
+                   unclickable, and no z-index fixes that. They sit inside the selected cell's stacking
+                   context, whose whole band has to stay below the headers (the order is selected cell <
+                   pinned cell < header < pinned header, so that a pinned column stays visible over a
+                   selected cell scrolling past it and every body cell scrolls under the headers), so
+                   lifting them over a header would mean lifting the selected cell over pinned columns.
+                   Outside the cell rather than within it, so they never cover the value they act on -
+                   which, in a right-aligned numeric column, is exactly where they would sit. */
                 .cell-copy
                 {
                     display: none;
                     position: absolute;
-                    bottom: 100%;
+                    top: 100%;
                     right: -1px;
                     padding: 0.25rem;
                     width: fit-content;
@@ -3493,20 +3473,6 @@ class QueryResultElement extends HTMLElement
                     filter: invert(1);
                     background-color: var(--element-background-color);
                     z-index: 1;
-                }
-
-                /* First row after a sticky header: place to the side to avoid overlap */
-                thead + tbody tr:first-child .cell-copy
-                {
-                    bottom: auto;
-                    left: 100%;
-                    top: -1px;
-                }
-
-                thead + tbody tr:first-child td:last-child .cell-copy
-                {
-                    left: auto;
-                    right: 100%;
                 }
 
                 .cell-copy svg
