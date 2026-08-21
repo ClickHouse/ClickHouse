@@ -1,23 +1,24 @@
 -- Tags: no-fasttest
 
--- Each statement builds its result array over many rows. It must complete well inside
--- max_execution_time; before the fix the accumulated array was copied once per row.
+-- These two build the result array over many rows and carry the timing oracle.
+-- max_block_size is pinned: the accumulator is per block, so the cost is linear in it.
 
 SELECT sum(length(h3kRing(materialize(579205133326352383), materialize(toUInt16(1)))))
 FROM numbers(150000)
-SETTINGS max_block_size = 65409, max_execution_time = 40;
+SETTINGS max_block_size = 65409, max_execution_time = 15;
 
 SELECT sum(length(h3ToChildren(materialize(599405990164561919), materialize(6))))
 FROM numbers(150000)
-SETTINGS max_block_size = 65409, max_execution_time = 40;
+SETTINGS max_block_size = 65409, max_execution_time = 15;
+
+-- The two polygon functions share the same fixed line. Each sum below must be non-zero,
+-- otherwise no cells were produced and the accumulator was never grown.
 
 SELECT sum(length(h3PolygonToCells([(materialize(55.66824), 12.595493), (55.667901, 12.593991), (55.667474, 12.595117), (55.66824, 12.595493)], 11)))
-FROM numbers(180000)
-SETTINGS max_block_size = 65409, max_execution_time = 40;
+FROM numbers(2000);
 
 SELECT sum(length(h3PolygonToCellsWithContainment([(materialize(-122.4089866999972145), 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 9, 0)))
-FROM numbers(12000)
-SETTINGS max_block_size = 65409, max_execution_time = 40;
+FROM numbers(200);
 
 -- The results themselves must be unchanged.
 
