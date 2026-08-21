@@ -17,10 +17,10 @@ $$
 \frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{n - 1}
 $$
 
-:::note
+<Note>
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarSampStable`](/reference/functions/aggregate-functions/covarSampStable) function.
 It works slower but provides a lower computational error.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax covarSamp_syntax = "covarSamp(x, y)";
     FunctionDocumentation::Arguments covarSamp_arguments = {
@@ -73,9 +73,9 @@ $$
 
 <br/>
 
-:::note
+<Note>
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarPopStable`](/reference/functions/aggregate-functions/covarPopStable) function. It works slower but provides a lower computational error.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax covarPop_syntax = "covarPop(x, y)";
     FunctionDocumentation::Arguments covarPop_arguments = {

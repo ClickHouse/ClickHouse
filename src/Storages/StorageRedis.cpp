@@ -724,17 +724,21 @@ PRIMARY KEY(primary_key_name);
 - `pool_size` — Redis max connection pool size, default is 16.
 - `primary_key_name` - any column name in the column list.
 
-:::note Serialization
+<Info>
+**Serialization**
+
 `PRIMARY KEY` supports only one column. The primary key will be serialized in binary as a Redis key.
 Columns other than the primary key will be serialized in binary as Redis value in corresponding order.
 Full scans with `SELECT * FROM redis_table` can fail with binary deserialization errors if the selected Redis database contains keys or values that were not written by ClickHouse.
-:::
+</Info>
 
 Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
 
-:::note Filtering
+<Info>
+**Filtering**
+
 Queries with `key equals` or `in filtering` will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
-:::
+</Info>
 
 ## Usage example {#usage-example}
 

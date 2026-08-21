@@ -50,9 +50,9 @@ REGISTER_FUNCTION(Divide)
 Calculates the quotient of two values `a` and `b`. The result type is always [Float64](/reference/data-types/float).
 Integer division is provided by the `intDiv` function.
 
-:::note
+<Note>
 Division by `0` returns `inf`, `-inf`, or `nan`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "divide(x, y)";
     FunctionDocumentation::Argument argument1 = {"x", "Dividend"};

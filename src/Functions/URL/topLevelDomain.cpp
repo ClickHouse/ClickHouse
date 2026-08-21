@@ -57,7 +57,7 @@ REGISTER_FUNCTION(TopLevelDomain)
     FunctionDocumentation::Description description_topLevelDomain = R"(
 Extracts the the top-level domain from a URL.
 
-:::note
+<Note>
 The URL can be specified with or without a protocol.
 For example:
 
@@ -66,7 +66,7 @@ svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
 ```
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_topLevelDomain = "topLevelDomain(url)";
     FunctionDocumentation::Arguments arguments_topLevelDomain = {

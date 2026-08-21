@@ -232,4 +232,12 @@ if __name__ == "__main__":
             )
         )
 
+    if selected("No legacy Docusaurus admonitions"):
+        results.append(
+            Result.from_commands_run(
+                name="No legacy Docusaurus admonitions",
+                command="python3 ci/jobs/scripts/docs/check_legacy_admonitions.py .",
+            )
+        )
+
     Result.create_from(results=results).complete_job()

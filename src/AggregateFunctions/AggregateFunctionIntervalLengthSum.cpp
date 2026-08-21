@@ -276,10 +276,10 @@ void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & facto
     FunctionDocumentation::Description description = R"(
 Takes multiple numeric ranges and calculates the total length when all overlapping parts are combined into a single unified range.
 
-:::note
+<Note>
 Arguments must be of the same data type.
 Otherwise, an exception will be thrown.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 intervalLengthSum(start, end)

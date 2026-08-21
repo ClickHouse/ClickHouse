@@ -106,9 +106,9 @@ preferring the series with the smaller `key`.
 This function implements the `topk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
 
-:::note
+<Note>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions = 1`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_topk = R"(
 timeSeriesTopKMasks(k, key, values)
@@ -152,9 +152,9 @@ preferring the series with the smaller `key`.
 This function implements the `bottomk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
 
-:::note
+<Note>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions = 1`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_bottomk = R"(
 timeSeriesBottomKMasks(k, key, values)
@@ -189,9 +189,9 @@ with non-NULL values at that step are selected. Sampling key ties are broken by 
 This function implements the `limitk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
 
-:::note
+<Note>
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions = 1`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_limitk = R"(
 timeSeriesLimitKMasks(k, key, sampling_key, values)

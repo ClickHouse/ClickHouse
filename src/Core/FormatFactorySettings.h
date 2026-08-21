@@ -148,9 +148,9 @@ See also:
     DECLARE(Bool, input_format_defaults_for_omitted_fields, true, R"(
 When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](/reference/formats/JSON/JSONEachRow) (and other JSON formats), [CSV](/reference/formats/CSV/CSV), [TabSeparated](/reference/formats/TabSeparated/TabSeparated), [TSKV](/reference/formats/TabSeparated/TSKV), [Parquet](/reference/formats/Parquet/Parquet), [Arrow](/reference/formats/Arrow/Arrow), [Avro](/reference/formats/Avro/Avro), [ORC](/reference/formats/ORC), [Native](/reference/formats/Native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
-:::note
+<Note>
 When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
-:::
+</Note>
 
 Possible values:
 
@@ -381,9 +381,9 @@ y   Nullable(String)
 z   IPv4
 ```
 
-:::note
+<Note>
 If the `schema_inference_hints` is not formatted properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
-:::
+</Note>
 )", 0) \
     DECLARE(SchemaInferenceMode, schema_inference_mode, "default", R"(
 Mode of schema inference. 'default' - assume that all files have the same schema and schema can be inferred from any file, 'union' - files can have different schemas and the resulting schema should be the a union of schemas of all files
@@ -1665,13 +1665,13 @@ When building the JSON column's internal String buffers while parsing JSON from 
     DECLARE(UInt64, input_format_max_block_wait_ms, 0, R"(
 Limits the maximum time in milliseconds to wait before emitting a block during parsing in row-based input formats. 0 means no limit.
 
-:::note
+<Note>
 This option only works if `input_format_connection_handling` is enabled. Setting a value also disables parallel parsing and makes deduplication impossible.
-:::
+</Note>
 
-:::note
+<Note>
 For streaming inserts, you must also set `min_insert_block_size_rows=0` and `min_insert_block_size_bytes=0`. Otherwise, parsed blocks may still be accumulated in memory by the block squashing stage until those thresholds are reached, preventing timely inserts.
-:::
+</Note>
 
 **Example: streaming Wikipedia recent changes into ClickHouse**
 
@@ -1691,9 +1691,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
     DECLARE(Bool, input_format_connection_handling, false, R"(
     When this option is enabled, if the connection closes unexpectedly, any remaining data in the buffer will be parsed and processed instead of being treated as an error
 
-:::note
+<Note>
 Enabling this option disables parallel parsing and makes deduplication impossible
-:::
+</Note>
 )", 0) \
     DECLARE(Bool, input_format_protobuf_oneof_presence, false, R"(
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column

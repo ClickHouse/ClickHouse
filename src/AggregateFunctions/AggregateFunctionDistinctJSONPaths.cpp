@@ -400,9 +400,9 @@ SELECT distinctJSONPaths(json) FROM test_json;
     FunctionDocumentation::Description description_distinctJSONPathsAndTypes = R"(
 Calculates the list of distinct paths and their types stored in [JSON](/reference/data-types/newjson) column.
 
-:::note
+<Note>
 If JSON declaration contains paths with specified types, these paths will be always included in the result of `distinctJSONPaths/distinctJSONPathsAndTypes` functions even if input data didn't have values for these paths.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_distinctJSONPathsAndTypes = R"(
 distinctJSONPathsAndTypes(json)

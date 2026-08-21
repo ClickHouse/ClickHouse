@@ -1183,9 +1183,9 @@ For example, it is possible to insert a BSON `int32` value into ClickHouse as [`
 Big integers and decimals such as `Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` can be parsed from a BSON Binary value with the `\x00` binary subtype. 
 In this case, the format will validate that the size of the binary data equals the size of the expected value.
 
-:::note
+<Note>
 This format does not work properly on Big-Endian platforms.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
@@ -1231,9 +1231,9 @@ FROM football INTO OUTFILE 'docs_data/bson/football.bson'
 FORMAT BSONEachRow
 ```
 
-:::tip
+<Tip>
 BSON is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output BSON files.
-:::
+</Tip>
 
 ## Format settings {#format-settings}
 

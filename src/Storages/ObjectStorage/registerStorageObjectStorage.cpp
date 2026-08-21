@@ -419,7 +419,7 @@ This example uses the [docker compose recipe](https://github.com/ClickHouse/exam
 
 Notice that the S3 endpoint in the `ENGINE` configuration uses the parameter token `{_partition_id}` as part of the S3 object (filename), and that the SELECT queries select against those resulting object names (e.g., `test_3.csv`).
 
-:::note
+<Note>
 As shown in the example, querying from S3 tables that are partitioned is
 not directly supported at this time, but can be accomplished by querying the individual partitions
 using the S3 table function.
@@ -430,7 +430,7 @@ ClickHouse system (for example, moving from on-prem systems to ClickHouse
 Cloud).  Because ClickHouse datasets are often very large, and network
 reliability is sometimes imperfect it makes sense to transfer datasets
 in subsets, hence partitioned writes.
-:::
+</Note>
 
 #### Create the table {#create-the-table}
 ```sql
@@ -457,9 +457,9 @@ INSERT INTO p VALUES (1, 2, 3), (3, 2, 1), (78, 43, 45)
 
 #### Select from partition 3 {#select-from-partition-3}
 
-:::tip
+<Tip>
 This query uses the s3 table function
-:::
+</Tip>
 
 ```sql
 SELECT *
@@ -528,9 +528,11 @@ For more information about virtual columns see [here](/reference/engines/table-e
   - Indexes.
   - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not supported.
 
-:::note Zero-copy replication is not ready for production
+<Info>
+**Zero-copy replication is not ready for production**
+
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-:::
+</Info>
 
 ## Wildcards in path {#wildcards-in-path}
 
@@ -544,9 +546,9 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
 
-:::note
+<Note>
 If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-:::
+</Note>
 
 **Example with wildcards 1**
 
@@ -687,13 +689,13 @@ FROM s3(
 );
 ```
 
-:::note
+<Note>
 ClickHouse supports three archive formats:
 ZIP
 TAR
 7Z
 While ZIP and TAR archives can be accessed from any supported storage location, 7Z archives can only be read from the local filesystem where ClickHouse is installed.
-:::
+</Note>
 
 ## Accessing public buckets {#accessing-public-buckets}
 
@@ -873,9 +875,11 @@ SELECT * FROM hdfs_engine_table LIMIT 2
   - Indexes.
   - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not recommended.
 
-:::note Zero-copy replication is not ready for production
+<Info>
+**Zero-copy replication is not ready for production**
+
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-:::
+</Info>
 
 **Globs in path**
 
@@ -919,9 +923,9 @@ Table consists of all the files in both directories (all files should satisfy fo
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-:::note
+<Note>
 If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-:::
+</Note>
 
 **Example**
 
@@ -1143,13 +1147,13 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-:::warning
+<Warning>
 We recommend using the [Iceberg Table Function](/reference/functions/table-functions/iceberg) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
 
 The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
 
 For optimal compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
-:::
+</Warning>
 
 This engine provides a *data* integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
@@ -1829,14 +1833,16 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-:::note `use_paimon_metadata_files_cache` lifecycle
+<Info>
+**`use_paimon_metadata_files_cache` lifecycle**
+
 How `use_paimon_metadata_files_cache` is applied depends on how the Paimon table is accessed:
 
 - **Table functions** (e.g. `SELECT ... FROM paimonS3(...)`): the cache decision is evaluated per query, so you can pass `SETTINGS use_paimon_metadata_files_cache = 1` directly in the `SELECT`.
 - **Persistent table engines** (`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, `PaimonLocal`, and the `Paimon` alias): the cache decision is latched once when the table's metadata is initialized and is stored in immutable persistent components; the metadata update path deliberately does not re-read the setting. Therefore, passing `SETTINGS use_paimon_metadata_files_cache = 1` in a `SELECT` against an already-initialized persistent table has no effect — the previously latched decision keeps being used. To change it, set `use_paimon_metadata_files_cache` before the table's metadata is initialized, or `DROP` and re-`CREATE` the table with the desired value.
 
 The server-level cache capacity (`paimon_metadata_files_cache_size`) is *not* latched: it is a runtime setting that can be changed via `SYSTEM RELOAD CONFIG` and takes effect immediately even for already-initialized tables.
-:::
+</Info>
 
 ## Incremental read examples {#incremental-read-examples}
 
@@ -1935,9 +1941,9 @@ DROP TABLE IF EXISTS paimon_mv_dest SYNC;
 DROP TABLE IF EXISTS paimon_mv_source SYNC;
 ```
 
-:::note
+<Note>
 Stop the MV before dropping it to prevent background refresh from blocking DDL operations.
-:::
+</Note>
 
 ## Limitations {#limitations}
 
@@ -2286,9 +2292,11 @@ CREATE TABLE table_name
 ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
 ```
 
-:::note[Unsupported gsutil URI]
+<Info>
+**Unsupported gsutil URI**
+
 gsutil URI such as `gs://clickhouse-docs-example-bucket` is not supported, please use a URL starting `https://storage.googleapis.com`
-:::
+</Info>
 
 **Arguments**
 
@@ -2347,10 +2355,10 @@ VALUES (1, 'John', 'Smith', 'M', 32);
 
 Delta Lake writes are a Beta feature disabled by default and must be enabled with `SET allow_delta_lake_writes = 1;` (available from version 26.7; on earlier versions use `SET allow_experimental_delta_lake_writes = 1;`).
 
-:::note
+<Note>
 Writing using the table engine is supported only through delta kernel.
 Writes to Azure are not yet supported but work for S3 and GCS.
-:::
+</Note>
 
 ### Data cache {#data-cache}
 

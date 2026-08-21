@@ -929,11 +929,11 @@ arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
 
     FunctionDocumentation::Description symdiff_description = R"(Takes multiple arrays and returns an array with elements that are not present in all source arrays. The result contains only unique values.
 
-:::note
+<Note>
 The symmetric difference of _more than two sets_ is [mathematically defined](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference)
 as the set of all input elements which occur in an odd number of input sets.
 In contrast, function `arraySymmetricDifference` simply returns the set of input elements which do not occur in all input sets.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax symdiff_syntax = "arraySymmetricDifference(arr1, arr2, ... , arrN)";
     FunctionDocumentation::Arguments symdiff_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/reference/data-types/array)."}};

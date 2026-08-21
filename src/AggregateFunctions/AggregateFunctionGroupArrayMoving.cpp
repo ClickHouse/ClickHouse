@@ -363,10 +363,10 @@ FROM t;
     FunctionDocumentation::Description description = R"(
 Calculates the moving average of input values.
 
-:::note
+<Note>
 The function uses rounding towards zero.
 It truncates the decimal places insignificant for the resulting data type.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 groupArrayMovingAvg(numbers_for_summing)

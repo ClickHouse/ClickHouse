@@ -484,9 +484,9 @@ Similar to [Template](/reference/formats/Template/Template), but it prints or re
 - [format_custom_result_before_delimiter](/reference/settings/formats/format-custom#format_custom_result_before_delimiter)
 - [format_custom_result_after_delimiter](/reference/settings/formats/format-custom#format_custom_result_after_delimiter)
 
-:::note
+<Note>
 It does not use escaping rules settings and delimiters from format strings.
-:::
+</Note>
 
 There is also the [`CustomSeparatedIgnoreSpaces`](/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpaces) format, which is similar to [TemplateIgnoreSpaces](/reference/formats/Template/TemplateIgnoreSpaces).
 
@@ -728,12 +728,12 @@ row('date';'season';'home_team';'away_team';'home_team_goals';'away_team_goals')
 
 ## Format settings {#format-settings}
 
-:::note
+<Note>
 If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from the input data will be mapped to the columns from the table by their names, 
 columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 
     factory.setDocumentation("CustomSeparatedWithNamesAndTypes", Documentation{
@@ -800,16 +800,16 @@ row('date';'season';'home_team';'away_team';'home_team_goals';'away_team_goals')
 
 ## Format settings {#format-settings}
 
-:::note
+<Note>
 If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-:::
+</Note>
 
-:::note
+<Note>
 If setting [`input_format_with_types_use_header`](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to `1`,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 }
 

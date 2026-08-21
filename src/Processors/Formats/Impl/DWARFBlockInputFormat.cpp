@@ -1054,7 +1054,7 @@ It is similar to `dwarfdump`, but much faster (hundreds of MB/s) and supporting 
 It produces one row for each Debug Information Entry (DIE) in the `.debug_info` section
 and includes "null"-entries that the DWARF encoding uses to terminate lists of children in the tree.
 
-:::info
+<Info>
 `.debug_info` consists of *units*, which correspond to compilation units:
 - Each unit is a tree of *DIE*s, with a `compile_unit` DIE as its root.
 - Each DIE has a *tag* and a list of *attributes*.
@@ -1068,7 +1068,7 @@ The DIEs represent things from the source code, and their *tag* tells you what k
 - function arguments (`formal_parameter`).
 
 The tree structure mirrors the corresponding source code. For example, a `class_type` DIE can contain `subprogram` DIEs representing methods of the class.
-:::
+</Info>
 
 The `DWARF` format outputs the following columns:
 

@@ -95,9 +95,9 @@ void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & fa
     FunctionDocumentation::Description description = R"(
 Sorts time series data by timestamp in ascending order.
 
-:::note
+<Note>
 This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 timeSeriesGroupArray(timestamp, value)

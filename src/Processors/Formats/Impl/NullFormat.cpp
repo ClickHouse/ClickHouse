@@ -34,9 +34,9 @@ In the `Null` format - nothing is output.
 This may at first sound strange, but it's important to note that despite outputting nothing, the query is still processed, 
 and when using the command-line client, data is transmitted to the client. 
 
-:::tip
+<Tip>
 The `Null` format can be useful for performance testing.
-:::
+</Tip>
 
 ## Example usage {#example-usage}
 
