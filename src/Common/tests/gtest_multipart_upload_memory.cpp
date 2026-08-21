@@ -1,12 +1,14 @@
 #include <gtest/gtest.h>
 
 #include <Common/BufferAllocationPolicy.h>
+#include <Core/Defines.h>
 
 #include <base/defines.h>
 
 #include <algorithm>
 #include <deque>
 #include <limits>
+#include <vector>
 
 using namespace DB;
 
@@ -153,11 +155,14 @@ TEST(MultipartUploadMemory, ExponentialPolicyAccountsForTheLiveBufferTiers)
     const auto memory = getMultipartUploadMemory(settings, 20);
 
     /// One GiB reaches the initial 32 MiB buffer and then 16 MiB multipart buffers, but it does not reach
-    /// the next tier. By the time 21 buffers coexist, the first 32 MiB buffer has been released, so the
-    /// live window contains 21 16 MiB buffers rather than 21 32 MiB buffers.
+    /// the next tier. The live window is the 21 most recent buffers, and the 32 MiB first buffer is still
+    /// one of them by the time 21 buffers coexist: it leaves the window only once a 22nd buffer is
+    /// allocated, which needs more than 352 MiB of output. So the peak is that first buffer plus 20 buffers
+    /// of min_upload_part_size - not 21 buffers of the largest reached tier, which is what pricing every
+    /// live slot at the biggest tier would give.
     EXPECT_EQ(
         getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024 * 1024),
-        21 * 16ULL * 1024 * 1024);
+        32ULL * 1024 * 1024 + 20 * 16ULL * 1024 * 1024);
 }
 
 TEST(MultipartUploadMemory, ExponentialPolicyFirstBufferFollowsMinUploadPartSize)
@@ -386,4 +391,86 @@ TEST(MultipartUploadMemory, TheFirstBufferIsNotPinnedUpFront)
 
     /// A caller that passes MORE than the policy's first part gets it shrunk down (allocateBuffer).
     EXPECT_EQ(firstBufferMemoryAfterWriting(settings, 64ULL * 1024 * 1024, 0), 32ULL * 1024 * 1024);
+}
+
+TEST(MultipartUploadMemory, ExponentialPolicyDoesNotChargeTheFirstPartBeforeItIsGrownInto)
+{
+    /// Default S3 sizing: the policy's first part is 32 MiB, but the writer starts with the caller's
+    /// buffer - at most DBMS_DEFAULT_BUFFER_SIZE, see the constructor of WriteBufferFromS3 - and
+    /// reallocateFirstBuffer only doubles it once it fills up. Output that does not fill the first buffer
+    /// must therefore be priced at the buffer the writer actually holds, not at the whole first part:
+    /// CompactionStatistics uses this value as the per-stream multipart term, so charging 32 MiB per stream
+    /// for a small remote merge closes merges_mutations_memory_usage_soft_limit on memory that is never
+    /// allocated.
+    BufferAllocationPolicy::Settings settings;
+    settings.max_single_size = 32 * 1024 * 1024;
+    settings.min_size = 16 * 1024 * 1024;
+    settings.max_size = 5ULL * 1024 * 1024 * 1024;
+
+    const auto memory = getMultipartUploadMemory(settings, 4);
+    EXPECT_EQ(firstPolicyBufferSize(settings), 32ULL * 1024 * 1024);
+
+    /// The sub-first-buffer window: every one of these amounts is held by the growing first buffer alone,
+    /// with nothing detached and no policy-sized buffer allocated at all.
+    for (const UInt64 bytes_written :
+         {1024ULL,
+          1024ULL * 1024,
+          1024ULL * 1024 + 1,
+          3ULL * 1024 * 1024,
+          20ULL * 1024 * 1024,
+          32ULL * 1024 * 1024})
+    {
+        EXPECT_EQ(
+            getMultipartUploadMemoryCeilingForWrittenBytes(memory, bytes_written),
+            firstBufferMemoryAfterWriting(settings, DBMS_DEFAULT_BUFFER_SIZE, bytes_written))
+            << "bytes_written = " << bytes_written;
+    }
+
+    EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024), 1024ULL * 1024);
+    EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024 + 1), 2ULL * 1024 * 1024);
+    EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 20ULL * 1024 * 1024), 32ULL * 1024 * 1024);
+
+    /// One byte past the first part is the first moment a second buffer exists: the full first buffer is
+    /// detached while the policy's second buffer - min_upload_part_size - is being filled.
+    EXPECT_EQ(
+        getMultipartUploadMemoryCeilingForWrittenBytes(memory, 32ULL * 1024 * 1024 + 1),
+        32ULL * 1024 * 1024 + 16ULL * 1024 * 1024);
+}
+
+TEST(MultipartUploadMemory, ExponentialPolicySubFirstBufferWindowNeverExceedsTheReplayedWriter)
+{
+    /// The same property over a spread of policies and output sizes, checked against the replay of the real
+    /// writer: the value must never be below what the writer holds (that would under-reserve an admitted
+    /// merge) and, inside the first-buffer window, never above it either.
+    const std::vector<BufferAllocationPolicy::Settings> policies = []
+    {
+        std::vector<BufferAllocationPolicy::Settings> result;
+        for (const UInt64 max_single_size : {8ULL * 1024 * 1024, 32ULL * 1024 * 1024, 256ULL * 1024 * 1024})
+        {
+            for (const UInt64 min_size : {512ULL * 1024, 16ULL * 1024 * 1024, 64ULL * 1024 * 1024})
+            {
+                BufferAllocationPolicy::Settings settings;
+                settings.max_single_size = max_single_size;
+                settings.min_size = min_size;
+                settings.max_size = 5ULL * 1024 * 1024 * 1024;
+                result.push_back(settings);
+            }
+        }
+        return result;
+    }();
+
+    for (const auto & settings : policies)
+    {
+        const auto memory = getMultipartUploadMemory(settings, 4);
+        const UInt64 first_part = firstPolicyBufferSize(settings);
+
+        for (const UInt64 bytes_written : {1ULL, 100ULL * 1024, 1024ULL * 1024, 5ULL * 1024 * 1024, 40ULL * 1024 * 1024})
+        {
+            const UInt64 priced = getMultipartUploadMemoryCeilingForWrittenBytes(memory, bytes_written);
+            const UInt64 held = firstBufferMemoryAfterWriting(settings, DBMS_DEFAULT_BUFFER_SIZE, bytes_written);
+            EXPECT_GE(priced, held) << "first part " << first_part << ", bytes_written " << bytes_written;
+            if (bytes_written <= first_part)
+                EXPECT_EQ(priced, held) << "first part " << first_part << ", bytes_written " << bytes_written;
+        }
+    }
 }

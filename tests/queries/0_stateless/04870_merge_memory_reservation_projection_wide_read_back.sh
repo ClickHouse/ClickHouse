@@ -8,7 +8,11 @@
 # whole rebuilt volume clears the wide-part thresholds. The estimate prices the read-back writer by that final
 # format rather than by the temporary parts', so under a pathologically small soft limit the (unconditionally
 # reserved) OPTIMIZE must still run to a single part with a Wide rebuilt projection, and must not error while
-# estimating.
+# estimating. That makes this an end-to-end coverage test of the rebuild path - it shows that the read-back
+# really does produce a Wide part out of Compact temporary ones, which is the situation the estimator has to
+# price - and not a check of the reserved amount itself: the reservation the estimator returns is asserted in
+# 05024_merge_memory_reservation_read_back_format_reserved, which holds a background merge on a failpoint and
+# compares the reservation of a Wide read-back against a Compact one.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

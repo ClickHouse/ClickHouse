@@ -157,6 +157,28 @@ MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Set
     return result;
 }
 
+namespace
+{
+
+/// Neither `WriteBufferFromS3` nor `WriteBufferFromAzureBlobStorage` allocates the allocation policy's first
+/// buffer up front: both start from the buffer the caller asks for, capped at `DBMS_DEFAULT_BUFFER_SIZE` in
+/// the constructor, and `reallocateFirstBuffer` doubles that allocation - capped by the policy's first buffer
+/// size - every time it fills up. Replay that growth, so that output which does not even fill the first
+/// buffer is not priced at the whole first part size. Returns false when the doubling overflows.
+bool replayFirstBufferGrowth(UInt64 first_policy_buffer_size, UInt64 bytes_written, UInt64 & first_buffer_size)
+{
+    first_buffer_size = std::min<UInt64>(first_policy_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
+    while (bytes_written > first_buffer_size && first_buffer_size < first_policy_buffer_size)
+    {
+        if (__builtin_mul_overflow(first_buffer_size, static_cast<UInt64>(2), &first_buffer_size))
+            return false;
+        first_buffer_size = std::min(first_buffer_size, first_policy_buffer_size);
+    }
+    return true;
+}
+
+}
+
 UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemory & memory, UInt64 bytes_written)
 {
     if (memory.ceiling == 0 || bytes_written == 0)
@@ -179,14 +201,9 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         /// while the next buffer is being filled. Do not charge more such buffers than the written data
         /// can reach, otherwise a small merge with a large strict upload part size is rejected for memory
         /// the writer cannot allocate.
-        const UInt64 initial_buffer_size = std::min<UInt64>(settings.strict_size, DBMS_DEFAULT_BUFFER_SIZE);
-        UInt64 first_buffer_size = initial_buffer_size;
-        while (bytes_written > first_buffer_size && first_buffer_size < settings.strict_size)
-        {
-            if (__builtin_mul_overflow(first_buffer_size, static_cast<UInt64>(2), &first_buffer_size))
-                return MultipartUploadMemory::UNLIMITED;
-            first_buffer_size = std::min(first_buffer_size, static_cast<UInt64>(settings.strict_size));
-        }
+        UInt64 first_buffer_size = 0;
+        if (!replayFirstBufferGrowth(settings.strict_size, bytes_written, first_buffer_size))
+            return MultipartUploadMemory::UNLIMITED;
 
         if (bytes_written <= first_buffer_size)
             return first_buffer_size;
@@ -202,6 +219,21 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
     else
     {
         auto policy = BufferAllocationPolicy::create(settings);
+        policy->nextBuffer();
+        const UInt64 first_policy_buffer_size = policy->getBufferSize();
+
+        /// The first buffer is grown into, not allocated up front, exactly like in the strict-size branch
+        /// above. While the output fits into it, that grown buffer is all the writer holds: nothing has been
+        /// detached, so no policy-sized buffer exists yet. Charging the policy's first part here would
+        /// over-reserve a small remote merge by the whole first tier - 32 MiB per stream with the default S3
+        /// sizing - and close `merges_mutations_memory_usage_soft_limit` on memory the writer never allocates.
+        UInt64 first_buffer_size = 0;
+        if (!replayFirstBufferGrowth(first_policy_buffer_size, bytes_written, first_buffer_size))
+            return MultipartUploadMemory::UNLIMITED;
+
+        if (bytes_written <= first_buffer_size)
+            return std::min(memory.ceiling, first_buffer_size);
+
         UInt64 written = 0;
         UInt64 live_memory = 0;
         UInt64 peak_live_memory = 0;
@@ -214,11 +246,9 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         /// buffer has reached a larger tier, so multiplying every live slot by the largest reached tier
         /// over-reserves small merges. Replay the policy and retain exactly the live allocation window.
         std::deque<UInt64> allocated_buffers;
+        UInt64 buffer_size = first_policy_buffer_size;
         while (true)
         {
-            policy->nextBuffer();
-            const UInt64 buffer_size = policy->getBufferSize();
-
             allocated_buffers.push_back(buffer_size);
             if (__builtin_add_overflow(live_memory, buffer_size, &live_memory))
                 return MultipartUploadMemory::UNLIMITED;
@@ -235,6 +265,9 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
             written += std::min(buffer_size, bytes_written - written);
             if (written == bytes_written)
                 break;
+
+            policy->nextBuffer();
+            buffer_size = policy->getBufferSize();
         }
 
         return std::min(memory.ceiling, peak_live_memory);

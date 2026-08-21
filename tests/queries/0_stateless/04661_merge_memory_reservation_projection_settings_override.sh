@@ -15,7 +15,12 @@
 #    temp-part writer (its per-stream buffers and remnants sized from the projection's settings) plus the
 #    read-back of the temporary parts.
 # OPTIMIZE reserves unconditionally, so under a pathologically small soft limit both merges must still run to
-# a single part with the projection present, and must not error while estimating.
+# a single part with the projection present, and must not error while estimating. That makes this an
+# end-to-end coverage test of the two projection paths - it exercises the estimator on them and checks the
+# merge result - and not a check of the reserved amount itself: the reservation the estimator returns is
+# asserted in 05023_merge_memory_reservation_projection_settings_reserved, which holds a background merge on
+# a failpoint and compares the reservation of a projection that raises max_compress_block_size against one
+# that inherits the table's.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
