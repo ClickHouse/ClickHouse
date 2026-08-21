@@ -13,6 +13,9 @@ INSERT INTO test_gradual_resize_grouping_sets SELECT number % 10, number FROM nu
 SET min_rows_per_stream_for_gradual_resize = 1000;
 SET min_bytes_per_stream_for_gradual_resize = 0;
 SET max_threads = 4;
+-- Aggregation in order takes an entirely different pipeline branch that has no pre-aggregation
+-- resize at all, so the positive control below would see no `GradualResize` with it enabled.
+SET optimize_aggregation_in_order = 0;
 
 -- Positive control: the ordinary keyed `GROUP BY` does use the gradual path.
 SELECT count() > 0
