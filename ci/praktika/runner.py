@@ -36,6 +36,9 @@ _IMAGE_PULL_RETRY_ERRORS = [
     "TLS handshake timeout",
     "i/o timeout",
     "unexpected EOF",
+    # A nameserver answered badly (SERVFAIL), so the name can resolve next attempt.
+    # Its NXDOMAIN sibling `no such host` is permanent and is deliberately absent.
+    "server misbehaving",
     # What `timeout --verbose` writes when it kills a stalled attempt. Plain `timeout`
     # writes nothing, so without this entry a stall is not retried.
     "sending signal TERM to command",
