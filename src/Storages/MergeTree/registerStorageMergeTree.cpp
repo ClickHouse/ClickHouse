@@ -95,6 +95,7 @@ namespace ErrorCodes
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_STATISTICS;
 }
 
 
@@ -671,6 +672,27 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
+    /// A full-definition `ATTACH TABLE t UUID '...' (...)` is CREATE-like user input even though it
+    /// runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from metadata stored on this
+    /// server (short `ATTACH`, `ATTACH DATABASE`, restart) carry `attach_short_syntax`, and
+    /// `SECONDARY_CREATE` (`Replicated`-database DDL replay, `RESTORE`) also replays validated ones.
+    const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+        || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
+    /// Statistics of a column that is not physically stored can never be built: the column is computed
+    /// on read and is absent from every written block. Columns inferred from ZooKeeper describe an
+    /// already existing table, so a new replica of a table predating this check still starts.
+    if (is_fresh_definition && !args.columns.empty())
+    {
+        for (const auto & column : columns)
+        {
+            if (!columns.hasPhysical(column.name) && column.statistics.hasExplicitStatistics())
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
+                    "Cannot add statistics to column '{}': it is not physically stored",
+                    column.name);
+        }
+    }
+
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
@@ -846,14 +868,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                         uk_column);
             }
         }
-
-        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
-        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
-        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
-        /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
-        /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
 
         /// Previously validated definitions must stay loadable even if the current strictness settings
         /// would reject them (`TTLValidationMode::Attach`), but a fresh definition gets full validation:

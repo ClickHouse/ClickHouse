@@ -53,6 +53,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -5413,6 +5414,61 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
+
+    /// Statistics of a column that is not physically stored can never be built: the column is computed
+    /// on read and is absent from every written block. Only the state after all commands can decide,
+    /// because one command can turn a column non-physical and another give it statistics.
+    /// A `Replicated` database re-executes the ALTER per replica here, so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    {
+        const auto txn = local_context->getZooKeeperMetadataTransaction();
+        const bool is_ddl_replay = txn && !txn->isInitialQuery();
+
+        if (!is_ddl_replay)
+        {
+            /// Only effective commands count: an ignored one changes nothing (`ADD COLUMN IF NOT EXISTS`
+            /// for a column that already exists).
+            NameSet statistics_named_by_alter;
+            std::unordered_map<String, String> renamed_from;
+            for (const auto & command : commands)
+            {
+                if (command.ignore)
+                    continue;
+                if (command.column_statistics_decl != nullptr)
+                    statistics_named_by_alter.insert(command.column_name);
+                if (command.type == AlterCommand::RENAME_COLUMN)
+                    renamed_from[command.rename_to] = command.column_name;
+            }
+
+            for (const auto & column : new_metadata.columns)
+            {
+                if (new_metadata.columns.hasPhysical(column.name) || !column.statistics.hasExplicitStatistics())
+                    continue;
+
+                /// A table created before this check stays alterable: the state is only refused when
+                /// this ALTER produced it, not when it was inherited untouched. A rename carries the
+                /// whole column description across, so resolve the pre-ALTER name.
+                String old_name = column.name;
+                for (size_t i = 0; i <= renamed_from.size(); ++i)
+                {
+                    auto it = renamed_from.find(old_name);
+                    if (it == renamed_from.end())
+                        break;
+                    old_name = it->second;
+                }
+
+                if (!statistics_named_by_alter.contains(column.name)
+                    && old_columns.has(old_name)
+                    && !old_columns.hasPhysical(old_name)
+                    && old_columns.get(old_name).statistics.hasExplicitStatistics())
+                    continue;
+
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
+                    "Cannot add statistics to column '{}': it is not physically stored",
+                    column.name);
+            }
+        }
+    }
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
