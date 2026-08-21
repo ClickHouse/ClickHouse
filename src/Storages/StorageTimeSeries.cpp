@@ -889,6 +889,11 @@ A table with this target gets an additional outer `histograms` column of type `A
 one tuple per histogram sample with the same elements as the table columns after `id`, and the stored
 histograms can be read back with the [timeSeriesHistograms](#functions) table function.
 
+Counts are stored as `Float64`, which represents every integer up to 2^53 exactly. The `flags` bit records
+whether a sample arrived as an integer or a float histogram, so an integer histogram round-trips unchanged;
+one whose count, zero count, or a decoded bucket count would exceed 2^53 is rejected on ingestion rather
+than stored rounded.
+
 ## Creation {#creation}
 
 There are multiple ways to create a table with the `TimeSeries` table engine.

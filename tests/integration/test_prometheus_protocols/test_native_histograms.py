@@ -402,3 +402,22 @@ def test_invalid_histograms_rejected():
             timestamp=1704067219000,
         )
     )
+    # An integer count above 2^53, which the Float64 carrier cannot hold exactly: rejected rather
+    # than rounded, so a stored integer histogram always reads back the count it arrived with.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=(1 << 53) + 1,
+            sum=0.0,
+            timestamp=1704067220000,
+        )
+    )
+    # The same bound applies to a decoded bucket count.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            positive_deltas=[(1 << 53) + 1],
+            timestamp=1704067221000,
+        )
+    )
