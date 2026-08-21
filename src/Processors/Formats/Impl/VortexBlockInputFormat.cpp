@@ -252,11 +252,11 @@ VortexExpressionPtr makeVortexLiteral(const arrow::DataType & arrow_type, const 
         case arrow::Type::STRING:
         case arrow::Type::LARGE_STRING:
         case arrow::Type::STRING_VIEW:
-            return make_string(true);
+            return make_string(/* is_utf8 */ true);
         case arrow::Type::BINARY:
         case arrow::Type::LARGE_BINARY:
         case arrow::Type::BINARY_VIEW:
-            return make_string(false);
+            return make_string(/* is_utf8 */ false);
         default:
             return nullptr;
     }
@@ -473,7 +473,7 @@ VortexExpressionPtr buildVortexFilterExpression(const KeyCondition & key_conditi
     if (rpn_stack.empty())
         return nullptr;
 
-    auto result = buildVortexFilterImpl(rpn_stack, key_condition, header, schema, true);
+    auto result = buildVortexFilterImpl(rpn_stack, key_condition, header, schema, /* positive */ true);
     chassert(rpn_stack.empty());
     return result;
 }
@@ -544,7 +544,6 @@ static FFI_VortexReader * openVortexReader(
 
     return reader;
 }
-
 
 /// The C entry points the library calls. An exception escaping one of them would unwind into Rust,
 /// so everything they reach is `noexcept`.
@@ -876,7 +875,7 @@ std::unique_ptr<ArrowColumnToCHColumn> VortexBlockInputFormat::createConverter()
         format_settings,
         std::nullopt,
         std::nullopt,
-        true,
+        /* allow_missing_columns */ true,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
         format_settings.parquet.allow_geoparquet_parser);
@@ -1227,8 +1226,8 @@ void VortexSchemaReader::initializeIfNeeded()
         arrow_file,
         *read_context,
         file_schema,
-        1,
-        false);
+        /* io_threads */ 1,
+        /* is_remote_fs */ false);
 }
 
 NamesAndTypesList VortexSchemaReader::readSchema()
@@ -1240,10 +1239,10 @@ NamesAndTypesList VortexSchemaReader::readSchema()
         nullptr,
         "Vortex",
         format_settings,
-        false,
-        true,
+        /* skip_columns_with_unsupported_types */ false,
+        /* allow_arrow_null_type */ true,
         format_settings.schema_inference_make_columns_nullable != 0,
-        false,
+        /* case_insensitive_matching */ false,
         format_settings.parquet.allow_geoparquet_parser);
     if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
+# ^ the Vortex format is not included in the fast test and MSan builds
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,7 +9,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A `DateTime` has to come back as a temporal type, `DateTime64(0)`, and not as a bare number.
 
 DATA_FILE=$CUR_DIR/test_$CLICKHOUSE_TEST_UNIQUE_NAME.vortex
-
 
 echo "Schema inference:"
 $CLICKHOUSE_LOCAL -q "

@@ -87,6 +87,7 @@ void VortexBlockOutputFormat::initWriter(const Chunk * chunk)
     /// As a plain `U32` a `DateTime` would come back as a number; as a timestamp with second
     /// precision it survives the round trip, arriving as `DateTime64(0)`.
     arrow_settings.output_datetime_as_timestamp = true;
+    /// The `Nothing` type (`SELECT NULL`) has a counterpart of its own: the Vortex `Null` type.
     arrow_settings.output_nothing_as_null = true;
 
     ch_column_to_arrow_column
@@ -147,8 +148,9 @@ void VortexBlockOutputFormat::finalizeImpl()
 
 void VortexBlockOutputFormat::resetFormatterImpl()
 {
-    /// The same formatter may be asked for another file into the same buffer, and finishing the
-    /// previous one has already consumed the Rust writer.
+    /// The same formatter may be asked for another file into the same buffer - this is how
+    /// `MessageQueueSink` formats every message - and finishing the previous one has already
+    /// consumed the Rust writer.
     if (writer)
     {
         vortex_ffi_writer_free(writer);

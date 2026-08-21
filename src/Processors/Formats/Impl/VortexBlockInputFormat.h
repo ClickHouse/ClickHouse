@@ -103,6 +103,8 @@ private:
     void prepareReader();
     void closeReader();
 
+    /// The chunks of a query that needs no column of the file, such as `SELECT count()`: only
+    /// their number of rows matters.
     Chunk readWithoutColumns();
 
     /// Runs the queued tasks of `queue`, and of the other queue too when both share a thread pool,
@@ -110,10 +112,12 @@ private:
     /// value because the task may still be waiting in the pool when the reader is destroyed.
     void driveQueue(FFI_VortexTaskQueue queue, std::shared_ptr<ShutdownHelper> shutdown_) noexcept;
 
+    /// How many drivers of `queue` this reader may have running at once.
     size_t maxDrivers(FFI_VortexTaskQueue queue) const;
 
     ThreadPoolCallbackRunnerFast & runnerFor(FFI_VortexTaskQueue queue) const;
 
+    /// Whether the reads have a pool of their own (`max_download_threads`) or share the parsing one.
     bool hasSeparateIORunner() const;
 
     /// The queue whose drivers are responsible for running the tasks of `queue`. Without a separate
@@ -121,8 +125,10 @@ private:
     /// drivers competing for it.
     FFI_VortexTaskQueue driverQueueFor(FFI_VortexTaskQueue queue) const;
 
+    /// Tells the scan to stop; safe to call from any thread.
     void cancelScan() noexcept;
 
+    /// Cancels the scan and waits for the drivers, so that no task of this reader runs afterwards.
     void stopTasks();
 
     /// Stores the first failure, so that `read` rethrows it, and wakes `read` up. Also stops the

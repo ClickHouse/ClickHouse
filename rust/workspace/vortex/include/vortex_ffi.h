@@ -19,7 +19,6 @@
 /// the runtime only advances on the thread already inside a call, which is enough for opening a
 /// file and for writing one. A scan does not wait to be asked: it pushes its results to callbacks.
 
-
 /// The Arrow C Data Interface definitions, see
 /// https://arrow.apache.org/docs/format/CDataInterface.html
 /// They are compatible with the ones in `arrow/c/abi.h`.
@@ -57,7 +56,7 @@ struct ArrowArray
     void * private_data;
 };
 
-#endif
+#endif // ARROW_C_DATA_INTERFACE
 
 extern "C" {
 
@@ -67,6 +66,7 @@ struct FFI_VortexScan;
 struct FFI_VortexWriter;
 struct FFI_VortexExpression;
 
+/// The queue a task waits in.
 enum class FFI_VortexTaskQueue : int32_t
 {
     /// Decoding, filtering and exporting to Arrow: work that needs a core.
@@ -121,6 +121,7 @@ enum class FFI_VortexPrimitiveType : int32_t
     F64 = 9,
 };
 
+/// The operator of `vortex_ffi_expr_compare`.
 enum class FFI_VortexComparisonOperator : int32_t
 {
     Eq = 0,
@@ -229,7 +230,6 @@ void vortex_ffi_scan_cancel(const FFI_VortexScan * scan);
 /// Frees the scan. The queues must no longer be driven: no task of it may still be running.
 void vortex_ffi_scan_free(FFI_VortexScan * scan);
 
-
 // Every builder below returns nullptr for input it cannot use, borrows rather than consumes its
 // arguments, and returns a handle that has to be freed with `vortex_ffi_expr_free`.
 
@@ -250,7 +250,7 @@ FFI_VortexExpression * vortex_ffi_expr_literal_float(FFI_VortexPrimitiveType pty
 FFI_VortexExpression * vortex_ffi_expr_literal_bool(bool value);
 
 /// Creates a string literal. `is_utf8` selects a `Utf8` literal, whose bytes have to be valid
-/// UTF-8, or a `Binary` one.
+/// UTF-8, or a `Binary` one. A nullptr `data` is only accepted for length 0.
 FFI_VortexExpression * vortex_ffi_expr_literal_string(const uint8_t * data, uint64_t length, bool is_utf8);
 
 /// Creates a comparison `lhs op rhs`. A comparison with a null value yields null, which the scan

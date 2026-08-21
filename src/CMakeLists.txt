@@ -906,8 +906,9 @@ if (TARGET ch_rust::delta_kernel_rs)
     target_link_libraries(dbms PRIVATE ch_rust::delta_kernel_rs)
 endif ()
 
-# Last in the link line on purpose: the crate carries its own zstd and our contrib has to win.
 if (TARGET ch_rust::vortex)
+    # Last in the link line for the same reason as delta_kernel_rs above: the crate carries its own
+    # zstd and our contrib has to win.
     target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::vortex,INTERFACE_INCLUDE_DIRECTORIES>)
     target_link_libraries(clickhouse_common_io PRIVATE ch_rust::vortex)
     target_link_libraries(dbms PRIVATE ch_rust::vortex)
