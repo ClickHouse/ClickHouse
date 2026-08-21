@@ -583,20 +583,35 @@ private:
         }
 
         batch_size = 1;
+        size_t rows_left = min_cursor_size - min_cursor_pos;
         size_t child_idx = nextChildIndex();
         auto & next_child_cursor = *(queue.begin() + child_idx);
 
-        if (min_cursor_pos + batch_size < min_cursor_size && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
+        if (batch_size < rows_left && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
             ++batch_size;
         else
             return;
+
+        if (batch_size == rows_left)
+            return;
+
+        /// At least two rows are extractable. Check the last row of the cursor: if even it is
+        /// less than the next cursor's current row, the whole remainder forms one batch. This
+        /// makes merging cursors with non-intersecting key ranges (e.g. parts sorted by the
+        /// primary key that do not overlap) cost O(1) comparisons per batch instead of a linear
+        /// detection followed by a binary search. When the check does not hit, it costs one
+        /// comparison and excludes the last row from the search below.
+        if (next_child_cursor.greaterWithOffset(begin_cursor, 0, rows_left - 1))
+        {
+            batch_size = rows_left;
+            return;
+        }
 
         /// Linear detection at most 16 elements to quickly find a small batch size.
         /// This heuristic helps to avoid the overhead of binary search for small batches.
         constexpr size_t max_linear_detection = 16;
         size_t i = 0;
-        while (i < max_linear_detection && min_cursor_pos + batch_size < min_cursor_size
-               && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
+        while (i < max_linear_detection && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
         {
             ++batch_size;
             ++i;
@@ -606,8 +621,9 @@ private:
             return;
 
         /// Binary search for the rest of elements in case of large batch size especially when sort columns have low cardinality.
+        /// The last row is already known to be not extractable, so it is excluded from the range.
         size_t start_offset = batch_size;
-        size_t end_offset = min_cursor_size - min_cursor_pos;
+        size_t end_offset = rows_left - 1;
         while (start_offset < end_offset)
         {
             size_t mid_offset = start_offset + (end_offset - start_offset) / 2;
