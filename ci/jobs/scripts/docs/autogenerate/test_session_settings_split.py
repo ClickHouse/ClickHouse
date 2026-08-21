@@ -37,6 +37,17 @@ def load_lychee_module():
     return mod
 
 
+def expect_exception(exception_type, message, callback):
+    try:
+        callback()
+    except exception_type as error:
+        assert message in str(error), str(error)
+    else:
+        raise AssertionError(
+            f"expected {exception_type.__name__} containing {message!r}"
+        )
+
+
 def generated_page(names, body_h1=None):
     sections = []
     for setting in names:
@@ -101,6 +112,14 @@ def main():
     mod = load_module()
     migrate = load_migrate_module()
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
+
+    repo_root = HERE.parents[4]
+    for family_name in mod.SETTINGS_SPLIT_FAMILIES:
+        routing = mod._settings_routing_from_disk(
+            repo_root / "docs", repo_root, family_name
+        )
+        assert routing["routes"]
+        assert routing["anchorRoutes"]
 
     generator_order = [
         generator["name"] for generator in mod.SETTINGS_GENERATORS
@@ -293,6 +312,134 @@ def main():
             "[unique_key_max_encoded_size]"
             "(/reference/settings/session-settings/unique-key"
             "#unique_key_max_encoded_size)"
+        )
+
+    with tempfile.TemporaryDirectory() as temp:
+        repo = Path(temp)
+        docs = repo / "docs"
+        family_name = "session-settings"
+        family = mod.SETTINGS_SPLIT_FAMILIES[family_name]
+        base_route = family["base_route"]
+        dest = docs / "reference/settings/session-settings.mdx"
+        legacy_routes_path = mod._settings_legacy_routes_path(
+            docs, family_name
+        )
+        route_contract_path = mod._settings_route_contract_path(
+            repo, family_name
+        )
+        legacy_routes_path.parent.mkdir(parents=True)
+        route_contract_path.parent.mkdir(parents=True)
+
+        valid_routes = [
+            {
+                "prefix": "stable",
+                "mode": "token",
+                "target": base_route + "/stable",
+            },
+            {
+                "prefix": "",
+                "mode": "raw",
+                "target": base_route + "/other",
+            },
+        ]
+        valid_anchor_routes = {
+            "stable_alpha": base_route + "/stable",
+        }
+        valid_legacy_script = mod._settings_legacy_routes_script(
+            valid_anchor_routes, family
+        )
+        route_contract_path.write_text(
+            mod._settings_route_contract(valid_routes), encoding="utf-8"
+        )
+
+        expect_exception(
+            FileNotFoundError,
+            "refusing to regenerate settings pages without stable routing",
+            lambda: mod.split_session_settings_page(
+                dest,
+                generated_page(["stable_alpha"]),
+                docs,
+                route_contract_path,
+            ),
+        )
+        legacy_routes_path.write_text(
+            valid_legacy_script, encoding="utf-8"
+        )
+        route_contract_path.unlink()
+        expect_exception(
+            FileNotFoundError,
+            "refusing to regenerate settings pages without stable routing",
+            lambda: mod.split_session_settings_page(
+                dest,
+                generated_page(["stable_alpha"]),
+                docs,
+                route_contract_path,
+            ),
+        )
+
+        def expect_invalid_routing(routes, anchor_routes, message):
+            route_contract_path.write_text(
+                mod._settings_route_contract(routes), encoding="utf-8"
+            )
+            legacy_routes_path.write_text(
+                mod._settings_legacy_routes_script(anchor_routes, family),
+                encoding="utf-8",
+            )
+            expect_exception(
+                ValueError,
+                message,
+                lambda: mod._settings_routing_from_disk(
+                    docs, repo, family_name
+                ),
+            )
+
+        invalid_route = dict(valid_routes[0])
+        invalid_route["prefix"] = "stable prefix"
+        expect_invalid_routing(
+            [invalid_route, valid_routes[1]],
+            valid_anchor_routes,
+            "route prefix",
+        )
+
+        invalid_route = dict(valid_routes[0])
+        invalid_route["mode"] = "glob"
+        expect_invalid_routing(
+            [invalid_route, valid_routes[1]],
+            valid_anchor_routes,
+            "route mode",
+        )
+
+        invalid_route = dict(valid_routes[0])
+        invalid_route["target"] = "/reference/settings/formats/stable"
+        expect_invalid_routing(
+            [invalid_route, valid_routes[1]],
+            valid_anchor_routes,
+            "is outside",
+        )
+
+        duplicate_prefix = dict(valid_routes[1])
+        duplicate_prefix["prefix"] = "stable"
+        expect_invalid_routing(
+            [valid_routes[0], duplicate_prefix],
+            valid_anchor_routes,
+            "duplicate session-settings settings route prefix",
+        )
+
+        duplicate_target = {
+            "prefix": "stable_more",
+            "mode": "token",
+            "target": base_route + "/stable",
+        }
+        expect_invalid_routing(
+            [valid_routes[0], duplicate_target, valid_routes[1]],
+            valid_anchor_routes,
+            "duplicate session-settings settings route target",
+        )
+
+        expect_invalid_routing(
+            valid_routes,
+            {"stable_alpha": base_route + "/missing"},
+            "is not present in the route contract",
         )
 
     with tempfile.TemporaryDirectory() as temp:

@@ -1109,7 +1109,11 @@ def _settings_route_contract(routes):
 
 def _settings_routes_from_contract_content(content, source):
     contract = json.loads(content)
-    if contract.get("version") != 1 or not isinstance(contract.get("routes"), list):
+    if (
+        not isinstance(contract, dict)
+        or contract.get("version") != 1
+        or not isinstance(contract.get("routes"), list)
+    ):
         raise ValueError(f"invalid settings route contract: {source}")
     return contract["routes"]
 
@@ -1138,18 +1142,127 @@ def _parse_settings_legacy_routes_script(script, family_name):
     return json.loads(route_line[len(assignment):-1])
 
 
-def _settings_routing_from_disk(docs_dir, repo_root, family_name):
-    script = _settings_legacy_routes_path(docs_dir, family_name).read_text(
-        encoding="utf-8"
+def _validate_settings_routing(
+        family_name, routes, anchor_routes, source):
+    family = SETTINGS_SPLIT_FAMILIES[family_name]
+    base_route = family["base_route"].rstrip("/")
+    target_prefix = base_route + "/"
+
+    if not isinstance(routes, list):
+        raise ValueError(
+            f"invalid {family_name} settings routes in {source}: "
+            "expected a list"
+        )
+    if not isinstance(anchor_routes, dict):
+        raise ValueError(
+            f"invalid {family_name} settings anchor routes in {source}: "
+            "expected an object"
+        )
+
+    prefixes = {}
+    targets = {}
+    for index, route in enumerate(routes):
+        if not isinstance(route, dict):
+            raise ValueError(
+                f"invalid {family_name} settings route {index} in {source}: "
+                "expected an object"
+            )
+
+        prefix = route.get("prefix")
+        mode = route.get("mode")
+        target = route.get("target")
+        if (
+            not isinstance(prefix, str)
+            or not re.fullmatch(r"[A-Za-z0-9_.-]*", prefix)
+            or (mode == "token" and not prefix)
+        ):
+            raise ValueError(
+                f"invalid {family_name} settings route prefix at index "
+                f"{index} in {source}: {prefix!r}"
+            )
+        if mode not in ("token", "raw"):
+            raise ValueError(
+                f"invalid {family_name} settings route mode at index "
+                f"{index} in {source}: {mode!r}"
+            )
+        if not isinstance(target, str) or not target.startswith(target_prefix):
+            raise ValueError(
+                f"invalid {family_name} settings route target at index "
+                f"{index} in {source}: {target!r} is outside {base_route!r}"
+            )
+        target_parts = target[len(target_prefix):].split("/")
+        if any(
+            not part or not re.fullmatch(r"[A-Za-z0-9_.-]+", part)
+            for part in target_parts
+        ):
+            raise ValueError(
+                f"invalid {family_name} settings route target at index "
+                f"{index} in {source}: {target!r}"
+            )
+
+        if prefix in prefixes:
+            raise ValueError(
+                f"duplicate {family_name} settings route prefix {prefix!r} "
+                f"at indexes {prefixes[prefix]} and {index} in {source}"
+            )
+        if target in targets:
+            raise ValueError(
+                f"duplicate {family_name} settings route target {target!r} "
+                f"at indexes {targets[target]} and {index} in {source}"
+            )
+        prefixes[prefix] = index
+        targets[target] = index
+
+    for anchor, target in anchor_routes.items():
+        if not isinstance(anchor, str) or not anchor:
+            raise ValueError(
+                f"invalid {family_name} settings anchor in {source}: "
+                f"{anchor!r}"
+            )
+        if not isinstance(target, str) or target not in targets:
+            raise ValueError(
+                f"invalid {family_name} settings anchor target for "
+                f"{anchor!r} in {source}: {target!r} is not present in the "
+                "route contract"
+            )
+
+    return {"routes": routes, "anchorRoutes": anchor_routes}
+
+
+def _settings_routing_from_paths(
+        legacy_routes_path, route_contract_path, family_name):
+    legacy_routes_path = Path(legacy_routes_path)
+    route_contract_path = Path(route_contract_path)
+    missing = [
+        path
+        for path in (legacy_routes_path, route_contract_path)
+        if not path.is_file()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            f"missing {family_name} settings routing metadata: "
+            + ", ".join(str(path) for path in missing)
+            + "; refusing to regenerate settings pages without stable routing"
+        )
+
+    routes = _settings_routes_from_contract(route_contract_path)
+    anchor_routes = _parse_settings_legacy_routes_script(
+        legacy_routes_path.read_text(encoding="utf-8"), family_name
     )
-    return {
-        "routes": _settings_routes_from_contract(
-            _settings_route_contract_path(repo_root, family_name)
-        ),
-        "anchorRoutes": _parse_settings_legacy_routes_script(
-            script, family_name
-        ),
-    }
+    return _validate_settings_routing(
+        family_name,
+        routes,
+        anchor_routes,
+        f"{route_contract_path} and {legacy_routes_path}",
+    )
+
+
+def _settings_routing_from_disk(docs_dir, repo_root, family_name):
+    return _settings_routing_from_paths(
+        _settings_legacy_routes_path(docs_dir, family_name),
+        _settings_route_contract_path(repo_root, family_name),
+        family_name,
+    )
 
 
 def _settings_routing_from_artifacts(
@@ -1172,14 +1285,16 @@ def _settings_routing_from_artifacts(
             f"{len(route_matches)} legacy scripts and "
             f"{len(contract_matches)} contracts"
         )
-    return {
-        "routes": _settings_routes_from_contract_content(
+    return _validate_settings_routing(
+        family_name,
+        _settings_routes_from_contract_content(
             contract_matches[0].content, family_name
         ),
-        "anchorRoutes": _parse_settings_legacy_routes_script(
+        _parse_settings_legacy_routes_script(
             route_matches[0].content, family_name
         ),
-    }
+        f"generated {family_name} routing artifacts",
+    )
 
 
 def _rewrite_setting_links_from_routes(
@@ -1199,7 +1314,18 @@ def _rewrite_setting_links_from_routes(
                 docs_dir, repo_root, family_name
             )
         else:
-            route_metadata = generated_routes[family_name]
+            supplied_metadata = generated_routes[family_name]
+            if not isinstance(supplied_metadata, dict):
+                raise ValueError(
+                    f"invalid generated {family_name} settings routing "
+                    "metadata: expected an object"
+                )
+            route_metadata = _validate_settings_routing(
+                family_name,
+                supplied_metadata.get("routes"),
+                supplied_metadata.get("anchorRoutes"),
+                "generated settings routing metadata",
+            )
         markdown = _rewrite_setting_links(
             markdown,
             route_metadata["routes"],
@@ -1642,14 +1768,10 @@ def split_settings_page(
     root_frontmatter, preamble, sections = parse_settings_page(content)
     previous_routing = None
     legacy_routes_path = _settings_legacy_routes_path(docs_dir, family_name)
-    if legacy_routes_path.is_file() and route_contract_path \
-            and Path(route_contract_path).is_file():
-        previous_routing = {
-            "routes": _settings_routes_from_contract(route_contract_path),
-            "anchorRoutes": _parse_settings_legacy_routes_script(
-                legacy_routes_path.read_text(encoding="utf-8"), family_name
-            ),
-        }
+    if route_contract_path is not None:
+        previous_routing = _settings_routing_from_paths(
+            legacy_routes_path, route_contract_path, family_name
+        )
     pages = group_session_settings(
         sections,
         base_route=family["base_route"],
