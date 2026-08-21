@@ -55,6 +55,8 @@ def start_unity_catalog(node):
             'tar -C / -cf - --exclude="*/zinc" unitycatalog | tar -C /tmp -xf -',
         ]
     )
+    
+    # Call start-uc-server.
     node.exec_in_container(
         [
             "bash",
@@ -63,6 +65,7 @@ def start_unity_catalog(node):
         ]
     )
 
+    # Wait for server to start.
     try:
         node.exec_in_container(
             [
@@ -84,18 +87,16 @@ def start_unity_catalog(node):
         raise
 
 
-UNIFORM_DIR = UC_HOME + "/etc/data/external/unity/default/tables/marksheet_uniform"
-
-
 def link_uniform_table(node):
-    """The upstream docs tell you to copy this table to `/tmp` before use; a
-    symlink does the same for read-only data. Both the catalog server and
-    ClickHouse then find it where its registration says it is."""
+    """`marksheet_uniform` is registered at /tmp/marksheet_uniform but ships
+    inside the catalog tree; upstream tells you to put it there before use. Both
+    the catalog server and ClickHouse read it at the registered path."""
+    table_dir = UC_HOME + "/etc/data/external/unity/default/tables/marksheet_uniform"
     node.exec_in_container(
         [
             "bash",
             "-c",
-            f"ln -sfn {UNIFORM_DIR} /tmp/marksheet_uniform && "
+            f"ln -s {table_dir} /tmp/marksheet_uniform && "
             "test -d /tmp/marksheet_uniform/metadata",
         ]
     )
