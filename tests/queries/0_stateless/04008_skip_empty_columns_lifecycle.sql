@@ -596,3 +596,36 @@ SELECT 'case48_data';
 SELECT key, b, c FROM t_skip_empty_case48 ORDER BY key;
 
 DROP TABLE t_skip_empty_case48;
+
+-- ============================================================================
+-- CASE 49: CLEAR only recomputes its readable MATERIALIZED dependency closure.
+-- An unrelated MATERIALIZED column backed by EPHEMERAL input cannot be rebuilt
+-- from an existing part and must retain its stored value.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case49;
+
+CREATE TABLE t_skip_empty_case49
+(
+    key UInt64,
+    b UInt64,
+    e UInt64 EPHEMERAL,
+    m1 UInt64 MATERIALIZED b + 1,
+    m2 UInt64 MATERIALIZED m1 + 1,
+    from_e UInt64 MATERIALIZED e + 1
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case49 (key, b, e) VALUES (1, 0, 41);
+ALTER TABLE t_skip_empty_case49 MODIFY COLUMN b UInt64 DEFAULT 999;
+ALTER TABLE t_skip_empty_case49 CLEAR COLUMN b;
+
+SELECT 'case49_data';
+SELECT key, b, m1, m2, from_e FROM t_skip_empty_case49 ORDER BY key;
+
+DROP TABLE t_skip_empty_case49;

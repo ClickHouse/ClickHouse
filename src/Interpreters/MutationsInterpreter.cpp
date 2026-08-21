@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -964,17 +965,13 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (!patch_updated_columns.empty())
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
-    /// MATERIALIZED columns rewritten by a CLEAR COLUMN. Must stay equal to the set the recompute
-    /// below writes, otherwise a rewritten column keeps stale dependent artifacts.
+    /// MATERIALIZED columns rewritten by CLEAR COLUMN are exactly the readable
+    /// dependency closure of the cleared columns. The dependency graph already
+    /// excludes expressions that require EPHEMERAL inputs, which cannot be
+    /// reconstructed while mutating an existing part.
     NameSet clear_affected_materialized;
-    if (!clear_column_names.empty() && !affected_materialized_closure(clear_column_names).empty())
-    {
-        for (const auto & column : columns_desc)
-        {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression)
-                clear_affected_materialized.insert(column.name);
-        }
-    }
+    if (!clear_column_names.empty())
+        clear_affected_materialized = affected_materialized_closure(clear_column_names);
 
     /// The union of every MATERIALIZED column recomputed by this mutation (from UPDATE, from
     /// materializing patch parts, and from CLEAR COLUMN). Used both to seed dependency analysis
@@ -1015,9 +1012,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// through original values).
     NameSet cleared_columns_with_dependencies;
 
-    /// Whether any MATERIALIZED column depends on a cleared column and needs
-    /// to be recalculated with the type-default value.
-    bool need_recalculate_materialized_for_clear = false;
+    /// Cleared columns with dependent stored data must enter the readonly stage
+    /// with their current DEFAULT value before those dependencies are rebuilt.
+    const bool need_recalculate_materialized_for_clear = !clear_affected_materialized.empty();
     if (has_lightweight_delete_materialization || has_rewrite_parts)
     {
         auto & stage = stages.emplace_back(context);
@@ -1454,8 +1451,17 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
                 /// that depend on it. We should rebuild such projections and indices
-                const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
-                if (column && command.data_type && !column->type->equals(*command.data_type))
+                DataTypePtr old_type;
+                if (const auto column = merge_tree_data_part->tryGetColumn(command.column_name))
+                    old_type = column->type;
+                else
+                {
+                    const auto & infos = merge_tree_data_part->getSerializationInfos();
+                    if (const auto * missing = infos.getMissingColumnInfo(command.column_name); missing && !missing->type_name.empty())
+                        old_type = DataTypeFactory::instance().get(missing->type_name);
+                }
+
+                if (old_type && command.data_type && !old_type->equals(*command.data_type))
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
@@ -1527,43 +1533,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
 
-            /// When clearing a column, any MATERIALIZED column whose expression
-            /// depends on the cleared column must be recalculated so its stored
-            /// data stays consistent with the new (default) value.
-            /// We must check every CLEAR COLUMN command (not short-circuit after the
-            /// first match) so that all cleared columns used by materialized
-            /// expressions are registered in `cleared_columns_with_dependencies`.
-            bool has_dependent_materialized = false;
-            for (const auto & column : columns_desc)
+            if (!clear_affected_materialized.empty())
             {
-                if (column.default_desc.kind != ColumnDefaultKind::Materialized
-                    || !available_columns_set.contains(column.name)
-                    || !column.default_desc.expression)
-                    continue;
-
-                auto query = column.default_desc.expression->clone();
-                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-                for (const auto & dep : syntax_result->requiredSourceColumns())
-                {
-                    if (dep == command.column_name)
-                    {
-                        has_dependent_materialized = true;
-                        break;
-                    }
-                }
-                if (has_dependent_materialized)
-                    break;
-            }
-
-            if (has_dependent_materialized)
-            {
-                need_recalculate_materialized_for_clear = true;
-                /// Ensure the cleared column enters the readonly stage
-                /// with its default value so the materialized expression
-                /// evaluates correctly.
-                dependencies.emplace(command.column_name, ColumnDependency::PROJECTION);
                 cleared_columns_with_dependencies.insert(command.column_name);
+                /// Ensure the cleared column enters the readonly stage with its
+                /// current DEFAULT so the exact dependency closure is evaluated
+                /// from the post-CLEAR value.
+                dependencies.emplace(command.column_name, ColumnDependency::PROJECTION);
             }
         }
         /// The following mutations handled separately:
