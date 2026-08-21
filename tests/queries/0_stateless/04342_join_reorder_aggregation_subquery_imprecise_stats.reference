@@ -1,0 +1,3 @@
+-- aggregation subquery over a table without statistics keeps the no_stats label --
+Join: agg[no_stats~1000] ⋈ s[100]
+ResultRows: ~~100

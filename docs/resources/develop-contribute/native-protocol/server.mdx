@@ -32,12 +32,12 @@ Response to [client hello](/resources/develop-contribute/native-protocol/client#
 
 | field         | type    | value           | description          |
 |---------------|---------|-----------------|----------------------|
-| name          | String  | `Clickhouse`    | Server name          |
+| name          | String  | `ClickHouse`    | Server name          |
 | version_major | UVarInt | `21`            | Server major version |
 | version_minor | UVarInt | `12`            | Server minor version |
 | revision      | UVarInt | `54452`         | Server revision      |
 | tz            | String  | `Europe/Moscow` | Server timezone      |
-| display_name  | String  | `Clickhouse`    | Server name for UI   |
+| display_name  | String  | `<display_name-or-hostname>` | Server name for UI   |
 | version_patch | UVarInt | `3`             | Server patch version |
 
 ## Exception {#exception}
@@ -54,7 +54,7 @@ Server exception during query processing.
 
 Can be continuous list of exceptions until `nested` is `false`.
 
-[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "List of error codes"
+[codes]: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp "List of error codes"
 
 ## Progress {#progress}
 

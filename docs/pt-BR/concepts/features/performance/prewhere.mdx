@@ -31,7 +31,7 @@ Vamos começar mostrando como uma consulta na tabela [uk&#95;price&#95;paid&#95;
 
 ③ Ele percorre as entradas do índice para identificar quais grânulos da coluna `town` podem conter linhas que correspondam ao predicado.
 
-④ Esses grânulos potencialmente relevantes são carregados na memória, junto com grânulos alinhados por posição de quaisquer outras colunas necessárias para a consulta.
+④ Esses grânulos potencialmente relevantes são carregados na memória, junto com grânulos alinhados posicionalmente de quaisquer outras colunas necessárias para a consulta.
 
 ⑤ Os filtros restantes são então aplicados durante a execução da consulta.
 
@@ -106,7 +106,7 @@ Na etapa final, apenas o conjunto mínimo de grânulos de coluna — aqueles que
   ## A otimização PREWHERE é aplicada automaticamente
 </div>
 
-A cláusula PREWHERE pode ser adicionada manualmente, como mostrado no exemplo acima. No entanto, não é necessário escrever PREWHERE manualmente. Quando a configuração [`optimize_move_to_prewhere`](/pt-BR/reference/settings/session-settings#optimize_move_to_prewhere) está habilitada (true por padrão), o ClickHouse move automaticamente as condições de filtro de WHERE para PREWHERE, priorizando aquelas que mais reduzem o volume de leitura.
+A cláusula PREWHERE pode ser adicionada manualmente, como mostrado no exemplo acima. No entanto, não é necessário escrever PREWHERE manualmente. Quando a configuração [`optimize_move_to_prewhere`](/pt-BR/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) está habilitada (true por padrão), o ClickHouse move automaticamente as condições de filtro de WHERE para PREWHERE, priorizando aquelas que mais reduzem o volume de leitura.
 
 A ideia é que colunas menores sejam mais rápidas de ler e, quando as colunas maiores forem processadas, a maioria dos grânulos já tenha sido filtrada. Como todas as colunas têm o mesmo número de linhas, o tamanho de uma coluna é determinado principalmente pelo seu tipo de dado; por exemplo, uma coluna `UInt8` geralmente é muito menor do que uma coluna `String`.
 

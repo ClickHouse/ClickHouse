@@ -1,24 +1,24 @@
 ---
-sidebarTitle: 'Scheduled scaling'
+sidebarTitle: 'escalado programado'
 slug: /cloud/features/autoscaling/scheduled-scaling
-description: 'Artículo sobre la funcionalidad Scheduled Scaling de ClickHouse Cloud'
+description: 'Artículo sobre la funcionalidad escalado programado de ClickHouse Cloud'
 keywords: ['scheduled scaling']
-title: 'Scheduled scaling'
+title: 'escalado programado'
 doc_type: 'guide'
 ---
 
-import PrivatePreviewBadge from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-Los servicios de ClickHouse Cloud escalan automáticamente en función del uso de CPU y memoria, pero muchas cargas de trabajo siguen patrones predecibles: picos diarios de ingestión, trabajos por lotes que se ejecutan por la noche o tráfico que disminuye drásticamente los fines de semana. Para estos casos de uso, Scheduled Scaling le permite definir exactamente cuándo debe escalar su servicio, ya sea hacia arriba o hacia abajo, independientemente de las métricas en tiempo real.
+Los servicios de ClickHouse Cloud escalan automáticamente en función del uso de CPU y memoria, pero muchas cargas de trabajo siguen patrones predecibles: picos diarios de ingestión, trabajos por lotes que se ejecutan por la noche o tráfico que disminuye drásticamente los fines de semana. Para estos casos de uso, escalado programado le permite definir exactamente cuándo debe escalar su servicio, ya sea hacia arriba o hacia abajo, independientemente de las métricas en tiempo real.
 
-Con Scheduled Scaling, configura un conjunto de reglas basadas en el tiempo directamente en la consola de ClickHouse Cloud. Cada regla especifica una hora, una recurrencia (diaria, semanal o personalizada) y el tamaño objetivo, ya sea el número de réplicas (horizontal) o el nivel de memoria (vertical). En el momento programado, ClickHouse Cloud aplica automáticamente el cambio, de modo que su servicio tenga el tamaño adecuado antes de que llegue la demanda, en lugar de reaccionar a ella después.
+Con escalado programado, configura un conjunto de reglas basadas en el tiempo directamente en la consola de ClickHouse Cloud. Cada regla especifica una hora, una recurrencia (diaria, semanal o personalizada) y el tamaño objetivo, ya sea el número de réplicas (horizontal) o el nivel de memoria (vertical). En el momento programado, ClickHouse Cloud aplica automáticamente el cambio, de modo que su servicio tenga el tamaño adecuado antes de que llegue la demanda, en lugar de reaccionar a ella después.
 
-Esto es distinto del escalado automático basado en métricas, que responde dinámicamente a la presión sobre la CPU y la memoria. Scheduled Scaling es determinista: sabe exactamente cuándo se producirá el escalado y a qué tamaño. Ambos enfoques son complementarios: un servicio puede tener una programación de escalado base y seguir beneficiándose del escalado automático dentro de esa ventana si las cargas de trabajo fluctúan de forma inesperada.
+Esto es distinto del escalado automático basado en métricas, que responde dinámicamente a la presión sobre la CPU y la memoria. El escalado programado es determinista: sabe exactamente cuándo se producirá el escalado y a qué tamaño. Ambos enfoques son complementarios: un servicio puede tener una programación de escalado base y seguir beneficiándose del escalado automático dentro de esa ventana si las cargas de trabajo fluctúan de forma inesperada.
 
-Actualmente, Scheduled Scaling está disponible en **vista previa privada**. Para habilitarlo en su organización, póngase en contacto con el equipo de soporte de ClickHouse.
+Actualmente, el escalado programado está disponible en **vista previa privada**. Para habilitarlo en su organización, póngase en contacto con el equipo de soporte de ClickHouse.
 
 <div id="setting-up-a-scaling-schedule">
   ## Configurar una programación de escalado

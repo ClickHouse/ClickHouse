@@ -126,7 +126,7 @@ ProcessList::EntryPtr ProcessList::insert(
     if (client_info.current_query_id.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
-    bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal;
+    bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port;
     std::shared_ptr<QueryStatus> query;
 
     // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
@@ -628,7 +628,7 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
         {
             String additional_error_part;
             if (elapsed_ns)
-                additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
+                additional_error_part = fmt::format("elapsed {:.3f} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time_ms);

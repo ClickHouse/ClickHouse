@@ -18,5 +18,8 @@ ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [DROP PROFILES 'profile_name' [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
+
+`SET variable = value` 是 `MODIFY SETTING variable = value` 的别名：它会就地修改单个设置，同时保留其余设置；而不带修饰的 `SETTINGS` 子句会替换整个 settings 列表，并移除所有继承的 (父级) profile。

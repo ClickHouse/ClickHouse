@@ -80,7 +80,7 @@ public:
     /// Per-value estimations.
     /// Returns std::nullopt when the statistics object cannot produce a meaningful estimate
     /// (e.g. the value cannot be converted to the column type).
-    virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
+    virtual std::optional<Float64> estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
@@ -106,6 +106,7 @@ struct Estimate
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
+    std::optional<UInt64> estimated_default_count;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
@@ -131,6 +132,9 @@ public:
     UInt64 getNonNullRowCount() const;
     /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
     bool hasNullCount() const;
+    /// True iff loaded statistics include a source of numeric min/max values
+    /// (`MinMax`, or `Basic` on a numeric/temporal column).
+    bool hasMinMax() const;
     UInt64 estimateCardinality() const;
     UInt64 estimateDefaults() const;
 
@@ -185,7 +189,11 @@ class MergeTreeStatisticsFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticsFactory & instance();
 
-    void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
+    /// `allow_deprecated_minmax` grandfathers an explicitly-declared `minmax` statistics type that
+    /// already exists in the table's metadata (e.g. a table created by an older version). It is set
+    /// only when the current CREATE/ALTER does not newly introduce `minmax`, so unrelated ALTERs of
+    /// such old tables are not rejected.
+    void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type, bool allow_deprecated_minmax = false) const;
     ColumnStatisticsDescription cloneWithSupportedStatistics(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
     using Validator = std::function<bool(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
@@ -214,5 +222,6 @@ private:
 
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
+
 
 }

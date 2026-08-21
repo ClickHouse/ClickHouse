@@ -20,6 +20,7 @@ INSERT INTO rf_fp_a SELECT number, number * 17 + 3 FROM numbers(1000);
 INSERT INTO rf_fp_a SELECT number, number * 19 + 5 FROM numbers(1000);
 
 SET enable_analyzer = 1, query_plan_join_swap_table = 'false';
+SET join_runtime_filter_min_probe_rows = 0;
 SET explain_query_plan_default = 'legacy';
 
 -- The collision condition: the two identical join shapes really do share a fingerprint name (so when

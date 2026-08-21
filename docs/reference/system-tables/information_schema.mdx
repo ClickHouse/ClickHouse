@@ -18,6 +18,7 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
+│ COLLATIONS              │
 │ COLUMNS                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
@@ -38,6 +39,7 @@ SHOW TABLES FROM information_schema;
 `INFORMATION_SCHEMA` contains the following views:
 
 - [COLUMNS](#columns)
+- [COLLATIONS](#collations)
 - [KEY_COLUMN_USAGE](#key_column_usage)
 - [REFERENTIAL_CONSTRAINTS](#referential_constraints)
 - [SCHEMATA](#schemata)
@@ -362,3 +364,17 @@ Columns:
 ## STATISTICS {#statistics}
 
 Provides information about table indexes. Currently returns an empty result (no rows) which is just enough to provide compatibility with 3rd party tools like Tableau Online.
+
+## COLLATIONS {#collations}
+
+Provides information about available collations. Contains the collations from [system.collations](/reference/system-tables/collations) plus two MySQL-compatibility rows: `utf8mb4_0900_ai_ci` — the collation that the MySQL protocol advertises in the handshake, in `SCHEMATA.DEFAULT_COLLATION_NAME`, and in `TABLES.TABLE_COLLATION` — and `binary` — the pseudo-collation that the MySQL protocol stamps on numeric and other non-string columns in result-set metadata — so that a MySQL-aware client following the advertised collations into this view finds them.
+
+Columns:
+
+- `collation_name` ([String](/reference/data-types/string)) — The name of the collation.
+- `character_set_name` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — The associated character set (`utf8mb4` for `utf8mb4_0900_ai_ci`, `binary` for `binary`, otherwise `NULL`). Provided for MySQL compatibility.
+- `id` ([Nullable](/reference/data-types/nullable)([UInt64](/reference/data-types/int-uint))) — The MySQL collation id (`255` for `utf8mb4_0900_ai_ci`, `63` for `binary`, otherwise `NULL`). Provided for MySQL compatibility.
+- `is_default` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — Whether the collation is the default of its character set (`Yes` for both MySQL-compatibility rows, otherwise `NULL`). Provided for MySQL compatibility.
+- `is_compiled` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — Whether the collation is compiled into the server (`Yes` for both MySQL-compatibility rows, otherwise `NULL`). Provided for MySQL compatibility.
+- `sortlen` ([Nullable](/reference/data-types/nullable)([UInt64](/reference/data-types/int-uint))) — The minimum sort length (`0` for `utf8mb4_0900_ai_ci`, `1` for `binary`, otherwise `NULL`). Provided for MySQL compatibility.
+- `pad_attribute` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — The pad attribute, `NO PAD` or `PAD SPACE` (`NO PAD` for both MySQL-compatibility rows, otherwise `NULL`). Provided for MySQL compatibility.

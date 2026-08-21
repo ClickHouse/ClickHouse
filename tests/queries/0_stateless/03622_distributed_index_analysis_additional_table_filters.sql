@@ -21,7 +21,49 @@ set allow_experimental_analyzer=1;
 set allow_experimental_parallel_reading_from_replicas=0;
 -- disable statistics-based part pruning to keep EXPLAIN output stable
 SET use_statistics_for_part_pruning = 0;
+-- Ignore `Cannot connect to {}. It will not participate in distributed index analysis`
+set send_logs_level='error';
 
 -- { echo }
 select count() from (select * from test_1m);
-explain indexes=1 select key from (select * from test_1m);
+-- The `Distributed:` block lists one row per replica of `test_cluster_one_shard_two_replicas`.
+-- 127.0.0.2 is not guaranteed to be up, and when it is down its row degenerates to an empty
+-- `Address:` with zero counters while the local replica absorbs its parts. Assert the
+-- aggregate `Parts:`/`Granules:` and the pushed-down `Condition:` instead.
+select * from (
+    explain indexes=1 select key from (select * from test_1m)
+) where explain not like '%Address:%'
+    and explain not like '%Parts send:%' and explain not like '%Parts received:%'
+    and explain not like '%Granules send:%' and explain not like '%Granules received:%';
+
+-- { echoOff }
+-- The filtered plan above no longer names the replica that answered, so assert separately that the
+-- remote replica analyzed its own parts rather than silently falling back to the initiator. Both
+-- `DistributedIndexAnalysisReplicaFallback` and `DistributedIndexAnalysisMissingParts` are
+-- incremented only once a replica has connected and its analysis then failed, so they read 0
+-- whether or not 127.0.0.2 is up. `DistributedIndexAnalysisScheduledReplicas` and
+-- `DistributedIndexAnalysisReplicaUnavailable` are deliberately not asserted: they depend on
+-- replica availability and would reintroduce the flakiness this test avoids.
+system flush logs query_log;
+select format(
+  'DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisReplicaFallback={}, DistributedIndexAnalysisMissingParts={}',
+  ProfileEvents['DistributedIndexAnalysisMicroseconds'] > 0,
+  ProfileEvents['DistributedIndexAnalysisReplicaFallback'],
+  ProfileEvents['DistributedIndexAnalysisMissingParts']
+)
+from system.query_log
+where
+  current_database = currentDatabase()
+  and event_date >= yesterday() and event_time >= now() - 600
+  and type = 'QueryFinish'
+  and is_initial_query
+  and endsWith(log_comment, '-' || currentDatabase())
+  -- The statement above is a `select` over a subquery, not an `explain`, so its kind is `Select`.
+  and query_kind = 'Select'
+  and position(query, 'explain indexes=1') > 0
+  -- This observing statement also contains that literal, so exclude it by the fact that it is the
+  -- only statement here reading `system`.
+  and not has(databases, 'system')
+-- Newest match only, so a rerun in a fixed database cannot add a second line.
+order by event_time_microseconds desc
+limit 1;

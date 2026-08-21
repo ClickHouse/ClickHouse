@@ -1,3 +1,6 @@
+#include <cstring>
+#include <memory>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
@@ -7,7 +10,10 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <Common/TargetSpecific.h>
+#include <base/extended_types.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -38,6 +44,7 @@ struct AggregateFunctionGroupBitOrData
     T value = 0;
     static const char * name() { return "groupBitOr"; }
     void update(T x) { value |= x; }
+    void ALWAYS_INLINE updateMasked(T x, T keep_mask) { value |= x & keep_mask; }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -61,6 +68,7 @@ struct AggregateFunctionGroupBitAndData
     T value = -1; /// Two's complement arithmetic, sign extension.
     static const char * name() { return "groupBitAnd"; }
     void update(T x) { value &= x; }
+    void ALWAYS_INLINE updateMasked(T x, T keep_mask) { value &= x | ~keep_mask; }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -84,6 +92,7 @@ struct AggregateFunctionGroupBitXorData
     T value = 0;
     static const char * name() { return "groupBitXor"; }
     void update(T x) { value ^= x; }
+    void ALWAYS_INLINE updateMasked(T x, T keep_mask) { value ^= x & keep_mask; }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -106,6 +115,78 @@ struct AggregateFunctionGroupBitXorData
 template <typename T, typename Data>
 class AggregateFunctionBitwise final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>
 {
+private:
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(
+    static void NO_INLINE
+    ), addManyImpl, MULTITARGET_FUNCTION_BODY((Data & data, const T * __restrict ptr, size_t row_begin, size_t row_end) /// NOLINT
+    {
+        /// Clang cannot vectorize the loop if the accumulator is not a local variable.
+        Data local;
+        for (size_t i = row_begin; i < row_end; ++i)
+            local.update(ptr[i]);
+        data.update(local.value);
+    })
+    )
+
+    static void addMany(Data & data, const T * __restrict ptr, size_t row_begin, size_t row_end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addManyImpl_x86_64_v4(data, ptr, row_begin, row_end);
+            return;
+        }
+#endif
+
+        addManyImpl(data, ptr, row_begin, row_end);
+    }
+
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(
+    template <bool add_if_zero>
+    static void NO_INLINE
+    ), addManyConditionalImpl, MULTITARGET_FUNCTION_BODY((Data & data, const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end) /// NOLINT
+    {
+        /// The flag is applied as an arithmetic all-ones/all-zeros mask: unlike a branch or a
+        /// ternary select, this form is if-converted and vectorized at the baseline instruction set.
+        Data local;
+        if constexpr (is_over_big_int<T>)
+        {
+            /// For wide integers only a mask built with memset is vectorized.
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                T keep_mask; /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned by the memset below
+                std::memset(&keep_mask, -static_cast<int>(!condition_map[i] == add_if_zero), sizeof(T));
+                local.updateMasked(ptr[i], keep_mask);
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                T keep_mask = T(0) - T(!condition_map[i] == add_if_zero);
+                local.updateMasked(ptr[i], keep_mask);
+            }
+        }
+        data.update(local.value);
+    })
+    )
+
+    template <bool add_if_zero>
+    static void addManyConditional(Data & data, const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addManyConditionalImpl_x86_64_v4<add_if_zero>(data, ptr, condition_map, row_begin, row_end);
+            return;
+        }
+#endif
+
+        addManyConditionalImpl<add_if_zero>(data, ptr, condition_map, row_begin, row_end);
+    }
+
 public:
     explicit AggregateFunctionBitwise(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>({type}, {}, createResultType())
@@ -123,6 +204,54 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).update(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos) const override
+    {
+        const auto & column = assert_cast<const ColumnVector<T> &>(*columns[0]);
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            addManyConditional<false>(this->data(place), column.getData().data(), flags.data(), row_begin, row_end);
+        }
+        else
+        {
+            addMany(this->data(place), column.getData().data(), row_begin, row_end);
+        }
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena *,
+        ssize_t if_argument_pos) const override
+    {
+        const auto & column = assert_cast<const ColumnVector<T> &>(*columns[0]);
+        if (if_argument_pos >= 0)
+        {
+            /// Merging the two sets of flags into a temporary buffer vectorizes better
+            /// than fusing both flags into the accumulation loop.
+            const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+            std::unique_ptr<UInt8[]> final_flags(new UInt8[row_end]);
+            for (size_t i = row_begin; i < row_end; ++i)
+                final_flags[i] = (!null_map[i]) & !!if_flags[i];
+
+            addManyConditional<false>(this->data(place), column.getData().data(), final_flags.get(), row_begin, row_end);
+        }
+        else
+        {
+            addManyConditional<true>(this->data(place), column.getData().data(), null_map, row_begin, row_end);
+        }
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

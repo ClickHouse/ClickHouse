@@ -82,6 +82,12 @@ public:
     bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
+    /// With a LowCardinality argument the default implementation would run throwIf on the whole
+    /// dictionary, which always contains the reserved default value even if no row references it.
+    /// That spurious entry could make throwIf throw for values absent from the data, so execute on
+    /// the minimal (only actually referenced) dictionary instead.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     /** Prevent constant folding for FunctionThrowIf because for short circuit evaluation
       * it is unsafe to evaluate this function during DAG analysis.
       */

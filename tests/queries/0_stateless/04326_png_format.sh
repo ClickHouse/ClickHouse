@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# no-fasttest: the PNG format requires libpng and base64, and the fast-test build does not enable base64
+# no-fasttest: the PNG format requires base64, and the fast-test build does not enable base64
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -181,7 +181,7 @@ png_http "output_format_image_width=4294967297" "
     SELECT toUInt8(0) AS v FROM numbers(1) FORMAT PNG
 " | grep -oE "BAD_ARGUMENTS" | head -1
 
-# Dimension above the encoder's per-dimension limit but below the 31-bit range -> exception, not a libpng failure
+# Dimension above the encoder's per-dimension limit but below the 31-bit range -> exception, not an encoder failure
 png_http "output_format_image_width=10000000&output_format_image_height=1" "
     SELECT toUInt8(number % 256) AS v FROM numbers(1) FORMAT PNG
 " | grep -oE "BAD_ARGUMENTS" | head -1

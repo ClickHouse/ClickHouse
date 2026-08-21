@@ -670,7 +670,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {}});
+    factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {.description = R"DOC(Searches for a chain of events in a sliding time window and returns the maximum number of events from the chain that occurred in order (the length of the longest matching prefix).)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

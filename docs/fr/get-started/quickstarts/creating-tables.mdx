@@ -69,20 +69,20 @@ Dans l’exemple ci-dessus, `my_first_table` est une table `MergeTree` comportan
   ## Une brève introduction aux clés primaires
 </div>
 
-Avant d&#39;aller plus loin, il est important de comprendre comment fonctionnent les clés primaires dans ClickHouse (leur implémentation
-peut sembler inattendue !):
+Avant d’aller plus loin, il est important de comprendre comment fonctionnent les clés primaires dans ClickHouse (leur implémentation
+peut sembler inattendue !) :
 
-* dans ClickHouse, les clés primaires ne sont ***pas uniques*** pour chaque ligne d&#39;une table
+* dans ClickHouse, les clés primaires ne sont ***pas uniques*** pour chaque ligne d’une table
 
-La clé primaire d&#39;une table ClickHouse détermine l&#39;ordre de tri des données lors de leur écriture sur disque. Toutes les 8 192 lignes ou tous les 10 MB de
-données (ce qu&#39;on appelle la **granularité de l&#39;index**) créent une entrée dans le fichier d&#39;index de la clé primaire. Ce principe de granularité
+La clé primaire d’une table ClickHouse détermine l’ordre de tri des données lors de leur écriture sur disque. Toutes les 8 192 lignes ou tous les 10 MB de
+données (ce qu’on appelle la **granularité de l’index**) créent une entrée dans le fichier d’index de la clé primaire. Ce principe de granularité
 crée un **index clairsemé** qui tient facilement en mémoire, et les granules représentent un segment correspondant à la plus petite quantité de
 données de colonnes traitée pendant les requêtes `SELECT`.
 
-La clé primaire peut être définie à l&#39;aide du paramètre `PRIMARY KEY`. Si vous définissez une table sans `PRIMARY KEY`,
-la clé devient alors le tuple spécifié dans la clause `ORDER BY`. Si vous spécifiez à la fois un `PRIMARY KEY` et un `ORDER BY`, la clé primaire doit être un préfixe de l&#39;ordre de tri.
+La clé primaire peut être définie à l’aide du paramètre `PRIMARY KEY`. Si vous définissez une table sans `PRIMARY KEY`,
+la clé devient alors le tuple spécifié dans la clause `ORDER BY`. Si vous spécifiez à la fois un `PRIMARY KEY` et un `ORDER BY`, la clé primaire doit être un préfixe de l’ordre de tri.
 
-La clé primaire est aussi la clé de tri, c&#39;est-à-dire un tuple `(user_id, timestamp)`. Par conséquent, les données stockées dans chaque
+La clé primaire est aussi la clé de tri, c’est-à-dire un tuple `(user_id, timestamp)`. Par conséquent, les données stockées dans chaque
 fichier de colonne seront triées par `user_id`, puis par `timestamp`.
 
 <Tip>

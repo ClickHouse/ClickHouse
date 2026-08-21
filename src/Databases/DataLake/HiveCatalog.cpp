@@ -154,9 +154,9 @@ bool HiveCatalog::empty() const
     return result.empty();
 }
 
-DB::Names HiveCatalog::getTables() const
+CatalogTables HiveCatalog::getTables() const
 {
-    DB::Names result;
+    CatalogTables result;
     DB::Names databases;
 
     executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(databases); });
@@ -165,8 +165,9 @@ DB::Names HiveCatalog::getTables() const
     {
         DB::Names current_tables;
         executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, db); });
+        /// A Hive catalog used with the Iceberg engine lists only Iceberg tables, so they are readable.
         for (const auto & table : current_tables)
-            result.push_back(db + "." + table);
+            result.push_back(CatalogTable{.name = db + "." + table});
     }
     return result;
 }
@@ -179,16 +180,17 @@ DataLake::ICatalog::Namespaces HiveCatalog::getNamespaces() const
     return databases;
 }
 
-DB::Names HiveCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+CatalogTables HiveCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
 {
     DB::Names current_tables;
     /// Retry transient `TTransportException` (same wrapper as `getTables`) rather
     /// than letting it bubble up and become an empty table list.
     executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, namespace_name); });
-    DB::Names result;
+    /// A Hive catalog used with the Iceberg engine lists only Iceberg tables, so they are readable.
+    CatalogTables result;
     result.reserve(current_tables.size());
     for (const auto & table : current_tables)
-        result.push_back(namespace_name + "." + table);
+        result.push_back(CatalogTable{.name = namespace_name + "." + table});
     return result;
 }
 

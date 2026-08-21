@@ -1,0 +1,9 @@
+<clickhouse>
+    <macros>
+        <nats_url>nats1:4444</nats_url>
+        <nats_stream>test_stream</nats_stream>
+        <nats_consumer_name>test_consumer</nats_consumer_name>
+        <nats_subjects>test_subject</nats_subjects>
+        <nats_format>JSONEachRow</nats_format>
+    </macros>
+</clickhouse>

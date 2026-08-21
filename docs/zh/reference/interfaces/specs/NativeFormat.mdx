@@ -30,30 +30,9 @@ Native 格式是 ClickHouse 用于传输表格数据的列式传输格式。它�
 
 列的 `data` 布局取决于其类型所属的 *家族*。这些家族按解码复杂度从低到高依次为：
 
-```mermaid
-flowchart TD
-    B[Block]
-    B --> BI[BlockInfo]
-    B --> NC[num_columns]
-    B --> NR[num_rows]
-    B --> Cs["columns[ ]"]
+<img className="w-full h-auto" src="/images/interfaces/native-format/block-structure.webp" alt="列式传输块的结构及其数据布局家族" width="1568" height="976" loading="lazy" />
 
-    Cs --> Col[Column]
-    Col --> Cname[name]
-    Col --> Ctype[type]
-    Col --> Chcs[has_custom_serialization]
-    Col --> Cdata["data — layout depends on type family"]
-
-    Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
-    Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
-
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
-    Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
-    Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
-```
-
-* **固定宽度**类型将 `data` 排布为 `bytes_per_value × num_rows` 个原始字节，不带任何按行分帧。
+* **定宽**类型将 `data` 排布为 `bytes_per_value × num_rows` 个原始字节，不带任何按行分帧。
 * **复合**类型 (`Nullable`、`Array`、`Tuple`、`Map`、`Nested`) 具有一种可由类型字符串完全递归推导出的结构形态，没有版本前缀，也不存在跨块状态。
 * **带版本 / 有状态**类型 (`LowCardinality`、`JSON`、`Variant`、`Dynamic`) 会在每个非空块开头带有序列化版本/状态前缀。在 `Native` 传输格式中，这个前缀以及任何字典都**仅限于当前块**——该格式不会携带*跨*块状态 (写入器会为每个块创建全新的序列化状态，并将 `low_cardinality_max_dictionary_size = 0`) 。跨块状态是 MergeTree 磁盘存储层面的问题，不属于 Native 传输布局。
 
@@ -145,7 +124,7 @@ Byte 1: data = 0x02, continuation = 0 → accumulator = (0x02 << 7) | 0x2C = 300
 </div>
 
 <div id="block-wire-layout">
-  ### 块的线传输布局
+  ### 块的传输布局
 </div>
 
 ```text
@@ -155,9 +134,9 @@ Byte 1: data = 0x02, continuation = 0 → accumulator = (0x02 << 7) | 0x2C = 300
 [Column × num_columns]    column entries, omitted when num_columns = 0
 ```
 
-`BlockInfo` 前缀是否存在取决于通道，因为写入器是按 *修订版本* 参数化的：
+`BlockInfo` 前缀是否存在取决于通道，因为写入器是按 *修订版本* 参数化的 (完整说明参见[协议修订版本与 Native 格式](#protocol-revision)，其中还包括 `client_protocol_version` 仅影响输出这一点) ：
 
-* 在 **native TCP protocol** 上，server 会按 connection 协商出的 修订版本 写入块 (这是一个较大的值——在此 release 中，`DBMS_TCP_PROTOCOL_VERSION` 为 `54485`) 。只要该 修订版本 大于零，就会写入 `BlockInfo`；而对于真实 connection，这一条件始终成立。每一列中的 `has_custom_serialization` 字节 (参见[列 wire 布局](#column-wire-layout)) 会在 修订版本 为 `54454` 及以上时写入。
+* 在 **native TCP protocol** 上，server 会按 connection 协商出的 修订版本 写入块 (这是一个较大的值——`DBMS_TCP_PROTOCOL_VERSION`，参见 `src/Core/ProtocolDefines.h`) 。只要该 修订版本 大于零，就会写入 `BlockInfo`；而对于真实 connection，这一条件始终成立。每一列中的 `has_custom_serialization` 字节 (参见[列的传输布局](#column-wire-layout)) 会在 修订版本 为 `54454` 及以上时写入。
 * `Native` *output format*——即通过 HTTP 执行的 `SELECT ... FORMAT Native`、`INTO OUTFILE ... FORMAT Native`，以及 `clickhouse-client` 生成的 `Native` format——*默认*按 修订版本 `0` 进行序列化。在 修订版本 `0` 下，`BlockInfo` 前缀和 `has_custom_serialization` 字节都会被省略，因此一个块只包含 `num_columns`、`num_rows` 和各列。
 
   对于 HTTP，这个 修订版本 不是固定的：client 可以通过 `?client_protocol_version=<n>` 查询参数提高它，而 server 会将该值作为响应的序列化 修订版本。
@@ -191,7 +170,7 @@ BlockInfo 是一组字段序列：每个字段前都有一个 VarUInt 类型的�
   ### 列的线协议布局
 </div>
 
-在一个 Block 中，Column 会出现 `num_columns` 次。
+在一个 块 中，列 会出现 `num_columns` 次。
 
 | # | Field                            | Type               | Condition                              | Description                                                                                                                                      |
 | - | -------------------------------- | ------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -209,16 +188,7 @@ BlockInfo 是一组字段序列：每个字段前都有一个 VarUInt 类型的�
   `type` 字段仅在默认模式下是文本 `String`。当查询设置 `output_format_native_encode_types_in_binary_format = 1` 时，该字段会改为**二进制类型编码**——也就是[数据类型二进制编码](/zh/reference/data-types/data-types-binary-encoding)文档中说明的同一种基于标签的编码——而扁平化后的 `Dynamic` 类型列表也会对各个类型名称使用相同的二进制编码。如果解码器始终将字段 2 读取为带长度前缀的字符串，就会把第一个二进制类型标签误当作字符串长度，从而失去同步，因此它必须知道该数据流使用的是哪种模式。
 </Info>
 
-```mermaid
-flowchart TD
-    T["type string<br/>(e.g. Array(String))"]
-    T --> P["strip outer (...)<br/>to find the base type"]
-    P --> F{"base type family?"}
-    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
-    F -->|variable-length| VL["read per-value length prefixes"]
-    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="从类型描述到其编码家族的解码器路由" width="1568" height="854" loading="lazy" />
 
 <div id="kind-stack-and-sparse-encoding">
   #### kind_stack 和稀疏编码
@@ -350,18 +320,105 @@ Data 家族的所有数据包都共享相同的 Block 传输格式。各个变�
 
 (零行结果 (例如仅含头部信息的块) 通过 `FORMAT Native` 完全不会产生任何字节：该输出格式不会输出空块。)
 
+<div id="protocol-revision">
+  ## 协议修订版本与 Native 格式
+</div>
+
+Native 字节流的形态首先取决于写入端和读取端所使用的**协议修订版本**。修订版本本身并不包含在这些字节中——线上并没有修订版本字段——但它仍然决定了某些特性是否会出现。因此，解码器必须先知道某个载荷是按哪个修订版本写入的，才能对其进行解析。由于修订版本不在 stream 中，读取端和写入端必须通过其他方式就此达成一致。
+
+它是一个单独的 `UInt64`，并且 `NativeWriter` 和 `NativeReader` 都将其作为构造函数参数传入。写入端将其称为 `client_revision`，读取端将其称为 `server_revision``，但它们是同一个数值。此版本所知的最新修订版本是 `DBMS&#95;TCP&#95;PROTOCOL&#95;VERSION`（参见 `src/Core/ProtocolDefines.h&#96;) 。
+
+<div id="what-the-revision-gates">
+  ### 修订版本控制的内容
+</div>
+
+每项功能背后都有一个 `DBMS_MIN_REVISION_WITH_*` 阈值。只有当修订版本达到该阈值时，写入器才会写出该功能；读取器也会按完全相同的规则来判断是否读取，因此两端才能保持一致——只要任一侧的修订版本判断出错，就会失步。对于 Native 格式，关键的门槛如下：
+
+| 功能                                         | 阈值常量                                                               | 修订版本    | 低于阈值时的影响                                                                                                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BlockInfo` 前缀                             | (任意 `> 0` 的值)                                                      | `1`     | [`BlockInfo`](#blockinfo) 前缀会被完全省略；一个块就只包含 `num_columns`、`num_rows` 和各列。                                                                                     |
+| `has_custom_serialization` 字节              | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454` | 每列的 [`has_custom_serialization`](#column-wire-layout) 字节会被省略；所有列都使用默认序列化 (没有 sparse、replicated 或 detached 形式) 。                                              |
+| 线上传输的 `LowCardinality`                     | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405` | 特殊情况——**不**遵循简单的“低于阈值就禁用”规则。只有当修订版本为*非零*且低于 `54405` 时，或者被单独强制剥离时，`LowCardinality(T)` 才会被剥离为基本类型 `T`。修订版本为 `0` 时会保留它。见下文说明。                                   |
+| V2 `Dynamic` / `JSON` 序列化                  | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473` | `Dynamic` 和 `JSON`/`Object` 会使用 V1 序列化 (带 `max_dynamic_*` 参数) ，而不是 V2。                                                                                       |
+| 聚合函数版本控制                                   | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452` | `AggregateFunction` 状态写入时不包含内嵌版本。                                                                                                                            |
+| `quantileDeterministic` 状态中的 `skip_degree` | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE`        | `54491` | `AggregateFunction(quantileDeterministic, ...)` 状态 (以及同一函数的 `quantiles`/`median` 写法) 会以状态版本 `0` 写入，不包含尾随的 `UInt8 skip_degree`。参见 [类型别名](#type-aliases) 下的说明。 |
+| `BlockInfo` 中的 `out_of_order_buckets`      | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480` | 不会写入 `BlockInfo` 字段 ID `3` (见 [BlockInfo](#blockinfo)) 。                                                                                                     |
+| 并行块编组 (`DETACHED`)                         | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478` | 列永远不会封装在 `ColumnBLOB` 中；也不会出现 `DETACHED` / `DETACHED_OVER_SPARSE` kind (见 [kind&#95;stack](#kind-stack-and-sparse-encoding)) 。                               |
+| `DateTime(tz)` 类型参数                        | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | 时区参数会从 `type` 字符串中去掉——`DateTime('UTC')` 会被声明为不带参数的 `DateTime`。                                                                                               |
+
+这意味着，修订版本 `0` 对几乎所有情况来说都是最保守的编码方式：stream 中没有 `BlockInfo`、没有 `has_custom_serialization` 字节、使用 V1 `Dynamic`/`JSON`、没有聚合函数版本，并且 `DateTime` 会去掉时区参数。聚合函数的*状态*版本在修订版本 `0` 时是例外：不存在可用于推导版本的对端——stream 由生成它的一方写入和读回 (例如 `StripeLog` 数据文件、`Set`/`Join` 备份或 `Native` 格式文件) ——因此写入器会保留类型上固定的版本 (照常在类型字符串中明确写出) ，而不是将状态降级为版本 `0`；只有未固定任何版本的类型才会以版本 `0` 写入。
+
+`LowCardinality` 是唯一的例外，而且这一点非常重要。写入器的判断条件是 `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)`。关键就在前面的 `client_revision &&`：当修订版本恰好为 `0` 时，整个条件会短路为 false。
+
+因此，在修订版本 `0`——也就是 `FORMAT Native` 的默认值——下，`LowCardinality(T)` **不会**被剥离。它的类型字符串和每块状态前缀都会保留在 stream 中，而修订版本为 `0` 的读取器也会原样读回。只有当修订版本为非零且低于 `54405`，或者在不考虑修订版本的情况下被强制剥离时，才会发生剥离。
+
+这个强制机制就是 `remove_low_cardinality` 标志。`FORMAT Native` 输出永远不会设置它，但 native TCP 路径会在 `low_cardinality_allow_in_native_format = 0` 时设置它 (默认值为 `1`) 。换句话说，这个 setting 会改变 native TCP 输出，但对 `FORMAT Native` 没有任何影响。
+
+实际结论是：默认的 `FORMAT Native` stream 完全可能合法地包含 `LowCardinality`，因此不要把它当成一个在修订版本 `0` 下不存在的功能。
+
+<div id="revision-per-channel">
+  ### 修订版本的来源取决于数据的传输方式
+</div>
+
+相同的 Native 字节可以通过不同路径传输：native TCP 协议、HTTP 请求，或磁盘上的文件。每条路径都会以各自的方式确定修订版本。有一点需要注意：读取端和写入端是分别设置的，因此它们最终可能使用不同的修订版本。
+
+<div id="revision-tcp">
+  #### 原生 TCP 协议——通过协商确定，双向分别生效
+</div>
+
+在 [原生 TCP 协议](/zh/reference/interfaces/specs/NativeProtocol) 中，修订版本来自 Hello 握手。客户端发送 `DBMS_TCP_PROTOCOL_VERSION`，服务端返回自己的版本，此后双方都会按**对方声明的修订版本**进行序列化：服务端根据 `client_tcp_protocol_version` 构建其 `NativeReader`/`NativeWriter`，客户端则使用收到的 `server_revision`。这里没有显式的 `min`，但双方都不可能发送自己尚未实现的特性，因此每个方向实际上都会受限于较旧的那一端。
+
+当两端都是相同的较新构建时，两个方向会落到同一个修订版本 (`DBMS_TCP_PROTOCOL_VERSION`，见 `src/Core/ProtocolDefines.h`) ，所有门槛条件都会启用。这是最常见的情况，但并不绝对。对于混合版本或第三方对端，两个方向可能处于不同的修订版本，因此这些门槛条件必须按方向分别理解：只要修订版本非零，就会包含 `BlockInfo`；而其余内容——包括 `has_custom_serialization`——只有当该方向的有效修订版本达到各自阈值时才会出现。比如，某个对端如果声明的修订版本低于 `54454`，就既不会发送，也不会接收 `has_custom_serialization` 这个字节。
+
+<div id="revision-output">
+  #### `FORMAT Native` 输出——默认修订版本为 0，但可通过 HTTP 提高
+</div>
+
+`Native` *输出*格式默认采用修订版本 **`0`**。这包括通过 HTTP 执行的 `SELECT ... FORMAT Native`、`INTO OUTFILE ... FORMAT Native`，以及 ClickHouse 客户端写出的 `Native` 输出；在这几种情况下，输出工厂都会将 `FormatSettings::client_protocol_version` 直接传给 `NativeWriter`。
+
+不过，对于 HTTP 来说，默认值并非全部。客户端可以通过 `?client_protocol_version=<n>` 查询参数提高该值，HTTP handler 会将其视为保留参数，而不是 SQL 设置：它会进入查询上下文，然后由格式层复制到 `FormatSettings` 中。只要设得足够高，HTTP 的 `FORMAT Native` 输出就会像 TCP 路径一样，开始包含 `BlockInfo` 前缀和 `has_custom_serialization` 字节——因此，不要想当然地认为 HTTP 的 `FORMAT Native` 载荷始终都是修订版本 `0`。文件导出和本地 ClickHouse 客户端输出没有这样的调节方式，因此会保持为 `0`。
+
+<div id="revision-input">
+  #### `FORMAT Native` 输入 — 始终为修订版本 0
+</div>
+
+`Native` *输入*格式则正好相反：它被**硬编码为修订版本 `0`**，完全不会理会 `client_protocol_version`。无论是解析 `INSERT ... FORMAT Native` 的 body，还是读取 `Native` 文件，它在构建 `NativeReader` 时都会直接使用字面量 `0`，因此既不会预期有 `BlockInfo` 前缀，也不会读取 `has_custom_serialization` 字节，并且始终假定使用默认序列化。
+
+因此，`client_protocol_version` 只对输出有效。在 `INSERT ... FORMAT Native` 请求上设置较高的 `?client_protocol_version=` (例如 `DBMS_TCP_PROTOCOL_VERSION`) ，不会对 body 的读取方式产生任何影响——body 仍然必须是修订版本 `0``。如果传入的 body 带有 `BlockInfo`前缀或`has&#95;custom&#95;serialization` 字节，读取器就会失去同步，最终表现为解析错误（`INCORRECT&#95;DATA`或`CANNOT&#95;READ&#95;ALL&#95;DATA&#96;) ，而不是成功插入。
+
+<div id="revision-round-trip">
+  ### 往返兼容性的影响
+</div>
+
+对于 `FORMAT Native`，两端都使用修订版本 `0` 是最稳妥的选择，这也是默认行为。通过修订版本 `0` 的 `SELECT ... FORMAT Native` 写出的数据，可以直接再读回 `INSERT ... FORMAT Native`，不会出现任何意外。
+
+只有在你刻意提高输出修订版本时，问题才会出现。带有 `?client_protocol_version=<large>` 的 `SELECT ... FORMAT Native` 会生成一个包含 `BlockInfo` 和 `has_custom_serialization` 字节的数据流，而修订版本为 `0` 的读取路径无法将其读回。如果你需要这类数据能够往返传输，要么在生成数据的 `SELECT` 中不要设置 `client_protocol_version`，要么通过原生 TCP 协议传输数据——在这种情况下，每个方向都使用由握手协商出的修订版本——而不要使用 `FORMAT Native`。
+
+| 通道                                                     | 写入修订版本                              | 读取修订版本                                 | `BlockInfo` / 自定义序列化                                                     |
+| ------------------------------------------------------ | ----------------------------------- | -------------------------------------- | ------------------------------------------------------------------------ |
+| Native TCP Data 包                                      | 对端声明的修订版本 (按方向)                     | 对端声明的修订版本 (按方向)                        | 修订版本 `> 0` 时带有 `BlockInfo`；修订版本 `≥ 54454` 时带有 `has_custom_serialization` |
+| 通过 HTTP 的 `SELECT ... FORMAT Native`                   | `client_protocol_version` (默认 `0`)  | n/a                                    | 仅在提高 `client_protocol_version` 时                                         |
+| 通过 HTTP 的 `INSERT ... FORMAT Native`                   | n/a                                 | `0` (固定，忽略 `client_protocol_version`)  | 永不读取                                                                     |
+| `INTO OUTFILE` / 文件 / `ClickHouse 客户端` `FORMAT Native` | `0`                                 | `0`                                    | 不包含 (但会保留 `LowCardinality`——见上文说明)                                       |
+
+<Info>
+  **协议修订版本与序列化版本**
+
+  不要将协议修订版本与[序列化版本](#serialization-version-concept)混为一谈。这里的修订版本是连接级或请求级的，永远不会出现在字节流中。序列化版本则是按列区分的，由[带版本的类型](#versioned-types)携带，并会写入每个非空块。修订版本决定某个特性是否存在；而序列化版本则是在进入带版本的列后，决定该类型后续使用哪一种编码变体。
+</Info>
+
 <div id="data-types">
   ## 数据类型
 </div>
 
-本节介绍 Native 格式可在列的 `data` 中承载的各类类型在 wire 上的编码方式，并按解码器复杂度递增归为四个家族。有两种类型——`AggregateFunction(func, ...)` 和 `QBit(T, N)`——虽然是有效的 `Native` 列类型，但其载荷依赖具体函数或类型，不在本文讨论范围内；下文会在原本可能被误认为别名的地方专门说明它们。
+本节介绍 Native 格式可在列的 `data` 中承载的各类类型在 wire 上的编码方式，并按解码器复杂度递增归为四个家族。有两种类型——`AggregateFunction(func, ...)` 和 `QBit(T, N[, stride])`——虽然是有效的 `Native` 列类型，但其载荷依赖具体函数或类型，不在本文讨论范围内；下文会在原本可能被误认为别名的地方专门说明它们。
 
-| 家族         | 章节                             | 每列的流数量 | 跨块状态                                 |
-| ---------- | ------------------------------ | ------ | ------------------------------------ |
-| 定宽         | [定宽类型](#fixed-width-types)     | 一个     | 无                                    |
-| 变长         | [变长类型](#variable-length-types) | 一个     | 无                                    |
-| 复合 (固定形态)  | [复合类型](#composite-types)       | 多个     | 无                                    |
-| 版本化 / 有状态  | [版本化类型](#versioned-types)      | 多个     | Native wire 上无——每个块都有独立的状态前缀，且每块重新开始 |
+| 家族        | 章节                             | 每列的流数量 | 跨块状态                                 |
+| --------- | ------------------------------ | ------ | ------------------------------------ |
+| 定宽        | [定宽类型](#fixed-width-types)     | 一个     | 无                                    |
+| 变长        | [变长类型](#variable-length-types) | 一个     | 无                                    |
+| 复合 (固定形态) | [复合类型](#composite-types)       | 多个     | 无                                    |
+| 版本化 / 有状态 | [版本化类型](#versioned-types)      | 多个     | Native wire 上无——每个块都有独立的状态前缀，且每块重新开始 |
 
 <div id="fixed-width-types">
   ### 定宽类型
@@ -824,7 +881,7 @@ values stream 包含内部类型对**全部** `num_rows` 行的标准编码，�
 
 类型字符串：`Array(InnerType)`。示例：`Array(UInt32)`、`Array(String)`、`Array(Nullable(UInt32))`、`Array(Array(UInt8))`。
 
-传输布局由内部 [prefix 阶段](#composite-types) (除非内部类型带版本信息，否则为空) 以及随后拼接在一起的两个流组成，其中 offsets 在前：
+传输布局由内部 [前缀阶段](#composite-types) (除非内部类型带版本信息，否则为空) 以及随后拼接在一起的两个流组成，其中 offsets 在前：
 
 ```text
 [inner type's state prefix]   empty for leaf/non-versioned inners; emitted first when the inner is versioned
@@ -860,16 +917,7 @@ Values (5 × UInt32 LE = 20 bytes):
 
 每个偏移量都是共享 values 流中某一行切片的累计*结束位置*；其起始位置是前一个偏移量 (第 0 行则为 `0`) 。连续相等的偏移量表示空行：
 
-```mermaid
-flowchart LR
-    subgraph V["values stream: [10, 20, 30, 40, 50]"]
-        direction LR
-        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
-    end
-    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
-    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
-    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/array-offsets.webp" alt="将行映射到共享 values 流中的偏移量" width="1568" height="388" loading="lazy" />
 
 `Array(String)`，对应的行 `[["a", "bb"], []]` (共 20 字节) ：
 
@@ -889,7 +937,7 @@ Values (2 strings, 4 bytes total):
 * 中间层 `Array(UInt32)` 解码为 3 行，偏移量为 `[2, 3, 5]`。
 * 最内层 `UInt32` 解码为 5 个值：`[1, 2, 3, 4, 5]`。
 
-总共是 24 (外层偏移量) + 24 (中间偏移量) + 20 (值) = 68 字节。
+总计 24 (外层偏移量) + 24 (中间层偏移量) + 20 (值) = 68 字节。
 
 <div id="tuple">
   #### Tuple(T1, T2, ...)
@@ -993,13 +1041,7 @@ Values (2 × UInt32 LE = 8 bytes):
 
 `Nested` 在线上传输中的表示形式取决于服务端的 `flatten_nested` 设置，因此分为两种情况。
 
-```mermaid
-flowchart TD
-    N["column declared Nested(a T1, b T2, ...)"]
-    N --> Q{"flatten_nested?"}
-    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
-    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/nested-layout.webp" alt="扁平化与非扁平化的复合列布局" width="1172" height="1068" loading="lazy" />
 
 **情况 A：`flatten_nested = 1` (server 默认值) 。** 当表在默认设置下创建时，`Nested` **不是一种 wire 类型**。server 会将该列存储并显示为 N 个并行的 `Array(T_i)` 列，并使用**点分名称** (`outer.field1`、`outer.field2` 等) 。对于 format 层来说，这里没有任何变化——每个点分列都只是一个普通的 [Array](#array)：
 
@@ -1062,24 +1104,24 @@ Field 'b' stream (3 strings, 6 bytes):
 
 地理类型实际上是对嵌套数组和 Tuple 的别名：
 
-| 类型字符串                        | 底层传输类型                    |
-| ---------------------------- | ------------------------- |
-| `Point`                      | `Tuple(Float64, Float64)` |
-| `Ring`, `LineString`         | `Array(Point)`            |
-| `Polygon`, `MultiLineString` | `Array(Ring)`             |
-| `MultiPolygon`               | `Array(Polygon)`          |
+| 类型字符串                              | 底层 wire 类型                |
+| ---------------------------------- | ------------------------- |
+| `Point`                            | `Tuple(Float64, Float64)` |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`            |
+| `Polygon`, `MultiLineString`       | `Array(Ring)`             |
+| `MultiPolygon`                     | `Array(Polygon)`          |
 
 因此，`Point` 列的解码方式与 `Tuple(Float64, Float64)` 完全相同 (显示为 `(1,2)`) ，`Ring` 则与 `Array(Tuple(Float64, Float64))` 完全相同 (`[(0,0),(1,1)]`) ，更高层级的类型也以此类推。
 
-`Geometry` 也是别名，但它别名到的不是嵌套数组，而是 [`Variant`](#variant)：它的载荷是上述六种地理类型组成的 Variant。列头只携带类型字符串 `Geometry`——**不会**显式展开为该 Variant——因此解码器必须自行展开。与任何 `Variant` 一样，判别值遵循这些地理别名按规范名称排序后的顺序：`0` = `LineString`，`1` = `MultiLineString`，`2` = `MultiPolygon`，`3` = `Point`，`4` = `Polygon`，`5` = `Ring`。随后，每个选中的值都会按其对应的地理别名进行解码 (`NULL` 使用 `Variant` 的 `NULL` 判别值 `255`) 。
+`Geometry` 也是别名，但它别名到的不是嵌套数组，而是 [`Variant`](#variant)：它的载荷是上述七种地理类型组成的 Variant。列头只携带类型字符串 `Geometry`——**不会**显式展开为该 Variant——因此解码器必须自行展开。与用户显式写出的 `Variant` 不同，`Geometry` 的判别值**不**遵循按名称排序的顺序：为了兼容性，它们是固定的，新的地理类型只会追加到末尾。映射关系为：`0` = `LineString`，`1` = `MultiLineString`，`2` = `MultiPolygon`，`3` = `Point`，`4` = `Polygon`，`5` = `Ring`，`6` = `MultiPoint` (在 26.7 中添加——来自旧版服务器的 stream 不会包含判别值 `6`) 。随后，每个选中的值都会按其对应的地理别名进行解码 (`NULL` 使用 `Variant` 的 `NULL` 判别值 `255`) 。
 
 `SimpleAggregateFunction(func, T)` 是其值类型 `T` 的别名。它存储的是已完成最终计算的聚合值，因此其传输形式和显示结果与 `T` 完全一致 (`SimpleAggregateFunction(sum, UInt64)` 会按 `UInt64` 解码) 。只有这种单值类型形式才是以这种方式实现的别名；其底层类型本身也可以是复合类型。
 
 <Note>
-  有两种相关类型**不是**别名。它们都是有效的 `Native` 列类型——例如，客户端可以从 `-State` 组合器或分布式聚合中接收到 `AggregateFunction` 列——但它们各自都带有专用载荷，不在本页讨论范围内：
+  以下两种相关类型**不是**别名。它们都是有效的 `Native` 列类型——例如，客户端可以从 `-State` 组合器或分布式聚合中接收 `AggregateFunction` 列——但各自携带专用载荷，具体细节不在本页讨论范围内：
 
-  * `AggregateFunction(func, ...)` 保存的是*中间*聚合状态 (而非最终值) ；其二进制布局取决于具体聚合函数和版本。
-  * `QBit(T, N)` 存储的是一个向量，其 bit planes 经过转置，用于向量搜索 workload。
+  * `AggregateFunction(func, ...)` 保存*中间*聚合状态 (而非最终值) ；其二进制布局取决于聚合函数及其版本。版本化聚合函数会将非零状态版本显式写为类型字符串的第一个参数——`AggregateFunction(1, quantileDeterministic, UInt64, UInt64)`——而版本 `0` 不会输出，因此类型字符串仍为 `AggregateFunction(quantileDeterministic, UInt64, UInt64)`。在已协商的连接上 (修订版本高于 `0`) ，写入器仅根据协议修订版本选择版本——绝不会采用其本地类型中恰好固定的版本，因为在线上传输中，版本 `0` 与“未通知版本”无法区分——因此，同一函数可在不同连接上通知不同版本，读取器必须从类型字符串中获取版本，而不能假定使用最新版本。在修订版本 `0` 时，没有可用于推导版本的 peer——该流是自描述的，且由写入者自行读回——因此，类型中固定的版本会保留在流中 (以及通知的类型字符串中) ，而不会降级为 `0`。`quantileDeterministic` (包括 `quantilesDeterministic` 和 `medianDeterministic` 这两种写法) 从修订版本 `54491` 起支持版本化：版本 `1` 会在状态末尾追加 `UInt8 skip_degree`，其前缀与版本 `0` 完全字节一致。低于该修订版本时，写入器会输出版本 `0` 状态，因此不会影响旧版 peer。这同样适用于嵌套在容器类型中的状态——`Array`、`Tuple`、`Map`、`Nullable`、`Variant` (其中，候选类型中显式写出的版本会改变类型字符串，但不会改变判别值顺序) ，以及 `Nested` / `SimpleAggregateFunction` 包装器。`Variant` 有一种边界情况完全没有线上传输表示：当两个候选类型仅在显式写出的状态版本上不同时 (由于类型字符串不同，作为列类型是合法的) ，若按协商的修订版本对二者重新确定版本，它们将合并为同一个候选类型，因此发送方必须使传输失败，而不能通知与载荷实际写入版本不一致的版本。`Dynamic` 是基于修订版本确定版本这一规则的有意例外：`Dynamic` 列会自行通知其嵌套类型——通过自身的类型列表以及[二进制类型编码](/zh/reference/data-types/data-types-binary-encoding)，其显式版本字段携带明确写出的状态版本 (其共享 Variant 的值即使在静态存储时也会以这种方式嵌入其类型) ——这些通知是列自身数据的一部分，对所有 peer 和所有介质均相同，因此绝不会针对协商的修订版本重写。因此，嵌套在 `Dynamic` 值中的状态会按其类型中明确写出的版本写入 (新创建的状态会携带该版本，因为 `-State` 查询结果会明确写出其版本) ；类型未写出版本时，则按版本 `0` 写入，所有连接和介质均是如此。
+  * `QBit(T, N[, stride])` 为向量搜索工作负载存储位平面转置后的向量；其线上传输流布局 (按组排列的 `FixedString` 位平面流，共 `element_size * (N / stride)` 个，带显式 `stride`) 及其二进制类型编码 (标签为 `0x36`，或当 `stride != N` 时为 `0x37` `QBitWithStride`) 已在 [`QBit` 数据类型页面](/zh/reference/data-types/qbit)和[二进制类型编码](/zh/reference/data-types/data-types-binary-encoding)参考中说明，因此 `Native` 读取器无需从 C++ 源代码中还原这些信息。
 </Note>
 
 <div id="versioned-types">
@@ -1113,19 +1155,7 @@ Native 写入器和读取器**不会**在块之间保留序列化状态：`Nativ
 
 因此，头部块 (rows = 0) 和空块都不会输出任何内容，解码器必须在每个非空块开头重新读取状态前缀。如果解码器只读取一次前缀，并把后续块都当作仅包含载荷，那么它会把下一个块的前缀当作数据读取，从而导致失步：
 
-```mermaid
-sequenceDiagram
-    participant S as Server (writer)
-    participant C as Client (decoder)
-    S->>C: Header block (num_rows = 0)
-    Note right of C: no state prefix
-    S->>C: First block with rows > 0
-    Note right of C: read state prefix,<br/>then block payload
-    S->>C: Next block with rows > 0
-    Note right of C: read state prefix again,<br/>then block payload
-    S->>C: Empty block (end marker)
-    Note right of C: no state prefix
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block.webp" alt="每个非空块都会重复状态前缀" width="1226" height="1162" loading="lazy" />
 
 <div id="serialization-version-reference">
   #### 序列化版本参考
@@ -1301,24 +1331,7 @@ ClickHouse 的 `JSON` 类型有多种线传输编码 (请参阅[序列化版本�
 
 判别值流就是索引；每个非 NULL 判别值都会从其类型对应的稠密 run 中取出下一个值，而 `255` (NULL) 则不消耗任何值。沿用同样的遍历过程也可以重建 [Dynamic](#dynamic)，二者唯一的区别只在于 NULL 的编码方式：
 
-```mermaid
-flowchart LR
-    subgraph D["discriminators (one per row)"]
-        direction TB
-        d0["row 0 → 1"]
-        d1["row 1 → 0"]
-        d2["row 2 → 255"]
-    end
-    subgraph SR["String run (discriminator 0)"]
-        s0["[0] = hi"]
-    end
-    subgraph UR["UInt64 run (discriminator 1)"]
-        u0["[0] = 42"]
-    end
-    d0 -->|"counter[1] = 0"| u0
-    d1 -->|"counter[0] = 0"| s0
-    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/variant-discriminators.webp" alt="判别值从稠密的特定类型序列中选择值" width="1568" height="624" loading="lazy" />
 
 <div id="dynamic">
   #### Dynamic
@@ -1332,7 +1345,7 @@ flowchart LR
 
 * 通过 `clickhouse-client` 和 HTTP `FORMAT Native` 时，writer 的 revision 为 `0` (除非通过 `client_protocol_version` 提高) ，因此默认是 **V1**。
 * 通过 native TCP protocol 使用协商后的 revision 时，默认是 **V2**。`Native` writer 会保持 statistics 禁用，因此默认的 `V2` 载荷不包含按 variant 划分的 statistics——类型列表之后直接就是嵌套的 `Variant` 前缀和数据。 (按 variant 划分的 statistics 属于 MergeTree 磁盘存储层面的内容，不属于 Native 传输格式的一部分。)
-* 查询设置 `output_format_native_use_flattened_dynamic_and_json_serialization = 1` 会覆盖前两者，无论 revision 如何都输出 **FLATTENED (version 3)&#x20;**。
+* 查询设置 `output_format_native_use_flattened_dynamic_and_json_serialization = 1` 会覆盖前两者，无论 revision 如何都输出 **FLATTENED (version 3)**。
 
 <Info>
   **范围**
@@ -1340,7 +1353,7 @@ flowchart LR
   本页仅规定 **`FLATTENED`** 布局。非扁平的 `V1`/`V2`/`V3` 二进制布局属于内部/磁盘表示形式 (二进制编码的类型列表、按 variant 划分的 statistics) ，此处**不**作说明。想要根据本页解码 `Dynamic` 的 client，必须通过设置 `output_format_native_use_flattened_dynamic_and_json_serialization = 1` 来请求 `FLATTENED`；下方布局以该设置为前提。由于 version 字节位于前缀开头，解码器可以检测实际收到的编码；如果它只实现了 `FLATTENED`，则可拒绝 `V1`/`V2`/`V3`。
 </Info>
 
-该设置选用的 **FLATTENED (version 3)&#x20;**&#x20;布局如下：
+该设置选用的 **FLATTENED (version 3)** 布局如下：
 
 ```text
 [per block with rows > 0]:
@@ -1359,8 +1372,16 @@ flowchart LR
 
 对于每个行数 &gt; 0 的块，都会在开头读取状态前缀 (版本 + 类型列表) ；头块和空块不会输出任何内容。
 
+<Info>
+  **计数值损坏**
+
+  `num_types` 会在读取任何类型名称之前先从 stream 中读出。解码器必须将其视为不可信，且不得直接用它来确定分配大小——无论是接近 `SIZE_MAX` 的计数值 (这可能导致中间算术溢出，或抛出非 `DB::Exception`) ，还是像 `100000000` 这样数值很大但仍在可表示范围内的计数值 (它远低于 vector 的 `max_size()`，却会在尚未读取任何一个类型名称之前就分配数 GB 内存) 。ClickHouse 会逐个读取类型列表条目，并且只使用带上限的预分配 hint，因此损坏的 `num_types` 要么会作为 `INCORRECT_DATA` 被拒绝 (&quot;`Dynamic` column has too many types&quot;，即计数超过容器可容纳的范围时) ，要么会在 stream 中的类型条目耗尽时作为普通读取错误被拒绝——绝不会表现为内存不足故障。
+
+  不过，**不要**用 `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT` (`254` in ClickHouse) 来限制**扁平化的** `num_types`：扁平化类型列表包含*所有*不同的运行时类型，包括那些已溢出到共享 variant 中的类型，因此一个有效的扁平化块完全可能合法地列出远多于该限制的类型。`MAX_DYNAMIC_TYPES_LIMIT` 这一限制只适用于非扁平 `V1`/`V2`/`V3` 前缀中的 `num_dynamic_types` 计数；该计数统计的是常规 variant slot，并受此限制约束 (ClickHouse 会在这里、为共享 variant 执行 `+ 1` 之前对其进行验证) 。
+</Info>
+
 <Note>
-  序列化为有状态的运行时类型 (`LowCardinality`、`Variant`、`Dynamic`、`JSON`) 会在类型名称列表后携带嵌套的状态前缀。
+  序列化为有状态的运行时类型 (`LowCardinality`、`Variant`、`Dynamic`、`JSON`) 会在类型名称列表之后携带嵌套的 state prefix。
 </Note>
 
 运行时类型列表通常遵循 `Variant` 的规范化形式——常规 variant slot 按 `DataTypeVariant` (类型名称) 顺序写入，因此 wire 顺序并不遵循插入顺序。不过，它**并不总是**全局有序的：溢出到共享 variant 中的类型 (例如在 `Dynamic(max_types=N)` 下) 会按首次出现的顺序追加在常规 slot 之后，因此列表尾部可能会打破按类型名称排序的顺序。因此，解码器必须将传输的类型列表视为分配判别值的权威依据，不得自行重新排序。对于行 `[42::UInt64, "hi", NULL]`，两种类型是 `String` 和 `UInt64`，而且 `"String"` 排在 `"UInt64"` 之前，因此判别值分别为 `0` = String、`1` = UInt64、`2` = NULL：
@@ -1404,6 +1425,14 @@ flowchart LR
 ```
 
 请注意这种两阶段形态：**所有**路径状态前缀都会先出现，然后才是**所有**路径数据。因此，动态路径的 `Dynamic` 前缀 (在前缀阶段) 会与其数据 (在数据阶段) 分开。状态前缀会在每个行数 &gt; 0 的块开头读取，而每个路径列 (无论是类型化还是动态) 都恰好包含 `num_rows` 个值。行 `r` 的对象是通过读取每个路径中索引 `r` 处的值来组装的；如果某个动态路径在该行的 `Dynamic` 判别值为 NULL，则它不会提供任何键。
+
+<Info>
+  **Malformed counts**
+
+  此处记录的 FLATTENED 布局中的 `num_dynamic_paths` —— 以及非扁平 `V1`/`V2`/`V3` 编码中的动态路径计数 —— 都是在路径名称之前从 stream 中读取的。(非扁平前缀中没有单独的 flattened-paths 字段：`V1`/`V2`/`V3` 只携带动态路径计数，另外 `V1` 还包含一个会被读取后丢弃的 `max_dynamic_paths` 值，以及下文所述的 `V3` 共享数据元数据。) 与 [`Dynamic`](#dynamic) 一样，decoder 必须将这些计数视为不可信，绝不能直接据此确定分配大小——无论是 `SIZE_MAX` 这一类计数，还是虽大但仍可表示的计数。ClickHouse 会逐个读取路径名称，并且只使用一个带上限的预分配 hint，因此损坏的计数会在两种情况下被拒绝：要么是在超过容器可容纳数量时以 `INCORRECT_DATA` (“JSON/Object column has too many paths”) 拒绝，要么是在 stream 中路径名称耗尽后作为普通读取错误拒绝。
+
+  非扁平 `V3` 前缀还会额外携带一个 `shared_data_buckets` 计数 (当共享数据 serialization version 为 `MAP_WITH_BUCKETS` 或 `ADVANCED` 时存在) 。它会直接确定每个桶的 reader 状态和列向量的大小 (而不是通过按需增长循环) ，因此 decoder 必须预先拒绝不合理的 bucket 计数。与路径计数和类型计数不同，这个计数在 writer 端有严格的不变量：桶数取自较小的 MergeTree settings (`object_shared_data_buckets_for_compact_part` / `object_shared_data_buckets_for_wide_part`) ，这些配置值非零且上限为 `256`，因此唯一有效的线上传输范围是 `1 … 256`。ClickHouse 会将任何超出该范围的值——包括像 `100000` 这样虽可表示但很大的计数，它远低于容器的 `max_size()`——都以 `INCORRECT_DATA` 拒绝 (“JSON/Object column has an invalid number of shared data buckets”) 。
+</Info>
 
 `JSON` 值 `{"a": 42, "b": "hi"}` (一行，两个路径都是动态的) 。JSON 整数会被推断为 `Int64`：
 
@@ -1449,29 +1478,41 @@ ClickHouse 可以使用内部帧格式压缩 `Native` stream 中的列数据。�
 
 总帧大小为 `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`。注意这里涉及两个范围：校验和覆盖 9 字节的头部加上数据体，而 `compressed_size` 计算的是头部加数据体，但**不**包括校验和本身：
 
-```mermaid
-flowchart LR
-    CK["checksum<br/>16 B<br/>CityHash128"]
-    subgraph SPAN["counted by compressed_size (9 + N)"]
-        direction LR
-        M["method<br/>1 B"]
-        CS["compressed_size<br/>4 B LE"]
-        US["uncompressed_size<br/>4 B LE"]
-        BODY["compressed body<br/>N = compressed_size − 9 B"]
-        M --> CS --> US --> BODY
-    end
-    CK --> M
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="压缩帧字段和压缩大小边界" width="1568" height="206" loading="lazy" />
 
 <div id="method-byte-values">
   ### 方法字节值
 </div>
 
-| 字节     | 方法   | 消息体编码                                        |
-| ------ | ---- | -------------------------------------------- |
-| `0x02` | NONE | 消息体为原始字节 (无压缩) 。仍会发送该帧；接收端会校验校验和。            |
-| `0x82` | LZ4  | 消息体采用 **LZ4 块格式** —— *不是* LZ4 帧格式。没有魔数。      |
-| `0x90` | ZSTD | 消息体是原始 zstd 单帧 stream (标准 zstd 魔数是消息体的一部分) 。 |
+这三种编解码器是服务器在整个流的 `Native` 分帧中使用的：HTTP `compress=1` 输出始终使用 `LZ4`，而原生 TCP 协议则根据 `network_compression_method` 使用 `LZ4`、`ZSTD` 或 `NONE`。通用的 `Native` client 只需要生成和处理这几种编解码器。
+
+| 字节     | 方法   | 主体编码                                                     |
+| ------ | ---- | -------------------------------------------------------- |
+| `0x02` | NONE | 主体为原始字节 (无压缩) 。帧仍会被发送；接收方会校验校验和。                   |
+| `0x82` | LZ4  | 主体采用 **LZ4 块格式**——*不是* LZ4 frame format。没有 magic number。 |
+| `0x90` | ZSTD | 主体是原始的 zstd 单帧 stream (标准 zstd magic number 是主体的一部分) 。   |
+
+方法字节还会编码 [column-level codecs](/zh/reference/statements/create/table/codec)。这些编解码器是按列应用在 MergeTree 的 磁盘路径上，而不是用于整个流的分帧；但 `decompress=1` 的 HTTP 输入路径会从每个帧的方法字节中读取编解码器，因此这些字节都可能合法地出现在输入中。因此，符合规范的 解码器 必须识别整个已分配的取值空间，并在遇到尚未实现的字节时拒绝处理，而不是误读主体。它们的主体内容取决于具体编解码器，不属于这个通用帧约定的范围：
+
+| 字节     | 方法                              |
+| ------ | ------------------------------- |
+| `0x91` | `Multiple` (包装一系列嵌套编解码器的复合编解码器) |
+| `0x92` | `Delta`                         |
+| `0x93` | `T64`                           |
+| `0x94` | `DoubleDelta`                   |
+| `0x95` | `Gorilla`                       |
+| `0x96` | `AES_128_GCM_SIV` (加密)          |
+| `0x97` | `AES_256_GCM_SIV` (加密)          |
+| `0x98` | `FPC`                           |
+| `0x9a` | `GCD`                           |
+| `0x9c` | `ALP`                           |
+| `0x9d` | `SZ3`                           |
+| `0x9e` | `Quantized`                     |
+| `0x9f` | `ZXC`                           |
+
+`0x9d` (`SZ3`) 是一种 **Experimental** 的、有误差边界的*有损*编解码器，用于 `Float32`、`Float64` 以及这些类型的 `Array`。只有在设置了 `allow_experimental_codecs` 时，才能使用 `CODEC(SZ3)` 创建表；但在解压时始终接受该方法字节，以确保之前写入的数据仍然可读。`0x9f` (`ZXC`) 是一种 **Experimental** 的非对称 LZ 编解码器：压缩较慢，但解压非常快，压缩比介于 `LZ4` 和 `ZSTD` 之间。只有在设置了 `allow_experimental_codecs` 时，才能使用 `CODEC(ZXC)` 创建表；但在解压时始终接受该方法字节，以确保之前写入的数据仍然可读。字节 `0x99` (`DeflateQpl`) 和 `0x9b` (`ZSTD_QPL`) 曾分配给现已移除的编解码器；它们现已保留，不会复用。
+
+`0x9e` (`Quantized`) 是一种用于稠密向量列 (`Array(Float32)` 及类似类型) 的 **Experimental** 列编解码器。和 `NONE` 一样，它是直通的——全精度主体会原样存储——但它的存在会附加一种 serialization，用于写入一个紧凑的量化伴随 stream，以加速向量搜索。只有在设置了 `allow_experimental_codecs` 时，才能使用 `CODEC(Quantized(...))` 创建表，并且在解压时始终接受该方法字节。
 
 <div id="checksum">
   ### 校验和
