@@ -1538,7 +1538,7 @@ static DataTypePtr resolveJSONSharedDataPathPolicyForCandidates(
             {
                 policy_source_type = source_column->type;
             }
-            else if (candidate_name.find('.') != String::npos)
+            else if (candidate_name.contains('.'))
             {
                 /// A member-qualified candidate ("t.doc", "m.values"): find the longest prefix that is
                 /// a physical column and descend the remaining members through its type, so only the
