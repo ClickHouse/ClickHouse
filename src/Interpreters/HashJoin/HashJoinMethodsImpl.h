@@ -222,7 +222,11 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     else
         added_columns.reserve(join_features.need_replication);
 
-    size_t processed_rows = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags, join.data->key_range);
+    auto & precomputed_keys = block.getPrecomputedKeys();
+    precomputed_keys.resize(onexprs.size());
+
+    size_t processed_rows = switchJoinRightColumns(
+        maps_, added_columns, block.getSelector(), precomputed_keys, join.data->type, *join.used_flags, join.data->key_range);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
 
@@ -239,10 +243,11 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     std::optional<ScatteredBlock> next_scattered_block;
     if (0 < processed_rows && processed_rows < block.rows())
     {
+        auto keys = block.getPrecomputedKeys();
         auto [raw_block, raw_selector] = std::move(block).detachData();
         auto split_selector = raw_selector.split(processed_rows);
-        block = ScatteredBlock(raw_block, std::move(split_selector.first));
-        next_scattered_block = ScatteredBlock(std::move(raw_block), std::move(split_selector.second));
+        block = ScatteredBlock(raw_block, std::move(split_selector.first), keys);
+        next_scattered_block = ScatteredBlock(std::move(raw_block), std::move(split_selector.second), std::move(keys));
     }
 
     auto join_result = std::make_unique<HashJoinResult>(
@@ -382,6 +387,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
     const std::vector<const MapsTemplate *> & mapv,
     AddedColumns & added_columns,
     const ScatteredBlock::Selector & selector,
+    ScatteredBlock::HashedKeysPerClause & precomputed_keys,
     HashJoin::Type type,
     JoinStuff::JoinUsedFlags & used_flags,
     HashJoin::RightTableData::KeyRange key_range)
@@ -399,8 +405,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
         { \
             const auto & join_on_key = added_columns.join_on_keys[d]; \
             a_map_type_vector[d] = mapv[d]->TYPE.get(); \
-            key_getter_vector.push_back( \
-                std::move(createKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes, selector, nullptr, key_range))); \
+            key_getter_vector.push_back(std::move(createKeyGetter<KeyGetter, is_asof_join>( \
+                join_on_key.key_columns, join_on_key.key_sizes, selector, precomputed_keys[d], key_range))); \
+            if constexpr (ColumnsHashing::uses_precomputed_keys<KeyGetter>) \
+                precomputed_keys[d] = key_getter_vector.back().precomputed_keys; \
         } \
         return joinRightColumnsSwitchNullability<KeyGetter>(std::move(key_getter_vector), a_map_type_vector, added_columns, selector, used_flags); \
     }

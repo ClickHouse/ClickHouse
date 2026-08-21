@@ -132,6 +132,7 @@ private:
         const std::vector<const MapsTemplate *> & mapv,
         AddedColumns & added_columns,
         const ScatteredBlock::Selector & selector,
+        ScatteredBlock::HashedKeysPerClause & precomputed_keys,
         HashJoin::Type type,
         JoinStuff::JoinUsedFlags & used_flags,
         HashJoin::RightTableData::KeyRange key_range);
