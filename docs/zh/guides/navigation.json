@@ -206,6 +206,7 @@
                 "zh/guides/use-cases/data-warehousing/nessie-catalog",
                 "zh/guides/use-cases/data-warehousing/onelake-catalog",
                 "zh/guides/use-cases/data-warehousing/polaris-catalog",
+                "zh/guides/use-cases/data-warehousing/horizon-catalog",
                 "zh/guides/use-cases/data-warehousing/rest-catalog",
                 "zh/guides/use-cases/data-warehousing/seaweedfs-catalog",
                 "zh/guides/use-cases/data-warehousing/unity-catalog",

@@ -1,0 +1,148 @@
+---
+slug: /use-cases/data-lake/horizon-catalog
+sidebarTitle: 'Каталог Horizon'
+title: 'Каталог Snowflake Horizon'
+description: 'Выполняйте запросы к таблицам Iceberg, управляемым Snowflake, и записывайте в них данные через каталог Snowflake Horizon с помощью ClickHouse DataLakeCatalog.'
+keywords: ['Horizon', 'Snowflake', 'Iceberg', 'озеро данных', 'Polaris']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+ClickHouse может подключаться к [каталогу Snowflake Horizon](https://docs.snowflake.com/en/user-guide/tables-iceberg-access-using-external-query-engine-snowflake-horizon)
+через предоставляемый Horizon Iceberg REST API (на базе Apache Polaris).
+Это позволяет **читать и записывать** таблицы Iceberg под управлением Snowflake из ClickHouse с помощью
+движка базы данных `DataLakeCatalog` с параметром `catalog_type = 'horizon'`.
+
+Horizon связан со Snowflake Open Catalog / самоуправляемым Polaris, но это не одно и то же:
+
+|                        | Open Catalog / Polaris (`catalog_type = 'rest'`) | Horizon (`catalog_type = 'horizon'`)                                                                                                                         |
+| ---------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Конечная точка         | URI Open Catalog или самоуправляемого Polaris    | `https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog`                                                                                         |
+| Хранилище              | Имя каталога / хранилища Polaris                 | Имя **базы данных** Snowflake (обычно в верхнем регистре)                                                                                                    |
+| Область аутентификации | `PRINCIPAL_ROLE:ALL` (обычно)                    | `session:role:<ROLE>`                                                                                                                                        |
+| Учётные данные         | `client_id:client_secret`                        | PAT или JWT на основе пары ключей в качестве `catalog_credential` (секрет OAuth client&#95;secret; не разделяется по &#39;:&#39;), либо bearer `auth_header` |
+
+<Note>
+  Поскольку эта возможность находится в бета-версии, включите её:
+  `SET allow_experimental_database_iceberg = 1;`
+  (или `SET allow_database_iceberg = 1;` в зависимости от версии ClickHouse).
+</Note>
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Аккаунт Snowflake с таблицами Iceberg под управлением Snowflake
+* REST-конечная точка Horizon Iceberg:
+  `https://<organization>-<account>.snowflakecomputing.com/polaris/api/catalog`
+* Роль Snowflake с привилегиями для таблиц Iceberg (и привилегиями на запись, если вы будете выполнять INSERT)
+* Аутентификация одним из следующих способов:
+  * токен программного доступа (PAT)
+  * JWT, созданный с помощью пары ключей и обмениваемый на токен доступа
+  * Токен доступа External OAuth (в качестве bearer `auth_header`)
+* Объектное хранилище, доступное из ClickHouse (рекомендуется использовать предоставляемые учетные данные)
+* ClickHouse с поддержкой DataLakeCatalog Iceberg
+
+<div id="connecting">
+  ## Создание подключения
+</div>
+
+<div id="option-a-programmatic-access-token-recommended">
+  ### Вариант A: токен программного доступа (рекомендуется)
+</div>
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE horizon_catalog
+ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
+SETTINGS
+    catalog_type = 'horizon',
+    warehouse = 'ICEBERG_TEST_DB',
+    catalog_credential = '<PAT>',
+    auth_scope = 'session:role:DATA_ENGINEER',
+    oauth_server_uri = 'https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog/v1/oauth/tokens',
+    vended_credentials = 1;
+```
+
+`warehouse` должно быть именем **базы данных** Snowflake (а не виртуального хранилища Snowflake).
+Идентификаторы Snowflake без кавычек пишутся в верхнем регистре.
+
+<div id="option-b-pre-exchanged-bearer-access-token">
+  ### Вариант B: Предварительно полученный токен доступа Bearer
+</div>
+
+```sql
+CREATE DATABASE horizon_catalog
+ENGINE = DataLakeCatalog('https://<org>-<account>.snowflakecomputing.com/polaris/api/catalog')
+SETTINGS
+    catalog_type = 'horizon',
+    warehouse = 'ICEBERG_TEST_DB',
+    auth_header = 'Authorization: Bearer <ACCESS_TOKEN>',
+    vended_credentials = 1;
+```
+
+<div id="query">
+  ## Запросы к таблицам Iceberg
+</div>
+
+```sql
+USE horizon_catalog;
+SHOW TABLES;
+
+SELECT count(*) FROM `PUBLIC.test_table`;
+SHOW CREATE TABLE `PUBLIC.test_table`;
+```
+
+<Note>
+  Пространство имен (схема) и таблица обычно указываются в формате `` `SCHEMA.table` ``, если не
+  включены экспериментальные пространства имен для таблиц.
+</Note>
+
+<div id="write">
+  ## Запись данных
+</div>
+
+При наличии роли с правами INSERT/UPDATE/DELETE (и CREATE ICEBERG TABLE при создании таблиц)
+ClickHouse может записывать данные через тот же каталог:
+
+```sql
+-- Insert into an existing Snowflake-managed Iceberg table
+INSERT INTO horizon_catalog.`PUBLIC.test_table`
+SELECT
+    number AS id,
+    concat('name_', toString(number)) AS name
+FROM numbers(100);
+
+-- Create a new Iceberg table in the Horizon catalog (requires CREATE ICEBERG TABLE)
+CREATE TABLE horizon_catalog.`PUBLIC.clickhouse_written`
+(
+    id Int64,
+    name String
+)
+ENGINE = Iceberg;
+```
+
+Точный синтаксис `CREATE TABLE` зависит от поддержки записи в ClickHouse Iceberg / DataLakeCatalog для REST-каталогов
+в используемой версии; ошибки привилегий Snowflake отображаются как HTTP-ошибки каталога.
+
+<div id="loading">
+  ## Загрузка в MergeTree
+</div>
+
+```sql
+CREATE TABLE my_clickhouse_table
+(
+    id Int64,
+    name String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO my_clickhouse_table
+SELECT * FROM horizon_catalog.`PUBLIC.test_table`;
+```
