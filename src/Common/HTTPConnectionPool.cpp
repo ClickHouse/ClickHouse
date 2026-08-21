@@ -647,13 +647,16 @@ private:
             catch (const Poco::Net::ConnectionRefusedException & e)
             {
                 /// A refusal discovered after EINPROGRESS reaches us as a bare "Connection refused":
-                /// Poco names the peer only on the immediate-failure path. Rethrow the same exception
-                /// type carrying the endpoint - Poco's message setters are protected, and catching the
-                /// NetException base instead would also swallow SSLException, which the caller of
-                /// doConnect() has to keep telling apart from a routing failure.
-                const auto peer = fmt::format("{}:{}", Session::getHost(), Session::getPort());
-                const auto & message = e.message();
-                throw Poco::Net::ConnectionRefusedException(message.empty() ? peer : message + ": " + peer, e.code());
+                /// Poco names the peer only on the immediate-failure path, which already carries it
+                /// here and must be left alone so the address is not repeated twice.
+                if (!e.message().empty())
+                    throw;
+
+                /// Rethrow the same exception type carrying the endpoint - Poco's message setters are
+                /// protected, and catching the NetException base instead would also swallow
+                /// SSLException, which the caller of doConnect() has to keep telling apart from a
+                /// routing failure.
+                throw Poco::Net::ConnectionRefusedException(fmt::format("{}:{}", Session::getHost(), Session::getPort()), e.code());
             }
             notifySocketInode();
         }
