@@ -1,6 +1,7 @@
 import csv
 import logging
 import os
+import socket
 import sys
 from pathlib import Path
 from typing import List, Tuple
@@ -169,12 +170,21 @@ def get_run_command(
     else:
         run_script = "/repo/tests/docker_scripts/stress_runner.sh"
 
+    # Nested docker does not inherit the runner /etc/hosts. 
+    # --network=host would expose minio and azurite
+    proxy_host = "dockerhub-proxy.dockerhub-proxy-zone"
+    try:
+        proxy_ip = socket.getaddrinfo(proxy_host, None)[0][4][0]
+    except OSError as e:
+        raise RuntimeError(f"Could not resolve {proxy_host} on the runner") from e
+
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
         # For dmesg and sysctl
         "--privileged "
         # azurite-rs (in-process Azure Blob Storage emulator) needs many fds under parallel load
         "--ulimit nofile=1048576:1048576 "
+        f"--add-host={proxy_host}:{proxy_ip} "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         "--tmpfs /tmp/clickhouse:mode=1777 "
