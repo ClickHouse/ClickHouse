@@ -20,6 +20,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <Common/VersionNumber.h>
+#include <Common/atomicRename.h>
 #include <base/phdr_cache.h>
 #include <Common/ErrorHandlers.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -1107,6 +1108,201 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_MDRAID_INSUFFICIENT_STRIPE_CACHE, stripe_cache_warning);
         }
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        UInt64 corrected_errors = 0;
+        fs::path edac_dir("/sys/devices/system/edac/mc");
+        if (fs::exists(edac_dir))
+        {
+            for (const auto & entry : fs::directory_iterator(edac_dir))
+            {
+                auto ce_path = entry.path() / "ce_count";
+                if (!fs::exists(ce_path))
+                    continue;
+                ReadBufferFromFile in(ce_path.string());
+                UInt64 count = 0;
+                readText(count, in);
+                corrected_errors += count;
+            }
+        }
+        if (corrected_errors >= 100)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_HIGH_CORRECTED_ECC_ERRORS_COUNT,
+                PreformattedMessage::create(
+                    "Memory controllers reported {} corrected ECC errors: a RAM module may be failing."
+                    " Check /sys/devices/system/edac/mc/mc*/ce_count",
+                    corrected_errors));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        UInt64 throttle_events = 0;
+        fs::path cpu_dir("/sys/devices/system/cpu");
+        if (fs::exists(cpu_dir))
+        {
+            for (const auto & entry : fs::directory_iterator(cpu_dir))
+            {
+                const auto name = entry.path().filename().string();
+                if (name.size() < 4 || !name.starts_with("cpu") || name[3] < '0' || name[3] > '9')
+                    continue;
+                auto throttle_path = entry.path() / "thermal_throttle" / "core_throttle_count";
+                if (!fs::exists(throttle_path))
+                    continue;
+                ReadBufferFromFile in(throttle_path.string());
+                UInt64 count = 0;
+                readText(count, in);
+                throttle_events += count;
+            }
+        }
+        if (throttle_events > 0)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_CPU_THERMAL_THROTTLING_DETECTED,
+                PreformattedMessage::create(
+                    "CPU cores reported {} thermal throttling events since boot. Performance can be degraded and unstable."
+                    " Check the cooling of the machine.",
+                    throttle_events));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        bool turbo_disabled = false;
+        const char * intel_no_turbo = "/sys/devices/system/cpu/intel_pstate/no_turbo";
+        const char * cpufreq_boost = "/sys/devices/system/cpu/cpufreq/boost";
+        if (fs::exists(intel_no_turbo))
+            turbo_disabled = readNumber(intel_no_turbo) == 1;
+        else if (fs::exists(cpufreq_boost))
+            turbo_disabled = readNumber(cpufreq_boost) == 0;
+        if (turbo_disabled)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_CPU_TURBO_BOOST_DISABLED,
+                PreformattedMessage::create(
+                    "CPU turbo frequency boost is disabled. Performance can be degraded."
+                    " Check {} and {}", String(intel_no_turbo), String(cpufreq_boost)));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        /// The first line of /proc/swaps is a header; any further line is an active swap area.
+        ReadBufferFromFile in("/proc/swaps");
+        String header;
+        readStringUntilNewlineInto(header, in);
+        if (!in.eof())
+            in.ignore();
+        String first_swap_area;
+        readStringUntilNewlineInto(first_swap_area, in);
+        if (!first_swap_area.empty())
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_SWAP_IS_ENABLED,
+                PreformattedMessage::create(
+                    "Swap is enabled on the host. It can cause severe latency degradation under memory pressure."
+                    " It is recommended to disable swap on ClickHouse servers. Check /proc/swaps"));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        std::string renameat2_message;
+        if (!supportsAtomicRename(&renameat2_message))
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_RENAMEAT2_UNAVAILABLE,
+                PreformattedMessage::create(
+                    "The kernel does not support the renameat2 system call ({})."
+                    " Atomic operations such as EXCHANGE TABLES will not work.", renameat2_message));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        const String canonical_data_path = fs::canonical(data_path).string();
+        /// Only filesystems that are plausible durable homes for the data directory.
+        const std::unordered_set<String> durable_fs_types = {"ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs"};
+
+        String data_fs_type;
+        String largest_fs_mount_point;
+        UInt64 largest_fs_capacity = 0;
+        size_t longest_mount_point_match = 0;
+        std::unordered_set<String> seen_devices;
+
+        ReadBufferFromFile mounts_file("/proc/self/mounts");
+        while (!mounts_file.eof())
+        {
+            String line;
+            readStringUntilNewlineInto(line, mounts_file);
+            if (!mounts_file.eof())
+                mounts_file.ignore();
+
+            /// Fields: device, mount point, filesystem type. Skip mount points with escaped characters.
+            size_t p1 = line.find(' ');
+            size_t p2 = (p1 == String::npos) ? String::npos : line.find(' ', p1 + 1);
+            size_t p3 = (p2 == String::npos) ? String::npos : line.find(' ', p2 + 1);
+            if (p3 == String::npos)
+                continue;
+            String device = line.substr(0, p1);
+            String mount_point = line.substr(p1 + 1, p2 - p1 - 1);
+            String fs_type = line.substr(p2 + 1, p3 - p2 - 1);
+            if (mount_point.find('\\') != String::npos)
+                continue;
+
+            bool contains_data_path = canonical_data_path == mount_point
+                || (canonical_data_path.starts_with(mount_point)
+                    && (mount_point == "/" || canonical_data_path[mount_point.size()] == '/'));
+            if (contains_data_path && mount_point.size() >= longest_mount_point_match)
+            {
+                longest_mount_point_match = mount_point.size();
+                data_fs_type = fs_type;
+            }
+
+            if (durable_fs_types.contains(fs_type) && seen_devices.insert(device).second)
+            {
+                std::error_code ec;
+                auto space = fs::space(mount_point, ec);
+                if (!ec && space.capacity > largest_fs_capacity)
+                {
+                    largest_fs_capacity = space.capacity;
+                    largest_fs_mount_point = mount_point;
+                }
+            }
+        }
+
+        if (data_fs_type == "overlay")
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::DATA_PATH_ON_OVERLAY_FS,
+                PreformattedMessage::create(
+                    "The data directory {} is located on an overlay filesystem, typically the ephemeral layer of a container."
+                    " The data will be lost when the container is removed, and I/O performance is reduced."
+                    " Mount a volume for the data directory instead.", String(data_path)));
+
+        std::error_code ec;
+        auto data_space = fs::space(canonical_data_path, ec);
+        /// Require a 2x difference so that volumes of comparable size don't trigger the warning.
+        if (!ec && largest_fs_capacity > 0 && static_cast<UInt64>(data_space.capacity) * 2 < largest_fs_capacity)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::DATA_PATH_NOT_ON_LARGEST_FILESYSTEM,
+                PreformattedMessage::create(
+                    "The data directory {} is on a filesystem of size {}, while a much larger filesystem ({}) is mounted at {}."
+                    " Make sure the data directory is on the intended volume.",
+                    String(data_path),
+                    formatReadableSizeWithBinarySuffix(data_space.capacity),
+                    formatReadableSizeWithBinarySuffix(largest_fs_capacity),
+                    largest_fs_mount_point));
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
