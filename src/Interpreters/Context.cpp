@@ -2395,11 +2395,15 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
 {
     if (check_constraints)
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
-    applySettingsChangesWithLock(profiles_info.settings, lock);
+
+    /// Apply the profile's settings without finalizing: deriving make_distributed_plan under the
+    /// outgoing constraints could latch the distributed-plan adjustments even though the incoming
+    /// constraints veto the plan. Finalize once the profile's own constraints are in place.
+    for (const SettingChange & change : profiles_info.settings)
+        applySettingChangeWithLock(change, lock);
+
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
     contextSanityClampSettingsWithLock(*this, *settings, lock);
-
-    /// The profile may have brought constraints that veto the value just derived above.
     finalizeSettingsWithLock(lock);
 }
 

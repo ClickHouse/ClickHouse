@@ -7,6 +7,11 @@
 # from the profile's distributed_plan_workers_num. The environment itself may already pin the
 # setting const for every user (ClickHouse Cloud does); the probe below reads the ambient pin
 # from a readonly=0 session, and the expectations follow it.
+#
+# A vetoed derivation must also leave no trace: the settings adjusted for distributed plans
+# must keep their profile values (`compile_expressions = 1` is the probe), not latch the
+# adjusted ones. That requires judging the derivation under the incoming profile's own
+# constraints rather than the ones it replaces.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -33,7 +38,7 @@ if [ "${AMBIENT_PIN}" == "0" ]; then EXPECTED_DERIVED="true"; else EXPECTED_DERI
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${FREE_PROFILE} SETTINGS distributed_plan_workers_num = 3"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${FREE_USER} SETTINGS PROFILE ${FREE_PROFILE}"
 
-${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PINNED_PROFILE} SETTINGS distributed_plan_workers_num = 3, make_distributed_plan CONST"
+${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PINNED_PROFILE} SETTINGS distributed_plan_workers_num = 3, compile_expressions = 1, make_distributed_plan CONST"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${PINNED_USER} SETTINGS PROFILE ${PINNED_PROFILE}"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${READONLY_PROFILE} SETTINGS readonly = 1, distributed_plan_workers_num = 3"
@@ -41,15 +46,16 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${READONLY_USER} SETTINGS PROFILE ${READONL
 
 check()
 {
-    local label=$1 user=$2 expected=$3
+    local label=$1 user=$2 setting=$3 expected=$4
     local actual
     # The bare binary, not ${CLICKHOUSE_CLIENT}: the harness options it carries (send_logs_level,
     # log_comment, randomized settings) are rejected at query start by a readonly=1 session.
-    actual=$(${CLICKHOUSE_CLIENT_BINARY} --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT_TCP}" --user "${user}" -q "SELECT getSetting('make_distributed_plan')")
+    actual=$(${CLICKHOUSE_CLIENT_BINARY} --host "${CLICKHOUSE_HOST}" --port "${CLICKHOUSE_PORT_TCP}" --user "${user}" -q "SELECT getSetting('${setting}')")
     echo "${label}"
     if [ "${actual}" == "${expected}" ]; then echo "OK"; else echo "FAIL: got ${actual}, expected ${expected}"; fi
 }
 
-check "derived at login without the constraint" "${FREE_USER}" "${EXPECTED_DERIVED}"
-check "vetoed at login by the const constraint" "${PINNED_USER}" "false"
-check "still derived in a readonly session" "${READONLY_USER}" "${EXPECTED_DERIVED}"
+check "derived at login without the constraint" "${FREE_USER}" make_distributed_plan "${EXPECTED_DERIVED}"
+check "vetoed at login by the const constraint" "${PINNED_USER}" make_distributed_plan "false"
+check "the vetoed plan does not latch its adjustments" "${PINNED_USER}" compile_expressions "true"
+check "still derived in a readonly session" "${READONLY_USER}" make_distributed_plan "${EXPECTED_DERIVED}"
