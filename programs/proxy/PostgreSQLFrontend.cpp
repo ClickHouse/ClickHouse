@@ -110,7 +110,7 @@ void handlePostgreSQL(FiberSocket & client, const FrontendContext & ctx)
     FiberSocket backend_socket;
     try
     {
-        backend_socket = connectToBackend(ctx, backend, backend.config().secure, attributes.host);
+        backend_socket = connectToBackend(ctx, backend, backend.config().secure);
     }
     catch (...)
     {

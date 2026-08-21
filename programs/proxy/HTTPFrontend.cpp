@@ -23,6 +23,8 @@
 
 #include <fmt/format.h>
 
+#include <optional>
+
 
 namespace DB::Proxy
 {
@@ -131,17 +133,32 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     attributes.protocol = ListenerProtocol::HTTP;
     attributes.peer_address = client.peerAddress().host().toString();
 
+    /// The server resolves a repeated query parameter or header to its *first* occurrence
+    /// (`Poco::Net::NameValueCollection::get`), so the proxy has to route by the first occurrence too.
+    /// Otherwise a client could send `?user=a&user=b`, make the proxy route by `b`,
+    /// and have the backend authenticate and execute the query as `a`.
+    auto assign_first = [](std::optional<String> & destination, const String & value)
+    {
+        if (!destination)
+            destination = value;
+    };
+
+    std::optional<String> param_user;
+    std::optional<String> param_database;
+    std::optional<String> param_session_id;
+    std::optional<String> param_query;
+
     Poco::URI uri(target);
     for (const auto & [key, value] : uri.getQueryParameters())
     {
         if (key == "user")
-            attributes.user = value;
+            assign_first(param_user, value);
         else if (key == "database")
-            attributes.database = value;
+            assign_first(param_database, value);
         else if (key == "session_id")
-            attributes.session_id = value;
+            assign_first(param_session_id, value);
         else if (key == "query")
-            attributes.query_type = classifyQuery(value);
+            assign_first(param_query, value);
     }
 
     /// Read the request headers.
@@ -149,6 +166,10 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     /// so the per-line limit alone does not bound memory: cap the total size of the request head,
     /// or a client could stream an unbounded number of headers before a backend is even chosen.
     constexpr size_t max_request_head_bytes = 1024 * 1024;
+    std::optional<String> header_host;
+    std::optional<String> header_user;
+    std::optional<String> header_database;
+    std::optional<String> basic_auth_user;
     String header;
     while (reader.readLine(header, 64 * 1024) && !header.empty())
     {
@@ -166,19 +187,19 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
         const String value = Poco::trim(header.substr(colon + 1));
 
         if (name == "host")
-            attributes.host = Poco::toLower(stripPort(value));   /// DNS hostnames are case-insensitive.
+            assign_first(header_host, Poco::toLower(stripPort(value)));   /// DNS hostnames are case-insensitive.
         else if (name == "x-clickhouse-user")
-            attributes.user = value;
+            assign_first(header_user, value);
         else if (name == "x-clickhouse-database")
-            attributes.database = value;
-        else if (name == "authorization" && value.starts_with("Basic "))
+            assign_first(header_database, value);
+        else if (name == "authorization" && value.starts_with("Basic ") && !basic_auth_user)
         {
             try
             {
                 const String decoded = base64Decode(value.substr(6));
                 const size_t sep = decoded.find(':');
-                if (sep != String::npos && attributes.user.empty())
-                    attributes.user = decoded.substr(0, sep);
+                if (sep != String::npos)
+                    basic_auth_user = decoded.substr(0, sep);
             }
             catch (...)  // NOLINT(bugprone-empty-catch)
             {
@@ -186,6 +207,21 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
             }
         }
     }
+
+    /// The same precedence as in `authenticateUserByHTTP`: the `X-ClickHouse-User` header wins,
+    /// then the query parameters, and the `Authorization` header is only used if neither is present.
+    attributes.host = header_host.value_or("");
+    attributes.database = header_database.value_or(param_database.value_or(""));
+    attributes.session_id = param_session_id.value_or("");
+    if (param_query)
+        attributes.query_type = classifyQuery(*param_query);
+
+    if (header_user)
+        attributes.user = *header_user;
+    else if (param_user)
+        attributes.user = *param_user;
+    else if (basic_auth_user)
+        attributes.user = *basic_auth_user;
 
     /// Endpoints the proxy serves itself, without a user or a backend.
     const String & path = uri.getPath();
@@ -220,7 +256,7 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     FiberSocket backend_socket;
     try
     {
-        backend_socket = connectToBackend(ctx, backend, backend.config().secure, attributes.host);
+        backend_socket = connectToBackend(ctx, backend, backend.config().secure);
     }
     catch (...)
     {

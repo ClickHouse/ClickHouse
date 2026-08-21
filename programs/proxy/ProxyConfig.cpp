@@ -308,6 +308,17 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
         "SELECT (SELECT sum(value) FROM system.asynchronous_metrics WHERE metric IN ('OSUserTimeNormalized', 'OSSystemTimeNormalized')),"
         " (SELECT value FROM system.asynchronous_metrics WHERE metric = 'MemoryResident') FORMAT TSV");
 
+    /// A zero interval makes the supervisor's sleep a no-op, so it would reconnect to every backend
+    /// in a busy loop - a single typo turns into a spin in the proxy and a flood at the backends.
+    /// Health checking is switched off with <health_check><enabled>false</enabled></health_check>.
+    if (res.health_check.enabled && res.health_check.interval_ms == 0)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "'proxy.health_check.interval_ms' must be greater than zero; "
+            "use 'proxy.health_check.enabled' to disable health checking");
+    if (res.health_check.enabled && res.health_check.resource_poll_interval_ms == 0)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "'proxy.health_check.resource_poll_interval_ms' must be greater than zero");
+
     res.ssh.host_key_file = config.getString("proxy.ssh.host_key_file", "");
     res.ssh.banner = config.getString("proxy.ssh.banner", "ClickHouse-proxy");
     res.ssh.backend_user = config.getString("proxy.ssh.backend_user", "default");

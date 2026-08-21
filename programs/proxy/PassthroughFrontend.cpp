@@ -32,7 +32,7 @@ void handleImmediatePassthrough(FiberSocket & client, const FrontendContext & ct
     FiberSocket backend_socket;
     try
     {
-        backend_socket = connectToBackend(ctx, backend, backend.config().secure, attributes.host);
+        backend_socket = connectToBackend(ctx, backend, backend.config().secure);
     }
     catch (...)
     {
@@ -93,7 +93,7 @@ void handlePassthrough(FiberSocket & client, const FrontendContext & ctx)
     try
     {
         /// Forward the raw encrypted bytes; never wrap the backend leg in the proxy's own TLS.
-        backend_socket = connectToBackend(ctx, backend, /*encrypt=*/ false, attributes.host);
+        backend_socket = connectToBackend(ctx, backend, /*encrypt=*/ false);
     }
     catch (...)
     {

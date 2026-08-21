@@ -8,6 +8,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
+#include <algorithm>
 #include <fstream>
 #include <string_view>
 #include <vector>
@@ -37,6 +38,24 @@ std::vector<String> splitList(const String & list)
     boost::split(res, list, boost::is_any_of(","));
     for (auto & value : res)
         boost::trim(value);
+    return res;
+}
+
+/// The highest `$N` referenced by a backend template, or zero if it references no capture.
+/// `$$` is an escaped dollar sign, as in `substituteCaptures`.
+size_t maxCaptureReference(const String & pattern)
+{
+    size_t res = 0;
+    for (size_t i = 0; i + 1 < pattern.size(); ++i)
+    {
+        if (pattern[i] != '$')
+            continue;
+        const char next = pattern[i + 1];
+        if (next >= '1' && next <= '9')
+            res = std::max(res, static_cast<size_t>(next - '0'));
+        if (next == '$' || (next >= '1' && next <= '9'))
+            ++i;
+    }
     return res;
 }
 
@@ -239,6 +258,30 @@ ConfigRoutingTable::ConfigRoutingTable(const std::vector<RuleConfig> & rules_)
 
         rule.target.pool_name = rule_config.pool;
         rule.target.backend = rule_config.backend_template;
+
+        /// Only the HTTP frontend fills `RouteAttributes::query_type`, so a rule that is restricted to
+        /// other protocols and also requires a query type could never match. Reject it at config load
+        /// instead of silently never routing.
+        if (!rule.query_types.empty())
+            for (auto protocol : rule.protocols)
+                if (protocol != ListenerProtocol::HTTP)
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "A routing rule uses 'query_type' with the '{}' protocol, but the query type is only "
+                        "known for the 'http' protocol", toString(protocol));
+
+        /// The rule set is immutable after startup, so a backend template that references a capture group
+        /// the rule cannot produce is a configuration error: report it here rather than on the first
+        /// connection that happens to match the rule.
+        if (rule.target.backend)
+        {
+            const size_t available = rule.host.captureCount() + rule.user.captureCount() + rule.database.captureCount();
+            const size_t referenced = std::max(
+                maxCaptureReference(rule.target.backend->name), maxCaptureReference(rule.target.backend->host));
+            if (referenced > available)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "A routing rule has a backend template referencing capture ${}, but its matchers have only "
+                    "{} capture groups", referenced, available);
+        }
 
         rules.push_back(std::move(rule));
     }

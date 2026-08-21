@@ -55,6 +55,9 @@ private:
 
         /// On a regexp match, the values of the capture groups are appended to captures.
         bool matches(const String & value, std::vector<String> & captures) const;
+
+        /// How many capture values a successful match appends. Exact values capture nothing.
+        size_t captureCount() const { return regexp ? static_cast<size_t>(regexp->NumberOfCapturingGroups()) : 0; }
     };
 
     struct Rule

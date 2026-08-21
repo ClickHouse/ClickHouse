@@ -120,7 +120,9 @@ A listener can handle TLS in three ways:
 
 - **Terminate and re-encrypt** — set `<secure>1</secure>` on the listener. The proxy holds its own
   certificate (from the `openSSL.server` section), decrypts the connection, and — if the chosen
-  backend is marked `<secure>1</secure>` — opens an independent TLS connection to it.
+  backend is marked `<secure>1</secure>` — opens an independent TLS connection to it. That connection
+  is verified against, and announces, the backend's own host name: the name the client used (an SNI,
+  an HTTP `Host` header) identifies the proxy, not the backend.
 - **Terminate only (unwrap)** — a secure listener with plaintext backends. The proxy decrypts and
   speaks to the backends without encryption.
 - **Transparent** — the `tls` listener protocol. The proxy reads the SNI from the `ClientHello`,

@@ -27,14 +27,14 @@ struct FrontendContext
 };
 
 /// Connect to a backend for the given listener protocol. When @p encrypt is set, the proxy-to-backend
-/// leg is wrapped in TLS (sending @p sni as the server name); otherwise bytes are forwarded as-is
-/// (used for transparent TLS routing, where the encrypted stream is passed through untouched).
+/// leg is wrapped in TLS, using the backend's own host name as the server name and for certificate
+/// verification; otherwise bytes are forwarded as-is (used for transparent TLS routing, where the
+/// encrypted stream is passed through untouched).
 /// Records connect latency and marks the backend down on repeated failures. Throws on failure.
 FiberSocket connectToBackend(
     const FrontendContext & ctx,
     Backend & backend,
-    bool encrypt,
-    const String & sni);
+    bool encrypt);
 
 /// Route the connection and, on success, connect to a backend. Returns a connected socket and sets
 /// @p out_backend, or throws / returns an un-connected socket with @p out_backend left null.

@@ -147,17 +147,43 @@ struct Cursor
 
 std::optional<String> peekTLSClientHelloSNI(RecordingReader & reader)
 {
-    /// TLS record header: content type (1) + version (2) + length (2).
-    if (reader.peekByte() != 0x16)     /// Not a handshake record.
-        return {};
+    /// A `ClientHello` is allowed to span several handshake records, so the records are collected
+    /// until the whole handshake message is buffered. The total is bounded: the peek happens before
+    /// a backend is chosen, so a client must not be able to make the proxy buffer without limit.
+    constexpr size_t max_handshake_bytes = 64 * 1024;
 
-    reader.skip(1);
-    reader.skip(2);
-    UInt32 record_length = (static_cast<UInt32>(reader.readByte()) << 8) | reader.readByte();
-    if (record_length == 0 || record_length > 64 * 1024)
-        return {};
+    String body;
+    auto read_record = [&]
+    {
+        /// TLS record header: content type (1) + version (2) + length (2).
+        if (!reader.ensure(5) || reader.peekByte() != 0x16)     /// Not a handshake record.
+            return false;
+        reader.skip(3);
+        const size_t record_length = (static_cast<size_t>(reader.readByte()) << 8) | reader.readByte();
+        if (record_length == 0 || body.size() + record_length > max_handshake_bytes || !reader.ensure(record_length))
+            return false;
+        body += reader.readFixed(record_length);
+        return true;
+    };
 
-    String body = reader.readFixed(record_length);
+    /// Handshake header: type (1) + length (3).
+    while (body.size() < 4)
+        if (!read_record())
+            return {};
+
+    if (static_cast<UInt8>(body[0]) == 0x01)     /// A ClientHello: collect its continuation records.
+    {
+        const size_t message_end = 4
+            + ((static_cast<size_t>(static_cast<UInt8>(body[1])) << 16)
+                | (static_cast<size_t>(static_cast<UInt8>(body[2])) << 8)
+                | static_cast<UInt8>(body[3]));
+        if (message_end > max_handshake_bytes)
+            return {};
+        while (body.size() < message_end)
+            if (!read_record())
+                return {};
+    }
+
     Cursor cursor{body.data(), body.size()};
 
     /// Handshake header: type (1) + length (3).

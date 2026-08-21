@@ -113,7 +113,7 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
     FiberSocket backend_socket;
     try
     {
-        backend_socket = connectToBackend(ctx, backend, backend.config().secure, /*sni=*/ "");
+        backend_socket = connectToBackend(ctx, backend, backend.config().secure);
     }
     catch (...)
     {

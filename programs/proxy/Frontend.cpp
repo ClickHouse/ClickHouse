@@ -70,7 +70,7 @@ String classifyQuery(std::string_view query)
     return "other";
 }
 
-FiberSocket connectToBackend(const FrontendContext & ctx, Backend & backend, bool encrypt, const String & sni)
+FiberSocket connectToBackend(const FrontendContext & ctx, Backend & backend, bool encrypt)
 {
     const UInt16 port = backendPortFor(ctx.listener.protocol, backend.config(), ctx.listener.port);
     const Poco::Net::SocketAddress address(backend.config().host, port);
@@ -82,9 +82,11 @@ FiberSocket connectToBackend(const FrontendContext & ctx, Backend & backend, boo
         if (encrypt)
         {
 #if USE_SSL
+            /// The backend leg is a connection to the backend, so it is verified against - and announces -
+            /// the backend's own name. Reusing the name the client asked for (an HTTP `Host` header, a
+            /// client SNI) would verify the backend against the proxy's public identity instead.
             socket = FiberSocket::connectTLS(
-                address, ctx.config.connect_timeout_ms, ctx.client_tls_context,
-                sni.empty() ? backend.config().host : sni);
+                address, ctx.config.connect_timeout_ms, ctx.client_tls_context, backend.config().host);
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot connect to a secure backend: built without SSL support");
 #endif
