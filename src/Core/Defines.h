@@ -48,6 +48,9 @@ static constexpr size_t DEFAULT_READER_EXECUTOR_WINDOW_SIZE = 4 * 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_BLOCK_SIZE = 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK = 2 * 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 1_MiB;
+/// How far ahead the `ReaderExecutor` resolves cache residency into its held `ReadPlan` (a cheap
+/// probe, not a read) so one resolve serves many windows.
+static constexpr size_t DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD = 16_MiB;
 static constexpr size_t MIN_READER_EXECUTOR_SIZE = 4_KiB;
 
 static constexpr auto SHOW_CHARS_ON_SYNTAX_ERROR = ptrdiff_t(160);
