@@ -1960,13 +1960,13 @@ public:
         const DataTypePtr & left_type = col_with_type_and_name_left.type;
         const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
-        if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-                removeLowCardinalityAndNullable(left_type)))
+        if (containsExponentialTimeDecayingFloat64(left_type)
+            || containsExponentialTimeDecayingFloat64(right_type))
         {
             validateExponentialTimeDecayingFloat64Column(
-                *col_with_type_and_name_left.column, *decay_length, getName());
+                *col_with_type_and_name_left.column, left_type, getName());
             validateExponentialTimeDecayingFloat64Column(
-                *col_with_type_and_name_right.column, *decay_length, getName());
+                *col_with_type_and_name_right.column, right_type, getName());
         }
 
         /// The case when arguments are the same (tautological comparison). Return constant.
