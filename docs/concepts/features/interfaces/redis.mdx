@@ -20,7 +20,7 @@ Supported commands:
 - `PING`, `ECHO`, `QUIT`, `COMMAND`, `CLIENT`.
 - `AUTH` — authenticate as a ClickHouse user: `AUTH password` authenticates the `default` user, `AUTH username password` authenticates the given user.
 
-Data commands require an authenticated session, and the user needs the `SELECT` privilege on the columns of the mapped table. If a client does not send `AUTH`, the first data command implicitly tries to authenticate as the `default` user with an empty password, matching the behavior of an unprotected Redis server; if the `default` user has a password, the command fails with an authentication error until the client sends `AUTH`.
+Data commands require an authenticated session, and the user needs the `SELECT` privilege on the columns of the mapped table. A lookup reads the table directly and does not evaluate row policies, so a table the authenticated user has a [row policy](/sql-reference/statements/create/row-policy) on is not served over this interface at all. If a client does not send `AUTH`, the first data command implicitly tries to authenticate as the `default` user with an empty password, matching the behavior of an unprotected Redis server; if the `default` user has a password, the command fails with an authentication error until the client sends `AUTH`.
 
 The database mapping and the mapped table are read from the configuration and resolved for every request, so `SYSTEM RELOAD CONFIG`, as well as `DROP TABLE`, `RENAME TABLE`, and recreating the table, take effect for already connected clients as well.
 
