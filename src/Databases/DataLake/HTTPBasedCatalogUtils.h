@@ -16,6 +16,9 @@ namespace DataLake
 template <typename Func>
 auto requestWithTokenRefresh(bool enable_refresh, Func && make_request)
 {
+    if (!enable_refresh)
+        return make_request(/* force_refresh = */ false);
+
     try
     {
         return make_request(/* force_refresh = */ false);
@@ -23,12 +26,11 @@ auto requestWithTokenRefresh(bool enable_refresh, Func && make_request)
     catch (const DB::HTTPException & e)
     {
         const auto status = e.getHTTPStatus();
-        if (!enable_refresh
-            || (status != Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED
-                && status != Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN))
+        if (status != Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED
+            && status != Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN)
             throw;
+        return make_request(/* force_refresh = */ true);
     }
-    return make_request(/* force_refresh = */ true);
 }
 
 DB::ReadWriteBufferFromHTTPPtr createReadBuffer(

@@ -85,6 +85,10 @@ private:
     /// pointing to {base_url}/iceberg-rest.
     mutable std::shared_ptr<RestCatalog> iceberg_rest_catalog TSA_GUARDED_BY(token_mutex);
 
+    /// Retries `make_request` once with a fresh token when the catalog rejects the cached one.
+    template <typename Func>
+    auto requestWithRetry(Func && make_request) const;
+
     std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(
         const std::string & route,
         const Poco::URI::QueryParameters & params = {}) const;

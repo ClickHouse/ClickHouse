@@ -1068,9 +1068,9 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     if (!params.empty())
         url.setQueryParameters(params);
 
-    auto create_buffer = [&](bool update_token)
+    auto create_buffer = [&](bool force_refresh)
     {
-        auto result_headers = auth_headers ? *auth_headers : getAuthHeaders(catalog_state, update_token);
+        auto result_headers = auth_headers ? *auth_headers : getAuthHeaders(catalog_state, force_refresh);
         std::move(headers.begin(), headers.end(), std::back_inserter(result_headers));
 
         return DB::BuilderRWBufferFromHTTP(url)

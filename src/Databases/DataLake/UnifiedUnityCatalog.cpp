@@ -203,11 +203,17 @@ DB::HTTPHeaderEntries UnifiedUnityCatalog::getAuthHeaders(bool force_refresh) co
     return {DB::HTTPHeaderEntry("Authorization", "Bearer " + access_token->token)};
 }
 
+template <typename Func>
+auto UnifiedUnityCatalog::requestWithRetry(Func && make_request) const
+{
+    return requestWithTokenRefresh(/* enable_refresh = */ use_oauth, std::forward<Func>(make_request));
+}
+
 std::pair<Poco::Dynamic::Var, std::string> UnifiedUnityCatalog::getJSONRequest(
     const std::string & route,
     const Poco::URI::QueryParameters & params) const
 {
-    return requestWithTokenRefresh(/* enable_refresh = */ use_oauth, [&](bool force_refresh)
+    return requestWithRetry([&](bool force_refresh)
     {
         return makeHTTPRequestAndReadJSON(
             base_url / route, getContext(), credentials, params, getAuthHeaders(force_refresh));
@@ -219,7 +225,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnifiedUnityCatalog::postJSONRequest(
     std::function<void(std::ostream &)> out_stream_callback) const
 {
     /// `out_stream_callback` is copied, not moved: the retry has to send the same body again.
-    return requestWithTokenRefresh(/* enable_refresh = */ use_oauth, [&](bool force_refresh)
+    return requestWithRetry([&](bool force_refresh)
     {
         return makeHTTPRequestAndReadJSON(
             base_url / route, getContext(), credentials, {}, getAuthHeaders(force_refresh),
@@ -336,7 +342,7 @@ bool UnifiedUnityCatalog::tryGetTableMetadata(
         /// The Unity tables API describes the table but does not serve its Iceberg metadata;
         /// Databricks exposes that only through the Iceberg REST catalog endpoint.
         /// See https://docs.databricks.com/aws/en/external-access/iceberg
-        return requestWithTokenRefresh(/* enable_refresh = */ use_oauth, [&](bool force_refresh)
+        return requestWithRetry([&](bool force_refresh)
         {
             return getIcebergRestCatalog(force_refresh)->tryGetTableMetadata(schema_name, table_name, result);
         });
