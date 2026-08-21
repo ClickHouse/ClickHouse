@@ -6342,6 +6342,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasQualify() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of QUALIFY");
 
+    /// The alias names of the top level projection nodes become the column names of the result.
+    /// They are collected before resolution: resolution can replace a projection node
+    /// with a folded constant that does not keep the alias.
+    std::unordered_set<std::string> projection_alias_names;
+    for (const auto & projection_node : query_node_typed.getProjection().getNodes())
+        if (projection_node->hasAlias())
+            projection_alias_names.insert(projection_node->getAlias());
+
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope.aliases);
 
@@ -6622,15 +6630,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (node_alias.empty())
             continue;
 
-        /** Conflicting expressions for an alias are an error only if the alias was actually used
-          * to resolve some identifier. An alias can also just give a name to an expression without
-          * being referenced anywhere, e.g. a name of a tuple element in
+        /** Conflicting expressions for an alias are an error only if the alias is actually used:
+          * either it was looked up to resolve some identifier, or it names a projection column
+          * (and therefore becomes a column name of the result). An alias can also just give a name
+          * to a nested expression without being referenced anywhere, e.g. a name of a tuple element in
           * SELECT tuple(1 AS x), tuple(2 AS x)
           * (see the setting enable_named_columns_in_function_tuple), and such queries are valid.
           * If the alias is used, the check below is preserved: whichever expression a reference
           * resolved to, conflicting definitions make the reference ambiguous.
           */
-        if (!scope.aliases.used_alias_names.contains(node_alias))
+        if (!scope.aliases.used_alias_names.contains(node_alias) && !projection_alias_names.contains(node_alias))
             continue;
 
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
