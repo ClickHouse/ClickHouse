@@ -639,6 +639,23 @@ class Runner:
         return "success"
 
     @staticmethod
+    def _pipeline_job_counts(job_results) -> dict:
+        """Break the pipeline's jobs down by status for CIDB attributes.
+
+        ``run`` counts jobs that actually ran (neither skipped nor dropped).
+        """
+        return {
+            "total": len(job_results),
+            "run": sum(
+                1 for j in job_results if not (j.is_skipped() or j.is_dropped())
+            ),
+            "success": sum(1 for j in job_results if j.is_success()),
+            "failed": sum(1 for j in job_results if j.is_failure() or j.is_error()),
+            "skipped": sum(1 for j in job_results if j.is_skipped()),
+            "dropped": sum(1 for j in job_results if j.is_dropped()),
+        }
+
+    @staticmethod
     def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
         """Whether a providing artifact that matched no file may be skipped.
 
@@ -913,28 +930,7 @@ class Runner:
                     compute_usage=ComputeUsage.from_dict(
                         workflow_result.ext.get("compute_usage", {})
                     ),
-                    job_counts={
-                        "total": len(workflow_result.results),
-                        "run": sum(
-                            1
-                            for j in workflow_result.results
-                            if not (j.is_skipped() or j.is_dropped())
-                        ),
-                        "success": sum(
-                            1 for j in workflow_result.results if j.is_success()
-                        ),
-                        "failed": sum(
-                            1
-                            for j in workflow_result.results
-                            if j.is_failure() or j.is_error()
-                        ),
-                        "skipped": sum(
-                            1 for j in workflow_result.results if j.is_skipped()
-                        ),
-                        "dropped": sum(
-                            1 for j in workflow_result.results if j.is_dropped()
-                        ),
-                    },
+                    job_counts=self._pipeline_job_counts(workflow_result.results),
                     start_time=workflow_result.start_time,
                     duration_s=workflow_result.update_duration().duration,
                     workflow_status=workflow_result.status,
