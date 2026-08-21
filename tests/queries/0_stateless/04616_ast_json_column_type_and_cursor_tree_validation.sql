@@ -20,26 +20,26 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM t STREAM'));
 -- A map element that is not a tuple.
 SELECT formatQueryFromJSON(replace(
     parseQueryToJSON('SELECT * FROM t STREAM CURSOR {''a'': 10}'),
-    '{"field_type":"Tuple","value":[{"field_type":"String","value":"a"},{"field_type":"UInt64","value":10}]}',
+    '{"field_type":"Tuple","value":[{"field_type":"String","value":"a"},{"field_type":"Int64","value":10}]}',
     '{"field_type":"String","value":"a"}')); -- { serverError BAD_ARGUMENTS }
 
 -- A tuple of the wrong size.
 SELECT formatQueryFromJSON(replace(
     parseQueryToJSON('SELECT * FROM t STREAM CURSOR {''a'': 10}'),
-    '"value":[{"field_type":"String","value":"a"},{"field_type":"UInt64","value":10}]',
+    '"value":[{"field_type":"String","value":"a"},{"field_type":"Int64","value":10}]',
     '"value":[{"field_type":"String","value":"a"}]')); -- { serverError BAD_ARGUMENTS }
 
 -- A leaf that is not an integer.
 SELECT formatQueryFromJSON(replace(
     parseQueryToJSON('SELECT * FROM t STREAM CURSOR {''a'': 10}'),
-    '{"field_type":"UInt64","value":10}',
+    '{"field_type":"Int64","value":10}',
     '{"field_type":"String","value":"x"}')); -- { serverError BAD_ARGUMENTS }
 
 -- A path that is not a string.
 SELECT formatQueryFromJSON(replace(
     parseQueryToJSON('SELECT * FROM t STREAM CURSOR {''a'': 10}'),
     '{"field_type":"String","value":"a"}',
-    '{"field_type":"UInt64","value":1}')); -- { serverError BAD_ARGUMENTS }
+    '{"field_type":"Int64","value":1}')); -- { serverError BAD_ARGUMENTS }
 
 -- A `cursor_tree` that is not a `Map` at all.
 SELECT formatQueryFromJSON(replace(

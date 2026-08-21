@@ -53,6 +53,10 @@ struct ObjectInfo
 
     FileBucketInfoPtr file_bucket_info;
 
+    /// Lazy materialization: if set, read only these rows of the file.
+    /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
+    std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
+
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 };

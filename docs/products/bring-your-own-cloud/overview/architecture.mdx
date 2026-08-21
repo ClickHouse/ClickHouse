@@ -62,12 +62,12 @@ The BYOC deployment model requires two essential components to ensure reliable o
 ClickHouse Cloud needs cross-account IAM permissions to provision and manage resources within your cloud account. This enables ClickHouse to:
 
 - **Provision infrastructure**: Create and configure VPCs, subnets, security groups, and other networking components
-- **Manage Kubernetes clusters**: Deploy and maintain EKS/GKE clusters, node groups, and cluster components
+- **Manage Kubernetes clusters**: Deploy and maintain EKS/GKE/AKS clusters, node groups, and cluster components
 - **Create storage resources**: Provision S3 buckets or equivalent object storage for data and backups
 - **Manage IAM roles**: Create and configure IAM roles for Kubernetes service accounts and supporting services
 - **Operate supporting services**: Deploy and manage monitoring stacks, ingress controllers, and other infrastructure components
 
-These permissions are granted through a cross-account IAM role (AWS) or service account (GCP) that you create during the initial onboarding process. The role follows the principle of least privilege, with permissions scoped to only what's necessary for BYOC operations.
+These permissions are granted through a cross-account IAM role (AWS), service account (GCP), or multi-tenant service principal (Azure) that you create during the initial onboarding process. The role follows the principle of least privilege, with permissions scoped to only what's necessary for BYOC operations.
 
 For detailed information about the specific permissions required, see the [BYOC Privilege Reference](/products/bring-your-own-cloud/reference/privilege).
 

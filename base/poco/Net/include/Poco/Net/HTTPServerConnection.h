@@ -18,6 +18,8 @@
 #define Net_HTTPServerConnection_INCLUDED
 
 
+#include <atomic>
+
 #include "Poco/Mutex.h"
 #include "Poco/Net/HTTPRequestHandlerFactory.h"
 #include "Poco/Net/HTTPResponse.h"
@@ -56,7 +58,9 @@ namespace Net
     private:
         HTTPServerParams::Ptr _pParams;
         HTTPRequestHandlerFactory::Ptr _pFactory;
-        bool _stopped;
+        /// Written by the thread calling `HTTPServer::stopAll` (via `onServerStopped`) while the
+        /// connection thread reads it in the `run` loop, so it must be atomic.
+        std::atomic<bool> _stopped;
         Poco::FastMutex _mutex;
     };
 

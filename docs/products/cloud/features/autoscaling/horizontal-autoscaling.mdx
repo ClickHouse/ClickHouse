@@ -1,0 +1,80 @@
+---
+sidebarTitle: 'Horizontal autoscaling'
+slug: /cloud/features/autoscaling/horizontal-autoscaling
+description: 'Configure horizontal autoscaling in ClickHouse Cloud'
+keywords: ['horizontal autoscaling', 'autoscaling', 'replicas', 'concurrent queries', 'scaling']
+title: 'Horizontal autoscaling'
+doc_type: 'guide'
+---
+
+<Note>
+Horizontal autoscaling is in Private Preview and is available on the Scale and Enterprise plans. To request access, contact your ClickHouse account team or support.
+</Note>
+
+Horizontal autoscaling automatically adds or removes replicas in your service in response to workload demand. Where vertical autoscaling changes the size of each replica, horizontal autoscaling changes the number of replicas, making it well suited to workloads where demand comes from more queries rather than heavier queries.
+
+## How it works {#how-it-works}
+
+The autoscaler continuously monitors your service and makes horizontal scaling recommendations every 10 minutes based on three signals:
+
+- **Concurrent queries:** Maximum number of queries running across replicas
+- **CPU utilization:** Maximum CPU usage across replicas
+- **Memory utilization:** Maximum memory usage across replicas
+
+The autoscaler targets 60% utilization across the service:
+
+- **Scale out:** When utilization rises above the high watermark of 80%, replicas are added up to your configured maximum
+- **Scale in:** When utilization falls below the low watermark of 45%, replicas are removed down to your configured minimum
+
+The gap between the watermarks provides hysteresis so the service doesn't oscillate between scaling out and in. Scale-in is intentionally more conservative than scale-out to protect running workloads.
+
+## Enable horizontal autoscaling {#enable-horizontal-autoscaling}
+
+Horizontal autoscaling is configured from the **Settings** page of your service, or via the [ClickHouse Cloud replica scaling API](/products/cloud/api-reference/service/update-service-auto-scaling-settings).
+
+To enable it:
+
+1. Pin the vertical size of your replicas by setting minimum memory equal to maximum memory. Horizontal autoscaling requires a fixed replica size for now; vertical and horizontal autoscaling can't be active on a service at the same time.
+2. Set maximum replicas greater than minimum replicas. The autoscaler operates within these bounds. Setting the two values equal pins the service to a fixed replica count and disables horizontal autoscaling.
+
+<Note>
+Services can scale horizontally to a maximum of 20 replicas. If you need additional replicas, contact our support team.
+</Note>
+
+## Configure your clients {#configure-your-clients}
+
+New replicas only help if your clients connect to them. Long-lived connections stay pinned to the replicas that existed when the connection was opened, so clients must refresh connections regularly to pick up new replicas.
+
+Configure clients in one of the following ways:
+
+- **HTTP protocol (recommended):** Connections are short-lived by default, so traffic spreads to new replicas automatically
+- **Native protocol:** Set the maximum connection lifetime to approximately 30 seconds so connections are re-established regularly
+
+## Choose the right replica size {#choose-the-right-replica-size}
+
+Horizontal autoscaling works best when each replica is large enough to comfortably run your typical queries. Adding replicas increases the number of queries the service can run in parallel; it doesn't increase the memory available to any single query.
+
+Recommended approach:
+
+1. Find a vertical size at which a few of your typical queries run comfortably without memory errors.
+2. Pin the service to that size.
+3. Let horizontal autoscaling add replicas as query volume grows.
+
+If replicas are too small for the workload, the autoscaler may add replicas that can't serve your queries. The autoscaler includes safeguards against this—for example, it won't scale out in response to a single oversized query that additional replicas can't help with—but correct sizing remains an important factor.
+
+## Load distribution {#load-distribution}
+
+Horizontal autoscaling assumes load is distributed evenly across replicas. If one replica runs at 90% utilization while others sit at 10%, adding replicas won't help, and the load imbalance should be addressed first. The autoscaler detects imbalanced load and won't recommend scaling out while it persists.
+
+Common causes of imbalance include long-lived connections concentrated on a few replicas (see [Configure your clients](#configure-your-clients)) and session-pinned workloads.
+
+## Observe scaling activity {#observe-scaling-activity}
+
+Scaling events are visible on the service's metrics dashboard in the ClickHouse Cloud console, which shows the current number of replicas and total resource allocation.
+
+## Known limitations {#known-limitations}
+
+- Horizontal autoscaling is in Private Preview and must be enabled for your organization by the ClickHouse support team.
+- The vertical replica size must be pinned by setting minimum memory equal to maximum memory.
+- Each service is limited to a maximum of 20 replicas. Contact support if you need additional replicas.
+- Recommendations are made every 10 minutes; horizontal autoscaling isn't designed to absorb sub-minute spikes. For predictable peaks, consider [scheduled scaling](/products/cloud/features/autoscaling/scheduled-scaling).

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Streaming/CursorTree_fwd.h>
+#include <Core/Streaming/CursorTree.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 
