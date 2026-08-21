@@ -628,8 +628,9 @@ TEST(SimpleMergeSelector, SmallPartsMinCountSurvivesLoweredMaxPartsCap)
     settings.small_parts_min_count = 8;
     settings.small_parts_max_age = 600;
     /// The heuristic under test stays at its default (enabled). Report a nearly full
-    /// partition (2990 of 3000 parts): the fullness formula lowers the effective
-    /// max-parts cap to 6, below `small_parts_min_count` = 8.
+    /// partition (2990 of 3000 parts): the fullness formula lowers the effective max-parts
+    /// cap to `base + (max_parts_to_merge_at_once - base) * (1 - ((2990 - base) / (3000 -
+    /// base)) ^ 5)` = `2 + 98 * (1 - 0.98347)` = 3, below `small_parts_min_count` = 8.
     settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = true;
 
     PartsRange parts;
@@ -708,9 +709,11 @@ TEST(SimpleMergeSelector, SmallPartsMinCountDoesNotLiftCapForStaleParts)
     PartsRanges selected = selector.select({parts}, constraints, nullptr);
 
     /// The freshness valve makes these candidates ineligible for the cap extension. The
-    /// fullness heuristic's cap is 6, so the selector must not invent an 8-part stale merge.
+    /// fullness heuristic's cap is 3 (same partition statistics and arithmetic as in
+    /// `SmallPartsMinCountSurvivesLoweredMaxPartsCap`), so the selector must not invent an
+    /// 8-part stale merge.
     ASSERT_EQ(selected.size(), 1);
-    ASSERT_EQ(selected[0].size(), 6);
+    ASSERT_EQ(selected[0].size(), 3);
 }
 
 
@@ -737,7 +740,7 @@ TEST(SimpleMergeSelector, SmallPartsMinCountDoesNotLiftCapForForceMergeEligibleP
         });
     }
 
-    /// A nearly full partition, so the fullness heuristic lowers the effective cap to 6.
+    /// A nearly full partition, so the fullness heuristic lowers the effective cap to 3.
     PartitionsStatistics statistics;
     statistics["all"] = PartitionStatistics{
         .min_age = 200,
@@ -751,9 +754,9 @@ TEST(SimpleMergeSelector, SmallPartsMinCountDoesNotLiftCapForForceMergeEligibleP
     PartsRanges selected = selector.select({parts}, constraints, nullptr);
 
     /// `allow` accepts these ranges through `min_age_to_force_merge` before the small-parts
-    /// gate is ever evaluated, so the gate is not what blocks the 6-part candidate and the
+    /// gate is ever evaluated, so the gate is not what blocks the capped candidate and the
     /// cap extension must not fire. Otherwise enabling `small_parts_min_count` would widen
-    /// the emitted force merge from 6 to 8 parts on saturated partitions.
+    /// the emitted force merge from 3 to 8 parts on saturated partitions.
     ASSERT_EQ(selected.size(), 1);
-    ASSERT_EQ(selected[0].size(), 6);
+    ASSERT_EQ(selected[0].size(), 3);
 }
