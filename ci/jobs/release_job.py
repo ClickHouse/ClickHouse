@@ -170,7 +170,9 @@ def main():
     # `.github/workflows` differ from master are not rejected by GitHub's
     # push-time workflow-scope check (which the App token, lacking that scope,
     # cannot pass on a repo this large).
-    os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
+    # A dry run pushes nothing and runs on an untrusted PR runner with no SSM access, so skip the robot PAT; gh reads use the ambient `gh auth token`.
+    if not args.dry_run:
+        os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
 
     results = []
     ok = True
@@ -209,6 +211,21 @@ def main():
         ],
         workdir=REPO_PATH,
     )
+
+    # A "new" release cuts from `master` via `checkout("master")`, but the PR
+    # dry-run check runs on a detached merge ref with no local `master`. Create
+    # it from origin. Skipped on a real release, which is already on `master`
+    # (`git branch -f` refuses the current branch).
+    if (
+        ok
+        and args.release_type == "new"
+        and Shell.get_output("git rev-parse --abbrev-ref HEAD") != "master"
+    ):
+        step(
+            name="Ensure Local master Branch",
+            command=["git branch --force master origin/master"],
+            workdir=REPO_PATH,
+        )
 
     step(
         name="Configure Git Auth for Release Pushes",
@@ -343,8 +360,9 @@ def main():
     # for an already-created release (repo/Docker recovery). If the ref resolves
     # to a new release, they would otherwise fall through to the creation steps
     # below (push tag, bump version, PRs) and produce a partial new release, so
-    # reject that misuse and require the release tag instead.
-    if ok and not is_tag_pushed and (args.skip_repo or args.skip_docker):
+    # reject that misuse and require the release tag instead. A dry run publishes
+    # nothing, so the combination is fine there (the PR dry-run check uses it).
+    if ok and not is_tag_pushed and (args.skip_repo or args.skip_docker) and not args.dry_run:
 
         def _require_recovery_ref():
             raise RuntimeError(
