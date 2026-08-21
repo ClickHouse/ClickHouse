@@ -327,6 +327,7 @@ public:
 
     UInt64 insert(std::string_view data);
     void reserve(size_t num_rows);
+    bool isBuilt() const { return index != nullptr; }
 
     /// Returns the found data's index in the dictionary. If index is not built, builds it.
     UInt64 getInsertionPoint(std::string_view data)

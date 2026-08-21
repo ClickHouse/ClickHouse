@@ -490,14 +490,51 @@ IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFr
             column_holder->getName(),
             src_dictionary.getName());
 
-    if constexpr (!is_float_vector_v<ColumnType>)
-        if (getRawColumnPtr()->size() == numSpecialValues())
-            reverse_index.reserve(destination_size_upper_bound);
-
     const bool source_is_nullable = src_dictionary.nestedColumnIsNullable();
     const size_t source_null_value_index = source_is_nullable ? src_dictionary.getNullValueIndex() : 0;
     [[maybe_unused]] const size_t source_nested_default_value_index = src_dictionary.getNestedTypeDefaultValueIndex();
     SCOPE_EXIT(updateNullMask());
+
+    if constexpr (ReverseIndex<UInt64, ColumnType>::is_numeric_column && !is_float_vector_v<ColumnType>)
+    {
+        if (getRawColumnPtr()->size() == numSpecialValues() && !reverse_index.isBuilt())
+        {
+            auto & destination_data = getRawColumnPtr()->getData();
+            const auto & source_data = source_column->getData();
+            destination_data.reserve(destination_size_upper_bound);
+
+            size_t max_destination_index = 0;
+            for (size_t i = 0; i < length; ++i)
+            {
+                const size_t source_index = src_indexes[start + i];
+                size_t destination_index = 0;
+                if (source_is_nullable && source_index == source_null_value_index)
+                    destination_index = getNullValueIndex();
+                else if (source_index == source_nested_default_value_index)
+                    destination_index = getNestedTypeDefaultValueIndex();
+                else
+                {
+                    destination_index = destination_data.size();
+                    destination_data.push_back(source_data[source_index]);
+                }
+
+                max_destination_index = std::max(max_destination_index, destination_index);
+                if (destination_index > std::numeric_limits<DestinationIndexType>::max())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "LowCardinality dictionary index {} does not fit in {} bytes",
+                        destination_index,
+                        sizeof(DestinationIndexType));
+                translated_indexes.push_back(static_cast<DestinationIndexType>(destination_index));
+            }
+
+            return {std::move(translated_column), max_destination_index};
+        }
+    }
+
+    if constexpr (!is_float_vector_v<ColumnType>)
+        if (getRawColumnPtr()->size() == numSpecialValues())
+            reverse_index.reserve(destination_size_upper_bound);
 
     auto insert_source_index = [&](size_t source_index) -> size_t
     {

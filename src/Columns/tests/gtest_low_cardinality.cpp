@@ -525,6 +525,25 @@ TEST(ColumnLowCardinality, EmptyDestinationDoesNotShareNonMinimalSourceDictionar
     EXPECT_EQ(destination->getUInt(0), source->getUInt(0));
 }
 
+TEST(ColumnLowCardinality, InsertAfterAppendingSparseRangeToEmptyDestination)
+{
+    auto source = makeLowCardinalityUInt64Column<UInt32>(256, {200, 5, 200, 130});
+    auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+    auto destination = low_cardinality_type->createColumn();
+
+    destination->insertRangeFrom(*source, 0, source->size());
+    const auto & low_cardinality_destination = assert_cast<const ColumnLowCardinality &>(*destination);
+    const size_t dictionary_size = low_cardinality_destination.getDictionary().size();
+
+    destination->insert(UInt64{200});
+    EXPECT_EQ(low_cardinality_destination.getDictionary().size(), dictionary_size);
+
+    destination->insert(UInt64{999});
+    EXPECT_EQ(low_cardinality_destination.getDictionary().size(), dictionary_size + 1);
+    EXPECT_EQ(destination->getUInt(destination->size() - 2), 200);
+    EXPECT_EQ(destination->getUInt(destination->size() - 1), 999);
+}
+
 TEST(ColumnLowCardinality, EmptyDestinationDoesNotShareRangeThatOmitsDictionaryKey)
 {
     auto source = makeLowCardinalityUInt64Column<UInt32>(5, {1, 2, 3, 3});
