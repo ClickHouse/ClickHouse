@@ -12,6 +12,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Server/IServer.h>
 #include <Server/RedisProtocolMapping.h>
+#include <Server/RedisProtocolRequest.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <base/types.h>
@@ -31,8 +32,9 @@ public:
     void run() final;
 
 private:
+    /// Interprets and executes an already read command.
     /// Returns false when the client has asked to close the connection.
-    bool processRequest();
+    bool processRequest(RedisProtocol::RedisRequest & req);
 
     /// Authenticates the session with the given credentials. Throws on failure.
     void authenticate(const String & user_name, const String & password);

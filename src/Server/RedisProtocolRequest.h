@@ -96,16 +96,22 @@ inline String toString(CommandType cmd_type)
 class IRequest
 {
 public:
-    virtual void deserialize(ReadBuffer & in) = 0;
+    /// Interprets the arguments of an already read command.
+    virtual void parse() = 0;
 
     virtual ~IRequest() = default;
 };
 
-/// Reads the command array header and the command name, leaving the arguments in the buffer.
+/// Reads a whole command: the RESP array header, the command name and all its arguments.
+///
+/// The command is always consumed completely before it is interpreted by `parse`, so that an error
+/// response for an unknown command or a wrong number of arguments does not leave unread arguments
+/// in the socket: the next request would then start in the middle of the previous command and
+/// desynchronize the connection.
 class RedisRequest : public IRequest
 {
 public:
-    void deserialize(ReadBuffer & in) override
+    void deserialize(ReadBuffer & in)
     {
         Reader reader(in);
         DataType type = reader.readType();
@@ -114,7 +120,7 @@ public:
                 ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                 "Cannot parse incoming request. Unexpected RESP type: {}", static_cast<char>(type));
 
-        command_len = reader.readInteger();
+        Int64 command_len = reader.readInteger();
         if (command_len < 1)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Wrong command length: {}", command_len);
         if (command_len > MAX_ARRAY_SIZE)
@@ -122,7 +128,23 @@ public:
                 ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                 "Command length {} exceeds the maximum allowed {}", command_len, MAX_ARRAY_SIZE);
 
-        auto cmd = Poco::toUpper(reader.readBulkString());
+        arguments.clear();
+        arguments.reserve(command_len);
+        size_t total_size = 0;
+        for (Int64 i = 0; i < command_len; ++i)
+        {
+            arguments.push_back(reader.readBulkString());
+            total_size += arguments.back().size();
+            if (total_size > MAX_COMMAND_SIZE)
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                    "Total size of the command arguments exceeds the maximum allowed {}", MAX_COMMAND_SIZE);
+        }
+    }
+
+    void parse() override
+    {
+        auto cmd = Poco::toUpper(arguments.front());
         if (cmd == Command::COMMAND)
             command = CommandType::COMMAND;
         else if (cmd == Command::AUTH)
@@ -149,13 +171,17 @@ public:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown command: {}", cmd);
     }
 
-    Int64 getCommandLen() const { return command_len; }
+    /// The number of elements of the command array, including the command name itself.
+    Int64 getCommandLen() const { return static_cast<Int64>(arguments.size()); }
 
     CommandType getCommand() const { return command; }
 
+    /// Argument 0 is the command name.
+    const String & getArgument(size_t index) const { return arguments[index]; }
+
 private:
     CommandType command = CommandType::COMMAND;
-    Int64 command_len = 0;
+    std::vector<String> arguments;
 };
 
 class SelectRequest : public IRequest
@@ -163,12 +189,11 @@ class SelectRequest : public IRequest
 public:
     explicit SelectRequest(RedisRequest & req) : request(req) {}
 
-    void deserialize(ReadBuffer & in) final
+    void parse() final
     {
-        Reader reader(in);
         if (request.getCommandLen() != 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'select' command");
-        db = parse<UInt32>(reader.readBulkString());
+        db = DB::parse<UInt32>(request.getArgument(1));
     }
 
     UInt32 getDB() const { return db; }
@@ -183,12 +208,11 @@ class EchoRequest : public IRequest
 public:
     explicit EchoRequest(RedisRequest & req) : request(req) {}
 
-    void deserialize(ReadBuffer & in) final
+    void parse() final
     {
-        Reader reader(in);
         if (request.getCommandLen() != 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'echo' command");
-        input = reader.readBulkString();
+        input = request.getArgument(1);
     }
 
     const String & getCommandInput() const { return input; }
@@ -203,7 +227,7 @@ class PingRequest : public IRequest
 public:
     explicit PingRequest(RedisRequest & req) : request(req) {}
 
-    void deserialize(ReadBuffer &) final
+    void parse() final
     {
         if (request.getCommandLen() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'ping' command");
@@ -218,12 +242,11 @@ class GetRequest : public IRequest
 public:
     explicit GetRequest(RedisRequest & req) : request(req) {}
 
-    void deserialize(ReadBuffer & in) final
+    void parse() final
     {
-        Reader reader(in);
         if (request.getCommandLen() != 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'get' command");
-        key = reader.readBulkString();
+        key = request.getArgument(1);
     }
 
     const String & getKey() const { return key; }
@@ -238,14 +261,13 @@ class MGetRequest : public IRequest
 public:
     explicit MGetRequest(RedisRequest & req) : request(req) {}
 
-    void deserialize(ReadBuffer & in) final
+    void parse() final
     {
-        Reader reader(in);
         if (request.getCommandLen() < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'mget' command");
         keys.reserve(request.getCommandLen() - 1);
         for (Int64 i = 1; i < request.getCommandLen(); ++i)
-            keys.push_back(reader.readBulkString());
+            keys.push_back(request.getArgument(i));
     }
 
     const std::vector<String> & getKeys() const { return keys; }
@@ -260,13 +282,12 @@ class HGetRequest : public IRequest
 public:
     explicit HGetRequest(RedisRequest & req) : request(req) {}
 
-    void deserialize(ReadBuffer & in) final
+    void parse() final
     {
-        Reader reader(in);
         if (request.getCommandLen() != 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'hget' command");
-        key = reader.readBulkString();
-        field = reader.readBulkString();
+        key = request.getArgument(1);
+        field = request.getArgument(2);
     }
 
     const String & getKey() const { return key; }
@@ -284,15 +305,14 @@ class HMGetRequest : public IRequest
 public:
     explicit HMGetRequest(RedisRequest & req) : request(req) {}
 
-    void deserialize(ReadBuffer & in) final
+    void parse() final
     {
-        Reader reader(in);
         if (request.getCommandLen() < 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'hmget' command");
-        key = reader.readBulkString();
+        key = request.getArgument(1);
         fields.reserve(request.getCommandLen() - 2);
         for (Int64 i = 2; i < request.getCommandLen(); ++i)
-            fields.push_back(reader.readBulkString());
+            fields.push_back(request.getArgument(i));
     }
 
     const String & getKey() const { return key; }
@@ -311,17 +331,16 @@ class AuthRequest : public IRequest
 public:
     explicit AuthRequest(RedisRequest & req) : request(req) {}
 
-    void deserialize(ReadBuffer & in) final
+    void parse() final
     {
-        Reader reader(in);
         if (request.getCommandLen() == 2)
         {
-            password = reader.readBulkString();
+            password = request.getArgument(1);
         }
         else if (request.getCommandLen() == 3)
         {
-            user = reader.readBulkString();
-            password = reader.readBulkString();
+            user = request.getArgument(1);
+            password = request.getArgument(2);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'auth' command");
@@ -335,23 +354,6 @@ private:
     RedisRequest & request;
     String user = "default";
     String password;
-};
-
-/// Reads and discards all arguments of a command.
-class CommandRequest : public IRequest
-{
-public:
-    explicit CommandRequest(RedisRequest & req) : request(req) {}
-
-    void deserialize(ReadBuffer & in) final
-    {
-        Reader reader(in);
-        for (Int64 i = 1; i < request.getCommandLen(); ++i)
-            reader.readBulkString();
-    }
-
-private:
-    RedisRequest & request;
 };
 
 }

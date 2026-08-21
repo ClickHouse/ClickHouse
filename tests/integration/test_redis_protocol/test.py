@@ -65,6 +65,17 @@ def started_cluster():
             ENGINE = Join(ANY, LEFT, name)
             """
         )
+        # A `LowCardinality` value column has to become `LowCardinality(Nullable(String))`,
+        # because `LowCardinality(String)` cannot be wrapped in `Nullable`.
+        node.query(
+            """
+            CREATE TABLE IF NOT EXISTS lc_value_map (name String, surname LowCardinality(String))
+            ENGINE = Join(ANY, LEFT, name)
+            """
+        )
+        node.query("INSERT INTO lc_value_map VALUES ('Alice', 'Smith'), ('Frank', '')")
+        node.query("CREATE USER IF NOT EXISTS policy_user IDENTIFIED WITH plaintext_password BY 'secret'")
+        node.query("GRANT SELECT ON default.name_surname_map TO policy_user")
         yield cluster
     except Exception as ex:
         logging.exception(ex)
@@ -303,3 +314,76 @@ def test_oversized_length_prefixes(started_cluster):
     response = send_raw_request(started_cluster, b"*2\r\n$3\r\nGET\r\n$1000000000\r\n")
     assert response.startswith(b"-ERR ")
     assert b"exceeds the maximum allowed" in response
+
+
+def test_low_cardinality_value_column(redis_client):
+    # `LowCardinality(String)` is a common type for values, and a missing key still has to be Nil.
+    assert redis_client.select(6)
+    assert redis_client.get("Alice") == b"Smith"
+    assert redis_client.get("Frank") == b""
+    assert redis_client.get("Mark") is None
+    assert redis_client.mget("Alice", "Mark", "Frank") == [b"Smith", None, b""]
+
+
+def test_row_policy_is_rejected(started_cluster):
+    # A lookup goes straight to the storage and does not evaluate the row policy filter,
+    # so a table the user has a row policy on must not be served at all.
+    node.query(
+        "CREATE ROW POLICY redis_policy ON default.name_surname_map USING name = 'Alice' TO policy_user"
+    )
+    try:
+        client = Redis(
+            host=started_cluster.get_instance_ip("node"),
+            port=server_port,
+            username="policy_user",
+            password="secret",
+        )
+        try:
+            with pytest.raises(exceptions.ResponseError) as resp_err:
+                client.select(1)
+            assert "row policy is applied" in str(resp_err.value)
+        finally:
+            client.close()
+
+        # A user the policy is not for does not see the rows either, exactly as with a regular
+        # `SELECT`: a table with row policies is hidden from everyone they do not apply to.
+        with pytest.raises(exceptions.ResponseError) as resp_err:
+            redis_client_get(started_cluster, 1, "Alice")
+        assert "row polic" in str(resp_err.value)
+    finally:
+        node.query("DROP ROW POLICY redis_policy ON default.name_surname_map")
+
+    # Once the policy is gone, the table is served again.
+    assert redis_client_get(started_cluster, 1, "Alice") == b"Smith"
+
+
+def redis_client_get(started_cluster, db, key):
+    client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port)
+    try:
+        assert client.select(db)
+        return client.get(key)
+    finally:
+        client.close()
+
+
+def test_error_does_not_desynchronize_connection(started_cluster):
+    # An error response must consume the whole command: otherwise the unread arguments would be
+    # interpreted as the beginning of the next command and every subsequent reply would be bogus.
+    sock = socket.create_connection((started_cluster.get_instance_ip("node"), server_port), timeout=30)
+    try:
+        # An unsupported command with arguments.
+        sock.sendall(b"*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n")
+        assert sock.recv(4096).startswith(b"-ERR ")
+
+        # The connection is still usable.
+        sock.sendall(b"*1\r\n$4\r\nPING\r\n")
+        assert sock.recv(4096) == b"+PONG\r\n"
+
+        # A known command with a wrong number of arguments.
+        sock.sendall(b"*3\r\n$3\r\nGET\r\n$1\r\nk\r\n$5\r\nextra\r\n")
+        assert sock.recv(4096).startswith(b"-ERR ")
+
+        sock.sendall(b"*2\r\n$4\r\nECHO\r\n$5\r\nhello\r\n")
+        assert sock.recv(4096) == b"$5\r\nhello\r\n"
+    finally:
+        sock.close()

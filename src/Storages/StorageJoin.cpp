@@ -9,6 +9,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -1134,8 +1135,14 @@ Block StorageJoin::getBlockByKeys(const std::vector<std::vector<Field>> & keys, 
 
         /// Request a Nullable result (as `joinGetOrNull` does), so that a missing key is
         /// distinguishable from a key present with a default value.
-        auto return_type = joinGetCheckAndGetReturnType(key_types, name, /*or_null=*/ true);
-        if (!return_type->isNullable())
+        /// `LowCardinality(T)` cannot be wrapped into `Nullable`, it has to become
+        /// `LowCardinality(Nullable(T))`, so make it nullable here rather than in `joinGetCheckAndGetReturnType`.
+        const bool is_low_cardinality = cur_sample_block.getByName(name).type->lowCardinality();
+        auto return_type = joinGetCheckAndGetReturnType(key_types, name, /*or_null=*/ !is_low_cardinality);
+        if (is_low_cardinality)
+            return_type = makeNullableOrLowCardinalityNullableSafe(return_type);
+
+        if (!isNullableOrLowCardinalityNullable(return_type))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Column {} of type {} in table {} cannot be used for get requests, because a missing key "

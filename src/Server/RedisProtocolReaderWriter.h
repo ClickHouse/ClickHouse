@@ -26,6 +26,9 @@ namespace RedisProtocol
 /// by sending only a length header.
 static constexpr Int64 MAX_ARRAY_SIZE = 1024 * 1024;
 static constexpr Int64 MAX_BULK_STRING_SIZE = 64 * 1024 * 1024;
+/// The total size of all the arguments of a single command: the per-argument limit alone still allows
+/// a client to make the server buffer `MAX_ARRAY_SIZE * MAX_BULK_STRING_SIZE` bytes for one command.
+static constexpr size_t MAX_COMMAND_SIZE = 64 * 1024 * 1024;
 
 enum class DataType : char
 {

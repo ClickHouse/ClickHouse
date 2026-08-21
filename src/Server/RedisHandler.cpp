@@ -5,6 +5,8 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
@@ -39,6 +41,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
     extern const int INVALID_STATE;
     extern const int UNSUPPORTED_METHOD;
@@ -64,13 +67,30 @@ void RedisHandler::run()
         if (in->eof())
             break;
 
+        RedisProtocol::RedisRequest req;
         try
         {
-            if (!processRequest())
+            req.deserialize(*in);
+        }
+        catch (const Poco::Exception & exc)
+        {
+            /// The command could not be read to its end, so the position in the stream is unknown
+            /// and the connection cannot be reused: report the error and close it.
+            log->log(exc);
+            RedisProtocol::ErrorResponse resp(exc.message());
+            resp.serialize(*out);
+            out->next();
+            break;
+        }
+
+        try
+        {
+            if (!processRequest(req))
                 break;
         }
         catch (const Poco::Exception & exc)
         {
+            /// The whole command has been read, so the connection stays usable.
             log->log(exc);
             RedisProtocol::ErrorResponse resp(exc.message());
             resp.serialize(*out);
@@ -126,21 +146,17 @@ void RedisHandler::ensureAuthenticated()
     }
 }
 
-bool RedisHandler::processRequest()
+bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
 {
     SCOPE_EXIT(out->next());
-    RedisProtocol::RedisRequest req;
-    req.deserialize(*in);
+    req.parse();
     switch (req.getCommand())
     {
         /// Necessary for working with cli clients in interactive mode.
         case RedisProtocol::CommandType::COMMAND:
         {
             LOG_DEBUG(log, "COMMAND request");
-            RedisProtocol::CommandRequest cmd_request(req);
-            cmd_request.deserialize(*in);
-
-            /// Just ignore it for now.
+            /// Just ignore it (the arguments have already been consumed) for now.
 
             RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
             resp.serialize(*out);
@@ -150,10 +166,7 @@ bool RedisHandler::processRequest()
         case RedisProtocol::CommandType::CLIENT:
         {
             LOG_DEBUG(log, "CLIENT request");
-            RedisProtocol::CommandRequest client_request(req);
-            client_request.deserialize(*in);
-
-            /// Just ignore it for now.
+            /// Just ignore it (the arguments have already been consumed) for now.
 
             RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
             resp.serialize(*out);
@@ -163,7 +176,7 @@ bool RedisHandler::processRequest()
         {
             LOG_DEBUG(log, "AUTH request");
             RedisProtocol::AuthRequest auth_request(req);
-            auth_request.deserialize(*in);
+            auth_request.parse();
 
             authenticate(auth_request.getUser(), auth_request.getPassword());
 
@@ -175,7 +188,7 @@ bool RedisHandler::processRequest()
         {
             LOG_DEBUG(log, "ECHO request");
             RedisProtocol::EchoRequest echo_request(req);
-            echo_request.deserialize(*in);
+            echo_request.parse();
 
             RedisProtocol::BulkStringResponse resp(echo_request.getCommandInput());
             resp.serialize(*out);
@@ -185,7 +198,7 @@ bool RedisHandler::processRequest()
         {
             LOG_DEBUG(log, "PING request");
             RedisProtocol::PingRequest ping_request(req);
-            ping_request.deserialize(*in);
+            ping_request.parse();
 
             RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::PONG);
             resp.serialize(*out);
@@ -202,7 +215,7 @@ bool RedisHandler::processRequest()
         {
             LOG_DEBUG(log, "SELECT request");
             RedisProtocol::SelectRequest select_request(req);
-            select_request.deserialize(*in);
+            select_request.parse();
 
             ensureAuthenticated();
 
@@ -233,7 +246,7 @@ bool RedisHandler::processRequest()
         {
             LOG_DEBUG(log, "GET request");
             RedisProtocol::GetRequest get_request(req);
-            get_request.deserialize(*in);
+            get_request.parse();
 
             ensureAuthenticated();
             checkDBSet();
@@ -255,7 +268,7 @@ bool RedisHandler::processRequest()
         {
             LOG_DEBUG(log, "MGET request");
             RedisProtocol::MGetRequest mget_request(req);
-            mget_request.deserialize(*in);
+            mget_request.parse();
 
             ensureAuthenticated();
             checkDBSet();
@@ -290,7 +303,7 @@ bool RedisHandler::processRequest()
         {
             LOG_DEBUG(log, "HGET request");
             RedisProtocol::HGetRequest hget_request(req);
-            hget_request.deserialize(*in);
+            hget_request.parse();
 
             ensureAuthenticated();
             checkDBSet();
@@ -312,7 +325,7 @@ bool RedisHandler::processRequest()
         {
             LOG_DEBUG(log, "HMGET request");
             RedisProtocol::HMGetRequest hmget_request(req);
-            hmget_request.deserialize(*in);
+            hmget_request.parse();
 
             ensureAuthenticated();
             checkDBSet();
@@ -376,6 +389,17 @@ RedisHandler::ResolvedTable RedisHandler::resolveTable(UInt32 db_, const RedisPr
 
 void RedisHandler::validateTable(UInt32 db_, const RedisProtocol::MapDescription & mapping, const StoragePtr & table_ptr) const
 {
+    /// A lookup goes straight to the storage, so the row policy filter that a regular `SELECT` would
+    /// apply is not evaluated. Refuse to serve a table the current user has a row policy on, instead
+    /// of exposing the rows that the policy hides.
+    auto row_policy_filter = query_context->getRowPolicyFilter(
+        mapping.clickhouse_db, mapping.clickhouse_table, RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Cannot read table {} configured for Redis database {}, because a row policy is applied on it",
+            table_ptr->getStorageID().getNameForLogs(), db_);
+
     if (!table_ptr->supportsGetRequests())
         throw Exception(
             ErrorCodes::UNSUPPORTED_METHOD,
