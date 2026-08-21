@@ -96,9 +96,6 @@ private:
     UInt64 incoming_packet_type = 0;
     size_t incoming_packet_bytes_filled = 0;
 
-    /// Even with no wakeup, the sink re-checks the socket and the ports after this long.
-    static constexpr Int64 WAIT_TIMEOUT_MS = 1000;
-
     /// Combines the socket and the port-update wakeup into one fd that the executor polls
     /// while the sink waits in `Async`.
     Epoll wait_events_epoll;

@@ -291,25 +291,25 @@ void StreamingExchangeSink::work()
 
 std::tuple<int, uint32_t, int64_t> StreamingExchangeSink::scheduleForEvent()
 {
-    /// If socket is not ready yet, wait on the eventfd
-    if (!socket)
-    {
-        if (!future_connection)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is not set for exchange stream {}", stream_name);
-
-        if (future_connection->isReady())
-            extractSocket();
-    }
-
     if (socket)
     {
         updateSocketWaitEvents();
         LOG_TEST(log, "Schedule exchange stream sink {}, socket is ready, fd: {}", stream_name, socket->sockfd());
         /// `wait_events_epoll` becomes readable on socket events (inbound `NoMoreDataNeeded`,
         /// peer close, writability while there are unsent bytes) and on the port-update wakeup.
-        return {wait_events_epoll.getFileDescriptor(), EPOLLIN | EPOLLERR, WAIT_TIMEOUT_MS};
+        /// No timeout: socket events and port updates each wake the sink explicitly; a timeout
+        /// would only hide a missed wakeup as a delay instead of a visible hang.
+        return {wait_events_epoll.getFileDescriptor(), EPOLLIN | EPOLLERR, -1};
     }
 
+    if (!future_connection)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is not set for exchange stream {}", stream_name);
+
+    /// Wait on the eventfd; `work` extracts the socket after the wake. The eventfd stays
+    /// readable once the connection is ready, so the wake is immediate even if the connection
+    /// got ready before this call. Extracting the socket here instead would skip that wake and
+    /// `prepare` would never run with the socket: the sink would sleep on a quiet socket
+    /// without ever marking its input as needed, and the fragment would never start.
     int fd = future_connection->getEventFd();
 
     LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);

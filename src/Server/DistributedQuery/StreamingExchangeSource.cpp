@@ -189,7 +189,9 @@ std::tuple<int, uint32_t, Int64> StreamingExchangeSource::scheduleForEvent()
     /// `wait_events_epoll` becomes readable on socket data and on the output-update wakeup, so
     /// a source whose peer sends nothing still notices that its output port was closed and
     /// sends `NoMoreDataNeeded` upstream.
-    return {wait_events_epoll.getFileDescriptor(), EPOLLIN | EPOLLERR, WAIT_TIMEOUT_MS};
+    /// No timeout: socket events and port updates each wake the source explicitly; a timeout
+    /// would only hide a missed wakeup as a delay instead of a visible hang.
+    return {wait_events_epoll.getFileDescriptor(), EPOLLIN | EPOLLERR, -1};
 }
 #endif
 

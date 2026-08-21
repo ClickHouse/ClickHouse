@@ -90,9 +90,6 @@ private:
     size_t rows_read = 0;
     size_t bytes_read = 0;
 
-    /// Even with no wakeup, the source re-checks the socket and the ports after this long.
-    static constexpr Int64 WAIT_TIMEOUT_MS = 1000;
-
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Combines the socket and the output-update wakeup into one fd that the executor polls
     /// while the source waits in `Async`.
