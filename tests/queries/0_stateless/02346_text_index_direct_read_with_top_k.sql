@@ -4,6 +4,7 @@
 
 SET query_plan_direct_read_from_text_index = 1;
 SET use_top_k_dynamic_filtering = 1;
+SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS tab;
