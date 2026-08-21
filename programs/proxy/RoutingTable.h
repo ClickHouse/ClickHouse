@@ -4,10 +4,7 @@
 
 #include <unordered_set>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wms-bitfield-padding"
-#include <re2/re2.h>
-#pragma clang diagnostic pop
+#include <Common/re2.h>
 
 namespace DB::Proxy
 {
