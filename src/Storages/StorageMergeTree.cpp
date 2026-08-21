@@ -2017,7 +2017,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     return {};
 }
 
-GapPartProperties StorageMergeTree::getMaxPropertiesInBetween(const PartProperties & left, const PartProperties & right) const
+std::pair<UInt32, Int64> StorageMergeTree::getMaxLevelMutationInBetween(const PartProperties & left, const PartProperties & right) const
 {
     auto parts_lock = readLockParts();
 
@@ -2029,23 +2029,23 @@ GapPartProperties StorageMergeTree::getMaxPropertiesInBetween(const PartProperti
     if (end == data_parts_by_info.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find right part, right part {}. It's a bug", right.name);
 
-    GapPartProperties result;
+    UInt32 level = 0;
+    Int64 mutation = 0;
 
     for (auto it = begin++; it != end; ++it)
     {
         if (it == data_parts_by_info.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "left and right parts in the wrong order, left part {}, right part {}. It's a bug", left.name, right.name);
 
-        /// A part left behind by a rolled back transaction is skipped when loading parts, so it can
-        /// never intersect the merge result and must not hold the merge back.
-        if ((*it)->version->getInfo().creation_csn == Tx::RolledBackCSN)
-            continue;
+        level = std::max(level, (*it)->info.level);
 
-        result.level = std::max(result.level, (*it)->info.level);
-        result.mutation = std::max(result.mutation, (*it)->info.mutation);
+        /// A part whose creation was rolled back is deactivated on load, so it never takes part in
+        /// the intersection check and cannot be the one that fails to load.
+        if ((*it)->version->getInfo().creation_csn != Tx::RolledBackCSN)
+            mutation = std::max(mutation, (*it)->info.mutation);
     }
 
-    return result;
+    return {level, mutation};
 }
 
 bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)

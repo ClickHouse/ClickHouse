@@ -8,13 +8,8 @@ set -e
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS table_with_mutated_gap SYNC;"
 
-# old_parts_lifetime keeps the outdated directory on disk, as 02521_merge_over_gap does.
-# max_bytes_to_merge_at_max_space_in_pool = 0 disables background merges while leaving
-# explicit OPTIMIZE and mutations working; SYSTEM STOP MERGES would also stop mutation
-# selection, so the mutation below would never run.
-# The cleanup delays are lowered because the empty part becoming Outdated is what this
-# test waits for: at the defaults that transition takes cleanup_delay_period plus up to
-# cleanup_delay_period_random_add seconds, which dominates the whole runtime.
+# max_bytes_to_merge_at_max_space_in_pool = 0 disables background merges while leaving explicit
+# OPTIMIZE and mutations working; SYSTEM STOP MERGES would also stop mutation selection.
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE table_with_mutated_gap (x UInt64, s String) ENGINE = MergeTree() ORDER BY x
     SETTINGS old_parts_lifetime = 10000, max_bytes_to_merge_at_max_space_in_pool = 0,
@@ -24,19 +19,16 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --query "INSERT INTO table_with_mutated_gap VALUES (1, 'left');"
 $CLICKHOUSE_CLIENT --query "INSERT INTO table_with_mutated_gap VALUES (2, 'middle');"
 
-# One row-dependent mutation: it deletes every row of the middle part, and throws on the
-# left one. The middle part therefore reaches a higher mutation version than its
-# neighbours while every level stays 0. A mutation that completes on all parts cannot
-# build the gap: every active part would reach the same version, and the merge result
-# would then contain the gap part.
+# Deletes every row of the middle part and throws on the left one, so only the middle part
+# advances its mutation version. A mutation that completes everywhere cannot build the gap:
+# every active part would reach the same version.
 $CLICKHOUSE_CLIENT --query "
     ALTER TABLE table_with_mutated_gap DELETE WHERE x = 2 OR throwIf(s = 'left', 'poison')
     SETTINGS mutations_sync = 0;"
 
-# Mutation work is per part and its outcomes are published independently, so a non-empty
-# latest_fail_reason can become visible before the middle part's empty result is committed.
-# The KILL below cancels the still pending task, which would leave no gap part at all, so
-# wait for that part to exist too: a committed part can no longer be cancelled.
+# Per-part outcomes are published independently, so latest_fail_reason can become non-empty
+# before the middle part's empty result is committed. Waiting for that part too is required:
+# the KILL below cancels a still pending task, and a committed part can no longer be cancelled.
 for _ in {1..120}; do
     failed=$($CLICKHOUSE_CLIENT --query "
         SELECT count() FROM system.mutations
@@ -49,14 +41,12 @@ for _ in {1..120}; do
 done
 $CLICKHOUSE_CLIENT --query "SELECT 'mutation failed on one part', $failed == 1;"
 
-# Killing the mutation leaves the left part at its lower version and lets merge
-# selection consider the range again.
+# Leaves the left part at its lower version and lets merge selection consider the range again.
 $CLICKHOUSE_CLIENT --query "
     KILL MUTATION WHERE table = 'table_with_mutated_gap' AND database = currentDatabase() SYNC FORMAT Null;"
 
-# The empty mutation result must become Outdated before it is a gap rather than a merge
-# source: the collector takes active parts only. clearEmptyParts does that in a
-# background task.
+# The empty mutation result is a gap only once it is Outdated: the collector takes active parts
+# only. clearEmptyParts does that in a background task.
 for _ in {1..120}; do
     outdated=$($CLICKHOUSE_CLIENT --query "
         SELECT count() FROM system.parts
@@ -75,8 +65,8 @@ $CLICKHOUSE_CLIENT --query "
     WHERE table = 'table_with_mutated_gap' AND database = currentDatabase()
     ORDER BY min_block_number, max_block_number, level, name;"
 
-# The gap part's mutation version strictly exceeds both neighbours' while all levels are
-# equal, which is what the level-only form of this check cannot see.
+# Asserts the shape the merge below must refuse: the gap part's mutation version strictly
+# exceeds both neighbours' while all levels are equal.
 $CLICKHOUSE_CLIENT --query "
     SELECT 'gap mutation exceeds neighbours, levels equal',
            max(if(rows = 0, mutation, 0)) > max(if(rows = 0, 0, mutation)),
@@ -92,10 +82,8 @@ $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE table_with_mutated_gap FINAL SETTINGS
   grep "There is an outdated part in a gap between two active parts" |\
   grep -o "CANNOT_ASSIGN_OPTIMIZE" | uniq || echo "NO ERROR"
 
-# The refusal alone does not prove the table still loads: before the mutation term was
-# added, the merge above produced a part intersecting the outdated one, and this reattach
-# failed with the `LOGICAL_ERROR` "intersects previous part ... manual intervention",
-# which aborts the server in debug and sanitizer builds.
+# Loading the parts is what rejects an intersecting pair, so the refusal above is only
+# meaningful together with a reattach.
 $CLICKHOUSE_CLIENT --query "DETACH TABLE table_with_mutated_gap;"
 $CLICKHOUSE_CLIENT --query "ATTACH TABLE table_with_mutated_gap;"
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT LOADING PARTS table_with_mutated_gap;"
