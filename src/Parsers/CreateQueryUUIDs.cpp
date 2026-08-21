@@ -55,10 +55,7 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
     }
 
-    /// Whether a CREATE TABLE ... ENGINE=TimeSeries query enables the optional "recent samples" inner table,
-    /// i.e. whether its SETTINGS clause sets `recent_samples_ttl_seconds` to a non-zero value.
-    /// The setting is checked here syntactically because the UUIDs are generated before the TimeSeries
-    /// storage (which owns the settings) is created.
+    /// Whether a CREATE TABLE ... ENGINE=TimeSeries query has the "recent samples" table, i.e. whether its SETTINGS clause carries a non-zero `recent_samples_ttl_seconds`: the check is syntactic because the UUIDs are generated before the storage owning the settings exists, and the normalization pins the on-by-default TTL into the clause before UUIDs are generated.
     bool hasTimeSeriesRecentSamplesTable(const ASTCreateQuery & query)
     {
         if (!query.storage || !query.storage->settings)

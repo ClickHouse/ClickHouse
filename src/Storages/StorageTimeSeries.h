@@ -61,8 +61,7 @@ public:
         return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics, ViewTarget::RecentSamples};
     }
 
-    /// Returns the kinds of the targets of this table: Samples, Tags, Metrics,
-    /// and RecentSamples if the recent samples table is enabled.
+    /// Returns the kinds of the targets of this table: Samples, Tags, Metrics, and RecentSamples if the recent samples table is enabled.
     std::vector<ViewTarget::Kind> getTargetKinds() const;
 
     void readImpl(
@@ -115,8 +114,7 @@ public:
 #endif
 
 private:
-    /// Represents one of the target tables (Samples, Tags, Metrics, or the optional RecentSamples).
-    /// `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
+    /// Represents one of the target tables; `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
     struct Target
     {
         ViewTarget::Kind kind{};
@@ -124,8 +122,7 @@ private:
         bool is_inner_table = false;
     };
 
-    /// Initializes information about the target tables (Samples, Tags, Metrics, and RecentSamples if enabled).
-    /// The function also creates inner tables (unless this is an ATTACH query).
+    /// Initializes information about the target tables and creates the inner ones (unless this is an ATTACH query).
     static std::vector<Target> buildTargets(
         const ASTCreateQuery & create_query,
         const StorageID & table_id,

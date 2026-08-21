@@ -1,7 +1,6 @@
 -- Tags: no-fasttest, no-replicated-database
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
--- Tag no-replicated-database: `DatabaseReplicated::dropTable` does not drop `TimeSeries` inner tables
--- synchronously, so the deferred inner DROPs are rejected with "ON CLUSTER is not allowed for Replicated database".
+-- Tag no-replicated-database: `DatabaseReplicated::dropTable` does not drop `TimeSeries` inner tables synchronously, so the deferred inner DROPs are rejected with "ON CLUSTER is not allowed for Replicated database".
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -15,7 +14,7 @@ SELECT '-- the recent samples inner table exists';
 
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%';
 
-SELECT '-- the recent samples inner table is partitioned by day, has the TTL and ttl_only_drop_parts';
+SELECT '-- the recent samples inner table is partitioned by 5-hour buckets by default, has the TTL and ttl_only_drop_parts';
 
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%';
 
@@ -113,14 +112,14 @@ SELECT value FROM prometheusQuery(ts_recent_ext, 'ext_metric', now());
 DROP TABLE ts_recent_ext;
 DROP TABLE recent_ext;
 
-SELECT '-- settings of the recent samples table require recent_samples_ttl_seconds';
+SELECT '-- settings of the recent samples table require a non-zero recent_samples_ttl_seconds';
 
-CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_partition_by = 'toStartOfHour(timestamp)'; -- { serverError INVALID_SETTING_VALUE }
-CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_index_granularity = 4096; -- { serverError INVALID_SETTING_VALUE }
+CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, recent_samples_partition_by = 'toStartOfHour(timestamp)'; -- { serverError INVALID_SETTING_VALUE }
+CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, recent_samples_index_granularity = 4096; -- { serverError INVALID_SETTING_VALUE }
 
-SELECT '-- a RECENT SAMPLES clause requires recent_samples_ttl_seconds';
+SELECT '-- a RECENT SAMPLES clause requires a non-zero recent_samples_ttl_seconds';
 
-CREATE TABLE ts_recent_bad ENGINE = TimeSeries RECENT SAMPLES ENGINE = MergeTree ORDER BY (id, timestamp); -- { serverError INCORRECT_QUERY }
+CREATE TABLE ts_recent_bad ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 RECENT SAMPLES ENGINE = MergeTree ORDER BY (id, timestamp); -- { serverError INCORRECT_QUERY }
 
 SELECT '-- the recent samples inner table requires a MergeTree-family engine';
 

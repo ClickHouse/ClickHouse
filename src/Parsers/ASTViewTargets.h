@@ -41,9 +41,7 @@ struct ViewTarget
         /// The "metrics" table for a TimeSeries table, contains general information (metadata) about metrics.
         Metrics,
 
-        /// The optional "recent samples" table for a TimeSeries table. It contains a copy of the samples
-        /// newer than the TTL configured by the `recent_samples_ttl_seconds` setting, fed by an inner
-        /// materialized view, and is preferred for reading when a query's time range fits in the TTL window.
+        /// The optional "recent samples" table of a TimeSeries table: a copy of the samples newer than the TTL configured by `recent_samples_ttl_seconds`, written on every insert and preferred for reading when a query's time range fits in the TTL window.
         RecentSamples,
     };
 
