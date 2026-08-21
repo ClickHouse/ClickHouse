@@ -171,6 +171,33 @@ SkipIndexClearFiles collectSkipIndexClearFiles(
     return result;
 }
 
+bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const MergeTreeIndexPtr & index)
+{
+    const auto & checksums = part.checksums;
+    const auto & storage = part.getDataPartStorage();
+    const IDataPartStorage * storage_for_discovery
+        = storage.getType() == MergeTreeDataPartStorageType::Full ? nullptr : &storage;
+    const NameSet candidates = getSkipIndexSubstreamFileNames(
+        {index},
+        part.getMarksFileExtension(),
+        checksums,
+        storage_for_discovery);
+
+    for (const auto & file : candidates)
+    {
+        if (checksums.has(file) || (storage_for_discovery && storage.existsFile(file)))
+            return true;
+    }
+
+    if (checksums.has(String(SKIP_INDICES_PACKED_FILENAME)))
+    {
+        const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&storage);
+        return skipIndexHasFilesInPackedArchive(*index, disk_storage, part.getMarksFileExtension());
+    }
+
+    return false;
+}
+
 bool skipIndexHasFilesInPackedArchive(
     const IMergeTreeIndex & index,
     const DataPartStorageOnDiskBase * storage,

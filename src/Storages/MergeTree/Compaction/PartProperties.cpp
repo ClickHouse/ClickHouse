@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexClearFiles.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/TTLDescription.h>
 
@@ -67,15 +68,29 @@ time_t buildNextIndexClearTTL(StorageMetadataPtr metadata_snapshot, MergeTreeDat
     if (!metadata_snapshot->hasAnyIndexClearTTL())
         return 0;
 
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
+
     time_t next_index_clear_ttl = 0;
     for (const auto & ttl : metadata_snapshot->getIndexClearTTLs())
     {
-        const auto it = part->ttl_infos.index_clear_ttl.find(ttl.result_column);
-        if (it == part->ttl_infos.index_clear_ttl.end() || it->second.finished())
+        const auto ttl_info_it = part->ttl_infos.index_clear_ttl.find(ttl.result_column);
+        if (ttl_info_it == part->ttl_infos.index_clear_ttl.end() || ttl_info_it->second.finished())
             continue;
 
-        const time_t max_ttl = it->second.max;
+        const time_t max_ttl = ttl_info_it->second.max;
         if (!max_ttl || max_ttl > current_time || (next_index_clear_ttl && next_index_clear_ttl <= max_ttl))
+            continue;
+
+        const auto index_it = std::find_if(
+            secondary_indices.begin(),
+            secondary_indices.end(),
+            [&](const auto & index) { return index.name == ttl.index_name; });
+        if (index_it == secondary_indices.end())
+            continue;
+
+        const auto index = index_factory.get(metadata_snapshot, *index_it, *part->storage.getSettings());
+        if (!partHasSkipIndexFiles(*part, index))
             continue;
 
         next_index_clear_ttl = max_ttl;
