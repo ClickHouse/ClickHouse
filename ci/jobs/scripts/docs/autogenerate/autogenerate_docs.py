@@ -496,6 +496,45 @@ def window_function_generators(docs_dir, file_map):
     return gens
 
 
+DICTIONARY_SOURCE_PAGE_ALIASES = {
+    "executable-file": "executable",
+    "executable-pool": "executable_pool",
+    "local-file": "file",
+}
+
+
+def dictionary_source_generators(docs_dir, file_map):
+    # One page per dictionary source, discovered from the migrated docs tree.
+    # The source registrations expose their complete page bodies through
+    # `system.dictionary_sources`. A few website filenames use a more
+    # descriptive name than the `SOURCE` clause, so bridge those names
+    # explicitly.
+    gens = []
+    for docu, mint in sorted(file_map.items()):
+        if "/statements/create/dictionary/sources/" not in mint or not mint.endswith(".mdx"):
+            continue
+        page = os.path.join(docs_dir, mint)
+        if not os.path.isfile(page):
+            continue
+        with open(page, encoding="utf-8") as f:
+            if not START_RE.search(f.read()):
+                continue
+        basename = os.path.basename(mint)[: -len(".mdx")]
+        gens.append({
+            "name": f"dictionary-source:{basename}",
+            "sql": ["generate-dictionary-sources.sql"],
+            "params": {
+                "source": DICTIONARY_SOURCE_PAGE_ALIASES.get(basename, basename)
+            },
+            "outfile": "temp-dictionary-source.md",
+            "dest": docu,
+            "method": "markers",
+            "skip_if_empty": True,
+            "full_transform": True,
+        })
+    return gens
+
+
 ALL_GENERATORS = SETTINGS_GENERATORS + FUNCTION_GENERATORS
 
 
@@ -738,7 +777,7 @@ def _flat_setting_page(base_route, prefix, sections):
     )
 
 
-def group_session_settings(
+def _group_session_settings_fresh(
         sections,
         base_route=SESSION_SETTINGS_BASE_ROUTE):
     first_token_groups = _token_groups(sections, 1)
@@ -791,6 +830,109 @@ def group_session_settings(
             "flat settings hierarchy has duplicate routes: "
             + ", ".join(duplicates))
     return pages
+
+
+def _setting_page_for_route(base_route, route, route_definition=None):
+    prefix = base_route.rstrip("/") + "/"
+    if not route.startswith(prefix):
+        raise ValueError(
+            f"generated settings route {route!r} is outside {base_route!r}")
+
+    parts = tuple(part for part in route[len(prefix):].split("/") if part)
+    if not parts:
+        raise ValueError(f"generated settings route {route!r} has no page")
+
+    if route == prefix + "other":
+        return SettingPage(
+            base_route=base_route,
+            parts=parts,
+            label="Other",
+            match_prefix="",
+            match_mode="raw",
+        )
+
+    route_definition = route_definition or {}
+    match_prefix = route_definition.get("prefix")
+    if not match_prefix:
+        match_prefix = "_".join(parts).replace("-", "_")
+    return SettingPage(
+        base_route=base_route,
+        parts=parts,
+        label=f"{match_prefix}_*",
+        match_prefix=match_prefix,
+        match_mode=route_definition.get("mode", "token"),
+    )
+
+
+def group_session_settings(
+        sections,
+        base_route=SESSION_SETTINGS_BASE_ROUTE,
+        previous_manifest=None):
+    """Group settings without changing the page of an existing setting.
+
+    The committed manifest is the routing contract. New settings first join a
+    matching existing page; only the remaining new settings participate in the
+    prefix-count heuristic which can create another page.
+    """
+    if not previous_manifest or not previous_manifest.get("anchorRoutes"):
+        return _group_session_settings_fresh(sections, base_route)
+
+    previous_anchor_routes = previous_manifest["anchorRoutes"]
+    previous_routes = previous_manifest.get("routes", [])
+    route_definitions = {
+        route["target"]: route
+        for route in previous_routes
+        if route.get("target")
+    }
+    other_route = base_route.rstrip("/") + "/other"
+    specific_previous_routes = [
+        route for route in previous_routes
+        if route.get("target") != other_route and route.get("prefix")
+    ]
+
+    assigned_routes = {}
+    new_sections = []
+    for section in sections:
+        previous_route = previous_anchor_routes.get(section.anchor)
+        if previous_route:
+            assigned_routes[section.name] = previous_route
+            continue
+
+        try:
+            assigned_routes[section.name] = setting_route(
+                section.name, specific_previous_routes)
+        except ValueError:
+            new_sections.append(section)
+
+    new_pages = _group_session_settings_fresh(new_sections, base_route)
+    page_definitions = {}
+    for page in new_pages:
+        page_definitions[page.route] = page
+        for section in page.sections:
+            assigned_routes[section.name] = page.route
+
+    sections_by_route = {}
+    for section in sections:
+        route = assigned_routes[section.name]
+        if not route.startswith(base_route.rstrip("/") + "/"):
+            raise ValueError(
+                f"previous route {route!r} for {section.name!r} is outside "
+                f"{base_route!r}")
+        sections_by_route.setdefault(route, []).append(section)
+
+    pages = []
+    for route, grouped_sections in sections_by_route.items():
+        page = page_definitions.get(route)
+        if page is None:
+            page = _setting_page_for_route(
+                base_route, route, route_definitions.get(route))
+        page.sections = grouped_sections
+        pages.append(page)
+
+    return sorted(
+        pages,
+        key=lambda page: (page.route == other_route, page.route),
+    )
 
 
 def walk_setting_pages(pages):
@@ -1097,7 +1239,7 @@ def _navigation_entry(page):
 def _settings_explorer(family):
     return (
         f"## {family['browse_title']}\n\n"
-        f"<{family['component_name']} />\n"
+        f'<{family["component_name"]} href="{family["base_route"]}" />\n'
     )
 
 
@@ -1106,7 +1248,9 @@ def _strip_settings_explorer(preamble, family):
     pattern = re.compile(
         rf"^[ \t]*##[ \t]+{re.escape(family['browse_title'])}"
         rf"(?:[ \t]+\{{#[^}}\n]+\}})?[ \t]*\n+"
-        rf"[ \t]*<{re.escape(family['component_name'])}[ \t]*/>[ \t]*(?:\n+|$)",
+        rf"[ \t]*<{re.escape(family['component_name'])}"
+        rf"(?:[ \t]+href=(?:\"[^\"\n]+\"|'[^'\n]+'))?"
+        rf"[ \t]*/>[ \t]*(?:\n+|$)",
         re.MULTILINE,
     )
     return pattern.sub("", preamble).strip()
@@ -1144,9 +1288,15 @@ def _settings_explorer_component(pages, family=None):
         return len(page.sections) + sum(subtree_count(child) for child in page.children)
 
     def explorer_setting(section, page):
+        base_route = family["base_route"].rstrip("/")
+        relative_route = page.route.removeprefix(base_route)
+        if not relative_route.startswith("/"):
+            raise ValueError(
+                f"Explorer route {page.route!r} is outside {base_route!r}"
+            )
         entry = {
             "name": section.name,
-            "href": f"{page.route}#{section.anchor}",
+            "path": f"{relative_route}#{section.anchor}",
         }
         default_value = section.default_value
         if default_value is None and family["component_name"] != "ServerSettingsExplorer":
@@ -1171,7 +1321,7 @@ def _settings_explorer_component(pages, family=None):
 
     entries_json = json.dumps(
         [explorer_entry(page) for page in pages], separators=(",", ":"))
-    template = '''const __COMPONENT_NAME__ = () => {
+    template = '''const __COMPONENT_NAME__ = ({ href: baseRoute }) => {
   // Mintlify's production renderer evaluates the exported component without
   // preserving module-scope bindings. Lazy state keeps the generated data in
   // that evaluation scope while constructing it only once per mount.
@@ -1337,7 +1487,7 @@ def _settings_explorer_component(pages, family=None):
                 <span aria-hidden="true" className="w-4 shrink-0" />
                 {branch(branchPrefix(childContinuations, itemIsLast))}
                 <a
-                  href={`/docs${item.value.href}`}
+                  href={`https://clickhouse.com/docs${baseRoute}${item.value.path}`}
                   className="min-w-0 whitespace-normal no-underline hover:underline"
                   style={{ overflowWrap: "anywhere" }}
                 >
@@ -1449,9 +1599,14 @@ export default __COMPONENT_NAME__;
 def split_settings_page(dest, content, docs_dir, family_name):
     family = SETTINGS_SPLIT_FAMILIES[family_name]
     root_frontmatter, preamble, sections = parse_settings_page(content)
+    manifest_path = _settings_manifest_path(docs_dir, family)
+    previous_manifest = None
+    if manifest_path.is_file():
+        previous_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     pages = group_session_settings(
         sections,
         base_route=family["base_route"],
+        previous_manifest=previous_manifest,
     )
     routes = session_settings_routes(pages)
     anchor_routes = _settings_anchor_routes(pages, preamble, sections)
@@ -1459,7 +1614,6 @@ def split_settings_page(dest, content, docs_dir, family_name):
     current_routes = {
         page.route for page in walk_setting_pages(pages) if page.sections
     }
-    manifest_path = shard_dir / "manifest.json"
 
     preamble_without_imports = IMPORT_RE.sub("", preamble).strip()
     # Mintlify renders the frontmatter title as the page H1. Some generated
@@ -1686,6 +1840,22 @@ def reconcile_generated_artifacts(
     return drift
 
 
+def select_generators(generators, only=None):
+    """Select generators while preserving dependencies between their outputs."""
+    selected_names = {
+        generator["name"]
+        for generator in generators
+        if not only or only in generator["name"]
+    }
+    if any(name in SETTINGS_SPLIT_FAMILIES for name in selected_names):
+        selected_names.add("beta-and-experimental")
+    return [
+        generator
+        for generator in generators
+        if generator["name"] in selected_names
+    ]
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1699,7 +1869,13 @@ def main(argv=None):
                       help="fail if regenerated output differs from committed docs")
     p.add_argument("--no-remap-legacy", dest="remap", action="store_false",
                    help="emit paths/links as the SQL produces them (Mintlify-native)")
-    p.add_argument("--only", help="only run generators whose name contains this substring")
+    p.add_argument(
+        "--only",
+        help=(
+            "run generators whose name contains this substring, plus any "
+            "generators that depend on their output"
+        ),
+    )
     args = p.parse_args(argv)
 
     binary = os.path.abspath(args.binary)
@@ -1708,8 +1884,9 @@ def main(argv=None):
     slug_map = args.slug_map or os.path.join(docs_dir, "_migration", "slug-map.csv")
 
     # The component-reference families (table/database engines, data types, formats,
-    # table/window functions) discover their pages by iterating the slug map
-    # (file_map), so build it even for a --no-remap-legacy run: those generators'
+    # table/window functions, dictionary sources) discover their pages by
+    # iterating the slug map (file_map), so build it even for a
+    # --no-remap-legacy run: those generators'
     # names are what the fast-fail check needs to tell whether the current selection
     # targets a family such a run cannot produce. The link/import remapping itself
     # only runs under --remap-legacy, so drop `migrate`/`lk` afterwards in that mode.
@@ -1725,6 +1902,7 @@ def main(argv=None):
         format_generators,
         table_function_generators,
         window_function_generators,
+        dictionary_source_generators,
     ]
 
     all_generators = ALL_GENERATORS + aggregate_generators(docs_dir)
@@ -1732,12 +1910,9 @@ def main(argv=None):
     for builder in remap_only_families:
         legacy_generators += builder(docs_dir, file_map)
 
-    # `--only` is a plain substring match on generator names; apply exactly that in
-    # both the fast-fail check and the final selection so the two can never disagree
-    # (a substring that targets a family, e.g. `--only newjson`, must be caught).
-    def selected(gens):
-        return [g for g in gens if not args.only or args.only in g["name"]]
-
+    # Apply the same substring selection and dependency expansion in the fast-fail
+    # check and the final selection so the two can never disagree (a substring that
+    # targets a family, e.g. `--only newjson`, must be caught).
     if args.remap:
         all_generators += legacy_generators
     else:
@@ -1745,8 +1920,9 @@ def main(argv=None):
         # source is updated to emit Mintlify-native paths (see the module
         # docstring). Today no family can be produced in it:
         #   * the component-reference families (table/database engines, data
-        #     types, formats, table/window functions) are discovered through the
-        #     slug map and need its link/path remapping to even be enumerated;
+        #     types, formats, table/window functions, dictionary sources) are
+        #     discovered through the slug map and need its link/path remapping
+        #     to even be enumerated;
         #   * settings, functions and aggregate carry hard-coded Docusaurus
         #     `dest` paths (e.g. docs/operations/settings/settings.md,
         #     docs/sql-reference/aggregate-functions/reference/<fn>.md) whose
@@ -1757,7 +1933,10 @@ def main(argv=None):
         # So fail fast for the whole selection (a full run, or an --only that
         # matches any generator) instead of dying mid-run, or -- for an --only
         # that matches nothing -- silently generating nothing.
-        blocked = selected(all_generators) + selected(legacy_generators)
+        blocked = (
+            select_generators(all_generators, args.only)
+            + select_generators(legacy_generators, args.only)
+        )
         if blocked:
             families = sorted({g["name"].split(":", 1)[0] for g in blocked})
             raise SystemExit(
@@ -1769,14 +1948,23 @@ def main(argv=None):
                 "with --remap-legacy until the generation source is updated to "
                 "emit Mintlify-native paths.")
 
-    generators = selected(all_generators)
+    generators = select_generators(all_generators, args.only)
     # A selector that matches nothing is a mistake (a typo, or a family unavailable
     # in this mode); never report success while doing nothing.
     if args.only and not generators:
         raise SystemExit(f"error: --only '{args.only}' matched no generator; nothing to do.")
 
     drift = 0
+    selected_generator_names = {gen["name"] for gen in generators}
     generated_settings_manifests = {}
+    if "beta-and-experimental" in selected_generator_names:
+        for family_name, family in SETTINGS_SPLIT_FAMILIES.items():
+            if family_name in selected_generator_names:
+                continue
+            manifest_path = _settings_manifest_path(docs_dir, family)
+            generated_settings_manifests[family_name] = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            )
     for gen in generators:
         artifacts = generate_artifacts(
             gen,

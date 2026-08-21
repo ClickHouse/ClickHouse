@@ -260,19 +260,35 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
 
-    /// The left stream after the key expression carries the keys plus only the columns the key
-    /// expressions do not consume, so a projection reading a consumed column has no input.
+    /// Decline the conversion if the rewritten plan could not resolve some
+    /// input of `join_output_actions`: `mergeInplace` with
+    /// `remove_dangling_inputs = true` would drop the unmatched INPUT (e.g.
+    /// source `L.col` whose only forwarded form is `arrayJoin(L.col)`),
+    /// causing a `NOT_FOUND_COLUMN_IN_BLOCK` exception at execution. The
+    /// check must happen before any plan mutation below. Compare against the
+    /// real post-expression header (`ActionsDAG::updateHeader`: DAG outputs
+    /// plus input columns the DAG does not consume), counting occurrences
+    /// per name, because both `updateHeader` and `mergeInplace` match
+    /// duplicate names by multiplicity.
+    ///
+    /// NB: `ActionsDAG::hasArrayJoin()` on the key sub-DAGs cannot be used to
+    /// gate this — an `arrayJoin` in a JOIN ON key is not represented as an
+    /// `ARRAY_JOIN` DAG node here, so `hasArrayJoin()` returns false and the
+    /// dangling input would slip through. The header-resolution check below is
+    /// what actually detects the consumed column.
     {
-        auto post_left_header = left_pre_join_actions.updateHeader(
-            *parent_node->children.at(0)->step->getOutputHeader());
-        std::unordered_map<std::string_view, size_t> forwarded;
-        for (const auto & column : post_left_header)
-            ++forwarded[column.name];
+        auto join_output_actions_subdag = JoinExpressionActions::getSubDAG(join_output_actions);
+        const auto & left_input_header = parent_node->children.at(0)->step->getOutputHeader();
+        auto post_left_header = left_pre_join_actions.updateHeader(*left_input_header);
 
-        for (const auto * input : JoinExpressionActions::getSubDAG(join_output_actions).getInputs())
+        std::unordered_map<std::string_view, size_t> forwarded_columns;
+        for (const auto & column : post_left_header)
+            ++forwarded_columns[column.name];
+
+        for (const auto * input : join_output_actions_subdag.getInputs())
         {
-            auto it = forwarded.find(input->result_name);
-            if (it == forwarded.end() || it->second == 0)
+            auto it = forwarded_columns.find(input->result_name);
+            if (it == forwarded_columns.end() || it->second == 0)
                 return 0;
             --it->second;
         }

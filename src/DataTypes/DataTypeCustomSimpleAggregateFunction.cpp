@@ -206,7 +206,7 @@ requires keeping track of a sum and a count, which will be divided to get the
 average in a final `Merge` step which combines the intermediate states.
 
 Aggregate function values are commonly produced by calling an aggregate function
-with the [`-SimpleState`](/sql-reference/aggregate-functions/combinators#-simplestate) combinator appended to the function name.
+with the [`-SimpleState`](/reference/functions/aggregate-functions/combinators#-simplestate) combinator appended to the function name.
 
 ## Syntax {#syntax}
 
@@ -258,7 +258,7 @@ CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE
 ## Related Content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
-- [AggregateFunction](/sql-reference/data-types/aggregatefunction) type.
+- [AggregateFunction](/reference/data-types/aggregatefunction) type.
 )DOCS_MD",
             .syntax = "SimpleAggregateFunction(name, types...)",
             .examples = {},

@@ -217,10 +217,12 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     bool show_secrets,
     bool print_pretty_type_names,
     IdentifierQuotingRule identifier_quoting_rule,
-    IdentifierQuotingStyle identifier_quoting_style) const
+    IdentifierQuotingStyle identifier_quoting_style,
+    bool ignore_redundant_parentheses) const
 {
 #if defined(CLICKHOUSE_PARSER_NO_FORMATTING)
-    UNUSED(max_length, one_line, show_secrets, print_pretty_type_names, identifier_quoting_rule, identifier_quoting_style);
+    UNUSED(max_length, one_line, show_secrets, print_pretty_type_names, identifier_quoting_rule, identifier_quoting_style,
+        ignore_redundant_parentheses);
     return "<AST>";  /// Only ever reaches an error message - see above.
 #else
     WriteBufferFromOwnString buf;
@@ -229,6 +231,7 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     settings.print_pretty_type_names = print_pretty_type_names;
     settings.identifier_quoting_rule = identifier_quoting_rule;
     settings.identifier_quoting_style = identifier_quoting_style;
+    settings.ignore_redundant_parentheses = ignore_redundant_parentheses;
     format(buf, settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length, !show_secrets);
 #endif
@@ -287,6 +290,18 @@ String IAST::formatWithSecretsMultiLine() const
         /*print_pretty_type_names=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
+String IAST::formatIgnoringRedundantParentheses() const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        /*show_secrets=*/true,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks,
+        /*ignore_redundant_parentheses=*/true);
 }
 
 bool IAST::childrenHaveSecretParts() const
@@ -447,9 +462,9 @@ void IAST::readJSON(const Poco::JSON::Object & json)
 /// In operator-chain context (`frame.need_parens == true`) we keep the parens here so the output
 /// is `(expr AS alias)`, because the parser would not accept `(expr) AS alias OP rhs` at the top
 /// level of a SELECT element / WHERE clause (the alias terminates the SELECT element parser).
-static bool decideParensEmission(const IAST & node, IAST::FormatStateStacked & frame)
+static bool decideParensEmission(const IAST & node, const IAST::FormatSettings & settings, IAST::FormatStateStacked & frame)
 {
-    const bool parens = node.isParenthesized() && !frame.wrapped_in_parens;
+    const bool parens = node.isParenthesized() && !frame.wrapped_in_parens && !settings.ignore_redundant_parentheses;
     frame.wrapped_in_parens = false;
     if (!parens)
         return false;
@@ -541,7 +556,7 @@ void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
 {
     FormatState state;
     FormatStateStacked frame;
-    const bool parens = decideParensEmission(*this, frame);
+    const bool parens = decideParensEmission(*this, settings, frame);
     if (parens)
         ostr.write('(');
     formatImpl(ostr, settings, state, std::move(frame));
@@ -552,7 +567,7 @@ void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
 void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     checkStackSize();
-    const bool parens = decideParensEmission(*this, frame);
+    const bool parens = decideParensEmission(*this, settings, frame);
     if (parens)
         ostr.write('(');
     formatImpl(ostr, settings, state, std::move(frame));
@@ -563,7 +578,7 @@ void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatSta
 void IAST::format(FormattingBuffer out) const
 {
     checkStackSize();
-    const bool parens = decideParensEmission(*this, out.frame);
+    const bool parens = decideParensEmission(*this, out.settings, out.frame);
     if (parens)
         out.ostr.write('(');
     formatImpl(out.ostr, out.settings, out.state, out.frame);
