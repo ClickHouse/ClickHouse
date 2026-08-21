@@ -102,6 +102,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_IOBufferAllocBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为 IO 缓冲区 (用于 ReadBuffer/WriteBuffer) 分配的字节数。
 * `ProfileEvent_ArenaAllocChunks` ([UInt64](/zh/reference/data-types/int-uint)) — 为内存 Arena 分配的块数 (用于 GROUP BY 和类似操作)
 * `ProfileEvent_ArenaAllocBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为内存 Arena 分配的字节数 (用于 GROUP BY 和类似操作)
+* `ProfileEvent_FiberStackAllocs` ([UInt64](/zh/reference/data-types/int-uint)) — 为 fiber 分配的栈数量 (fiber 用于与远程副本进行异步通信) 。
+* `ProfileEvent_FiberStackAllocBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 为 fiber 栈分配的字节数，包括保护页 (保护页仅用于调试和 sanitizer 构建) 。
+* `ProfileEvent_FiberStackAllocNanoseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分配 fiber 栈所花费的时间。使用纳秒是因为单次分配通常快于一微秒，除非 allocator 或内核存在竞争。
+* `ProfileEvent_FiberStackFreeNanoseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 释放 fiber 栈所花费的时间。
 * `ProfileEvent_FunctionExecute` ([UInt64](/zh/reference/data-types/int-uint)) — SQL 普通函数调用次数 (SQL 函数按块调用，因此该数字表示块数) 。
 * `ProfileEvent_TableFunctionExecute` ([UInt64](/zh/reference/data-types/int-uint)) — 表函数调用次数。
 * `ProfileEvent_DefaultImplementationForNullsRows` ([UInt64](/zh/reference/data-types/int-uint)) — 函数执行期间由用于处理 NULL 值的默认实现处理的行数
@@ -269,14 +273,14 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_QueryRemoteReadThrottlerBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 通过 &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39; 限流器的字节数。
 * `ProfileEvent_QueryRemoteReadThrottlerSleepMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询为遵守 &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39; 限流而休眠的总时间。
 * `ProfileEvent_ReaderExecutorSourceRequests` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 在源端打开的请求数量 (不包括实时缓冲区复用) 。
-* `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 在所有缓存层级均未命中后从数据源读取的物理字节数 (包括前台和后台预取，以及后续丢弃而浪费的预取字节) ；并非提供给消费者的字节数——参见 ReaderExecutorRequestedBytes。
-* `ProfileEvent_ReaderExecutorRequestedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 提供给读取请求的有效字节数 (请求窗口的载荷，不包括额外读取和缓存回写) 。这是建模每字节成本 KPI 的分母 (ReaderExecutorModeledCostMicroseconds / ReaderExecutorRequestedBytes) 。
+* `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 在所有缓存层级均未命中后从数据源读取的物理字节数 (包括前台和后台预取，以及后续丢弃而浪费的预取字节) ；并非提供给消费者的字节数——参见 ReaderExecutorDeliveredBytes。
+* `ProfileEvent_ReaderExecutorDeliveredBytes` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 提供给读取请求的有效字节数 (请求窗口的载荷，不包括额外读取和缓存回写) 。这是建模每字节成本 KPI 的分母 (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes) 。
 * `ProfileEvent_ReaderExecutorCacheGetRequests` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 中 ICacheHandle::get 的调用次数。在引入 ReaderExecutor 缓存层级之前为零。
 * `ProfileEvent_ReaderExecutorCachePopulateRequests` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 中 ICacheHandle::put 的调用次数。在引入 ReaderExecutor 缓存层级之前为零。
 * `ProfileEvent_ReaderExecutorIncompleteConnections` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 在将数据源连接读取至其右边界前丢弃的连接数量；这些连接无法由连接池复用，因而必须重新建立。在引入 ReaderExecutor 活跃数据源缓冲区复用之前为零。
 * `ProfileEvent_ReaderExecutorWorkMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 ReaderExecutor::readNextWindow 内花费的总挂钟时间 (打开、寻道和读取所提供的窗口) 。直接影响查询读取延迟。
 * `ProfileEvent_ReaderExecutorDecryptMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 就地解密所提供载荷的耗时 (CTR、可按位置寻址) 。对于未加密读取以及不含 SSL 的构建，该值为零。
-* `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 读取的建模 I/O 成本：用于衡量读取路径最优性的合成代理 KPI，而非实测延迟。使用启发式 S3 权重对上述计数器加权求和：每个数据源请求 30ms + 每个未完成连接 5ms + 从数据源传输的每 MiB 20ms (有效载荷加额外读取) + 每次缓存 put 0.1ms + 每次缓存 get 0.05ms。除以 ReaderExecutorRequestedBytes 可得到与负载无关的每字节成本。Experimental，跟踪 Experimental ReaderExecutor。
+* `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 读取的建模 I/O 成本：用于衡量读取路径最优性的合成代理 KPI，而非实测延迟。使用启发式 S3 权重对上述计数器加权求和：每个数据源请求 30ms + 每个未完成连接 5ms + 从数据源传输的每 MiB 20ms (有效载荷加额外读取) + 每次缓存 put 0.1ms + 每次缓存 get 0.05ms。除以 ReaderExecutorDeliveredBytes 可得到与负载无关的每字节成本。Experimental，跟踪 Experimental ReaderExecutor。
 * `ProfileEvent_ReaderExecutorLongConnectionOpened` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 为优化顺序读取而打开的长数据源连接数量。
 * `ProfileEvent_ReaderExecutorLongConnectionHits` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 通过已打开的长数据源连接读取所提供的窗口数量。
 * `ProfileEvent_ReaderExecutorLongConnectionFallbacks` ([UInt64](/zh/reference/data-types/int-uint)) — ReaderExecutor 希望使用长连接，但因没有可用插槽而回退到一次性读取的次数。
@@ -298,6 +302,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中已应用的补丁分区片段总数
 * `ProfileEvent_PatchesMergeAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中以 Merge 模式应用的补丁分区片段总数
 * `ProfileEvent_PatchesJoinAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中以 Join 模式应用的补丁分区片段总数
+* `ProfileEvent_PatchesMergeOnKeyAppliedInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中以 MergeOnKey 模式 (v2) 应用的补丁分区片段总数
 * `ProfileEvent_PatchesReadRows` ([UInt64](/zh/reference/data-types/int-uint)) — 从补丁分区片段中读取的行总数
 * `ProfileEvent_PatchesReadUncompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从补丁分区片段中读取的未压缩字节总数
 * `ProfileEvent_PatchesJoinRowsAddedToHashTable` ([UInt64](/zh/reference/data-types/int-uint)) — 以 Join 模式应用补丁分区片段时添加到哈希表的行总数
@@ -305,6 +310,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 读取补丁分区片段所花费的总时间
 * `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为以 Merge 模式应用补丁分区片段而构建索引所花费的总时间
 * `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 为以 Join 模式应用补丁分区片段而构建索引和哈希表所花费的总时间
+* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 applyPatchesMergeOnKey 排序键合并循环中所花费的总时间
 * `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分析补丁分区片段索引所花费的总时间
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/zh/reference/data-types/int-uint)) — 即时应用了任意变更的读取任务总数
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 所有读取任务中即时应用的变更总数
@@ -903,6 +909,21 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从 RemoteReadBufferCache 的本地缓存缓冲区读取的字节数
 * `ProfileEvent_MainConfigLoads` ([UInt64](/zh/reference/data-types/int-uint)) — 重新加载主配置的次数。
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/zh/reference/data-types/int-uint)) — 聚合时在哈希表中预分配的元素数量。
+* `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在冻结阈值处冻结的本地哈希表数量。
+* `ProfileEvent_AdaptiveAggregationGiveUps` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合中因其 stream 持有的不同键较少而放弃冻结的线程数量。
+* `ProfileEvent_AdaptiveAggregationPressureStandDowns` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合中因内存压力超过外部聚合阈值而永久退出学习阶段的线程数量，因此其本地表会通过普通外部聚合落盘。
+* `ProfileEvent_AdaptiveAggregationThaws` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合因暂存 stream 被证明由重复记录主导而解冻本地表的次数。
+* `ProfileEvent_AdaptiveAggregationProbeBypasses` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合中因几乎没有行命中冻结的本地表而停止探测该表的线程数量。
+* `ProfileEvent_AdaptiveAggregationStagedRecords` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在去重前暂存的延迟记录数量。
+* `ProfileEvent_AdaptiveAggregationStagedRecordsMerged` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在发布和封存时作为重复键合并掉的暂存记录数。
+* `ProfileEvent_AdaptiveAggregationStagedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合为合并时排空而暂存的键字节数。
+* `ProfileEvent_AdaptiveAggregationSealedChunks` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合从缓冲的暂存批次中封存的合并块数量。
+* `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/zh/reference/data-types/int-uint)) — 由于缓冲批次在某个参数位置不一致，自适应聚合封存时归一化列表示的次数。
+* `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在合并时排入共享表的延迟记录数。
+* `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/zh/reference/data-types/int-uint)) — 因内存压力而提前排空暂存记录的次数。
+* `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/zh/reference/data-types/int-uint)) — 自适应聚合在内存压力下提前排空的暂存记录数。
+* `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/zh/reference/data-types/int-uint)) — 在合并和转换完成后、整个合并结束前立即释放其工作内存 (Arena 插槽、暂存块引用) 的两级桶数量。
+* `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/zh/reference/data-types/int-uint)) — 通过桶本地 Top-K 选择 (aggregationBucketTopK 查询计划优化) 转换的两级桶数量。
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/zh/reference/data-types/int-uint)) — 聚合时初始化为两级哈希表的数量。
 * `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/zh/reference/data-types/int-uint)) — 运行时将单层聚合哈希表转换为两级哈希表的次数。
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/zh/reference/data-types/int-uint)) — 应用了相等键范围优化的块数
@@ -1107,6 +1128,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_MergerMutatorSelectRangePartsCount` ([UInt64](/zh/reference/data-types/int-uint)) — 选定合并范围中的分片数量
 * `ProfileEvent_ConnectionPoolIsFullMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 等待 connection pool 中可用 slot 的总耗时。
 * `ProfileEvent_AsyncLoaderWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 查询等待异步 loader 作业的总耗时。
+* `ProfileEvent_AsyncLoaderSpawnFailures` ([UInt64](/zh/reference/data-types/int-uint)) — 由于全局线程池无法提供线程，异步加载器无法创建工作线程的次数。随后，队列中的作业会由线程池已有的工作线程运行：正在运行的工作线程，或从等待其他池作业的状态恢复的工作线程。
 * `ProfileEvent_DistrCacheServerSwitches` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。在读穿/写穿缓存中，分布式缓存服务器之间切换的次数
 * `ProfileEvent_DistrCacheReadMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。从分布式缓存读取所花费的时间
 * `ProfileEvent_DistrCacheFallbackReadMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 分布式缓存读取缓冲区事件。从后备缓冲区而非分布式缓存读取所花费的时间
@@ -1292,6 +1314,10 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/zh/reference/data-types/int-uint)) — 提交线程从提交预读读取器的已解码窗口获取的日志条目数 (快速路径弹出或窗口首项排空弹出)
 * `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 Keeper 更新日志的字节数
 * `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 更新日志执行 fsync 所花费的时间 (仅未压缩日志)
+* `ProfileEvent_KeeperChangelogStartupReadMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 启动期间并行读取更新日志所花费的墙钟时间
+* `ProfileEvent_KeeperChangelogStartupStitchMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 将各文件并行启动读取结果整合为 LogEntryStorage 状态所花费的墙钟时间
+* `ProfileEvent_KeeperChangelogStartupReadEntries` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 并行启动读取器验证的更新日志记录数
+* `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 并行启动读取器从更新日志文件读取的物理字节数 (校验和 + 请求头 + blob)
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 Keeper 快照文件的字节数
 * `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — Keeper 快照文件执行 fsync 所花费的时间
 * `ProfileEvent_StorageConnectionsCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 已创建的存储连接数
@@ -1383,6 +1409,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — executable&#95;pool 用户自定义函数池耗尽时等待 tryBorrowObject 所花费的时间 (微秒) 。
 * `ProfileEvent_ParquetReadRowGroups` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 数据中读取的行组总数
 * `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Parquet 数据中被剪枝的行组总数
+* `ProfileEvent_ParquetReadPages` ([UInt64](/zh/reference/data-types/int-uint)) — 读取的 Parquet 数据页总数
 * `ProfileEvent_ParquetPrunedPages` ([UInt64](/zh/reference/data-types/int-uint)) — 通过列索引从 Parquet 数据中被剪枝的页面总数
 * `ProfileEvent_ParquetDecodingTasks` ([UInt64](/zh/reference/data-types/int-uint)) — 由 Parquet 读取器发出的任务数
 * `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/zh/reference/data-types/int-uint)) — 由 Parquet 读取器发送到线程池的任务批次
