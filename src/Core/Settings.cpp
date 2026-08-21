@@ -20,6 +20,9 @@
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
 #include <Common/NamePrompter.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+
+#include <utility>
 #include <Common/typeid_cast.h>
 
 #include <boost/program_options.hpp>
@@ -8969,14 +8972,23 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
+    void setDefaultValue(std::string_view name);
 
     bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
     void resetSettingsChangedByCompatibility();
+
+    void rememberBeforeDistributedPlanAdjustment(std::string_view name);
+    void restoreDistributedPlanAdjustments();
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
     UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
+
+    /// The pre-override (value, changed) of the settings force-adjusted for a derived distributed
+    /// plan, so the overrides can be undone when the plan turns off. Not serialized: a receiver
+    /// re-derives the plan and re-adjusts from the changes it gets.
+    UnorderedMapWithMemoryTracking<std::string_view, std::pair<Field, bool>> settings_adjusted_for_distributed_plan;
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -9124,7 +9136,42 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
         settings_changed_by_compatibility_setting.erase(final_name);
 
+    /// An explicit change takes the setting out of the distributed-plan adjustment memory, so
+    /// turning the derived plan off does not overwrite the new value with the remembered one.
+    if (!settings_adjusted_for_distributed_plan.empty())
+        settings_adjusted_for_distributed_plan.erase(SettingsTraits::resolveName(name));
+
     BaseSettings::set(name, value);
+}
+
+void SettingsImpl::setDefaultValue(std::string_view name)
+{
+    /// `SET name = DEFAULT` is an explicit change like any other - see the note in set().
+    if (!settings_adjusted_for_distributed_plan.empty())
+        settings_adjusted_for_distributed_plan.erase(SettingsTraits::resolveName(name));
+
+    resetToDefault(name);
+}
+
+void SettingsImpl::rememberBeforeDistributedPlanAdjustment(std::string_view name)
+{
+    auto final_name = SettingsTraits::resolveName(name);
+    if (settings_adjusted_for_distributed_plan.contains(final_name))
+        return;
+
+    settings_adjusted_for_distributed_plan.emplace(final_name, std::pair{get(final_name), isChanged(final_name)});
+}
+
+void SettingsImpl::restoreDistributedPlanAdjustments()
+{
+    const auto remembered = std::exchange(settings_adjusted_for_distributed_plan, {});
+    for (const auto & [name, value_and_changed] : remembered)
+    {
+        if (value_and_changed.second)
+            BaseSettings::set(name, value_and_changed.first);
+        else
+            resetToDefault(name);
+    }
 }
 
 void SettingsImpl::resetSettingsChangedByCompatibility()
@@ -9252,7 +9299,17 @@ void Settings::set(std::string_view name, const Field & value)
 
 void Settings::setDefaultValue(std::string_view name)
 {
-    impl->resetToDefault(name);
+    impl->setDefaultValue(name);
+}
+
+void Settings::rememberBeforeDistributedPlanAdjustment(std::string_view name)
+{
+    impl->rememberBeforeDistributedPlanAdjustment(name);
+}
+
+void Settings::restoreDistributedPlanAdjustments()
+{
+    impl->restoreDistributedPlanAdjustments();
 }
 
 bool Settings::hasSettingsChangedByCompatibility() const
