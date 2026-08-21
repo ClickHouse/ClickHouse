@@ -1345,18 +1345,22 @@ void ColumnObject::updateHashFast(SipHash & hash) const
 
 ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    UnorderedMapWithMemoryTracking<String, ColumnPtr> filtered_typed_paths;
+    /// The columns below are freshly created here and nobody else references them, so
+    /// `IColumn::mutate` on an rvalue only detaches them without copying. Passing them to the
+    /// `const ColumnPtr &` overload of `create` instead would leave the local copies alive and
+    /// force a deep copy of every path.
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> filtered_typed_paths;
     filtered_typed_paths.reserve(typed_paths.size());
     for (const auto & [path, column] : typed_paths)
-        filtered_typed_paths[path] = column->filter(filt, result_size_hint);
+        filtered_typed_paths[path] = IColumn::mutate(column->filter(filt, result_size_hint));
 
-    UnorderedMapWithMemoryTracking<String, ColumnPtr> filtered_dynamic_paths;
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> filtered_dynamic_paths;
     filtered_dynamic_paths.reserve(dynamic_paths_ptrs.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
-        filtered_dynamic_paths[path] = column->filter(filt, result_size_hint);
+        filtered_dynamic_paths[path] = IColumn::mutate(column->filter(filt, result_size_hint));
 
-    auto filtered_shared_data = shared_data->filter(filt, result_size_hint);
-    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto filtered_shared_data = IColumn::mutate(shared_data->filter(filt, result_size_hint));
+    return ColumnObject::create(std::move(filtered_typed_paths), std::move(filtered_dynamic_paths), std::move(filtered_shared_data), max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 void ColumnObject::filter(const Filter & filt)
@@ -1383,50 +1387,56 @@ void ColumnObject::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
 {
-    UnorderedMapWithMemoryTracking<String, ColumnPtr> permuted_typed_paths;
+    /// See the comment in `filter`: these columns are exclusively owned here, so `IColumn::mutate`
+    /// on an rvalue is free, while the `const ColumnPtr &` overload of `create` would deep copy them.
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> permuted_typed_paths;
     permuted_typed_paths.reserve(typed_paths.size());
     for (const auto & [path, column] : typed_paths)
-        permuted_typed_paths[path] = column->permute(perm, limit);
+        permuted_typed_paths[path] = IColumn::mutate(column->permute(perm, limit));
 
-    UnorderedMapWithMemoryTracking<String, ColumnPtr> permuted_dynamic_paths;
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> permuted_dynamic_paths;
     permuted_dynamic_paths.reserve(dynamic_paths_ptrs.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
-        permuted_dynamic_paths[path] = column->permute(perm, limit);
+        permuted_dynamic_paths[path] = IColumn::mutate(column->permute(perm, limit));
 
-    auto permuted_shared_data = shared_data->permute(perm, limit);
-    return ColumnObject::create(permuted_typed_paths, permuted_dynamic_paths, permuted_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto permuted_shared_data = IColumn::mutate(shared_data->permute(perm, limit));
+    return ColumnObject::create(std::move(permuted_typed_paths), std::move(permuted_dynamic_paths), std::move(permuted_shared_data), max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
 {
-    UnorderedMapWithMemoryTracking<String, ColumnPtr> indexed_typed_paths;
+    /// See the comment in `filter`: these columns are exclusively owned here, so `IColumn::mutate`
+    /// on an rvalue is free, while the `const ColumnPtr &` overload of `create` would deep copy them.
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> indexed_typed_paths;
     indexed_typed_paths.reserve(typed_paths.size());
     for (const auto & [path, column] : typed_paths)
-        indexed_typed_paths[path] = column->index(indexes, limit);
+        indexed_typed_paths[path] = IColumn::mutate(column->index(indexes, limit));
 
-    UnorderedMapWithMemoryTracking<String, ColumnPtr> indexed_dynamic_paths;
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> indexed_dynamic_paths;
     indexed_dynamic_paths.reserve(dynamic_paths_ptrs.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
-        indexed_dynamic_paths[path] = column->index(indexes, limit);
+        indexed_dynamic_paths[path] = IColumn::mutate(column->index(indexes, limit));
 
-    auto indexed_shared_data = shared_data->index(indexes, limit);
-    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto indexed_shared_data = IColumn::mutate(shared_data->index(indexes, limit));
+    return ColumnObject::create(std::move(indexed_typed_paths), std::move(indexed_dynamic_paths), std::move(indexed_shared_data), max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
 {
-    UnorderedMapWithMemoryTracking<String, ColumnPtr> replicated_typed_paths;
+    /// See the comment in `filter`: these columns are exclusively owned here, so `IColumn::mutate`
+    /// on an rvalue is free, while the `const ColumnPtr &` overload of `create` would deep copy them.
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> replicated_typed_paths;
     replicated_typed_paths.reserve(typed_paths.size());
     for (const auto & [path, column] : typed_paths)
-        replicated_typed_paths[path] = column->replicate(replicate_offsets);
+        replicated_typed_paths[path] = IColumn::mutate(column->replicate(replicate_offsets));
 
-    UnorderedMapWithMemoryTracking<String, ColumnPtr> replicated_dynamic_paths;
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> replicated_dynamic_paths;
     replicated_dynamic_paths.reserve(dynamic_paths_ptrs.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
-        replicated_dynamic_paths[path] = column->replicate(replicate_offsets);
+        replicated_dynamic_paths[path] = IColumn::mutate(column->replicate(replicate_offsets));
 
-    auto replicated_shared_data = shared_data->replicate(replicate_offsets);
-    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto replicated_shared_data = IColumn::mutate(shared_data->replicate(replicate_offsets));
+    return ColumnObject::create(std::move(replicated_typed_paths), std::move(replicated_dynamic_paths), std::move(replicated_shared_data), max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_columns, const Selector & selector) const
@@ -1691,18 +1701,21 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
          my_max_dynamic_types = max_dynamic_types,
          my_statistics = statistics]() mutable
     {
-        UnorderedMapWithMemoryTracking<String, ColumnPtr> decompressed_typed_paths;
+        /// See the comment in `filter`: the decompressed columns are exclusively owned here, so
+        /// `IColumn::mutate` on an rvalue is free, while the `const ColumnPtr &` overload of
+        /// `create` would deep copy them.
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> decompressed_typed_paths;
         decompressed_typed_paths.reserve(my_compressed_typed_paths.size());
         for (const auto & [path, column] : my_compressed_typed_paths)
-            decompressed_typed_paths[path] = column->decompress();
+            decompressed_typed_paths[path] = IColumn::mutate(column->decompress());
 
-        UnorderedMapWithMemoryTracking<String, ColumnPtr> decompressed_dynamic_paths;
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> decompressed_dynamic_paths;
         decompressed_dynamic_paths.reserve(my_compressed_dynamic_paths.size());
         for (const auto & [path, column] : my_compressed_dynamic_paths)
-            decompressed_dynamic_paths[path] = column->decompress();
+            decompressed_dynamic_paths[path] = IColumn::mutate(column->decompress());
 
-        auto decompressed_shared_data = my_compressed_shared_data->decompress();
-        return ColumnObject::create(decompressed_typed_paths, decompressed_dynamic_paths, decompressed_shared_data, my_max_dynamic_paths, my_global_max_dynamic_paths, my_max_dynamic_types, my_statistics);
+        auto decompressed_shared_data = IColumn::mutate(my_compressed_shared_data->decompress());
+        return ColumnPtr(ColumnObject::create(std::move(decompressed_typed_paths), std::move(decompressed_dynamic_paths), std::move(decompressed_shared_data), my_max_dynamic_paths, my_global_max_dynamic_paths, my_max_dynamic_types, my_statistics));
     };
 
     return ColumnCompressed::create(size(), byte_size, decompress);
