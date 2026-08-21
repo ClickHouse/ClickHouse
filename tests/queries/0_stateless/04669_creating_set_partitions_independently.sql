@@ -204,6 +204,16 @@ CREATE TABLE test_in_global (a UInt32) ENGINE = MergeTree ORDER BY tuple() PARTI
 INSERT INTO test_in_global SELECT number % 64 FROM numbers_mt(400);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT count() FROM remote('127.0.0.{1,2}', system.numbers) WHERE number < 100 AND number GLOBAL IN (SELECT a FROM test_in_global) SETTINGS allow_creating_set_partitions_independently = 1) WHERE explain LIKE '%Pre-distinct%';
 SELECT count() FROM remote('127.0.0.{1,2}', system.numbers) WHERE number < 100 AND number GLOBAL IN (SELECT a FROM test_in_global) SETTINGS allow_creating_set_partitions_independently = 1;
+-- With the outer table read through `remote`, the external table reaches the set build only at
+-- pipeline build time, after the plan optimization checked for it. The transfer limits count the raw
+-- subquery rows (400 here, 64 unique), so a limit between the two must still fire: the
+-- pre-deduplication must stay out of the external-table write.
+DROP TABLE IF EXISTS test_in_global_probe;
+CREATE TABLE test_in_global_probe (k UInt32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO test_in_global_probe SELECT number FROM numbers(100);
+SELECT count() FROM remote('127.0.0.{1,2}', currentDatabase(), test_in_global_probe) WHERE k GLOBAL IN (SELECT a FROM test_in_global) SETTINGS allow_creating_set_partitions_independently = 1, prefer_localhost_replica = 0, max_rows_to_transfer = 100, transfer_overflow_mode = 'throw'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+SELECT count() FROM remote('127.0.0.{1,2}', currentDatabase(), test_in_global_probe) WHERE k GLOBAL IN (SELECT a FROM test_in_global) SETTINGS allow_creating_set_partitions_independently = 1, prefer_localhost_replica = 0;
+DROP TABLE test_in_global_probe;
 DROP TABLE test_in_global;
 
 -- Mostly-unique input: the preliminary per-stream deduplication observes the first chunks, sees that
