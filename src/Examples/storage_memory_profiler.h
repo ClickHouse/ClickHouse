@@ -68,6 +68,7 @@ private:
     /// Server context
     std::unique_ptr<SharedContextHolder> shared_context;
     ContextMutablePtr global_context;
+    ContextMutablePtr session_context;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 };
 

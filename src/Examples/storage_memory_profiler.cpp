@@ -58,6 +58,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/QueryScope.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
@@ -87,6 +88,7 @@ namespace ServerSetting
 {
 extern const ServerSettingsUInt64 max_server_memory_usage;
 extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
+extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
 }
 
 namespace
@@ -313,6 +315,8 @@ void StorageMemoryProfiler::initializeContext()
 
     /// Set up memory tracking
     const auto & server_settings = global_context->getServerSettings();
+    JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
+
     size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
     const double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
     const size_t physical_server_memory = getMemoryAmount();
@@ -362,6 +366,10 @@ void StorageMemoryProfiler::setupDatabase()
     DatabaseCatalog::instance().attachDatabase(default_database, database);
     global_context->setCurrentDatabase(default_database);
 
+    session_context = Context::createCopy(global_context);
+    session_context->makeSessionContext();
+    session_context->setClientInterface(ClientInfo::Interface::LOCAL);
+
     /// Attach system tables if needed
     if (!no_system_tables)
     {
@@ -380,6 +388,7 @@ void StorageMemoryProfiler::setupDatabase()
 
 void StorageMemoryProfiler::cleanup()
 {
+    session_context.reset();
     if (global_context)
     {
         global_context->shutdown();
@@ -417,7 +426,7 @@ void StorageMemoryProfiler::executeQueriesFromFile(const std::string & filepath)
 
     for (const auto & query_text : queries)
     {
-        auto context = Context::createCopy(global_context);
+        auto context = Context::createCopy(session_context);
         context->makeQueryContext();
         context->setCurrentQueryId("");
         context->setClientInterface(ClientInfo::Interface::LOCAL);
