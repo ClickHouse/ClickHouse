@@ -170,13 +170,16 @@ def get_run_command(
     else:
         run_script = "/repo/tests/docker_scripts/stress_runner.sh"
 
-    # Nested docker does not inherit the runner /etc/hosts. 
-    # --network=host would expose minio and azurite
+    # Nested docker does not inherit the runner /etc/hosts.
+    # --network=host would expose minio and azurite. Skip --add-host when the
+    # name is unknown (CI Tests e2e / local) rather than failing the job.
     proxy_host = "dockerhub-proxy.dockerhub-proxy-zone"
+    add_host = ""
     try:
         proxy_ip = socket.getaddrinfo(proxy_host, None)[0][4][0]
-    except OSError as e:
-        raise RuntimeError(f"Could not resolve {proxy_host} on the runner") from e
+        add_host = f"--add-host={proxy_host}:{proxy_ip} "
+    except OSError:
+        logging.info("Could not resolve %s; not passing --add-host", proxy_host)
 
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
@@ -184,7 +187,7 @@ def get_run_command(
         "--privileged "
         # azurite-rs (in-process Azure Blob Storage emulator) needs many fds under parallel load
         "--ulimit nofile=1048576:1048576 "
-        f"--add-host={proxy_host}:{proxy_ip} "
+        f"{add_host}"
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         "--tmpfs /tmp/clickhouse:mode=1777 "
