@@ -23,10 +23,6 @@ ICEBERG_SECURABLE_KIND = "TABLE_DELTA_ICEBERG_EXTERNAL"
 # The lookahead makes this a no-op on an already-well-formed `file:///tmp/...`.
 SINGLE_SLASH_SCHEME = re.compile(r"file:/(?=tmp/marksheet_uniform)")
 
-# Describe this hop rather than the request, so they must not be forwarded.
-HOP_BY_HOP_HEADERS = {"host", "content-length", "accept-encoding", "connection"}
-
-
 def normalize_scheme(data):
     return SINGLE_SLASH_SCHEME.sub("file:///", data.decode()).encode()
 
@@ -50,36 +46,17 @@ def patch_tables_response(data):
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def _health_check(self):
-        response = b"OK"
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", str(len(response)))
-        self.end_headers()
-        self.wfile.write(response)
-
-    def _proxy(self, method):
+    def do_GET(self):
         if self.path == "/":
-            self._health_check()
+            self._reply(200, b"OK")
             return
 
         path = self.path.replace("/iceberg-rest/", "/iceberg/")
-
-        length = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(length) if length else None
-
-        request = urllib.request.Request(UPSTREAM + path, data=body, method=method)
-        for name, value in self.headers.items():
-            if name.lower() not in HOP_BY_HOP_HEADERS:
-                request.add_header(name, value)
-
         try:
-            response = urllib.request.urlopen(request)
+            response = urllib.request.urlopen(UPSTREAM + path)
             status, data = response.status, response.read()
-            content_type = response.headers.get("Content-Type", "application/json")
         except urllib.error.HTTPError as e:
             status, data = e.code, e.read()
-            content_type = e.headers.get("Content-Type", "application/json")
 
         if status == 200:
             if "/unity-catalog/tables" in path:
@@ -87,20 +64,13 @@ class Handler(BaseHTTPRequestHandler):
             elif "/unity-catalog/iceberg/" in path:
                 data = normalize_scheme(data)
 
+        self._reply(status, data)
+
+    def _reply(self, status, data):
         self.send_response(status)
-        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
-
-    def do_GET(self):
-        self._proxy("GET")
-
-    def do_POST(self):
-        self._proxy("POST")
-
-    def do_HEAD(self):
-        self._proxy("HEAD")
 
     def log_message(self, fmt, *args):
         print("%s %s" % (self.command, self.path), flush=True)
