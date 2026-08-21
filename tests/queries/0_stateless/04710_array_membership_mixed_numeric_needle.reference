@@ -69,6 +69,11 @@ Enum8/UInt8	0
 Enum8/UInt8 rep	1
 Enum8/UInt32	0
 Enum8/UInt32 rep	1
--- a String needle shorter than a FixedString element still matches, since equality pads
+-- a String needle shorter than a FixedString element still matches, since equality pads.
+-- The needle carries a trailing NUL, which a round trip through String would strip.
 LC(FixedString(4))/String	1	1
+LC(FixedString(4))/String NUL	1	1
 LC(FixedString(4))/String absent	0	0
+-- the dictionary shortcut over a float element must not resolve a lossy integer needle
+LC(Float64)/Int64	0	0
+LC(Float64)/Int64 rep	1	1

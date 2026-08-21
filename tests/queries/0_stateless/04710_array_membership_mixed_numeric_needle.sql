@@ -134,8 +134,16 @@ SELECT 'Enum8/UInt8 rep', has(v, 1::UInt8) AS got FROM en;
 SELECT 'Enum8/UInt32', has(v, 4294967295::UInt32) AS got FROM en;
 SELECT 'Enum8/UInt32 rep', has(v, 1::UInt32) AS got FROM en;
 
-SELECT '-- a String needle shorter than a FixedString element still matches, since equality pads';
+SELECT '-- a String needle shorter than a FixedString element still matches, since equality pads.';
+SELECT '-- The needle carries a trailing NUL, which a round trip through String would strip.';
 CREATE TABLE fs (v Array(LowCardinality(FixedString(4)))) ENGINE = Memory;
 INSERT INTO fs VALUES ([CAST('a', 'FixedString(4)'), CAST('zz', 'FixedString(4)')]);
 SELECT 'LC(FixedString(4))/String', has(v, 'a') AS got, arrayExists(x -> x = 'a', v) AS oracle FROM fs;
+SELECT 'LC(FixedString(4))/String NUL', has(v, unhex('6100')) AS got, arrayExists(x -> x = unhex('6100'), v) AS oracle FROM fs;
 SELECT 'LC(FixedString(4))/String absent', has(v, 'q') AS got, arrayExists(x -> x = 'q', v) AS oracle FROM fs;
+
+SELECT '-- the dictionary shortcut over a float element must not resolve a lossy integer needle';
+CREATE TABLE lcf (v Array(LowCardinality(Float64))) ENGINE = Memory;
+INSERT INTO lcf VALUES ([9007199254740992.0, 1.5]);
+SELECT 'LC(Float64)/Int64', has(v, 9007199254740993::Int64) AS got, arrayExists(x -> x = 9007199254740993::Int64, v) AS oracle FROM lcf;
+SELECT 'LC(Float64)/Int64 rep', has(v, 9007199254740992::Int64) AS got, arrayExists(x -> x = 9007199254740992::Int64, v) AS oracle FROM lcf;
