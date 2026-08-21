@@ -79,7 +79,7 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
             upper = deserializeFieldFromBinaryRepr(*summary.upper_bound, type, false);
         }
 
-        left_keys[i] = lower.has_value() ? FieldRef(*lower) : FieldRef(NEGATIVE_INFINITY);
+        left_keys[i] = (lower.has_value() && !summary.contains_null) ? FieldRef(*lower) : FieldRef(NEGATIVE_INFINITY);
         right_keys[i] = (upper.has_value() && !summary.contains_null) ? FieldRef(*upper) : FieldRef(POSITIVE_INFINITY);
     }
 
