@@ -122,7 +122,7 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         /// The set is keyed on all columns of its input header. With disjoint input streams, deduplicating
         /// each stream independently is complete deduplication, so the single set-filling transform only
         /// hashes unique rows.
-        if (settings.creating_set_partitions_independently && !creating_set->hasExternalTable()
+        if (settings.creating_set_partitions_independently && !creating_set->usesExternalTable()
             && partitionDeterminedByKeys(property, step->getInputHeaders().front()->getNames()))
         {
             creating_set->enablePreliminaryDistinct();

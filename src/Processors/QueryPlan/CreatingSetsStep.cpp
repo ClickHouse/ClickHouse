@@ -64,7 +64,7 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// it only at pipeline build time (see `ReadFromRemote`), after the optimization passes checked it,
     /// and pre-deduplication would change the table contents and what the
     /// `max_{rows,bytes}_to_transfer` limits count.
-    if (preliminary_distinct && !hasExternalTable() && pipeline.getNumStreams() > 1)
+    if (preliminary_distinct && !usesExternalTable() && pipeline.getNumStreams() > 1)
     {
         /// With `transform_null_in = 0` the set fill skips rows with a NULL in any key component, so
         /// the preliminary deduplication drops them too instead of hashing and counting them.

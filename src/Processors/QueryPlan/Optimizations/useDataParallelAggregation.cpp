@@ -235,7 +235,7 @@ void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
     /// GLOBAL IN: the set-filling transform also copies every consumed row into an external temporary
     /// table under the `max_{rows,bytes}_to_transfer` limits. Pre-deduplication would change the table
     /// contents and what those limits count.
-    if (creating_set_step->hasExternalTable())
+    if (creating_set_step->usesExternalTable())
         return;
 
     auto & child = *node.children.front();
