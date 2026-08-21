@@ -23,10 +23,18 @@ LOCAL=(${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}")
     SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 100;
 "
 
+# The inode of the generation the main pass must see. The replacement is installed with mv,
+# so seeing a query fd with this inode proves the main pass opened the file before the swap.
+orig_inode=$(stat -c %i "${LOCAL_DIR}/data.parquet")
+
 # `sleepEachRow` keeps the main pass open while a replacement is atomically installed. The
 # lazy pass must reject the replacement instead of combining columns from the two generations.
 # A single reading thread makes the sleeping serial, so the main pass stays open for the whole
 # two seconds rather than for the time of one row group.
+# The structure is spelled out because schema inference would open the file too: waiting for
+# "any fd on data.parquet" could then trigger on that short-lived inference read, letting the
+# swap land before the main pass opens the file at all - the query then just reads the
+# replacement as the only generation it ever saw, a legitimate result that produces no error.
 "${LOCAL[@]}" \
     --enable_analyzer=1 \
     --max_block_size=1 \
@@ -35,19 +43,20 @@ LOCAL=(${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}")
     --query_plan_optimize_lazy_materialization=1 \
     --query_plan_max_limit_for_lazy_materialization=0 \
     --query_plan_optimize_lazy_materialization_for_file=1 \
-    --query "SELECT s FROM file('${LOCAL_DIR}/data.parquet', Parquet) PREWHERE sleepEachRow(0.002) = 0 ORDER BY k LIMIT 1" \
+    --query "SELECT s FROM file('${LOCAL_DIR}/data.parquet', Parquet, 'k UInt64, s String') PREWHERE sleepEachRow(0.002) = 0 ORDER BY k LIMIT 1" \
     > "${LOCAL_DIR}/query.out" 2>&1 &
 query_pid=$!
 
-# Wait until the main pass has really opened the file, instead of assuming it got that far
-# within a fixed delay: process startup alone can take longer than that under a sanitizer
-# build, and a replacement installed before the file was opened is simply read as the only
-# generation the query ever saw - a legitimate result, but not what this test is about.
+# Wait until the main pass really holds the original generation open: an fd whose target is
+# the pre-swap inode. Waiting a fixed delay is not enough (process startup alone can take
+# longer under a sanitizer build), and merely seeing a path match is not enough either - only
+# the inode proves the fd is not already a reopen of some later generation.
 for _ in {1..1200}; do
-    # shellcheck disable=SC2010
-    if ls -l "/proc/${query_pid}/fd" 2>/dev/null | grep -q 'data\.parquet'; then
-        break
-    fi
+    for fd in "/proc/${query_pid}/fd"/*; do
+        if [ "$(stat -Lc %i "${fd}" 2>/dev/null)" = "${orig_inode}" ]; then
+            break 2
+        fi
+    done
     kill -0 "${query_pid}" 2>/dev/null || break
     sleep 0.05
 done
