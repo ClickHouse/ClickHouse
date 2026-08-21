@@ -50,11 +50,14 @@ bool ReadState::readRoundInProgress() const
 
 void ReadState::updatePartitionCursor(const std::string & partition, PartitionCursor cursor)
 {
+    partition_last_read_time[partition] = std::chrono::steady_clock::now();
     partition_cursors[partition] = cursor;
 }
 
 void ReadState::updatePartitionWatermark(const std::string & partition, Field watermark)
 {
+    partition_last_read_time[partition] = std::chrono::steady_clock::now();
+
     auto & current = partition_watermarks[partition];
     if (watermark > current)
         current = std::move(watermark);
