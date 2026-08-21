@@ -2419,7 +2419,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     first_argument_constant_type, set_element_type, "IN constant set");
             };
 
-            if (const auto * set_element_types = typeid_cast<const DataTypeTuple *>(second_argument_constant_type.get()))
+            if (isExponentialTimeDecayingFloat64(removeNullable(second_argument_constant_type)))
+                assert_set_element_type_compatible(second_argument_constant_type);
+            else if (const auto * set_element_types = typeid_cast<const DataTypeTuple *>(second_argument_constant_type.get()))
             {
                 for (const auto & set_element_type : set_element_types->getElements())
                     assert_set_element_type_compatible(set_element_type);

@@ -690,6 +690,9 @@ SELECT decaying IN (plain); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 WITH CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS value
 SELECT 'direct decaying IN false negative' WHERE NOT (value IN (value));
 
+WITH CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS value
+SELECT 'direct decaying multi-value IN false negative' WHERE NOT (value IN (value, value));
+
 WITH CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecayingFloat64(10))') AS value
 SELECT 'nested decaying IN false negative' WHERE NOT (value IN (value));
 
