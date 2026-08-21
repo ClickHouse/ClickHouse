@@ -242,7 +242,11 @@ def _make_test_case(tmp_path, stop=True):
 
 
 class _FailedProc:
+    # Stands in for `Optional[Popen]`, so it carries a pid: the record cleanup reads one on
+    # every arm, ahead of the classification these tests assert. Own pid, so the group is
+    # alive and the cleanup neither writes nor drops a record.
     returncode = 1
+    pid = os.getpid()
 
 
 def _reason_for_stderr(tmp_path, stderr, liveness):

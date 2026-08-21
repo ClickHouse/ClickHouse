@@ -1338,9 +1338,10 @@ def test_a_nested_invocation_does_not_adopt_the_outer_runs_token():
     inherited.
 
     Driven as a real subprocess with the variable pre-set, because inheritance is the
-    thing being asserted; ``run_name="__main__"`` puts the guard on the path.  The runner
-    exits early (no binary, or no server), which is after the module body has run - which
-    is all this arm needs.
+    thing being asserted; ``run_name="__main__"`` puts the guard on the path.  ``--help``
+    stops it in ``parse_args``, which is after the module body that mints the token - all
+    this arm needs - and before anything that would run tests: this job supplies both a
+    binary and a server, so an argv-less invocation starts a whole run instead of exiting.
     """
     _clear_records()
     ct = runpy.run_path(_CLICKHOUSE_TEST)
@@ -1362,7 +1363,7 @@ def test_a_nested_invocation_does_not_adopt_the_outer_runs_token():
                 sys.executable,
                 "-c",
                 f"import runpy, sys\n"
-                f"sys.argv = ['clickhouse-test']\n"
+                f"sys.argv = ['clickhouse-test', '--help']\n"
                 f"try:\n"
                 f"    runpy.run_path({_CLICKHOUSE_TEST!r}, run_name='__main__')\n"
                 f"except SystemExit:\n"
