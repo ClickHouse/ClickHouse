@@ -107,7 +107,7 @@ ORDER BY key
 Text indexes can be defined on columns of these types:
 - [String](/reference/data-types/string) and [FixedString](/reference/data-types/fixedstring),
 - [Array(String)](/reference/data-types/array) and [Array(FixedString)](/reference/data-types/array),
-- [Map](/reference/data-types/map) (via [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) and [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions, or directly on the `Map` column with the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer), and
+- [Map](/reference/data-types/map), either on the `Map` column using the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, or only on the map keys or values using the [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) or [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) function, and
 - [JSON](/reference/data-types/newjson) (via [JSONAllPaths](/reference/functions/regular-functions/json-functions#JSONAllPaths) and [`JSONAllValues`](/reference/functions/regular-functions/json-functions#JSONAllValues) functions).
 
 Columns of type [Nullable(T)](/reference/data-types/nullable) and [LowCardinality()](/reference/data-types/lowcardinality) are also supported, including `Array(Nullable(String or FixedString))`.
@@ -176,8 +176,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)). For compatibility with other systems, `keyword` is available as an alias of `array`.
-- `keyValuePairs` performs no tokenization either. It is used for an index created directly on a `Map(String, String)` column, where every `(key, value)` pair of a row becomes a single token.
-  It accelerates exact map element lookups such as `WHERE map['key'] = 'value'`, which are then answered from the index without reading the map column (see [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs)).
+- `keyValuePairs` combines the key-value pairs of a `Map` column to a single token. This helps to perform combined key-value lookups such as `WHERE map['key'] = 'value'` (see [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs)).
 
 All available tokenizers are listed in [system.tokenizers](/reference/system-tables/tokenizers).
 
@@ -517,7 +516,7 @@ For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the tex
 Without `support_phrase_search`, `hasPhrase` uses the index only as a hint and verifies each surviving row with the original predicate; a postprocessor additionally normalizes both the phrase and the haystack tokens the same way, so the result is independent of the read path, and tokens the postprocessor drops do not break phrase adjacency. With `support_phrase_search = 1`, `hasPhrase` uses exact direct reads (still applying the postprocessor, if any).
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
-| Function | Supports a preprocessor | Compatible tokenizers | Supports a postprocessor |
+| Function | Supports a preprocessor | Compatible tokenizers¹ | Supports a postprocessor |
 |---|---|---|---|
 | `=` | yes | all | yes |
 | `IN` | yes | all | yes |
@@ -529,9 +528,9 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` | yes |
 | [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
-| [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
+| [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes² | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`² | yes² |
+| [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes² | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`² | yes² |
+| [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes³ (`lower`/`upper` only) | `splitByNonAlpha`, `array`³ | no³ |
 | [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
 | [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
 | [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
@@ -540,17 +539,14 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                               | yes | `array` | yes |
 | [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
 
-¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
+¹ The *compatible tokenizers* column ignores the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, which is a specialized tokenizer for `Map` columns.
+
+² `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
 `LIKE` additionally supports a *direct read (without hint)* (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
 
-² `ILIKE` is only supported via direct read (without hint) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
+³ `ILIKE` is only supported via direct read (without hint) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
 There is no fallback to using the index as a hint: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
-
-The `keyValuePairs` tokenizer does not appear in the table because it is not applied to strings.
-It is used for an index created directly on a `Map` column and so far answers only `=` on a map element (`map['key'] = 'value'`); every other map search falls back to a brute-force scan.
-It accepts neither a preprocessor nor a postprocessor, so the corresponding columns above do not apply to it.
-See [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs).
 
 **Experimental: Support phrase search argument (optional)**.
 
@@ -891,8 +887,8 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 #### `operator[]` {#functions-example-access-operator}
 
 Access [operator[]](/reference/operators/index#access-operators) can be used with the text index to filter out keys and values.
-The text index is used if it is created on `mapKeys(map)` or `mapValues(map)` expressions, or both, or directly on the `Map` column with the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer.
-Only the latter matches a key to its value, so only it can answer `map['key'] = 'value'` from the index alone.
+The text index is utilized if it uses a [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer on top of the `Map` column, or if it is built on a `mapKeys(map)` or `mapValues(map)` index expression.
+In the former case (`keyValuePairs` tokenizer), direct read can be used, otherwise direct read with hint.
 
 Example:
 
@@ -967,19 +963,53 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full
 
 As log volume grows, these queries become slow.
 
-The solution is creating a text index for the [Map](/reference/data-types/map) keys and values.
+The solution is a text index on the [Map](/reference/data-types/map) column.
+Which index to create depends on what you search for: a key together with its value, or keys and values independently.
+
+#### Combined key-value lookups with the `keyValuePairs` tokenizer {#tokenizer-key-value-pairs}
+
+Use the `keyValuePairs` tokenizer on the `Map` column itself when you search for a specific key holding a specific value:
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
+ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
+
+-- Finds all error logs:
+SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
+```
+
+The tokenizer combines each `(key, value)` pair of a row into a single token, so the index knows which value belongs to which key.
+The `mapKeys` and `mapValues` indexes described below cannot answer such a query, because they index keys and values independently: they can tell that some attribute of a row has the value `error`, but not that it was the `level` attribute.
+
+A pair is stored as the token `key ‖ value ‖ length(key)`.
+The trailing length keeps the boundary between the key and the value unambiguous, so both may contain arbitrary bytes: unlike joining them with a separator such as `key=value`, a key or a value that contains the separator cannot produce a false match.
+
+The following restrictions apply:
+
+- The index must be created on a `Map` whose keys and values are of type `String` or `LowCardinality(String)`.
+  `FixedString` is rejected because the column stores the padding bytes while the searched constant does not, which would silently miss rows.
+  `Nullable` is rejected because the encoding cannot distinguish an empty value from `NULL`.
+- The arguments `preprocessor`, `postprocessor` and `support_phrase_search` are rejected at table creation.
+- Only `=` on a map element is answered from the index so far.
+  Other map searches, such as `mapContainsKey`, `mapContainsValue`, their `*Like` variants and `IN`, fall back to a brute-force scan.
+- `map['key']` returns the default value of the value type when the key is missing, so `map['key'] = ''` is also true for rows that do not contain the key and therefore have no token.
+  Such a predicate falls back to a brute-force scan.
+- If a row contains the same key more than once, `map['key']` is the value of its first occurrence, and the index matches that occurrence.
+
+#### Key and value search with `mapKeys` and `mapValues` {#text-index-map-keys-and-values}
+
 Use [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) to create a text index when you need to find logs by field names or attribute types:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_keys_idx;
 ```
 
 Use [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) to create a text index when you need to search within the actual content of attributes:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
-ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+ALTER TABLE logs MATERIALIZE INDEX attributes_vals_idx;
 ```
 
 Example queries:
@@ -994,37 +1024,6 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 -- Finds all logs where any attribute includes an error:
 SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
-
-#### Exact key-value lookups with the `keyValuePairs` tokenizer {#tokenizer-key-value-pairs}
-
-The `mapKeys` and `mapValues` indexes above accelerate key search and value search independently.
-An index on `mapValues(attributes)` can show that some attribute of a row has the value `error`, but not that it was the `level` attribute, so a predicate that ties a key to a value still has to read the map column.
-
-To answer such an exact lookup from the index, create a `keyValuePairs` index directly on the `Map` column:
-
-```sql
-ALTER TABLE logs ADD INDEX attributes_kv_idx attributes TYPE text(tokenizer = keyValuePairs);
-ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
-
--- Find all logs of a specific level:
-SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index
-```
-
-Every `(key, value)` pair of a row is stored as one token, `key ‖ value ‖ length(key)`.
-The trailing length makes the boundary between the key and the value unambiguous, so both may contain arbitrary bytes: unlike joining them with a separator (for example `key=value`), a key or a value that itself contains the separator character cannot produce a false match.
-Tokens therefore sort by key and then by value, which keeps the entries of one key together in the index dictionary.
-
-The following restrictions apply:
-
-- The index must be created on a `Map` whose keys and values are of type `String` or `LowCardinality(String)`.
-  `FixedString` is rejected because the column stores the padding bytes while the searched constant does not, which would silently miss rows.
-  `Nullable` is rejected because the encoding cannot distinguish an empty value from `NULL`.
-- The arguments `preprocessor`, `postprocessor` and `support_phrase_search` are rejected at table creation.
-- Only `=` on a map element is answered from the index so far.
-  Other map searches, such as `mapContainsKey`, `mapContainsValue`, their `*Like` variants and `IN`, fall back to a brute-force scan.
-- `map['key']` returns the default value of the value type when the key is missing, so `map['key'] = ''` is also true for rows that do not contain the key and therefore have no token.
-  Such a predicate falls back to a brute-force scan.
-- If a row contains the same key more than once, `map['key']` is the value of its first occurrence, and the index matches that occurrence.
 
 ### Indexing JSON columns {#text-index-example-json}
 
