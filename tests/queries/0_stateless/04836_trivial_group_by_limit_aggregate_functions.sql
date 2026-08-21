@@ -78,13 +78,18 @@ WITH lim AS (SELECT toUInt64(number % 997) AS k, count() AS c FROM numbers_mt(10
 SELECT count(), countIf(lim.c != tru.c) FROM lim INNER JOIN tru ON lim.k = tru.k;
 
 -- `make_distributed_plan` rejects a nonzero aggregation cap because it cannot enforce it
--- globally after splitting the aggregation. The aggregate cutoff must stay disabled here.
+-- globally after splitting the aggregation. The aggregate cutoff must stay disabled here:
+-- if it armed, the plan-level distribution would reject the capped `AggregatingStep` with
+-- an exception instead of returning the rows. `max_rows_to_group_by = 0` clears the CI
+-- profile's global cap (the convention of the other `make_distributed_plan` tests), and a
+-- single localhost shard is used because `make_distributed_plan` rejects the fragment a
+-- shard receives from a remote initiator regardless of the cutoff.
 SELECT count() FROM
 (
     SELECT k, count()
-    FROM remote('127.0.0.{1,2}', view(SELECT toUInt64(number % 97) AS k FROM numbers(10000)))
+    FROM remote('127.0.0.1', view(SELECT toUInt64(number % 97) AS k FROM numbers(10000)))
     GROUP BY k LIMIT 10
-    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1
+    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, max_rows_to_group_by = 0
 );
 
 -- Distributed query: the aggregation is split between the shards and the initiator, so the
