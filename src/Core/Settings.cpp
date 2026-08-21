@@ -8495,7 +8495,7 @@ The activation is a single-threshold switch from one stream to all streams, not 
 
 When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, the stage starts with `G` initial active streams (one per split group) rather than one, and this threshold is divided by `G` so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
 
-Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected: serializing the upstream scan/filter work would lose parallel-scan throughput while still producing one partial state per stream.
+Only affects `GROUP BY` queries with non-constant grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected: serializing the upstream scan/filter work would lose parallel-scan throughput while still producing one partial state per stream. An aggregation whose keys are all constant, such as `GROUP BY 1` on a remote shard, has the same shape and is also unaffected.
 
 The threshold is currently applied only to the ordinary aggregation pipeline. `GROUP BY ... GROUPING SETS ...`, aggregation reading from aggregate projections, and sharded aggregation (`enable_sharding_aggregator = 1`) keep using the strict resize, so they build one partial state per stream (per grouping set or shard, respectively) regardless of this setting.
 )", 0) \
@@ -8504,7 +8504,7 @@ Total number of bytes that must be pushed through the `GROUP BY` pre-aggregation
 
 When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, the stage starts with `G` initial active streams (one per split group) rather than one, and this threshold is divided by `G` so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
 
-Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected.
+Only affects `GROUP BY` queries with non-constant grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys), and aggregations whose keys are all constant, are unaffected.
 
 The threshold is currently applied only to the ordinary aggregation pipeline. `GROUP BY ... GROUPING SETS ...`, aggregation reading from aggregate projections, and sharded aggregation (`enable_sharding_aggregator = 1`) keep using the strict resize, so they build one partial state per stream (per grouping set or shard, respectively) regardless of this setting.
 )", 0) \

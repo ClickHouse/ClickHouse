@@ -76,6 +76,24 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+/// Whether every `GROUP BY` key is a constant in the input header.
+/// The analyzer strips constant keys, but only on the initiator: a remote shard that analyzes the
+/// query itself keeps them (see `ExpressionAnalyzer::analyzeAggregation` and
+/// `PlannerExpressionAnalysis`, which both gate the removal), so `params.keys` can be non-empty
+/// while the aggregation still produces a single group. Such a query has one partial state per
+/// stream regardless of the data volume, exactly like a global aggregate.
+static bool allAggregationKeysAreConstant(const Block & header, const Names & keys)
+{
+    for (const auto & key : keys)
+    {
+        const auto * column = header.findByName(key);
+        if (!column || !column->column || !isColumnConst(*column->column))
+            return false;
+    }
+
+    return true;
+}
+
 static bool memoryBoundMergingWillBeUsed(
     bool should_produce_results_in_order_of_bucket_number,
     bool memory_bound_merging_of_aggregation_results_enabled,
@@ -821,7 +839,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// regardless of cardinality, so reducing parallelism would not save any merging work
             /// proportional to the result; it would only serialize the upstream scan/filter and
             /// lose parallel-scan throughput.
+            /// An aggregation whose keys are all constant has the same shape - a single group, and
+            /// therefore one partial state per stream - and is excluded for the same reason.
             bool use_gradual_resize = !params.keys.empty()
+                && !allAggregationKeysAreConstant(pipeline.getHeader(), params.keys)
                 && (settings.min_rows_per_stream_for_gradual_resize || settings.min_bytes_per_stream_for_gradual_resize);
 
             if (use_gradual_resize)
