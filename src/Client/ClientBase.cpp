@@ -4708,7 +4708,25 @@ void ClientBase::runInteractive()
     if (load_suggestions)
     {
         /// Load suggestion data from the server.
-        if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
+        if (isEmbeeddedClient())
+        {
+            /// The embedded client runs inside the server process, and its session was authenticated
+            /// externally, e.g. by an SSH key, so a separate connection for loading suggestions cannot
+            /// be created: there are no credentials to authenticate it with. (A `LocalConnection`
+            /// created from a bare context would try the `default` user with an empty password.)
+            /// Load suggestions synchronously through the main connection: it is idle at this point,
+            /// and the embedded client always waits for suggestions to load anyway.
+            /// This is a query exchange on the shared connection. Keep the same
+            /// resynchronization discipline as the fallback below, because `load`
+            /// reports failures rather than propagating them.
+            if (connection_needs_resynchronization)
+                resynchronizeConnectionAfterError();
+            connection_needs_resynchronization = true;
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), error_stream);
+            if (suggest->lastExchangeEndedInSync())
+                connection_needs_resynchronization = false;
+        }
+        else if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
             suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit", 10000), wait_for_suggestions_to_load);
         else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL || client_context->getApplicationType() == Context::ApplicationType::SERVER)
             suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit", 10000), wait_for_suggestions_to_load);
@@ -4916,7 +4934,7 @@ void ClientBase::runInteractive()
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
             connection_needs_resynchronization = true;
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo());
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), error_stream);
             if (suggest->lastExchangeEndedInSync())
                 connection_needs_resynchronization = false;
         }

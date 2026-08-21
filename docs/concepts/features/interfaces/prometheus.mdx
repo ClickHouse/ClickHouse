@@ -187,7 +187,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-See the [supported PromQL features](/sql-reference/table-functions/prometheusQueryRange#supported-promql-features) for the function and aggregation operator list used by the HTTP API, the `promql` dialect, and the table functions.
+See the [supported PromQL features](/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) for the function and aggregation operator list used by the HTTP API, the `promql` dialect, and the table functions.
 
 #### Grafana {#grafana}
 
@@ -217,7 +217,7 @@ Only the query endpoints `/api/v1/query` and `/api/v1/query_range` are implement
 
 #### SQL entry points {#sql-entry-points}
 
-ClickHouse uses the same PromQL converter for the HTTP API, the `promql` dialect, and the [`prometheusQuery`](/sql-reference/table-functions/prometheusQuery) and [`prometheusQueryRange`](/sql-reference/table-functions/prometheusQueryRange) table functions.
+ClickHouse uses the same PromQL converter for the HTTP API, the `promql` dialect, and the [`prometheusQuery`](/reference/functions/table-functions/prometheusQuery) and [`prometheusQueryRange`](/reference/functions/table-functions/prometheusQueryRange) table functions.
 
 Run PromQL directly with `clickhouse-client`:
 
