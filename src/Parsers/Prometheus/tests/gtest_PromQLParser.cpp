@@ -1660,7 +1660,7 @@ PrometheusQueryTree(STRING):
     EXPECT_EQ(parse(R"(
         "\n"
         )"), R"(
-"\n"
+"\x0a"
 
 PrometheusQueryTree(STRING):
     StringLiteral('\n')
@@ -1669,7 +1669,7 @@ PrometheusQueryTree(STRING):
     EXPECT_EQ(parse(R"(
         "these are unescaped: \n \\ ' \" ` \t"
         )"), R"(
-"these are unescaped: \n \\ ' \" ` \t"
+"these are unescaped: \x0a \\ ' \" ` \x09"
 
 PrometheusQueryTree(STRING):
     StringLiteral('these are unescaped: \n \\ \' " ` \t')
@@ -1678,7 +1678,7 @@ PrometheusQueryTree(STRING):
     EXPECT_EQ(parse(R"(
         'these are unescaped: \n \\ \' " ` \t'
         )"), R"(
-"these are unescaped: \n \\ ' \" ` \t"
+"these are unescaped: \x0a \\ ' \" ` \x09"
 
 PrometheusQueryTree(STRING):
     StringLiteral('these are unescaped: \n \\ \' " ` \t')
