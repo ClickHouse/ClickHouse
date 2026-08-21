@@ -41,6 +41,10 @@ class CIDB:
     @classmethod
     def convert_status(cls, status: str) -> str:
         """Map Result.Status value to legacy CIDB check_status string."""
+        # An empty status is allowed for synthetic rows (e.g. the workflow-level
+        # metrics summary row, which is not a real check).
+        if not status:
+            return ""
         legacy = cls._STATUS_TO_CIDB.get(status)
         if legacy is not None:
             return legacy
@@ -384,7 +388,9 @@ ORDER BY day DESC
         storage_usage: Optional[StorageUsage] = None,
         compute_usage: Optional[ComputeUsage] = None,
         job_counts: Optional[dict] = None,
+        start_time: Optional[float] = None,
         duration_s: Optional[float] = None,
+        workflow_status: str = "",
     ):
         """Write a single workflow-level summary row carrying pipeline
         utilization, storage and compute usage in the ``attributes`` JSON
@@ -401,6 +407,15 @@ ORDER BY day DESC
         columns in a way inconsistent with their schema meaning."""
         info = Info()
         attributes: dict = {}
+        if workflow_status:
+            # This is a synthetic metrics row, so the canonical check_status is
+            # left empty (it must not be mistaken for the workflow's own status).
+            # The real workflow status is carried here instead.
+            attributes["pipeline_status"] = self.convert_status(workflow_status)
+        if start_time:
+            # Actual pipeline start (first job), unlike the row's check_start_time
+            # which is stamped when this final job writes the summary.
+            attributes["pipeline_start_time"] = Utils.timestamp_to_str(start_time)
         if duration_s is not None:
             # Whole-pipeline wall-clock duration (first job start to last job
             # end), distinct from pipeline_wall_time_s which sums job runtimes.
@@ -432,7 +447,7 @@ ORDER BY day DESC
             workflow_name=info.workflow_name,
             commit_url=info.commit_url,
             check_name=info.workflow_name,
-            check_status=Result.Status.OK,
+            check_status="",
             check_duration_ms=0,
             check_start_time=Utils.timestamp_to_str(Utils.timestamp()),
             report_url=info.get_report_url(),

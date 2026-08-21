@@ -111,10 +111,15 @@ job-level fields above with a `host_` prefix:
 
 The Finish-workflow (final) job writes one extra row (`check_name` = workflow
 name, empty `test_name`) via `CIDB.insert_workflow_usage`, carrying all three
-workflow-level aggregates from the workflow `Result.ext`:
+workflow-level aggregates from the workflow `Result.ext`. This is a **synthetic
+metrics row**: its canonical `check_status` / `check_duration_ms` are left
+empty/zero so it is not mistaken for the workflow's own status record — the real
+workflow status and duration are carried in `attributes` instead.
 
 | `attributes` key | Source |
 |---|---|
+| `pipeline_status` | the workflow's overall status (legacy CIDB form, e.g. `success`/`failure`) |
+| `pipeline_start_time` | actual pipeline start (first job), unlike the row's `check_start_time` which is stamped when the final job writes the summary |
 | `pipeline_duration_s` | whole-pipeline wall-clock duration (first job start to last job end), distinct from `pipeline_wall_time_s` which sums job runtimes |
 | `pipeline_total_jobs`, `pipeline_run_jobs`, `pipeline_success_jobs`, `pipeline_failed_jobs`, `pipeline_skipped_jobs`, `pipeline_dropped_jobs` | job counts in the pipeline by status (`run` = jobs that actually ran, i.e. not skipped/dropped), unlike `pipeline_jobs` which counts only the qualifying jobs |
 | `pipeline_*` (e.g. `pipeline_jobs`, `pipeline_cpu_hours`, `pipeline_mem_gb_hours`, `pipeline_disk_gb_hours`, `pipeline_cpu_util_pct`, `pipeline_cpu_stall_pct`, `pipeline_mem_full_pct`, …) | every field of `PipelineUtilization.to_summary`, prefixed `pipeline_` |
