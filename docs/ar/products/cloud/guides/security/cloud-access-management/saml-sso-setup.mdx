@@ -15,7 +15,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 يدعم ClickHouse Cloud تسجيل الدخول الأحادي (SSO) عبر لغة توصيف تأكيد الأمان (SAML). يتيح لك ذلك تسجيل الدخول بأمان إلى المؤسسة الخاصة بك في ClickHouse Cloud من خلال المصادقة باستخدام موفّر الهوية (IdP) لديك.
 
-نحن ندعم SSO الذي يبدأه موفّر الخدمة، واستخدام مؤسسات متعددة لاتصالات منفصلة، والتوفير الفوري عند الحاجة. كما ندعم [توفير SCIM](/ar/products/cloud/guides/security/cloud-access-management/scim-setup) في private preview، مع دعم Okta. ولا ندعم حتى الآن تعيين السمات.
+نحن ندعم SSO الذي يبدأه موفّر الخدمة، واستخدام مؤسسات متعددة لاتصالات منفصلة، والتوفير الفوري عند الحاجة. كما ندعم توفير SCIM مع [Okta](/ar/products/cloud/guides/security/cloud-access-management/scim-setup) و[Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/scim-setup-entra). ولا ندعم حتى الآن تعيين السمات.
 
 يمكن للعملاء الذين يفعّلون تكاملات SAML أيضًا تحديد الدور الافتراضي الذي سيُعيَّن للمستخدمين الجدد وضبط إعدادات مهلة الجلسة.
 
@@ -364,5 +364,5 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 </div>
 
 * [Manage cloud users](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — إدارة أذونات المستخدمين وقصر الوصول على اتصالات SAML فقط.
-* [توفير SCIM](/ar/products/cloud/guides/security/cloud-access-management/scim-setup) — أتمتة تهيئة المستخدمين والمجموعات (معاينة خاصة).
+* توفير SCIM — أتمتة تهيئة المستخدمين والمجموعات باستخدام [Okta](/ar/products/cloud/guides/security/cloud-access-management/scim-setup) أو [Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/scim-setup-entra).
 * [Console roles and permissions](/ar/products/cloud/reference/security/console-roles) — الأدوار التي يمكنك تعيينها كدور SAML افتراضي.

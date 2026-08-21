@@ -1,0 +1,52 @@
+-- cube, group_by_use_nulls = 0
+	0	249500	500
+	0	499500	1000
+	1	250000	500
+k0	0	83166	167
+k0	0	166833	334
+k0	1	83667	167
+k1	0	82834	166
+k1	0	166167	333
+k1	1	83333	167
+k2	0	83500	167
+k2	0	166500	333
+k2	1	83000	166
+-- cube with grouping(), group_by_use_nulls = 1
+k0	0	0	83166
+k0	1	0	83667
+k0	\N	1	166833
+k1	0	0	82834
+k1	1	0	83333
+k1	\N	1	166167
+k2	0	0	83500
+k2	1	0	83000
+k2	\N	1	166500
+\N	0	1	249500
+\N	1	1	250000
+\N	\N	2	499500
+-- multi-argument grouping in reverse key order
+	0	1	249500
+	0	3	499500
+	1	1	250000
+k0	0	0	83166
+k0	0	2	166833
+k0	1	0	83667
+k1	0	0	82834
+k1	0	2	166167
+k1	1	0	83333
+k2	0	0	83500
+k2	0	2	166500
+k2	1	0	83000
+-- distributed plan
+Expression (Project names)
+  GatherExchange (sorted by (__table1.k1 ASC, __table1.k2 ASC))
+    Sorting (Sorting for ORDER BY)
+      ScatterExchange (any scatter)
+        Expression ((Before ORDER BY + Projection))
+          Cube
+            MergingAggregated (merge)
+              GatherExchange
+                Aggregating (partial)
+                  ScatterExchange (any)
+                    Expression ((Before GROUP BY + Change column names to column identifiers))
+                      ReadFromMergeTree (default.t_cube_dist)

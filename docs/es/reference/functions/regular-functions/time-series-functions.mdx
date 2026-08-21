@@ -459,7 +459,7 @@ timeSeriesIdToGroup(id)
 
 **Argumentos**
 
-* `id` — Identificador de una serie temporal. [`UInt64`](/es/reference/data-types/int-uint) o [`UInt128`](/es/reference/data-types/int-uint) o [`UUID`](/es/reference/data-types/uuid) o [`FixedString(16)`](/es/reference/data-types/fixedstring)
+* `id` — Identificador de una serie temporal. Debe ser del mismo tipo que se usó al llamar a [timeSeriesStoreTags()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/es/reference/data-types/index)
 
 **Valor devuelto**
 
@@ -504,7 +504,7 @@ timeSeriesIdToTags(id)
 
 **Argumentos**
 
-* `id` — Identificador de una serie temporal. [`UInt64`](/es/reference/data-types/int-uint) o [`UInt128`](/es/reference/data-types/int-uint) o [`UUID`](/es/reference/data-types/uuid) o [`FixedString(16)`](/es/reference/data-types/fixedstring)
+* `id` — Identificador de una serie temporal. Debe ser del mismo tipo que se utilizó al llamar a [timeSeriesStoreTags()](/es/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/es/reference/data-types/index)
 
 **Valor devuelto**
 
@@ -832,7 +832,7 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **Argumentos**
 
-* `id` — Identificador de una serie temporal. [`UInt64`](/es/reference/data-types/int-uint) o [`UInt128`](/es/reference/data-types/int-uint) o [`UUID`](/es/reference/data-types/uuid) o [`FixedString(16)`](/es/reference/data-types/fixedstring)
+* `id` — Identificador de una serie temporal. Puede ser de cualquier tipo comparable. Se omiten las filas con identificadores NULL. [`Any`](/es/reference/data-types/index)
 * `tags_array` — Array de pares (tag&#95;name, tag&#95;value). [`Array(Tuple(String, String))`](/es/reference/data-types/array) o [`NULL`](/es/reference/syntax#null)
 * `separate_tag_name_i` — El nombre de una etiqueta. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring)
 * `separate_tag_value_i` — El valor de una etiqueta. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`Nullable(String)`](/es/reference/data-types/nullable)

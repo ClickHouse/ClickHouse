@@ -31,6 +31,8 @@ struct BlockInfo
       * Please refer to the comment in `ConvertingAggregatedToChunksTransform` for more details.
       */
 
+/// The revision argument is expanded only in BlockInfo.cpp, so `ProtocolDefines.h` is not needed
+/// here (`Block.h` pulls this header into nearly every translation unit).
 #define APPLY_FOR_BLOCK_INFO_FIELDS(M)                                                                                \
     M(bool,               is_overflows,         false, 1, 0)                                                          \
     M(Int32,              bucket_num,           -1,    2, 0)                                                          \

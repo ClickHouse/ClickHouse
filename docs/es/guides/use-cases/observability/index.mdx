@@ -1,10 +1,13 @@
 ---
 slug: /use-cases/observability
 title: 'Observabilidad'
+sidebarTitle: 'descripción general'
 description: 'Página de inicio de la guía del caso de uso de observabilidad'
-keywords: ['observabilidad', 'logs', 'traces', 'metrics', 'OpenTelemetry', 'Grafana', 'OTel']
+keywords: ['observabilidad', 'logs', 'trazas', 'métricas', 'OpenTelemetry', 'Grafana', 'OTel']
 doc_type: 'guide'
 ---
+
+import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 ClickHouse ofrece una velocidad, escalabilidad y eficiencia de costos inigualables para la observabilidad. Esta guía presenta dos opciones según tus necesidades:
 
@@ -42,3 +45,11 @@ Para usuarios con **requisitos personalizados** —como canalizaciones de ingest
 | [Integración con OpenTelemetry](/es/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | Recopilación y exportación de logs y trazas mediante OpenTelemetry con ClickHouse.                                                                                                              |
 | [Uso de herramientas de visualización](/es/guides/use-cases/observability/build-your-own/grafana)            | Aprenda a usar herramientas de visualización para observabilidad con ClickHouse, incluidas HyperDX y Grafana.                                                                                   |
 | [Aplicación de demostración](/es/guides/use-cases/observability/build-your-own/demo-application)             | Explore OpenTelemetry Demo Application, bifurcada para funcionar con ClickHouse para logs y trazas.                                                                                             |
+
+<div id="prometheus-metrics">
+  ## Métricas de Prometheus
+</div>
+
+<CloudNotSupportedBadge />
+
+ClickHouse puede almacenar métricas de Prometheus en una tabla [`TimeSeries`](/es/reference/engines/table-engines/integrations/time-series) y evaluar consultas PromQL. Consulte [Protocolos de Prometheus y PromQL](/es/concepts/features/interfaces/prometheus) para configurar la ingestión, las consultas y las visualizaciones.
