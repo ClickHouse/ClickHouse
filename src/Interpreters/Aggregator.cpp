@@ -112,10 +112,17 @@ void initDataVariantsWithSizeHint(
     const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
     if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
     {
-        /// A table predicted to reach the freeze threshold stays single-level (a two-level table
-        /// cannot freeze), pre-sized to at most what it can hold before freezing. A table
-        /// predicted to stay below the threshold will give up on freezing instead.
-        if (params.enable_adaptive_aggregator && hint->median_size >= params.adaptive_aggregator_freeze_threshold)
+        /// An engaged run always starts single-level (a two-level table cannot freeze),
+        /// pre-sized to at most what it can hold before the key-count freeze. Gating this on
+        /// the hint's median reaching the key threshold would leave a hole: the generic
+        /// initialization below goes two-level once the median reaches
+        /// `group_by_two_level_threshold`, so whenever that threshold is set below the freeze
+        /// threshold, a median between the two (recorded by a byte-triggered freeze or by a
+        /// run that never froze) would initialize the next run two-level and make it
+        /// unfreezable, alternating the query between the adaptive and baseline paths. A
+        /// table predicted to stay small initializes at its predicted size; if the prediction
+        /// holds, the run gives up on freezing through the ordinary learning rule.
+        if (params.enable_adaptive_aggregator)
         {
             result.init(method_chosen, std::min<size_t>(hint->median_size, 2 * params.adaptive_aggregator_freeze_threshold));
         }
