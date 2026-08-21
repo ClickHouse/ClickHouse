@@ -23,6 +23,8 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -36,6 +38,70 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Frequency counter over shared-data paths with a hard entry bound (weighted Misra-Gries).
+///
+/// Counting every distinct path exactly would make the counting structure itself grow with the
+/// number of distinct paths, so a wide JSON value could run out of memory here before the
+/// MAX_SHARED_DATA_STATISTICS_SIZE cap is ever applied. This keeps at most `capacity` entries: when
+/// a new path arrives and the table is full, the smallest counter's value is subtracted from every
+/// entry and the ones that reach zero are dropped.
+///
+/// The guarantee that matters for path selection is preserved: any path occurring in more than
+/// total/(capacity + 1) of the counted rows always survives, and its count is understated by at most
+/// that same amount. Rarer paths may be dropped or undercounted, which only affects which of the
+/// already-infrequent paths get statistics. Amortized O(1) per add: each eviction pass costs
+/// O(capacity) but removes at least `capacity` from the total counted mass.
+/// Entry bound for the counter below: a multiple of the statistics cap, so the frequent paths that
+/// actually get kept are ranked accurately while the working set stays bounded.
+const size_t SHARED_DATA_STATISTICS_COUNTER_CAPACITY = 4 * ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE;
+
+class BoundedPathFrequencyCounter
+{
+public:
+    explicit BoundedPathFrequencyCounter(size_t capacity_) : capacity(capacity_) { }
+
+    void add(const String & path, size_t count)
+    {
+        if (count == 0)
+            return;
+
+        if (auto it = counters.find(path); it != counters.end())
+        {
+            it->second += count;
+            return;
+        }
+
+        if (counters.size() < capacity)
+        {
+            counters.emplace(path, count);
+            return;
+        }
+
+        size_t min_count = std::numeric_limits<size_t>::max();
+        for (const auto & [_, counter] : counters)
+            min_count = std::min(min_count, counter);
+
+        const size_t decrement = std::min(count, min_count);
+        for (auto it = counters.begin(); it != counters.end();)
+        {
+            it->second -= decrement;
+            if (it->second == 0)
+                it = counters.erase(it);
+            else
+                ++it;
+        }
+
+        if (count > decrement)
+            counters.emplace(path, count - decrement);
+    }
+
+    const UnorderedMapWithMemoryTracking<String, size_t> & get() const { return counters; }
+
+private:
+    const size_t capacity;
+    UnorderedMapWithMemoryTracking<String, size_t> counters;
+};
 
 const FormatSettings & getFormatSettings()
 {
@@ -2438,12 +2504,16 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
     for (const auto & [path, column] : dynamic_paths)
         calculated_statistics->dynamic_paths_statistics[path] = column->size() - column->getNumberOfDefaultRows();
 
-    /// Count every distinct shared-data path before capping to MAX_SHARED_DATA_STATISTICS_SIZE (below),
-    /// so the paths kept are the actual top-K by frequency rather than whichever were seen first.
-    UnorderedMapWithMemoryTracking<String, size_t> shared_data_candidates;
+    /// Rank the shared-data paths by frequency before capping to MAX_SHARED_DATA_STATISTICS_SIZE
+    /// (below), so the ones kept are the frequent paths rather than whichever were seen first. The
+    /// counter is bounded, so a value with very many distinct paths cannot blow up here.
+    BoundedPathFrequencyCounter shared_data_counter(SHARED_DATA_STATISTICS_COUNTER_CAPACITY);
     const auto [shared_data_paths, _] = getSharedDataPathsAndValues();
     for (size_t i = 0; i != shared_data_paths->size(); ++i)
-        ++shared_data_candidates[String(shared_data_paths->getDataAt(i))];
+    {
+        shared_data_counter.add(String(shared_data_paths->getDataAt(i)), 1);
+    }
+    const auto & shared_data_candidates = shared_data_counter.get();
 
     if (shared_data_candidates.size() <= ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
     {
@@ -2468,8 +2538,10 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
     Statistics new_statistics;
-    /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data statistics).
-    UnorderedMapWithMemoryTracking<String, size_t> shared_data_candidates;
+    /// Collect total sizes for paths that are not in our dynamic_paths (candidates for shared data
+    /// statistics). Bounded the same way as in getOrCalculateStatistics: merging many sources with
+    /// broad path sets must not make this map grow with the number of distinct paths.
+    BoundedPathFrequencyCounter shared_data_counter(SHARED_DATA_STATISTICS_COUNTER_CAPACITY);
     for (const auto & source_column : source_columns)
     {
         const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
@@ -2482,7 +2554,7 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
             if (dynamic_paths.contains(path))
                 new_statistics.dynamic_paths_statistics[path] += size;
             else
-                shared_data_candidates[path] += size;
+                shared_data_counter.add(path, size);
         }
 
         /// For shared data paths in source statistics: if the path got promoted to a dynamic path
@@ -2492,9 +2564,11 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
             if (dynamic_paths.contains(path))
                 new_statistics.dynamic_paths_statistics[path] += size;
             else
-                shared_data_candidates[path] += size;
+                shared_data_counter.add(path, size);
         }
     }
+
+    const auto & shared_data_candidates = shared_data_counter.get();
 
     /// Select top MAX_SHARED_DATA_STATISTICS_SIZE paths by total size for shared data statistics.
     if (shared_data_candidates.size() <= Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
