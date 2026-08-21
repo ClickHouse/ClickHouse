@@ -122,14 +122,12 @@ std::string formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    /// KeeperMap metadata is shared across server versions, so cosmetic parentheses must not
-    /// change its serialized representation.
-    return ast->formatIgnoringRedundantParentheses();
+    return ast->formatWithSecretsOneLine();
 }
 
 /// Some builds persisted a single primary-key expression as `(key)`, while others wrote `key`.
-/// Parse both representations before comparing existing metadata, but reject input that could
-/// only match after the parser discarded a statement terminator, comment, or other trailing text.
+/// Normalize only outer parentheses that wrap one complete expression. This works with parsers
+/// that either preserve or discard those parentheses and rejects comments or trailing syntax.
 std::optional<std::string> tryCanonicalPrimaryKey(const std::string & primary_key)
 {
     if (!primary_key.ends_with('\n'))
@@ -138,34 +136,45 @@ std::optional<std::string> tryCanonicalPrimaryKey(const std::string & primary_ke
     std::string_view expression(primary_key);
     expression.remove_suffix(1);
 
-    ParserExpressionList parser(/*allow_alias_without_as_keyword_=*/ false);
-    const char * pos = expression.data();
-    const char * end = pos + expression.size();
-    std::string error_message;
+    auto try_parse = [](std::string_view text)
+    {
+        ParserExpression parser;
+        const char * pos = text.data();
+        const char * end = pos + text.size();
+        std::string error_message;
+        return tryParseQuery(
+            parser,
+            pos,
+            end,
+            error_message,
+            /*hilite=*/ false,
+            /*description=*/ "KeeperMap primary key",
+            /*allow_multi_statements=*/ false,
+            text.size(),
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+            /*skip_insignificant=*/ true);
+    };
 
-    ASTPtr ast = tryParseQuery(
-        parser,
-        pos,
-        end,
-        error_message,
-        /*hilite=*/ false,
-        /*description=*/ "KeeperMap primary key",
-        /*allow_multi_statements=*/ false,
-        expression.size(),
-        DBMS_DEFAULT_MAX_PARSER_DEPTH,
-        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
-        /*skip_insignificant=*/ true);
-
+    ASTPtr ast = try_parse(expression);
     if (!ast)
         return std::nullopt;
 
-    const auto formatted = ast->formatWithSecretsOneLine();
-    auto canonical = ast->formatIgnoringRedundantParentheses();
+    while (expression.size() >= 2 && expression.front() == '(' && expression.back() == ')')
+    {
+        auto inner_expression = expression.substr(1, expression.size() - 2);
+        auto inner_ast = try_parse(inner_expression);
+        if (!inner_ast)
+            break;
 
-    if (expression != formatted && expression != canonical)
+        expression = inner_expression;
+        ast = std::move(inner_ast);
+    }
+
+    if (expression != ast->formatWithSecretsOneLine())
         return std::nullopt;
 
-    return canonical;
+    return std::string(expression);
 }
 
 void verifyTableId(const StorageID & table_id)
@@ -506,25 +515,11 @@ StorageKeeperMap::StorageKeeperMap(
                 auto client = getClient();
                 std::shared_ptr<zkutil::EphemeralNodeHolder> metadata_drop_lock;
                 std::string stored_metadata_string;
-                Coordination::Stat stored_metadata_stat;
-                auto exists = client->tryGet(zk_metadata_path, stored_metadata_string, &stored_metadata_stat);
+                auto exists = client->tryGet(zk_metadata_path, stored_metadata_string);
 
                 if (exists)
                 {
-                    auto normalized_metadata_string = getNormalizedMetadataStringIfCompatible(
-                        stored_metadata_string, metadata_string, /*throw_on_error=*/ true);
-
-                    if (*normalized_metadata_string != stored_metadata_string)
-                    {
-                        auto code = client->trySet(zk_metadata_path, *normalized_metadata_string, stored_metadata_stat.version);
-                        if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
-                            return;
-
-                        if (code != Coordination::Error::ZOK)
-                            throw zkutil::KeeperException::fromPath(code, zk_metadata_path);
-
-                        LOG_INFO(log, "Normalized primary key metadata at path {}", zk_metadata_path);
-                    }
+                    isMetadataStringCompatible(stored_metadata_string, metadata_string, /*throw_on_error=*/ true);
 
                     auto code = client->tryCreate(zk_table_path, "", zkutil::CreateMode::Persistent);
 
@@ -723,13 +718,13 @@ VirtualColumnsDescription StorageKeeperMap::createVirtuals()
     return desc;
 }
 
-std::optional<std::string> StorageKeeperMap::getNormalizedMetadataStringIfCompatible(
+bool StorageKeeperMap::isMetadataStringCompatible(
     const std::string & zk_metadata_string,
     const std::string & local_metadata_string,
     bool throw_on_error) const
 {
     if (zk_metadata_string == local_metadata_string)
-        return zk_metadata_string;
+        return true;
 
     const std::string_view metadata_format_version_prefix = "KeeperMap metadata format version: 1\ncolumns: ";
     const std::string_view primary_key_header = "\nprimary key: ";
@@ -760,17 +755,14 @@ std::optional<std::string> StorageKeeperMap::getNormalizedMetadataStringIfCompat
     if (zk_pk == local_pk)
     {
         if (columns_equal)
-            return zk_metadata_string;
+            return true;
     }
     else if (columns_equal)
     {
         const auto canonical_zk_pk = tryCanonicalPrimaryKey(zk_pk);
         const auto canonical_local_pk = tryCanonicalPrimaryKey(local_pk);
         if (canonical_zk_pk && canonical_local_pk && *canonical_zk_pk == *canonical_local_pk)
-        {
-            return zk_metadata_string.substr(0, zk_pk_pos + primary_key_header.size())
-                + *canonical_zk_pk + '\n';
-        }
+            return true;
     }
 
     if (throw_on_error)
@@ -793,7 +785,7 @@ std::optional<std::string> StorageKeeperMap::getNormalizedMetadataStringIfCompat
         zk_metadata_string,
         local_metadata_string);
 
-    return std::nullopt;
+    return false;
 }
 
 
@@ -1484,7 +1476,7 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
                     return;
                 }
 
-                if (!getNormalizedMetadataStringIfCompatible(stored_metadata_string, metadata_string, /*throw_on_error=*/ false))
+                if (!isMetadataStringCompatible(stored_metadata_string, metadata_string, /*throw_on_error=*/ false))
                 {
                     table_status = TableStatus::INVALID_METADATA;
                     return;

@@ -13,7 +13,6 @@
 #include <Backups/IBackup.h>
 #include <Backups/WithRetries.h>
 
-#include <optional>
 #include <span>
 
 namespace DB
@@ -139,7 +138,7 @@ private:
 
     TableStatus getTableStatus(const ContextPtr & context) const;
 
-    std::optional<std::string> getNormalizedMetadataStringIfCompatible(
+    bool isMetadataStringCompatible(
         const std::string & zk_metadata_string,
         const std::string & local_metadata_string,
         bool throw_on_error) const;
