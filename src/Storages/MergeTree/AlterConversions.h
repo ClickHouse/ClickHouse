@@ -76,25 +76,33 @@ private:
     void addMutationCommand(const MutationCommand & command, const ContextPtr & context);
     void addPatchPart(PatchPartInfoForReader patch_part);
 
+    /// The commands of the on-fly chain a read task needs, and the storage columns that chain reads.
+    struct MutationChainForRead
+    {
+        MutationCommands commands;
+        Names read_columns;
+    };
+
+    MutationChainForRead buildMutationChainForRead(
+        const NamesAndTypesList & read_columns,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context) const;
+
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands
     /// that affect columns from @read_columns.
     std::vector<MutationActions> getMutationActions(
         const IMergeTreeDataPartInfoForReader & part_info,
-        const NamesAndTypesList & read_columns,
+        MutationChainForRead chain,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context) const;
 
-    /// Adds the columns needed to recalculate the MATERIALIZED columns of @read_columns: the columns
-    /// their expressions read, transitively, but only those through which an updated column is reachable.
-    void addColumnsRequiredForMaterialized(
+    /// Returns only mutations commands that affect columns from set, extending the set with the
+    /// columns those commands read.
+    MutationCommands filterMutationCommands(
         Names & read_columns,
         NameSet & read_columns_set,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ContextPtr & context) const;
-
-    /// Returns only mutations commands that affect columns from set.
-    MutationCommands filterMutationCommands(Names & read_columns, NameSet read_columns_set) const;
+        const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Rename map new_name -> old_name.
     std::vector<RenamePair> rename_map;
