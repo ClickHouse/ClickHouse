@@ -5,8 +5,8 @@ full_projection
 full_projection_order_by
 Sorting (Sorting for ORDER BY)
 results_match
-0
+0	0	10	10
 mixed_parts
 AggregatingProjection
 mixed_results_match
-0
+0	0	10	10

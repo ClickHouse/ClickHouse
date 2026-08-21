@@ -70,14 +70,23 @@ INSERT INTO gt_projection
 SELECT k, sum(v) AS s FROM t_top_k_proj GROUP BY k ORDER BY k LIMIT 10;
 SET enable_group_by_top_k_optimization = 1;
 
-SELECT 'results_match';
-SELECT count() FROM
-(
-    SELECT k, sum(v) AS s FROM t_top_k_proj GROUP BY k ORDER BY k LIMIT 10
-) AS o
-FULL JOIN gt_projection AS u USING (k)
-WHERE o.s != u.s;
+DROP TABLE IF EXISTS opt_projection;
+CREATE TABLE opt_projection ENGINE = Memory EMPTY AS
+SELECT k, sum(v) AS s FROM t_top_k_proj GROUP BY k ORDER BY k LIMIT 10;
+INSERT INTO opt_projection
+SELECT k, sum(v) AS s FROM t_top_k_proj GROUP BY k ORDER BY k LIMIT 10;
 
+-- Compare both `EXCEPT` directions and the cardinalities: a join filtered on
+-- `o.s != u.s` evaluates to NULL for a key missing on either side, so it stays
+-- empty on exactly the key-set divergence this test is meant to catch.
+SELECT 'results_match';
+SELECT
+    (SELECT count() FROM (SELECT * FROM opt_projection EXCEPT SELECT * FROM gt_projection)),
+    (SELECT count() FROM (SELECT * FROM gt_projection EXCEPT SELECT * FROM opt_projection)),
+    (SELECT count() FROM opt_projection),
+    (SELECT count() FROM gt_projection);
+
+DROP TABLE opt_projection;
 DROP TABLE gt_projection;
 
 DROP TABLE t_top_k_proj;
@@ -110,14 +119,20 @@ INSERT INTO gt_projection_mixed
 SELECT k, sum(v) AS s FROM t_top_k_proj_mixed GROUP BY k ORDER BY k LIMIT 10;
 SET enable_group_by_top_k_optimization = 1;
 
-SELECT 'mixed_results_match';
-SELECT count() FROM
-(
-    SELECT k, sum(v) AS s FROM t_top_k_proj_mixed GROUP BY k ORDER BY k LIMIT 10
-) AS o
-FULL JOIN gt_projection_mixed AS u USING (k)
-WHERE o.s != u.s;
+DROP TABLE IF EXISTS opt_projection_mixed;
+CREATE TABLE opt_projection_mixed ENGINE = Memory EMPTY AS
+SELECT k, sum(v) AS s FROM t_top_k_proj_mixed GROUP BY k ORDER BY k LIMIT 10;
+INSERT INTO opt_projection_mixed
+SELECT k, sum(v) AS s FROM t_top_k_proj_mixed GROUP BY k ORDER BY k LIMIT 10;
 
+SELECT 'mixed_results_match';
+SELECT
+    (SELECT count() FROM (SELECT * FROM opt_projection_mixed EXCEPT SELECT * FROM gt_projection_mixed)),
+    (SELECT count() FROM (SELECT * FROM gt_projection_mixed EXCEPT SELECT * FROM opt_projection_mixed)),
+    (SELECT count() FROM opt_projection_mixed),
+    (SELECT count() FROM gt_projection_mixed);
+
+DROP TABLE opt_projection_mixed;
 DROP TABLE gt_projection_mixed;
 
 DROP TABLE t_top_k_proj_mixed;

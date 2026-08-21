@@ -13,6 +13,7 @@ SET optimize_aggregation_in_order = 0;
 SET enable_parallel_replicas = 0;
 SET max_threads = 1;
 SET max_block_size = 1024;
+SET log_queries = 1;
 
 SELECT 'legacy string keys survive cross-block eviction';
 SELECT
@@ -26,7 +27,8 @@ FROM
     ORDER BY k DESC
     LIMIT 10
     SETTINGS enable_packed_string_keys_in_aggregation = 0
-);
+)
+SETTINGS log_comment = '04907_legacy';
 
 SELECT 'packed string keys survive cross-block eviction';
 SELECT
@@ -40,7 +42,8 @@ FROM
     ORDER BY k DESC
     LIMIT 10
     SETTINGS enable_packed_string_keys_in_aggregation = 1
-);
+)
+SETTINGS log_comment = '04907_packed';
 
 -- Multiple keys use the serialized-key method, whose key is another
 -- arena-backed string view retained by the heap for later erase.
@@ -55,4 +58,18 @@ FROM
     GROUP BY k, suffix
     ORDER BY k DESC, suffix DESC
     LIMIT 10
-);
+)
+SETTINGS log_comment = '04907_serialized';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Positive proof that the heap actually ran (and evicted) for every method
+-- family above: correct final rows alone would stay green even if a later
+-- gate silently disabled top-K and stopped exercising the erase path.
+SELECT 'each family evicted through the heap';
+SELECT log_comment, max(ProfileEvents['AggregationTopKKeysEvicted']) > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND current_database = currentDatabase()
+    AND type = 'QueryFinish' AND log_comment IN ('04907_legacy', '04907_packed', '04907_serialized')
+GROUP BY log_comment
+ORDER BY log_comment;
