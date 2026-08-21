@@ -4850,21 +4850,49 @@ deltaLake{suffix}({cluster}
         )
     )
 
-    # Pinning a version before the DELETE keeps the pre-deletion count: that snapshot carries no
-    # deletion vector, so the optimization still applies there.
+    # Version 1 is the overwrite that precedes the DELETE, so that snapshot carries no deletion
+    # vector and the optimization still applies to it. This is the positive control for the pinned
+    # path: without it, the assertions below would also hold if the optimization had been disabled
+    # for every Delta table rather than declined for the files that carry a vector.
     assert 5 == int(
         node.query(
             f"SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 1"
         ).strip()
     )
+    assert trivial_count_step in node.query(
+        f"EXPLAIN SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 1"
+    )
+
+    # A commit after the DELETE, so the version that carries the vector becomes an older snapshot
+    # and the counts below cannot be served by whatever the latest version happens to be.
+    df_appended = spark.createDataFrame(data=[(3, "z", "z")], schema=schema)
+    df_appended.write.format("delta").partitionBy("a").mode("append").save(path)
+    upload_directory(minio_client, bucket, path, "")
+
+    # The vector stays on the surviving file across later commits, so the newest version is
+    # over-counted too: 3 rows survive, while the statistics of its files still add up to 5.
+    assert 3 == int(node.query(f"SELECT count() FROM {delta_function}").strip())
+    assert trivial_count_step not in node.query(
+        f"EXPLAIN SELECT count() FROM {delta_function}"
+    )
+    # Version 2 is the DELETE itself. Reading it counts 2, the number of rows that version has,
+    # rather than the 4 its file statistics record.
+    assert 2 == int(
+        node.query(
+            f"SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 2"
+        ).strip()
+    )
+    assert trivial_count_step not in node.query(
+        f"EXPLAIN SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 2"
+    )
 
     if on_cluster:
         return
 
-    # An engine table keeps one metadata object across queries, which is what reaches the second
-    # accumulation site: the scan callback publishes the statistics a later `count()` then reads,
-    # whereas a table function rebuilds its metadata per query and only ever reaches the
-    # metadata-only stats scan.
+    # Scanning a table before counting it makes the scan callback publish the statistics, which is
+    # the other place the row counts are accumulated: `getSnapshotStats` caches, and the callback
+    # only fills an empty cache, so whichever query runs first decides which of the two sites is
+    # exercised.
     engine_table = table_name + "_engine"
     node.query(f"DROP TABLE IF EXISTS {engine_table}")
     node.query(
@@ -4881,7 +4909,7 @@ deltaLake{suffix}({cluster}
         )
     )
 
-    assert 2 == int(node.query(f"SELECT count() FROM {engine_table}").strip())
+    assert 3 == int(node.query(f"SELECT count() FROM {engine_table}").strip())
     assert trivial_count_step not in node.query(
         f"EXPLAIN SELECT count() FROM {engine_table}"
     )
@@ -4914,6 +4942,37 @@ deltaLake{suffix}({cluster}
     assert 5 == int(
         node.query(
             f"SELECT total_rows FROM system.tables WHERE name = '{plain_table}'"
+        ).strip()
+    )
+
+    # The control above counts before it scans, so its row count comes from the metadata-only stats
+    # scan. Reading the same data through a table that is scanned first covers the other site in
+    # the direction where it must still report a number, which the deletion-vector assertions above
+    # cannot check: they only require it to report nothing.
+    plain_scanned = plain_table + "_scanned"
+    node.query(f"DROP TABLE IF EXISTS {plain_scanned}")
+    node.query(
+        f"CREATE TABLE {plain_scanned} ENGINE=DeltaLake(s3, filename = '{plain_table}/', "
+        f"format=Parquet, url = 'http://minio1:9001/{bucket}/')"
+    )
+    plain_scan_query_id = f"test_dv_plain_scan_{table_name}"
+    node.query(
+        f"SELECT * FROM {plain_scanned} FORMAT Null", query_id=plain_scan_query_id
+    )
+    node.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{plain_scan_query_id}' "
+            "AND message LIKE '%Updated statistics from data files iterator for snapshot version%'"
+        )
+    )
+    assert 5 == int(node.query(f"SELECT count() FROM {plain_scanned}").strip())
+    assert trivial_count_step in node.query(
+        f"EXPLAIN SELECT count() FROM {plain_scanned}"
+    )
+    assert 5 == int(
+        node.query(
+            f"SELECT total_rows FROM system.tables WHERE name = '{plain_scanned}'"
         ).strip()
     )
 
