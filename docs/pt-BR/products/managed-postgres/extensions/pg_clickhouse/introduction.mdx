@@ -41,36 +41,36 @@ pushdown de consultas.
   ## Caso de teste: TPC-H
 </div>
 
-Esta tabela compara o desempenho das [TPC-H] queries entre tabelas
-PostgreSQL comuns e o pg&#95;clickhouse conectado ao ClickHouse, ambos carregados com
-fator de escala 1; ✔︎ indica pushdown completo, enquanto um traço indica o
-cancelamento de uma consulta após 1 min. Todos os testes foram executados em um MacBook Pro M4 Max com 36 GB de
-memória.
+Esta tabela compara o desempenho das consultas [TPC-H] entre tabelas
+PostgreSQL convencionais e o pg&#95;clickhouse conectado ao ClickHouse, ambos carregados com fator de
+escala 1; ✔︎ indica pushdown completo em uma única varredura externa, e ✼ indica
+pushdown completo em várias varreduras externas. Todos os testes foram executados em um MacBook Pro M4 Max
+com 36 GB de memória.
 
 |   Consulta | PostgreSQL | pg&#95;clickhouse | Pushdown |
 | ---------: | ---------: | ----------------: | :------: |
-|  [consulta 1] |    4693 ms |            268 ms |    ✔︎    |
-|  [consulta 2] |     458 ms |           3446 ms |          |
-|  [consulta 3] |     742 ms |            111 ms |    ✔︎    |
-|  [consulta 4] |     270 ms |            130 ms |    ✔︎    |
-|  [consulta 5] |     337 ms |           1460 ms |    ✔︎    |
-|  [consulta 6] |     764 ms |             53 ms |    ✔︎    |
-|  [consulta 7] |     619 ms |             96 ms |    ✔︎    |
-|  [consulta 8] |     342 ms |            156 ms |    ✔︎    |
-|  [consulta 9] |    3094 ms |            298 ms |    ✔︎    |
-| [consulta 10] |     581 ms |            197 ms |    ✔︎    |
-| [consulta 11] |     212 ms |             24 ms |          |
-| [consulta 12] |    1116 ms |             84 ms |    ✔︎    |
-| [consulta 13] |     958 ms |           1368 ms |          |
-| [consulta 14] |     181 ms |             73 ms |    ✔︎    |
-| [consulta 15] |    1118 ms |            557 ms |          |
-| [consulta 16] |     497 ms |           1714 ms |          |
-| [consulta 17] |    1846 ms |          32709 ms |          |
-| [consulta 18] |    5823 ms |          10649 ms |          |
-| [consulta 19] |      53 ms |            206 ms |    ✔︎    |
-| [consulta 20] |     421 ms |                 - |          |
-| [consulta 21] |    1349 ms |           4434 ms |          |
-| [consulta 22] |     258 ms |           1415 ms |          |
+|  [Query 1] |    4483 ms |             59 ms |     ✔    |
+|  [Query 2] |     588 ms |             24 ms |     ✔    |
+|  [Query 3] |     786 ms |             62 ms |     ✔    |
+|  [Query 4] |     550 ms |             38 ms |     ✔    |
+|  [Query 5] |     721 ms |           1439 ms |     ✔    |
+|  [Query 6] |     592 ms |             17 ms |     ✔    |
+|  [Query 7] |     639 ms |             29 ms |     ✔    |
+|  [Query 8] |     398 ms |            383 ms |     ✔    |
+|  [Query 9] |    2842 ms |            162 ms |     ✔    |
+| [Query 10] |     860 ms |            125 ms |     ✔    |
+| [Query 11] |     276 ms |             21 ms |     ✼    |
+| [Query 12] |     963 ms |             26 ms |     ✔    |
+| [Query 13] |    1037 ms |           1354 ms |          |
+| [Query 14] |     675 ms |             30 ms |     ✔    |
+| [Query 15] |    2520 ms |            387 ms |          |
+| [Query 16] |     539 ms |            823 ms |          |
+| [Query 17] |    2107 ms |             37 ms |     ✔    |
+| [Query 18] |    5230 ms |           7228 ms |          |
+| [Query 19] |      68 ms |             47 ms |     ✔    |
+| [Query 20] |     473 ms |             28 ms |          |
+| [Query 21] |    1145 ms |           4470 ms |          |
+| [Query 22] |     270 ms |             45 ms |     ✼    |
 
 <div id="compile-from-source">
   ### Compilar a partir do código-fonte
@@ -141,18 +141,6 @@ Para compilar e instalar a biblioteca ClickHouse e `pg_clickhouse`, execute:
 make
 sudo make install
 ```
-
-{/* XXX DSO atualmente desabilitado.
-  Por padrão, `make` faz o link dinâmico da biblioteca `clickhouse-cpp` (exceto no
-  macOS, onde ainda não há suporte para uma biblioteca dinâmica `clickhouse-cpp`). Para
-  compilar estaticamente a biblioteca ClickHouse em `pg_clickhouse`, passe
-  `CH_BUILD=static`:
-
-  ```sh
-  make CH_BUILD=static
-  sudo make install CH_BUILD=static
-  ```
-  */}
 
 Se o host tiver várias instalações do PostgreSQL, talvez seja necessário especificar
 a versão correta do `pg_config`:
@@ -295,6 +283,8 @@ de adicionar recursos de DML. Nosso roadmap:
 </div>
 
 * [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+* [Josh Ventura](https://github.com/JoshDreamland)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 

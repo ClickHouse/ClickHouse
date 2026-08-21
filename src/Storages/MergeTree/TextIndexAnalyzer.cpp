@@ -428,6 +428,31 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
     }
 }
 
+void TextIndexAnalyzer::detachQueryFromTokens(const UInt128 & query_hash, const QueryBuilder & query_builder)
+{
+    /// Detach the full declared token set so yet-unseen tokens stop passing isTokenNeeded.
+    for (const auto & query_token : query_builder.query->getTokens())
+        queries_by_token[query_token].erase(query_hash);
+
+    /// Also detach already-discovered dynamic pattern tokens (not in `query->getTokens`).
+    for (const auto & [query_token, _] : query_builder.tokens)
+        queries_by_token[query_token].erase(query_hash);
+}
+
+void TextIndexAnalyzer::markAllQueriesFailed()
+{
+    always_false = true;
+
+    for (auto & [query_hash, query_builder] : query_builders)
+    {
+        if (query_builder.is_failed)
+            continue;
+
+        query_builder.markFailed();
+        detachQueryFromTokens(query_hash, query_builder);
+    }
+}
+
 template <typename Operation>
 void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation && operation)
 {
@@ -446,16 +471,12 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
 
         if (query_builder.is_failed)
         {
+            detachQueryFromTokens(query_hash, query_builder);
+
+            /// One failed query in `All` global mode proves the whole conjunction false in this
+            /// part; the remaining queries cannot contribute to the result, so fail them all.
             if (global_search_mode == TextSearchMode::All)
-                always_false = true;
-
-            /// Erase the failed query for the full declared token set so yet-unseen tokens stop passing isTokenNeeded.
-            for (const auto & query_token : query_builder.query->getTokens())
-                queries_by_token[query_token].erase(query_hash);
-
-            /// Also erase for already-discovered dynamic pattern tokens (not in `query->getTokens`).
-            for (const auto & [query_token, _] : query_builder.tokens)
-                queries_by_token[query_token].erase(query_hash);
+                markAllQueriesFailed();
         }
     }
 }

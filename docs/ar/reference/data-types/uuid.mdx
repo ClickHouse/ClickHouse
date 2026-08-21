@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 المعرّف الفريد عالميًا (معرّف UUID) هو قيمة بطول 16 بايت تُستخدم لتحديد السجلات. لمزيد من المعلومات التفصيلية حول UUIDs، راجع [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
-مع وجود إصدارات مختلفة من معرّف UUID، مثل UUIDv4 وUUIDv7 (راجع [هنا](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis))، فإن ClickHouse لا يتحقق مما إذا كانت UUIDs المدرجة تتوافق مع إصدار معيّن.
+مع وجود إصدارات مختلفة من معرّف UUID، مثل UUIDv4 وUUIDv7 (راجع [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562))، فإن ClickHouse لا يتحقق مما إذا كانت UUIDs المدرجة تتوافق مع إصدار معيّن.
 تُعامَل UUIDs داخليًا على أنها تسلسل من 16 بايت عشوائي، مع تمثيل [8-4-4-4-12](https://en.wikipedia.org/wiki/Universally_unique_identifier#Textual_representation) على مستوى SQL.
 
 مثال على قيمة معرّف UUID:

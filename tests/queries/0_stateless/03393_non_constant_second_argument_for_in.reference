@@ -7,6 +7,10 @@
 1
 6
 7
+0
+1
+6
+7
 -- MORE CASES --
 -- { echoOn }
 
@@ -28,8 +32,8 @@ SELECT (1, null) in [(number % 3, number % 5)] FROM numbers(2);
 SELECT (1, null) in (SELECT (0, 0::Nullable(Int))), (1, null) in (SELECT (1, 1::Nullable(Int)));
 0	0
 SELECT (1, null) in [(number % 3, number % 5), (1, null)] FROM numbers(2);
-1
-1
+0
+0
 SELECT (1, null) in (SELECT (0, 0::Nullable(Int)) UNION ALL SELECT (1, null)), (1, null) in (SELECT (1, 1::Nullable(Int)) UNION ALL SELECT (1, null));
 1	1
 SELECT 'ANOTHER SETTING';
