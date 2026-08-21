@@ -51,7 +51,7 @@ bool textIndexSetElementIsComparable(
     /// the type it receives there: the element type for an `Array` carrier, which is rewritten
     /// through `arrayMap`, and the declared type otherwise. Any other carrier lets the two
     /// applications read different input and produce different tokens, unless the preprocessor only
-    /// folds case, which reads no type and preserves the byte count.
+    /// folds case, which maps the bytes it is given without consulting their type.
     if (has_preprocessor && !preprocessor_is_case_folding
         && !preprocessorInputType(index_type)->equals(DataTypeString{}))
         return false;
