@@ -712,18 +712,19 @@ def test_submodule_cache_clone_is_bounded():
     assert all(h and 0 < h <= budget for h in heads), heads
 
 
-def test_every_subprocess_of_the_population_is_bounded_by_the_shared_budget():
-    """Every subprocess the population starts must carry a deadline drawn from the budget.
+def test_the_producing_and_publishing_steps_are_bounded_by_the_shared_budget():
+    """Each step that produces or publishes the archive carries a deadline from the budget.
 
     The clone is not the only step that can hang: the S3 probes and the upload are AWS
     client subprocesses whose own socket deadline is minutes long and is retried, so an
     unbounded one can outlast the budget by itself and let the job watchdog fire, which is
     the outcome the budget exists to prevent. Asserting only the clone leaves that open.
 
-    `GHAuth.auth` is deliberately out of this scope: it is bounded by nothing, but the job
-    already authenticates unconditionally before the population starts, so this path only
-    ever reaches it after that earlier attempt failed, and bounding it here would leave
-    that earlier one to overrun the cap on its own.
+    Two calls are outside this scope, `GHAuth.auth` and the `Digest.get_submodule_shas`
+    enumeration, because on the workflows this job runs for an earlier and larger call of
+    the same thing is what a bound would have to cover. The two tests after this one pin
+    those orderings, and the enumeration one records the workflows the ordering does not
+    hold for, so the scope rests on them rather than on this wording.
     """
     import ci.praktika.native_jobs as nj
     from ci.praktika.settings import Settings
@@ -946,6 +947,113 @@ def test_the_job_authenticates_before_the_population_can_reach_auth():
         gh_auth_module.Shell = original_shell
         GHAuth._get_access_token_from_lambda = original_mint
         GHAuth._authenticated = original
+
+
+def test_the_job_enumerates_submodules_before_the_population_can():
+    """The digest pass runs the same enumeration before the population is reached.
+
+    `Digest.get_submodule_shas` is unbounded, but the cache lookup that gates the population
+    already runs it for every job digesting with submodules, so bounding only the
+    population's call would leave that earlier and larger run to overrun the cap on its own.
+
+    Holds for the workflows whose jobs digest with submodules, which is every cache-enabled
+    one except `OPTIMIZE_WORKFLOWS_WITHOUT_SUBMODULE_DIGEST`. Those two reach the population
+    with no earlier enumeration, so pin the set: a third one appearing is a workflow this
+    reasoning has not been checked against.
+    """
+    import inspect
+
+    import ci.praktika.digest as digest_module
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.hook_cache import CacheRunnerHooks
+    from ci.praktika.runtime import RunConfig
+    from ci.workflows.pull_request import workflow
+
+    source, first_line = inspect.getsourcelines(nj._config_workflow)
+    lookup = [
+        first_line + offset
+        for offset, line in enumerate(source)
+        if "CacheRunnerHooks.configure(" in line
+    ]
+    population = [
+        first_line + offset
+        for offset, line in enumerate(source)
+        if "_prepare_submodule_cache(" in line
+    ]
+    assert lookup and population, (lookup, population)
+    assert max(lookup) < min(population), (lookup, population)
+
+    # The order above is not enough: it says the lookup runs first, not that it enumerates.
+    # Driving it is what shows that, and the file hashing is replaced because it dominates
+    # the runtime without being the subject.
+    calls = []
+    original_enumerate = digest_module.Digest.__dict__["get_submodule_shas"]
+    original_file_digest = digest_module.Digest.__dict__["_calc_file_digest"]
+    config = RunConfig(
+        name=workflow.name,
+        digest_jobs={},
+        digest_dockers={docker.name: "0" * 12 for docker in workflow.dockers},
+        sha="0" * 40,
+        cache_success=[],
+        cache_success_base64=[],
+        cache_artifacts={},
+        cache_jobs={},
+        filtered_jobs={},
+        custom_data={},
+        submodule_cache_hash="",
+    )
+    try:
+        digest_module.Digest.get_submodule_shas = staticmethod(
+            lambda: calls.append(1) or "sha"
+        )
+        digest_module.Digest._calc_file_digest = staticmethod(
+            lambda path, hash_md5: hash_md5
+        )
+        # Inherited from `Serializable`, so shadow it here and drop the override to restore.
+        RunConfig.from_fs = staticmethod(lambda _name: config)
+        # The lookup itself reads S3; skipping it is the path that still digests everything.
+        CacheRunnerHooks.configure(workflow, skip_lookup=True)
+    finally:
+        del RunConfig.from_fs
+        digest_module.Digest._calc_file_digest = original_file_digest
+        digest_module.Digest.get_submodule_shas = original_enumerate
+
+    assert calls, "the cache lookup must enumerate submodules, not just run first"
+
+
+# Cache-enabled, yet no job in them digests with submodules, so the population's own
+# enumeration is the first one and the ordering above does not cover them. Both only
+# collect build profiles, so they never restore the archive they populate.
+OPTIMIZE_WORKFLOWS_WITHOUT_SUBMODULE_DIGEST = ("OptimizeClickHouse", "OptimizeToolchain")
+
+
+def test_the_workflows_without_an_earlier_enumeration_are_the_known_two():
+    """Pin which cache-enabled workflows reach the population with no earlier enumeration.
+
+    The population runs for every cache-enabled workflow, so a new one whose jobs do not
+    digest with submodules would silently join a set the carve-out above does not reason
+    about. Naming the set turns that into a failure here instead.
+    """
+    import importlib
+    import pkgutil
+
+    import ci.workflows
+
+    without = []
+    for module in sorted(m.name for m in pkgutil.iter_modules(ci.workflows.__path__)):
+        workflow = getattr(
+            importlib.import_module(f"ci.workflows.{module}"), "workflow", None
+        )
+        # The population is gated on the workflow's own cache being enabled.
+        if workflow is None or not workflow.enable_cache:
+            continue
+        if not any(
+            job.digest_config and job.digest_config.with_git_submodules
+            for job in workflow.jobs
+        ):
+            without.append(workflow.name)
+
+    assert sorted(without) == sorted(OPTIMIZE_WORKFLOWS_WITHOUT_SUBMODULE_DIGEST), without
 
 
 def test_the_clone_deadline_accounts_for_authenticated_setup():
