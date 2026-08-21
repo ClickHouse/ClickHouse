@@ -106,9 +106,9 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    String getValueName(const IColumn::Options & options) const
+    std::pair<String, DataTypePtr> getValueNameAndType(const IColumn::Options & options) const
     {
-        return constant_value.getValueName(options);
+        return constant_value.getValueNameAndType(options);
     }
 
     bool isDeterministic() const { return is_deterministic; }

@@ -1,6 +1,4 @@
 #include <Client/BuzzHouse/Generator/ProbabilityGenerator.h>
-#include <Common/ErrorCodes.h>
-#include <Common/Exception.h>
 
 #include <cassert>
 #include <random>
@@ -8,19 +6,10 @@
 #include <base/defines.h>
 #include <Common/randomSeed.h>
 
-namespace DB
-{
-namespace ErrorCodes
-{
-extern const int BUZZHOUSE;
-}
-}
-
 namespace BuzzHouse
 {
 
-ProbabilityGenerator::ProbabilityGenerator(
-    const ProbabilityStrategy ps, const uint64_t in_seed, const std::vector<ProbabilityBounds> & b, const String & desc)
+ProbabilityGenerator::ProbabilityGenerator(const ProbabilityStrategy ps, const uint64_t in_seed, const std::vector<ProbabilityBounds> & b)
     : nvalues(b.size())
     , strategy(ps)
     , bounds(b)
@@ -28,7 +17,6 @@ ProbabilityGenerator::ProbabilityGenerator(
     , generator(seed)
     , cdf(nvalues, 0.0)
     , enabled_values(nvalues, true)
-    , description(desc)
 {
     ensureAtLeastOneEnabled(enabled_values);
     probabilities = generateInitial();
@@ -115,7 +103,7 @@ void ProbabilityGenerator::ensureAtLeastOneEnabled(const std::vector<bool> & mas
     for (bool b : mask)
         any |= b;
     if (!any)
-        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "At least one option must be enabled");
+        throw std::runtime_error("At least one option must be enabled");
 }
 
 size_t ProbabilityGenerator::lastEnabledEnum() const
@@ -181,7 +169,7 @@ std::vector<double> ProbabilityGenerator::genBounded()
         }
         const auto b = bounds[i];
         if (b.min < 0.0 || b.max < 0.0 || b.min > b.max)
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Invalid bounds");
+            throw std::runtime_error("Invalid bounds");
         std::uniform_real_distribution<double> unif(b.min, b.max);
         w[i] = unif(generator);
     }
@@ -296,9 +284,9 @@ void ProbabilityGenerator::clampToBoundsAndRenormEnabled(std::vector<double> & p
         sum_max += bounds[i].max;
     }
     if (sum_min > 1.0 + 1e-12)
-        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Inconsistent bounds for enabled subset at {} (cannot min sum to 1)", description);
+        throw std::runtime_error("Inconsistent bounds for enabled subset (cannot min sum to 1)");
     if (sum_max < 1.0 - 1e-12)
-        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Inconsistent bounds for enabled subset at {} (cannot max sum to 1)", description);
+        throw std::runtime_error("Inconsistent bounds for enabled subset (cannot max sum to 1)");
 
     std::vector<bool> fixed(nvalues, false);
     for (int iter = 0; iter < 10; ++iter)

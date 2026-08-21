@@ -46,13 +46,7 @@ using namespace DB;
 
 
 static std::atomic_bool is_crashed = false;
-static_assert(std::atomic_bool::is_always_lock_free, "is_crashed must be lock-free for use in signal handlers");
 bool isCrashed() { return is_crashed.load(std::memory_order_relaxed); }
-
-/// After re-raising the signal, the siginfo recorded in the core dump shows SI_TKILL with no si_addr,
-/// so we need to preserve the address for core dump analysis.
-static std::atomic<uintptr_t> saved_fault_address{0};
-static_assert(std::atomic<uintptr_t>::is_always_lock_free, "saved_fault_address must be lock-free for use in signal handlers");
 
 
 void call_default_signal_handler(int sig)
@@ -113,9 +107,6 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
-
-    if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE)
-        saved_fault_address.store(reinterpret_cast<uintptr_t>(info->si_addr), std::memory_order_relaxed);
 
     if (sig != SIGTSTP)
         is_crashed.store(true, std::memory_order_relaxed);
@@ -192,7 +183,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
             for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
                 terminate_current_exception_trace[i] = stack_trace_frames[i];
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort in terminate handler
+        catch (...) {} // NOLINT(bugprone-empty-catch)
     }
     else
     {
@@ -291,8 +282,8 @@ void blockSignals(const std::vector<int> & signals)
 }
 
 
-SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_)
-    : daemon(daemon_), log(log_), terminate_request_callback(std::move(terminate_request_callback_))
+SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_)
+    : daemon(daemon_), log(log_)
 {
 }
 
@@ -305,7 +296,7 @@ void SignalListener::run()
     else
     {
         /// This is the case of clickhouse-client and clickhouse-local.
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
         /// This operation is heavy (0.5 sec under TSan) - we don't do it in constructor to not slow-down clickhouse-client,
         /// Do it lazily to not slow-down the termination of clickhouse-client.
         build_id = []{ return SymbolIndex::instance().getBuildIDHex(); };
@@ -353,31 +344,8 @@ void SignalListener::run()
         }
         else if (sig == SIGINT || sig == SIGQUIT || sig == SIGTERM)
         {
-            bool crashing;
-            {
-                std::lock_guard lock(terminate_request_mutex);
-                ++terminate_requested;
-
-                crashing = terminate_requested > 1;
-                if (crashing)
-                    LOG_INFO(log, "Received second termination signal ({}). Immediately terminate.", strsignal(sig)); // NOLINT(concurrency-mt-unsafe)
-                else
-                    LOG_INFO(log, "Received termination signal ({})", strsignal(sig)); // NOLINT(concurrency-mt-unsafe)
-
-                if (terminate_request_callback)
-                    terminate_request_callback(sig, crashing);
-            }
-
-            if (crashing)
-            {
-                call_default_signal_handler(sig);
-                /// If the above did not help.
-                _exit(128 + sig);
-            }
-            else
-            {
-                terminate_request_cv.notify_all();
-            }
+            if (daemon)
+                daemon->handleSignal(sig);
         }
         else if (sig == SIGCHLD)
         {
@@ -412,21 +380,6 @@ void SignalListener::run()
             onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr, exception_trace, exception_trace_size);
         }
     }
-}
-
-bool SignalListener::waitForTerminationRequest(std::chrono::milliseconds timeout)
-{
-    std::unique_lock lock(terminate_request_mutex);
-    auto condition = [&] { return terminate_requested > 0; };
-    bool res = true;
-
-    /// condition_variable::wait_for probably doesn't check for overflow, so we can't just pass max() to it.
-    if (timeout == std::chrono::milliseconds::max())
-        terminate_request_cv.wait(lock, condition);
-    else
-        res = terminate_request_cv.wait_for(lock, timeout, condition);
-
-    return res;
 }
 
 void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) const
@@ -619,8 +572,6 @@ try
             exception_trace, exception_trace_size);
     }
 
-    if (daemon)
-         daemon->flushTextLogs();
     Context::getGlobalContextInstance()->handleCrash();
 
     /// Send crash report to developers (if configured)
@@ -646,7 +597,7 @@ try
     /// List changed settings.
     if (!query_id.empty())
     {
-        ContextPtr query_context = thread_ptr->tryGetQueryContext();
+        ContextPtr query_context = thread_ptr->getQueryContext();
         if (query_context)
         {
             String changed_settings = query_context->getSettingsRef().toString();

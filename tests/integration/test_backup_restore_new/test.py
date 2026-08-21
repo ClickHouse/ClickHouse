@@ -1603,7 +1603,7 @@ def test_restore_table_not_evaluate_table_defaults():
     )
 
     # INSERT needs dictionary `test2.dict` and it will cause loading it.
-    error = "necessary to have the grant SELECT ON test2.src"  # User `u1` has no privileges for reading `test2.src`
+    error = "necessary to have the grant SELECT(key, value) ON test2.src"  # User `u1` has no privileges for reading `test2.src`
     assert error in instance.query_and_get_error(
         "INSERT INTO test2.tbl (a, b) SELECT number, number + 1 FROM numbers(5, 5)"
     )
@@ -1730,7 +1730,6 @@ def test_backup_all(exclude_system_log_tables):
             "crash_log",
             "text_log",
             "metric_log",
-            "histogram_metric_log",
             "filesystem_cache_log",
             "filesystem_read_prefetches_log",
             "asynchronous_metric_log",

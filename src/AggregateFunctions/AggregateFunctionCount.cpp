@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnNullable.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
@@ -320,7 +319,7 @@ SELECT count(DISTINCT num) FROM t
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
 
-    factory.registerFunction("count", {createAggregateFunctionCount, documentation, properties}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("count", {createAggregateFunctionCount, properties, documentation}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

@@ -11,6 +11,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FieldInterval.h>
 #include <Functions/FunctionHelpers.h>
@@ -575,23 +576,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Microsecond>
         else if (scale_multiplier > 1000000)
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
-            Int64 microseconds_scaled = 0;
-            if (common::mulOverflow(microseconds, scale_diff, microseconds_scaled))
-                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
             if (t >= 0) [[likely]] /// When we divide the `t` value we should round the result
-            {
-                Int64 t_rounded = 0;
-                if (common::addOverflow(t, scale_diff / 2, t_rounded))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-                return t_rounded / microseconds_scaled * microseconds;
-            }
+                return (t + scale_diff / 2) / (microseconds * scale_diff) * microseconds;
             else
-            {
-                Int64 result = 0;
-                if (common::mulOverflow((t + 1) / microseconds / scale_diff - 1, microseconds, result))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-                return result;
-            }
+                return ((t + 1) / microseconds / scale_diff - 1) * microseconds;
         }
         else
             if (t >= 0) [[likely]]
@@ -631,23 +619,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
         else if (scale_multiplier > 1000)
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
-            Int64 milliseconds_scaled = 0;
-            if (common::mulOverflow(milliseconds, scale_diff, milliseconds_scaled))
-                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
             if (t >= 0) [[likely]]  /// When we divide the `t` value we should round the result
-            {
-                Int64 t_rounded = 0;
-                if (common::addOverflow(t, scale_diff / 2, t_rounded))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-                return t_rounded / milliseconds_scaled * milliseconds;
-            }
+                return (t + scale_diff / 2) / (milliseconds * scale_diff) * milliseconds;
             else
-            {
-                Int64 result = 0;
-                if (common::mulOverflow((t + 1) / milliseconds / scale_diff - 1, milliseconds, result))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-                return result;
-            }
+                return ((t + 1) / milliseconds / scale_diff - 1) * milliseconds;
         }
         else
             if (t >= 0) [[likely]]
@@ -760,10 +735,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     {
         if (!origin.has_value())
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
-        Int64 days = 0;
-        if (common::mulOverflow(weeks, static_cast<Int64>(7), days))
-            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, days, time_zone, scale_multiplier, origin);
+        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -819,10 +791,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     {
         if (!origin.has_value())
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
-        Int64 months = 0;
-        if (common::mulOverflow(quarters, static_cast<Int64>(3), months))
-            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, months, time_zone, scale_multiplier, origin);
+        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -845,10 +814,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     {
         if (!origin.has_value())
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
-        Int64 months = 0;
-        if (common::mulOverflow(years, static_cast<Int64>(12), months))
-            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, months, time_zone, scale_multiplier, origin);
+        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -1004,8 +970,7 @@ struct ToStartOfMillisecondImpl
         }
         if (scale_multiplier <= 1000)
         {
-            /// Use unsigned arithmetic to avoid signed overflow UB.
-            return static_cast<DateTime64>(static_cast<UInt64>(datetime64) * static_cast<UInt64>(1000 / scale_multiplier));
+            return datetime64 * (1000 / scale_multiplier);
         }
 
         auto droppable_part_with_sign
@@ -1026,8 +991,7 @@ struct ToStartOfMillisecondImpl
         }
         if (scale_multiplier <= 1000)
         {
-            /// Use unsigned arithmetic to avoid signed overflow UB.
-            return static_cast<Time64>(static_cast<UInt64>(time64) * static_cast<UInt64>(1000 / scale_multiplier));
+            return time64 * (1000 / scale_multiplier);
         }
 
         auto droppable_part_with_sign
@@ -1074,8 +1038,7 @@ struct ToStartOfMicrosecondImpl
         }
         if (scale_multiplier <= 1000000)
         {
-            /// Use unsigned arithmetic to avoid signed overflow UB.
-            return static_cast<DateTime64>(static_cast<UInt64>(datetime64) * static_cast<UInt64>(1000000 / scale_multiplier));
+            return datetime64 * (1000000 / scale_multiplier);
         }
 
         auto droppable_part_with_sign
@@ -1097,8 +1060,7 @@ struct ToStartOfMicrosecondImpl
         }
         if (scale_multiplier <= 1000000)
         {
-            /// Use unsigned arithmetic to avoid signed overflow UB.
-            return static_cast<Time64>(static_cast<UInt64>(time64) * static_cast<UInt64>(1000000 / scale_multiplier));
+            return time64 * (1000000 / scale_multiplier);
         }
 
         auto droppable_part_with_sign
@@ -1607,34 +1569,6 @@ struct ToDayOfMonthImpl
     static UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toDayOfMonth(DayNum(d));
-    }
-
-    static constexpr bool hasPreimage() { return false; }
-    using FactorTransform = ToStartOfMonthImpl;
-};
-
-struct ToDaysInMonthImpl
-{
-    static constexpr auto name = "toDaysInMonth";
-    static UInt8 execute(UInt64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.daysInMonth(t);
-    }
-    static UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.daysInMonth(t);
-    }
-    static UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.daysInMonth(t);
-    }
-    static UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.daysInMonth(ExtendedDayNum(d));
-    }
-    static UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.daysInMonth(DayNum(d));
     }
 
     static constexpr bool hasPreimage() { return false; }

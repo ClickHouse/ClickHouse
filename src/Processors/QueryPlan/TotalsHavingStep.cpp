@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -113,28 +112,26 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
 
 void TotalsHavingStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
-
-    settings.out << prefix << "Filter column: ";
-
-    settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
-
-    if (!settings.pretty && remove_filter)
+    String prefix(settings.offset, ' ');
+    settings.out << prefix << "Filter column: " << filter_column_name;
+    if (remove_filter)
         settings.out << " (removed)";
-
     settings.out << '\n';
     settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
 
-    if (!settings.compact && actions_dag)
+    if (actions_dag)
     {
         bool first = true;
-        auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
-        for (const auto & action : expression->getActions())
+        if (actions_dag)
         {
-            settings.out << prefix << (first ? "Actions: "
-                                            : "         ");
-            first = false;
-            settings.out << action.toString() << '\n';
+            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+            for (const auto & action : expression->getActions())
+            {
+                settings.out << prefix << (first ? "Actions: "
+                                                : "         ");
+                first = false;
+                settings.out << action.toString() << '\n';
+            }
         }
     }
 }

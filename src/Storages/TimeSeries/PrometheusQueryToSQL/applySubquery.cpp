@@ -22,7 +22,7 @@ namespace
             throw Exception(
                 ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
                 "Expression {} has type {} and can't be used in a subquery",
-                getPromQLText(expression, context),
+                getPromQLQuery(expression, context),
                 expression.type);
         }
     }

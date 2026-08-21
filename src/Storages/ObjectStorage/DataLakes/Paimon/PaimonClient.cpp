@@ -254,7 +254,7 @@ std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String ma
     RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
     auto manifest_list_buf = createReadBuffer(relative_path, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_list_deserializer(
-        std::move(manifest_list_buf), Iceberg::IcebergPathFromMetadata::deserialize(manifest_list_path), getFormatSettings(getContext()));
+        std::move(manifest_list_buf), manifest_list_path, getFormatSettings(getContext()));
 
     std::vector<PaimonManifestFileMeta> paimon_manifest_file_meta_vec;
     paimon_manifest_file_meta_vec.reserve(manifest_list_deserializer.rows());
@@ -276,7 +276,7 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
     auto context = getContext();
     RelativePathWithMetadata object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
     auto manifest_buf = createReadBuffer(object_info, object_storage, context, log);
-    Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), Iceberg::IcebergPathFromMetadata::deserialize(manifest_path), getFormatSettings(getContext()));
+    Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), manifest_path, getFormatSettings(getContext()));
 
     PaimonManifest paimon_manifest;
     paimon_manifest.entries.reserve(manifest_deserializer.rows());

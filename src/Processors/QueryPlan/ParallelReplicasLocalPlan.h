@@ -8,9 +8,6 @@
 namespace DB
 {
 
-class IQueryTreeNode;
-using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
-
 std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     const ASTPtr & query_ast,
     const Block & header,
@@ -18,7 +15,7 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     QueryProcessingStage::Enum processed_stage);
 
 std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
-    const QueryTreeNodePtr & query_tree,
+    const ASTPtr & query_ast,
     const Block & header,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,

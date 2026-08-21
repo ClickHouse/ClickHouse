@@ -123,7 +123,7 @@ try
     if (argc < 3)
     {
         std::cout << "A tool similar to 'su'" << std::endl;
-        std::cout << "Usage: clickhouse su user:group ..." << std::endl;
+        std::cout << "Usage: ./clickhouse su user:group ..." << std::endl;
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 

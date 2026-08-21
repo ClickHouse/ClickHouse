@@ -26,6 +26,8 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -51,12 +53,13 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            FunctionArgumentDescriptor variadic_args{
-                "json1",isString, nullptr, "String"
-            };
-            FunctionArgumentDescriptors mandatory_args{variadic_args};
+            if (arguments.empty())
+                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires at least one argument.", getName());
 
-            validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
+            for (const auto & arg : arguments)
+                if (!isString(arg.type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} requires string arguments", getName());
+
             return std::make_shared<DataTypeString>();
         }
 
@@ -168,7 +171,7 @@ REGISTER_FUNCTION(JSONMergePatch)
     FunctionDocumentation::Description description = R"(
 Returns the merged JSON object string which is formed by merging multiple JSON objects.
     )";
-    FunctionDocumentation::Syntax syntax = "JSONMergePatch(json1[, json2, ...])";
+    FunctionDocumentation::Syntax syntax = "jsonMergePatch(json1[, json2, ...])";
     FunctionDocumentation::Arguments arguments = {
         {"json1[, json2, ...]", "One or more strings with valid JSON.", {"String"}}
     };
@@ -177,7 +180,7 @@ Returns the merged JSON object string which is formed by merging multiple JSON o
     {
         "Usage example",
         R"(
-SELECT JSONMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res;
+SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res;
         )",
         R"(
 ┌─res───────────────────┐

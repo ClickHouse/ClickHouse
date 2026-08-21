@@ -61,14 +61,6 @@ bool BrotliReadBuffer::nextImpl()
 
         if (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in->eof()))
         {
-            /// If the inner stream is completely empty (e.g. a URL returned 404
-            /// and http_skip_not_found_url_for_globs is set), there is nothing to decompress.
-            if (!in_available && in->eof() && total_in == 0)
-            {
-                eof_flag = true;
-                return false;
-            }
-
             throw Exception(
                 ErrorCodes::BROTLI_READ_FAILED,
                 "brotli decode error{}",
@@ -78,9 +70,7 @@ bool BrotliReadBuffer::nextImpl()
         out_capacity = internal_buffer.size();
         out_data = reinterpret_cast<uint8_t *>(internal_buffer.begin());
 
-        size_t in_available_before = in_available;
         brotli->result = BrotliDecoderDecompressStream(brotli->state, &in_available, &in_data, &out_capacity, &out_data, nullptr);
-        total_in += in_available_before - in_available;
 
         in->position() = in->buffer().end() - in_available;
     }

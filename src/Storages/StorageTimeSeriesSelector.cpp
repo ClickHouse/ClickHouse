@@ -1,9 +1,6 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
-#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -107,7 +104,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr(context, false);
+    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr();
     auto id_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::ID).type;
     auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
     auto scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
@@ -141,9 +138,8 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
 StorageTimeSeriesSelector::StorageTimeSeriesSelector(
     const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_)
-    : StorageWithCommonVirtualColumns{table_id_}
+    : IStorage{table_id_}
     , config(config_)
-    , log(getLogger("StorageTimeSeriesSelector"))
 {
     const auto * node = config.selector.getRoot();
     if (!node || (node->node_type != PrometheusQueryTree::NodeType::InstantSelector))
@@ -155,16 +151,7 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 
@@ -383,16 +370,10 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// PREWHERE (id IN (SELECT id FROM (select_query_from_tags_table))) AND (timestamp >= min_time) AND (timestamp <= max_time)
-        ///
-        /// NOTE: We have to use PREWHERE and not WHERE here to make sure that tags are stored in ContextTimeSeriesTagsCollector before we use them.
-        /// Otherwise in case the result of timeSeriesSelector() is passed to timeSeriesIdToGroup() as following:
-        /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value FROM timeSeriesSelector(...)
-        /// ClickHouse may decide to parallelize and execute timeSeriesIdToGroup(id) before executing timeSeriesStoreTags()
-        /// which may cause exception "Unknown identifier".
+        /// WHERE id IN (SELECT id FROM (select_query_from_tags_table))
         {
-            auto prewhere_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
-            select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_filter));
+            auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
+            select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
         /// Wrap the select query into ASTSelectWithUnionQuery.
@@ -423,7 +404,7 @@ namespace
 }
 
 
-void StorageTimeSeriesSelector::readImpl(
+void StorageTimeSeriesSelector::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,
@@ -462,9 +443,6 @@ void StorageTimeSeriesSelector::readImpl(
         config.id_data_type,
         config.timestamp_data_type,
         config.scalar_data_type);
-
-    LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
-    LOG_DEBUG(log, "Will execute query:\n{}", select_query_from_data_table->formatForLogging());
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 

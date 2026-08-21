@@ -106,7 +106,7 @@ public:
 
     StreamingHandleErrorMode getHandleKafkaErrorMode() const;
 
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }

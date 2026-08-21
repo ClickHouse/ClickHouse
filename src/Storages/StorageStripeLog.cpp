@@ -5,7 +5,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
-#include <Common/logger_useful.h>
 
 #include <Core/Settings.h>
 
@@ -21,15 +20,12 @@
 #include <Formats/NativeWriter.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageLogSettings.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -64,7 +60,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
-    extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
@@ -80,30 +75,41 @@ namespace FailPoints
 /// because we read ranges of data that do not change.
 class StripeLogSource final : public ISource
 {
-    static Block getHeader(const NamesAndTypesList & physical, const NamesAndTypesList & virtuals)
+public:
+    static Block getHeader(
+        const StorageSnapshotPtr & storage_snapshot,
+        const Names & column_names,
+        IndexForNativeFormat::Blocks::const_iterator index_begin,
+        IndexForNativeFormat::Blocks::const_iterator index_end)
     {
-        Block res;
-        for (const auto & name_type : physical)
-            res.insert({name_type.type->createColumn(), name_type.type, name_type.name});
-        for (const auto & name_type : virtuals)
-            res.insert({name_type.type->createColumn(), name_type.type, name_type.name});
-        return res;
+        if (index_begin == index_end)
+            return storage_snapshot->getSampleBlockForColumns(column_names);
+
+        /// TODO: check if possible to always return storage.getSampleBlock()
+
+        Block header;
+
+        for (const auto & column : index_begin->columns)
+        {
+            auto type = DataTypeFactory::instance().get(column.type);
+            header.insert(ColumnWithTypeAndName{ type, column.name });
+        }
+
+        return header;
     }
 
-public:
     StripeLogSource(
-        NamesAndTypesList physical_columns_,
-        NamesAndTypesList virtual_columns_,
         std::shared_ptr<const StorageStripeLog> storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const Names & column_names,
         ReadSettings read_settings_,
         std::shared_ptr<const IndexForNativeFormat> indices_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_,
         size_t file_size_)
-        : ISource(std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
-        , physical_columns(std::move(physical_columns_))
-        , virtual_columns(std::move(virtual_columns_))
+        : ISource(std::make_shared<const Block>(getHeader(storage_snapshot_, column_names, index_begin_, index_end_)))
         , storage(std::move(storage_))
+        , storage_snapshot(storage_snapshot_)
         , read_settings(std::move(read_settings_))
         , indices(indices_)
         , index_begin(index_begin_)
@@ -117,27 +123,36 @@ public:
 protected:
     Chunk generate() override
     {
-        Columns result_columns;
-        result_columns.reserve(getPort().getHeader().columns());
-        fillPhysicalColumns(result_columns);
+        Block res;
+        start();
 
-        UInt64 num_rows = result_columns.empty() ? 0 : result_columns.front()->size();
-        if (!result_columns.empty())
-            fillVirtualColumns(result_columns, num_rows);
+        if (block_in)
+        {
+            res = block_in->read();
 
-        return Chunk(std::move(result_columns), num_rows);
+            /// Freeing memory before destroying the object.
+            if (res.empty())
+            {
+                block_in.reset();
+                data_in.reset();
+                indices.reset();
+            }
+        }
+
+        return Chunk(res.getColumns(), res.rows());
     }
 
 private:
-    const NamesAndTypesList physical_columns;
-    const NamesAndTypesList virtual_columns;
     const std::shared_ptr<const StorageStripeLog> storage;
+    StorageSnapshotPtr storage_snapshot;
     ReadSettings read_settings;
 
     std::shared_ptr<const IndexForNativeFormat> indices;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
     size_t file_size;
+
+    Block header;
 
     /** optional - to create objects only on first reading
       *  and delete objects (release buffers) after the source is exhausted
@@ -155,42 +170,8 @@ private:
 
             String data_file_path = storage->table_path + "data.bin";
             data_in.emplace(storage->disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)));
-
-            /// Limit reads to the file size that was snapshotted under the read lock.
-            /// The file may have grown since (due to concurrent inserts after lock release),
-            /// but we must not read beyond the snapshotted range that the index covers.
-            data_in->setReadUntilPosition(file_size);
-
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
-    }
-
-    void fillPhysicalColumns(Columns & result_columns)
-    {
-        start();
-
-        if (!block_in)
-            return;
-
-        Block res = block_in->read();
-
-        /// Freeing memory before destroying the object.
-        if (res.empty())
-        {
-            block_in.reset();
-            data_in.reset();
-            indices.reset();
-            return;
-        }
-
-        for (const auto & col : physical_columns)
-            result_columns.emplace_back(res.getByName(col.name).column);
-    }
-
-    void fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
-    {
-        if (!virtual_columns.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
     }
 };
 
@@ -309,7 +290,7 @@ StorageStripeLog::StorageStripeLog(
     const String & comment,
     LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , WithMutableContext(context_)
     , disk(std::move(disk_))
     , table_path(relative_path_)
@@ -323,7 +304,6 @@ StorageStripeLog::StorageStripeLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -385,13 +365,6 @@ static std::chrono::seconds getLockTimeout(ContextPtr local_context)
     return std::chrono::seconds{lock_timeout};
 }
 
-VirtualColumnsDescription StorageStripeLog::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
 
 Pipe StorageStripeLog::read(
     const Names & column_names,
@@ -415,11 +388,8 @@ Pipe StorageStripeLog::read(
     if (!data_file_size)
         return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
 
-    /// Filter out virtual columns - they are not stored on disk and not in the index.
-    auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
-    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
-    auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
-    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
+    auto indices_for_selected_columns
+        = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{column_names.begin(), column_names.end()}));
 
     size_t size = indices_for_selected_columns->blocks.size();
     num_streams = std::min(num_streams, size);
@@ -436,10 +406,7 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            physical_columns, virtual_columns,
-            std::static_pointer_cast<const StorageStripeLog>(shared_from_this()),
-            read_settings,
-            indices_for_selected_columns, begin, end, data_file_size));
+            std::static_pointer_cast<const StorageStripeLog>(shared_from_this()), storage_snapshot, column_names, read_settings, indices_for_selected_columns, begin, end, data_file_size));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -652,7 +619,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     /// columns.txt
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
 
     /// count.txt
     size_t num_rows = 0;

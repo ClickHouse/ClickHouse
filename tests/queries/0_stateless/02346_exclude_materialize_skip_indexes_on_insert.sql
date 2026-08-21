@@ -2,7 +2,6 @@
 SET parallel_replicas_local_plan = 1; -- this setting may skip index analysis when false
 SET use_skip_indexes_on_data_read = 0;
 SET mutations_sync = 2; -- disable asynchronous mutations
-SET use_statistics_for_part_pruning = 0; -- disable statistics-based part pruning to keep EXPLAIN output stable
 
 CREATE TABLE tab
 (
@@ -77,7 +76,7 @@ SELECT '';
 SELECT 'Count query log entries containing index updates on INSERT';
 SELECT count()
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+WHERE current_database = currentDatabase()
     AND query LIKE 'INSERT INTO tab SELECT%'
     AND type = 'QueryFinish';
 
@@ -124,7 +123,7 @@ SELECT '';
 SELECT 'Count query log entries containing index updates on INSERT';
 SELECT count()
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+WHERE current_database = currentDatabase()
     AND query LIKE 'INSERT INTO tab SELECT%'
     AND type = 'QueryFinish';
 

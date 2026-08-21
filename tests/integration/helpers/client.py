@@ -277,16 +277,11 @@ class CommandRequest:
         if self.parse:
             from io import StringIO
 
-            res = (
+            return (
                 pd.read_csv(StringIO(stdout), sep="\t")
                 .replace(r"\N", None)
                 .replace(np.nan, None)
             )
-
-            if self.parse == "dict":
-                res = res.to_dict(orient="records")
-
-            return res
 
         return stdout
 

@@ -180,11 +180,11 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 
         if (options.contains("help"))
         {
-            std::cout << "Preprocess config file and extract value of the given key." << std::endl
+            std::cerr << "Preprocess config file and extract value of the given key." << std::endl
                 << std::endl;
-            std::cout << "Usage: clickhouse extract-from-config [options]" << std::endl
+            std::cerr << "Usage: clickhouse extract-from-config [options]" << std::endl
                 << std::endl;
-            std::cout << options_desc << std::endl;
+            std::cerr << options_desc << std::endl;
             return 0;
         }
 

@@ -5,7 +5,6 @@
 #include <Core/Names.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -57,14 +56,7 @@ bool addDiscardingExpressionStepIfNeeded(QueryPlan::Nodes & nodes, QueryPlan::No
         columns_to_discard.push_back(&(*output_it));
 
     if (columns_to_discard.empty())
-    {
-        /// Even when all column names match, the column representations might differ
-        /// (e.g., Const vs materialized after JoinStepLogical materializes its dummy column).
-        /// Sync the parent's input header with the child's output header.
-        if (!blocksHaveEqualStructure(*input_header, *output_header))
-            parent.step->updateInputHeader(parent.children[child_id]->step->getOutputHeader(), child_id);
         return false;
-    }
 
     ActionsDAG discarding_dag;
     for (const auto * column : columns_to_discard)
@@ -111,21 +103,12 @@ bool removedAnyInput(const IQueryPlanStep::RemovedUnusedColumns & result)
 /// to match (e.g., ReadFromMergeTree with FINAL must keep columns required for merging),
 /// adjust the parent step to accept the extra columns from the child by adding them as
 /// consumed DAG inputs and setting the input header to match the child's output exactly.
-/// Also sets the `prevent_input_removal` flag to ensure these absorbed columns are not
-/// removed on subsequent optimization passes.
-/// Works with both ExpressionStep and FilterStep parents.
+/// Also sets the `prevent_input_removal` flag on the ExpressionStep to ensure these absorbed
+/// columns are not removed on subsequent optimization passes.
 bool absorbExtraChildColumns(QueryPlan::Node & node, size_t child_id)
 {
-    ActionsDAG * dag = nullptr;
-
     auto * expr_step = typeid_cast<ExpressionStep *>(node.step.get());
-    auto * filter_step = typeid_cast<FilterStep *>(node.step.get());
-
-    if (expr_step)
-        dag = &expr_step->getExpression();
-    else if (filter_step)
-        dag = &filter_step->getExpression();
-    else
+    if (!expr_step)
         return false;
 
     const auto & parent_input = node.step->getInputHeaders()[child_id];
@@ -140,7 +123,7 @@ bool absorbExtraChildColumns(QueryPlan::Node & node, size_t child_id)
     {
         if (!parent_input_names.contains(col.name))
         {
-            dag->addInput(col.name, col.type);
+            expr_step->getExpression().addInput(col.name, col.type);
             added_any = true;
         }
     }
@@ -154,10 +137,7 @@ bool absorbExtraChildColumns(QueryPlan::Node & node, size_t child_id)
 
     /// Prevent future optimization passes from removing these absorbed inputs,
     /// which would re-create the mismatch and cause infinite optimization loops.
-    if (expr_step)
-        expr_step->setPreventInputRemoval();
-    else
-        filter_step->setPreventInputRemoval();
+    expr_step->setPreventInputRemoval();
 
     return true;
 }
@@ -200,18 +180,11 @@ RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, Query
         /// (e.g. ReadFromMergeTree with FINAL must keep sort key / version columns).
         /// If the parent is an ExpressionStep, absorb these extra columns as consumed DAG inputs
         /// so the step's output is unchanged but input headers match.
-        /// Otherwise, add a discarding ExpressionStep between the parent and child to remove the extra columns.
         {
             const auto & current_parent_input = node.step->getInputHeaders()[child_id];
             const auto & child_output = node.children[child_id]->step->getOutputHeader();
             if (child_output->columns() != current_parent_input->columns())
-            {
-                if (!absorbExtraChildColumns(node, child_id))
-                {
-                    if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id))
-                        added_any_discarding_step = true;
-                }
-            }
+                absorbExtraChildColumns(node, child_id);
         }
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)

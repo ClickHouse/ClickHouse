@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -55,7 +54,7 @@ void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQu
 
 void LimitStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
     settings.out << prefix << "Limit " << limit << '\n';
     settings.out << prefix << "Offset " << offset << '\n';
 

@@ -1,5 +1,3 @@
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -103,12 +101,9 @@ void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_i
 
 void SourceStepWithFilter::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix = format_settings.detail_prefix;
+    std::string prefix(format_settings.offset, format_settings.indent_char);
 
-    if (format_settings.pretty)
-        QueryPlanFormat::formatOutputColumns(format_settings.pretty_names, format_settings.out, *this, prefix);
-
-    if (!format_settings.pretty && (query_info.prewhere_info || query_info.row_level_filter))
+    if (query_info.prewhere_info || query_info.row_level_filter)
     {
         format_settings.out << prefix << "Prewhere info" << '\n';
         if (query_info.prewhere_info)
@@ -120,58 +115,26 @@ void SourceStepWithFilter::describeActions(FormatSettings & format_settings) con
 
     if (query_info.prewhere_info)
     {
-        const auto pretty_expression = format_settings.pretty
-            ? QueryPlanFormat::formatColumnPretty(query_info.prewhere_info->prewhere_column_name, format_settings.pretty_names) : String{};
+        format_settings.out << prefix << "Prewhere filter" << '\n';
+        format_settings.out << prefix << "Prewhere filter column: " << query_info.prewhere_info->prewhere_column_name;
+        if (query_info.prewhere_info->remove_prewhere_column)
+            format_settings.out << " (removed)";
+        format_settings.out << '\n';
 
-        if (!format_settings.pretty || !pretty_expression.empty())
-        {
-            format_settings.out << prefix << "Prewhere filter" << '\n';
-            format_settings.out << prefix << "Prewhere filter column: " << (format_settings.pretty ? pretty_expression : query_info.prewhere_info->prewhere_column_name);
-            if (!format_settings.pretty && query_info.prewhere_info->remove_prewhere_column)
-                format_settings.out << " (removed)";
-            format_settings.out << '\n';
-        }
-
-        if (format_settings.pretty)
-        {
-            const auto annotation = QueryPlanFormat::getColumnAnnotation(query_info.prewhere_info->prewhere_column_name, format_settings);
-            if (!annotation.empty())
-                format_settings.out << prefix << annotation << '\n';
-        }
-
-        if (!format_settings.compact)
-        {
-            auto expression = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone());
-            expression->describeActions(format_settings.out, prefix);
-        }
+        auto expression = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone());
+        expression->describeActions(format_settings.out, prefix);
     }
 
     if (query_info.row_level_filter)
     {
-        const auto pretty_expression = format_settings.pretty
-            ? QueryPlanFormat::formatColumnPretty(query_info.row_level_filter->column_name, format_settings.pretty_names) : String{};
+        format_settings.out << prefix << "Row level filter" << '\n';
+        format_settings.out << prefix << "Row level filter column: " << query_info.row_level_filter->column_name;
+        if (query_info.row_level_filter->do_remove_column)
+            format_settings.out << " (removed)";
+        format_settings.out << '\n';
 
-        if (!format_settings.pretty || !pretty_expression.empty())
-        {
-            format_settings.out << prefix << "Row level filter" << '\n';
-            format_settings.out << prefix << "Row level filter column: " << (format_settings.pretty ? pretty_expression : query_info.row_level_filter->column_name);
-            if (!format_settings.pretty && query_info.row_level_filter->do_remove_column)
-                format_settings.out << " (removed)";
-            format_settings.out << '\n';
-        }
-
-        if (format_settings.pretty)
-        {
-            const auto annotation = QueryPlanFormat::getColumnAnnotation(query_info.row_level_filter->column_name, format_settings);
-            if (!annotation.empty())
-                format_settings.out << prefix << annotation << '\n';
-        }
-
-        if (!format_settings.compact)
-        {
-            auto expression = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
-            expression->describeActions(format_settings.out, prefix);
-        }
+        auto expression = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
+        expression->describeActions(format_settings.out, prefix);
     }
 }
 

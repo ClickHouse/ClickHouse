@@ -1,5 +1,4 @@
 #include <Processors/Port.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
@@ -22,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace MergeTreeSetting
@@ -218,7 +216,6 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
-    , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index_ptr).getPostingListCodec())
 {
     cursors.resize(segments.size());
     inputs.resize(segments.size());
@@ -226,6 +223,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
 
     output_tokens = ColumnString::create();
     params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
+    posting_list_codec = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getPostingListCodec();
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
@@ -285,7 +283,7 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     if (data_buffer->eof())
         return;
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, &postings_serialization);
+    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, posting_list_codec);
     const auto & tokens = inputs[source_num].tokens;
     cursors[source_num].reset({tokens}, getHeader(), tokens->size());
     queue.push(cursors[source_num]);
@@ -306,7 +304,7 @@ std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source
     for (const auto offset_in_file : token_info.offsets)
     {
         stream->seekToMark({offset_in_file, 0});
-        postings.emplace_back(postings_serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality));
+        postings.emplace_back(PostingsSerialization::deserialize(*data_buffer, token_info.header, token_info.cardinality, posting_list_codec));
     }
 
     return postings;
@@ -331,7 +329,7 @@ void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
+    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, posting_list_codec);
 
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
@@ -374,7 +372,7 @@ void MergeTextIndexesTask::flushDictionaryBlock()
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
         {
             const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
-            postings_serialization.serialize(roaring_bitmap, output_infos[i].header, ostr);
+            PostingsSerialization::serialize(roaring_bitmap, output_infos[i].header, ostr);
         }
     }
 
@@ -506,22 +504,17 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
 {
     static constexpr size_t marks_count = 1;
 
-    /// Check for both original and hashed filenames (hashed if the index name is too long)
-    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, *data_part_storage);
-    if (!actual_stream_name)
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File for text index stream {} does not exist", stream_name + extension);
-
     /// Use reader stream that doesn't read marks,
     /// because text index always has one mark.
     return std::make_unique<MergeTreeReaderStreamSingleColumnWholePart>(
         data_part_storage,
-        *actual_stream_name,
+        stream_name,
         extension,
         marks_count,
         MarkRanges{{0, marks_count}},
         reader_settings,
         /*uncompressed_cache=*/ nullptr,
-        data_part_storage->getFileSize(*actual_stream_name + extension),
+        data_part_storage->getFileSize(stream_name + extension),
         /*marks_loader=*/ nullptr,
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);

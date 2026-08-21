@@ -110,11 +110,7 @@ public:
 
             UInt64 res = 0;
             if (validator.validateCell(hindex))
-            {
-                H3Index parent = 0;
-                if (!cellToParent(hindex, resolution, &parent))
-                    res = parent;
-            }
+                res = cellToParent(hindex, resolution);
 
             dst_data[row] = res;
         }

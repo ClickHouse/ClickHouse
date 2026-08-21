@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
 #include <Core/QueryProcessingStage.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>

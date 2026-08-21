@@ -1,13 +1,16 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.cluster import ClickHouseCluster
 
 from .yt_helpers import YtsaurusURIHelper, YTsaurusCLI
 
-# The `ytsaurus_backend` docker image is amd64-only.
-if is_arm():
-    pytestmark = pytest.mark.skip
+from helpers.cluster import is_arm
 
+
+if is_arm():
+    # skip due to no arm support for ytsaurus-backend docker image
+    # https://github.com/ytsaurus/ytsaurus/blob/main/BUILD.md
+    pytestmark = pytest.mark.skip
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

@@ -12,15 +12,23 @@ TABLE="test_04039_snapshot_teardown_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 TABLE_PROJ="test_04039_proj_teardown_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ITERATIONS=20
 
-function run_query()
+function wait_for_query_to_start()
 {
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "$1" 2>/dev/null
+    local timeout=30
+    local start=$EPOCHSECONDS
+    while [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.processes WHERE query_id = '$1'" 2>/dev/null || echo "0") == 0 ]]; do
+        if ((EPOCHSECONDS - start > timeout)); then
+            echo "Timeout waiting for query $1 to start" >&2
+            return 1
+        fi
+        sleep 0.1
+    done
 }
 
 function cleanup()
 {
-    run_query "DROP TABLE IF EXISTS ${TABLE} SYNC" >/dev/null 2>&1 ||:
-    run_query "DROP TABLE IF EXISTS ${TABLE_PROJ} SYNC" >/dev/null 2>&1 ||:
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ${TABLE} SYNC" >/dev/null 2>&1 ||:
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ${TABLE_PROJ} SYNC" >/dev/null 2>&1 ||:
 }
 
 function wait_for_reading()
@@ -31,7 +39,7 @@ function wait_for_reading()
 
     while true; do
         local read_rows
-        read_rows=$(run_query "SELECT read_rows FROM system.processes WHERE query_id = '${query_id}'" || echo "")
+        read_rows=$($CLICKHOUSE_CLIENT --query "SELECT read_rows FROM system.processes WHERE query_id = '${query_id}'" 2>/dev/null || echo "")
         if [ -n "$read_rows" ] && [ "$read_rows" -gt 0 ] 2>/dev/null; then
             return 0
         fi
@@ -82,13 +90,13 @@ function run_iteration_proj()
 
     wait_for_query_to_start "$query_id"
     if ! wait_for_reading "$query_id"; then
-        run_query "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null" >/dev/null 2>&1 ||:
+        $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null" >/dev/null 2>&1 ||:
         wait "$pid" >/dev/null 2>&1 ||:
         rm -f "$log_file"
         return 1
     fi
 
-    run_query "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null" >/dev/null 2>&1 ||:
+    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null" >/dev/null 2>&1 ||:
     wait "$pid" >/dev/null 2>&1 ||:
 
     if grep -F "Code:" "$log_file" | grep -v -F "QUERY_WAS_CANCELLED" >/dev/null; then
@@ -130,13 +138,13 @@ function run_iteration()
 
     wait_for_query_to_start "$query_id"
     if ! wait_for_reading "$query_id"; then
-        run_query "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null" >/dev/null 2>&1 ||:
+        $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null" >/dev/null 2>&1 ||:
         wait "$pid" >/dev/null 2>&1 ||:
         rm -f "$log_file"
         return 1
     fi
 
-    run_query "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null" >/dev/null 2>&1 ||:
+    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null" >/dev/null 2>&1 ||:
     wait "$pid" >/dev/null 2>&1 ||:
 
     if grep -F "Code:" "$log_file" | grep -v -F "QUERY_WAS_CANCELLED" >/dev/null; then

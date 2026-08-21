@@ -73,7 +73,7 @@ std::optional<off_t> SeekableReadBuffer::tryGetPosition()
     {
         return getPosition();
     }
-    catch (...) // Ok: tryGetPosition is a try-pattern
+    catch (...)
     {
         return std::nullopt;
     }

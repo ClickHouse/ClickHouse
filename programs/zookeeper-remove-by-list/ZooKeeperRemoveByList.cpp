@@ -48,7 +48,7 @@ try
     {
         try
         {
-            (void)future.get();
+            future.get();
         }
         catch (...)
         {

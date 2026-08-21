@@ -40,7 +40,6 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage.h>
 #include <Common/CurrentThread.h>
-#include <Common/QueryScope.h>
 #include <Common/DateLUT.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SensitiveDataMasker.h>
@@ -401,7 +400,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,
         table,
-        table->getInMemoryMetadataPtr(query_context, false),
+        table->getInMemoryMetadataPtr(),
         query_context,
         /* no_destination */false,
         insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
@@ -992,19 +991,19 @@ try
     insert_context->setCurrentQueryId(insert_query_id);
     insert_context->setInitialQueryId(insert_query_id);
 
-    DB::QueryScope query_scope;
+    DB::CurrentThread::QueryScope query_scope;
     if (current_query_thread_group)
     {
         /// that means that flush async insert is called from some SYSTEM FLUSH ASYNC QUEUE,
         /// it is important to account profile events and other things correctly
-        query_scope = QueryScope::createForFlushAsyncInsert(insert_context, current_query_thread_group);
+        query_scope = CurrentThread::QueryScope::createForFlushAsyncInsert(insert_context, current_query_thread_group);
 
         /// This log line is useful to understand if async insert is flushed in the context of some query and which one
         if (auto query_context = current_query_thread_group->query_context.lock())
             LOG_DEBUG(log, "Processing async insert as a part of a query with query_id: {}", query_context->getCurrentQueryId());
     }
     else
-        query_scope = QueryScope::create(insert_context);
+        query_scope = CurrentThread::QueryScope::create(insert_context);
 
     LOG_DEBUG(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
 

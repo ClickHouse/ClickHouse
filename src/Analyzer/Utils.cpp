@@ -265,11 +265,7 @@ bool checkCorrelatedColumn(
     ///
     /// X would have lambda as a source node
     /// Y comes from outer scope and requires ordinary check.
-    ///
-    /// Similarly, INTERPOLATE creates fake columns with InterpolateNode as the source.
-    /// These are expression arguments, not table expressions, so they cannot be correlated.
-    auto source_type = column_source->getNodeType();
-    if (source_type == QueryTreeNodeType::LAMBDA || source_type == QueryTreeNodeType::INTERPOLATE)
+    if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
         return false;
 
     bool is_correlated = false;
@@ -589,15 +585,6 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
 
         switch (node_type)
         {
-            case QueryTreeNodeType::IDENTIFIER:
-            {
-                /** An unresolved identifier can appear in a join tree if the query tree
-                  * was not fully resolved (e.g. a subquery inside an unresolved table function
-                  * argument). Treat it like a leaf table expression.
-                  */
-                result.push_back(std::move(node_to_process));
-                break;
-            }
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
@@ -673,8 +660,6 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
 
         switch (node_type)
         {
-            case QueryTreeNodeType::IDENTIFIER:
-                [[fallthrough]];
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::QUERY:

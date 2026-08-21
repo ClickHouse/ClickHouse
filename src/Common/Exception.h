@@ -347,7 +347,7 @@ T current_exception_cast()
     {
         return &concrete;
     }
-    catch (...) // Ok: exception does not match the requested type
+    catch (...)
     {
         return nullptr;
     }

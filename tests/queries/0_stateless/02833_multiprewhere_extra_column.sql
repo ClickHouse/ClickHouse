@@ -17,7 +17,7 @@ select sum(b) from t_multi_prewhere prewhere a < 5000;
 system flush logs query_log;
 
 select ProfileEvents['FileOpen'] from system.query_log
-where event_date >= yesterday() AND event_time >= now() - 600 AND
+where
     type = 'QueryFinish'
     and current_database = currentDatabase()
     and query ilike '%select sum(b) from t_multi_prewhere prewhere a < 5000%';

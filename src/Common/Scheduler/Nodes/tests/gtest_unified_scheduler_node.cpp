@@ -467,7 +467,7 @@ TEST(SchedulerUnifiedNode, ResourceGuardException)
         {
             ResourceGuard rg(ResourceGuard::Metrics::getIOWrite(), link);
         }
-        catch (...) // Ok: test verifies that exception is thrown
+        catch (...)
         {
             caught = true;
         }

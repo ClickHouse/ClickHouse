@@ -111,12 +111,9 @@ public:
 
             if (validator.validateCell(h3index))
             {
-                H3Error err = cellToLatLng(h3index, &coord);
-                if (!err)
-                {
-                    lon_data[row] = radsToDegs(coord.lng);
-                    lat_data[row] = radsToDegs(coord.lat);
-                }
+                cellToLatLng(h3index, &coord);
+                lon_data[row] = radsToDegs(coord.lng);
+                lat_data[row] = radsToDegs(coord.lat);
             }
         }
 

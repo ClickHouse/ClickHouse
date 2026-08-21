@@ -1,4 +1,3 @@
-#include <Poco/Exception.h>
 #include <Poco/Net/DNS.h>
 #include <base/getFQDNOrHostName.h>
 
@@ -14,7 +13,7 @@ namespace
         {
             return Poco::Net::DNS::thisHost().name();
         }
-        catch (const Poco::IOException &)
+        catch (...)
         {
             return Poco::Net::DNS::hostName();
         }

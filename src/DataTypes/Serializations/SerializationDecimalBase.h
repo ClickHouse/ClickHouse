@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/TypeName.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -20,8 +19,6 @@ public:
 
     SerializationDecimalBase(UInt32 precision_, UInt32 scale_)
         : precision(precision_), scale(scale_) {}
-
-    static UInt128 getHash(UInt32 precision_, UInt32 scale_);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

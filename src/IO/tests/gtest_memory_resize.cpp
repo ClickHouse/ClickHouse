@@ -51,7 +51,7 @@ public:
         return dummy_address;
     }
 
-    void free([[maybe_unused]] void * buf, size_t /*size*/, size_t /*alignment*/ = 0)
+    void free([[maybe_unused]] void * buf, size_t /*size*/)
     {
         assert(buf == dummy_address);
     }

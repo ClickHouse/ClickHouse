@@ -1199,7 +1199,7 @@ try
 {
     using namespace DB;
 
-    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
+    po::options_description desc("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
         ("skip-commits-without-parents", po::value<bool>()->default_value(true),
@@ -1228,11 +1228,11 @@ try
     if (options.contains("help"))
     {
         std::cout << documentation << '\n'
-            << "Usage: clickhouse git-import\n"
+            << "Usage: " << argv[0] << '\n'
             << desc << '\n'
             << "\nExample:\n"
             << "\nclickhouse git-import --skip-paths 'generated\\.cpp|^(contrib|docs?|website|libs/(libcityhash|liblz4|libdivide|libvectorclass|libdouble-conversion|libcpuid|libzstd|libfarmhash|libmetrohash|libpoco|libwidechar_width))/' --skip-commits-with-messages '^Merge branch '\n";
-        return 0;
+        return 1;
     }
 
     processLog(Options(options));

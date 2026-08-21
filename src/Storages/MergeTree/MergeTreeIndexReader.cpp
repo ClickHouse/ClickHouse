@@ -85,13 +85,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
 
     for (const auto & substream : index_format.substreams)
     {
-        auto full_stream_name = index_name + substream.suffix;
-        auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, part->checksums);
-
-        /// If the stream doesn't exist (neither original nor hashed name), use the full name
-        /// and let it fail later when trying to open the file. This preserves the original error
-        /// behavior and compatibility - the error message will indicate the missing file path.
-        auto stream_name = stream_name_opt.value_or(full_stream_name);
+        auto stream_name = index_name + substream.suffix;
 
         auto stream = makeIndexReaderStream(
             stream_name,
@@ -146,13 +140,9 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     ///
     /// The same cannot be done for other skip indexes. Because their GRANULARITY is small (e.g. 1), the sheer number of skip index granules
     /// would create too much lock contention in the cache (this was learned the hard way).
-    /// Don't populate the cache for parts which are not Active (e.g. Outdated after a mutation).
-    /// Such parts will be removed soon and caching them is wasteful.
-    /// Also note that the cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
-    /// the key used during eviction in `IMergeTreeDataPart::removeFromVectorIndexCache`.
-    if (index->isVectorSimilarityIndex() && part->getState() == MergeTreeDataPartState::Active)
+    if (index->isVectorSimilarityIndex())
     {
-        VectorSimilarityIndexCacheKey key{part->getDataPartStorage().getDiskName() + ":" + part->getRelativePathOfActivePart(),
+        VectorSimilarityIndexCacheKey key{part->getDataPartStorage().getDiskName() + ":" + part->getDataPartStorage().getFullPath(),
                                           index->getFileName(),
                                           mark};
 

@@ -17,13 +17,13 @@ namespace ErrorCodes
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
-using ConstArenas = VectorWithMemoryTracking<ConstArenaPtr>;
+using ConstArenas = std::vector<ConstArenaPtr>;
 
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 
 /** Column of states of aggregate functions.
@@ -137,7 +137,7 @@ public:
 
     void get(size_t n, Field & res) const override;
 
-    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t) const override
     {
@@ -216,7 +216,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override

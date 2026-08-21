@@ -20,7 +20,7 @@ ARG CACHE_INVALIDATOR=0
 RUN groupadd -r clickhouse && \
     useradd -r -g clickhouse -m -d /home/clickhouse -s /sbin/nologin -c "ClickHouse user" clickhouse
 
-RUN npm install -g npm@11 mintlify@latest
+RUN npm install -g npm@11
 ENV HOME=/opt/clickhouse-docs
 
 # Create directory with specific ownership

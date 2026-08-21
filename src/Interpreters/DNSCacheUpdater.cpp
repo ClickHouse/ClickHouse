@@ -22,11 +22,10 @@ void DNSCacheUpdater::run()
 {
     auto & resolver = DNSResolver::instance();
 
-    resolver.updateCache(max_consecutive_failures);
-    /// Reload cluster config if IPs of host name has been changed since last update.
-    if (resolver.updateHostNameAndAddresses())
+    /// Reload cluster config if IP of any host has been changed since last update.
+    if (resolver.updateCache(max_consecutive_failures))
     {
-        LOG_INFO(getLogger("DNSCacheUpdater"), "IPs of host name {} have been changed. Will reload cluster config.", resolver.getHostName());
+        LOG_INFO(getLogger("DNSCacheUpdater"), "IPs of some hosts have been changed. Will reload cluster config.");
         try
         {
             getContext()->reloadClusterConfig();

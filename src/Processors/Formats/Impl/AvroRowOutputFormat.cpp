@@ -292,10 +292,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {schema, [enum_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 auto enum_value = assert_cast<const DataTypeEnum8::ColumnType &>(column).getElement(row_num);
-                auto it = enum_mapping.find(enum_value);
-                if (it == enum_mapping.end())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Enum8 value {} in Avro output", enum_value);
-                encoder.encodeEnum(it->second);
+                encoder.encodeEnum(enum_mapping.at(enum_value));
             }};
         }
         case TypeIndex::Enum16:
@@ -311,10 +308,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {schema, [enum_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 auto enum_value = assert_cast<const DataTypeEnum16::ColumnType &>(column).getElement(row_num);
-                auto it = enum_mapping.find(enum_value);
-                if (it == enum_mapping.end())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Enum16 value {} in Avro output", enum_value);
-                encoder.encodeEnum(it->second);
+                encoder.encodeEnum(enum_mapping.at(enum_value));
             }};
         }
         case TypeIndex::UUID:

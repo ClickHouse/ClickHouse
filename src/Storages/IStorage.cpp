@@ -1,7 +1,6 @@
 #include <Storages/IStorage.h>
 
 #include <Disks/IStoragePolicy.h>
-#include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
@@ -39,13 +38,31 @@ namespace ErrorCodes
     extern const int TABLE_IS_BEING_RESTARTED;
 }
 
+const VirtualColumnsDescription IStorage::common_virtuals = IStorage::createCommonVirtuals();
+
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
     : storage_id(std::move(storage_id_))
+    , virtuals(std::make_unique<VirtualColumnsDescription>())
 {
     if (metadata_)
         metadata.set(std::move(metadata_));
     else
         metadata.set(std::make_unique<StorageInMemoryMetadata>());
+}
+
+bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
+{
+    /// Virtual column maybe overridden by real column
+    return !metadata_snapshot->getColumns().has(column_name) && (virtuals.get()->has(column_name) || common_virtuals.has(column_name));
+}
+
+VirtualColumnsDescription IStorage::createCommonVirtuals()
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
+
+    return desc;
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -227,7 +244,7 @@ Pipe IStorage::alterPartition(
 void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
@@ -285,11 +302,6 @@ void IStorage::mutate(const MutationCommands &, ContextPtr)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
 }
 
-Pipe IStorage::executeCommand(const String & command_name, const ASTPtr & /*args*/, ContextPtr /*context*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by storage {}", command_name, getName());
-}
-
 CancellationCode IStorage::killMutation(const String & /*mutation_id*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
@@ -316,11 +328,6 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-bool IStorage::supportsSampling() const
-{
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->hasSamplingKey();
-}
-
 ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, const Names &, ContextPtr) const
 {
     return nullptr;
@@ -336,8 +343,7 @@ Names IStorage::getAllRegisteredNames() const
 {
     Names result;
     auto getter = [](const auto & column) { return column.name; };
-    const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    const auto & available_columns = metadata_snapshot->getColumns().getAllPhysical();
+    const NamesAndTypesList & available_columns = getInMemoryMetadata().getColumns().getAllPhysical();
     std::transform(available_columns.begin(), available_columns.end(), std::back_inserter(result), getter);
     return result;
 }
@@ -350,10 +356,9 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     for (const auto & view_id : view_ids)
     {
         auto view = DatabaseCatalog::instance().getTable(view_id, context);
-        auto view_metadata = view->getInMemoryMetadataPtr(context, false);
-        if (view_metadata->select.inner_query)
+        if (view->getInMemoryMetadataPtr()->select.inner_query)
         {
-            const auto & select_query = view_metadata->select.inner_query;
+            const auto & select_query = view->getInMemoryMetadataPtr()->select.inner_query;
             Names required_columns;
             if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {

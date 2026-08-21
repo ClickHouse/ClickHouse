@@ -159,11 +159,6 @@ public:
 
     void setFinal();
 
-    /// Reorder children to match the canonical order used by ParserSelectQuery.
-    /// The KQL parser may add children in a different order, which causes
-    /// tree hash mismatches when comparing with a reparsed SQL representation.
-    void normalizeChildrenOrder();
-
     QueryKind getQueryKind() const override { return QueryKind::Select; }
     bool hasQueryParameters() const;
 

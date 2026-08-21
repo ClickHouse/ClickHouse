@@ -132,11 +132,14 @@ void registerTableFunctionYTsaurus(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionYTsaurus>(
     {
-            .description = "Allows get data from YTsaurus.",
-            .examples = {
-                {"Fetch collection by URI", "SELECT * FROM ytsaurus('localhost:80', '//tmp/test', 'auth_token', 'key UInt64, data String')", ""},
+            .documentation =
+            {
+                    .description = "Allows get data from YTsaurus.",
+                    .examples = {
+                        {"Fetch collection by URI", "SELECT * FROM ytsaurus('localhost:80', '//tmp/test', 'auth_token', 'key UInt64, data String')", ""},
+                    },
+                    .category = FunctionDocumentation::Category::TableFunction
             },
-            .category = FunctionDocumentation::Category::TableFunction
     });
 }
 

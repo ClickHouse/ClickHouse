@@ -4,7 +4,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <base/cgroupsv2.h>
-#include <base/getMemoryAmount.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/OSThreadNiceValue.h>
@@ -546,14 +545,14 @@ void MemoryWorker::setDirtyDecayForAllArenas(size_t decay_ms)
             {
                 Jemalloc::setValue(arena_path.c_str(), decay_ms);
             }
-            catch (...) // Ok: some arenas might not exist or be accessible, skip them
+            catch (...)
             {
                 /// Some arenas might not exist or be accessible, skip them
                 LOG_TRACE(log, "Failed to set dirty_decay_ms for arena {}", i);
             }
         }
     }
-    catch (...) // Ok: jemalloc arena config is best-effort
+    catch (...)
     {
         tryLogCurrentException(log, "Failed to set dirty_decay_ms");
     }
@@ -572,19 +571,6 @@ void MemoryWorker::purgeDirtyPagesThread()
 
     uint64_t default_dirty_decay_ms = dirty_decay_ms_mib.getValue();
     LOG_INFO(log, "Default dirty pages decay period: {}ms", default_dirty_decay_ms);
-
-    /// On low-memory systems (< 4 GiB), disable jemalloc dirty page retention
-    /// (dirty_decay_ms=0) to prevent RSS inflation.
-    {
-        size_t available_memory = getMemoryAmount();
-        if (available_memory > 0 && available_memory < (4ul << 30))
-        {
-            LOG_INFO(log, "Low memory system detected ({}). Setting dirty_decay_ms=0",
-                formatReadableSizeWithBinarySuffix(available_memory));
-            setDirtyDecayForAllArenas(0);
-            default_dirty_decay_ms = 0;
-        }
-    }
     while (true)
     {
         try

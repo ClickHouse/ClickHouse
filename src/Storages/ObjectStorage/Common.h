@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <Storages/IPartitionStrategy.h>
+#include <Common/Exception.h>
 
 namespace DB
 {

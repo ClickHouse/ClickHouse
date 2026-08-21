@@ -23,7 +23,7 @@ class EphemeralLockInZooKeeper : public boost::noncopyable
         const std::optional<String> & znode_data);
 
 protected:
-    EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, UInt64 number_, const String & conflict_path_ = "");
+    EphemeralLockInZooKeeper(const String & path_prefix_, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & path_, const String & conflict_path_ = "");
 
 public:
     EphemeralLockInZooKeeper() = delete;
@@ -45,7 +45,6 @@ public:
         path_prefix = std::move(rhs.path_prefix);
         path = std::move(rhs.path);
         conflict_path = std::move(rhs.conflict_path);
-        number = rhs.number;
         return *this;
     }
 
@@ -67,11 +66,8 @@ public:
         return conflict_path;
     }
 
-    UInt64 getNumber() const
-    {
-        checkCreated();
-        return number;
-    }
+    /// Parse the number at the end of the path.
+    UInt64 getNumber() const;
 
     void unlock();
 
@@ -94,7 +90,6 @@ private:
     String path_prefix;
     String path;
     String conflict_path;
-    UInt64 number = 0;
 };
 
 EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(

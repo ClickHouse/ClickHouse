@@ -34,8 +34,6 @@ private:
 
     Chunk generate() override;
 
-    void onCancel() noexcept override;
-
     void insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx, const IDataType & data_type);
 
     String query_str;

@@ -73,14 +73,8 @@ public:
         explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
-private:
-    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
 
-public:
-    static UInt128 getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
-    static SerializationPtr create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
-
-    bool supportsPooling() const override { return dynamic_serialization->supportsPooling(); }
+    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

@@ -473,7 +473,7 @@ String ConstantExpressionTemplate::TemplateStructure::dumpTemplate() const
     return res.str();
 }
 
-UInt64 ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
+size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
                                                                       const LiteralsInfo & replaced_literals,
                                                                       const DataTypePtr & result_column_type,
                                                                       bool null_as_default,
@@ -492,7 +492,11 @@ UInt64 ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     /// Allows distinguish expression in the last column in Values format
     hash_state.update(salt);
 
-    return hash_state.get64();
+    const auto res128 = getSipHash128AsPair(hash_state);
+    size_t res = 0;
+    boost::hash_combine(res, res128.low64);
+    boost::hash_combine(res, res128.high64);
+    return res;
 }
 
 
@@ -518,7 +522,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(expression);
 
-    UInt64 template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
+    size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
     auto iter = cache.find(template_hash);
     if (iter == cache.end())
     {

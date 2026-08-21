@@ -266,10 +266,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 #undef M
     }
 
-    bool within_limits = limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-    if (!within_limits)
-        is_truncated = true;
-    return within_limits;
+    return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 void Set::appendSetElements(SetKeyColumns & holder)

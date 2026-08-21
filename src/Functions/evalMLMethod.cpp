@@ -1,10 +1,8 @@
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Common/FunctionDocumentation.h>
 #include <Common/typeid_cast.h>
 
 
@@ -16,16 +14,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-}
-
-namespace
-{
-
-bool isAggregateFunctionState(const IDataType & type)
-{
-    return typeid_cast<const DataTypeAggregateFunction *>(&type) != nullptr;
-}
-
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -65,19 +54,18 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"model", &isAggregateFunctionState, nullptr, "AggregateFunctionState"}
-        };
-        FunctionArgumentDescriptor optional_args{
-            "xi", &isNumber, nullptr, "Float* or (U)Int*"
-        };
+        if (arguments.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires at least one argument", getName());
 
-        validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, optional_args);
+        const auto * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
+        if (!type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument for function {} must have type AggregateFunction - state "
+                            "of aggregate function.", getName());
 
-        const auto* agg_function = static_cast<const DataTypeAggregateFunction *>(arguments[0].type.get());
-        return agg_function->getReturnTypeToPredict();
+        return type->getReturnTypeToPredict();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override

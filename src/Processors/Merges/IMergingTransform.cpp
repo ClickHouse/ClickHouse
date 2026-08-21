@@ -215,8 +215,7 @@ IProcessor::Status IMergingTransformBase::prepare()
                 return Status::NeedData;
 
             state.input_chunk.set(input.pull());
-            const auto & input_chunk = state.input_chunk.chunk;
-            if (!input_chunk.hasRows() && !isVirtualRow(input_chunk) && !input.isFinished())
+            if (!state.input_chunk.chunk.hasRows() && !input.isFinished())
                 return Status::NeedData;
 
             state.has_input = true;

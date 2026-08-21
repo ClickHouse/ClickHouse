@@ -34,8 +34,6 @@ struct NodeEvaluationRange
     DateTime64 end_time;
     Decimal64 step;
     Decimal64 window;
-
-    bool empty() const { return start_time > end_time; }  /// If `start_time == end_time` it's one point
 };
 
 }

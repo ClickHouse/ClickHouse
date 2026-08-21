@@ -43,7 +43,7 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
     /// Set the comment
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
     assert(table);
-    StorageInMemoryMetadata metadata = *table->getInMemoryMetadataPtr(context, false);
+    auto metadata = table->getInMemoryMetadata();
     metadata.comment = comment;
     table->setInMemoryMetadata(metadata);
 }

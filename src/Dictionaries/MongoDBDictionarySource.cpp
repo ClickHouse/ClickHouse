@@ -29,7 +29,6 @@ namespace ErrorCodes
     #if USE_MONGODB
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     #else
     extern const int SUPPORT_IS_DISABLED;
     #endif
@@ -53,9 +52,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         {
             if (named_collection->has("uri"))
             {
-                if (named_collection->has("options"))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'options' key should not be set when using 'uri', as connection options are already part of the URI");
-                validateNamedCollection(*named_collection, {"uri", "collection"}, {});
+                validateNamedCollection(*named_collection, {"collection"}, {});
                 configuration->uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
             }
             else

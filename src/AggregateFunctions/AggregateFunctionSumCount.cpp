@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
@@ -157,7 +156,7 @@ SELECT sumCount(x) FROM s_table;
     FunctionDocumentation::Category category_sumCount = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_sumCount = {description_sumCount, syntax_sumCount, arguments_sumCount, parameters_sumCount, returned_value_sumCount, examples_sumCount, introduced_in_sumCount, category_sumCount};
 
-    factory.registerFunction("sumCount", {createAggregateFunctionSumCount, documentation_sumCount});
+    factory.registerFunction("sumCount", {createAggregateFunctionSumCount, {}, documentation_sumCount});
 }
 
 }

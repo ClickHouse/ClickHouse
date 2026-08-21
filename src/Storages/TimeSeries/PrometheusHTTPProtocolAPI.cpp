@@ -49,7 +49,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     const Params & params)
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr(getContext(), false);
+    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr();
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
     auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
@@ -86,7 +86,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto sql_query = converter.getSQL();
 
     chassert(sql_query);
-    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     PullingPipelineExecutor executor(io.pipeline);
@@ -390,7 +389,8 @@ void PrometheusHTTPProtocolAPI::writeScalar(WriteBuffer & response, Float64 valu
     }
     else if (std::isinf(value))
     {
-        response.write((value > 0) ? '+' : '-');
+        if (value < 0)
+            response.write('-');
         writeString("Inf", response);
     }
     else

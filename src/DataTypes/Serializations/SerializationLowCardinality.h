@@ -12,19 +12,10 @@ class SerializationLowCardinality : public ISerialization
 {
 private:
     DataTypePtr dictionary_type;
-    /// Serialization of the nested column.
-    SerializationPtr nested_serialization;
-    /// Serialization of the dictionary type.
-    /// It can differ from the nested serialization for nullable types.
     SerializationPtr dict_inner_serialization;
 
-    explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
-
 public:
-    static UInt128 getHash(const DataTypePtr & dictionary_type);
-    static SerializationPtr create(const DataTypePtr & dictionary_type);
-
-    bool supportsPooling() const override { return dict_inner_serialization->supportsPooling(); }
+    explicit SerializationLowCardinality(const DataTypePtr & dictionary_type);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

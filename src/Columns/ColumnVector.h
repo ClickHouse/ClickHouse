@@ -10,8 +10,6 @@
 #include <base/TypeName.h>
 #include <base/unaligned.h>
 
-#include <bit>
-
 #include "config.h"
 
 class SipHash;
@@ -53,7 +51,7 @@ private:
 public:
     bool isNumeric() const override { return is_arithmetic_v<T>; }
 
-    size_t size() const final
+    size_t size() const override
     {
         return data.size();
     }
@@ -149,43 +147,12 @@ public:
 
     /// This method implemented in header because it could be possibly devirtualized.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif
     {
         return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
-    }
-
-    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const final
-    {
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    #define compareAt doCompareAt
-#endif
-        Int64 res = compareAt(n, m, rhs, nan_direction_hint);
-
-        if (res < 0)
-        {
-            ++n;
-            while (n < size() && (compareAt(n, m, rhs, nan_direction_hint) < 0))
-            {
-                --res;
-                ++n;
-            }
-        }
-        else if (res > 0)
-        {
-            ++m;
-            while (m < assert_cast<const Self &>(rhs).size() && (compareAt(n, m, rhs, nan_direction_hint) > 0))
-            {
-                ++res;
-                ++m;
-            }
-        }
-        return res;
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    #undef compareAt
-#endif
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -240,7 +207,7 @@ public:
         res = (*this)[n];
     }
 
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
 
     UInt64 get64(size_t n) const override;
 
@@ -318,29 +285,7 @@ public:
         return std::string_view(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
-    bool isDefaultAt(size_t n) const override
-    {
-        if constexpr (is_floating_point<T>)
-        {
-            /// For floating-point types, use bit_cast to compare raw bit patterns instead of
-            /// arithmetic equality. IEEE 754 defines -0.0 == +0.0, so the arithmetic check
-            /// would incorrectly treat -0.0 as the default value, losing the sign on
-            /// deserialization. Comparing bits directly distinguishes the two: +0.0 is
-            /// all-zero bits, while -0.0 has its sign bit set.
-            ///
-            /// std::conditional_t selects an unsigned integer type of the same size as T,
-            /// satisfying the requirement of std::bit_cast that both types have equal size.
-            /// Unsigned integers are chosen because their value equals their bit pattern,
-            /// making the comparison to 0 unambiguous.
-            using Bits = std::conditional_t<sizeof(T) == 2, UInt16,
-                         std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>;
-            return std::bit_cast<Bits>(data[n]) == 0;
-        }
-        else
-        {
-            return data[n] == T{};
-        }
-    }
+    bool isDefaultAt(size_t n) const override { return data[n] == T{}; }
 
     bool structureEquals(const IColumn & rhs) const override
     {

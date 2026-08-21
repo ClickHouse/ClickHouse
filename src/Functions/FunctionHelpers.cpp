@@ -1,7 +1,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
@@ -428,11 +427,6 @@ bool isDecimalOrNullableDecimal(const DataTypePtr & type)
     if (!which.isNullable())
         return false;
     return isDecimal(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
-}
-
-bool isLowCardinalityType(const IDataType & type)
-{
-    return typeid_cast<const DataTypeLowCardinality *>(&type) != nullptr;
 }
 
 /// Note that, for historical reasons, most of the functions use the first argument size to determine which is the

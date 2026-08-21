@@ -7,11 +7,11 @@ namespace DB
 
 struct VirtualColumnDescription : public ColumnDescription
 {
-    VirtualsKind kind = VirtualsKind::None;
-    VirtualsMaterializationPlace place = VirtualsMaterializationPlace::Reader;
+    using Self = VirtualColumnDescription;
+    VirtualsKind kind;
 
     VirtualColumnDescription() = default;
-    VirtualColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_, VirtualsMaterializationPlace place_);
+    VirtualColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_);
 
     bool isEphemeral() const { return kind == VirtualsKind::Ephemeral; }
     bool isPersistent() const { return kind == VirtualsKind::Persistent; }
@@ -38,7 +38,7 @@ public:
     VirtualColumnsDescription() = default;
 
     void add(VirtualColumnDescription desc);
-    void addEphemeral(String name, DataTypePtr type, String comment, VirtualsMaterializationPlace place);
+    void addEphemeral(String name, DataTypePtr type, String comment);
     void addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment);
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
@@ -46,13 +46,21 @@ public:
     bool empty() const { return container.empty(); }
     bool has(const String & name) const { return container.get<1>().contains(name); }
 
-    std::optional<NameAndTypePair> tryGet(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
-    NameAndTypePair get(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
+    NameAndTypePair get(const String & name, VirtualsKind kind) const;
+    std::optional<NameAndTypePair> tryGet(const String & name, VirtualsKind kind) const;
 
-    const VirtualColumnDescription * tryGetDescription(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
-    const VirtualColumnDescription & getDescription(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
+    NameAndTypePair get(const String & name) const { return get(name, VirtualsKind::All); }
+    std::optional<NameAndTypePair> tryGet(const String & name) const { return tryGet(name, VirtualsKind::All); }
 
-    Block getSampleBlock(VirtualsKind kind, VirtualsMaterializationPlace place) const;
+    const VirtualColumnDescription * tryGetDescription(const String & name, VirtualsKind kind) const;
+    const VirtualColumnDescription & getDescription(const String & name, VirtualsKind kind) const;
+
+    const VirtualColumnDescription * tryGetDescription(const String & name) const { return tryGetDescription(name, VirtualsKind::All); }
+    const VirtualColumnDescription & getDescription(const String & name) const { return getDescription(name, VirtualsKind::All); }
+
+    Block getSampleBlock() const;
+    NamesAndTypesList getNamesAndTypesList() const;
+    NamesAndTypesList getNamesAndTypesList(VirtualsKind kind) const;
 
 private:
     Container container;

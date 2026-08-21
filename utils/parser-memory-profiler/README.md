@@ -31,7 +31,7 @@ The C++ profiler binary source is located at `src/Parsers/examples/parser_memory
 cd /path/to/clickhouse
 mkdir -p build && cd build
 cmake ..
-ninja clickhouse-examples
+ninja parser_memory_profiler
 ```
 
 ### 2. Install jeprof (from jemalloc)
@@ -108,12 +108,12 @@ Profile both versions and generate a comparison report:
 ```bash
 # Profile original version
 git checkout main
-cd build && ninja clickhouse-examples && cd ..
+cd build && ninja parser_memory_profiler && cd ..
 ./run_profiler.sh -o results_before -b ../build
 
 # Profile optimized version
 git checkout my-optimization-branch
-cd build && ninja clickhouse-examples && cd ..
+cd build && ninja parser_memory_profiler && cd ..
 ./run_profiler.sh -o results_after -b ../build
 
 # Generate comparison report
@@ -173,7 +173,7 @@ Shows side-by-side comparison:
 
 2. **run_profiler.sh**:
    - Iterates through queries in the input file
-   - Runs `clickhouse-examples parser_memory_profiler` with `MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0`
+   - Runs `parser_memory_profiler` with `JE_MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0`
    - Uses `jeprof` to analyze heap profile diffs
    - Generates text reports, collapsed stacks, and SVGs
    - Collects everything into `results.json`
@@ -187,11 +187,12 @@ Shows side-by-side comparison:
 
 | Variable | Description |
 |----------|-------------|
-| `MALLOC_CONF` | jemalloc configuration |
+| `JE_MALLOC_CONF` | jemalloc configuration (macOS with `je_` prefix) |
+| `MALLOC_CONF` | jemalloc configuration (Linux) |
 
 Required settings for profiling:
 ```bash
-MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0
+JE_MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0
 ```
 
 - `prof:true` - Enable profiling support
@@ -204,7 +205,7 @@ MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0
 
 The jemalloc library must be built with profiling support. Check:
 ```bash
-./clickhouse-examples parser_memory_profiler <<< "SELECT 1"
+./parser_memory_profiler <<< "SELECT 1"
 ```
 
 If it shows "config.prof: no", jemalloc was built without `--enable-prof`.

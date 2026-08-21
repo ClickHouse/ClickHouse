@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.kafka.common_direct import *
 import helpers.kafka.common as k
 from helpers.test_tools import TSV

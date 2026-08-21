@@ -52,12 +52,11 @@ StoragePtr TableFunctionFuzzJSON::executeImpl(
 void registerTableFunctionFuzzJSON(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFuzzJSON>(
-        {
-            .description = "Perturbs a JSON string with random variations.",
+        {.documentation
+         = {.description = "Perturbs a JSON string with random variations.",
             .returned_value = {"A table object with a a single column containing perturbed JSON strings."},
-            .category = FunctionDocumentation::Category::TableFunction
-        },
-        {.allow_readonly = true});
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = true});
 }
 
 }

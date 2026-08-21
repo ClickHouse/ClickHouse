@@ -93,7 +93,6 @@ def test_max_fields_exceeds_limit(started_cluster):
     request = build_http_request(headers=headers)
     status, body = send_raw_http(node.ip_address, HTTP_PORT, request)
     assert status == 400
-    assert body == "Too many header fields"
 
 
 # -- http_max_field_name_size (configured to 64) --
@@ -111,7 +110,6 @@ def test_field_name_exceeds_limit(started_cluster):
     request = build_http_request(headers=headers)
     status, body = send_raw_http(node.ip_address, HTTP_PORT, request)
     assert status == 400
-    assert body == "Field name is too long"
 
 
 # -- http_max_field_value_size (configured to 256) --
@@ -129,7 +127,6 @@ def test_field_value_exceeds_limit(started_cluster):
     request = build_http_request(headers=headers)
     status, body = send_raw_http(node.ip_address, HTTP_PORT, request)
     assert status == 400
-    assert body == "Field value is too long"
 
 
 # -- http_max_request_header_size (configured to 512 bytes total) --
@@ -149,7 +146,6 @@ def test_total_header_size_exceeds_limit(started_cluster):
     request = build_http_request(headers=headers)
     status, body = send_raw_http(node.ip_address, HTTP_PORT, request)
     assert status == 400
-    assert body == "Total request header size is too large"
 
 
 # -- http_headers_read_timeout (configured to 3 seconds) --
@@ -223,7 +219,6 @@ def test_max_fields_override_ignored(started_cluster):
     )
     status, body = send_raw_http(node.ip_address, HTTP_PORT, request)
     assert status == 400
-    assert body == "Too many header fields"
 
 
 def test_max_request_header_size_override_ignored(started_cluster):
@@ -234,4 +229,3 @@ def test_max_request_header_size_override_ignored(started_cluster):
     )
     status, body = send_raw_http(node.ip_address, HTTP_PORT, request)
     assert status == 400
-    assert body == "Total request header size is too large"

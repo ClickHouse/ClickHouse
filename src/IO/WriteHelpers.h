@@ -5,6 +5,8 @@
 #include <limits>
 #include <algorithm>
 #include <bit>
+#include <sstream>
+
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -27,6 +29,8 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
 
 namespace DB
 {
@@ -104,6 +108,13 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
     writeStringBinary(std::string_view{s}, buf);
 }
 
+inline void writeJSONBinary(Poco::JSON::Object::Ptr object, WriteBuffer & buf)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit | std::ios::badbit);
+    Poco::JSON::Stringifier::stringify(object, oss);
+    writeStringBinary(oss.str(), buf);
+}
 
 template <typename T, typename Alloc = std::allocator<T>>
 void writeVectorBinary(const std::vector<T, Alloc> & v, WriteBuffer & buf)

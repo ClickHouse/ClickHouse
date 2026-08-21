@@ -14,7 +14,6 @@
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -84,7 +83,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     ContextPtr context_,
     const String & remote_table_schema_,
     const String & on_conflict_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
@@ -103,16 +102,7 @@ StoragePostgreSQL::StoragePostgreSQL(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StoragePostgreSQL::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
@@ -206,7 +196,7 @@ public:
 
 }
 
-void StoragePostgreSQL::readImpl(
+void StoragePostgreSQL::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

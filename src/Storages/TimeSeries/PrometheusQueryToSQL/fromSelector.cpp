@@ -20,7 +20,8 @@ namespace
                                     ConverterContext & context)
     {
         auto node_range = context.node_range_getter.get(node);
-        if (node_range.empty())
+
+        if (node_range.start_time > node_range.end_time)
             return SQLQueryPiece{node, ResultType::RANGE_VECTOR, StoreMethod::EMPTY};
 
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, StoreMethod::RAW_DATA};

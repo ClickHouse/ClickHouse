@@ -213,7 +213,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
         {
             data_type = (*creator)(parameters);
         }
-        catch (...) // Ok: tryGetDataType is a try-pattern
+        catch (...)
         {
             return nullptr;
         }
@@ -224,7 +224,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
         data_type = (*creator)(parameters);
     }
 
-    auto query_context = CurrentThread::tryGetQueryContext();
+    auto query_context = CurrentThread::getQueryContext();
     if (query_context && query_context->getSettingsRef()[Setting::log_queries])
     {
         query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, data_type->getName());

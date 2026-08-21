@@ -8,7 +8,6 @@ ExpressionTransform
   (Limit)
   Limit
     (Sorting)
-    RemoveVirtualRowTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
@@ -26,7 +25,6 @@ ExpressionTransform
   (Limit)
   Limit
     (Sorting)
-    RemoveVirtualRowTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
@@ -47,7 +45,6 @@ ExpressionTransform
   (Limit)
   Limit
     (Sorting)
-    RemoveVirtualRowTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)

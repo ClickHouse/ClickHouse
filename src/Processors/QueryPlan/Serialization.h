@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
@@ -31,8 +30,6 @@ struct IQueryPlanStep::Deserialization
 {
     ReadBuffer & in;
     DeserializedSetsRegistry & registry;
-    std::vector<StoragePtr> storage_holders;    /// Storages that are referenced by the step and need to be kept alive
-
     const ContextPtr & context;
 
     const SharedHeaders & input_headers;

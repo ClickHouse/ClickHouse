@@ -31,7 +31,7 @@ node_old = cluster.add_instance(
     tag="25.12",
     with_installed_binary=True,
     stay_alive=True,
-    user_configs=["config/config_old.xml"],
+    user_configs=["config/config.xml"],
 )
 
 
@@ -142,7 +142,7 @@ def test_single_node_wide(started_cluster):
         """
         CREATE TABLE test_stat(a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest), c Int64 STATISTICS(tdigest))
         ENGINE = MergeTree() ORDER BY a
-        SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
+        SETTINGS min_bytes_for_wide_part = 0;
     """
     )
     run_test_single_node(started_cluster)
@@ -154,8 +154,7 @@ def test_single_node_normal(started_cluster):
     node1.query(
         """
         CREATE TABLE test_stat(a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest), c Int64 STATISTICS(tdigest))
-        ENGINE = MergeTree() ORDER BY a
-        SETTINGS auto_statistics_types = '';
+        ENGINE = MergeTree() ORDER BY a;
     """
     )
     run_test_single_node(started_cluster)
@@ -168,15 +167,13 @@ def test_replicated_table_ddl(started_cluster):
     node1.query(
         """
         CREATE TABLE test_stat(a Int64 STATISTICS(tdigest, uniq), b Int64 STATISTICS(tdigest, uniq), c Int64 STATISTICS(tdigest))
-        ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '1') ORDER BY a
-        SETTINGS auto_statistics_types = '';
+        ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '1') ORDER BY a;
     """
     )
     node2.query(
         """
         CREATE TABLE test_stat(a Int64 STATISTICS(tdigest, uniq), b Int64 STATISTICS(tdigest, uniq), c Int64 STATISTICS(tdigest))
-        ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '2') ORDER BY a
-        SETTINGS auto_statistics_types = '';
+        ENGINE = ReplicatedMergeTree('/clickhouse/test/statistics', '2') ORDER BY a;
     """
     )
 
@@ -188,7 +185,7 @@ def test_replicated_table_ddl(started_cluster):
 
     assert (
         node2.query("SHOW CREATE TABLE test_stat")
-        == "CREATE TABLE default.test_stat\\n(\\n    `a` Int64 STATISTICS(tdigest, uniq),\\n    `b` Int64,\\n    `c` Int64 STATISTICS(tdigest, uniq)\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/test/statistics\\', \\'2\\')\\nORDER BY a\\nSETTINGS auto_statistics_types = \\\'\\\', index_granularity = 8192\n"
+        == "CREATE TABLE default.test_stat\\n(\\n    `a` Int64 STATISTICS(tdigest, uniq),\\n    `b` Int64,\\n    `c` Int64 STATISTICS(tdigest, uniq)\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/test/statistics\\', \\'2\\')\\nORDER BY a\\nSETTINGS index_granularity = 8192\n"
     )
 
     node2.query("insert into test_stat values(1,2,3), (2,3,4)")
@@ -233,7 +230,7 @@ def test_replicated_db(started_cluster):
         "CREATE DATABASE test ENGINE = Replicated('/test/shared_stats', '{shard}', '{replica}')"
     )
     node1.query(
-        "CREATE TABLE test.test_stats (a Int64, b Int64) ENGINE = ReplicatedMergeTree() ORDER BY() SETTINGS auto_statistics_types = ''"
+        "CREATE TABLE test.test_stats (a Int64, b Int64) ENGINE = ReplicatedMergeTree() ORDER BY()"
     )
     node2.query("ALTER TABLE test.test_stats MODIFY COLUMN b Float64")
     node2.query("ALTER TABLE test.test_stats MODIFY STATISTICS b TYPE tdigest")
@@ -242,7 +239,7 @@ def test_replicated_db(started_cluster):
 def test_setting_materialize_statistics_on_merge(started_cluster):
     node3.query("DROP TABLE IF EXISTS test_stats SYNC")
     node3.query(
-        "CREATE TABLE test_stats (a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest)) ENGINE = MergeTree() ORDER BY() SETTINGS materialize_statistics_on_merge = 0, auto_statistics_types = ''"
+        "CREATE TABLE test_stats (a Int64 STATISTICS(tdigest), b Int64 STATISTICS(tdigest)) ENGINE = MergeTree() ORDER BY() settings materialize_statistics_on_merge = 0"
     )
     node3.query("SYSTEM STOP MERGES")
     node3.query("insert into test_stats values(1,2)")

@@ -54,9 +54,6 @@ bool makeFilterNodeOnTopOf(
     return makeExpressionNodeOnTopOfImpl<FilterStep>(node, std::move(actions_dag), nodes, std::move(step_description), filter_column_name, remove_filer);
 }
 
-namespace QueryPlanOptimizations
-{
-
 FilterResult getFilterResult(const ColumnWithTypeAndName & column)
 {
     if (!column.column)
@@ -68,9 +65,15 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
 }
 
-bool dagContainsNonReadySet(const ActionsDAG & dag)
+FilterResult filterResultForNotMatchedRows(
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name,
+    const Block & input_stream_header,
+    bool allow_unknown_function_arguments
+)
 {
-    for (const auto & node : dag.getNodes())
+    /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
+    for (const auto & node : filter_dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
         {
@@ -82,23 +85,10 @@ bool dagContainsNonReadySet(const ActionsDAG & dag)
             {
                 auto future_set = column_set->getData();
                 if (!future_set || !future_set->get())
-                    return true;
+                    return FilterResult::UNKNOWN;
             }
         }
     }
-    return false;
-}
-
-FilterResult filterResultForNotMatchedRows(
-    const ActionsDAG & filter_dag,
-    const String & filter_column_name,
-    const Block & input_stream_header,
-    bool allow_unknown_function_arguments
-)
-{
-    /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
-    if (dagContainsNonReadySet(filter_dag))
-        return FilterResult::UNKNOWN;
 
     ActionsDAG::IntermediateExecutionResult filter_input;
 
@@ -120,21 +110,17 @@ FilterResult filterResultForNotMatchedRows(
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }
 
-    const auto * filter_node = filter_dag.tryFindInOutputs(filter_column_name);
-    if (!filter_node)
-        return FilterResult::UNKNOWN;
-
     ColumnsWithTypeAndName filter_output;
     try
     {
         filter_output = ActionsDAG::evaluatePartialResult(
             filter_input,
-            { filter_node },
+            { filter_dag.tryFindInOutputs(filter_column_name) },
             /*input_rows_count=*/1,
             { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments }
         );
     }
-    catch (const Exception &)
+    catch (...)
     {
         /// If we cannot evaluate the filter expression, return UNKNOWN
         return FilterResult::UNKNOWN;
@@ -142,5 +128,6 @@ FilterResult filterResultForNotMatchedRows(
 
     return getFilterResult(filter_output[0]);
 }
-}
+
+
 }

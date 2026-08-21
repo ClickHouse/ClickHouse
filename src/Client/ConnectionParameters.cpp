@@ -135,7 +135,8 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 
         if (config.has("one-time-password"))
         {
-            password += "+";
+            if (!password.empty())
+                password += "+";
             password += config.getString("one-time-password");
         }
         else if (config.getBool("ask-password-2fa", false))

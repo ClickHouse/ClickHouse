@@ -46,7 +46,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"OK")
             return
 
-
         self.process_head()
         if self.path.endswith("/ping"):
             self.wfile.write(b"OK")

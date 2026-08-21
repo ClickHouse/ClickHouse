@@ -5,6 +5,7 @@
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

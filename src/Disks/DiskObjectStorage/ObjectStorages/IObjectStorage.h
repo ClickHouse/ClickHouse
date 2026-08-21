@@ -76,9 +76,6 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
     std::shared_ptr<AzureBlobStorage::StaticCredential>>;
-
-
-struct ConnectionParams;
 }
 
 #endif
@@ -198,12 +195,7 @@ public:
     virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
 
     /// List objects recursively by certain prefix. Use it instead of listObjects, if you want to list objects lazily.
-    /// Optional start_after is supported for storages that can efficiently resume listing from a key.
-    virtual ObjectStorageIteratorPtr iterate(
-        const std::string & path_prefix,
-        size_t max_keys,
-        bool with_tags,
-        const std::optional<std::string> & start_after) const;
+    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const;
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
@@ -317,16 +309,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
-    virtual const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
-    }
-
     virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
-
 #endif
 
 #if USE_AWS_S3
@@ -344,10 +330,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The method 'tagObjects' is only implemented for S3 and Azure storages");
     }
 #endif
-
-    /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
-    /// Returns nullptr for non-decorator types, meaning this storage is already the base.
-    virtual ObjectStoragePtr getUnderlying() { return nullptr; }
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

@@ -31,7 +31,7 @@ namespace
         bool isServerConstant() const override { return true; }
     };
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     /// buildId() - returns the compiler build id of the running binary.
     class FunctionBuildId : public FunctionServerConstantBase<FunctionBuildId, String, DataTypeString>
     {
@@ -146,7 +146,7 @@ namespace
     };
 }
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 REGISTER_FUNCTION(BuildId)
 {
     FunctionDocumentation::Description description = R"(
@@ -306,7 +306,7 @@ REGISTER_FUNCTION(ServerTimezone)
 Returns the timezone of the server, i.e. the value of the [`timezone`](/operations/server-configuration-parameters/settings#timezone) setting.
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     )";
-    FunctionDocumentation::Syntax syntax = "serverTimezone()";
+    FunctionDocumentation::Syntax syntax = "serverTimeZone()";
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the server timezone as a", {"String"}};
     FunctionDocumentation::Examples examples = {

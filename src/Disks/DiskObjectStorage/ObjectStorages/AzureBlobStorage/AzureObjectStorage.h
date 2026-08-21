@@ -38,11 +38,7 @@ public:
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     /// Sanitizer build may crash with max_keys=1; this looks like a false positive.
-    ObjectStorageIteratorPtr iterate(
-        const std::string & path_prefix,
-        size_t max_keys,
-        bool with_tags,
-        const std::optional<std::string> & start_after) const override;
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const override;
 
     std::string getName() const override { return "Azure"; }
 
@@ -115,7 +111,6 @@ public:
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override { return connection_params; }
 
     bool isReadOnly() const override { return settings.get()->read_only; }
 

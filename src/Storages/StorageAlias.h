@@ -105,14 +105,27 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
-
-    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override
+    StorageInMemoryMetadata getInMemoryMetadata() const override
     {
         auto target = tryGetTargetTable();
         if (!target)
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+            return IStorage::getInMemoryMetadata();
+        return target->getInMemoryMetadata();
+    }
+    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache) const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
+        return target->getInMemoryMetadataPtr(bypass_metadata_cache);
+    }
+    std::optional<StorageMetadataPtr> tryGetInMemoryMetadataPtr() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
 
-        return target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        return target->getInMemoryMetadataPtr();
     }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -121,7 +134,7 @@ public:
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
-    bool supportsColumnsWithDynamicStructure() const override { return getTargetTable()->supportsColumnsWithDynamicStructure(); }
+    bool supportsDynamicSubcolumns() const override { return getTargetTable()->supportsDynamicSubcolumns(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
     bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
@@ -144,6 +157,8 @@ public:
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override { return getTargetTable()->supportsTrivialCountOptimization(storage_snapshot, query_context); }
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
+
+    NamesAndTypesList getVirtuals() const { return getTargetTable()->getVirtualsList(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,

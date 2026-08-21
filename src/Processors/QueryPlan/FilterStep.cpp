@@ -1,6 +1,5 @@
 #include <Processors/QueryPlan/FilterStep.h>
 
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -195,34 +194,29 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
 void FilterStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, settings.indent_char);
 
     auto cloned_dag = actions_dag.clone();
 
     std::vector<ActionsAndName> and_atoms;
-    if (!settings.pretty && !actions_dag.hasStatefulFunctions())
+    if (!actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
 
     for (auto & and_atom : and_atoms)
     {
+        auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));
         settings.out << prefix << "AND column: " << and_atom.name << '\n';
-        if (!settings.compact)
-        {
-            auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));
-            expression->describeActions(settings.out, prefix);
-        }
+        expression->describeActions(settings.out, prefix);
     }
 
-    settings.out << prefix << "Filter column: "
-        << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
+    settings.out << prefix << "Filter column: " << filter_column_name;
 
-    if (!settings.pretty && remove_filter_column)
+    if (remove_filter_column)
         settings.out << " (removed)";
     settings.out << '\n';
 
     auto expression = std::make_shared<ExpressionActions>(std::move(cloned_dag));
-    if (!settings.compact)
-        expression->describeActions(settings.out, prefix);
+    expression->describeActions(settings.out, prefix);
 }
 
 void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -306,11 +300,6 @@ IQueryPlanStep::RemovedUnusedColumns FilterStep::removeUnusedColumns(NameMultiSe
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
-
-    /// When extra columns were absorbed from a child step that cannot reduce its output,
-    /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
-    if (prevent_input_removal)
-        remove_inputs = false;
 
     if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "In {} cannot be more inputs in the DAG than columns in the input header", getName());

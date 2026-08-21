@@ -74,8 +74,6 @@ struct SelectQueryOptions
       */
     bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
 
-    bool force_materialize_cte = false;
-
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
@@ -196,12 +194,6 @@ struct SelectQueryOptions
     SelectQueryOptions & setExplain(bool value = true)
     {
         is_explain = value;
-        return *this;
-    }
-
-    SelectQueryOptions & forceMaterializeCTE(bool value = true)
-    {
-        force_materialize_cte = value;
         return *this;
     }
 };

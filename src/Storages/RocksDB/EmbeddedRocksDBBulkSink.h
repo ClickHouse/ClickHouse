@@ -5,6 +5,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <rocksdb/db.h>
 #include <rocksdb/status.h>
+#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 

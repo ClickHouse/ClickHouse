@@ -13,10 +13,6 @@ int main(int argc, char ** argv)
 {
     testing::InitGoogleTest(&argc, argv);
 
-    auto & options = getTestCommandLineOptions();
-    options.argc = argc;
-    options.argv = argv;
-
     testing::AddGlobalTestEnvironment(new ContextEnvironment);
 
     return RUN_ALL_TESTS();
