@@ -2261,9 +2261,14 @@ void Planner::buildPlanForUnionNode()
         Field settings_offset;
         settings.tryGet("limit", settings_limit);
         settings.tryGet("offset", settings_offset);
-        const bool has_order_sensitive_post_distinct_limit = select_query_options.subquery_depth == 0
+        const bool has_settings_limit_offset = select_query_options.subquery_depth == 0
             && !select_query_options.settings_limit_offset_done
             && (settings_limit.safeGet<Float64>() > 0 || settings_offset.safeGet<Float64>() > 0);
+
+        /// The same order-sensitive trimming can also be applied by an outer query - an `OFFSET`, a
+        /// negative or fractional `LIMIT`, or a `LIMIT BY` over the derived table - and it is not
+        /// visible here. Keep the final set-operation DISTINCT of a subquery single-stream as well.
+        const bool has_order_sensitive_post_distinct_limit = has_settings_limit_offset || select_query_options.is_subquery;
 
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
