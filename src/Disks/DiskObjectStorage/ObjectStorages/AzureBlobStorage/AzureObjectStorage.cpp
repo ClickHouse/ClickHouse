@@ -54,6 +54,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int FILE_ALREADY_EXISTS;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -621,7 +622,7 @@ void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
-    const WriteSettings &,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto settings_ptr = settings.get();
@@ -635,19 +636,38 @@ void AzureObjectStorage::copyObject( /// NOLINT
 
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
 
-    copyAzureBlobStorageFile(
-        client_ptr,
-        client_ptr,
-        connection_params.getContainer(),
-        object_from.remote_path,
-        0,
-        object_metadata.size_bytes,
-        connection_params.getContainer(),
-        object_to.remote_path,
-        settings_ptr,
-        read_settings,
-        object_to_attributes,
-        scheduler);
+    const auto & if_none_match = write_settings.object_storage_write_if_none_match;
+
+    try
+    {
+        copyAzureBlobStorageFile(
+            client_ptr,
+            client_ptr,
+            connection_params.getContainer(),
+            object_from.remote_path,
+            0,
+            object_metadata.size_bytes,
+            connection_params.getContainer(),
+            object_to.remote_path,
+            settings_ptr,
+            read_settings,
+            object_to_attributes,
+            scheduler,
+            /*blob_storage_log=*/ nullptr,
+            /// Lets a caller demand that the copy fail rather than overwrite an existing destination.
+            if_none_match);
+    }
+    catch (const Azure::Core::RequestFailedException & e)
+    {
+        /// Azure answers 409 BlobAlreadyExists / 412 for a rejected If-None-Match. Report it the way the
+        /// other object storages do, so a caller can tell an existing destination from a failed copy.
+        if (!if_none_match.empty()
+            && (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+                || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                "Object {} already exists in container {}", object_to.remote_path, connection_params.getContainer());
+        throw;
+    }
 }
 
 void AzureObjectStorage::applyNewSettings(
