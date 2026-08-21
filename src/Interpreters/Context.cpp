@@ -10,6 +10,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
+#include "config.h"
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -4240,6 +4241,16 @@ WasmModuleManager * Context::initWasmModuleManager()
     if (!shared->server_settings[ServerSetting::allow_experimental_webassembly_udf])
         return nullptr;
 
+#if !USE_WASMTIME
+    /// This build has no WebAssembly engine, so fail close: do not expose any WebAssembly UDF surface at all.
+    /// In particular, `system.webassembly_modules` is not attached and persisted `LANGUAGE WASM` functions are
+    /// not loaded at startup (loading them would compile the modules and abort the server startup).
+    LOG_WARNING(
+        shared->log,
+        "WebAssembly UDFs are enabled in the configuration, but this build of ClickHouse does not include "
+        "a WebAssembly engine, so WebAssembly UDFs remain unavailable");
+    return nullptr;
+#else
     String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
@@ -4248,6 +4259,7 @@ WasmModuleManager * Context::initWasmModuleManager()
     shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_scripts_path_ */ "wasm", engine_name);
 
     return shared->wasm_module_manager.get();
+#endif
 }
 
 bool Context::hasWasmModuleManager() const
@@ -4260,7 +4272,15 @@ WasmModuleManager & Context::getWasmModuleManager() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->wasm_module_manager)
+    {
+#if USE_WASMTIME
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WebAssembly support is not enabled");
+#else
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "WebAssembly support is not enabled: this build of ClickHouse does not include a WebAssembly engine");
+#endif
+    }
     return *shared->wasm_module_manager;
 }
 
