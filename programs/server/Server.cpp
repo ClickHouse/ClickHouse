@@ -4310,15 +4310,16 @@ void Server::createServers(
             port_name = "arrowflight_port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(Poco::Timespan());
-                socket.setSendTimeout(settings[Setting::send_timeout]);
+                /// Do not bind a Poco socket here: gRPC owns the listening socket of an Arrow Flight
+                /// server and binds it in `start`. A pre-bind would both bind the address twice and
+                /// defeat the family-agnostic handling of a wildcard address by gRPC, which falls
+                /// back to `0.0.0.0` for `::` on a host without IPv6.
+                auto address = makeSocketAddress(listen_host, port, &logger());
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
                     "Arrow Flight compatibility protocol: " + address.toString(),
-                    std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, address)),
                     true);
             });
         }

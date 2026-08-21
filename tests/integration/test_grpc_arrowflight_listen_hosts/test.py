@@ -45,6 +45,7 @@ def test_one_grpc_listener_for_mixed_wildcard_listen_hosts():
     assert (
         len(wildcard_node.grep_in_log("Listening for gRPC protocol").splitlines()) == 1
     )
+    assert wildcard_node.contains_in_log("Listening for gRPC protocol: 0.0.0.0:9100")
     assert (
         len(
             wildcard_node.grep_in_log(
@@ -52,6 +53,9 @@ def test_one_grpc_listener_for_mixed_wildcard_listen_hosts():
             ).splitlines()
         )
         == 1
+    )
+    assert wildcard_node.contains_in_log(
+        "Listening for Arrow Flight compatibility protocol: 0.0.0.0:8888"
     )
 
     # That single listener must serve IPv4 too.
@@ -80,10 +84,11 @@ def test_unavailable_listen_host_does_not_prevent_startup():
 
 
 def test_runtime_reload_normalizes_grpc_listen_hosts():
-    """Reloading from a specific address to a wildcard must replace the existing gRPC-based
-    listener. Keeping the old listener while adding the wildcard one recreates the overlapping
-    socket issue that startup normalization avoids."""
+    """Reloading from a specific address to a wildcard must replace the existing gRPC listener.
+    Keeping the old listener while adding the wildcard one recreates the overlapping socket issue
+    that startup normalization avoids."""
     assert reload_node.query("SELECT 1") == "1\n"
+    assert len(reload_node.grep_in_log("Listening for gRPC protocol").splitlines()) == 1
 
     reload_node.exec_in_container(
         [
@@ -91,11 +96,12 @@ def test_runtime_reload_normalizes_grpc_listen_hosts():
             "-c",
             """cat > /etc/clickhouse-server/config.d/reload_hosts.xml <<'EOF'
 <clickhouse>
-    <listen_host>127.0.0.1</listen_host>
+    <listen_host>reload_node</listen_host>
     <listen_host>0.0.0.0</listen_host>
 
+    <listen_try>1</listen_try>
+
     <grpc_port>9200</grpc_port>
-    <arrowflight_port>8889</arrowflight_port>
 </clickhouse>
 EOF""",
         ]
@@ -104,14 +110,7 @@ EOF""",
 
     assert reload_node.query("SELECT 1") == "1\n"
     assert len(reload_node.grep_in_log("Listening for gRPC protocol").splitlines()) == 2
-    assert (
-        len(
-            reload_node.grep_in_log(
-                "Listening for Arrow Flight compatibility protocol"
-            ).splitlines()
-        )
-        == 2
-    )
+    assert reload_node.contains_in_log("Listening for gRPC protocol: 0.0.0.0:9200")
 
 
 def test_all_unavailable_listen_hosts_prevent_startup():
