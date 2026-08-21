@@ -1293,6 +1293,102 @@ TEST(CoordinationRequestSize, WriteRejectsRequestOverInt32)
     EXPECT_THROW(request.write(wbuf, false, false), Coordination::Exception);
 }
 
+/// checkIfRequestIncreaseMem is the memory-soft-limit admission classifier. It is a pure function of
+/// the request, so it is tested here rather than through the integration test: reproducing sustained
+/// memory pressure is RSS-driven and decays as soon as the load stops, which makes any assertion that
+/// depends on Keeper still refusing inherently racy.
+namespace
+{
+
+Coordination::ZooKeeperRequestPtr makeSetRequest(const std::string & path, const std::string & data)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperSetRequest>();
+    request->path = path;
+    request->data = data;
+    request->version = -1;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeCreateRequest(const std::string & path, const std::string & data)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    request->path = path;
+    request->data = data;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeRemoveRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperRemoveRequest>();
+    request->path = path;
+    request->version = -1;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeMultiRequest(const Coordination::Requests & subrequests)
+{
+    return std::make_shared<Coordination::ZooKeeperMultiRequest>(subrequests, Coordination::ACLs{});
+}
+
+}
+
+TEST(KeeperMemorySoftLimitAdmission, EmptySetIsNotMemoryIncreasing)
+{
+    /// The session-registration write from ZooKeeper::initSession. Refusing it is what locked tables
+    /// into readonly for the duration of a Keeper memory event: a Set cannot allocate a znode, and with
+    /// empty data the amount of stored data can only shrink.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeSetRequest("/clickhouse/sessions/zookeeper/uuid", "")));
+
+    /// A Set that actually carries data can grow the store, so it must still be refused - note this is
+    /// true even though the path is long, i.e. the decision is on the data and not on the request size.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeSetRequest("/clickhouse/sessions/zookeeper/uuid", "x")));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, CreateIsAlwaysMemoryIncreasing)
+{
+    /// Unchanged behaviour, asserted so that narrowing the Set branch cannot silently widen this one.
+    /// An empty Create still allocates a znode, so unlike Set it is classified increasing.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeCreateRequest("/a", "")));
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeCreateRequest("/a", "data")));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, MultiClassifiedBySumOfDataSizes)
+{
+    /// A Multi of only empty Sets has a zero delta and must be admitted. Before the fix this returned
+    /// true, because the branch summed bytesSize() - which includes the path, the version and the xid -
+    /// so an empty Set contributed growth proportional to its path length. `Set(<table>/replicas, "")`
+    /// in SharedMergeTree's activateReplica is exactly this shape.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeSetRequest("/some/quite/long/path/that/would/have/dominated/bytesSize", ""),
+        makeSetRequest("/another/long/path/replicas", ""),
+    })));
+
+    /// Data in any subrequest still makes the Multi increasing.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeSetRequest("/a", ""),
+        makeSetRequest("/b", "data"),
+    })));
+
+    /// So does a Create, which is the gate-2 shape from activateReplica: an ephemeral is_active node
+    /// plus Sets. This one genuinely allocates and is expected to stay refused.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeCreateRequest("/table/replicas/r1/is_active", ""),
+        makeSetRequest("/table/replicas/r1/host", "hostname"),
+        makeSetRequest("/table/replicas", ""),
+    })));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, ReadsAndRemovesAreNotMemoryIncreasing)
+{
+    /// Reads fall through to the final `return false`, which is why a saturated Keeper still serves
+    /// them - the property the end-to-end test relies on.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(std::make_shared<Coordination::ZooKeeperGetRequest>()));
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(std::make_shared<Coordination::ZooKeeperListRequest>()));
+
+    /// A standalone Remove is not classified increasing. Deliberately unchanged by this fix.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeRemoveRequest("/a")));
+}
+
 namespace DB
 {
 
