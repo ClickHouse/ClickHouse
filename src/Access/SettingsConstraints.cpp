@@ -121,13 +121,30 @@ void SettingsConstraints::get(const MergeTreeSettings &, std::string_view short_
     writability = checker.constraint.writability;
 }
 
-SettingConstraintWritability SettingsConstraints::getWritability(std::string_view setting_name) const
+bool SettingsConstraints::allowsValue(std::string_view setting_name, const Field & value) const
 {
     auto it = constraints.find(resolveSettingNameWithCache(setting_name));
     if (it == constraints.end())
-        return SettingConstraintWritability::WRITABLE;
+        return true;
 
-    return it->second.writability;
+    const auto & constraint = it->second;
+
+    if (constraint.writability == SettingConstraintWritability::CONST)
+        return false;
+
+    if (!constraint.min_value.isNull() && accurateLess(value, constraint.min_value))
+        return false;
+
+    if (!constraint.max_value.isNull() && accurateLess(constraint.max_value, value))
+        return false;
+
+    for (const auto & disallowed_value : constraint.disallowed_values)
+    {
+        if (accurateEquals(disallowed_value, value))
+            return false;
+    }
+
+    return true;
 }
 
 void SettingsConstraints::merge(const SettingsConstraints & other)

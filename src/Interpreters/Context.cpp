@@ -3380,10 +3380,10 @@ void Context::finalizeSettingsWithLock(const std::lock_guard<ContextSharedMutex>
 {
     applySettingsQuirks(*settings);
 
-    /// A `const` constraint pins make_distributed_plan against the derived value too.
-    const auto writability = getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.getWritability("make_distributed_plan");
+    /// A constraint that forbids enabling `make_distributed_plan` also vetoes the derived value.
+    const bool derivation_allowed = getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.allowsValue("make_distributed_plan", Field(true));
 
-    adjustSettingsForMakeDistributedPlan(*settings, writability != SettingConstraintWritability::CONST);
+    adjustSettingsForMakeDistributedPlan(*settings, derivation_allowed);
 }
 
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
