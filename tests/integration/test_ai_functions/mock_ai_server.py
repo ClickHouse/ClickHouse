@@ -250,6 +250,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             })
             return
 
+        if parsed.path == "/v1/anthropic/no_content":
+            # A `200` the provider bills for, whose body then fails validation. Anthropic reports usage
+            # under different keys than OpenAI.
+            self._send_json(200, {
+                "id": "msg-no-content",
+                "type": "message",
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 9, "output_tokens": 0},
+            })
+            return
+
         if parsed.path == "/v1/error":
             self._send_json(500, make_error_response("permanent failure"))
             return

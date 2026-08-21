@@ -114,6 +114,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Anthropic endpoint returning a billed `200` with no `content` array.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_anthropic_no_content AS "
+            f"provider = 'anthropic', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/no_content', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # Endpoint returning a deterministic HTTP 400, which the url table function never retries.
         instance.query(
             f"CREATE NAMED COLLECTION ai_bad_request AS "
@@ -1117,6 +1125,46 @@ def test_generate_malformed_response_records_input_tokens(started_cluster):
     events = get_profile_events(qid)
     assert int(events["api_calls"]) == 1
     assert int(events["input_tokens"]) == 7  # `usage.prompt_tokens` of the rejected body
+
+
+def test_generate_malformed_response_counts_tokens_against_quota(started_cluster):
+    """The tokens of a billed-but-rejected response must reach `AIQuotaTracker`, not only `system.query_log`:
+    the first row spends the whole input-token cap, so the second row is never dispatched."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
+    qid = unique_query_id("generate_malformed_quota")
+    instance.query(
+        "SELECT aiGenerate(x, map('credentials', 'ai_no_choices')) FROM test_input",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_throw_on_error": 0,
+            "ai_function_throw_on_quota_exceeded": 0,
+            "ai_function_max_retries": 0,
+            "ai_function_max_input_tokens_per_query": 7,
+        },
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    # One request only: the first response's 7 rejected-but-billed tokens met the cap.
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 7
+    assert int(events["rows_skipped"]) == 2  # one rejected response, one row never dispatched
+
+
+def test_anthropic_malformed_response_records_input_tokens(started_cluster):
+    """Same guarantee through `AnthropicProvider`, whose body shape and usage keys differ from OpenAI's."""
+    qid = unique_query_id("anthropic_malformed_tokens")
+    result = instance.query(
+        "SELECT aiGenerate('hi', map('credentials', 'ai_anthropic_no_content'))",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_throw_on_error": 0,
+            "ai_function_max_retries": 0,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == ""  # the rejected response yields no output
+    assert int(get_profile_events(qid)["input_tokens"]) == 9  # `usage.input_tokens` of the rejected body
 
 
 def test_similarity_row_counters_stay_zero_on_throw(started_cluster):
