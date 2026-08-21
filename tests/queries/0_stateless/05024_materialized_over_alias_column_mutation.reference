@@ -1,0 +1,8 @@
+stored
+10	0	110	111
+update of an unrelated column
+10	5	110	111
+update of the column behind the alias
+20	5	120	121
+on the fly, mutation pending
+20	120	121
