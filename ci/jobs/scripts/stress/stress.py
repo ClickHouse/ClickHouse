@@ -289,17 +289,22 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         # every algorithm meets every worker mode (plain, join_use_nulls, replicated
         # database) and the multi-algorithm fallback paths are covered too.
         join_algorithms = [
+            "hash",
             "parallel_hash",
             "partial_merge",
             "full_sorting_merge",
+            "grace_hash",
             "auto",
         ]
         if not upgrade_check:
-            # grace_hash: some crashes are not fixed in 23.2 yet.
-            # parallel_full_sorting_merge, ie_join: the previous release may not know
-            # these values, so ignore them in Upgrade check.
-            join_algorithms += ["grace_hash", "parallel_full_sorting_merge", "ie_join"]
-        selected = random.sample(join_algorithms, k=random.randint(1, 3))
+            # The Upgrade check runs the pre-upgrade load against the previous
+            # release server, which rejects join_algorithm values it does not
+            # know yet and would fail every query, so skip the values that are
+            # newer than the previous release.
+            join_algorithms += ["parallel_full_sorting_merge", "ie_join"]
+        selected = random.sample(
+            join_algorithms, k=random.randint(1, len(join_algorithms))
+        )
         if selected == ["ie_join"]:
             # ie_join applies only to inequality joins; alone it would fail every plain
             # equality join with NOT_IMPLEMENTED.
