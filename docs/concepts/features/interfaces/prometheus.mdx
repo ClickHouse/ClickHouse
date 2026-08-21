@@ -199,7 +199,7 @@ remote_write:
       password: <password>
 ```
 
-For a `prometheus_api_v1` handler, URL-path routing applies only to `/write`. The read and query endpoints keep using a fixed table in the handler configuration or the `database` and `table` query parameters.
+Enabling `enable_table_name_url_routing` on a `prometheus_api_v1` handler makes that handler write-only. Configure a separate handler without this option for `/read`, `/query`, and metadata endpoints; that handler can use a fixed `database` and `table` or the corresponding query parameters.
 
 ### Query with PromQL {#promql-query-support}
 

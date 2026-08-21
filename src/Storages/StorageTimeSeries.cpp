@@ -733,7 +733,7 @@ When configuring a Prometheus remote-write handler with `enable_table_name_url_r
 </http_handlers>
 ```
 
-For a `prometheus_api_v1` handler, `enable_table_name_url_routing` is supported only for the remote-write `/write` endpoint. The `/read`, `/query`, and metadata endpoints must use a fixed table in the handler configuration or the existing `database` and `table` query parameters.
+Enabling `enable_table_name_url_routing` on a `prometheus_api_v1` handler makes that handler write-only. Configure a separate handler without this option for `/read`, `/query`, and metadata endpoints; that handler can use a fixed `database` and `table` or the corresponding query parameters.
 
 See [Route remote write by URL path](/concepts/features/interfaces/prometheus#remote-write-url-routing) for the full handler configuration.
 
