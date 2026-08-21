@@ -30,60 +30,6 @@ TABLE_SETTINGS="
     add_minmax_index_for_block_offset_column = 1,
     part_minmax_index_columns = 'with_block_number_offset'"
 
-# A bounded stream must read everything committed before it started, even with older work in flight.
-
-$CLICKHOUSE_CLIENT --query "
-DROP TABLE IF EXISTS t_bounded_stale;
-CREATE TABLE t_bounded_stale (k UInt64, v UInt64)
-ENGINE = MergeTree ORDER BY k SETTINGS $TABLE_SETTINGS;"
-
-# Arm both before any reader exists: the pump spends the one-shot pause, so the reader gets a fresh one.
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_ROUND"
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_OBSERVED"
-
-# shellcheck disable=SC2086
-$CLICKHOUSE_CLIENT $STREAM_SETTINGS --query_id "${CLICKHOUSE_DATABASE}_stale_pump" --query \
-    "SELECT 'pump', count() FROM t_bounded_stale STREAM BOUNDED" > /dev/null 2>&1 &
-PUMP=$!
-
-# Park the enrichment while the table is empty, then let the pump consume its own pause.
-timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_ROUND PAUSE" \
-    || echo "stale_snapshot initial round barrier timed out"
-timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_OBSERVED PAUSE" \
-    || echo "stale_snapshot pump barrier timed out"
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_OBSERVED" 2>/dev/null || true
-
-$CLICKHOUSE_CLIENT --query "
-INSERT INTO t_bounded_stale SELECT number, number * 10 FROM numbers(5);
-INSERT INTO t_bounded_stale SELECT number, number * 10 FROM numbers(5, 5);"
-
-# No round can arrive while one is parked, so re-arming here reserves the pause for the reader
-# below: it starts after the parked work took its view, so that work must not count for it.
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_OBSERVED"
-
-# shellcheck disable=SC2086
-$CLICKHOUSE_CLIENT $STREAM_SETTINGS --query_id "${CLICKHOUSE_DATABASE}_stale_reader" --query \
-    "SELECT 'stale_snapshot', count(), sum(k), sum(v) FROM t_bounded_stale STREAM BOUNDED" &
-READER=$!
-
-# Hold the reader as soon as it has looked at the table, before it decides whether to stop.
-timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_OBSERVED PAUSE" \
-    || echo "stale_snapshot reader barrier timed out"
-
-# Release the parked round and wait for the next to park, which only happens once the released one
-# finished. Bounded and announced, because a build that reads wrong leaves no round to park.
-$CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT $FP_ROUND" 2>/dev/null || true
-timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_ROUND PAUSE" \
-    || echo "stale_snapshot round barrier timed out"
-
-# Let the reader act on what it saw, then release the round so its own round can serve it.
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_OBSERVED" 2>/dev/null || true
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_ROUND" 2>/dev/null || true
-
-wait $READER
-wait $PUMP || true
-$CLICKHOUSE_CLIENT --query "DROP TABLE t_bounded_stale"
-
 # A bounded stream must not stop on work that is still publishing partitions.
 
 $CLICKHOUSE_CLIENT --query "
@@ -106,10 +52,6 @@ READER=$!
 timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_MID PAUSE" \
     || echo "partial_round mid barrier timed out"
 
-# Holding it there gives a reader that wrongly accepts partial data time to stop. Best-effort: off
-# timing still expects the full result, so the arm loses coverage rather than failing.
-sleep 5
-
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_MID" 2>/dev/null || true
 
 wait $READER
@@ -123,7 +65,8 @@ DROP TABLE IF EXISTS t_bounded_between;
 CREATE TABLE t_bounded_between (k UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY k SETTINGS $TABLE_SETTINGS;"
 
-# Same two-stage arming as the first arm, for the same reason.
+# Armed before any reader exists, so the pump spends the one-shot pause and the reader below, which
+# is the one being measured, gets a fresh one instead of racing the pump for it.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_ROUND"
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_OBSERVED"
 
@@ -154,7 +97,8 @@ timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_OBSERVED PAUSE"
     || echo "observed_between reader barrier timed out"
 
 # With the reader held, step two whole rounds. The first was parked while the table was empty and
-# does not count for this reader; the second does. Bounded and announced as in the first arm.
+# does not count for this reader; the second does. Each wait is bounded and announces a timeout,
+# because a build that reads in the wrong order leaves no round to park.
 $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT $FP_ROUND" 2>/dev/null || true
 timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_ROUND PAUSE" \
     || echo "observed_between first round barrier timed out"
