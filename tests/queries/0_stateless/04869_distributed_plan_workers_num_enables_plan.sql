@@ -25,17 +25,20 @@ SELECT getSetting('make_distributed_plan') = (SELECT readonly = 0 FROM system.se
 SELECT 'the implied plan adjusts the settings it does not support, unless pinned const';
 SELECT getSetting('compile_expressions') = (SELECT readonly != 0 FROM system.settings WHERE name = 'make_distributed_plan') SETTINGS distributed_plan_workers_num = 3, compile_expressions = 1;
 
-SELECT 'implied by a session workers num unless pinned const';
-SET distributed_plan_workers_num = 3;
-SELECT getSetting('make_distributed_plan') = (SELECT readonly = 0 FROM system.settings WHERE name = 'make_distributed_plan');
-
 SELECT 'the query distributes with make_distributed_plan left alone';
--- sum() and not a bare count() so the trivial-count optimization cannot fold the plan away.
+-- The workers num rides on the explained query itself: the wrapper query has to stay local,
+-- because a distributed wrapper could not serialize its read from the EXPLAIN table function
+-- for remote execution. sum() and not a bare count() so the trivial-count optimization cannot
+-- fold the plan away.
 SELECT (count() > 0) = (SELECT readonly = 0 FROM system.settings WHERE name = 'make_distributed_plan')
-FROM (EXPLAIN PIPELINE SELECT sum(v) FROM t_dp_workers)
+FROM (EXPLAIN PIPELINE SELECT sum(v) FROM t_dp_workers SETTINGS distributed_plan_workers_num = 3)
 WHERE explain LIKE '%ReadFromDistributedPlanSource%';
 
 DROP TABLE t_dp_workers;
+
+SELECT 'implied by a session workers num unless pinned const';
+SET distributed_plan_workers_num = 3;
+SELECT getSetting('make_distributed_plan') = (SELECT readonly = 0 FROM system.settings WHERE name = 'make_distributed_plan');
 
 SELECT 'off again when the workers num goes back to zero';
 SET distributed_plan_workers_num = 0;

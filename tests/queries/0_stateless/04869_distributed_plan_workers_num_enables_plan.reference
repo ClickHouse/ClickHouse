@@ -4,9 +4,9 @@ implied by a per-query workers num unless pinned const
 1
 the implied plan adjusts the settings it does not support, unless pinned const
 1
-implied by a session workers num unless pinned const
-1
 the query distributes with make_distributed_plan left alone
+1
+implied by a session workers num unless pinned const
 1
 off again when the workers num goes back to zero
 false
