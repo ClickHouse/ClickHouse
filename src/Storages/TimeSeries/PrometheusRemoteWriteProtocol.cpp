@@ -122,7 +122,7 @@ void appendHistogramBuckets(
         Int64 running = 0;
         for (Int64 delta : deltas)
         {
-            Int64 new_running;
+            Int64 new_running = 0;
             if (__builtin_add_overflow(running, delta, &new_running))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has an overflowing {} bucket count during delta decoding", what);
@@ -251,9 +251,9 @@ ColumnPtr makeHistogramsColumn(
     auto make_spans_array = [](auto && span_offsets, auto && span_lengths, auto && spans_offsets) -> ColumnPtr
     {
         Columns span_tuple_columns;
-        span_tuple_columns.push_back(std::move(span_offsets));
-        span_tuple_columns.push_back(std::move(span_lengths));
-        return ColumnArray::create(ColumnTuple::create(std::move(span_tuple_columns)), std::move(spans_offsets));
+        span_tuple_columns.push_back(std::forward<decltype(span_offsets)>(span_offsets));
+        span_tuple_columns.push_back(std::forward<decltype(span_lengths)>(span_lengths));
+        return ColumnArray::create(ColumnTuple::create(std::move(span_tuple_columns)), std::forward<decltype(spans_offsets)>(spans_offsets));
     };
 
     Columns tuple_columns;
@@ -373,7 +373,7 @@ Block makeTimeSeriesBlock(
         size_t num_histograms = 0;
         auto histograms_column = makeHistogramsColumn(time_series, num_metadata_rows, timestamp_type, num_histograms);
         block.insert(ColumnWithTypeAndName{
-            std::move(histograms_column), metadata.columns.get(TimeSeriesColumnNames::Histograms).type, TimeSeriesColumnNames::Histograms});
+            histograms_column, metadata.columns.get(TimeSeriesColumnNames::Histograms).type, TimeSeriesColumnNames::Histograms});
         ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteHistograms, num_histograms);
     }
 
