@@ -1,0 +1,16 @@
+-- A Const result stays Const in both backends (the default entry size limit is 1 MiB, materialized it would be 2 MB)
+2000000 1
+-- The entry was accepted by the in-memory cache and stayed small (materialized it would be at least 2 MB)
+1
+-- The result is served from disk when reads from the in-memory cache are disabled
+2000000 1
+-- The entry on disk is small, and the second run read it (from system.query_log)
+1	0
+1	1
+-- A Sparse column survives the round trip through the on-disk cache
+500000 0
+1 777
+499999 0
+500000 0
+1 777
+499999 0
