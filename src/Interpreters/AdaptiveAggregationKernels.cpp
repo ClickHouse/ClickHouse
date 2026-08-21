@@ -944,11 +944,13 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     ///
     /// - `staged_records` grows by the batch's record count.
     /// - `staged_bytes` grows by the batch's estimated footprint, computed below as
-    ///   `batch_bytes`. It counts the key bytes as the kernel staged them, the
-    ///   variable-width aggregate arguments at the block's average width, and 16 bytes of
-    ///   per-record bookkeeping (the routing hash plus a row or offset). A column read by
-    ///   several aggregates is staged once, so it is counted once; a count batch stages a
-    ///   four-byte run length instead of arguments.
+    ///   `batch_bytes`. It counts the key bytes as the kernel staged them, the variable-width
+    ///   aggregate arguments at their gathered sizes (the sealed chunk's columns hold exactly
+    ///   the staged rows, so a wide tail behind a narrow frequent head is charged its real
+    ///   width rather than the block's average), and 16 bytes of per-record bookkeeping (the
+    ///   routing hash plus a row or offset). A column read by several aggregates is staged
+    ///   once, so it is counted once; a count batch stages a four-byte run length instead of
+    ///   arguments.
     ///   The estimate is taken before the count deduplication (which merges a batch's
     ///   repeats of one key into a single record with a run length), so it charges every
     ///   staged record. That is deliberate: `staged_records` also counts the records before
@@ -980,6 +982,18 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     /// to freeze also checks it at the crossing, so no table freezes against it. The current
     /// records are still published: their rows were deferred by the frozen kernel and only
     /// the drain will aggregate them.
+    auto block = std::make_shared<StagedChunk>();
+    auto & keys = block->keys;
+
+    if (counts_only)
+    {
+        buildDeduplicatedCountChunk<SharedKey>(*block, adaptive, local_find_state, scratch_pool, key_row_override);
+    }
+    else
+    {
+        buildBucketGroupedAggregateChunk<SharedKey>(*block, columns, adaptive, local_find_state, scratch_pool, key_row_override);
+    }
+
     size_t batch_bytes = 0;
     if constexpr (adaptive_key_stages_bytes<SharedKey>)
         for (const auto size : adaptive.miss_key_sizes)
@@ -990,19 +1004,9 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     if (counts_only)
         batch_bytes += total * sizeof(UInt32);
     else
-    {
-        std::vector<size_t> positions;
-        for (const auto & argument_positions : aggregates_positions)
-            positions.insert(positions.end(), argument_positions.begin(), argument_positions.end());
-        std::sort(positions.begin(), positions.end());
-        positions.erase(std::unique(positions.begin(), positions.end()), positions.end());
-
-        size_t argument_bytes_per_row = 0;
-        for (const auto position : positions)
-            if (!columns[position]->valuesHaveFixedSize())
-                argument_bytes_per_row += columns[position]->byteSize() / num_rows;
-        batch_bytes += total * argument_bytes_per_row;
-    }
+        for (const auto & column : std::get<StagedChunk::AggregatePayload>(block->payload).argument_columns)
+            if (column && !column->valuesHaveFixedSize())
+                batch_bytes += column->byteSize();
     batch_bytes += total * 16;
 
     if (!shared.thaw_all.load(std::memory_order_relaxed))
@@ -1044,18 +1048,6 @@ void NO_INLINE Aggregator::publishDelayedRecords(
                 repeat,
                 static_cast<size_t>((repeat - 1.0) * (static_cast<double>(shared.staged_bytes) / static_cast<double>(shared.staged_records))));
         }
-    }
-
-    auto block = std::make_shared<StagedChunk>();
-    auto & keys = block->keys;
-
-    if (counts_only)
-    {
-        buildDeduplicatedCountChunk<SharedKey>(*block, adaptive, local_find_state, scratch_pool, key_row_override);
-    }
-    else
-    {
-        buildBucketGroupedAggregateChunk<SharedKey>(*block, columns, adaptive, local_find_state, scratch_pool, key_row_override);
     }
 
     adaptive.miss_source_rows.clear();
