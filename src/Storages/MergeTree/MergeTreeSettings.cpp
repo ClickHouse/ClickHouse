@@ -507,6 +507,21 @@ there is free space, but this space is already booked by ongoing large merges,
 so other merges are unable to start, and the number of small parts grows
 with every insert.
 )", 0) \
+    DECLARE(UInt64, min_unreserved_disk_space_for_merge, 0, R"(
+Keeps the specified amount of unreserved disk space (in bytes) out of reach of
+background merges: a merge is selected only if the disk would still have at
+least this much unreserved space after booking the space for it. As the disk
+fills up, the maximum size of selected merges shrinks dynamically, and merges
+stop entirely once the remaining unreserved space falls to this threshold,
+leaving it available for inserts and other operations. (0 means disabled)
+
+Unlike `keep_free_space_bytes`, the protected space remains usable by
+ClickHouse itself - it is only excluded from merge scheduling. The setting has
+no effect on disks with unlimited space (such as object storage).
+
+Merges initiated by [OPTIMIZE FINAL](/reference/statements/optimize) ignore
+this setting (only the free disk space is taken into account).
+)", 0) \
     DECLARE(UInt64, max_replicated_merges_in_queue, 1000, R"(
 How many tasks of merging and mutating parts are allowed simultaneously in
 ReplicatedMergeTree queue.
