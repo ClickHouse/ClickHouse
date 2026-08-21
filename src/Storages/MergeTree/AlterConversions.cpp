@@ -516,10 +516,10 @@ AlterConversions::MutationChainForRead AlterConversions::buildMutationChainForRe
 
     MaterializedColumnDependencies dependencies(metadata_snapshot->getColumns(), context);
 
-    /// `filterMutationCommands` puts the columns the surviving commands read into the read set, and one
-    /// of them can be a MATERIALIZED column of a chain (`DELETE WHERE m2 > 100`); closing the set over
-    /// it can in turn keep an older command alive that reads yet more columns. The set only grows and
-    /// is bounded by the width of the table, so iterating until it stops growing terminates.
+    /// Closing the read set and filtering the commands feed each other: the filter keeps a command only
+    /// if it touches the read set, and adds what that command itself reads — possibly a MATERIALIZED
+    /// column (`DELETE WHERE m2 > 100`) for the next round to close over. Terminates because the read
+    /// set only grows and is bounded by the width of the table.
     size_t num_read_columns = 0;
     do
     {
