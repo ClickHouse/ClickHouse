@@ -12,3 +12,8 @@ clickhouse_add_executable(column_low_cardinality_key_holder benchmark_low_cardin
 target_link_libraries(column_low_cardinality_key_holder PRIVATE
     ch_contrib::gbenchmark_all
     dbms)
+
+clickhouse_add_executable(column_low_cardinality_aggregation_method benchmark_low_cardinality_aggregation_method.cpp)
+target_link_libraries(column_low_cardinality_aggregation_method PRIVATE
+    ch_contrib::gbenchmark_all
+    dbms)
