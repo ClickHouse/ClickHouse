@@ -695,13 +695,15 @@ SinkToStoragePtr StorageObjectStorage::import(
 
     std::string partition_key;
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+
     if (configuration->getPartitionStrategy())
     {
         /// The values still carry the source table's types, but the partition key is rendered as text into the
         /// object path and read back in this table's types, so it must be expressed in them first. A DateTime
         /// in another time zone is the sharpest case: the epoch is the same, yet its text names another instant.
         Block block_in_destination_types = block_with_partition_values;
-        const auto destination_sample = getInMemoryMetadataPtr(local_context, false)->getSampleBlock();
+        const auto destination_sample = metadata_snapshot->getSampleBlock();
         for (auto & column : block_in_destination_types)
         {
             if (!destination_sample.has(column.name))
@@ -723,8 +725,6 @@ SinkToStoragePtr StorageObjectStorage::import(
     }
 
     const auto base_path = configuration->getPathForWrite(partition_key, file_name).path;
-
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     return std::make_shared<MultiFileStorageObjectStorageSink>(
         base_path,
