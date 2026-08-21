@@ -598,36 +598,47 @@ public:
 
         // ── Allocate buffer in WASM memory ───────────────────────────────────
         {
-            ProfileEventTimeIncrement<Microseconds> timer_ser(ProfileEvents::WasmSerializationMicroseconds);
-
             auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment, stop_token);
-            WasmMemoryGuard wasm_input = allocateInWasmMemory(wmm.get(), total_buf_size);
-            auto wasm_mem = wasm_input.getMemoryView();
-            // Same defensive check as the buffered path's fallback branch: a buggy
-            // clickhouse_create_buffer implementation in the WASM module could return a
-            // handle to a smaller buffer than requested. Without it, the header/descriptor
-            // memcpys and writeColData below would write past the end of the real guest
-            // buffer instead of throwing.
-            if (wasm_mem.size() != total_buf_size)
-                throw Exception(ErrorCodes::WASM_ERROR,
-                    "Cannot allocate WASM buffer of size {}, got {}. "
-                    "Maybe '{}' function implementation in WebAssembly module is incorrect",
-                    total_buf_size, wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
+            WasmMemoryGuard wasm_input = nullptr;
 
-            // Write header
-            uint32_t n_rows32 = static_cast<uint32_t>(input_rows_count);
-            std::memcpy(wasm_mem.data(),     &n_rows32,  4);
-            std::memcpy(wasm_mem.data() + 4, &num_cols,  4);
+            // Scope the serialization timer to the allocate-and-write phase only. It must
+            // not extend over `compartment->invoke` below (guest execution, which is neither
+            // serialization nor host work) nor over the read-back block (already counted by
+            // `WasmDeserializationMicroseconds`); otherwise `WasmSerializationMicroseconds`
+            // reports very nearly the whole of `WasmTotalExecuteMicroseconds` and double
+            // counts the deserialization time, making the COLUMNAR_V1 profile unreadable and
+            // incomparable with the BUFFERED_V1 path, whose timers are already disjoint.
+            {
+                ProfileEventTimeIncrement<Microseconds> timer_ser(ProfileEvents::WasmSerializationMicroseconds);
 
-            // Write descriptors
-            for (uint32_t ci = 0; ci < num_cols; ++ci)
-                std::memcpy(wasm_mem.data() + COLUMNAR_HEADER_BYTES + ci * COLUMNAR_DESC_BYTES,
-                            &descs[ci], COLUMNAR_DESC_BYTES);
+                wasm_input = allocateInWasmMemory(wmm.get(), total_buf_size);
+                auto wasm_mem = wasm_input.getMemoryView();
+                // Same defensive check as the buffered path's fallback branch: a buggy
+                // clickhouse_create_buffer implementation in the WASM module could return a
+                // handle to a smaller buffer than requested. Without it, the header/descriptor
+                // memcpys and writeColData below would write past the end of the real guest
+                // buffer instead of throwing.
+                if (wasm_mem.size() != total_buf_size)
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "Cannot allocate WASM buffer of size {}, got {}. "
+                        "Maybe '{}' function implementation in WebAssembly module is incorrect",
+                        total_buf_size, wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
 
-            // Write column data
-            for (uint32_t ci = 0; ci < num_cols; ++ci)
-                writeColData(inner_cols[ci], is_nullable_flags[ci], row_counts[ci],
-                             descs[ci], wasm_mem);
+                // Write header
+                uint32_t n_rows32 = static_cast<uint32_t>(input_rows_count);
+                std::memcpy(wasm_mem.data(),     &n_rows32,  4);
+                std::memcpy(wasm_mem.data() + 4, &num_cols,  4);
+
+                // Write descriptors
+                for (uint32_t ci = 0; ci < num_cols; ++ci)
+                    std::memcpy(wasm_mem.data() + COLUMNAR_HEADER_BYTES + ci * COLUMNAR_DESC_BYTES,
+                                &descs[ci], COLUMNAR_DESC_BYTES);
+
+                // Write column data
+                for (uint32_t ci = 0; ci < num_cols; ++ci)
+                    writeColData(inner_cols[ci], is_nullable_flags[ci], row_counts[ci],
+                                 descs[ci], wasm_mem);
+            }
 
             // ── Invoke WASM ──────────────────────────────────────────────────
             auto result_ptr = compartment->invoke<WasmPtr>(
