@@ -233,51 +233,6 @@ Block makeBlock(
     return block;
 }
 
-void insertBlockSync(ASTPtr insert_query, Block block, const ContextMutablePtr & context)
-{
-    auto [ast, io] = executeQuery(insert_query->formatWithSecretsOneLine(), context);
-    try
-    {
-        PushingPipelineExecutor executor(io.pipeline);
-        executor.start();
-        executor.push(std::move(block));
-        executor.finish();
-    }
-    catch (...)
-    {
-        io.onException();
-        throw;
-    }
-
-    finishExecutedQuery(io, {});
-}
-
-/// Inserts a block through the asynchronous insert queue so that data from multiple remote-write
-/// requests is batched together before forming parts. Waits until the data is flushed to all inner
-/// tables of the TimeSeries table regardless of the `wait_for_async_insert` setting: the remote-write
-/// protocol treats an acknowledged write as durable, so we can acknowledge only after the flush.
-/// If the flush fails, the exception is rethrown here and the client gets an error instead of an ack.
-void insertBlockAsync(ASTPtr insert_query, Block block, AsynchronousInsertQueue & queue, const ContextMutablePtr & context)
-{
-    /// Deduplication on flush is not needed here: a flushed block combines data from multiple
-    /// remote-write requests (so its hash is different on every retry anyway), and the inner tables
-    /// of the TimeSeries engine handle duplicates themselves.
-    /// `deduplicate_insert` overrides `async_insert_deduplicate`, so both must be disabled.
-    context->setSetting("deduplicate_insert", String{"disable"});
-    context->setSetting("async_insert_deduplicate", false);
-
-    auto result = queue.pushQueryWithBlock(std::move(insert_query), std::move(block), context);
-    if (result.status != AsynchronousInsertQueue::PushResult::OK)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of pushing a block to the asynchronous insert queue");
-
-    const auto timeout_ms = context->getSettingsRef()[Setting::wait_for_async_insert_timeout].totalMilliseconds();
-    if (result.future.wait_for(std::chrono::milliseconds(timeout_ms)) == std::future_status::timeout)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for asynchronous insert timeout ({} ms) exceeded", timeout_ms);
-
-    /// Rethrows the exception if the flush failed.
-    std::ignore = result.future.get();
-}
-
 void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutablePtr & context)
 {
     if (!block.rows())
@@ -292,11 +247,64 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
         columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
     insert_query->columns = columns_ast;
 
+    /// With the `async_insert` setting, the block goes through the asynchronous insert queue, so that
+    /// data from multiple remote-write requests is batched together before forming parts.
     auto * queue = context->tryGetAsynchronousInsertQueue();
-    if (queue && context->getSettingsRef()[Setting::async_insert])
-        insertBlockAsync(std::move(insert_query), std::move(block), *queue, context);
-    else
-        insertBlockSync(std::move(insert_query), std::move(block), context);
+    const bool async_insert = queue && context->getSettingsRef()[Setting::async_insert];
+
+    if (async_insert)
+    {
+        /// Deduplication on flush is not needed here: a flushed block combines data from multiple
+        /// remote-write requests (so its hash is different on every retry anyway), and the inner tables
+        /// of the TimeSeries engine handle duplicates themselves.
+        /// `deduplicate_insert` overrides `async_insert_deduplicate`, so both must be disabled.
+        context->setSetting("deduplicate_insert", String{"disable"});
+        context->setSetting("async_insert_deduplicate", false);
+    }
+
+    /// `executeQuery` is needed on the asynchronous path too: it registers the query in the process list
+    /// and attaches the current thread to the query, so the entry pushed to the queue captures the user
+    /// memory tracker of the current thread (the queue requires it and aborts in debug and sanitizer
+    /// builds otherwise), and the query gets its own query_log record and quota accounting.
+    auto [ast, io] = executeQuery(insert_query->formatWithSecretsOneLine(), context);
+    try
+    {
+        if (async_insert)
+        {
+            auto result = queue->pushQueryWithBlock(ast, std::move(block), context);
+            if (result.status != AsynchronousInsertQueue::PushResult::OK)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of pushing a block to the asynchronous insert queue");
+
+            /// The pipeline built by `executeQuery` is not needed: the flush of the queue inserts the data
+            /// itself. Reset it before waiting for the flush because it holds locks for the target tables.
+            io.resetPipeline(/*cancel=*/ true);
+
+            /// Wait until the data is flushed to all inner tables of the TimeSeries table regardless of
+            /// the `wait_for_async_insert` setting: the remote-write protocol treats an acknowledged write
+            /// as durable, so we can acknowledge only after the flush. If the flush fails, the exception
+            /// is rethrown here and the client gets an error instead of an ack.
+            const auto timeout_ms = context->getSettingsRef()[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+            if (result.future.wait_for(std::chrono::milliseconds(timeout_ms)) == std::future_status::timeout)
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for asynchronous insert timeout ({} ms) exceeded", timeout_ms);
+
+            /// Rethrows the exception if the flush failed.
+            std::ignore = result.future.get();
+        }
+        else
+        {
+            PushingPipelineExecutor executor(io.pipeline);
+            executor.start();
+            executor.push(std::move(block));
+            executor.finish();
+        }
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    finishExecutedQuery(io, {});
 }
 
 }
