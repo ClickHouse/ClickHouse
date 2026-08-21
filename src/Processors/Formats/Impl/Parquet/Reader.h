@@ -501,6 +501,7 @@ struct Reader
     ReadOptions options;
     const Block * sample_block{};
     FormatFilterInfoPtr format_filter_info;
+    std::optional<String> row_group_index_cache_key;
     Prefetcher prefetcher;
 
     parq::FileMetaData file_metadata;
@@ -564,7 +565,9 @@ struct Reader
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
-    void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
+    void init(
+        const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_,
+        std::optional<String> row_group_index_cache_key_ = std::nullopt);
 
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);

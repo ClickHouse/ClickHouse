@@ -1568,6 +1568,8 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
     M(ParquetRowGroupMinMaxPredicateChecks, "The number of full min-max predicate evaluations performed for Parquet row groups", ValueType::Number) \
+    M(ParquetOrderedRowGroupIndexCacheHits, "The number of hits in the Parquet ordered row-group fence-index cache", ValueType::Number) \
+    M(ParquetOrderedRowGroupIndexCacheMisses, "The number of misses in the Parquet ordered row-group fence-index cache", ValueType::Number) \
     M(ParquetReadPages, "The total number of Parquet data pages read", ValueType::Number) \
     M(ParquetPrunedPages, "The total number of pages pruned from parquet data via column index", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \

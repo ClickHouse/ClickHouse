@@ -100,7 +100,15 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             reader.emplace();
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
             reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
-            reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
+            std::optional<String> row_group_index_cache_key;
+            if (object_with_metadata.has_value() && object_with_metadata->metadata.has_value()
+                && object_with_metadata->metadata->isEtagUsableAsCacheKey())
+                row_group_index_cache_key = fmt::format(
+                    "{}:{}{}",
+                    object_with_metadata->getPath().size(),
+                    object_with_metadata->getPath(),
+                    object_with_metadata->metadata->etag);
+            reader->reader.init(read_options, getPort().getHeader(), format_filter_info, std::move(row_group_index_cache_key));
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
         }
     }

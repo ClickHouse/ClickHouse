@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <mutex>
+#include <list>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
 
@@ -53,10 +54,93 @@ namespace ProfileEvents
     extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
     extern const Event ParquetRowGroupMinMaxPredicateChecks;
+    extern const Event ParquetOrderedRowGroupIndexCacheHits;
+    extern const Event ParquetOrderedRowGroupIndexCacheMisses;
 }
 
 namespace DB::Parquet
 {
+
+namespace
+{
+enum class OrderedRowGroupDirection : UInt8
+{
+    Unknown,
+    Ascending,
+    Descending,
+};
+
+struct OrderedRowGroupBound
+{
+    size_t row_group_idx;
+    Range range;
+};
+
+struct OrderedRowGroupIndex
+{
+    bool proven = false;
+    OrderedRowGroupDirection direction = OrderedRowGroupDirection::Unknown;
+    std::vector<OrderedRowGroupBound> bounds;
+};
+
+class OrderedRowGroupIndexCache
+{
+public:
+    std::shared_ptr<const OrderedRowGroupIndex> get(const String & key)
+    {
+        std::lock_guard lock(mutex);
+        auto it = entries.find(key);
+        if (it == entries.end())
+            return {};
+        lru.splice(lru.begin(), lru, it->second.lru_position);
+        return it->second.index;
+    }
+
+    std::shared_ptr<const OrderedRowGroupIndex> set(
+        const String & key, std::shared_ptr<const OrderedRowGroupIndex> index)
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = entries.find(key); it != entries.end())
+            return it->second.index;
+
+        const size_t weight = 128 + index->bounds.size() * 128;
+        if (weight > max_size_bytes)
+            return index;
+        while (!lru.empty() && size_bytes + weight > max_size_bytes)
+        {
+            const String & victim = lru.back();
+            auto victim_it = entries.find(victim);
+            size_bytes -= victim_it->second.weight;
+            entries.erase(victim_it);
+            lru.pop_back();
+        }
+        lru.push_front(key);
+        entries.emplace(key, Entry{index, weight, lru.begin()});
+        size_bytes += weight;
+        return index;
+    }
+
+private:
+    struct Entry
+    {
+        std::shared_ptr<const OrderedRowGroupIndex> index;
+        size_t weight;
+        std::list<String>::iterator lru_position;
+    };
+
+    static constexpr size_t max_size_bytes = 64 * 1024 * 1024;
+    std::mutex mutex;
+    std::list<String> lru;
+    std::unordered_map<String, Entry> entries;
+    size_t size_bytes = 0;
+};
+
+OrderedRowGroupIndexCache & getOrderedRowGroupIndexCache()
+{
+    static OrderedRowGroupIndexCache cache;
+    return cache;
+}
+}
 
 /// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
 /// input file is malformed. Loading such an enum directly is undefined behavior (caught by
@@ -211,11 +295,14 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
     }
 }
 
-void Reader::init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_)
+void Reader::init(
+    const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_,
+    std::optional<String> row_group_index_cache_key_)
 {
     options = options_;
     sample_block = &sample_block_;
     format_filter_info = format_filter_info_;
+    row_group_index_cache_key = std::move(row_group_index_cache_key_);
 }
 
 parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
@@ -445,70 +532,89 @@ bool Reader::getFiniteRowGroupRange(
 
 Reader::OrderedRowGroupLookup Reader::findOrderedRowGroupForPoint(const PointProbe & probe) const
 {
-    struct Bound
-    {
-        size_t row_group_idx;
-        Range range;
-    };
-
-    enum class Direction : UInt8
-    {
-        Unknown,
-        Ascending,
-        Descending,
-    };
-
-    std::vector<Bound> bounds;
-    bounds.reserve(file_metadata.row_groups.size());
-    Direction direction = Direction::Unknown;
     const PrimitiveColumnInfo & column_info = primitive_columns[probe.primitive_idx];
-
-    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    String cache_key;
+    std::shared_ptr<const OrderedRowGroupIndex> index;
+    if (row_group_index_cache_key)
     {
-        const auto & meta = file_metadata.row_groups[row_group_idx];
-        if (meta.num_rows < 0 || meta.columns.size() != total_primitive_columns_in_file)
-            return {};
-        if (meta.num_rows == 0)
-            continue;
-
-        Range range = Range::createWholeUniverse();
-        try
-        {
-            if (!getFiniteRowGroupRange(meta, column_info, range))
-                return {};
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(
-                "in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore",
-                column_info.name);
-            throw;
-        }
-
-        if (!bounds.empty())
-        {
-            const Range & previous = bounds.back().range;
-            const bool ascending = Range::less(previous.right, range.left);
-            const bool descending = Range::less(range.right, previous.left);
-            if (ascending == descending)
-                return {};
-            const Direction pair_direction = ascending ? Direction::Ascending : Direction::Descending;
-            if (direction == Direction::Unknown)
-                direction = pair_direction;
-            else if (direction != pair_direction)
-                return {};
-        }
-        bounds.push_back(Bound{row_group_idx, std::move(range)});
+        cache_key = fmt::format(
+            "{}#column={}:{}#decoded={}#output={}#null_default={}#output_nullable={}",
+            *row_group_index_cache_key,
+            column_info.column_idx,
+            column_info.schema_idx,
+            column_info.decoded_type->getName(),
+            extended_sample_block_data_types.at(column_info.idx_in_output_block)->getName(),
+            options.format.null_as_default,
+            column_info.output_nullable);
+        index = getOrderedRowGroupIndexCache().get(cache_key);
+        if (index)
+            ProfileEvents::increment(ProfileEvents::ParquetOrderedRowGroupIndexCacheHits);
+        else
+            ProfileEvents::increment(ProfileEvents::ParquetOrderedRowGroupIndexCacheMisses);
     }
+
+    if (!index)
+    {
+        auto built = std::make_shared<OrderedRowGroupIndex>();
+        built->bounds.reserve(file_metadata.row_groups.size());
+        for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+        {
+            const auto & meta = file_metadata.row_groups[row_group_idx];
+            if (meta.num_rows < 0 || meta.columns.size() != total_primitive_columns_in_file)
+                break;
+            if (meta.num_rows == 0)
+                continue;
+
+            Range range = Range::createWholeUniverse();
+            try
+            {
+                if (!getFiniteRowGroupRange(meta, column_info, range))
+                    break;
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(
+                    "in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore",
+                    column_info.name);
+                throw;
+            }
+
+            if (!built->bounds.empty())
+            {
+                const Range & previous = built->bounds.back().range;
+                const bool ascending = Range::less(previous.right, range.left);
+                const bool descending = Range::less(range.right, previous.left);
+                if (ascending == descending)
+                    break;
+                const auto pair_direction = ascending
+                    ? OrderedRowGroupDirection::Ascending
+                    : OrderedRowGroupDirection::Descending;
+                if (built->direction == OrderedRowGroupDirection::Unknown)
+                    built->direction = pair_direction;
+                else if (built->direction != pair_direction)
+                    break;
+            }
+            built->bounds.push_back(OrderedRowGroupBound{row_group_idx, std::move(range)});
+        }
+        built->proven = built->bounds.size()
+            == static_cast<size_t>(std::count_if(file_metadata.row_groups.begin(), file_metadata.row_groups.end(),
+                [](const auto & row_group) { return row_group.num_rows != 0; }));
+        index = cache_key.empty()
+            ? std::shared_ptr<const OrderedRowGroupIndex>(std::move(built))
+            : getOrderedRowGroupIndexCache().set(cache_key, std::move(built));
+    }
+
+    if (!index->proven)
+        return {};
 
     OrderedRowGroupLookup result{.proven = true, .candidate_row_group = std::nullopt};
     size_t left = 0;
-    size_t right = bounds.size();
+    size_t right = index->bounds.size();
     while (left < right)
     {
         const size_t middle = left + (right - left) / 2;
-        const Range & range = bounds[middle].range;
-        if (direction != Direction::Descending)
+        const Range & range = index->bounds[middle].range;
+        if (index->direction != OrderedRowGroupDirection::Descending)
         {
             if (Range::less(range.right, probe.point))
                 left = middle + 1;
@@ -516,7 +622,7 @@ Reader::OrderedRowGroupLookup Reader::findOrderedRowGroupForPoint(const PointPro
                 right = middle;
             else
             {
-                result.candidate_row_group = bounds[middle].row_group_idx;
+                result.candidate_row_group = index->bounds[middle].row_group_idx;
                 break;
             }
         }
@@ -528,7 +634,7 @@ Reader::OrderedRowGroupLookup Reader::findOrderedRowGroupForPoint(const PointPro
                 left = middle + 1;
             else
             {
-                result.candidate_row_group = bounds[middle].row_group_idx;
+                result.candidate_row_group = index->bounds[middle].row_group_idx;
                 break;
             }
         }
