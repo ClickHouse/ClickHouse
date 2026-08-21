@@ -1,0 +1,4 @@
+Without SELECT on the loop table
+ACCESS_DENIED
+With SELECT on the loop table
+UNSUPPORTED_METHOD
