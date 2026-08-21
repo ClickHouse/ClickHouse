@@ -67,8 +67,8 @@ SELECT round(
     6)
 FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
 
--- A positive budget compares calculation index timestamps. The old but large
--- contribution remains within five decay lengths of the dominant contribution.
+-- Raw rows do not carry a calculation index, so a positive budget leaves their
+-- aggregation exact.
 SET exponential_time_decay_aggregate_function_calculation_budget = 5;
 SELECT round(
     exponentialTimeDecayingValueAt(
@@ -77,8 +77,8 @@ SELECT round(
     6)
 FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
 
--- A contribution whose unit-magnitude timestamp is outside the budget is
--- discarded before exp().
+-- This remains exact as well, even though the old contribution would be outside
+-- the budget if an index had been supplied.
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSum(10)(value, time),
@@ -101,7 +101,8 @@ WITH
 SELECT abs(actual - expected) <= 1e-12 * greatest(1., abs(expected))
 FROM VALUES('value Float64, time Float64', (1000000, 0), (2, 100));
 
--- The same cutoff applies while merging independently built states.
+-- Aggregate-state merges remain exact. In particular, storage-engine merges do
+-- not inherit a query's approximation budget.
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSumMerge(10)(state),
@@ -110,14 +111,15 @@ SELECT round(
 FROM
 (
     SELECT exponentialTimeDecayedSumState(10)(value, time) AS state
-    FROM VALUES('value Float64, time Float64', (1000, 0))
+    FROM VALUES('value Float64, time Float64', (1, 0))
     UNION ALL
     SELECT exponentialTimeDecayedSumState(10)(value, time) AS state
     FROM VALUES('value Float64, time Float64', (2, 100))
 );
 
--- Finalized values already store the unit-magnitude timestamp, so they use the
--- same magnitude-aware cutoff without needing the original anchor timestamp.
+-- Finalized values already carry the unit-magnitude timestamp. This is the only
+-- input form on which the calculation budget is applied; sorting these values by
+-- their calculation-index timestamp makes the fast rejection path especially effective.
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSum(decaying_value),
@@ -125,10 +127,31 @@ SELECT round(
     6)
 FROM
 (
-    SELECT exponentialTimeDecayingFloat64(10)(1000, toFloat64(0)) AS decaying_value
+    SELECT exponentialTimeDecayingFloat64(10)(1, toFloat64(0)) AS decaying_value
     UNION ALL
     SELECT exponentialTimeDecayingFloat64(10)(2, toFloat64(100)) AS decaying_value
 );
+
+-- The same setting must never approximate persisted SimpleAggregateFunction
+-- values during an AggregatingMergeTree background merge.
+DROP TABLE IF EXISTS time_decay_budget_engine_exact;
+CREATE TABLE time_decay_budget_engine_exact
+(
+    key UInt8,
+    value SimpleAggregateFunction(
+        exponentialTimeDecayedSum,
+        ExponentialTimeDecayingFloat64(10))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY key;
+INSERT INTO time_decay_budget_engine_exact
+SELECT 1, exponentialTimeDecayingFloat64(10)(1, toFloat64(0));
+INSERT INTO time_decay_budget_engine_exact
+SELECT 1, exponentialTimeDecayingFloat64(10)(2, toFloat64(100));
+OPTIMIZE TABLE time_decay_budget_engine_exact FINAL;
+SELECT round(exponentialTimeDecayingValueAt(value, toFloat64(100)), 6)
+FROM time_decay_budget_engine_exact;
+DROP TABLE time_decay_budget_engine_exact;
 
 SET exponential_time_decay_aggregate_function_calculation_budget = -1;
 SELECT exponentialTimeDecayedSum(10)(value, time)

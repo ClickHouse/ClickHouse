@@ -346,7 +346,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
             return nullptr;
 
-        const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
+        const bool use_query_settings
+            = !is_data_type_reconstruction || found.use_query_settings_for_data_type_reconstruction;
+        const Settings * settings = query_context && use_query_settings
+            ? &query_context->getSettingsRef()
+            : nullptr;
 
         AggregateFunctionPtr function;
         if (state_variant == AggregateFunctionStateVariant::Window && found.window_creator)

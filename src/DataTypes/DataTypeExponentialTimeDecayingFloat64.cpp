@@ -162,21 +162,11 @@ void validateExponentialTimeDecayingFloat64Column(
 
         const Float64 sign = signs[row];
         const Float64 signed_unit_time = signed_unit_times[row];
-        if (sign == 0)
-        {
-            if (signed_unit_time != 0)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Malformed ExponentialTimeDecayingFloat64 value in {}: zero value must have zero signed unit time",
-                    operation);
-        }
-        else if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
-        {
+        if (!isCanonicalExponentialTimeDecayingFloat64Value(sign, signed_unit_time))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Malformed ExponentialTimeDecayingFloat64 value in {}: expected a canonical sign and finite signed unit time",
+                "Malformed ExponentialTimeDecayingFloat64 value in {}: expected canonical sign and signed unit time fields",
                 operation);
-        }
     }
 }
 

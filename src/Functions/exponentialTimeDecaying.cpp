@@ -104,21 +104,14 @@ void assertValidRow(const DecayingColumnView & input, size_t row, const String &
 
     const Float64 sign = input.sign.getData()[row];
     const Float64 signed_unit_time = input.signed_unit_time.getData()[row];
-    if (sign == 0)
-    {
-        if (signed_unit_time != 0)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Zero value of function {} must have zero signed unit time",
-                function_name);
-        return;
-    }
-
-    if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
+    if (!isCanonicalExponentialTimeDecayingFloat64Value(sign, signed_unit_time))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Argument of function {} is not a canonical ExponentialTimeDecayingFloat64 value",
             function_name);
+
+    if (sign == 0)
+        return;
 }
 
 Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_time)

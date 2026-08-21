@@ -47,6 +47,10 @@ struct AggregateFunctionWithProperties
     std::optional<AggregateFunctionProperties> window_properties;
     /// Optional execution check for the normal aggregate creator. Data-type reconstruction skips it.
     AggregateFunctionExecutionAvailabilityCheck execution_availability_check;
+    /// Aggregate functions embedded in data types normally inherit the current query settings.
+    /// Functions with query-only approximations can disable that behavior so persisted merges
+    /// are constructed with their exact defaults.
+    bool use_query_settings_for_data_type_reconstruction = true;
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
@@ -60,13 +64,15 @@ struct AggregateFunctionWithProperties
         AggregateFunctionProperties properties_ = {},
         AggregateFunctionCreator window_creator_ = {},
         std::optional<AggregateFunctionProperties> window_properties_ = {},
-        AggregateFunctionExecutionAvailabilityCheck execution_availability_check_ = {}) /// NOLINT
+        AggregateFunctionExecutionAvailabilityCheck execution_availability_check_ = {},
+        bool use_query_settings_for_data_type_reconstruction_ = true) /// NOLINT
         : creator(std::forward<Creator>(creator_))
         , window_creator(std::move(window_creator_))
         , documentation(std::move(documentation_))
         , properties(std::move(properties_))
         , window_properties(std::move(window_properties_))
         , execution_availability_check(std::move(execution_availability_check_))
+        , use_query_settings_for_data_type_reconstruction(use_query_settings_for_data_type_reconstruction_)
     {
     }
 };

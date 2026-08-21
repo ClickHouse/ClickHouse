@@ -14,6 +14,7 @@
 
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <utility>
 
 
@@ -54,45 +55,18 @@ struct ExponentialTimeDecayedState
     Float64 weighted_sum = 0;
     Float64 weight = 0;
     Float64 max_time = 0;
+    /// Runtime-only cache. It is deliberately not serialized: persisted aggregate
+    /// states and storage-engine merges always retain the exact representation.
+    Float64 calculation_index_time = std::numeric_limits<Float64>::quiet_NaN();
     bool empty() const { return weight == 0; }
 
-    Float64 getCalculationIndexTime(Float64 magnitude, Float64 decay_length) const
+    Float64 getCalculationIndexTime(Float64 decay_length)
     {
-        if (magnitude == 0)
-            return -std::numeric_limits<Float64>::infinity();
-
-        return max_time + decay_length * std::log(magnitude);
-    }
-
-    bool isCalculationNegligibleComparedTo(
-        const ExponentialTimeDecayedState & rhs,
-        Float64 decay_length,
-        Float64 max_decay_distance,
-        ExponentialTimeDecayedResult result_kind) const
-    {
-        const auto index_is_outside_budget = [max_decay_distance](Float64 lhs_index_time, Float64 rhs_index_time)
-        {
-            return rhs_index_time > lhs_index_time && rhs_index_time - lhs_index_time > max_decay_distance;
-        };
-
-        if (result_kind == ExponentialTimeDecayedResult::Count)
-            return index_is_outside_budget(
-                getCalculationIndexTime(weight, decay_length),
-                rhs.getCalculationIndexTime(rhs.weight, decay_length));
-
-        const bool sum_is_negligible = index_is_outside_budget(
-            getCalculationIndexTime(std::abs(weighted_sum), decay_length),
-            rhs.getCalculationIndexTime(std::abs(rhs.weighted_sum), decay_length));
-        if (result_kind == ExponentialTimeDecayedResult::Sum)
-            return sum_is_negligible;
-
-        const bool weight_is_negligible = index_is_outside_budget(
-            getCalculationIndexTime(weight, decay_length),
-            rhs.getCalculationIndexTime(rhs.weight, decay_length));
-
-        /// An average depends on both its numerator and denominator. Discard a
-        /// state only when neither can materially affect the dominant state.
-        return sum_is_negligible && weight_is_negligible;
+        if (std::isnan(calculation_index_time))
+            calculation_index_time = weighted_sum == 0
+                ? -std::numeric_limits<Float64>::infinity()
+                : max_time + decay_length * std::log(std::abs(weighted_sum));
+        return calculation_index_time;
     }
 
     void add(
@@ -100,20 +74,36 @@ struct ExponentialTimeDecayedState
         Float64 time,
         Float64 decay_length,
         Float64 max_decay_distance,
-        ExponentialTimeDecayedResult result_kind)
+        std::optional<Float64> input_calculation_index_time)
     {
         ExponentialTimeDecayedState rhs;
         rhs.weighted_sum = value;
         rhs.weight = 1;
         rhs.max_time = time;
-        merge(rhs, decay_length, max_decay_distance, result_kind);
+        if (input_calculation_index_time)
+            rhs.calculation_index_time = *input_calculation_index_time;
+
+        /// Approximation is only allowed when the input already carries its
+        /// calculation index. Raw rows and merged aggregate states take the exact
+        /// path, so storage engines never apply a query's calculation budget.
+        if (input_calculation_index_time && std::isfinite(max_decay_distance) && !empty())
+        {
+            const Float64 current_index_time = getCalculationIndexTime(decay_length);
+            if (*input_calculation_index_time > current_index_time
+                && *input_calculation_index_time - current_index_time > max_decay_distance)
+            {
+                *this = rhs;
+                return;
+            }
+            if (current_index_time > *input_calculation_index_time
+                && current_index_time - *input_calculation_index_time > max_decay_distance)
+                return;
+        }
+
+        mergeExact(rhs, decay_length);
     }
 
-    void merge(
-        const ExponentialTimeDecayedState & rhs,
-        Float64 decay_length,
-        Float64 max_decay_distance,
-        ExponentialTimeDecayedResult result_kind)
+    void mergeExact(const ExponentialTimeDecayedState & rhs, Float64 decay_length)
     {
         if (rhs.empty())
             return;
@@ -122,20 +112,6 @@ struct ExponentialTimeDecayedState
         {
             *this = rhs;
             return;
-        }
-
-        /// Compare contributions by their calculation index timestamps. A distance
-        /// of B decay lengths bounds the smaller magnitude by exp(-B) relative to
-        /// the larger one, independently of their anchor times.
-        if (std::isfinite(max_decay_distance))
-        {
-            if (isCalculationNegligibleComparedTo(rhs, decay_length, max_decay_distance, result_kind))
-            {
-                *this = rhs;
-                return;
-            }
-            if (rhs.isCalculationNegligibleComparedTo(*this, decay_length, max_decay_distance, result_kind))
-                return;
         }
 
         /// Re-anchor the older state at the shared greatest timestamp before adding them.
@@ -159,6 +135,8 @@ struct ExponentialTimeDecayedState
             weighted_sum += rhs.weighted_sum;
             weight += rhs.weight;
         }
+
+        calculation_index_time = std::numeric_limits<Float64>::quiet_NaN();
     }
 
     void write(WriteBuffer & buf) const
@@ -173,6 +151,7 @@ struct ExponentialTimeDecayedState
         readBinaryLittleEndian(weighted_sum, buf);
         readBinaryLittleEndian(weight, buf);
         readBinaryLittleEndian(max_time, buf);
+        calculation_index_time = std::numeric_limits<Float64>::quiet_NaN();
     }
 };
 
@@ -215,6 +194,7 @@ public:
     {
         Float64 value = 1;
         Float64 time = std::numeric_limits<Float64>::quiet_NaN();
+        std::optional<Float64> input_calculation_index_time;
 
         if (input_is_decaying_value)
         {
@@ -230,23 +210,17 @@ public:
                     stored_decay_length,
                     decay_length,
                     getName());
-            if (sign == 0)
-            {
-                if (signed_unit_time != 0)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Zero value of aggregate function {} must have zero signed unit time",
-                        getName());
-                return;
-            }
-            if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
+            if (!isCanonicalExponentialTimeDecayingFloat64Value(sign, signed_unit_time))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Input of aggregate function {} is not a canonical ExponentialTimeDecayingFloat64 value",
                     getName());
+            if (sign == 0)
+                return;
 
             value = sign;
             time = getExponentialTimeDecayingUnitTime(sign, signed_unit_time);
+            input_calculation_index_time = time;
         }
         else
         {
@@ -261,12 +235,12 @@ public:
         if (!std::isfinite(value))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be finite", getName());
 
-        this->data(place).add(value, time, decay_length, max_decay_distance, result_kind);
+        this->data(place).add(value, time, decay_length, max_decay_distance, input_calculation_index_time);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs), decay_length, max_decay_distance, result_kind);
+        this->data(place).mergeExact(this->data(rhs), decay_length);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -323,6 +297,9 @@ private:
 
 Float64 getMaxDecayDistance(const String & name, const Settings * settings, Float64 decay_length)
 {
+    /// Aggregate functions embedded in AggregateFunction/SimpleAggregateFunction
+    /// data types are constructed without query settings. Keeping this path
+    /// infinite makes all storage-engine merges exact by construction.
     if (!settings)
         return std::numeric_limits<Float64>::infinity();
 

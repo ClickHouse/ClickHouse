@@ -8633,17 +8633,18 @@ The window-function forms are not affected by this setting.
 )", EXPERIMENTAL) \
     DECLARE(Float, exponential_time_decay_aggregate_function_calculation_budget, 0.0, R"(
 Maximum distance between calculation index timestamps, measured in decay lengths, for
-contributions retained by the mergeable `exponentialTimeDecayed*` aggregate functions.
-For sums, the index timestamp is when the absolute contribution or aggregate state reaches
-unit magnitude. Counts use the equivalent timestamp for total decayed weight. Averages use
-both indexes and discard a state only when both its numerator and denominator are negligible.
+contributions retained by `exponentialTimeDecayedSum` when its input is already an
+`ExponentialTimeDecayingFloat64`. Such values carry the index timestamp at which their
+magnitude reaches one, so the cutoff does not need to calculate an index for every raw row.
 A contribution outside the budget is smaller than `exp(-budget)` relative to the dominant
-state and is discarded without evaluating the decay factor.
+value and is discarded without evaluating the decay factor. Inputs sorted by their
+calculation-index timestamp make this rejection path especially efficient.
 
 The default value `0` disables the cutoff and preserves exact behavior. A positive value
-opts into approximate aggregation for better performance. Results close to the cutoff can
-depend on input order and state-merge grouping. Signed sums that nearly cancel can have a
-larger relative error even when every discarded contribution is individually small.
+opts into approximate aggregation for better performance. Raw `(value, time)` aggregation,
+aggregate-state merges, and storage-engine merges remain exact. Results close to the cutoff
+can depend on input order. Signed sums that nearly cancel can have a larger relative error
+even when every discarded contribution is individually small.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.

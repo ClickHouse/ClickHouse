@@ -4020,7 +4020,8 @@ FROM
                 name, argument_types, parameters);
         },
         properties,
-        assertExperimentalTimeDecayAggregateFunctionEnabled});
+        assertExperimentalTimeDecayAggregateFunctionEnabled,
+        false});
 
     factory.registerFunction("exponentialTimeDecayingFloat64", {
         createAggregateFunctionExponentialTimeDecayingFloat64,

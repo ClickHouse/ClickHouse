@@ -33,6 +33,14 @@ inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat
     return {sign, sign * unit_time};
 }
 
+inline bool isCanonicalExponentialTimeDecayingFloat64Value(Float64 sign, Float64 signed_unit_time)
+{
+    if (sign == 0)
+        return signed_unit_time == 0;
+
+    return (sign == -1 || sign == 1) && std::isfinite(signed_unit_time);
+}
+
 inline Float64 getExponentialTimeDecayingUnitTime(Float64 sign, Float64 signed_unit_time)
 {
     return sign * signed_unit_time;

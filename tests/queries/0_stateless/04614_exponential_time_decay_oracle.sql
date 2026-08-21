@@ -545,6 +545,13 @@ FROM
 )
 ORDER BY value; -- { serverError BAD_ARGUMENTS }
 
+-- Validation at the conversion boundary also protects sorting helpers which
+-- invoke the native column comparator directly instead of sortBlock.
+SELECT arraySort([
+    _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)'),
+    _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)')
+]); -- { serverError BAD_ARGUMENTS }
+
 -- Set-backed membership must validate reconstructed values on both sides.
 WITH
     _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS malformed,
@@ -561,7 +568,8 @@ WITH
     _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS valid
 SELECT malformed NOT IN (valid); -- { serverError BAD_ARGUMENTS }
 
--- MergeTree set indexes sort internal blocks and must preserve their data types.
+-- MergeTree set indexes may sort internal blocks without type metadata. Optional
+-- custom-type validation must not change the native sorter for ordinary columns.
 DROP TABLE IF EXISTS time_decay_set_index_sort;
 CREATE TABLE time_decay_set_index_sort (key Int8) ENGINE = MergeTree ORDER BY key;
 INSERT INTO time_decay_set_index_sort VALUES (-30), (1);
