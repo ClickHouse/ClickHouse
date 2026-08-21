@@ -189,7 +189,7 @@ SELECT * FROM timeSeriesMetrics('db_name', 'time_series_table');
 
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Histograms>>(
         {.description = R"DOCS_MD(
-`timeSeriesHistograms(db_name.time_series_table)` - Returns the _histograms_ table
+`timeSeriesHistograms(db_name.time_series_table)` - Returns the [histograms](/reference/engines/table-engines/integrations/time-series#histograms-table) table
 used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine
 and which was created with a `HISTOGRAMS` target or the `store_native_histograms` setting:
 

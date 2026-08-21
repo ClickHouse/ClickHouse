@@ -114,7 +114,8 @@ If both forms are used in the same `CREATE TABLE` statement, the declared types 
 A `TimeSeries` table doesn't have its own data, everything is stored in its target tables.
 This is similar to how a [materialized view](/reference/statements/create/view#materialized-view) works,
 with the difference that a materialized view has one target table
-whereas a `TimeSeries` table has three target tables named [samples](#samples-table), [tags](#tags-table), and [metrics](#metrics-table).
+whereas a `TimeSeries` table has three target tables named [samples](#samples-table), [tags](#tags-table), and [metrics](#metrics-table),
+plus an optional fourth one named [histograms](#histograms-table).
 
 The target tables can be either specified explicitly in the `CREATE TABLE` query
 or the `TimeSeries` table engine can generate inner target tables automatically.
@@ -167,6 +168,30 @@ The _metrics_ table must have columns:
 | `type` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The type of a metric family, one of "counter", "gauge", "summary", "stateset", "histogram", "gaugehistogram" |
 | `unit` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The unit used in a metric |
 | `help` | [x] | `String` | `String` or `LowCardinality(String)` | The description of a metric |
+
+### Histograms table {#histograms-table}
+
+The _histograms_ table contains [Prometheus native histogram](https://prometheus.io/docs/specs/native_histograms/) samples.
+Unlike the three tables above it is optional: it exists only if the `TimeSeries` table was created
+with a `HISTOGRAMS` target or with the [store_native_histograms](#settings) setting.
+
+The _histograms_ table must have columns:
+
+| Name | Mandatory? | Default type | Possible types | Description |
+|---|---|---|---|---|
+| `id` | [x] | `Tuple(UInt64, UUID)` | any (must match the type of `id` in the [samples](#samples-table) table) | Identifies a combination of a metric name and tags |
+| `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
+| `flags` | [x] | `UInt8` | `UInt8` | Bit flags of the sample: bit 0 marks a float histogram, bits 1-2 hold the Prometheus counter reset hint, bit 4 marks a staleness marker |
+| `schema` | [x] | `Int8` | `Int8` | The bucket schema: `-53` for custom bucket boundaries (NHCB), otherwise a resolution in `-4`..`8` where consecutive bucket boundaries differ by a factor of `2^(2^-schema)` |
+| `zero_threshold` | [x] | `Float64` | `Float64` | The half-width of the zero bucket |
+| `count` | [x] | `Float64` | `Float64` | The total number of observations |
+| `sum` | [x] | `Float64` | `Float64` | The sum of all observations |
+| `zero_count` | [x] | `Float64` | `Float64` | The number of observations in the zero bucket |
+| `positive_spans` | [x] | `Array(Tuple(offset Int32, length UInt32))` | `Array(Tuple(offset Int32, length UInt32))` | Runs of consecutive populated buckets on the positive side |
+| `positive_values` | [x] | `Array(Float64)` | `Array(Float64)` | Bucket values for the positive spans |
+| `negative_spans` | [x] | `Array(Tuple(offset Int32, length UInt32))` | `Array(Tuple(offset Int32, length UInt32))` | Runs of consecutive populated buckets on the negative side |
+| `negative_values` | [x] | `Array(Float64)` | `Array(Float64)` | Bucket values for the negative spans |
+| `custom_values` | [x] | `Array(Float64)` | `Array(Float64)` | Custom bucket boundaries, used when `schema` is `-53` |
 
 ## Creation {#creation}
 
@@ -412,6 +437,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
 | `use_all_tags_column_to_generate_id` | Bool | false | Obsolete setting, does nothing |
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
+| `store_native_histograms` | Bool | false | If set to true then the table gets a fourth target table [histograms](#histograms-table) storing Prometheus native histogram samples. An explicit `HISTOGRAMS` clause in the `CREATE` query enables it too |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
