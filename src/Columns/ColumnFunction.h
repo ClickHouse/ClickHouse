@@ -71,6 +71,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
     }
 
+    bool supportsGetDataAt() const override { return false; }
+
     bool isDefaultAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());

@@ -148,6 +148,7 @@ public:
     void get(size_t, Field &) const override { throwInapplicable(); }
     void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwInapplicable(); }
     std::string_view getDataAt(size_t) const override { throwInapplicable(); }
+    bool supportsGetDataAt() const override { return false; }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }
     bool tryInsert(const Field &) override { throwInapplicable(); }

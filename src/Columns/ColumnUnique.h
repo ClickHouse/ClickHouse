@@ -83,6 +83,7 @@ public:
     }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     std::string_view getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
+    bool supportsGetDataAt() const override { return getNestedColumn()->supportsGetDataAt(); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }

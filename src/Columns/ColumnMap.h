@@ -68,6 +68,7 @@ public:
     bool isDefaultAt(size_t n) const override;
     UInt64 getNumberOfDefaultRows() const override;
     std::string_view getDataAt(size_t n) const override;
+    bool supportsGetDataAt() const override { return false; }
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
