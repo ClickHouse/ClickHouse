@@ -92,7 +92,7 @@ Você pode modificar as configurações da stack, como a versão em uso, por mei
 ```shell
 user@example-host clickstack % cat .env
 
-# Usado pelo docker-compose.yml
+# Used by docker-compose.yml
 IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
 LOCAL_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-local
 ALL_IN_ONE_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
@@ -103,14 +103,14 @@ IMAGE_VERSION=2
 IMAGE_NIGHTLY_TAG=2-nightly
 IMAGE_LATEST_TAG=latest
 
-# Configurar URLs de domínio
-HYPERDX_API_PORT=8000 #opcional (não deve ser utilizada por outros serviços)
+# Set up domain URLs
+HYPERDX_API_PORT=8000 #optional (should not be taken by other services)
 HYPERDX_APP_PORT=8080
 HYPERDX_APP_URL=http://localhost
 HYPERDX_LOG_LEVEL=debug
 HYPERDX_OPAMP_PORT=4320
 
-# Configuração Otel/Clickhouse
+# Otel/ClickHouse config
 HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
 ```
 
