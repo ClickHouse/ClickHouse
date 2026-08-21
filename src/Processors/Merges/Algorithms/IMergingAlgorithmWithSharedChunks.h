@@ -43,7 +43,10 @@ protected:
     Sources sources;
     std::vector<size_t> sources_origin_merge_tree_part_level;
 
-    SortingQueue<SortCursor> queue;
+    /// The batch queue identifies how many consecutive rows can be taken from the front
+    /// cursor in one go (see `SortingQueueImpl::updateBatchSize`), so consuming rows one by
+    /// one with `next(1)` restructures the queue once per batch instead of once per row.
+    SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch> queue;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution

@@ -41,7 +41,7 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
         sources_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(*source.chunk);
     }
 
-    queue = SortingQueue<SortCursor>(cursors);
+    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors);
 }
 
 void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num)

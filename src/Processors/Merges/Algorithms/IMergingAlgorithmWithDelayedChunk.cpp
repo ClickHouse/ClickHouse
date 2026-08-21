@@ -34,7 +34,7 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
         inputs_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(current_inputs[source_num].chunk);
     }
 
-    queue = SortingQueue<SortCursor>(cursors);
+    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors);
 }
 
 void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t source_num)
