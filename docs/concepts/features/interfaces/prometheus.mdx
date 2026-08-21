@@ -131,7 +131,7 @@ Configure one prefix-routed handler on the main ClickHouse HTTP port:
 
 The example omits `database` and `table` from the handler. Requests to the query endpoints must provide the `table` query parameter. They can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables. The `/format_query` endpoint only parses and canonicalizes the PromQL expression, so it does not require a `TimeSeries` table.
 
-The ClickHouse formatter removes comments and normalizes the expression using the native PromQL query tree. For example, durations are represented in seconds: `[5m]` becomes `[300]`.
+The ClickHouse formatter removes comments and normalizes the expression using the native PromQL query tree. Its output follows Prometheus' PromQL formatting conventions, including duration units, matcher ordering, millisecond timestamps, and line breaks for long expressions.
 
 To use one fixed table for every request, configure it in the handler:
 

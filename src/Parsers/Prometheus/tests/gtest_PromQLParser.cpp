@@ -35,12 +35,84 @@ namespace
         EXPECT_EQ(reparsed.getResultType(), query_tree.getResultType()) << input;
         EXPECT_EQ(reparsed.dumpTree(), query_tree.dumpTree()) << input;
     }
+
+    void expectPrometheusFormatting(std::string_view input, std::string_view expected)
+    {
+        PrometheusQueryTree query_tree{input, 9};
+        EXPECT_EQ(query_tree.toPrometheusString(), expected) << input;
+
+        PrometheusQueryTree reparsed{expected, 9};
+        EXPECT_EQ(reparsed.toPrometheusString(), expected) << input;
+    }
 }
 
 
 TEST(PromQLParser, TrailingComment)
 {
     expectRoundTrip("up # comment", "up");
+}
+
+
+TEST(PromQLParser, PrometheusFormatting)
+{
+    expectPrometheusFormatting(
+        "sum by (job) (rate(http_requests_total[5m]))",
+        "sum by (job) (rate(http_requests_total[5m]))");
+    expectPrometheusFormatting(R"(foo[7d])", R"(foo[1w])");
+    expectPrometheusFormatting(R"(foo[90d])", R"(foo[90d])");
+    expectPrometheusFormatting(R"(foo[1y2w3d4h5m6s7ms])", R"(foo[382d4h5m6s7ms])");
+    expectPrometheusFormatting(R"(foo{z="last",a="first"})", R"(foo{a="first",z="last"})");
+    expectPrometheusFormatting(R"(foo{nan="first",inf="last"})", R"(foo{inf="last",nan="first"})");
+    expectPrometheusFormatting(R"({"foo",job="x"})", R"({__name__="foo",job="x"})");
+    expectPrometheusFormatting(R"(foo @ 1.23456789)", R"(foo @ 1.235)");
+    expectPrometheusFormatting(R"(foo @ -1.2345)", R"(foo @ -1.235)");
+    expectPrometheusFormatting(R"(foo offset 1h30m)", R"(foo offset 1h30m)");
+    expectPrometheusFormatting(R"(foo offset -1h30m)", R"(foo offset -1h30m)");
+    expectPrometheusFormatting(R"(foo[1h30m:5m])", R"(foo[1h30m:5m])");
+    expectPrometheusFormatting(R"(1e-7)", R"(0.0000001)");
+    expectPrometheusFormatting(R"(1e21)", R"(1000000000000000000000)");
+    expectPrometheusFormatting(R"(Inf)", R"(+Inf)");
+    expectPrometheusFormatting(R"(-Inf)", R"(-Inf)");
+    expectPrometheusFormatting(R"(NaN)", R"(NaN)");
+    expectPrometheusFormatting(R"(foo + on(job) group_left(instance) bar)", R"(foo + on (job) group_left (instance) bar)");
+    expectPrometheusFormatting(R"(foo + ignoring() bar)", R"(foo + bar)");
+    expectPrometheusFormatting(R"(foo + on() group_left() bar)", R"(foo + on () group_left () bar)");
+    expectPrometheusFormatting(R"(sum by () (foo))", R"(sum(foo))");
+    expectPrometheusFormatting(R"(sum without () (foo))", R"(sum without () (foo))");
+    expectPrometheusFormatting(R"("\a\v\000\001\037\177")", R"("\a\v\x00\x01\x1f\x7f")");
+    expectPrometheusFormatting(R"("\u0085\u00a0\u2028\u00a1\U0001f600")", R"("\u0085\u00a0\u2028¡😀")");
+    expectPrometheusFormatting(R"("\xff")", R"("\xff")");
+}
+
+
+TEST(PromQLParser, PrometheusFormattingSplitsLongFunction)
+{
+    expectPrometheusFormatting(
+        R"(label_replace(foo, "label", "this string is long enough to make the PromQL call exceed the line length limit", "source", "regex"))",
+        R"(label_replace(
+  foo,
+  "label",
+  "this string is long enough to make the PromQL call exceed the line length limit",
+  "source",
+  "regex"
+))");
+}
+
+
+TEST(PromQLParser, PrometheusFormattingSplitsNestedExpressions)
+{
+    expectPrometheusFormatting(
+        R"(topk(5, label_replace(foo, "label", "this string is long enough to make the PromQL call exceed the line length limit", "source", "regex")))",
+        R"(topk(
+  5,
+  label_replace(
+    foo,
+    "label",
+    "this string is long enough to make the PromQL call exceed the line length limit",
+    "source",
+    "regex"
+  )
+))");
 }
 
 

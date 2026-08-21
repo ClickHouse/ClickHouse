@@ -100,6 +100,8 @@ public:
     class InstantSelector : public Node
     {
     public:
+        /// The metric name written before the optional label matcher list. Empty when the selector starts with `{`.
+        String metric_name;
         MatcherList matchers;
         InstantSelector() { node_type = NodeType::InstantSelector; result_type = ResultType::INSTANT_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
@@ -257,6 +259,9 @@ public:
 
     /// Returns the promql query which was parsed to build this tree.
     String toString() const;
+
+    /// Returns the query formatted with the syntax and output conventions used by Prometheus' format_query API.
+    String toPrometheusString() const;
 
     /// Returns the type of the query's returning value.
     ResultType getResultType() const;

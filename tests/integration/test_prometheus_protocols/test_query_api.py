@@ -178,7 +178,7 @@ def test_format_query_allows_trailing_comment_without_newline():
     assert data == {"status": "success", "data": "foo"}
 
 
-def test_format_query_round_trips_promql_string_escapes():
+def test_format_query_uses_prometheus_string_escapes():
     query = r'label_replace(foo, "label", "\a\v\000\001\037\177", "source", "regex")'
     response = requests.get(
         f"http://{node.ip_address}:9093/api/v1/format_query",
@@ -186,7 +186,7 @@ def test_format_query_round_trips_promql_string_escapes():
     )
     assert response.status_code == requests.codes.ok, response.text
     data = response.json()
-    assert data == {"status": "success", "data": query}
+    assert data == {"status": "success", "data": r'label_replace(foo, "label", "\a\v\x00\x01\x1f\x7f", "source", "regex")'}
 
 
 def test_format_query_post_urlencoded():
@@ -197,10 +197,10 @@ def test_format_query_post_urlencoded():
     )
     assert response.status_code == requests.codes.ok, response.text
     data = response.json()
-    assert data == {"status": "success", "data": "sum by (job) (rate(http_requests_total[300]))"}
+    assert data == {"status": "success", "data": "sum by (job) (rate(http_requests_total[5m]))"}
 
 
-def test_format_query_preserves_sub_millisecond_timestamp_precision():
+def test_format_query_rounds_timestamp_to_milliseconds():
     response = requests.get(
         f"http://{node.ip_address}:9093/api/v1/format_query",
         params={"query": "foo @ 1.23456789"},
@@ -208,7 +208,37 @@ def test_format_query_preserves_sub_millisecond_timestamp_precision():
     assert response.status_code == requests.codes.ok, response.text
     data = response.json()
     assert data["status"] == "success"
-    assert data["data"] == "foo @ 1.23456789"
+    assert data["data"] == "foo @ 1.235"
+
+
+def test_format_query_sorts_matchers_like_prometheus():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": 'foo{z="last",a="first"}'},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {"status": "success", "data": 'foo{a="first",z="last"}'}
+
+
+def test_format_query_formats_long_expressions_on_multiple_lines():
+    query = 'label_replace(foo, "label", "this string is long enough to make the PromQL call exceed the line length limit", "source", "regex")'
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {
+        "status": "success",
+        "data": "label_replace(\n"
+        "  foo,\n"
+        '  "label",\n'
+        '  "this string is long enough to make the PromQL call exceed the line length limit",\n'
+        '  "source",\n'
+        '  "regex"\n'
+        ")",
+    }
 
 
 @pytest.mark.parametrize("query", ["", "foo +"])
