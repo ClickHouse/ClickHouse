@@ -168,6 +168,29 @@ def test_format_query_get():
     assert data == {"status": "success", "data": "foo / bar"}
 
 
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("0755", "493"),
+        ("0_755", "493"),
+        ("-0755", "-493"),
+        ("08", "8"),
+        ("foo @ 0755", "foo @ 493"),
+        ("+1", "1"),
+        ("+1e3", "1000"),
+        ("+5m", "5m"),
+        ("+foo", "+foo"),
+    ],
+)
+def test_format_query_formats_numeric_literals_like_prometheus(query, expected):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    assert response.json() == {"status": "success", "data": expected}
+
+
 def test_format_query_allows_trailing_comment_without_newline():
     response = requests.get(
         f"http://{node.ip_address}:9093/api/v1/format_query",

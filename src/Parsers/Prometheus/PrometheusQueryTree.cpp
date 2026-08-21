@@ -958,8 +958,13 @@ namespace
             case NodeType::UnaryOperator:
             {
                 const auto & unary = static_cast<const PrometheusQueryTree::UnaryOperator &>(node);
-                if (const auto * scalar = typeid_cast<const PrometheusQueryTree::Scalar *>(unary.getArgument()); scalar && std::isinf(scalar->scalar))
-                    return unary.operator_name + String(scalar->scalar < 0 ? "-Inf" : "Inf");
+                if (const auto * scalar = typeid_cast<const PrometheusQueryTree::Scalar *>(unary.getArgument()); scalar)
+                {
+                    if (unary.operator_name == "+")
+                        return formatPrometheusScalar(*scalar);
+                    if (std::isinf(scalar->scalar))
+                        return unary.operator_name + String(scalar->scalar < 0 ? "-Inf" : "Inf");
+                }
 
                 const bool need_parentheses = unary.getPrecedence() < unary.getArgument()->getPrecedence();
                 String result = unary.operator_name;

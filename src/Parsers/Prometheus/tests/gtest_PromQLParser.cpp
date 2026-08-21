@@ -275,6 +275,7 @@ TEST(PromQLParser, PrometheusFormatting)
     expectPrometheusFormatting(R"({"foo",job="x"})", R"({__name__="foo",job="x"})");
     expectPrometheusFormatting(R"(foo @ 1.23456789)", R"(foo @ 1.235)");
     expectPrometheusFormatting(R"(foo @ -1.2345)", R"(foo @ -1.235)");
+    expectPrometheusFormatting(R"(foo @ 0755)", R"(foo @ 493)");
     expectPrometheusFormatting(R"(foo offset 1h30m)", R"(foo offset 1h30m)");
     expectPrometheusFormatting(R"(foo offset -1h30m)", R"(foo offset -1h30m)");
     expectPrometheusFormatting(R"(foo[1h30m:5m])", R"(foo[1h30m:5m])");
@@ -282,6 +283,16 @@ TEST(PromQLParser, PrometheusFormatting)
     expectPrometheusFormatting(R"(vector(5m))", R"(vector(5m))");
     expectPrometheusFormatting(R"(1h30m)", R"(1h30m)");
     expectPrometheusFormatting(R"(-5m)", R"(-5m)");
+    expectPrometheusFormatting(R"(0755)", R"(493)");
+    expectPrometheusFormatting(R"(0_755)", R"(493)");
+    expectPrometheusFormatting(R"(-0755)", R"(-493)");
+    expectPrometheusFormatting(R"(08)", R"(8)");
+    expectPrometheusFormatting(R"(+1)", R"(1)");
+    expectPrometheusFormatting(R"(+1e3)", R"(1000)");
+    expectPrometheusFormatting(R"(+5m)", R"(5m)");
+    expectPrometheusFormatting(R"(+Inf)", R"(+Inf)");
+    expectPrometheusFormatting(R"(+NaN)", R"(NaN)");
+    expectPrometheusFormatting(R"(+foo)", R"(+foo)");
     expectPrometheusFormatting(R"(1e-7)", R"(0.0000001)");
     expectPrometheusFormatting(R"(1e21)", R"(1000000000000000000000)");
     expectPrometheusFormatting(R"(Inf)", R"(+Inf)");
