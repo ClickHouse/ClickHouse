@@ -2281,7 +2281,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
               CHSetting(
                   [](RandomGenerator & rg, FuzzConfig &)
                   {
-                      const std::vector<uint32_t> choices{0, 1, 10, 100, 1000};
+                      const std::vector<uint32_t> choices{1, 10, 100, 1000};
                       return std::to_string(rg.pickRandomly(choices));
                   },
                   {},
