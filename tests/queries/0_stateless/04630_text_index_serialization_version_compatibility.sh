@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # The `text_index_serialization_version` setting is a preference, not a hard constraint: an index
-# with `support_phrase_search` is always written in the 'v2_with_positions' format because older
+# with `positions` is always written in the 'v2_with_positions' format because older
 # formats cannot represent positions. The `compatibility` setting may pin an older default on an
 # existing table, but that must not make the index unwritable: inserts and merges keep working
 # and keep writing the format the index requires, and readers take the format version from the
@@ -14,9 +14,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 data_path="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 $CLICKHOUSE_LOCAL --path "$data_path" -m -q "
-CREATE TABLE tab (id UInt32, str String, INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1))
+CREATE TABLE tab (id UInt32, str String, INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', positions = 1))
 ENGINE = MergeTree ORDER BY id
-SETTINGS allow_experimental_text_index_phrase_search = 1;
+SETTINGS allow_experimental_text_index_positions = 1;
 INSERT INTO tab SELECT number, 'foo bar' FROM numbers(512);
 INSERT INTO tab SELECT number + 512, 'foo baz' FROM numbers(512);
 SELECT count() FROM tab WHERE hasPhrase(str, 'foo bar');

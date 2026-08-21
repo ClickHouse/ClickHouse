@@ -10,7 +10,6 @@ SET use_skip_indexes_on_data_read = 1;
 SET use_text_index_header_cache = 1;
 SET use_text_index_tokens_cache = 1;
 SET use_text_index_postings_cache = 1;
-SET query_plan_optimize_count_from_text_index = 0;
 
 CREATE TABLE tab
 (

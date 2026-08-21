@@ -415,16 +415,6 @@ template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request
 
 Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 {
-    /// One exit for all attempts (initial, wrong-region, redirected), so a killed query is reported
-    /// as a cancellation instead of the stale S3/network outcome.
-    auto outcome = headObjectInternal(request);
-    if (!outcome.IsSuccess())
-        CurrentThread::checkIfNotCancelled();
-    return outcome;
-}
-
-Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request) const
-{
     const auto & bucket = request.GetBucket();
 
     request.setApiMode(api_mode);
@@ -708,8 +698,6 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (result.IsSuccess())
             return result;
 
-        CurrentThread::checkIfNotCancelled();
-
         const auto & error = result.GetError();
 
         if (checkIfCredentialsChanged(error))
@@ -826,8 +814,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 // update ClickHouse-specific attempt number in the request
                 // to help choose the right timeouts on the HTTP client which depends on retry attempt number
-                auto clickhouse_request_attempt = getClickHouseAttemptNumber(request_);
-                setClickHouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
+                auto clickhouse_request_attempt = getClickhouseAttemptNumber(request_);
+                setClickhouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
             }
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
@@ -1057,15 +1045,7 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
     auto uri = resolved_endpoint.GetResult().GetURI();
     uri.SetAuthority(endpoint);
 
-    S3::URI result(uri.GetURIString());
-
-    /// The endpoint is taken from an attacker-controllable 301 response (Location header or
-    /// <Endpoint> XML), so validate it against RemoteHostFilter before following the redirect,
-    /// otherwise a malicious S3 server can redirect us to internal hosts (SSRF). This mirrors
-    /// the Poco 307 path in PocoHTTPClient. Throws UNACCEPTABLE_URL.
-    client_configuration.remote_host_filter.checkURL(result.uri);
-
-    return result;
+    return S3::URI(uri.GetURIString());
 }
 
 // Do a list request because head requests don't have body in response
@@ -1129,12 +1109,6 @@ void ClientCache::clearCache()
         std::lock_guard lock(uri_cache_mutex);
         uri_for_bucket_cache.clear();
     }
-}
-
-ClientCacheRegistry & ClientCacheRegistry::instance()
-{
-    static ClientCacheRegistry registry;
-    return registry;
 }
 
 void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)
@@ -1294,12 +1268,9 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
 
     // we need to force environment credentials if explicit credentials are empty and we have role_arn
-    // this is a crutch because we know that we have environment credentials on our Cloud.
-    // For user-facing requests (forbid_implicit_credentials) the same is done by getCredentialsProvider
-    // itself, which allows the role_arn STS base while refusing the other server-managed sources.
-    if (!credentials_configuration.forbid_implicit_credentials)
-        credentials_configuration.use_environment_credentials =
-            credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
+    // this is a crutch because we know that we have environment credentials on our Cloud
+    credentials_configuration.use_environment_credentials =
+        credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
 

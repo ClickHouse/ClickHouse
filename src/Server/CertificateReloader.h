@@ -74,9 +74,11 @@ public:
     /// Singleton
     CertificateReloader(CertificateReloader const &) = delete;
     void operator=(CertificateReloader const &) = delete;
-    /// Defined out of line: a static local in a header-defined function gives every shared
-    /// object its own copy.
-    static CertificateReloader & instance();
+    static CertificateReloader & instance()
+    {
+        static CertificateReloader instance;
+        return instance;
+    }
 
     /// Handle configuration reload for default path
     void tryLoad(const Poco::Util::AbstractConfiguration & config);

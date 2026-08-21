@@ -1,8 +1,6 @@
 #include <Columns/ColumnString.h>
 
-#include <cstring>
 #include <Columns/Collator.h>
-#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsNumber.h>
@@ -804,22 +802,6 @@ int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
         reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
 }
 
-size_t ColumnString::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
-{
-    if (begin >= end)
-        return begin;
-
-    /// Compare length first then bytes if needed.
-    const size_t ref_size = sizeAt(begin);
-    const UInt8 * ref_data = chars.data() + offsetAt(begin);
-    auto equals = [&](size_t i)
-    { return sizeAt(i) == ref_size && 0 == memcmpSmallAllowOverflow15(chars.data() + offsetAt(i), ref_data, ref_size); };
-
-    /// A string comparison reads offsets and bytes, which is relatively expensive, so keep the linear probe short.
-    static constexpr size_t linear_probe = 8;
-    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, equals);
-}
-
 void ColumnString::protect()
 {
     getChars().protect();
@@ -886,50 +868,6 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
     }
 
     return column_sizes;
-}
-
-/// Byte-comparable encoding: 0x00 → [0x00, 0x01]; terminated with [0x00, 0x00].
-/// Uses memchr+append fast path: no-NUL strings are copied in one append call.
-void ColumnString::serializeAsComparable(size_t n, String & out) const
-{
-    const size_t string_size = sizeAt(n);
-    const auto string_offset = offsetAt(n);
-    const char * src = reinterpret_cast<const char *>(&chars[string_offset]);
-    const char * const end = src + string_size;
-
-    out.reserve(out.size() + string_size + 2);
-
-    const char * p = static_cast<const char *>(std::memchr(src, '\0', string_size));
-    if (p == nullptr)
-    {
-        out.append(src, string_size);
-    }
-    else
-    {
-        const char * cursor = src;
-        do
-        {
-            out.append(cursor, p - cursor);
-            out.append("\0\x01", 2);
-            cursor = p + 1;
-            p = static_cast<const char *>(std::memchr(cursor, '\0', end - cursor));
-        }
-        while (p != nullptr);
-        out.append(cursor, end - cursor);
-    }
-
-    out.append("\0\x00", 2);
-}
-
-void ColumnString::batchSerializeAsComparable(
-    size_t num_rows,
-    VectorWithMemoryTracking<String> & out,
-    const IColumn::Permutation * permutation,
-    const UInt8 * null_map) const
-{
-    batchSerializeAsComparableImpl(
-        num_rows, out, permutation, null_map,
-        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
 }

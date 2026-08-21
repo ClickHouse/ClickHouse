@@ -65,10 +65,10 @@ CREATE TABLE tab_v2_with_positions
 (
     id UInt32,
     str String,
-    INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1)
+    INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', positions = 1)
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS index_granularity = 64, text_index_serialization_version = 'v2_with_positions', allow_experimental_text_index_phrase_search = 1;
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v2_with_positions', allow_experimental_text_index_positions = 1;
 
 INSERT INTO tab_v2_with_positions SELECT number, 'foo bar baz' FROM numbers(512);
 SELECT count() FROM tab_v2_with_positions WHERE hasPhrase(str, 'foo bar');
@@ -134,10 +134,10 @@ CREATE TABLE tab_positions_pinned
 (
     id UInt32,
     str String,
-    INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1)
+    INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', positions = 1)
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS index_granularity = 64, text_index_serialization_version = 'v1_with_codec', allow_experimental_text_index_phrase_search = 1;
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v1_with_codec', allow_experimental_text_index_positions = 1;
 
 INSERT INTO tab_positions_pinned SELECT number, 'foo bar baz' FROM numbers(512);
 SELECT count() FROM tab_positions_pinned WHERE hasPhrase(str, 'foo bar');
@@ -151,8 +151,8 @@ CREATE TABLE tab_add_index
     str String
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS index_granularity = 64, text_index_serialization_version = 'v1_with_codec', allow_experimental_text_index_phrase_search = 1;
-ALTER TABLE tab_add_index ADD INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1);
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v1_with_codec', allow_experimental_text_index_positions = 1;
+ALTER TABLE tab_add_index ADD INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', positions = 1);
 INSERT INTO tab_add_index SELECT number, 'foo bar' FROM numbers(512);
 SELECT count() FROM tab_add_index WHERE hasPhrase(str, 'foo bar');
 
