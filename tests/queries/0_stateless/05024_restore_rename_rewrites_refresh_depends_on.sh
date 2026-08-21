@@ -18,15 +18,22 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 SRC="${CLICKHOUSE_DATABASE}_src"
 DST="${CLICKHOUSE_DATABASE}_dst"
+DST2="${CLICKHOUSE_DATABASE}_dst2"
 OUT="${CLICKHOUSE_DATABASE}_out"
 BACKUP_DB="${CLICKHOUSE_TEST_UNIQUE_NAME}_db"
+BACKUP_AS="${CLICKHOUSE_TEST_UNIQUE_NAME}_as"
 BACKUP_TBL="${CLICKHOUSE_TEST_UNIQUE_NAME}_tbl"
 
 drop_all() {
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS \`$SRC\` SYNC"
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS \`$DST\` SYNC"
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS \`$DST2\` SYNC"
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS \`$OUT\` SYNC"
 }
+
+# These databases live outside $CLICKHOUSE_DATABASE, so the harness does not reclaim them: drop them
+# on every exit path, not just the successful one.
+trap drop_all EXIT
 
 # An interrupted earlier run must not make this one fail with TABLE_ALREADY_EXISTS.
 drop_all
@@ -40,27 +47,29 @@ show_refs() {
                extract(create_table_query, ' TO ([^ ]+)') AS to_target,
                extract(create_table_query, ' FROM ([^ ]+)') AS select_from
         FROM system.tables WHERE database = '$db' AND name = '$view' FORMAT TSV" \
-    | sed -e "s/$SRC/SRC/g" -e "s/$DST/DST/g" -e "s/$OUT/OUT/g"
+    | sed -e "s/$SRC/SRC/g" -e "s/$DST2/DST2/g" -e "s/$DST/DST/g" -e "s/$OUT/OUT/g"
 }
 
-# A refreshable MV outside the backed-up set, used by the control arm below. `EVERY 1 YEAR` keeps it
-# from refreshing on its own during the test.
+# No view here may ever refresh. A non-append refresh replaces its target through CREATE OR REPLACE,
+# which a concurrent `BACKUP DATABASE` scan reports as an inconsistency warning on stderr. `EMPTY`
+# skips the initial refresh and `EVERY 1 YEAR` puts the next one a year out. Neither keyword is
+# printed back into `create_table_query`, so the oracle is unaffected.
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE \`$OUT\`"
 ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW \`$OUT\`.p REFRESH EVERY 1 YEAR
-    (a UInt64) ENGINE = MergeTree ORDER BY a AS SELECT 1 AS a"
+    (a UInt64) ENGINE = MergeTree ORDER BY a EMPTY AS SELECT 1 AS a"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE \`$SRC\`"
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE \`$SRC\`.raw (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE \`$SRC\`.dst (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE MATERIALIZED VIEW \`$SRC\`.parent REFRESH EVERY 1 YEAR
-        (a UInt64) ENGINE = MergeTree ORDER BY a AS SELECT a FROM \`$SRC\`.raw;
-    CREATE MATERIALIZED VIEW \`$SRC\`.child REFRESH AFTER 1 SECOND DEPENDS ON \`$SRC\`.parent
-        (a UInt64) ENGINE = MergeTree ORDER BY a AS SELECT a FROM \`$SRC\`.parent;
-    CREATE MATERIALIZED VIEW \`$SRC\`.child_to REFRESH AFTER 1 SECOND DEPENDS ON \`$SRC\`.parent
-        TO \`$SRC\`.dst AS SELECT a FROM \`$SRC\`.parent;
-    CREATE MATERIALIZED VIEW \`$SRC\`.child_out REFRESH AFTER 1 SECOND DEPENDS ON \`$OUT\`.p
-        (a UInt64) ENGINE = MergeTree ORDER BY a AS SELECT a FROM \`$SRC\`.raw;
+        (a UInt64) ENGINE = MergeTree ORDER BY a EMPTY AS SELECT a FROM \`$SRC\`.raw;
+    CREATE MATERIALIZED VIEW \`$SRC\`.child REFRESH EVERY 1 YEAR DEPENDS ON \`$SRC\`.parent
+        (a UInt64) ENGINE = MergeTree ORDER BY a EMPTY AS SELECT a FROM \`$SRC\`.parent;
+    CREATE MATERIALIZED VIEW \`$SRC\`.child_to REFRESH EVERY 1 YEAR DEPENDS ON \`$SRC\`.parent
+        TO \`$SRC\`.dst EMPTY AS SELECT a FROM \`$SRC\`.parent;
+    CREATE MATERIALIZED VIEW \`$SRC\`.child_out REFRESH EVERY 1 YEAR DEPENDS ON \`$OUT\`.p
+        (a UInt64) ENGINE = MergeTree ORDER BY a EMPTY AS SELECT a FROM \`$SRC\`.raw;
 "
 
 ${CLICKHOUSE_CLIENT} -q "BACKUP DATABASE \`$SRC\` TO Disk('backups', '$BACKUP_DB')" | grep -o "BACKUP_CREATED"
@@ -83,12 +92,20 @@ ${CLICKHOUSE_CLIENT} -q "
            countMatches(create_table_query, '$SRC') AS old_name
     FROM system.tables WHERE database = '$DST' AND name = 'child' FORMAT TSV"
 
+# `BACKUP ... AS` renames while writing the backup, through a different pair of call sites than the
+# restore path uses. The stored definition is already renamed, so restoring it needs no rename.
+${CLICKHOUSE_CLIENT} -q "BACKUP DATABASE \`$SRC\` AS \`$DST2\` TO Disk('backups', '$BACKUP_AS')" | grep -o "BACKUP_CREATED"
+${CLICKHOUSE_CLIENT} -q "RESTORE DATABASE \`$DST2\` FROM Disk('backups', '$BACKUP_AS')" | grep -o "RESTORED"
+
+echo "5. renamed at backup time rather than at restore time:"
+show_refs "$DST2" child
+echo "6. control, dependency outside the backed-up set stays unchanged:"
+show_refs "$DST2" child_out
+
 # Control: a per-table rename whose dependency is not itself renamed. The renaming map holds only
 # child -> child2, so the dependency on `parent` must be left alone.
 ${CLICKHOUSE_CLIENT} -q "BACKUP TABLE \`$SRC\`.child TO Disk('backups', '$BACKUP_TBL')" | grep -o "BACKUP_CREATED"
 ${CLICKHOUSE_CLIENT} -q "RESTORE TABLE \`$SRC\`.child AS \`$SRC\`.child2 FROM Disk('backups', '$BACKUP_TBL')" | grep -o "RESTORED"
 
-echo "5. control, table-level rename leaves a dependency that is not renamed:"
+echo "7. control, table-level rename leaves a dependency that is not renamed:"
 show_refs "$SRC" child2
-
-drop_all
