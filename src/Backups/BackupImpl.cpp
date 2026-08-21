@@ -51,6 +51,8 @@ namespace DB
 namespace FailPoints
 {
     extern const char backup_fail_before_writing_metadata[];
+    extern const char backup_fail_lock_file_removal[];
+    extern const char backup_pause_before_lock_file_creation[];
 }
 
 namespace ErrorCodes
@@ -242,22 +244,47 @@ void BackupImpl::open()
     else
     {
         ProfileEvents::increment(ProfileEvents::BackupsOpenedForWrite);
-        LOG_INFO(log, "Writing backup: {}", backup_name_for_logging);
         timestamp = std::time(nullptr);
-        if (!uuid)
-            uuid = UUIDHelpers::generateV4();
         lock_file_name = use_archive ? (archive_params.archive_name + ".lock") : ".lock";
         lock_file_before_first_file_checked = false;
         writing_finalized = false;
 
-        /// Check that we can write a backup there and create the lock file to own this destination.
-        checkBackupDoesntExist();
-        if (!params.is_internal_backup)
-            createLockFile();
-        checkLockFile(true);
+        /// `open` runs from the constructor, so a throw anywhere below leaves no backup behind for
+        /// anything else to clean up. The lock must not outlive the attempt that created it: it fences
+        /// the destination against every later one, which cannot match it either, because a retry picks
+        /// a fresh backup UUID. That covers opening the archive as much as taking the lock.
+        try
+        {
+#if CLICKHOUSE_CLOUD
+            if (params.resume)
+                BackupResumer(*this, *params.resume).openDestination();
+            else
+#endif
+            {
+                LOG_INFO(log, "Writing backup: {}", backup_name_for_logging);
+                if (!uuid)
+                    uuid = UUIDHelpers::generateV4();
+
+                /// Check that we can write a backup there and create the lock file to own this destination.
+                checkBackupDoesntExist();
+                if (!params.is_internal_backup)
+                    createLockFile();
+                checkLockFile(true);
+            }
+
+            if (use_archive)
+                openArchive();
+        }
+        catch (...)
+        {
+            if (!params.is_internal_backup)
+                tryRemoveOwnLockFile();
+            throw;
+        }
     }
 
-    if (use_archive)
+    /// A write opens the archive inside the guard above, where a failure still removes the lock.
+    if (use_archive && open_mode != OpenMode::WRITE)
         openArchive();
 
     if (open_mode == OpenMode::READ || open_mode == OpenMode::UNLOCK)
@@ -432,6 +459,13 @@ void BackupImpl::writeBackupMetadata()
     chassert(!params.is_internal_backup);
     checkLockFile(true);
 
+#if CLICKHOUSE_CLOUD
+    /// A Keeper session can expire while this upload is in flight. The progress fingerprint covers every
+    /// input written to the manifest, so a new owner can only publish the same metadata bytes.
+    if (params.resume)
+        params.resume->check_owner();
+#endif
+
     std::unique_ptr<WriteBuffer> out;
     if (use_archive)
         out = archive_writer->writeFile(".backup");
@@ -441,7 +475,14 @@ void BackupImpl::writeBackupMetadata()
     *out << "<config>";
     *out << "<version>" << (params.is_lightweight_snapshot ? CURRENT_BACKUP_VERSION : INITIAL_BACKUP_VERSION) << "</version>";
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
-    *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
+    *out << "<timestamp>"
+#if CLICKHOUSE_CLOUD
+         /// A continued attempt republishes the timestamp of the one it continues, byte for byte.
+         << (params.resume ? params.resume->timestamp_text : toString(LocalDateTime{timestamp}))
+#else
+         << toString(LocalDateTime{timestamp})
+#endif
+         << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
     if (!backup_id.empty())
         *out << "<backup_id>" << xml << backup_id << "</backup_id>";
@@ -557,6 +598,34 @@ void BackupImpl::writeBackupMetadata()
 
     LOG_TRACE(log, "Backup {}: Metadata was written", backup_name_for_logging);
 }
+
+
+#if CLICKHOUSE_CLOUD
+void BackupImpl::recalculateMetadataCounters()
+{
+    num_files = 0;
+    total_size = 0;
+    num_entries = 0;
+    size_of_entries = 0;
+
+    coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
+    {
+        ++num_files;
+        total_size += info.size;
+        const bool has_entry = !params.deduplicate_files
+            || (info.size && info.size != info.base_size
+                && (info.data_file_name.empty()
+                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
+        if (has_entry)
+        {
+            ++num_entries;
+            size_of_entries += info.size - info.base_size;
+        }
+    });
+
+    uncompressed_size = size_of_entries + writer->getFileSize(".backup");
+}
+#endif
 
 
 void BackupImpl::readBackupMetadata()
@@ -828,9 +897,62 @@ void BackupImpl::createLockFile()
     chassert(!params.is_internal_backup);
 
     chassert(uuid);
-    auto out = writer->writeFile(lock_file_name);
-    writeUUIDText(*uuid, *out);
-    out->finalize();
+    if (lock_file_contents.empty())
+        lock_file_contents = toString(*uuid);
+    const String completed_file = use_archive ? archive_params.archive_name : ".backup";
+    FailPointInjection::pauseFailPoint(FailPoints::backup_pause_before_lock_file_creation);
+    bool lock_created = false;
+    try
+    {
+        auto out = writer->writeFileIfNotExists(lock_file_name);
+        *out << lock_file_contents;
+        out->finalize();
+        lock_created = true;
+    }
+    catch (...)
+    {
+        auto exception = std::current_exception();
+        String actual_file_contents;
+        bool lock_contents_match = false;
+        try
+        {
+            lock_contents_match = writer->fileContentsEqual(lock_file_name, lock_file_contents, actual_file_contents);
+        }
+        catch (...)
+        {
+            /// The lock can be removed while we read it, by the backup that created it. The existence
+            /// checks below decide who owns the destination, and rethrow if they find nothing.
+            tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not read lock file {}", lock_file_name));
+        }
+#if CLICKHOUSE_CLOUD
+        /// A continued attempt is allowed to find its own lock: it is the one that wrote it.
+        if (lock_contents_match && !params.resume)
+#else
+        if (lock_contents_match)
+#endif
+            throw Exception(
+                ErrorCodes::BACKUP_ALREADY_EXISTS,
+                "A concurrent backup writing to the same destination {} detected",
+                backup_name_for_logging);
+        if (!lock_contents_match)
+        {
+            if (writer->fileExists(lock_file_name))
+                throw Exception(
+                    ErrorCodes::BACKUP_ALREADY_EXISTS,
+                    "A concurrent backup writing to the same destination {} detected",
+                    backup_name_for_logging);
+            if (writer->fileExists(completed_file))
+                throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
+            std::rethrow_exception(exception);
+        }
+    }
+
+    if (writer->fileExists(completed_file))
+    {
+        if (lock_created)
+            removeLockFile();
+        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
+    }
 }
 
 bool BackupImpl::checkLockFile(bool throw_if_failed) const
@@ -842,9 +964,10 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
             LOG_TRACE(log, "Checking lock file {}", lock_file_name);
             ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
             String actual_file_contents;
-            if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
+            const String expected_file_contents = lock_file_contents.empty() ? toString(*uuid) : lock_file_contents;
+            if (writer->fileContentsEqual(lock_file_name, expected_file_contents, actual_file_contents))
                 return true;
-            LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
+            LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, expected_file_contents, actual_file_contents);
         }
     }
     catch (...)
@@ -876,10 +999,36 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
     return false;
 }
 
-void BackupImpl::removeLockFile()
+bool BackupImpl::removeLockFile()
 {
-    if (checkLockFile(false))
-        writer->removeFile(lock_file_name);
+    /// `checkLockFile(false)` returns false both for a foreign lock and for one it could not read, so a
+    /// caller cannot tell "the lock is not ours" from "we do not know" -- and in the second case the lock
+    /// is still there. Report that as a failure to remove: everything upstream that decides whether the
+    /// destination is clean has to treat an unverifiable lock as one that survived.
+    fiu_do_on(FailPoints::backup_fail_lock_file_removal, { return false; });
+    if (!checkLockFile(false))
+        return false;
+    writer->removeFile(lock_file_name);
+    return true;
+}
+
+bool BackupImpl::tryRemoveOwnLockFile() noexcept
+{
+    /// A failed `open` must leave the destination as it found it. Otherwise the lock it just created
+    /// outlives it and fences the destination against every later attempt, which cannot match it either:
+    /// a retry that finds no progress picks a fresh backup UUID, so the orphaned lock's UUID belongs to
+    /// nobody. `removeLockFile` only removes a lock this backup still owns, so a foreign lock -- which may
+    /// belong to a concurrent attempt that won the race -- is deliberately left alone. Never throws: it
+    /// runs from an exception handler, where throwing would hide the original error.
+    try
+    {
+        return removeLockFile();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
 }
 
 bool BackupImpl::directoryExists(const String & directory) const
@@ -1303,6 +1452,11 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     {
         std::lock_guard lock{mutex};
+#if CLICKHOUSE_CLOUD
+        /// Only a continued attempt can find the manifest already published.
+        if (params.resume && params.resume->metadata_published())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup metadata is already published");
+#endif
         ++num_files;
         total_size += info.size;
     }
@@ -1399,9 +1553,20 @@ void BackupImpl::finalizeWriting()
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
         });
-        writeBackupMetadata();
+#if CLICKHOUSE_CLOUD
+        /// A continued attempt whose manifest is already in the destination republishes nothing; it only
+        /// recomputes the counters it reports.
+        if (params.resume && params.resume->metadata_published())
+            recalculateMetadataCounters();
+        else
+#endif
+            writeBackupMetadata();
         closeArchive(/* finalize= */ true);
         setCompressedSize();
+#if CLICKHOUSE_CLOUD
+        if (params.resume)
+            params.resume->check_owner();
+#endif
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);
     }
@@ -1501,9 +1666,12 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
             return false;
 
         writer->removeFiles(files_to_remove);
-        removeLockFile();
+        /// The lock is the last thing to go, and it can survive its removal: `removeLockFile` gives up
+        /// when it cannot verify the lock is still ours. Returning true then would tell the caller the
+        /// destination is empty while it is still fenced by a lock no later attempt can match.
+        const bool removed_lock_file = removeLockFile();
         writer->removeEmptyDirectories();
-        return true;
+        return removed_lock_file;
     }
     catch (...)
     {

@@ -396,6 +396,7 @@ class JobNames:
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
+    PROMQL_COMPLIANCE = "PromQL Compliance"
     BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
@@ -432,6 +433,7 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
+    PARSER_MEMORY_CHECK = "Parser memory check"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
     COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
