@@ -149,10 +149,14 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
+/// This is how a column is serialized into ZooKeeper, and `ColumnsDescription::operator==` compares
+/// two sets of columns through it, so the text must not depend on the redundant parentheses the user
+/// has written around a `DEFAULT`, `CODEC` or `TTL` expression.
 static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(true);
+    settings.ignore_redundant_parentheses = true;
     ast.format(buf, settings, state, IAST::FormatStateStacked());
     return buf.str();
 }
@@ -245,7 +249,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (auto col_codec = col_ast->getCodec())
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, false, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, CodecValidationSettings::trusted());
 
             if (auto col_ttl = col_ast->getTTL())
                 ttl = col_ttl;
@@ -406,6 +410,21 @@ void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 
 }
 
+void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata)
+{
+    for (auto & column : columns)
+    {
+        /// Same type only: a dropped and re-added column would throw in the helper.
+        const auto * column_in_metadata = metadata.tryGet(column.name);
+        if (!column_in_metadata || !column_in_metadata->codec || !column_in_metadata->type->equals(*column.type))
+            continue;
+
+        /// The customization lands on the shared type instance, i.e. on column.type itself.
+        ColumnDescription column_with_codec(column.name, column.type, column_in_metadata->codec, {});
+        attachQuantizeSerializationIfNeeded(column_with_codec);
+    }
+}
+
 void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
 {
     if (has(column.name))
@@ -439,6 +458,12 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
     invalidateGetCache();
+}
+
+void ColumnsDescription::addIfNotExists(ColumnDescription column)
+{
+    if (!has(column.name))
+        add(std::move(column));
 }
 
 void ColumnsDescription::remove(const String & column_name)
@@ -553,6 +578,14 @@ void ColumnsDescription::flattenNested()
             /// TODO: what to do with default expressions?
             nested_column.name = Nested::concatenateName(column.name, names[i]);
             nested_column.type = std::make_shared<DataTypeArray>(elements[i]);
+            /// The declared statistics were built from the unflattened `Nested(...)` type, while the
+            /// physical subcolumn is an `Array(...)` of one element. Retarget them at the type they
+            /// will actually be built for, otherwise `checkColumnTypeMatchesStatistics` reports a
+            /// type mismatch as a logical error the first time the statistics are materialized.
+            /// Statistics types unsupported for the flattened type are rejected afterwards, by the
+            /// storage validation in `MergeTreeStatisticsFactory::validate`.
+            if (!nested_column.statistics.empty())
+                nested_column.statistics.data_type = nested_column.type;
 
             addSubcolumns(nested_column.name, nested_column.type);
             columns.get<0>().insert(it, std::move(nested_column));
@@ -1511,6 +1544,19 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/true, insert_time_default_columns);
     chassert(result.has_value());
     return std::move(*result);
+}
+
+bool prewhereSupportedColumnsContain(
+    const NameSet & supported_columns, bool include_subcolumns, const ColumnsDescription & columns, const String & column_name)
+{
+    if (supported_columns.contains(column_name))
+        return true;
+
+    if (!include_subcolumns)
+        return false;
+
+    auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+    return column && column->isSubcolumn() && supported_columns.contains(column->getNameInStorage());
 }
 
 }

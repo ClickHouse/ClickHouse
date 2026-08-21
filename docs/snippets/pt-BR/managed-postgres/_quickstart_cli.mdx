@@ -38,7 +38,7 @@ Crie o serviço e salve a resposta; a senha é exibida apenas uma vez:
 clickhousectl cloud postgres create \
   --name quickstart-pg \
   --region us-east-1 \
-  --size c6gd.large \
+  --size m6gd.large \
   --pg-version 18 \
   --json > pg.json
 ```
@@ -52,7 +52,7 @@ A resposta inclui o ID do serviço, o hostname e uma string de conexão pronta p
   "provider": "aws",
   "region": "us-east-1",
   "postgresVersion": "18",
-  "size": "c6gd.large",
+  "size": "m6gd.large",
   "storageSize": 118,
   "haType": "none",
   "state": "creating",
@@ -175,7 +175,7 @@ INSERT 0 1000
 Time: 84.807 ms
 ```
 
-A inserção de 1 milhão de linhas leva cerca de 7 segundos no `c6gd.large` (a menor configuração), graças ao armazenamento NVMe. Verifique com uma consulta; a contagem de linhas varia entre as execuções porque os dados são gerados com `random()`:
+A inserção de 1 milhão de linhas leva cerca de 7 segundos no `m6gd.large` (a menor configuração), graças ao armazenamento NVMe. Verifique com uma consulta; a contagem de linhas varia entre as execuções porque os dados são gerados com `random()`:
 
 ```bash
 psql "$PG_URL" -c "SELECT event_type, COUNT(*) FROM events GROUP BY event_type ORDER BY 2 DESC;"
@@ -215,7 +215,7 @@ Para usar um serviço existente, defina `CH_ID` a partir de `clickhousectl cloud
   ### Replique as tabelas para o ClickHouse
 </div>
 
-Crie um Postgres CDC ClickPipe no serviço do ClickHouse, apontando para o hostname do Managed Postgres. O pipe copia as linhas existentes e, em seguida, mantém o ClickHouse sincronizado com as alterações contínuas:
+Crie um Postgres CDC ClickPipe no serviço do ClickHouse, apontando para o hostname do ClickHouse Managed Postgres. O pipe copia as linhas existentes e, em seguida, mantém o ClickHouse sincronizado com as alterações contínuas:
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)
@@ -307,7 +307,7 @@ SQL
 
 O heredoc está sem aspas de propósito, para que o shell substitua `$CH_HOST` e `$CH_PASSWORD` antes que o SQL chegue ao Postgres. As tabelas replicadas agora estão visíveis como tabelas estrangeiras no schema `organization`; as consultas sobre elas são executadas no ClickHouse.
 
-Em testes no `c6gd.large` com este conjunto de dados, as consultas analíticas são executadas de 6 a 9 vezes mais rápido por meio das tabelas estrangeiras (por exemplo, um GROUP BY com 5 agregações: 176 ms via ClickHouse vs 1.133 ms localmente; um JOIN com agregações: 298 ms vs 2.764 ms).
+Em testes no `m6gd.large` com este conjunto de dados, as consultas analíticas são executadas de 6 a 9 vezes mais rápido por meio das tabelas estrangeiras (por exemplo, um GROUP BY com 5 agregações: 176 ms via ClickHouse vs 1.133 ms localmente; um JOIN com agregações: 298 ms vs 2.764 ms).
 
 <div id="cleanup-resources">
   ## Limpeza

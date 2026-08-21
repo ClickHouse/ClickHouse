@@ -19,7 +19,7 @@ namespace
     /// Checks if a prometheus query allows evaluating over a range and throws an exception if not.
     /// If a query normally returns a scalar or an instant vector then it can be evaluated over a range
     /// and produce a range vector as a result.
-    void checkPrometheusQueryAllowsEvaluationRange(const PQT & promql_tree)
+    void checkPrometheusQueryAllowsEvaluationRange(const PrometheusQueryTree & promql_tree)
     {
         if ((promql_tree.getResultType() == ResultType::SCALAR)
             || (promql_tree.getResultType() == ResultType::INSTANT_VECTOR))
@@ -35,7 +35,7 @@ namespace
 }
 
 
-ResultType getResultType(const PQT & promql_tree, const PrometheusQueryEvaluationSettings & settings)
+ResultType getResultType(const PrometheusQueryTree & promql_tree, const PrometheusQueryEvaluationSettings & settings)
 {
     if (settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE)
     {

@@ -1009,6 +1009,7 @@ std::optional<String> optimizeUseAggregateProjections(
                     metadata,
                     *parent_reading_select_result,
                     projection_query_info,
+                    reading->getTopKFilterInfo(),
                     context);
 
                 if (!analyzed)
@@ -1127,17 +1128,8 @@ std::optional<String> optimizeUseAggregateProjections(
 
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
 
-        std::vector<char> state(agg_count->sizeOfData());
-        AggregateDataPtr place = state.data();
-        agg_count->create(place);
-        SCOPE_EXIT_MEMORY_SAFE(agg_count->destroy(place));
-        AggregateFunctionCount::set(place, exact_count);
-
-        auto column = ColumnAggregateFunction::create(agg_count);
-        column->insertFrom(place);
-
         Block block_with_count{
-            {std::move(column),
+            {createSingleCountStateColumn(agg_count, exact_count),
              std::make_shared<DataTypeAggregateFunction>(agg_count, DataTypes{}, Array{}),
              candidates.only_count_column}};
 

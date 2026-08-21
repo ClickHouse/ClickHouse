@@ -13,6 +13,7 @@ target_compile_options (_poco_xml_expat
         -Wno-extra-semi-stmt
         -Wno-implicit-fallthrough
         -Wno-reserved-identifier
+        -Wno-unreachable-code-fallthrough
         -Wno-unused-macros
         -Wno-implicit-int-conversion
 )
@@ -47,6 +48,7 @@ target_compile_options (_poco_xml
         -Wno-tautological-unsigned-zero-compare
         -Wno-unreachable-code
         -Wno-unreachable-code-break
+        -Wno-unreachable-code-fallthrough
         -Wno-unused-macros
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant

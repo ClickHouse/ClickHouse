@@ -1,0 +1,19 @@
+--- INTO OUTFILE with limit setting (analyzer) ---
+0
+1
+2
+--- INTO OUTFILE with limit setting (no analyzer) ---
+0
+1
+2
+--- INTO OUTFILE with limit + offset settings ---
+5
+6
+--- INTO OUTFILE FORMAT CSV with filter + limit settings ---
+0
+2
+--- compressed INTO OUTFILE keeps compression when wrapped ---
+0
+1
+2
+3
