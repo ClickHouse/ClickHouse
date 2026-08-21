@@ -44,9 +44,6 @@ CalculateWatermarksStep::CalculateWatermarksStep(SharedHeader input_header_, Wat
 
 void CalculateWatermarksStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (!watermark)
-        return;
-
     pipeline.addSimpleTransform([&] (const SharedHeader & header)
     {
         auto watermark_expression = buildWatermarkActionsDAG(watermark->expression, *input_headers.front(), context);
@@ -56,18 +53,11 @@ void CalculateWatermarksStep::transformPipeline(QueryPipelineBuilder & pipeline,
 
 void CalculateWatermarksStep::updateOutputHeader()
 {
-    if (watermark)
-    {
-        Block extended = *input_headers.front();
-        auto type = extended.getByName(watermark->column).type;
-        extended.insert(ColumnWithTypeAndName(type->createColumn(), type, TimeAttributeColumn::name));
-        extended.insert(ColumnWithTypeAndName(type->createColumn(), type, WatermarkColumn::name));
-        output_header = std::make_shared<const Block>(std::move(extended));
-    }
-    else
-    {
-        output_header = input_headers.front();
-    }
+    Block extended = *input_headers.front();
+    auto type = extended.getByName(watermark->column).type;
+    extended.insert(ColumnWithTypeAndName(type->createColumn(), type, TimeAttributeColumn::name));
+    extended.insert(ColumnWithTypeAndName(type->createColumn(), type, WatermarkColumn::name));
+    output_header = std::make_shared<const Block>(std::move(extended));
 }
 
 QueryPlanStepPtr CalculateWatermarksStep::clone() const
