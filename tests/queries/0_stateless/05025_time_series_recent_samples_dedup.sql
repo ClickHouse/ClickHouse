@@ -10,8 +10,9 @@ SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts_dedup;
 
+-- The TTL is 10 years: the fixed timestamps below (byte-identical blocks are needed for dedup) must stay inside the TTL window.
 CREATE TABLE ts_dedup ENGINE = TimeSeries
-SETTINGS recent_samples_ttl_seconds = 864000
+SETTINGS recent_samples_ttl_seconds = 315360000
 SAMPLES INNER ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05025_ts_dedup/samples', 'r1') ORDER BY (id, timestamp)
 RECENT SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05025_ts_dedup/recent', 'r1') PARTITION BY toDate(timestamp) ORDER BY (id, timestamp);
 
