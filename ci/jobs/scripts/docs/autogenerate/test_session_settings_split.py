@@ -344,6 +344,7 @@ def main():
         ]
         valid_anchor_routes = {
             "stable_alpha": base_route + "/stable",
+            "misc_setting": base_route + "/other",
         }
         valid_legacy_script = mod._settings_legacy_routes_script(
             valid_anchor_routes, family
@@ -459,6 +460,17 @@ def main():
             valid_routes,
             {"stable_alpha": base_route + "/missing"},
             "is not present in the route contract",
+        )
+
+        orphan_route = {
+            "prefix": "retired",
+            "mode": "token",
+            "target": base_route + "/retired",
+        }
+        expect_invalid_routing(
+            [orphan_route, *valid_routes],
+            valid_anchor_routes,
+            "route targets without anchors",
         )
 
         expect_invalid_routing(

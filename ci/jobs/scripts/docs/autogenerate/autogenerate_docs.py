@@ -1277,6 +1277,7 @@ def _validate_settings_routing(
             "specificity, then mode and target"
         )
 
+    referenced_targets = set()
     for anchor, target in anchor_routes.items():
         if not isinstance(anchor, str) or not anchor:
             raise ValueError(
@@ -1289,6 +1290,14 @@ def _validate_settings_routing(
                 f"{anchor!r} in {source}: {target!r} is not present in the "
                 "route contract"
             )
+        referenced_targets.add(target)
+
+    orphan_targets = sorted(set(targets) - referenced_targets)
+    if orphan_targets:
+        raise ValueError(
+            f"invalid {family_name} settings routes in {source}: "
+            "route targets without anchors: " + ", ".join(orphan_targets)
+        )
 
     return {"routes": routes, "anchorRoutes": anchor_routes}
 
