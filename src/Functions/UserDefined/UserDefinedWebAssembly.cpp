@@ -42,7 +42,6 @@
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
 
 #include <Processors/Chunk.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/formatReadable.h>
@@ -56,8 +55,6 @@
 #include <base/arithmeticOverflow.h>
 
 
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
@@ -330,13 +327,22 @@ public:
         checkFunction(WasmMemoryManagerV01::deallocateFunctionDeclaration());
     }
 
-    static void readSingleBlock(std::unique_ptr<PullingPipelineExecutor> pipeline_executor, Block & result_block)
+    /// Reads the whole result out of `input_format` by driving it directly, without building a
+    /// `QueryPipeline` and a `PullingPipelineExecutor` around it. `FormatFactory::getInput` returns a
+    /// single `IInputFormat` source with no transforms attached, so a pipeline would add nothing here
+    /// beyond its own construction cost, which is substantial relative to deserializing one small
+    /// in-memory frame: it dominated the WASM read-back path in profiles. `IInputFormat::generate`
+    /// yields an empty chunk at end of input, exactly as `ISource::tryGenerate` (and therefore
+    /// `ISource::work`) interprets it, so this loop reproduces the source's own driving logic,
+    /// including the trailing `onFinish`. No input format overrides `tryGenerate`, so nothing else
+    /// can be interposed between `work` and `generate`.
+    static void readSingleBlock(IInputFormat & input_format, Block & result_block)
     {
         Chunk result_chunk;
         while (true)
         {
-            Chunk chunk;
-            bool has_data = pipeline_executor->pull(chunk);
+            Chunk chunk = input_format.generate();
+            bool has_data = static_cast<bool>(chunk);
 
             if (chunk && chunk.getNumColumns() != result_block.columns())
                 throw Exception(
@@ -364,6 +370,8 @@ public:
             if (!has_data)
                 break;
         }
+
+        input_format.onFinish();
 
         if (result_chunk.getNumColumns() != result_block.columns())
             throw Exception(
@@ -460,11 +468,10 @@ public:
 
         Block result_header({ColumnWithTypeAndName(result_type->createColumn(), result_type, "result")});
 
-        auto pipeline = QueryPipeline(
-            Pipe(context->getInputFormat(
-                serialization_format, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE,
-                wasmFormatSettings(context))));
-        readSingleBlock(std::make_unique<PullingPipelineExecutor>(pipeline), result_header);
+        auto input_format = context->getInputFormat(
+            serialization_format, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE,
+            wasmFormatSettings(context));
+        readSingleBlock(*input_format, result_header);
 
         if (result_header.columns() != 1 || result_header.rows() != num_rows)
             throw Exception(
