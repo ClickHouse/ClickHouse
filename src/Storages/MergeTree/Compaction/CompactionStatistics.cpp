@@ -21,6 +21,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_min_space_in_pool;
+    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 max_number_of_mutations_for_replica;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
@@ -80,10 +81,16 @@ UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data)
 UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count)
 {
     const auto data_settings = data.getSettings();
+
+    /// Keep some unreserved space out of merges' reach, so that they cannot starve inserts (see #80006).
+    size_t max_unreserved_free_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
+    size_t space_to_protect = (*data_settings)[MergeTreeSetting::min_unreserved_disk_space_for_merge];
+    max_unreserved_free_space -= std::min(max_unreserved_free_space, space_to_protect);
+
     return getMaxSourcePartsBytesForMerge(
         /*max_count=*/max_count,
         /*scheduled_tasks_count=*/scheduled_tasks_count,
-        /*max_unreserved_free_space*/data.getStoragePolicy()->getMaxUnreservedFreeSpace(),
+        /*max_unreserved_free_space*/max_unreserved_free_space,
         /*size_lowering_threshold=*/(*data_settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_lower_max_size_of_merge],
         /*size_limit_at_min_pool_space=*/(*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_min_space_in_pool],
         /*size_limit_at_max_pool_space=*/(*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]);
