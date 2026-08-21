@@ -201,11 +201,9 @@ private:
         std::unordered_set<const void *> removed_edges;
     };
     RemoveGroupResult removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction);
+    RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
     std::shared_ptr<PendingRemovalGroup> findGroupReadyForRemoval();
     void accountFinishedProcessorInGroup(const ProcessorPtr & processor);
-
-    /// Retire every pending group whose processors have all finished. Must be called without `nodes_mutex` held.
-    RemoveGroupResult removeReadyGroups(Processors & delayed_destruction);
 
     /// Monotonic counter for assigning Node::processors_id.
     uint64_t next_node_id = 0;
