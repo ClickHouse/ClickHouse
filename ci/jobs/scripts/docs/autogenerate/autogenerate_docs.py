@@ -1158,6 +1158,11 @@ def _validate_settings_routing(
             f"invalid {family_name} settings anchor routes in {source}: "
             "expected an object"
         )
+    if not anchor_routes:
+        raise ValueError(
+            f"invalid {family_name} settings anchor routes in {source}: "
+            "the registry must not be empty"
+        )
 
     prefixes = {}
     targets = {}

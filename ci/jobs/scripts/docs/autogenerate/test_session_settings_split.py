@@ -442,6 +442,12 @@ def main():
             "is not present in the route contract",
         )
 
+        expect_invalid_routing(
+            valid_routes,
+            {},
+            "the registry must not be empty",
+        )
+
     with tempfile.TemporaryDirectory() as temp:
         docs = Path(temp)
         dest = docs / "reference/settings/session-settings.mdx"
