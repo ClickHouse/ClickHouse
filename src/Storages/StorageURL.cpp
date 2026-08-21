@@ -2677,7 +2677,8 @@ void registerStorageURL(StorageFactory & factory)
                     writer_header_columns = metadata->getColumns().getAllPhysical();
                 }
                 validateParquetFieldIdSettingsWithResolvedHeader(
-                    args, storage->getFormatName(), writer_header_columns, format_settings);
+                    args, storage->getFormatName(), writer_header_columns, format_settings,
+                    /* validate_secondary_create */ true);
             }
 
             return storage;
