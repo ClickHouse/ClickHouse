@@ -305,6 +305,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
             .min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek,
             .block_size = settings.reader_executor.block_size,
             .max_tail_for_drain = settings.reader_executor.max_tail_for_drain,
+            .plan_look_ahead = settings.reader_executor.plan_look_ahead,
             .long_connection_limit = long_connection_limit,
             /// Null unless a random-object-key encrypted disk allowed it (see DiskEncrypted::prepareRead).
             .encryption_header_cache = encryption_header_cache,
