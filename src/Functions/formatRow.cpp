@@ -86,6 +86,7 @@ public:
                             format_name, getName());
 
         auto columns = arg_columns.getColumns();
+        size_t prev_offset = 0;
         for (size_t i = 0; i != input_rows_count; ++i)
         {
             row_output_format->writePrefixIfNeeded();
@@ -93,11 +94,15 @@ public:
             row_output_format->finalize();
             if (no_newline)
             {
-                if (buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
+                /// The buffer is shared by all the rows, so a row that produced no output at all
+                /// must not rewind the position into the previous row: that would make the offsets
+                /// non-monotonic, and the size of the previous row would underflow.
+                if (buffer.count() > prev_offset && buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
                     --buffer.position();
             }
 
             offsets[i] = buffer.count();
+            prev_offset = offsets[i];
             row_output_format->resetFormatter();
         }
 
