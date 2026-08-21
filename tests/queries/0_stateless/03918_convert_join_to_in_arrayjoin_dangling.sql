@@ -17,6 +17,11 @@
 -- INVALID_JOIN_ON_EXPRESSION, so force the Analyzer here.
 SET enable_analyzer = 1;
 
+-- Only SEMI is converted, and only while hash is the first accepting algorithm and no join or
+-- transfer limit is set, so the conversion arms below need all of that pinned.
+SET join_algorithm = 'hash';
+SET max_rows_in_join = 0, max_bytes_in_join = 0, max_rows_to_transfer = 0, max_bytes_to_transfer = 0;
+
 DROP TABLE IF EXISTS lt_03918_dangling;
 DROP TABLE IF EXISTS rt_03918_dangling;
 
@@ -30,7 +35,7 @@ INSERT INTO rt_03918_dangling VALUES ('a'), ('d');
 -- (1) Conversion stays on: SELECT references only `id`, a non-key column
 --     that the post-expression stream still forwards untouched.
 SELECT 'just_id', lt_03918_dangling.id
-FROM lt_03918_dangling INNER JOIN rt_03918_dangling
+FROM lt_03918_dangling SEMI LEFT JOIN rt_03918_dangling
     ON arrayJoin(lt_03918_dangling.tags) = rt_03918_dangling.tag_id
 ORDER BY lt_03918_dangling.id
 SETTINGS query_plan_convert_join_to_in = 1;
@@ -39,14 +44,14 @@ SETTINGS query_plan_convert_join_to_in = 1;
 --     NOT_FOUND_COLUMN_IN_BLOCK. After fix: conversion declined, query runs
 --     via normal JOIN, correct result.
 SELECT 'with_tags', lt_03918_dangling.id, lt_03918_dangling.tags
-FROM lt_03918_dangling INNER JOIN rt_03918_dangling
+FROM lt_03918_dangling SEMI LEFT JOIN rt_03918_dangling
     ON arrayJoin(lt_03918_dangling.tags) = rt_03918_dangling.tag_id
 ORDER BY lt_03918_dangling.id
 SETTINGS query_plan_convert_join_to_in = 1;
 
 -- (3) SELECT references arrayJoin again. Same expected behaviour.
 SELECT 'with_arrjoin', lt_03918_dangling.id, arrayJoin(lt_03918_dangling.tags) AS aj
-FROM lt_03918_dangling INNER JOIN rt_03918_dangling
+FROM lt_03918_dangling SEMI LEFT JOIN rt_03918_dangling
     ON arrayJoin(lt_03918_dangling.tags) = rt_03918_dangling.tag_id
 ORDER BY lt_03918_dangling.id, aj
 SETTINGS query_plan_convert_join_to_in = 1;
@@ -54,7 +59,7 @@ SETTINGS query_plan_convert_join_to_in = 1;
 -- (4) Control: same query as (3) with conversion disabled. Confirms that
 --     the fallback path returns the same answer the fix produces in (3).
 SELECT 'with_arrjoin_off', lt_03918_dangling.id, arrayJoin(lt_03918_dangling.tags) AS aj
-FROM lt_03918_dangling INNER JOIN rt_03918_dangling
+FROM lt_03918_dangling SEMI LEFT JOIN rt_03918_dangling
     ON arrayJoin(lt_03918_dangling.tags) = rt_03918_dangling.tag_id
 ORDER BY lt_03918_dangling.id, aj
 SETTINGS query_plan_convert_join_to_in = 0;
@@ -71,7 +76,7 @@ FROM
     (
         EXPLAIN description = 0
         SELECT lt_03918_dangling.id
-        FROM lt_03918_dangling INNER JOIN rt_03918_dangling
+        FROM lt_03918_dangling SEMI LEFT JOIN rt_03918_dangling
             ON arrayJoin(lt_03918_dangling.tags) = rt_03918_dangling.tag_id
         ORDER BY lt_03918_dangling.id
         SETTINGS query_plan_convert_join_to_in = 1
@@ -87,7 +92,7 @@ FROM
     (
         EXPLAIN description = 0
         SELECT lt_03918_dangling.id, lt_03918_dangling.tags
-        FROM lt_03918_dangling INNER JOIN rt_03918_dangling
+        FROM lt_03918_dangling SEMI LEFT JOIN rt_03918_dangling
             ON arrayJoin(lt_03918_dangling.tags) = rt_03918_dangling.tag_id
         ORDER BY lt_03918_dangling.id
         SETTINGS query_plan_convert_join_to_in = 1
