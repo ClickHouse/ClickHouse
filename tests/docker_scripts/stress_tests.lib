@@ -136,9 +136,10 @@ function run_capturing_output()
         drain_capture "$captured" "$FAILURE_DRAIN_GRACE_OK"
     fi
     finalize_capture "$captured" "$captured_exit_code"
-    # Writers can outlive the settle wait, so look once more whenever the job ends.
-    # `$captured` is local and must expand now; `$captured_exit_code` must not, so a caller
-    # that goes on to exit with a different status is reported with that one.
+    # Writers can outlive the settle wait, so look once more whenever the job ends. The
+    # artifact is kept on the wrapped command's status, not the job's: a later failure of
+    # the caller's own does not make this capture worth uploading. `$captured` is local, so
+    # it must expand now.
     # shellcheck disable=SC2064
     trap "finalize_capture '$captured' \"\$captured_exit_code\"" EXIT
     return "$captured_exit_code"
