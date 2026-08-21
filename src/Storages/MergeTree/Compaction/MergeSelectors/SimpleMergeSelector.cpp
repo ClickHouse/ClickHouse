@@ -243,11 +243,9 @@ void selectWithinPartsRange(
     /// grow uncontrollably, similar to a snowball effect.
     /// To address this we will try to assign a merge taking into consideration
     /// only last N parts.
-    /// The window exists to keep up with incoming parts. A partition that no longer receives them
-    /// has no such tail to keep up with, and skipping its prefix would leave it uncompactable.
     const size_t parts_threshold = settings.window_size;
     size_t begin = 0;
-    if (!force_merge_by_partition_age && parts_count >= parts_threshold)
+    if (parts_count >= parts_threshold)
     {
         if (settings.enable_stochastic_sliding)
             begin = calculateRangeWithStochasticSliding(parts_count, parts_threshold);
