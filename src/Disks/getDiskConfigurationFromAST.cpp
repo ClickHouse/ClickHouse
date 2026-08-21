@@ -376,8 +376,9 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "A dynamic native GCS disk created from user SQL may not use Application Default Credentials because "
-            "they can resolve the server's identity. Provide `service_account_key`, `access_token`, or "
-            "`no_sign_request`, or enable `s3_allow_server_credentials_in_user_queries`");
+            "they can resolve the server's identity. Provide `service_account_key` or `no_sign_request`, or enable "
+            "`s3_allow_server_credentials_in_user_queries` (`access_token` and `google_adc_*` are not supported for "
+            "a disk: its long-lived client cannot refresh them)");
 
     if (relies_on_server_credentials && context->shouldRestrictUserQueryS3Credentials() && !restriction_exempt)
     {
@@ -691,9 +692,10 @@ void validateResolvedGCSDiskCredentials(
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "A dynamic native GCS disk created from user SQL that uses `include` may not use Application Default "
-                "Credentials, because they can resolve the server's identity. Provide `service_account_key`, "
-                "`access_token`, or `no_sign_request` as literal values in the "
-                "SQL definition, or enable `s3_allow_server_credentials_in_user_queries`");
+                "Credentials, because they can resolve the server's identity. Provide `service_account_key` or "
+                "`no_sign_request` as literal values in the SQL definition, or enable "
+                "`s3_allow_server_credentials_in_user_queries` (`access_token` and `google_adc_*` are not supported "
+                "for a disk: its long-lived client cannot refresh them)");
     }
 }
 
