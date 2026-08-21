@@ -21,24 +21,32 @@ jobs:
           set -euo pipefail
 
           MAX_RERUNS=10
+          SCAN_LIMIT=1000
           rerun_count=0
           cutoff=$(date -u -d '6 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          scan_floor=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
 
           echo "Looking for failed PR workflow runs since $cutoff..."
           echo ""
 
-          # Get recent failed runs for the PR workflow that have not been retried yet.
-          # The window is measured from updatedAt (when the run finished), because a run
-          # only becomes listable once it completes: a run longer than the window would
-          # never be inside it when first seen. The list itself is ordered by createdAt,
-          # so a long run sits deep in it and the limit has to be well above the window.
-          run_ids=$(gh run list \
+          # Eligibility is by updatedAt (a run only becomes listable once it completes), but
+          # the listing is ordered by createdAt. Bounding the scan on createdAt makes it a
+          # contiguous prefix of that order, so no eligible run can sit behind newer ones.
+          runs=$(gh run list \
             --repo "$GH_REPO" \
             --workflow pull_request.yml \
             --status failure \
-            --limit 200 \
-            --json databaseId,attempt,updatedAt \
-            --jq ".[] | select(.attempt == 1 and .updatedAt >= \"$cutoff\") | .databaseId")
+            --created ">=$scan_floor" \
+            --limit "$SCAN_LIMIT" \
+            --json databaseId,attempt,updatedAt)
+
+          # A full page means the createdAt bound is no longer what ends the scan.
+          if [ "$(echo "$runs" | jq 'length')" -ge "$SCAN_LIMIT" ]; then
+            echo "WARNING: hit the $SCAN_LIMIT-run listing cap; the scan may be truncated."
+          fi
+
+          run_ids=$(echo "$runs" | jq -r \
+            ".[] | select(.attempt == 1 and .updatedAt >= \"$cutoff\") | .databaseId")
 
           if [ -z "$run_ids" ]; then
             echo "No recent failed runs found."
