@@ -27,7 +27,9 @@
 #include <Poco/RegularExpression.h>
 #include <Poco/Timespan.h>
 
+#include <cerrno>
 #include <climits>
+#include <typeinfo>
 #include <sys/stat.h>
 
 #include <queue>
@@ -675,10 +677,6 @@ private:
                 /// `SocketImpl::connect` calls `error(err)` without an argument on that path. Poco
                 /// names the peer only on the immediate-failure path, which already carries it here
                 /// and must be left alone so the address is not repeated twice.
-                ///
-                /// The other deferred `SO_ERROR` failures ("Network is unreachable", "No route to
-                /// host", ...) lose the address the same way, but each is a different exception type
-                /// carrying Poco's own text, so they keep it: only refusals are restated here.
                 if (!e.message().empty())
                     throw;
 
@@ -687,6 +685,19 @@ private:
                 /// SSLException, which the caller of doConnect() has to keep telling apart from a
                 /// routing failure.
                 throw Poco::Net::ConnectionRefusedException(connectEndpoint(), e.code());
+            }
+            catch (const Poco::Net::NetException & e)
+            {
+                /// The other deferred `SO_ERROR` connect failures lose the address the same way and
+                /// arrive as plain NetExceptions with Poco's bare text ("Network is unreachable",
+                /// "No route to host", "Host is down"). Subclasses (SSLException, ...) pass through
+                /// untouched, and so does an immediate failure, whose text already names the peer.
+                if (typeid(e) == typeid(Poco::Net::NetException)
+                    && (e.code() == ENETUNREACH || e.code() == EHOSTUNREACH || e.code() == EHOSTDOWN)
+                    && e.message().find(": ") == String::npos)
+                    throw Poco::Net::NetException(e.message(), connectEndpoint(), e.code());
+
+                throw;
             }
             notifySocketInode();
         }
