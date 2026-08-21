@@ -42,7 +42,7 @@ def get_event(name):
 
 
 def test_oversized_result_is_not_stored_on_disk(started_cluster):
-    # `ColumnConst` has a tiny in-memory representation but is materialized before Native serialization.
+    # The limit is 1 byte here, so even this tiny result (a `ColumnConst`, which is stored in its compact representation) exceeds it.
     query = f"SELECT 1 FROM numbers(1000) SETTINGS {SETTINGS}"
 
     written_before = get_event("QueryCacheOnDiskWrittenBytes")
