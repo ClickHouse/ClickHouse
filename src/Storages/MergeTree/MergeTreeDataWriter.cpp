@@ -1326,8 +1326,9 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
         collectValueCarryingIdentifierNames(*child, names, masked_names);
 }
 
-/// tuple(j1, j2)/arrayZip(j1, j2)/map(j1, j2) feed *different* structural slots from different
-/// identifiers; these let the caller merge each slot's own candidates against only that slot's type.
+/// tuple(j1, j2)/arrayZip(j1, j2)/map(j1, j2), and the lambda producers arrayMap(... -> tuple(...))
+/// and mapApply, feed *different* structural slots from different identifiers; these let the caller
+/// merge each slot's own candidates against only that slot's type.
 struct ProjectionOutputProvenance
 {
     std::vector<String> flat_candidates;
@@ -1377,9 +1378,12 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
         if (const auto * function = unwrapTransparentProjectionExpression(*child)->as<ASTFunction>(); function && function->arguments)
         {
             const auto & args = function->arguments->children;
-            if ((function->name == "tuple" || function->name == "arrayZip") && args.size() >= 2)
+            if ((function->name == "tuple" || function->name == "arrayZip" || function->name == "arrayZipUnaligned")
+                && args.size() >= 2)
             {
-                provenance.is_array_zip = (function->name == "arrayZip");
+                /// arrayZipUnaligned has arrayZip's Array(Tuple(...)) contract, only with Nullable
+                /// slots - which the policy merge already looks through.
+                provenance.is_array_zip = (function->name != "tuple");
                 for (const auto & arg : args)
                 {
                     IdentifierNameSet element_names = collectValueCarryingIdentifierNames(*arg);
@@ -1394,6 +1398,46 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                     IdentifierNameSet pair_names = collectValueCarryingIdentifierNames(*args[i]);
                     auto & target = (i % 2 == 0) ? provenance.map_key_candidates : provenance.map_value_candidates;
                     target.insert(target.end(), pair_names.begin(), pair_names.end());
+                }
+            }
+            else if (function->name == "mapApply" && args.size() == 2)
+            {
+                /// mapApply((k, v) -> (key_expr, value_expr), m) rebuilds the map slot-wise. Its lambda
+                /// takes two formals over a single map argument, so extractLambdaParamsAndBody's arity
+                /// rule does not apply; a formal stands for one half of the source map, which the member
+                /// descent can name as `m.keys` / `m.values`.
+                const auto * lambda_arg = args[0]->as<ASTFunction>();
+                const auto * params_tuple = lambda_arg && lambda_arg->name == "lambda" && lambda_arg->arguments
+                        && lambda_arg->arguments->children.size() == 2
+                    ? lambda_arg->arguments->children[0]->as<ASTFunction>()
+                    : nullptr;
+                const auto * body_tuple = params_tuple ? lambda_arg->arguments->children[1]->as<ASTFunction>() : nullptr;
+                const auto * map_identifier = args[1]->as<ASTIdentifier>();
+                if (params_tuple && params_tuple->name == "tuple" && params_tuple->arguments
+                    && params_tuple->arguments->children.size() == 2 && map_identifier
+                    && body_tuple && body_tuple->name == "tuple" && body_tuple->arguments
+                    && body_tuple->arguments->children.size() == 2)
+                {
+                    std::unordered_map<String, String> param_to_member;
+                    for (size_t i = 0; i != 2; ++i)
+                        if (const auto * param_identifier = params_tuple->arguments->children[i]->as<ASTIdentifier>())
+                            param_to_member.emplace(
+                                param_identifier->name(), map_identifier->name() + (i == 0 ? ".keys" : ".values"));
+
+                    provenance.is_map = true;
+                    for (size_t i = 0; i != 2; ++i)
+                    {
+                        auto & target = (i == 0) ? provenance.map_key_candidates : provenance.map_value_candidates;
+                        for (const auto & name : collectValueCarryingIdentifierNames(*body_tuple->arguments->children[i]))
+                        {
+                            const size_t dot = name.find('.');
+                            auto member_it = param_to_member.find(dot == String::npos ? name : name.substr(0, dot));
+                            if (member_it == param_to_member.end())
+                                target.push_back(name);
+                            else
+                                target.push_back(dot == String::npos ? member_it->second : member_it->second + name.substr(dot));
+                        }
+                    }
                 }
             }
             else if (function->name == "arrayMap" && args.size() >= 2)
@@ -1419,14 +1463,24 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                         std::vector<String> slot_candidates;
                         for (const auto & name : slot_names)
                         {
-                            auto source_it = param_to_source.find(name);
+                            const size_t dot = name.find('.');
+                            auto source_it = param_to_source.find(dot == String::npos ? name : name.substr(0, dot));
                             if (source_it == param_to_source.end())
                             {
                                 slot_candidates.push_back(name);
                                 continue;
                             }
-                            IdentifierNameSet source_names = collectValueCarryingIdentifierNames(*source_it->second);
-                            slot_candidates.insert(slot_candidates.end(), source_names.begin(), source_names.end());
+                            if (dot == String::npos)
+                            {
+                                IdentifierNameSet source_names = collectValueCarryingIdentifierNames(*source_it->second);
+                                slot_candidates.insert(slot_candidates.end(), source_names.begin(), source_names.end());
+                            }
+                            else if (const auto * source_identifier = source_it->second->as<ASTIdentifier>())
+                            {
+                                /// `x.doc` with x bound to `arr`: name it `arr.doc` and let the member
+                                /// descent in resolveMemberQualifiedPolicySource do the rest.
+                                slot_candidates.push_back(source_identifier->name() + name.substr(dot));
+                            }
                         }
                         provenance.tuple_element_candidates.push_back(std::move(slot_candidates));
                     }
