@@ -92,6 +92,14 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
 size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_length);
 std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_length);
 
+/// Surrogate code points are reserved for UTF-16 and are not Unicode scalar values,
+/// so they have no valid UTF-8 encoding. `convertCodePointToUTF8` doesn't check that,
+/// it encodes them as CESU-8, so callers must reject them beforehand.
+constexpr bool isSurrogateCodePoint(UInt32 code_point)
+{
+    return code_point >= 0xD800 && code_point <= 0xDFFF;
+}
+
 
 /// returns UTF-8 wcswidth. Invalid sequence is treated as zero width character.
 /// `prefix` is used to compute the `\t` width which extends the string before

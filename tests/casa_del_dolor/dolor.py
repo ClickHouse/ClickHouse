@@ -250,6 +250,12 @@ parser.add_argument(
     help="Add log tables server settings",
 )
 parser.add_argument(
+    "--without-encryption-codecs",
+    action="store_false",
+    dest="add_encryption_codecs",
+    help="Add 'encryption_codecs' keys, enabling the AES codecs",
+)
+parser.add_argument(
     "--without-distributed-ddl",
     action="store_false",
     dest="add_distributed_ddl",

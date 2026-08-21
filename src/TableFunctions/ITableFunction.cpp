@@ -53,14 +53,15 @@ ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr 
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
-                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query) const
+                                   ColumnsDescription cached_columns, bool use_global_context, bool is_insert_query, bool check_create_temporary_table, bool check_source_access) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    checkSourceAccess(context, is_insert_query);
+    if (check_source_access)
+        checkSourceAccess(context, is_insert_query);
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
-    if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
+    if (check_create_temporary_table && (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly)))
         context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
