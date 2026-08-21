@@ -100,6 +100,9 @@ struct MockCacheState
     /// concurrent query populated in the window between our read-only probe and the claim.
     IntervalSet late_committed;
     VectorWithMemoryTracking<ByteRange> writes;
+    /// Model a `waitAndRead` timeout: when set, a writer's `waitAndRead` serves nothing, so the driver
+    /// must fall back to a source read.
+    bool wait_returns_empty = false;
     explicit MockCacheState(size_t file_size) : store(file_size, 0), declared_size(file_size) {}
 
     void addConcurrentDownload(ByteRange r) { concurrent_download.add(r); }
@@ -185,6 +188,14 @@ private:
             return c;
         }
         ChainedBuffers read(ByteRange sub) override { return Reader{r, state}.read(sub); }
+        /// Models waiting on a concurrent downloader: it commits (returns the bytes) unless the test
+        /// forces a timeout via `wait_returns_empty`.
+        ChainedBuffers waitAndRead(ByteRange sub) override
+        {
+            if (state->wait_returns_empty)
+                return {};
+            return read(sub);
+        }
         Lead claimLeadRole(ByteRange range) override
         {
             Lead lead;
@@ -568,16 +579,20 @@ TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
         << "warm read fetched from source -> a boundary block missed the cache";
 }
 
-TEST_F(ReaderExecutorTest, ConcurrentDownloadCellIsFetchedThrough)
+TEST_F(ReaderExecutorTest, ConcurrentDownloadIsWaitedForAndServedFromCache)
 {
-    /// A cell another thread is already downloading is fetched through - this simple FS-only driver
-    /// does not wait. Our write into that cell lands 0 (we do not hold the downloader role), but the
-    /// source fetch still serves the bytes correctly and leaves the cell for that thread to cache.
+    /// A cell another thread is already downloading: we hold no role over it, so instead of re-reading
+    /// it from source we wait for that downloader and serve it from cache (`waitAndRead`). Only the rest
+    /// of the file comes from source, and we never write the concurrently-downloaded cell.
     StoredObjects objects{makeFile("a.bin", 1024)};
     const size_t block = 256;
 
     auto state = std::make_shared<MockCacheState>(/*file_size=*/1024);
     state->addConcurrentDownload(ByteRange{0, 256});
+    /// The concurrent downloader's committed bytes that `waitAndRead` returns (models the download
+    /// finishing during the wait); it never becomes `resident` here - that thread owns caching it.
+    for (size_t i = 0; i < 256; ++i)
+        state->store[i] = static_cast<char>(patternByte(i));
     CacheChain chain;
     chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
 
@@ -590,7 +605,35 @@ TEST_F(ReaderExecutorTest, ConcurrentDownloadCellIsFetchedThrough)
     for (size_t i = 0; i < data.size(); ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
 
-    /// Cold: everything came from source; the concurrently-downloaded block was fetched through, not written.
+    /// The concurrently-downloaded [0,256) was served via waitAndRead, so only [256,1024) hit source.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 768u);
+    for (const auto & wr : state->writes)
+        EXPECT_GE(wr.offset, 256u) << "wrote into the concurrently-downloaded block";
+}
+
+TEST_F(ReaderExecutorTest, ConcurrentDownloadWaitTimesOutFallsBackToSource)
+{
+    /// If the wait times out (the downloader did not commit in time), the bytes must still be served:
+    /// the driver reads the whole run from source, still without writing the cell it does not lead.
+    StoredObjects objects{makeFile("a.bin", 1024)};
+    const size_t block = 256;
+
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/1024);
+    state->addConcurrentDownload(ByteRange{0, 256});
+    state->wait_returns_empty = true;   /// force the waitAndRead timeout
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 1024, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 1024u);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    /// Wait failed, so everything came from source; still no write into the concurrently-downloaded cell.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u);
     for (const auto & wr : state->writes)
         EXPECT_GE(wr.offset, 256u) << "wrote into the concurrently-downloaded block";

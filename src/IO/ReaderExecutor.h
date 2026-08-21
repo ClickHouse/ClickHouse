@@ -195,9 +195,10 @@ private:
     /// Grow `read_plan` forward to cover `[pos, pos + plan_look_ahead)` (clamped to the file end),
     /// resolving each provider one object-piece at a time. Rebuilds from `pos` on a seek or gap.
     void ensureResolved(size_t pos);
-    /// Fetch the miss run `[pos, ...)` from source (one read, capped at `max_serve`), populate every
-    /// populating tier's writers over it, and serve one block. A run with no populating tier is served
-    /// straight from source.
+    /// Serve one block of the miss run `[pos, ...)`. If a concurrent downloader already committed `pos`,
+    /// serve from that tier; if one leads every populating tier, wait for it and serve from its cache.
+    /// Otherwise fetch the run from source (one read, capped at `max_serve`), populate the tiers we hold
+    /// the role for, and serve. A run with no populating tier is served straight from source.
     ChainedBuffers fetchAndServe(size_t pos, ByteRange miss_run, size_t max_serve);
     void dropLongConnection();
 
