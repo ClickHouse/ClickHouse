@@ -1,5 +1,7 @@
 bounds in JOIN ON
 10	1555
+bounds in WHERE over a CROSS JOIN
+10	1555
 bounds as plain literals
 10	1555
 pruned parts
@@ -14,3 +16,5 @@ left join with bounds in WHERE
 10	1555
 equality against a constant column
 1	155
+bounds shared by a chain of joins
+10	1555

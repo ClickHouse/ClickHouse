@@ -123,6 +123,61 @@ ExpressionSide getExpressionSide(
     return ExpressionSide::UNKNOWN;
 }
 
+
+using NameToColumnMap = std::unordered_map<std::string_view, ColumnWithTypeAndName>;
+
+const ColumnConst * findInlinableConstant(const ActionsDAG::Node * node, const NameToColumnMap & constants)
+{
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return nullptr;
+
+    auto it = constants.find(node->result_name);
+    if (it == constants.end() || !it->second.type->equals(*node->result_type))
+        return nullptr;
+
+    return typeid_cast<const ColumnConst *>(it->second.column.get());
+}
+
+/// Whether the expression reads columns of both sides, and becomes evaluable on a single one of them
+/// once the constant columns of the other side are replaced by their values. Only then does moving it
+/// into the ON expression pay off: the join step turns such a condition into a filter on that input,
+/// which can reach index analysis. Any other predicate mixing the two sides is left in place - as a
+/// join condition it would be applied in the very same position, right after the join.
+bool becomesSingleSided(
+    const ActionsDAG::Node * expr,
+    const std::unordered_set<const ActionsDAG::Node *> & left_allowed_inputs,
+    const std::unordered_set<const ActionsDAG::Node *> & right_allowed_inputs,
+    const NameToColumnMap & constants
+)
+{
+    bool has_left_constant = false;
+    bool has_right_constant = false;
+    bool has_left_regular = false;
+    bool has_right_regular = false;
+
+    for (const auto * input : getExpressionInputs(expr))
+    {
+        bool in_left = left_allowed_inputs.contains(input);
+        bool in_right = right_allowed_inputs.contains(input);
+        if (!in_left && !in_right)
+            return false;
+
+        if (findInlinableConstant(input, constants))
+        {
+            has_left_constant |= in_left;
+            has_right_constant |= in_right;
+        }
+        else
+        {
+            has_left_regular |= in_left;
+            has_right_regular |= in_right;
+        }
+    }
+
+    return (has_left_regular && !has_right_regular && has_right_constant)
+        || (has_right_regular && !has_left_regular && has_left_constant);
+}
+
 using JoinConditionParts = std::vector<ActionsDAG>;
 
 const ActionsDAG::Node & createResultPredicate(
@@ -145,8 +200,8 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
     const Names & left_stream_available_columns,
-    const Names & right_stream_available_columns
-)
+    const Names & right_stream_available_columns,
+    const NameToColumnMap & constants)
 {
     auto * predicate = const_cast<ActionsDAG::Node *>(filter_dag.tryFindInOutputs(filter_name));
     if (!predicate)
@@ -197,6 +252,12 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
                 conjuncts_to_replace.insert(conjunct);
                 continue;
             }
+        }
+        else if (becomesSingleSided(conjunct, left_stream_allowed_nodes, right_stream_allowed_nodes, constants))
+        {
+            result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
+            conjuncts_to_replace.insert(conjunct);
+            continue;
         }
         rejected_conjuncts.push_back(conjunct);
     }
@@ -293,12 +354,21 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     auto left_stream_available_columns = get_available_columns(*left_stream_header);
     auto right_stream_available_columns = get_available_columns(*right_stream_header);
 
+    NameToColumnMap header_constants;
+    for (const auto & column : left_stream_header->getColumnsWithTypeAndName())
+        if (column.column && isColumnConst(*column.column))
+            header_constants.emplace(column.name, column);
+    for (const auto & column : right_stream_header->getColumnsWithTypeAndName())
+        if (column.column && isColumnConst(*column.column))
+            header_constants.emplace(column.name, column);
+
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
         filter_dag,
         filter_step->getFilterColumnName(),
         left_stream_available_columns,
-        right_stream_available_columns);
+        right_stream_available_columns,
+        header_constants);
 
     if (equality_predicates.empty())
         return 0;
