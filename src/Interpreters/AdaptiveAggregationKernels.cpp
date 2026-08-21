@@ -3,6 +3,7 @@
 /// (defined here rather than in `Aggregator.cpp`, following `ClientBaseOptimizedParts.cpp`),
 /// dispatched over the aggregation-method variants.
 
+#include <algorithm>
 #include <bit>
 
 #include <Columns/ColumnConst.h>
@@ -920,11 +921,90 @@ void NO_INLINE Aggregator::publishDelayedRecords(
 
     auto & shared = *adaptive.session;
 
-    /// The thaw check (see the tuning constants). The sample is collected outside the lock (a
-    /// publish contributes on the order of `total` / 256 entries) and folded into the shared
-    /// sampler; the verdict takes effect at every thread's next block, through the ordinary
-    /// dispatch on the per-thread flags. The current records are still published: their rows
-    /// were deferred by the frozen kernel and only the drain will aggregate them.
+    /// Thawing is the adaptive aggregation standing down globally: when the staged stream
+    /// proves to keep repeating the same missing keys instead of bringing rare ones, every
+    /// thread returns to ordinary insertion for good. A frozen table thaws; a thread still
+    /// learning stops trying to freeze. Staging such a stream re-copies a repeated key's
+    /// bytes on every occurrence, while an unfrozen table would absorb the repeats as cheap
+    /// in-place updates.
+    ///
+    /// The verdict is evaluated over totals shared by all threads; the tuning constants
+    /// hold the calibration:
+    ///
+    ///     wasted bytes per distinct key = (repeat - 1) * bytes per record
+    ///                                   > adaptive_thaw_wasted_bytes_per_key
+    ///
+    /// Here repeat = thaw_sampled_records / distinct_sampled_hashes, and bytes per record =
+    /// staged_bytes / staged_records. A key's first record is the price of storing it once;
+    /// each repeat wastes one record's bytes, so heavy records tolerate few repeats and tiny
+    /// ones many. Until the verdict fires, every publish folds its batch into the shared
+    /// evidence and re-evaluates, so the thread whose batch tips the totals over the bound
+    /// fires for everyone by setting `thaw_all`, once `staged_records` has reached the
+    /// `adaptive_thaw_min_staged_records` evidence floor. A publish updates:
+    ///
+    /// - `staged_records` grows by the batch's record count.
+    /// - `staged_bytes` grows by the batch's estimated footprint, computed below as
+    ///   `batch_bytes`. It counts the key bytes as the kernel staged them, the
+    ///   variable-width aggregate arguments at the block's average width, and 16 bytes of
+    ///   per-record bookkeeping (the routing hash plus a row or offset). A column read by
+    ///   several aggregates is staged once, so it is counted once; a count batch stages a
+    ///   four-byte run length instead of arguments.
+    ///   The estimate is taken before the count deduplication (which merges a batch's
+    ///   repeats of one key into a single record with a run length), so it charges every
+    ///   staged record. That is deliberate: `staged_records` also counts the records before
+    ///   deduplication, and the verdict's bytes per record is `staged_bytes` divided by
+    ///   `staged_records`, so the two counters must describe the same set of records for
+    ///   the ratio to mean anything.
+    ///   Variable-width arguments count in full because staging such a value pays real work
+    ///   at every step. The seal gathers it out of the block into the staged column (a copy),
+    ///   the staged chunk pins that memory until the merge drains it, and updating the
+    ///   aggregate state from it copies the value once more (a string min keeps its own copy
+    ///   of the winning value). A repeated key pays all of that on every occurrence, where
+    ///   an unfrozen table would have paid a single in-place state update, so each repeat of
+    ///   a heavy value is genuine waste.
+    ///   Fixed-width arguments are deliberately not counted because their staging copy is a
+    ///   few bytes and the drain consumes the staged batch with the same vectorized batch
+    ///   executor the scan would have used on the original block. Deferring such values
+    ///   moves the work without multiplying it, so their staging costs about what their
+    ///   consumption saves. Charging them would fire the thaw on streams where staging is in
+    ///   fact profitable. The measured anchor is a stream of five UInt64 arguments at repeat
+    ///   10: it stays a clear adaptive win, and counting its forty fixed bytes per record
+    ///   would have thawed it.
+    /// - The sampler receives the batch's routing hashes matching `hash & 0xFF == 0`, about
+    ///   total / 256 of them, collected outside the lock. `thaw_sampled_records` counts
+    ///   every sampled occurrence; `distinct_sampled_hashes` collapses a key's repeats onto
+    ///   one entry across all threads, so their ratio estimates the stream's repeat factor
+    ///   independently of how the keys spread over the threads.
+    ///
+    /// The verdict lands at each thread's next between-blocks check; a learning thread about
+    /// to freeze also checks it at the crossing, so no table freezes against it. The current
+    /// records are still published: their rows were deferred by the frozen kernel and only
+    /// the drain will aggregate them.
+    size_t batch_bytes = 0;
+    if constexpr (adaptive_key_stages_bytes<SharedKey>)
+        for (const auto size : adaptive.miss_key_sizes)
+            batch_bytes += size;
+    else
+        batch_bytes = total * sizeof(SharedKey);
+
+    if (counts_only)
+        batch_bytes += total * sizeof(UInt32);
+    else
+    {
+        std::vector<size_t> positions;
+        for (const auto & argument_positions : aggregates_positions)
+            positions.insert(positions.end(), argument_positions.begin(), argument_positions.end());
+        std::sort(positions.begin(), positions.end());
+        positions.erase(std::unique(positions.begin(), positions.end()), positions.end());
+
+        size_t argument_bytes_per_row = 0;
+        for (const auto position : positions)
+            if (!columns[position]->valuesHaveFixedSize())
+                argument_bytes_per_row += columns[position]->byteSize() / num_rows;
+        batch_bytes += total * argument_bytes_per_row;
+    }
+    batch_bytes += total * 16;
+
     if (!shared.thaw_all.load(std::memory_order_relaxed))
     {
         PaddedPODArray<UInt64> sampled_hashes;
@@ -934,22 +1014,35 @@ void NO_INLINE Aggregator::publishDelayedRecords(
 
         std::lock_guard lock(shared.thaw_sample_mutex);
         shared.staged_records += total;
+        shared.staged_bytes += batch_bytes;
         shared.thaw_sampled_records += sampled_hashes.size();
         for (const auto hash : sampled_hashes)
             shared.distinct_sampled_hashes.insert(hash);
         /// Re-checked under the lock: a thread that sampled while another was firing would
-        /// otherwise fire a second time.
+        /// otherwise fire a second time. The verdict compares the wasted staged bytes per
+        /// distinct key, (repeat - 1) * bytes per record, against the bound. It is rearranged
+        /// onto a common denominator so the arithmetic stays integral:
+        /// (sampled - distinct) * staged_bytes > bound * distinct * staged_records.
+        /// The products are widened to 128 bits: a giant near-unique stream (billions of
+        /// staged records times their bytes) overflows 64, and a wrapped product could thaw
+        /// a healthy stream.
+        const size_t distinct = shared.distinct_sampled_hashes.size();
         if (!shared.thaw_all.load(std::memory_order_relaxed)
             && shared.staged_records >= adaptive_thaw_min_staged_records
-            && shared.thaw_sampled_records > adaptive_thaw_repeat_factor * shared.distinct_sampled_hashes.size())
+            && shared.thaw_sampled_records > distinct
+            && static_cast<UInt128>(shared.thaw_sampled_records - distinct) * shared.staged_bytes
+                > static_cast<UInt128>(adaptive_thaw_wasted_bytes_per_key) * distinct * shared.staged_records)
         {
             shared.thaw_all.store(true, std::memory_order_relaxed);
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
+            const double repeat = static_cast<double>(shared.thaw_sampled_records) / static_cast<double>(distinct);
             LOG_TRACE(
                 log,
-                "Adaptive aggregation: thawing the local tables after {} staged records (sampled repeat factor {})",
+                "Adaptive aggregation: thawing the local tables after {} staged records ({} bytes, repeat factor {:.2f}, {} wasted bytes per key)",
                 shared.staged_records,
-                shared.thaw_sampled_records / shared.distinct_sampled_hashes.size());
+                shared.staged_bytes,
+                repeat,
+                static_cast<size_t>((repeat - 1.0) * (static_cast<double>(shared.staged_bytes) / static_cast<double>(shared.staged_records))));
         }
     }
 
