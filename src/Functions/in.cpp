@@ -10,6 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/PreparedSets.h>
 
 
 namespace DB
@@ -107,6 +108,19 @@ public:
                 getName(), column_set_ptr->getName());
 
         auto future_set = column_set->getData();
+
+        /// Tuple-literal sets can lose a custom type name while their common type is inferred.
+        /// Validate their values against the decaying type from the left-hand side before hashing.
+        if (decay_length)
+        {
+            if (const auto * tuple_set = dynamic_cast<const FutureSetFromTuple *>(future_set.get()))
+            {
+                for (const auto & column : tuple_set->getKeyColumns())
+                    validateExponentialTimeDecayingFloat64Column(
+                        *column, *decay_length, "IN set construction");
+            }
+        }
+
         if (!future_set)
         {
             if (dry_run)
