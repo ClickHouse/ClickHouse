@@ -138,8 +138,8 @@ ManifestFilesPruner::ManifestFilesPruner(
     }
 }
 
-PruningReturnStatus ManifestFilesPruner::canBePruned(
-    const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
+PruningReturnStatus ManifestFilesPruner::canBePrunedByPartition(
+    const ProcessedManifestFileEntryPtr & entry) const
 {
     if (partition_key_condition.has_value())
     {
@@ -160,11 +160,15 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
             partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
 
         if (!can_be_true)
-        {
             return PruningReturnStatus::PARTITION_PRUNED;
-        }
     }
 
+    return PruningReturnStatus::NOT_PRUNED;
+}
+
+PruningReturnStatus ManifestFilesPruner::canBePrunedByMinMax(
+    const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
+{
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
         std::optional<NameAndTypePair> name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, column_id);
@@ -190,6 +194,27 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
     }
 
     return PruningReturnStatus::NOT_PRUNED;
+}
+
+String ManifestFilesPruner::partitionFilterHash() const
+{
+    if (!partition_key_condition.has_value())
+        return "no_partition_condition";
+    /// A hash collision here would silently return a wrong prune decision
+    /// (missing data), so use the full serialized condition rather than a
+    /// 64-bit hash. It is bounded by the query's partition predicate and
+    /// identical for every query sharing that predicate.
+    return partition_key_condition->toString();
+}
+
+PruningReturnStatus ManifestFilesPruner::canBePruned(
+    const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
+{
+    auto partition_status = canBePrunedByPartition(entry);
+    if (partition_status == PruningReturnStatus::PARTITION_PRUNED)
+        return partition_status;
+
+    return canBePrunedByMinMax(entry, entry_hyperrectangles);
 }
 }
 

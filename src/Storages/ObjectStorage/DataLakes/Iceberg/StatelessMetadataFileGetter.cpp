@@ -137,6 +137,7 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         *persistent_table_components.schema_processor,
         cache_key.added_sequence_number,
         cache_key.added_snapshot_id,
+        cache_key.added_snapshot_id,
         local_context,
         nullptr,
         table_snapshot_schema_id);

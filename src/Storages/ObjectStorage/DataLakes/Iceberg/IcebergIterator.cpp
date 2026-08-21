@@ -229,6 +229,7 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             *persistent_components.schema_processor,
             manifest_list_entry.added_sequence_number,
             manifest_list_entry.added_snapshot_id,
+            data_snapshot->snapshot_id,
             local_context,
             filter_dag,
             table_snapshot->schema_id);
@@ -428,6 +429,7 @@ void IcebergIterator::decodeDeleteManifests()
                     *persistent_components.schema_processor,
                     manifest_list_entry.added_sequence_number,
                     manifest_list_entry.added_snapshot_id,
+                    data_snapshot->snapshot_id,
                     local_context,
                     deletes_filter_dag,
                     table_state_snapshot->schema_id);

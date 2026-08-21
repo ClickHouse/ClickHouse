@@ -58,6 +58,19 @@ public:
         DB::ContextPtr context);
 
     PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
+
+    /// Split partition vs min-max so the caller can cache the partition
+    /// decision separately (keyed on a partition-predicate hash only -
+    /// independent of the point-lookup literal, giving ~100% cache hits
+    /// across queries sharing a prefix).
+    PruningReturnStatus canBePrunedByPartition(const ProcessedManifestFileEntryPtr & entry) const;
+    PruningReturnStatus canBePrunedByMinMax(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
+
+    /// Stable hash of the partition-predicate condition (empty string if
+    /// the table has no partition key or no filter). Same hash for any
+    /// two queries whose partition predicates are identical, regardless
+    /// of other WHERE literals. Used as the partition-cache key.
+    String partitionFilterHash() const;
 };
 
 }
