@@ -469,6 +469,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         chassert(nested_table != nullptr);
 
         bool added_to_replication = false;
+        bool publication_added = false;
         try
         {
             auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
@@ -486,7 +487,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             /// database definition and cannot observe a ghost materialized table.
             {
                 std::lock_guard lock(handler_mutex);
-                replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+                publication_added = replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
             }
             added_to_replication = true;
 
@@ -505,15 +506,18 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         }
         catch (...)
         {
-            /// `addTableToReplication` publishes the table and gives its nested storage to the consumer.
-            /// Roll both side effects back when persisting the table list or publishing the wrapper fails,
-            /// otherwise a failed ATTACH would leave a ghost replicated table behind.
+            /// `addTableToReplication` gives the nested storage to the consumer, and it publishes the
+            /// table unless the publication already contained it. Roll both side effects back when
+            /// persisting the table list or publishing the wrapper fails, otherwise a failed ATTACH
+            /// would leave a ghost replicated table behind. A publication entry this ATTACH did not
+            /// create is kept: dropping it would make the publication drift from the replicated set,
+            /// which is exactly what the attach-time checks refuse to resume from.
             if (added_to_replication)
             {
                 try
                 {
                     std::lock_guard lock(handler_mutex);
-                    replication_handler->removeTableFromReplication(table_name);
+                    replication_handler->removeTableFromReplication(table_name, publication_added);
                 }
                 catch (...)
                 {
@@ -574,7 +578,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
 
         std::lock_guard lock(handler_mutex);
-        replication_handler->removeTableFromReplication(table_name);
+        replication_handler->removeTableFromReplication(table_name, /* remove_from_publication */ true);
 
         try
         {

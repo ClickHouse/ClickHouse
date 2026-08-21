@@ -72,9 +72,13 @@ public:
 
     ASTPtr getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name);
 
-    void addTableToReplication(StorageMaterializedPostgreSQL * storage, const String & postgres_table_name);
+    /// Returns true if this call added the table to the publication, and false if the publication
+    /// already published it. The caller needs the distinction to roll back only what it created:
+    /// dropping a pre-existing publication entry would introduce the very publication drift the
+    /// attach checks fail closed on.
+    bool addTableToReplication(StorageMaterializedPostgreSQL * storage, const String & postgres_table_name);
 
-    void removeTableFromReplication(const String & postgres_table_name);
+    void removeTableFromReplication(const String & postgres_table_name, bool remove_from_publication);
 
     void setSetting(const SettingChange & setting);
 
@@ -111,7 +115,8 @@ private:
 
     void dropPublication(pqxx::nontransaction & ntx);
 
-    void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);
+    /// Returns true if the table was added, and false if the publication already published it.
+    bool addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);
 
     void removeTableFromPublication(pqxx::nontransaction & ntx, const String & table_name);
 

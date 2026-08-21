@@ -1728,7 +1728,7 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 }
 
 
-void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
+bool PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
     const auto published = fetchPublishedTablePairs(ntx);
     const auto table = getNormalizedSchemaAndTableName(table_name);
@@ -1750,12 +1750,13 @@ void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & 
     if (published.contains(table))
     {
         LOG_TRACE(log, "Table {} is already in publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
-        return;
+        return false;
     }
 
     std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name));
     ntx.exec(query_str);
     LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
+    return true;
 }
 
 
@@ -2336,12 +2337,13 @@ template
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         pqxx::nontransaction & tx, const std::string & table_name) const;
 
-void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
+bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
 {
     assertInitialized();
 
     /// Note: we have to ensure that replication consumer task is stopped when we reload table, because otherwise
     /// it can read wal beyond start lsn position (from which this table is being loaded), which will result in losing data.
+    bool publication_added = false;
     consumer_task->deactivate();
     try
     {
@@ -2371,7 +2373,7 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 
         {
             pqxx::nontransaction tx(replication_connection.getRef());
-            addTableToPublication(tx, postgres_table_name);
+            publication_added = addTableToPublication(tx, postgres_table_name);
         }
 
         /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
@@ -2380,6 +2382,24 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
     }
     catch (...)
     {
+        /// Undo the publication entry this call created, so that a failure in a later step does not
+        /// leave the table published while nothing replicates it. A membership that was already there
+        /// is left alone: this call did not create it, and dropping it would make the replicated set
+        /// drift from the publication.
+        if (publication_added)
+        {
+            try
+            {
+                postgres::Connection replication_connection(connection_info, /* replication */true);
+                pqxx::nontransaction tx(replication_connection.getRef());
+                removeTableFromPublication(tx, postgres_table_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to remove table from publication after a failed add to replication");
+            }
+        }
+
         consumer_task->activate();
         consumer_task->scheduleAfter(milliseconds_to_wait);
 
@@ -2388,19 +2408,23 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
                         "Failed to add table `{}` to replication. Info: {}", postgres_table_name, error_message);
     }
     consumer_task->activateAndSchedule();
+    return publication_added;
 }
 
 
-void PostgreSQLReplicationHandler::removeTableFromReplication(const String & postgres_table_name)
+void PostgreSQLReplicationHandler::removeTableFromReplication(const String & postgres_table_name, bool remove_from_publication)
 {
     assertInitialized();
 
     consumer_task->deactivate();
     try
     {
-        postgres::Connection replication_connection(connection_info, /* replication */true);
-
+        /// `remove_from_publication` is false when the caller is undoing an `ATTACH TABLE` that reused
+        /// an existing publication entry: the table stays published, only this database's consumer
+        /// stops replicating it.
+        if (remove_from_publication)
         {
+            postgres::Connection replication_connection(connection_info, /* replication */true);
             pqxx::nontransaction tx(replication_connection.getRef());
             removeTableFromPublication(tx, postgres_table_name);
         }

@@ -9,7 +9,7 @@ from helpers.postgres_utility import (
     check_tables_are_synchronized,
     get_postgres_conn,
 )
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -538,7 +538,13 @@ def test_upgrade_with_grown_schema_adopts_presalt_identity(started_cluster):
     # reuse that membership instead of issuing a duplicate `ALTER PUBLICATION ... ADD TABLE`.
     cursor.execute(f'ALTER PUBLICATION "{presalt_publication}" ADD TABLE ONLY growth_c')
     node1.restart_clickhouse()
-    assert node1.contains_in_log("also publishes the following table(s) this database does not replicate: public.growth_c")
+    # The warning is emitted by the background replication startup task, not by the restart itself.
+    assert_logs_contain_with_retry(
+        node1,
+        "also publishes the following table(s) this database does not replicate: public.growth_c",
+        retry_count=60,
+        sleep_time=1,
+    )
 
     node1.query(f"ATTACH TABLE {mat_db}.growth_c")
     assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.growth_c", "10")
@@ -561,6 +567,11 @@ def test_upgrade_with_grown_schema_adopts_presalt_identity(started_cluster):
     cursor.close()
     conn.close()
     server_cursor.execute(f'DROP DATABASE "{pg_db}" WITH (FORCE)')
+
+
+def unescaped_create(database):
+    # `SHOW CREATE DATABASE` is returned in TabSeparated, which escapes the quotes of the string literals.
+    return node1.query(f"SHOW CREATE DATABASE {database}").replace("\\'", "'")
 
 
 def test_attach_table_does_not_persist_failed_replication_setup(started_cluster):
@@ -590,19 +601,25 @@ def test_attach_table_does_not_persist_failed_replication_setup(started_cluster)
     )
     assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.{pg_table}", "0")
 
-    # A table without a primary key or replica identity cannot complete the snapshot. Its failed
-    # `ATTACH TABLE` must leave neither a persisted table-list entry nor a cached wrapper behind.
+    # A table without a primary key or replica identity cannot be replicated. Its failed `ATTACH TABLE`
+    # must leave neither a persisted table-list entry, nor a cached wrapper, nor a publication entry.
     error = node1.query_and_get_error(f"ATTACH TABLE {mat_db}.attach_failure_table")
-    assert "Failed to add table" in error
-    assert f"materialized_postgresql_tables_list = '{pg_table}'" in node1.query(
-        f"SHOW CREATE DATABASE {mat_db}"
-    )
+    assert "has no primary key and no replica identity index" in error
+    assert f"materialized_postgresql_tables_list = '{pg_table}'" in unescaped_create(mat_db)
     assert pg_table == node1.query(f"SHOW TABLES FROM {mat_db}").strip()
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication_tables WHERE tablename = 'attach_failure_table'"
+    )
+    assert 0 == cursor.fetchone()[0]
 
     # Once PostgreSQL is repaired, the same attach starts from the original definition and succeeds.
     cursor.execute("ALTER TABLE attach_failure_table ADD PRIMARY KEY (key)")
     node1.query(f"ATTACH TABLE {mat_db}.attach_failure_table")
     assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.attach_failure_table", "1")
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication_tables WHERE tablename = 'attach_failure_table'"
+    )
+    assert 1 == cursor.fetchone()[0]
 
     node1.query(f"DROP DATABASE {mat_db} SYNC")
     cursor.execute("DROP TABLE attach_failure_table")
@@ -649,9 +666,7 @@ def test_attach_table_rejects_foreign_schema_bare_name_collision(started_cluster
 
     error = node1.query_and_get_error(f"ATTACH TABLE {mat_db}.{table_to_attach}")
     assert "foreign-schema table(s) with the same bare name" in error
-    assert f"materialized_postgresql_tables_list = '{pg_table}'" in node1.query(
-        f"SHOW CREATE DATABASE {mat_db}"
-    )
+    assert f"materialized_postgresql_tables_list = '{pg_table}'" in unescaped_create(mat_db)
     assert pg_table == node1.query(f"SHOW TABLES FROM {mat_db}").strip()
 
     node1.query(f"DROP DATABASE {mat_db} SYNC")
