@@ -151,3 +151,17 @@ SELECT sum(serialization_kind = 'Sparse') > 0 FROM system.parts_columns WHERE da
 SELECT sum(cityHash64(s)), sum(s.size), sum(cityHash64(arr)), sum(arr.size0), sum(cityHash64(t)), sum(t.a) FROM t_cache_sparse;
 
 DROP TABLE t_cache_sparse;
+
+-- StorageLog and StorageTinyLog use the same cache.
+DROP TABLE IF EXISTS t_cache_log;
+DROP TABLE IF EXISTS t_cache_tiny_log;
+
+CREATE TABLE t_cache_log (c Array(Tuple(`size0` UInt64)), d Tuple(`a` String, `a.size` UInt64)) ENGINE = Log;
+CREATE TABLE t_cache_tiny_log (c Array(Tuple(`size0` UInt64)), d Tuple(`a` String, `a.size` UInt64)) ENGINE = TinyLog;
+INSERT INTO t_cache_log VALUES ([(100), (200)], ('abc', 99)), ([(300)], ('de', 98));
+INSERT INTO t_cache_tiny_log VALUES ([(100), (200)], ('abc', 99)), ([(300)], ('de', 98));
+SELECT c, d FROM t_cache_log ORDER BY c;
+SELECT c, d FROM t_cache_tiny_log ORDER BY c;
+
+DROP TABLE t_cache_log;
+DROP TABLE t_cache_tiny_log;
