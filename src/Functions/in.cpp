@@ -91,11 +91,8 @@ public:
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
-        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeLowCardinalityAndNullable(arguments[0].type));
-        if (decay_length)
-            validateExponentialTimeDecayingFloat64Column(
-                *arguments[0].column, *decay_length, "IN set probe");
+        validateExponentialTimeDecayingFloat64Column(
+            *arguments[0].column, arguments[0].type, "IN set probe");
 
         /// Second argument must be ColumnSet (possibly wrapped in ColumnConst).
         ColumnPtr column_set_ptr = arguments[1].column;
@@ -124,6 +121,23 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
         }
 
+        const auto set_types = set->getDataTypes();
+        if (!set_types.empty())
+        {
+            DataTypes left_types = {arguments[0].type};
+            const auto left_type_without_wrappers = removeLowCardinalityAndNullable(arguments[0].type);
+            const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_type_without_wrappers.get());
+
+            if (left_tuple_type && set_types.size() != 1 && set_types.size() == left_tuple_type->getElements().size())
+                left_types = left_tuple_type->getElements();
+
+            if (left_types.size() == set_types.size())
+            {
+                for (size_t i = 0; i < left_types.size(); ++i)
+                    assertExponentialTimeDecayingFloat64TypesCompatible(left_types[i], set_types[i], "IN");
+            }
+        }
+
         /// Empty set: return a constant result. Must be checked before input_rows_count == 0
         /// so that header evaluation produces a ColumnConst detectable by ConstantFilterDescription.
         if (set->getTotalRowCount() == 0)
@@ -142,7 +156,6 @@ public:
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
 
         ColumnsWithTypeAndName columns_of_key_columns;
-        auto set_types = set->getDataTypes();
 
         if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())
         {

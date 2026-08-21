@@ -685,6 +685,28 @@ WITH
     CAST([(1., 0., 10.)], 'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))') AS plain
 SELECT decaying IN (plain); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- Empty-set shortcuts must retain recursive validation and pairwise compatibility.
+WITH _CAST([(1., 0., 20.)], 'Array(ExponentialTimeDecayingFloat64(10))') AS malformed
+SELECT malformed IN
+(
+    SELECT CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecayingFloat64(10))')
+    FROM numbers(0)
+); -- { serverError BAD_ARGUMENTS }
+
+WITH CAST((1., 0., 10.), 'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS plain
+SELECT plain IN
+(
+    SELECT CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)')
+    FROM numbers(0)
+); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+WITH CAST([(1., 0., 10.)], 'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))') AS plain
+SELECT plain NOT IN
+(
+    SELECT CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecayingFloat64(10))')
+    FROM numbers(0)
+); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- Compatible direct and nested values must retain normal IN semantics. These
 -- queries stay silent on success and expose a reference diff on a false negative.
 WITH CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS value
