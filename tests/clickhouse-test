@@ -5000,6 +5000,96 @@ def check_server_liveness(args, max_retries=10) -> bool:
     return False
 
 
+class HungCheckMonitor:
+    """Decides when a server that stopped answering means the run must be aborted.
+
+    A failed liveness probe says the server is not answering.  It does not say
+    the server is gone.  A sanitizer build can stop making progress
+    process-wide for minutes - every thread parked at once, no CPU burnt, no
+    log line, other processes on the box unaffected - and then carry on.
+    `check_server_liveness` gives up after at most ~165 s, so such a stall was
+    reported as "Server died" for a server that answered again a minute later
+    and then shut down cleanly, throwing away an otherwise green run.
+
+    So the verdict is split by the evidence that is actually available:
+
+      * the server process is gone: abort on the first failed probe, at the
+        same latency as before;
+      * the process is still there: keep probing, and only call it a hang once
+        the server has stayed silent for `GRACE_WITH_LIVE_PROCESS`.
+
+    Not being able to tell (no `ps`, or a server on another host) reads as
+    gone - without positive evidence of a live process we keep the previous
+    behaviour instead of sitting out the grace.  `get_server_pid` picks the
+    first of the servers it can see, so in a multi-replica setup a surviving
+    replica delays the verdict on a dead main server by the grace; it does not
+    lose it.
+    """
+
+    # Long enough to cover the multi-minute whole-process stalls observed on
+    # sanitizer builds, short enough to stay well inside a job's own budget.
+    # A server that really is deadlocked is still reported, just later.
+    GRACE_WITH_LIVE_PROCESS = 600.0
+    # How often to re-probe inside that grace.  The re-probe is a single
+    # attempt, so without a gate a server refusing connections instantly would
+    # be probed at the caller loop's own 10 Hz.
+    RETRY_INTERVAL = 10.0
+
+    def __init__(self, args):
+        self.args = args
+        # Start of the current silent stretch; None while the server answers.
+        self.unresponsive_since = None
+        self.last_probe_at = 0.0
+
+    def is_hung(self) -> bool:
+        """Probe the server once; True when the silence should abort the run.
+
+        Safe to call from a tight loop: while the server answers this costs one
+        successful query, exactly as before, and while it does not the probes
+        are interval-gated.
+        """
+        now = time()
+        if (
+            self.unresponsive_since is not None
+            and now - self.last_probe_at < self.RETRY_INTERVAL
+        ):
+            return False
+        self.last_probe_at = now
+
+        # The first probe of a silent stretch keeps the full retry budget, so a
+        # server that is gone is reported as fast as before.  After that the
+        # budget has already been spent proving the server unresponsive, and
+        # repeating it would block the caller for minutes per iteration.
+        if check_server_liveness(
+            self.args, max_retries=1 if self.unresponsive_since else 10
+        ):
+            if self.unresponsive_since is not None:
+                print(
+                    "Server answered the liveness check again after "
+                    f"{time() - self.unresponsive_since:.0f}s - it was stalled, "
+                    "not dead; continuing the run."
+                )
+                self.unresponsive_since = None
+            return False
+
+        if self.unresponsive_since is None:
+            # Anchor on the start of the probe, not its end: the probe itself
+            # spends most of the window the server was already silent for.
+            self.unresponsive_since = now
+        unresponsive_for = time() - self.unresponsive_since
+
+        server_pid = get_server_pid(self.args)
+        if server_pid is None or unresponsive_for >= self.GRACE_WITH_LIVE_PROCESS:
+            return True
+        print(
+            f"Server did not answer the liveness check, but process {server_pid} "
+            f"is still alive ({unresponsive_for:.0f}s so far) - waiting up to "
+            f"{self.GRACE_WITH_LIVE_PROCESS:.0f}s for it to recover before "
+            "declaring a hang."
+        )
+        return False
+
+
 def _read_process_rss(pid: Optional[int]) -> Optional[int]:
     """Resident set size in bytes from /proc/<pid>/statm, or None when unreadable."""
     if pid is None:
@@ -5387,6 +5477,8 @@ def do_run_tests(
         # `GLOBAL_TIME_LIMIT_EXIT_CODE` rather than the "Server died" code.
         global_time_limit_reached = False
 
+        hung_check_monitor = HungCheckMonitor(args)
+
         while processes:
             sleep(0.1)
             sys.stdout.flush()
@@ -5441,11 +5533,10 @@ def do_run_tests(
 
             # Periodically check the server for hangs
             # and stop all processes in this case
-            if args.hung_check:
-                if not check_server_liveness(args):
-                    print("Hung check failed: server is not responding")
-                    print_c_stacktraces(args)
-                    stop_testing.set()
+            if args.hung_check and hung_check_monitor.is_hung():
+                print("Hung check failed: server is not responding")
+                print_c_stacktraces(args)
+                stop_testing.set()
 
             if stop_testing.is_set():
                 # Mask SIGTERM during the cleanup: when we terminate a worker,
