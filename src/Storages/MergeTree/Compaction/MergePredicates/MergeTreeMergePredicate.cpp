@@ -5,9 +5,27 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <base/defines.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
+static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree & storage)
+{
+    auto patches_vector = storage.getPatchPartsVectorForInternalUsage();
+
+    std::vector<MergeTreePartInfo> patch_infos;
+    patch_infos.reserve(patches_vector.size());
+
+    for (const auto & patch : patches_vector)
+        patch_infos.push_back(patch->info);
+
+    return patch_infos;
+}
+
+/// The same set of parts that 'MergeTreePartsCollector::collectInitial' works with. Inside a transaction
+/// it is a superset of the visible parts: it keeps the outdated parts that a rollback can bring back,
+/// so that a merge is not assigned over a gap between them.
 static MergeTreeDataPartsVector getPartsVisibleForMerge(const StorageMergeTree & storage, const MergeTreeTransactionPtr & tx)
 {
     MergeTreeData::DataPartsKinds affordable_kinds{MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch};
@@ -60,19 +78,19 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     , committing_blocks(storage.getCommittingBlocks())
     , min_update_block(getMinUpdateBlockNumber(committing_blocks))
 {
+    /// The wider set is used only to find the data versions that a merge of patch parts must not span.
+    /// A version that only a rollbackable outdated part has still has to be seen here, otherwise the
+    /// merge becomes wrong as soon as that part is active again.
     auto parts_visible_for_merge = getPartsVisibleForMerge(storage, tx_);
 
-    std::vector<MergeTreePartInfo> patches_vector;
-    for (const auto & part : parts_visible_for_merge)
-    {
-        if (part->info.isPatch())
-            patches_vector.push_back(part->info);
-    }
+    bool has_patches = std::ranges::any_of(parts_visible_for_merge, [](const auto & part) { return part->info.isPatch(); });
 
-    if (!patches_vector.empty())
+    if (has_patches)
         data_versions_by_partition = getDataVersionsByPartition(parts_visible_for_merge);
 
-    patches_by_partition = getPatchPartsByPartition(patches_vector, min_update_block.value_or(std::numeric_limits<Int64>::max()));
+    /// The patch parts that a merge applies must be visible to that merge itself, and nothing here
+    /// checks their visibility later, so they are taken from the active parts only.
+    patches_by_partition = getPatchPartsByPartition(getPatchPartInfos(storage), min_update_block.value_or(std::numeric_limits<Int64>::max()));
 }
 
 std::expected<void, PreformattedMessage>
