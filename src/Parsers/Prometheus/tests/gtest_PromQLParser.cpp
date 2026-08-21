@@ -226,7 +226,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 
 TEST(PromQLParser, QuotedGroupingLabelsRoundTrip)
 {
-    for (const auto input : {
+    for (const auto *const input : {
              R"(sum by ("a\x00b") (up))",
              R"(sum by ("Inf") (up))",
              R"(sum by ("NaN") (up))",
@@ -245,8 +245,8 @@ TEST(PromQLParser, QuotedGroupingLabelsRoundTrip)
 
 TEST(PromQLParser, QuotedMetricNameRoundTrip)
 {
-    const auto input = R"(sum by ("service.name") ({__name__="http.server.duration"}))";
-    const auto expected = R"(sum by ("service.name") ({"http.server.duration"}))";
+    const auto *const input = R"(sum by ("service.name") ({__name__="http.server.duration"}))";
+    const auto *const expected = R"(sum by ("service.name") ({"http.server.duration"}))";
 
     PrometheusQueryTree query_tree{input};
     EXPECT_EQ(query_tree.toString(), expected);
@@ -258,7 +258,7 @@ TEST(PromQLParser, QuotedMetricNameRoundTrip)
 
 TEST(PromQLParser, InvalidQuotedGroupingLabels)
 {
-    for (const auto query : {R"(sum by ("") (up))", R"(sum by ("\xff") (up))"})
+    for (const auto *const query : {R"(sum by ("") (up))", R"(sum by ("\xff") (up))"})
     {
         PrometheusQueryTree query_tree;
         String error_message;
