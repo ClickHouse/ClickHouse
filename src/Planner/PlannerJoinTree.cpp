@@ -483,8 +483,16 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     if (!columns_with_sizes.empty())
         result = std::min_element(columns_with_sizes.begin(), columns_with_sizes.end())->column;
     else
+    {
+        /// A table expression can resolve to no columns at all, for example a table function over a
+        /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
+        if (column_names_and_types.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Cannot read from table expression with no columns");
+
         /// If we have no information about columns sizes, choose a column of minimum size of its data type
         result = ExpressionActions::getSmallestColumn(column_names_and_types);
+    }
 
     return result;
 }
@@ -581,6 +589,12 @@ bool applyTrivialCountIfPossible(
     chassert(function_node.getAggregateFunction() != nullptr);
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
+        return false;
+
+    /// `arrayJoin` in the argument multiplies rows above the source read, so the aggregate does not
+    /// observe `totalRows()` rows. Must precede `optimize_trivial_count`: storages that count in
+    /// read() act on that flag even when this function later declines.
+    if (hasFunctionNode(aggregates.front(), "arrayJoin"))
         return false;
 
     /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
