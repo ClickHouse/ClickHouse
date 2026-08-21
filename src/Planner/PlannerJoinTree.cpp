@@ -79,6 +79,7 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -237,6 +238,74 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id);
     }
+}
+
+bool whereOnlyReferencesTable(const QueryTreeNodePtr & where, const QueryTreeNodePtr & table)
+{
+    std::vector<QueryTreeNodePtr> stack = {where};
+    while (!stack.empty())
+    {
+        auto current = std::move(stack.back());
+        stack.pop_back();
+
+        if (const auto * column = current->as<ColumnNode>())
+        {
+            auto source = column->getColumnSourceOrNull();
+            if (!source || source.get() != table.get())
+                return false;
+        }
+
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                stack.push_back(child);
+        }
+    }
+    return true;
+}
+
+/// `IStorageCluster` JOINs wrap the left table in a subquery planned with an empty
+/// `FiltersForTableExpressionMap`, so initiator file listing would miss left-only WHERE.
+/// Attach dummy-analysis filters to the wrap source for listing only; do not add a
+/// FilterStep, which would drop unused columns from the wrap header.
+void tryAddClusterWrapFilter(QueryPlan & query_plan, const TableExpressionData & table_expression_data)
+{
+    const auto & filter_actions = table_expression_data.getFilterActions();
+    if (!filter_actions || !query_plan.isInitialized())
+        return;
+
+    QueryPlan::Node * node = query_plan.getRootNode();
+    while (node && !node->children.empty())
+        node = node->children.front();
+
+    auto * source = node ? dynamic_cast<SourceStepWithFilter *>(node->step.get()) : nullptr;
+    if (!source)
+        return;
+
+    auto filter_dag = filter_actions->clone();
+    const auto filter_column_name = filter_dag.getOutputs().at(0)->result_name;
+    const auto & header = source->getOutputHeader();
+    ActionsDAG rename_dag(header->getColumnsWithTypeAndName());
+    const auto & identifier_to_name = table_expression_data.getColumnIdentifierToColumnName();
+
+    for (const auto * input : filter_dag.getInputs())
+    {
+        if (header->has(input->result_name))
+            continue;
+
+        auto it = identifier_to_name.find(input->result_name);
+        if (it == identifier_to_name.end() || !header->has(it->second))
+            continue;
+
+        const auto & physical = rename_dag.findInOutputs(it->second);
+        rename_dag.addOrReplaceInOutputs(rename_dag.addAlias(physical, input->result_name));
+    }
+
+    filter_dag = ActionsDAG::merge(std::move(rename_dag), std::move(filter_dag));
+    source->addFilter(std::move(filter_dag), filter_column_name);
+    /// Wrap subquery planning already called `applyFilters` with no predicate.
+    /// Apply now so icebergCluster listing is recreated with the WHERE.
+    source->SourceStepWithFilterBase::applyFilters();
 }
 
 bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
@@ -1481,8 +1550,30 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
     if (wrap_read_columns_in_subquery)
     {
+        auto original_table_expression = table_expression;
+
+        /// Subqueries inherit the outer GlobalPlannerContext, whose filter map is keyed by
+        /// outer table nodes. Collect filters for this JOIN query so icebergCluster listing
+        /// still sees left-only WHERE after the wrap.
+        if (!table_expression_data.getFilterActions() && select_query_info.query_tree)
+        {
+            auto collected = collectFiltersForAnalysis(select_query_info.query_tree, select_query_options, nullptr);
+            auto it = collected.find(table_expression);
+            if (it != collected.end() && it->second.filter_actions)
+                table_expression_data.setFilterActions(it->second.filter_actions->clone());
+        }
+
         auto columns = table_expression_data.getColumns();
-        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, query_context);
+        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, original_table_expression, query_context);
+
+        /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy a left-only
+        /// WHERE onto that subquery so initiator file listing sees the same predicate as a
+        /// single-table `icebergCluster` read (which already prunes).
+        if (const auto * parent_query = select_query_info.query_tree->as<QueryNode>())
+        {
+            if (parent_query->hasWhere() && whereOnlyReferencesTable(parent_query->getWhere(), original_table_expression))
+                table_expression->as<QueryNode &>().getWhere() = parent_query->getWhere()->clone();
+        }
     }
 
     auto * table_node = table_expression->as<TableNode>();
@@ -2173,12 +2264,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         else
         {
             std::shared_ptr<GlobalPlannerContext> subquery_planner_context;
+            auto subquery_options = select_query_options.subquery();
             if (wrap_read_columns_in_subquery)
-                subquery_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+            {
+                subquery_planner_context = std::make_shared<GlobalPlannerContext>(
+                    nullptr, nullptr, nullptr, collectFiltersForAnalysis(table_expression, subquery_options, nullptr));
+            }
             else
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
-            auto subquery_options = select_query_options.subquery();
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
@@ -2186,6 +2280,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             const auto & mapping = subquery_planner.getQueryNodeToPlanStepMapping();
             query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
             query_plan = std::move(subquery_planner).extractQueryPlan();
+            if (wrap_read_columns_in_subquery && till_stage == QueryProcessingStage::FetchColumns)
+                tryAddClusterWrapFilter(query_plan, table_expression_data);
         }
 
         auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
