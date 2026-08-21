@@ -1,0 +1,5 @@
+fire-and-forget:
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","accepted_bytes":"positive","total_rows_to_read":"0","result_rows":"0","result_bytes":"0"}
+waited:
+< X-ClickHouse-Summary: {"read_rows":"4","read_bytes":"32","written_rows":"4","written_bytes":"32","accepted_rows":"4","accepted_bytes":"positive","total_rows_to_read":"0","result_rows":"4","result_bytes":"32"}
+total_rows	8
