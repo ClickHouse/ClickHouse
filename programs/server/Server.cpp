@@ -19,6 +19,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
+#include <Common/VersionNumber.h>
 #include <base/phdr_cache.h>
 #include <Common/ErrorHandlers.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -881,6 +882,62 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     {
     }
 
+    try
+    {
+        std::unordered_set<String> slow_governors;
+        fs::path cpu_dir("/sys/devices/system/cpu");
+        if (fs::exists(cpu_dir))
+        {
+            for (const auto & entry : fs::directory_iterator(cpu_dir))
+            {
+                const auto name = entry.path().filename().string();
+                if (name.size() < 4 || !name.starts_with("cpu") || name[3] < '0' || name[3] > '9')
+                    continue;
+
+                auto governor_path = entry.path() / "cpufreq" / "scaling_governor";
+                if (!fs::exists(governor_path))
+                    continue;
+
+                String governor = readLine(governor_path.string());
+                if (governor != "performance")
+                    slow_governors.insert(governor);
+            }
+        }
+        if (!slow_governors.empty())
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_CPU_SCALING_GOVERNOR_NOT_PERFORMANCE,
+                PreformattedMessage::create(
+                    "Linux CPU scaling governor is set to \"{}\" instead of \"performance\" for some CPUs."
+                    " Performance can be degraded. Check /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
+                    *slow_governors.begin()));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        /// Ranges of Linux kernel versions with bugs known to affect ClickHouse (see #18794).
+        VersionNumber linux_version(Poco::Environment::osVersion());
+        std::optional<PreformattedMessage> kernel_warning;
+        if (linux_version < VersionNumber{3, 2, 0})
+            kernel_warning = PreformattedMessage::create(
+                "Linux kernel version {} is too old: IPv6 packets can be dropped randomly. Consider upgrading the kernel.",
+                linux_version.toString());
+        else if (linux_version >= VersionNumber{4, 16, 0} && linux_version < VersionNumber{4, 16, 4})
+            kernel_warning = PreformattedMessage::create(
+                "Linux kernel version {} has a known ext4 filesystem corruption bug (fixed in 4.16.4). Consider upgrading the kernel.",
+                linux_version.toString());
+        else if (linux_version >= VersionNumber{5, 5, 0} && linux_version < VersionNumber{5, 6, 13})
+            kernel_warning = PreformattedMessage::create(
+                "Linux kernel version {} has broken nested epoll_wait (fixed in 5.6.13). Consider upgrading the kernel.",
+                linux_version.toString());
+        server.context()->addOrUpdateWarningMessage(Context::WarningType::LINUX_KERNEL_WITH_KNOWN_ISSUES, kernel_warning);
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
     if (!PerCPU::haveRSeq())
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
@@ -946,6 +1003,22 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
     try
     {
+        const char * filename = "/proc/sys/fs/file-max";
+        /// The value can be as large as 2^63 - 1, so don't use the int-typed readNumber() here.
+        ReadBufferFromFile in(filename);
+        UInt64 system_wide_max_open_files = 0;
+        readText(system_wide_max_open_files, in);
+        if (system_wide_max_open_files < 500000)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_MAX_OPEN_FILES_SYSTEM_WIDE_TOO_LOW,
+                PreformattedMessage::create("Linux system-wide limit on the number of open files is too low. Check {}", String(filename)));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
         const char * filename = "/proc/sys/kernel/task_delayacct";
         if (readNumber(filename) == 0)
             server.context()->addOrUpdateWarningMessage(
@@ -976,6 +1049,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
         {
             std::optional<PreformattedMessage> resync_warning;
             std::optional<PreformattedMessage> degraded_warning;
+            std::optional<PreformattedMessage> stripe_cache_warning;
 
             for (const auto & entry : fs::directory_iterator(sys_block))
             {
@@ -1008,7 +1082,21 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                     }
                 }
 
-                if (resync_warning && degraded_warning)
+                auto level_path = entry.path() / "md" / "level";
+                auto stripe_cache_path = entry.path() / "md" / "stripe_cache_size";
+                if (fs::exists(level_path) && fs::exists(stripe_cache_path))
+                {
+                    String level = readLine(level_path.string());
+                    /// The default stripe cache size of 256 pages is known to be insufficient for good RAID 4/5/6 write performance.
+                    if ((level == "raid4" || level == "raid5" || level == "raid6") && readNumber(stripe_cache_path.string()) < 1024)
+                    {
+                        stripe_cache_warning = PreformattedMessage::create(
+                            "Linux mdraid array {} with level `{}` has a low stripe cache size. Write performance can be degraded. Check {}",
+                            name, level, stripe_cache_path.string());
+                    }
+                }
+
+                if (resync_warning && degraded_warning && stripe_cache_warning)
                     break;
             }
 
@@ -1016,6 +1104,8 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_MDRAID_IS_BEING_RESYNCHRONIZED, resync_warning);
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_MDRAID_IS_DEGRADED, degraded_warning);
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_MDRAID_INSUFFICIENT_STRIPE_CACHE, stripe_cache_warning);
         }
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
