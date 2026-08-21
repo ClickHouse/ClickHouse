@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Tests the per-database `max_rows` setting: INSERT/ATTACH/rename/exchange enforcement,
 # ALTER DATABASE MODIFY SETTING, and the system.databases.rows column.
+# Statements are batched into few client invocations to keep the test fast under
+# sanitizers; statements that must fail run in separate invocations.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -11,132 +13,132 @@ DB="${CLICKHOUSE_DATABASE}_b"
 
 CH="${CLICKHOUSE_CLIENT}"
 
-cleanup() {
-    $CH -q "DROP DATABASE IF EXISTS ${DA}"
-    $CH -q "DROP DATABASE IF EXISTS ${DB}"
-}
-cleanup
+$CH -q "DROP DATABASE IF EXISTS ${DA}; DROP DATABASE IF EXISTS ${DB}"
 
-# The number of rows in a database as seen by system.databases.
-db_rows() { $CH -q "SELECT rows FROM system.databases WHERE name = '$1'"; }
-
-echo "-- 1. setting is stored and visible in system.databases"
-$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 10"
-$CH -q "SELECT engine_full LIKE '%max_rows = 10%' FROM system.databases WHERE name = '${DA}'"
-
-echo "-- 2. counter tracks inserts and matches system.tables"
-$CH -q "CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(8)"
-db_rows "${DA}"
-$CH -q "SELECT rows = (SELECT sum(total_rows) FROM system.tables WHERE database = '${DA}') FROM system.databases WHERE name = '${DA}'"
-
-echo "-- 3. a single batch may overshoot the limit, the next insert throws"
-# current 8 < 10, so this insert of 5 is allowed and overshoots to 13
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(5)"
-db_rows "${DA}"
-# now 13 >= 10, the next insert is rejected
+$CH -q "
+SELECT '-- 1. setting is stored and visible in system.databases';
+CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 10;
+SELECT engine_full LIKE '%max_rows = 10%' FROM system.databases WHERE name = '${DA}';
+SELECT '-- 2. counter tracks inserts and matches system.tables';
+CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ${DA}.t SELECT number FROM numbers(8);
+SELECT rows FROM system.databases WHERE name = '${DA}';
+SELECT rows = (SELECT sum(total_rows) FROM system.tables WHERE database = '${DA}') FROM system.databases WHERE name = '${DA}';
+SELECT '-- 3. a single batch may overshoot the limit, the next insert throws';
+INSERT INTO ${DA}.t SELECT number FROM numbers(5);
+SELECT rows FROM system.databases WHERE name = '${DA}';
+"
+# current 13 >= 10, the next insert is rejected
 $CH -q "INSERT INTO ${DA}.t SELECT 1" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
 
-echo "-- 4. TRUNCATE frees rows"
-$CH -q "TRUNCATE TABLE ${DA}.t"
-db_rows "${DA}"
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(3)"
-db_rows "${DA}"
-
-echo "-- 4a. MOVE PARTITION inside an over-limit database succeeds"
-$CH -q "DROP TABLE ${DA}.t"
-$CH -q "CREATE TABLE ${DA}.src (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x"
-$CH -q "CREATE TABLE ${DA}.dst (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x"
-# The first INSERT may overshoot the limit, but moving its partition to another table in the
-# same database does not change the database row count.
-$CH -q "INSERT INTO ${DA}.src SELECT toDate('2020-01-01'), number FROM numbers(12)"
-$CH -q "ALTER TABLE ${DA}.src MOVE PARTITION '2020-01-01' TO TABLE ${DA}.dst"
-$CH -q "SELECT count() FROM ${DA}.dst"
-
-echo "-- 5. DROP PARTITION lowers the counter"
-$CH -q "DROP TABLE ${DA}.src"
-$CH -q "DROP TABLE ${DA}.dst"
-$CH -q "CREATE TABLE ${DA}.p (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x"
-$CH -q "INSERT INTO ${DA}.p VALUES ('2020-01-01', 1), ('2020-01-01', 2), ('2020-01-02', 3)"
-db_rows "${DA}"
-$CH -q "ALTER TABLE ${DA}.p DROP PARTITION '2020-01-01'"
-db_rows "${DA}"
-
-echo "-- 6. ALTER DATABASE MODIFY SETTING raises and lowers the limit"
-$CH -q "DROP TABLE ${DA}.p"
-$CH -q "CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(9)"
-$CH -q "ALTER DATABASE ${DA} MODIFY SETTING max_rows = 100"
-$CH -q "SELECT engine_full LIKE '%max_rows = 100%' FROM system.databases WHERE name = '${DA}'"
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(50)"
-db_rows "${DA}"
-# lower below current: the next insert throws
-$CH -q "ALTER DATABASE ${DA} MODIFY SETTING max_rows = 10"
+$CH -q "
+SELECT '-- 4. TRUNCATE frees rows';
+TRUNCATE TABLE ${DA}.t;
+SELECT rows FROM system.databases WHERE name = '${DA}';
+INSERT INTO ${DA}.t SELECT number FROM numbers(3);
+SELECT rows FROM system.databases WHERE name = '${DA}';
+SELECT '-- 4a. MOVE PARTITION inside an over-limit database succeeds';
+DROP TABLE ${DA}.t;
+CREATE TABLE ${DA}.src (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+CREATE TABLE ${DA}.dst (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+-- The first INSERT may overshoot the limit, but moving its partition to another table in the
+-- same database does not change the database row count.
+INSERT INTO ${DA}.src SELECT toDate('2020-01-01'), number FROM numbers(12);
+ALTER TABLE ${DA}.src MOVE PARTITION '2020-01-01' TO TABLE ${DA}.dst;
+SELECT count() FROM ${DA}.dst;
+SELECT '-- 5. DROP PARTITION lowers the counter';
+DROP TABLE ${DA}.src;
+DROP TABLE ${DA}.dst;
+CREATE TABLE ${DA}.p (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO ${DA}.p VALUES ('2020-01-01', 1), ('2020-01-01', 2), ('2020-01-02', 3);
+SELECT rows FROM system.databases WHERE name = '${DA}';
+ALTER TABLE ${DA}.p DROP PARTITION '2020-01-01';
+SELECT rows FROM system.databases WHERE name = '${DA}';
+SELECT '-- 6. ALTER DATABASE MODIFY SETTING raises and lowers the limit';
+DROP TABLE ${DA}.p;
+CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ${DA}.t SELECT number FROM numbers(9);
+ALTER DATABASE ${DA} MODIFY SETTING max_rows = 100;
+SELECT engine_full LIKE '%max_rows = 100%' FROM system.databases WHERE name = '${DA}';
+INSERT INTO ${DA}.t SELECT number FROM numbers(50);
+SELECT rows FROM system.databases WHERE name = '${DA}';
+ALTER DATABASE ${DA} MODIFY SETTING max_rows = 10;
+"
+# the limit was lowered below the current row count: the next insert throws
 $CH -q "INSERT INTO ${DA}.t SELECT 1" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
 
-echo "-- 7. max_rows = 0 means unlimited"
-$CH -q "ALTER DATABASE ${DA} MODIFY SETTING max_rows = 0"
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(1000)"
-db_rows "${DA}"
-
-echo "-- 8. only max_rows is alterable, bad values rejected"
+$CH -q "
+SELECT '-- 7. max_rows = 0 means unlimited';
+ALTER DATABASE ${DA} MODIFY SETTING max_rows = 0;
+INSERT INTO ${DA}.t SELECT number FROM numbers(1000);
+SELECT rows FROM system.databases WHERE name = '${DA}';
+SELECT '-- 8. only max_rows is alterable, bad values rejected';
+"
 $CH -q "ALTER DATABASE ${DA} MODIFY SETTING disk = 'default'" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -n1
 $CH -q "ALTER DATABASE ${DA} MODIFY SETTING max_rows = -1" 2>&1 | grep -qE "Exception|Cannot" && echo "rejected"
 
-echo "-- 9. ATTACH of a populated table is checked"
-cleanup
-$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 100"
-$CH -q "CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(60)"
-$CH -q "DETACH TABLE ${DA}.t"
-db_rows "${DA}"
-$CH -q "CREATE TABLE ${DA}.filler (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.filler SELECT number FROM numbers(60)"
+$CH -q "
+SELECT '-- 9. ATTACH of a populated table is checked';
+DROP DATABASE ${DA};
+CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 100;
+CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ${DA}.t SELECT number FROM numbers(60);
+DETACH TABLE ${DA}.t;
+SELECT rows FROM system.databases WHERE name = '${DA}';
+CREATE TABLE ${DA}.filler (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ${DA}.filler SELECT number FROM numbers(60);
+"
 # attaching t (60) on top of filler (60) exceeds 100
 $CH -q "ATTACH TABLE ${DA}.t" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
 # free headroom, then attach succeeds
-$CH -q "DROP TABLE ${DA}.filler"
-$CH -q "ATTACH TABLE ${DA}.t"
-db_rows "${DA}"
-
-echo "-- 10. max_rows and lazy_load_tables cannot be combined"
-$CH -q "DROP DATABASE IF EXISTS ${DB}"
+$CH -q "
+DROP TABLE ${DA}.filler;
+ATTACH TABLE ${DA}.t;
+SELECT rows FROM system.databases WHERE name = '${DA}';
+SELECT '-- 10. max_rows and lazy_load_tables cannot be combined';
+"
 $CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 5, lazy_load_tables = 1" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -n1
 $CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
 $CH -q "ALTER DATABASE ${DB} MODIFY SETTING max_rows = 5" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -n1
-$CH -q "DROP DATABASE ${DB}"
 
-echo "-- 11. RENAME into a full Ordinary database is rejected without orphaning the table"
-cleanup
-$CH --allow_deprecated_database_ordinary=1 --send_logs_level=fatal -q "CREATE DATABASE ${DA} ENGINE = Ordinary SETTINGS max_rows = 1000"
-$CH --allow_deprecated_database_ordinary=1 --send_logs_level=fatal -q "CREATE DATABASE ${DB} ENGINE = Ordinary SETTINGS max_rows = 40"
-$CH -q "CREATE TABLE ${DA}.big (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.big SELECT number FROM numbers(50)"
+$CH --allow_deprecated_database_ordinary=1 --send_logs_level=fatal -q "
+DROP DATABASE ${DB};
+SELECT '-- 11. RENAME into a full Ordinary database is rejected without orphaning the table';
+DROP DATABASE ${DA};
+CREATE DATABASE ${DA} ENGINE = Ordinary SETTINGS max_rows = 1000;
+CREATE DATABASE ${DB} ENGINE = Ordinary SETTINGS max_rows = 40;
+CREATE TABLE ${DA}.big (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ${DA}.big SELECT number FROM numbers(50);
+"
 $CH -q "RENAME TABLE ${DA}.big TO ${DB}.big" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
 # the source table must stay fully intact (not orphaned by a partial move)
-echo "da=$(db_rows "${DA}") db=$(db_rows "${DB}")"
-$CH -q "SELECT count() FROM ${DA}.big"
-
-echo "-- 12. lazy proxy forwards rows for reporting and cross-database RENAME"
-cleanup
-$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
-$CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 40"
-$CH -q "CREATE TABLE ${DA}.big (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.big SELECT number FROM numbers(50)"
-$CH -q "DETACH DATABASE ${DA}; ATTACH DATABASE ${DA}"
-# Reading database rows must materialize the proxy and report its active rows.
-db_rows "${DA}"
+$CH -q "
+SELECT concat('da=', toString((SELECT rows FROM system.databases WHERE name = '${DA}')), ' db=', toString((SELECT rows FROM system.databases WHERE name = '${DB}')));
+SELECT count() FROM ${DA}.big;
+SELECT '-- 12. lazy proxy forwards rows for reporting and cross-database RENAME';
+DROP DATABASE ${DA};
+DROP DATABASE ${DB};
+CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 40;
+CREATE TABLE ${DA}.big (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO ${DA}.big SELECT number FROM numbers(50);
+DETACH DATABASE ${DA};
+ATTACH DATABASE ${DA};
+-- Reading database rows must materialize the proxy and report its active rows.
+SELECT rows FROM system.databases WHERE name = '${DA}';
+"
 $CH -q "RENAME TABLE ${DA}.big TO ${DB}.big" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
-$CH -q "EXISTS TABLE ${DA}.big"
-
-echo "-- 13. RENAME inside an over-limit Ordinary database succeeds"
-cleanup
-$CH --allow_deprecated_database_ordinary=1 --send_logs_level=fatal -q "CREATE DATABASE ${DA} ENGINE = Ordinary SETTINGS max_rows = 10"
-$CH -q "CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x"
-# A single batch can exceed the limit. Renaming it inside the database must remain a no-op for accounting.
-$CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(12)"
-$CH -q "RENAME TABLE ${DA}.t TO ${DA}.u"
-$CH -q "EXISTS TABLE ${DA}.u"
-db_rows "${DA}"
-
-cleanup
+$CH --allow_deprecated_database_ordinary=1 --send_logs_level=fatal -q "
+EXISTS TABLE ${DA}.big;
+SELECT '-- 13. RENAME inside an over-limit Ordinary database succeeds';
+DROP DATABASE ${DA};
+DROP DATABASE ${DB};
+CREATE DATABASE ${DA} ENGINE = Ordinary SETTINGS max_rows = 10;
+CREATE TABLE ${DA}.t (x UInt64) ENGINE = MergeTree ORDER BY x;
+-- A single batch can exceed the limit. Renaming it inside the database must remain a no-op for accounting.
+INSERT INTO ${DA}.t SELECT number FROM numbers(12);
+RENAME TABLE ${DA}.t TO ${DA}.u;
+EXISTS TABLE ${DA}.u;
+SELECT rows FROM system.databases WHERE name = '${DA}';
+DROP DATABASE ${DA};
+"
