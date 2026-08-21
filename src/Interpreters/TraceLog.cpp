@@ -191,6 +191,10 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         size_t num_frames = trace.size();
         for (size_t frame = 0; frame < num_frames; ++frame)
         {
+            /// The symbol name and the source location are looked up independently, exactly as in
+            /// `symbolizeTrace` and `StackTrace::forEachFrame`: DWARF line resolution does not depend
+            /// on the symbol table, so each column defaults to an empty string only when its own
+            /// lookup fails.
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
             {
                 auto demangled = tryDemangle(symbol->name);
@@ -198,16 +202,15 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
                     column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
                 else
                     column_symbols_inner.insertData(symbol->name, strlen(symbol->name));
-
-                /// For non-innermost frames the address is a return address; subtract 1 so DWARF
-                /// resolves the `call` instruction itself (mirrors `StackTrace::forEachFrame`).
-                column_lines_inner.insert(AddressToLineCache::get(trace[frame] - (frame > 0 ? 1 : 0)));
             }
             else
             {
                 column_symbols_inner.insertDefault();
-                column_lines_inner.insertDefault();
             }
+
+            /// For non-innermost frames the address is a return address; subtract 1 so DWARF
+            /// resolves the `call` instruction itself (mirrors `StackTrace::forEachFrame`).
+            column_lines_inner.insert(AddressToLineCache::get(trace[frame] - (frame > 0 ? 1 : 0)));
         }
 
         column_symbols.getOffsets().push_back(column_symbols.getOffsets().back() + num_frames);
