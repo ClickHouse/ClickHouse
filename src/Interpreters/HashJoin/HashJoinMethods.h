@@ -51,8 +51,12 @@ struct Inserter
         return emplace_result.isInserted();
     }
 
+    /// `asof_type` and `asof_inequality` are read from the join once, before the loop, for the reason
+    /// given above `insertOne`: reading them here would be a load per row, and the type is behind an
+    /// `std::optional` that was dereferenced on every row even though only an insert needs it.
     static ALWAYS_INLINE bool insertAsof(
-        HashJoin & join,
+        TypeIndex asof_type,
+        ASOFJoinInequality asof_inequality,
         HashMap & map,
         KeyGetter & key_getter,
         UInt32 stored_block_no,
@@ -63,9 +67,8 @@ struct Inserter
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
         typename HashMap::mapped_type * time_series_map = &emplace_result.getMapped();
 
-        TypeIndex asof_type = *join.getAsofType();
         if (emplace_result.isInserted())
-            time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
+            time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, asof_inequality));
         (*time_series_map)->insert(asof_column, stored_block_no, i);
         return emplace_result.isInserted();
     }
