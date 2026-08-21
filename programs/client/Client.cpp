@@ -168,12 +168,20 @@ std::vector<String> Client::loadWarningMessages()
         return {};
 
     std::vector<String> messages;
+
+    /// Only the compression knobs: the rest of the session settings must not leak into this
+    /// client-issued helper query. See `networkCompressionSettings`. `showWarnings` swallows any
+    /// exception from here, so a session setting that makes this plain SQL probe fail - a non-default
+    /// `dialect`, or a compatibility-derived network setting pinned read-only by a profile - would
+    /// silently stop warnings from being displayed at all.
+    const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+
     connection->sendQuery(connection_parameters.timeouts,
                           "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
                           {} /* query_parameters */,
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
-                          &client_context->getSettingsRef(),
+                          &compression_settings,
                           &client_context->getClientInfo(), false, {}, {});
     while (true)
     {
