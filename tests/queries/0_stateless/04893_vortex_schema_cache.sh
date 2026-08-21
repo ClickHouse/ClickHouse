@@ -20,6 +20,11 @@ $CLICKHOUSE_LOCAL -q "
     INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Vortex
 "
 
+# `SchemaCache::tryGetImpl` drops an entry whose file is not strictly older than it, and both times
+# are whole seconds, so a file written in the same second as the inference is never a cache hit.
+# Backdating the file keeps the hit below independent of where the second boundary falls.
+touch -d '2000-01-01 00:00:00' "$DATA_FILE"
+
 $CLICKHOUSE_LOCAL -m -q "
     DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 1;
     DESC file('$DATA_FILE', 'Vortex') SETTINGS schema_inference_make_columns_nullable = 0;
@@ -39,7 +44,7 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('$DATA_FILE', 'Vortex') FORMAT Null;
     SELECT
         'schema cache hits',
-        (SELECT value FROM system.events WHERE event = 'SchemaInferenceCacheSchemaHits') > 0;
+        (SELECT sum(value) FROM system.events WHERE event = 'SchemaInferenceCacheSchemaHits') > 0;
 "
 
 # `allow_geoparquet_parser` reaches the Vortex reader too, so it has to be part of the key: the two

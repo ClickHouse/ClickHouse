@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan, no-tsan
+# Tags: no-fasttest, no-msan
 # ^ the Vortex format is not included in the fast test and MSan builds
-# no-tsan: the pushdown path awaits a segment read through the `oneshot` crate, whose receiver
-# synchronizes with a relaxed load plus a standalone `fence(Acquire)`; ThreadSanitizer does not
-# model standalone fences, so it reports the handover of the read buffer as a data race.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
