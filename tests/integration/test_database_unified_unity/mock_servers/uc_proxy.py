@@ -9,16 +9,11 @@ Databricks-specific behaviours `UnifiedUnityCatalog` depends on:
    never sends `securable_kind` and cannot register an Iceberg table at all, so
    the kind is injected into the response for the UniForm tables listed below.
 
-It also makes one cosmetic repair. The Iceberg metadata reports the table
-location as `file:/tmp/marksheet_uniform`, with a single slash, and
-`TableMetadata::setLocation` requires a `://` scheme. Only the scheme is
-normalised; the directory is left exactly as the server reports it, so the
-metadata stays self-consistent and ClickHouse never has to rebase the
-`file:/tmp/...` paths embedded in the manifests. The test roots `user_files` at
-`/` so that location is readable.
+It also normalises `file:/tmp/...` to `file:///tmp/...`, which
+`TableMetadata::setLocation` requires. The directory is left as the server
+reports it, so the metadata stays self-consistent and nothing has to be rebased.
 
-Only the tables in `UNIFORM_TABLES` are patched, so a database pointed at this
-proxy still sees every other table exactly as the upstream server reports it.
+Only the tables in `UNIFORM_TABLES` are touched.
 """
 import json
 import re
@@ -29,17 +24,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 UPSTREAM = "http://localhost:8080"
 
-# Tables the proxy presents as managed Iceberg. `marksheet_uniform` is the only
-# UniForm table in the server's seeded sample data.
+# The only UniForm table in the seeded sample data.
 UNIFORM_TABLES = {"marksheet_uniform"}
 
 ICEBERG_SECURABLE_KIND = "TABLE_DELTA_ICEBERG_EXTERNAL"
 
-# `file:/tmp/...` -> `file:///tmp/...`. The lookahead makes this a no-op on the
-# already-well-formed `file:///tmp/...` the tables API returns.
+# The lookahead makes this a no-op on an already-well-formed `file:///tmp/...`.
 SINGLE_SLASH_SCHEME = re.compile(r"file:/(?=tmp/marksheet_uniform)")
 
-# Headers that describe this hop rather than the request, so they must not be forwarded.
+# Describe this hop rather than the request, so they must not be forwarded.
 HOP_BY_HOP_HEADERS = {"host", "content-length", "accept-encoding", "connection"}
 
 
@@ -54,8 +47,7 @@ def patch_table(table):
 
 
 def patch_tables_response(data):
-    """Handles both the paged listing (`{"tables": [...]}`) and the
-    single-table response (`{"name": ...}`); the catalog uses both."""
+    """The catalog uses both the paged listing and the single-table response."""
     body = json.loads(data)
     if "tables" in body:
         body["tables"] = [patch_table(t) for t in body["tables"]]
@@ -118,9 +110,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_HEAD(self):
         self._proxy("HEAD")
-
-    def do_DELETE(self):
-        self._proxy("DELETE")
 
     def log_message(self, fmt, *args):
         print("%s %s" % (self.command, self.path), flush=True)

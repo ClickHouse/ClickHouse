@@ -1,21 +1,12 @@
 #!/usr/bin/env python3
 """Integration tests for the unified Unity Catalog (`catalog_type = 'unity_catalog'`).
 
-`UnifiedUnityCatalog` serves both Delta and Iceberg tables from a single Unity
-Catalog and detects the format per table. The open-source Unity Catalog server
-used here can only express Delta tables: it never sends `securable_kind`, its
-`DataSourceFormat` enum has no `ICEBERG` value, and it serves the Iceberg REST
-API at `{base}/iceberg` rather than the `{base}/iceberg-rest` that Databricks
-documents. The Iceberg tests therefore go through `mock_servers/uc_proxy.py`,
-which patches exactly those two differences and nothing else.
-
-The seeded UniForm table is registered under `/tmp`, so `configs/user_files_root.xml`
-roots `user_files` at `/`. Reading the table where its own metadata says it lives
-keeps every path inside it self-consistent.
+`UnifiedUnityCatalog` serves Delta and Iceberg tables from one catalog, detecting
+the format per table. The open-source server can only express Delta tables, so the
+Iceberg tests go through `mock_servers/uc_proxy.py`.
 """
 
 import json
-import logging
 import os
 import uuid
 
@@ -26,14 +17,12 @@ from helpers.cluster import ClickHouseCluster
 CATALOG = "unity"
 
 UC_PORT = 8080
-# 8081, the obvious choice, is taken: Unity Catalog binds both 8080 and 8081.
-PROXY_PORT = 8090
+PROXY_PORT = 8090  # Unity Catalog itself binds both 8080 and 8081.
 
 UC_URL = f"http://localhost:{UC_PORT}/api/2.1/unity-catalog"
 PROXY_URL = f"http://localhost:{PROXY_PORT}/api/2.1/unity-catalog"
 
-# Seeded by the docker image, all Delta. `marksheet_uniform` is a UniForm table:
-# a Delta table that also publishes Iceberg metadata.
+# Seeded by the docker image, all Delta.
 SEEDED_TABLES = [
     "default.marksheet",
     "default.marksheet_uniform",
@@ -43,8 +32,7 @@ SEEDED_TABLES = [
 UNIFORM_TABLE = "default.marksheet_uniform"
 DELTA_TABLE = "default.marksheet"
 
-# `marksheet_uniform` is a UniForm copy of `marksheet` and holds byte-identical
-# data, which lets the Iceberg arm be checked against the Delta arm.
+# `marksheet_uniform` is a UniForm copy of `marksheet`, byte-identical.
 SEEDED_ROW_COUNT = 15
 SEEDED_FIRST_ROW = "1\tnWYHawtqUw\t930"
 SEEDED_LAST_ROW = "15\tkxUUZEUoKv\t398"
@@ -54,30 +42,21 @@ EXPERIMENTAL_SETTING = "allow_experimental_database_unified_unity_catalog"
 
 UC_HOME = "/var/lib/clickhouse/user_files/unitycatalog"
 UC_LOG = UC_HOME + "/uc.log"
-UC_START_TIMEOUT = 300
+UC_START_TIMEOUT = 120
 
 
 def start_unity_catalog(node):
-    """Local variant of the one in `test_database_delta`. That one backgrounds the
-    copy and the server together, so a failure to start is indistinguishable from
-    a slow copy and leaves no log to read. Here the copy is synchronous and the
-    server is checked for liveness, so a failure says what actually broke."""
-    # The server's classpath (`server/target/classpath`) names 253 dependency
-    # jars under `/root/.cache/coursier`, but outside CI the container runs as
-    # uid 1000 / gid 0 and `/root` is mode 0700, so the JVM loads none of them.
-    # `a+rx`, not `o+rx`: gid 0 matches the directory's group, whose bits win
-    # over the other bits. Traversal is all that is needed; nothing writes there.
+    # The server's classpath lives under `/root/.cache/coursier`, unreadable to
+    # the container's uid outside CI. `a+rx` because that uid has gid 0, so the
+    # group bits apply, not the other bits.
     node.exec_in_container(["bash", "-c", "chmod a+rx /root"], user="root")
 
-    # `cp -r` fails here: eight sbt incremental-compile caches under */zinc are
-    # mode 0600 and owned by root, while this runs as the container's own user.
-    # tar skips them, and they have no role at runtime.
+    # tar, not `cp -r`: the sbt caches under */zinc are root-owned mode 0600.
+    # `user_files` is rooted at `/`, so nothing else creates this directory.
     node.exec_in_container(
         [
             "bash",
             "-c",
-            # The server creates this directory itself only when `user_files_path`
-            # points at it, and this test roots `user_files` at `/` instead.
             "mkdir -p /var/lib/clickhouse/user_files && "
             'tar -C / -cf - --exclude="*/zinc" unitycatalog'
             " | tar -C /var/lib/clickhouse/user_files -xf -",
@@ -102,6 +81,7 @@ def start_unity_catalog(node):
             ]
         )
     except Exception:
+        # A bare port-wait timeout says nothing about why the server is absent.
         for description, command in (
             ("server process", "pgrep -af start-uc-server || echo '(not running)'"),
             ("log file", f"ls -la {UC_LOG} 2>&1"),
@@ -120,19 +100,15 @@ UNIFORM_DIR = (
 
 
 def link_uniform_table(node):
-    """`marksheet_uniform` is the one sample table that needs setup before use.
-    It ships registered at `file:///tmp/marksheet_uniform`, and the upstream docs
-    (`docs/usage/tables/uniform.md`) tell you to copy the data there. A symlink
-    does the same job for read-only data. Both readers need it: the Unity Catalog
-    server reads the Iceberg metadata off disk at the registered path, and
-    ClickHouse follows the same path once `user_files` is rooted at `/`."""
+    """The upstream docs tell you to copy this table to `/tmp` before use; a
+    symlink does the same for read-only data. Both the catalog server and
+    ClickHouse then find it where its registration says it is."""
     node.exec_in_container(
         [
             "bash",
             "-c",
             f"ln -sfn {UNIFORM_DIR} /tmp/marksheet_uniform && "
-            "test -f /tmp/marksheet_uniform/metadata/"
-            "00002-5b7aa739-d074-4764-b49d-ad6c63419576.metadata.json",
+            "test -d /tmp/marksheet_uniform/metadata",
         ]
     )
 
@@ -142,9 +118,8 @@ PROXY_LOG = "/var/lib/clickhouse/user_files/uc_proxy.log"
 
 
 def start_proxy(node):
-    """`helpers.mock_servers.start_mock_servers` copies to a relative path, so the
-    script lands in the container's working directory, which the container's uid
-    cannot write to outside CI. Place it in `user_files` and start it directly."""
+    """Not `helpers.mock_servers.start_mock_servers`: it copies to a relative path,
+    which the container's uid cannot write to outside CI."""
     node.copy_file_to_container(
         os.path.join(os.path.dirname(__file__), "mock_servers", "uc_proxy.py"),
         PROXY_PATH,
@@ -184,24 +159,18 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/user_files_root.xml"],
-            user_configs=[],
             image="clickhouse/integration-test-with-unity-catalog",
             with_installed_binary=False,
             tag=os.environ.get("DOCKER_BASE_WITH_UNITY_CATALOG_TAG", "latest"),
         )
 
-        logging.info("Starting cluster...")
         cluster.start()
 
         node = cluster.instances["node1"]
-        if (
-            int(
-                node.query(
-                    "SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'"
-                ).strip()
-            )
-            == 0
-        ):
+        engines = node.query(
+            "SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'"
+        )
+        if int(engines.strip()) == 0:
             pytest.skip("DeltaLake engine is not available")
 
         start_unity_catalog(node)
@@ -246,8 +215,7 @@ def read_rows(node, db_name, table):
 
 
 def uc_api_post(node, route, payload):
-    """Calls the Unity Catalog REST API directly. Used to register tables that
-    the Spark connector cannot create, such as a non-Delta external table."""
+    """Registers objects the seeded data does not provide, such as a CSV table."""
     script = f"""
 import json, urllib.request
 request = urllib.request.Request(
@@ -262,8 +230,7 @@ print(urllib.request.urlopen(request).status)
 
 
 def test_experimental_gate(started_cluster):
-    """The catalog is experimental, so `CREATE DATABASE` must refuse without the
-    opt-in setting. Only a real CREATE is gated; ATTACH deliberately is not."""
+    """`CREATE DATABASE` must refuse without the opt-in setting."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("gated")
 
@@ -277,8 +244,7 @@ SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_catalog', vended_credent
 
 
 def test_list_and_read_delta_tables(started_cluster):
-    """The seeded catalog is all Delta, so the unified catalog must behave like
-    the Delta-only one: list every table and read it correctly."""
+    """On an all-Delta catalog the unified engine must match the Delta-only one."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("unified_delta")
     create_database(node, db_name)
@@ -294,13 +260,10 @@ def test_list_and_read_delta_tables(started_cluster):
 
 
 def test_unreadable_table_is_hidden(started_cluster):
-    """A table whose `data_source_format` is neither Delta nor Iceberg is not
-    readable. It must be absent from listings, and naming it directly must
-    report why rather than fail obscurely."""
+    """An unreadable table is hidden from listings, and naming it says why."""
     node = started_cluster.instances["node1"]
-    test_uuid = str(uuid.uuid4()).replace("-", "_")
-    schema_name = f"unified_unreadable_{test_uuid}"
-    db_name = f"unified_unreadable_db_{test_uuid}"
+    schema_name = unique_name("unified_unreadable")
+    db_name = unique_name("unified_unreadable_db")
 
     uc_api_post(node, "schemas", {"name": schema_name, "catalog_name": CATALOG})
     uc_api_post(
@@ -312,8 +275,8 @@ def test_unreadable_table_is_hidden(started_cluster):
             "schema_name": schema_name,
             "table_type": "EXTERNAL",
             "data_source_format": "CSV",
-            # `setLocation` requires a `://` scheme and throws `Unexpected location
-            # format` without one, which would pre-empt the format check under test.
+            # `setLocation` needs a `://` scheme, or it throws before the
+            # format check under test.
             "storage_location": f"file:///var/lib/clickhouse/user_files/tmp/{schema_name}/csv_table",
             "columns": [
                 {
@@ -348,8 +311,7 @@ def test_unreadable_table_is_hidden(started_cluster):
 
 
 def test_uniform_table_reads_as_delta(started_cluster):
-    """The control case for the Iceberg tests below. Unpatched, the UniForm
-    table reports `data_source_format = DELTA` and must route to the Delta arm."""
+    """Control case: unproxied, the UniForm table reports DELTA and routes there."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("unified_uniform")
     create_database(node, db_name)
@@ -360,9 +322,8 @@ def test_uniform_table_reads_as_delta(started_cluster):
 
 
 def test_iceberg_table_routes_to_iceberg_arm(started_cluster):
-    """Databricks reports a managed Iceberg table with `data_source_format = DELTA`
-    and an Iceberg `securable_kind`, so the kind must win over the format. The
-    proxy injects the kind; the same table read directly stays Delta."""
+    """Databricks reports managed Iceberg as `data_source_format = DELTA`, so
+    `securable_kind` must win over the format."""
     node = started_cluster.instances["node1"]
     proxied_db = unique_name("unified_iceberg")
     direct_db = unique_name("unified_direct")
@@ -378,10 +339,8 @@ def test_iceberg_table_routes_to_iceberg_arm(started_cluster):
 
 
 def test_iceberg_table_is_listed_and_readable(started_cluster):
-    """Reading through the Iceberg arm goes to an embedded `RestCatalog` at the
-    Iceberg REST endpoint, a completely different metadata path from Delta. The
-    UniForm table is a copy of `marksheet`, so the two arms must agree row for
-    row; that is a stronger check than either one on its own."""
+    """The Iceberg arm reads through an embedded `RestCatalog`, a different
+    metadata path from Delta. Both arms read the same rows, so they must agree."""
     node = started_cluster.instances["node1"]
     iceberg_db = unique_name("unified_iceberg_read")
     delta_db = unique_name("unified_delta_read")
@@ -403,8 +362,7 @@ def test_iceberg_table_is_listed_and_readable(started_cluster):
 
 
 def test_mixed_formats_in_one_database(started_cluster):
-    """The reason the unified catalog exists: one database serving both formats.
-    `used_storages` from the query log names the engine each read actually used."""
+    """One database serving both formats, which is the point of the engine."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("unified_mixed")
     create_database(node, db_name, url=PROXY_URL)
@@ -420,7 +378,7 @@ def test_mixed_formats_in_one_database(started_cluster):
             f" WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         ).strip()
 
-    delta_storages = used_storages("default.marksheet")
+    delta_storages = used_storages(DELTA_TABLE)
     iceberg_storages = used_storages(UNIFORM_TABLE)
 
     assert "DeltaLake" in delta_storages, delta_storages
