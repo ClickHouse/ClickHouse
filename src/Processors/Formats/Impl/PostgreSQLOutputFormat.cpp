@@ -4,9 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
-#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ProcessList.h>
-#include <Processors/Formats/PostgreSQLArrayText.h>
 
 #include <Processors/Port.h>
 
@@ -31,7 +29,7 @@ PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader 
 void PostgreSQLOutputFormat::writePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
-    data_types = header.getDataTypes();
+    auto data_types = header.getDataTypes();
 
     if (header.columns())
     {
@@ -73,12 +71,7 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
             else
             {
                 WriteBufferFromOwnString ostr;
-                if (isArray(data_types[j]))
-                    /// Arrays must be emitted in PostgreSQL array-literal form (`{...}`) so that a
-                    /// self-connected `postgresql(..., 'arr_table')` can read them back.
-                    writePostgreSQLArrayText(*columns[j], *data_types[j], i, ostr, format_settings);
-                else
-                    serializations[j]->serializeText(*columns[j], i, ostr, format_settings);
+                serializations[j]->serializeText(*columns[j], i, ostr, format_settings);
                 row.push_back(std::make_shared<PostgreSQLProtocol::Messaging::StringField>(std::move(ostr.str())));
             }
         }

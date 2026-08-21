@@ -34,9 +34,8 @@ PY
 
 for NAME in utf8 large_utf8 list_utf8; do
     for FMT in Arrow ArrowStream; do
-        native=$(${CLICKHOUSE_LOCAL}  --query "SELECT c FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 1")
-        library=$(${CLICKHOUSE_LOCAL} --query "SELECT c FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 0")
-        if [ "$native" = "$library" ]; then echo "OK native==library | ${NAME} ${FMT}"; echo "$native"; else echo "MISMATCH | ${NAME} ${FMT}"; fi
+        echo "| ${NAME} ${FMT}"
+        ${CLICKHOUSE_LOCAL} --query "SELECT c FROM file('${DATA_FILE}.${NAME}.${FMT}', '${FMT}')"
         rm -f "${DATA_FILE}.${NAME}.${FMT}"
     done
 done

@@ -148,7 +148,10 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
     for (size_t i = 0; i < elems.size(); ++i)
         infos.push_back(elems[i]->createWithType(*old_elements[i], *new_elements[i], new_settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+    /// The result describes `new_type`, so the element identities have to be the ones of `new_type` as well:
+    /// the elements can be renamed, and everything that merges tuple subinfos (`add`, `replaceData`) matches
+    /// them by name, so carrying the old names over would silently make the renamed elements unmatched.
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), new_tuple.getElementNames());
 }
 
 void SerializationInfoTuple::serialializeKindStackBinary(WriteBuffer & out) const
