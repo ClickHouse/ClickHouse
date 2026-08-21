@@ -10,6 +10,7 @@ namespace
 {
 
 constexpr uint64_t SECOND = 1'000'000'000ULL;
+constexpr uint64_t NO_RELOAD = 0;   /// no ladder change, so the reload bypass never triggers
 
 /// Save and restore the shared thresholds so a test that changes them does not leak into others.
 struct ScopedThresholds
@@ -67,6 +68,26 @@ TEST(MemoryPressureMonitor, ClassifyReflectsSharedThresholdsLive)
     EXPECT_EQ(classifyMemoryPressure(0.55), MemoryPressureLevel::Normal);   /// live change
 }
 
+/// End to end: a reload relaxes an in-flight monitor at once. Raise the ladder above the current
+/// pressure with no time advance; only the reload stamp (not a step-down) can lower the level here.
+TEST(MemoryPressureMonitor, ThresholdReloadDropsCooldownImmediately)
+{
+    ScopedThresholds guard(75, 90, 95);
+
+    MemoryPressureMonitor root;
+    MemoryTracker tracker(nullptr, VariableContext::Process, false);
+    tracker.setHardLimit(1000);
+    MemoryPressureMonitor scoped(tracker, root);
+
+    tracker.adjustWithUntrackedMemory(920);   /// 0.92 -> High under 75 / 90 / 95
+    EXPECT_EQ(scoped.currentLevel(), MemoryPressureLevel::High);
+
+    setMemoryPressureThresholds(95, 96, 97);   /// stamps a set time after the level above was set
+    EXPECT_EQ(scoped.currentLevel(), MemoryPressureLevel::Normal);
+
+    tracker.adjustWithUntrackedMemory(-920);
+}
+
 /// A scoped monitor classifies its tracker's pressure against its own thresholds. Snap-up is
 /// immediate, so a rising pressure gives the classified level on the first sample (no clock needed).
 /// The parent (a fresh global monitor over the untracked server total) contributes `Normal` here.
@@ -116,22 +137,32 @@ TEST(MemoryPressureMonitor, CooldownAppliesToClassifiedLevels)
 {
     PressureCooldown c(/*cooldown_ns_=*/10 * SECOND);
 
-    EXPECT_EQ(c.apply(MemoryPressureLevel::High, SECOND), MemoryPressureLevel::High);            /// snap up
-    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 2 * SECOND), MemoryPressureLevel::High);      /// sticky
-    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 12 * SECOND), MemoryPressureLevel::Elevated); /// one step per cooldown
-    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 13 * SECOND), MemoryPressureLevel::Elevated); /// next step not due yet
-    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 23 * SECOND), MemoryPressureLevel::Normal);
+    EXPECT_EQ(c.apply(MemoryPressureLevel::High, SECOND, NO_RELOAD), MemoryPressureLevel::High);            /// snap up
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 2 * SECOND, NO_RELOAD), MemoryPressureLevel::High);      /// sticky
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 12 * SECOND, NO_RELOAD), MemoryPressureLevel::Elevated); /// one step per cooldown
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 13 * SECOND, NO_RELOAD), MemoryPressureLevel::Elevated); /// next step not due yet
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 23 * SECOND, NO_RELOAD), MemoryPressureLevel::Normal);
 }
 
 TEST(MemoryPressureMonitor, CooldownReSpikeRefreshesTheClock)
 {
     PressureCooldown c(/*cooldown_ns_=*/10 * SECOND);
 
-    EXPECT_EQ(c.apply(MemoryPressureLevel::Critical, SECOND), MemoryPressureLevel::Critical);
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Critical, SECOND, NO_RELOAD), MemoryPressureLevel::Critical);
     /// A re-spike at the same level refreshes the timestamp: the step-down needs sustained calm.
-    EXPECT_EQ(c.apply(MemoryPressureLevel::Critical, 9 * SECOND), MemoryPressureLevel::Critical);
-    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 12 * SECOND), MemoryPressureLevel::Critical);
-    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 20 * SECOND), MemoryPressureLevel::High);
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Critical, 9 * SECOND, NO_RELOAD), MemoryPressureLevel::Critical);
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 12 * SECOND, NO_RELOAD), MemoryPressureLevel::Critical);
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 20 * SECOND, NO_RELOAD), MemoryPressureLevel::High);
+}
+
+TEST(MemoryPressureMonitor, CooldownReloadBypassesStickiness)
+{
+    PressureCooldown c(/*cooldown_ns_=*/10 * SECOND);
+
+    EXPECT_EQ(c.apply(MemoryPressureLevel::High, SECOND, NO_RELOAD), MemoryPressureLevel::High);        /// snap up at 1s
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 2 * SECOND, NO_RELOAD), MemoryPressureLevel::High);  /// sticky, no reload
+    /// A reload stamped after the level was set (> 1s) drops the sticky level at once, no cooldown wait.
+    EXPECT_EQ(c.apply(MemoryPressureLevel::Normal, 3 * SECOND, /*thresholds_set_ns=*/2 * SECOND), MemoryPressureLevel::Normal);
 }
 
 TEST(MemoryPressureMonitor, CooldownsAreIndependent)
@@ -140,10 +171,10 @@ TEST(MemoryPressureMonitor, CooldownsAreIndependent)
     PressureCooldown query_a(PressureCooldown::QUERY_COOLDOWN_NS);
     PressureCooldown query_b(PressureCooldown::QUERY_COOLDOWN_NS);
 
-    EXPECT_EQ(query_a.apply(MemoryPressureLevel::Critical, SECOND), MemoryPressureLevel::Critical);
-    EXPECT_EQ(query_b.apply(MemoryPressureLevel::Normal, SECOND), MemoryPressureLevel::Normal);
-    EXPECT_EQ(query_a.apply(MemoryPressureLevel::Normal, 2 * SECOND), MemoryPressureLevel::Critical);
-    EXPECT_EQ(query_b.apply(MemoryPressureLevel::Normal, 2 * SECOND), MemoryPressureLevel::Normal);
+    EXPECT_EQ(query_a.apply(MemoryPressureLevel::Critical, SECOND, NO_RELOAD), MemoryPressureLevel::Critical);
+    EXPECT_EQ(query_b.apply(MemoryPressureLevel::Normal, SECOND, NO_RELOAD), MemoryPressureLevel::Normal);
+    EXPECT_EQ(query_a.apply(MemoryPressureLevel::Normal, 2 * SECOND, NO_RELOAD), MemoryPressureLevel::Critical);
+    EXPECT_EQ(query_b.apply(MemoryPressureLevel::Normal, 2 * SECOND, NO_RELOAD), MemoryPressureLevel::Normal);
 }
 
 /// `MemoryTracker::getPressure` is `amount / hard_limit`, lock-free, and 0 when there is no limit or usage.

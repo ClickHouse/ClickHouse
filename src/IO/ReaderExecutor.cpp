@@ -59,10 +59,9 @@ constexpr size_t BLOCK_REDUCTION[memoryPressureLevelCount()] = {1, 2, 2, 8};
 /// also capped at the window.
 WindowAndBlock sizesAtPressure(MemoryPressureLevel pressure, size_t base_window, size_t base_block)
 {
-    static constexpr size_t FLOOR = 128ULL << 10;
     const size_t level = static_cast<size_t>(pressure);
-    const size_t window = std::min(std::max(base_window / WINDOW_REDUCTION[level], FLOOR), base_window);
-    size_t block = std::min(std::max(base_block / BLOCK_REDUCTION[level], FLOOR), base_block);
+    const size_t window = std::min(std::max(base_window / WINDOW_REDUCTION[level], MIN_READER_EXECUTOR_SIZE), base_window);
+    size_t block = std::min(std::max(base_block / BLOCK_REDUCTION[level], MIN_READER_EXECUTOR_SIZE), base_block);
     block = std::min(block, window);
     return {window, block};
 }

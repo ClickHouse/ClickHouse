@@ -31,6 +31,13 @@ std::atomic<uint32_t> & thresholdsSingleton()
     return packed;
 }
 
+/// Steady-clock time the ladder was last (re)set; lets a cooldown tell a stale level from a fresh one.
+std::atomic<uint64_t> & thresholdsSetNs()
+{
+    static std::atomic<uint64_t> set_ns{0};
+    return set_ns;
+}
+
 uint64_t steadyNowNs()
 {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -54,7 +61,7 @@ void validateMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt
             elevated_pct, high_pct, critical_pct);
 }
 
-MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw_level, uint64_t now_ns)
+MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw_level, uint64_t now_ns, uint64_t thresholds_set_ns)
 {
     const uint8_t raw = static_cast<uint8_t>(raw_level);
     std::lock_guard lk(mutex);
@@ -62,6 +69,13 @@ MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw_level, uint6
     if (raw >= level)
     {
         /// Snap up immediately; refresh the "still elevated" timestamp.
+        level = raw;
+        last_at_or_above_ns = now_ns;
+    }
+    else if (thresholds_set_ns > last_at_or_above_ns)
+    {
+        /// The ladder was reloaded after this level was set, so the level is stale - accept the new
+        /// classification at once instead of holding the old one until the cooldown expires.
         level = raw;
         last_at_or_above_ns = now_ns;
     }
@@ -88,6 +102,8 @@ void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 cr
 {
     validateMemoryPressureThresholds(elevated_pct, high_pct, critical_pct);
     thresholdsSingleton().store(packThresholds(elevated_pct, high_pct, critical_pct), std::memory_order_relaxed);
+    /// Stamp the change so cooldowns holding a level from the old ladder accept the new one at once.
+    thresholdsSetNs().store(steadyNowNs(), std::memory_order_relaxed);
 }
 
 MemoryPressureThresholds getMemoryPressureThresholds()
@@ -98,10 +114,10 @@ MemoryPressureThresholds getMemoryPressureThresholds()
 
 MemoryPressureLevel classifyMemoryPressure(double pressure)
 {
-    const uint32_t packed = thresholdsSingleton().load(std::memory_order_relaxed);
-    const double elevated = static_cast<double>((packed >> 16) & 0xFFu) / 100.0;
-    const double high = static_cast<double>((packed >> 8) & 0xFFu) / 100.0;
-    const double critical = static_cast<double>(packed & 0xFFu) / 100.0;
+    const MemoryPressureThresholds th = getMemoryPressureThresholds();
+    const double elevated = static_cast<double>(th.elevated_pct) / 100.0;
+    const double high = static_cast<double>(th.high_pct) / 100.0;
+    const double critical = static_cast<double>(th.critical_pct) / 100.0;
 
     if (pressure >= critical)
         return MemoryPressureLevel::Critical;
@@ -143,7 +159,8 @@ double MemoryPressureMonitor::samplePressure() const
 
 MemoryPressureLevel MemoryPressureMonitor::currentLevel()
 {
-    const MemoryPressureLevel own = cooldown.apply(classifyMemoryPressure(samplePressure()), steadyNowNs());
+    const MemoryPressureLevel own = cooldown.apply(
+        classifyMemoryPressure(samplePressure()), steadyNowNs(), thresholdsSetNs().load(std::memory_order_relaxed));
 
     /// Escalate up the chain: a monitor never reads below any level above it.
     if (auto * p = parent.load(std::memory_order_relaxed))

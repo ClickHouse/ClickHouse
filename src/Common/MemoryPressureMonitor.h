@@ -52,7 +52,10 @@ public:
 
     explicit PressureCooldown(uint64_t cooldown_ns_ = COOLDOWN_NS) : cooldown_ns(cooldown_ns_) {}
 
-    MemoryPressureLevel apply(MemoryPressureLevel raw, uint64_t now_ns);
+    /// `thresholds_set_ns` is when the shared ladder was last (re)set. If that is newer than the sticky
+    /// level's timestamp, the level was classified against an old ladder and is accepted anew at once,
+    /// bypassing the cooldown - a reload takes effect immediately without a per-monitor flag.
+    MemoryPressureLevel apply(MemoryPressureLevel raw, uint64_t now_ns, uint64_t thresholds_set_ns);
 
     /// Clear the sticky level and timestamp.
     void reset();

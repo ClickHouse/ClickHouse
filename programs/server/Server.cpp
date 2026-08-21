@@ -2966,8 +2966,8 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            /// Already validated above, so this won't throw. Sets the shared thresholds; every monitor
-            /// classifies against them, so running queries pick up the new ladder at once.
+            /// Already validated above, so this won't throw. Sets and stamps the shared thresholds, so
+            /// every monitor adopts the new ladder on its next sample, bypassing the sticky cooldown.
             setMemoryPressureThresholds(
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],

@@ -99,9 +99,7 @@ public:
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
-    /// This query's memory-pressure monitor, scoped to the group so its cooldown dies with the query
-    /// and does not leak into the next query on a pool thread. Watches the group's tracker chain and
-    /// escalates against the global monitor.
+    /// This query's memory-pressure monitor; its parent is repointed to the user monitor at query start.
     MemoryPressureMonitor memory_pressure_monitor{memory_tracker, memoryPressureMonitor()};
 
     struct SharedData
