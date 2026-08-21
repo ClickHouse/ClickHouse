@@ -427,23 +427,29 @@ def test_shim_returns_response_on_success(monkeypatch):
 # dropping `**kwargs` from the delegation leaves both silently unsent.
 def test_caller_request_options_survive_delegation(monkeypatch):
     sleeps: list = []
-    calls, _ = _install_fake_transport(monkeypatch, [200], b"", None, sleeps)
+    calls, _ = _install_fake_transport(monkeypatch, [504, 504, 200], b"", None, sleeps)
     monkeypatch.setattr(
         bdh, "grt", types.SimpleNamespace(ROBOT_TOKEN=None, get_best_robot_token=str)
     )
 
     bdh.get_gh_api(
         URL,
+        sleep=0,
         params={"page": 1, "per_page": 100},
         headers={"Accept": "application/vnd.github.v3.diff"},
         timeout=10,
     )
 
-    url, sent = calls["requests"][0]
-    assert url == URL
-    assert sent["params"] == {"page": 1, "per_page": 100}
-    assert sent["headers"]["Accept"] == "application/vnd.github.v3.diff"
-    assert sent["timeout"] == 10
+    # Every retried attempt, not just the first: an option cleared after a failure would
+    # otherwise be invisible.
+    assert calls["count"] == 3
+    for url, sent in calls["requests"]:
+        assert url == URL
+        assert sent["params"] == {"page": 1, "per_page": 100}
+        assert sent["headers"]["Accept"] == "application/vnd.github.v3.diff"
+        assert sent["timeout"] == 10
+    # The shim must forward the caller's `sleep`, which `pr_info.py` sets to 0.
+    assert sleeps == [0, 0]
 
 
 # Row 15: the failover must install a usable bearer, not merely an `Authorization` key.
@@ -461,10 +467,13 @@ def test_failover_sends_the_fetched_token(monkeypatch):
     )
 
     with pytest.raises(bdh.APIException):
-        bdh.get_gh_api(URL)
+        bdh.get_gh_api(URL, params={"page": 1})
 
     assert auth_seen[0] is False and auth_seen[1] is True
     _, before = calls["requests"][0]
     _, after = calls["requests"][1]
     assert "Authorization" not in (before.get("headers") or {})
     assert after["headers"]["Authorization"] == "Bearer fetched-token"
+    # The failover restarts the budget, so it is also where a caller option can be lost.
+    for _, sent in calls["requests"]:
+        assert sent["params"] == {"page": 1}

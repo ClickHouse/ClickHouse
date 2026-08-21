@@ -221,7 +221,7 @@ class GH:
         """GET a GitHub API url over HTTP, retrying transient failures.
 
         Transport errors and the statuses in ``API_GET_RETRYABLE_STATUSES`` (plus every
-        5xx) grow the delay as ``sleep * 2 ** attempt``, capped at
+        5xx) grow the delay as ``sleep * 2 ** (attempt - 1)``, capped at
         ``API_GET_RETRY_MAX_BACKOFF``; any other status keeps a flat ``sleep``, so a
         terminal 4xx is not turned into a long wait. The growth base is the caller's
         ``sleep``, so a caller passing 0 still gets no sleep at all.
