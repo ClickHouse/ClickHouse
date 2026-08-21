@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <Core/Names.h>
+#include <Storages/MergeTree/AutomaticLowCardinality.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
@@ -950,43 +951,22 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// Automatic LowCardinality serialization: store a String/FixedString column in dictionary-encoded
     /// form when it has a cardinality statistic (`uniq` or `uniq_v2`) with a low estimate. This uses only
     /// the existing statistics - it does not change statistics serialization.
-    const UInt64 max_uniq_for_low_cardinality = (*data_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality];
-    NameSet low_cardinality_candidates;
-    if (max_uniq_for_low_cardinality != 0)
+    auto low_cardinality_candidates = chooseColumnsForAutomaticLowCardinality(
+        columns, statistics, (*data_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality]);
+
+    /// The entries have to exist before the data of the block is accumulated, so that the recorded
+    /// number of defaults is the real one.
+    for (const auto & [column_name, column_type] : columns)
     {
-        for (const auto & [column_name, column_type] : columns)
-        {
-            if (!isStringOrFixedString(column_type))
-                continue;
-
-            auto stats_it = statistics.find(column_name);
-            if (stats_it == statistics.end() || !stats_it->second->hasCardinality())
-                continue;
-
-            if (stats_it->second->estimateCardinality() > max_uniq_for_low_cardinality)
-                continue;
-
-            low_cardinality_candidates.insert(column_name);
-
-            /// `SerializationInfoByName` creates entries only for columns eligible for sparse serialization,
-            /// and no entries at all when sparse serialization is disabled with
-            /// `ratio_of_defaults_for_sparse_serialization = 1`. Automatic `LowCardinality` does not depend on
-            /// sparse serialization, so create the missing entry to keep the two settings independent.
-            if (!infos.contains(column_name))
-                infos.emplace(column_name, column_type->createSerializationInfo(settings));
-        }
+        if (low_cardinality_candidates.contains(column_name) && !infos.contains(column_name))
+            infos.emplace(column_name, column_type->createSerializationInfo(settings));
     }
 
     infos.add(block);
 
     /// The decision is made after the sparse one, so a column that qualifies for sparse serialization is
     /// stored as sparse instead.
-    for (const auto & column_name : low_cardinality_candidates)
-    {
-        auto & info = infos.at(column_name);
-        if (!ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::SPARSE))
-            info->appendToKindStack(ISerialization::Kind::LOW_CARDINALITY);
-    }
+    appendAutomaticLowCardinalityKind(infos, columns, low_cardinality_candidates, settings);
 
     for (const auto & [column_name, _] : columns)
     {

@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/AutomaticLowCardinality.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -942,6 +943,21 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             , nullptr
 #endif
             ));
+    }
+
+    /// Automatic `LowCardinality` serialization: besides preserving the kind of an already encoded source
+    /// part, a merge also chooses the encoding anew from the merged cardinality statistics of the result
+    /// part. This is what upgrades legacy `Default` parts after the setting is enabled.
+    /// The statistics that have to be rebuilt during the merge are not accounted here (they are not
+    /// calculated yet), so the estimate can be lower than the real cardinality of the result part; the
+    /// choice is a heuristic and does not affect correctness.
+    {
+        auto low_cardinality_candidates = chooseColumnsForAutomaticLowCardinality(
+            global_ctx->storage_columns,
+            global_ctx->gathered_data.statistics,
+            (*merge_tree_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality]);
+
+        appendAutomaticLowCardinalityKind(infos, global_ctx->storage_columns, low_cardinality_candidates, info_settings);
     }
 
     if (global_ctx->new_data_part->info.isPatch())

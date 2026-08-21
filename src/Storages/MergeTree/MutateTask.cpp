@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
+#include <Storages/MergeTree/AutomaticLowCardinality.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -913,6 +914,31 @@ getColumnsForNewDataPart(
 
             new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(settings));
         }
+    }
+
+    /// Automatic `LowCardinality` serialization: a mutation that rewrites a column also chooses the
+    /// encoding anew from the statistics the source part carries, so that enabling the setting and running
+    /// a rewrite (`ALTER TABLE ... REWRITE PARTS`) upgrades legacy parts. Columns that are only hardlinked
+    /// are not considered: their data files are carried over byte for byte, so the serialization of the
+    /// source part stays in place.
+    const UInt64 max_uniq_number_for_low_cardinality
+        = (*source_part->storage.getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality];
+
+    if (max_uniq_number_for_low_cardinality != 0)
+    {
+        NamesAndTypesList rewritten_columns;
+        for (const auto & column : storage_columns)
+        {
+            if (updated_header.has(column.name) && !removed_columns.contains(column.name))
+                rewritten_columns.push_back(column);
+        }
+
+        /// The statistics are those of the source part: a mutation that changes the values of the column
+        /// makes them stale, which can only make the choice suboptimal, never incorrect.
+        auto low_cardinality_candidates = chooseColumnsForAutomaticLowCardinality(
+            rewritten_columns, source_part->loadStatistics(), max_uniq_number_for_low_cardinality);
+
+        appendAutomaticLowCardinalityKind(new_serialization_infos, rewritten_columns, low_cardinality_candidates, settings);
     }
 
     /// In compact parts we read all columns, because they all stored in a single file

@@ -224,6 +224,10 @@ sparse serialization, so a column that qualifies for sparse serialization is sto
 Reading a subcolumn of such a column (for example `s.size`) is not supported, because the subcolumn's
 streams do not exist in a dictionary-encoded part.
 
+The decision is made every time a part is written: on `INSERT`, on merges and on rewrites of the parts by
+mutations. Enabling this setting on a table that already has data upgrades the existing parts on their
+next merge or rewrite.
+
 A value of `0` disables automatic `LowCardinality` serialization.
 )", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
