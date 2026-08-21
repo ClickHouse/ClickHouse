@@ -37,9 +37,12 @@ ENGINE = MergeTree ORDER BY k
 -- merge-tree settings cannot break it: index_granularity fixes the granule
 -- count (2000 rows / 100 = 20 granules), replace_long_file_name_to_hash = 0
 -- keeps the index file at its logical name (skp_idx_mm_v.idx2) that we rename,
--- and min_bytes_for_wide_part = 0 forces the Wide layout.
+-- min_bytes_for_wide_part = 0 forces the Wide layout, and
+-- packed_skip_index_max_bytes = 0 keeps that file standalone rather than a
+-- member of skp_idx.packed, which the rename cannot reach.
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          index_granularity = 100, replace_long_file_name_to_hash = 0,
+         packed_skip_index_max_bytes = 0,
          columns_and_secondary_indices_sizes_lazy_calculation = 0"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_legacy_minmax (k, v) SELECT number, number FROM numbers(2000)"

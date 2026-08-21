@@ -23,10 +23,7 @@ constexpr size_t KEY_NOT_FOUND = std::numeric_limits<size_t>::max();
 /// Phase 1: Find the position of the requested key in each row.
 ///
 /// Builds `matched_positions[i]` = flat index into the keys/values column
-/// where the key was found for row (start + i), or KEY_NOT_FOUND.
-/// Uses position prediction: if the key was at relative offset K in the
-/// previous row, we try offset K first in the current row before falling
-/// back to a linear scan.
+/// of the first key matching `key` in row (start + i), or KEY_NOT_FOUND.
 /// ---------------------------------------------------------------------------
 
 /// Generic key matcher that uses virtual compareAt. Used as a fallback
@@ -91,6 +88,15 @@ struct KeyMatcherFixedString
 
 /// The core position-finding loop, parametrized by Matcher type.
 /// For each row in [start, end), finds the flat index of the matching key.
+///
+/// `m[key]` returns the value of the FIRST occurrence of the key in the row, so
+/// each row is scanned left to right and the first match is taken. Duplicate keys
+/// in a Map are a legal (if degenerate) state, so a position-prediction shortcut
+/// across rows is not used: it could accept a later duplicate at the predicted
+/// offset while an earlier occurrence exists, yielding a value that depends on the
+/// preceding rows in the block (see issue #111203). Ruling out an earlier duplicate
+/// still requires scanning from the start, so there is no correct constant-time
+/// shortcut to prefer over the scan.
 template <typename Matcher>
 void findKeyPositions(
     const ColumnArray::Offsets & offsets,
@@ -102,48 +108,20 @@ void findKeyPositions(
     size_t num_rows = end - start;
     matched_positions.resize(num_rows);
 
-    /// Relative offset of the key within the map from the previous row.
-    /// Used for position prediction.
-    size_t predicted_relative_pos = 0;
-    bool have_prediction = false;
-
     for (size_t i = start; i < end; ++i)
     {
         size_t positions_row_idx = i - start;
         size_t offset_start = offsets[ssize_t(i) - 1];
         size_t offset_end = offsets[i];
 
-        /// Try the predicted position first.
-        if (have_prediction)
-        {
-            size_t predicted_pos = offset_start + predicted_relative_pos;
-            if (predicted_pos < offset_end && matcher.match(predicted_pos))
-            {
-                matched_positions[positions_row_idx] = predicted_pos;
-                continue;
-            }
-        }
-
-        /// Prediction missed or not available. Fall back to linear scan.
-        bool found = false;
+        matched_positions[positions_row_idx] = KEY_NOT_FOUND;
         for (size_t j = offset_start; j < offset_end; ++j)
         {
             if (matcher.match(j))
             {
                 matched_positions[positions_row_idx] = j;
-                predicted_relative_pos = j - offset_start;
-                have_prediction = true;
-                found = true;
                 break;
             }
-        }
-
-        if (!found)
-        {
-            /// Keep the prediction unchanged: if only this row is missing the key,
-            /// subsequent rows likely have the same key order, so the prediction
-            /// may still be valid. A wrong prediction costs only one extra match call.
-            matched_positions[positions_row_idx] = KEY_NOT_FOUND;
         }
     }
 }

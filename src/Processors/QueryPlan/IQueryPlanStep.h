@@ -5,6 +5,8 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <span>
 #include <string_view>
 #include <variant>
 #include <list>
@@ -36,6 +38,8 @@ class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
+
+using StepProcessors = std::span<IProcessor * const>;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -75,7 +79,7 @@ public:
     struct Serialization;
     struct Deserialization;
 
-    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
+    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/, UInt64 /*version*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
     virtual bool isSerializable() const { return false; }
 
@@ -182,6 +186,8 @@ public:
     /// Follow the pattern of classes with multi stage execution that already implements these methods
     virtual std::vector<size_t> getStepGroups() const { return {0}; }
     virtual String getStepGroupName(size_t) const { return {}; }
+
+    virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
 
 protected:
     virtual void updateOutputHeader() = 0;
