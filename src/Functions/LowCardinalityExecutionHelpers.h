@@ -259,12 +259,7 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
     auto value_type_without_low_cardinality = recursiveRemoveLowCardinality(value_type);
     auto original_value = value;
     auto cast_type = target_type;
-    /// Accurate cast, so that a constant which is not representable in the dictionary's type does not
-    /// wrap into the bit pattern of an unrelated element (e.g. UInt32(4294967295) into Int32(-1)).
-    value = castColumnAccurateOrNull({value, value_type_without_low_cardinality, ""}, target_type);
-
-    if (value->isNullAt(0))
-        return false;
+    value = castColumn({value, value_type_without_low_cardinality, ""}, target_type);
 
     if (value->isNullable())
     {
@@ -272,22 +267,17 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
         cast_type = removeNullable(cast_type);
     }
 
+    /// The cast above narrows without reporting loss, so UInt64(256) reaches a UInt8 dictionary as 0
+    /// and UInt32(4294967295) reaches an Int32 one as -1, each denoting an element the constant is not
+    /// equal to. A constant the element type cannot represent equals no element, whether or not the
+    /// index it wrapped onto is the default slot.
+    if (!target_type->equals(*value_type_without_low_cardinality)
+        && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
+        return false;
+
     const auto & dictionary = low_cardinality_data.getDictionary();
 
-    auto find_in_dictionary = [&](std::string_view elem) -> std::optional<UInt64>
-    {
-        /// The default slot holds its value whether or not any row references it, and the cast above
-        /// narrows without reporting loss, so UInt64(256) reaches it as UInt8(0). Answering from that
-        /// slot requires the constant to have survived the cast; one that did not equals no element.
-        if (elem == dictionary.getNestedNotNullableColumn()->getDataAt(dictionary.getNestedTypeDefaultValueIndex())
-            && !target_type->equals(*value_type_without_low_cardinality)
-            && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
-            return {};
-
-        return dictionary.getOrFindValueIndex(elem);
-    };
-
-    if (auto maybe_index = find_in_dictionary(value->getDataAt(0)))
+    if (auto maybe_index = dictionary.getOrFindValueIndex(value->getDataAt(0)))
     {
         dictionary_index = *maybe_index;
         return true;
