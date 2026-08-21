@@ -535,9 +535,18 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
                 it->second = log;
         };
 
+        /// A live log is registered under the name of the table it writes to as well, so that
+        /// `SYSTEM FLUSH LOGS metric_log` finds the log serving `system.metric_log` regardless
+        /// of which of the alternative implementations is instantiated.
         #define GET_MAP_VALUES(log_type, member, descr) \
             add_log_name(getLowerCaseAndRemoveUnderscores(#member), (member).get()); \
-            add_log_name(getLowerCaseAndRemoveUnderscores((member).get() ? (member)->getTableID().getFullTableName() : "system."#member), (member).get());
+            if ((member)) \
+            { \
+                add_log_name(getLowerCaseAndRemoveUnderscores((member)->getTableID().getFullTableName()), (member).get()); \
+                add_log_name(getLowerCaseAndRemoveUnderscores((member)->getTableID().table_name), (member).get()); \
+            } \
+            else \
+                add_log_name(getLowerCaseAndRemoveUnderscores("system."#member), nullptr);
 
         LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
         #if CLICKHOUSE_CLOUD

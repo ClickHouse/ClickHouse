@@ -96,7 +96,8 @@ def test_bucketed_schema(start_cluster):
     node2.query("SYSTEM FLUSH LOGS metric_log")
     node2.query("SYSTEM FLUSH LOGS system.metric_log")
 
-    create_query = node2.query("SHOW CREATE TABLE system.metric_log")
+    # `TSVRaw`: the default format escapes the quotes inside the query text
+    create_query = node2.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
     assert "`metrics` Map(Enum16(" in create_query
     assert "map_serialization_version = 'with_buckets'" in create_query
     assert "max_buckets_in_map = 128" in create_query
