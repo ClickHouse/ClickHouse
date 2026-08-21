@@ -275,6 +275,12 @@ public:
         return current_metadata->shouldReloadSchemaForConsistency(context);
     }
 
+    void checkReadIsAllowed(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) const override
+    {
+        assertInitialized();
+        current_metadata->checkReadIsAllowed(storage_snapshot, context);
+    }
+
     IDataLakeMetadata * getExternalMetadata() override
     {
         assertInitialized();

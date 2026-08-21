@@ -1219,6 +1219,8 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
+    rejectGeoTypesIfNotAllowed(
+        *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id), local_context);
 
     if (!actual_data_snapshot)
     {
@@ -1287,6 +1289,8 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
+    rejectGeoTypesIfNotAllowed(
+        *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id), local_context);
 
     if (!actual_data_snapshot)
         return 0;
@@ -1375,6 +1379,11 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
 bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 {
     return true;
+}
+
+void IcebergMetadata::checkReadIsAllowed(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & local_context) const
+{
+    rejectGeoTypesIfNotAllowed(storage_snapshot->metadata->getColumns().getAll(), local_context);
 }
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const

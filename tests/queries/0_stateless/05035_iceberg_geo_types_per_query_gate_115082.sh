@@ -11,6 +11,10 @@ TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 NESTED="n_${CLICKHOUSE_DATABASE}_${RANDOM}"
 NESTED_PATH="${USER_FILES_PATH}/${NESTED}/"
+PLAIN="p_${CLICKHOUSE_DATABASE}_${RANDOM}"
+PLAIN_PATH="${USER_FILES_PATH}/${PLAIN}/"
+MERGE_GEO="mg_${CLICKHOUSE_DATABASE}_${RANDOM}"
+MERGE_PLAIN="mp_${CLICKHOUSE_DATABASE}_${RANDOM}"
 
 GEO_REFUSED="allow_experimental_geo_types_in_iceberg"
 
@@ -55,6 +59,50 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "
 ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT count() FROM ${NESTED}"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${NESTED}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
 
+# Reading through Merge is gated too. Merge does not resolve its children's dynamic metadata, so
+# these arms cover the read paths that never see the per-query check applied on a direct read: the
+# trivial count() optimization, and a scan of a snapshot that an earlier query already pinned.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_GEO}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${MERGE_GEO} ENGINE = Merge(currentDatabase(), '^${TABLE}\$')"
+
+# Cold: no query has read this table since it was attached.
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${TABLE}"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${TABLE}"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+
+# A query that enables the flag reads through Merge, and pins the table state. Asserted as "not
+# refused" rather than as a row count: the trivial count() of a just-written Iceberg table read
+# through Merge races with snapshot visibility and returns 0 instead of 1 in about 6 runs in 100,
+# equally on master. What this test is about is who is allowed to read, so it asserts exactly that.
+${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT count() FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT id, wkt(g) FROM ${MERGE_GEO}"
+
+# Warm: the same two flag-less reads must still be refused. Enforcement that depends on whether an
+# earlier query happened to warm the state is the defect this test guards against.
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+
+# system.tables reads total_rows of every table, and must not be broken by a refused one.
+${CLICKHOUSE_CLIENT} --query "SELECT count() >= 2 FROM system.tables WHERE database = currentDatabase()"
+
+# A table without a geometry column is unaffected on each of the three paths gated above: the
+# trivial count() through Merge, a direct read, and a scan through Merge of a pinned snapshot.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PLAIN}"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${PLAIN} (id Int64, s String)
+    ENGINE = IcebergLocal('${PLAIN_PATH}', 'Parquet')
+"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${PLAIN} SELECT 7, 'x'"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_PLAIN}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${MERGE_PLAIN} ENGINE = Merge(currentDatabase(), '^${PLAIN}\$')"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${MERGE_PLAIN}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+${CLICKHOUSE_CLIENT} --query "SELECT id, s FROM ${PLAIN}"
+${CLICKHOUSE_CLIENT} --query "SELECT id, s FROM ${MERGE_PLAIN}"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_GEO}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_PLAIN}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${NESTED}"
-rm -rf "${TABLE_PATH}" "${NESTED_PATH}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PLAIN}"
+rm -rf "${TABLE_PATH}" "${NESTED_PATH}" "${PLAIN_PATH}"
