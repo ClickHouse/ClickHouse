@@ -3,8 +3,10 @@
 DROP TABLE IF EXISTS t_merge_file_num_streams_limit;
 DROP TABLE IF EXISTS t_file_num_streams_limit;
 
+-- No explicit path: the data file lives in the table's own directory, so repeated or
+-- concurrent runs of this test do not append to a shared file in the user files directory.
 CREATE TABLE t_file_num_streams_limit (n UInt64)
-ENGINE = File(TabSeparated, 'merge_file_num_streams_limit.tsv');
+ENGINE = File(TabSeparated);
 INSERT INTO t_file_num_streams_limit VALUES (1);
 
 CREATE TABLE t_merge_file_num_streams_limit (n UInt64)
