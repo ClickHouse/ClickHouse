@@ -178,7 +178,9 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, NormalizeImplicitIndicesUsesLocalO
     columns.add(ColumnDescription("x", std::make_shared<DataTypeUInt64>()));
 
     MetadataFields fields;
-    fields.indices = "auto_minmax_index_x x TYPE minmax GRANULARITY 1";
+    /// The canonical implicit definition as an older replica would have written it: the index type
+    /// is built with `makeASTFunction`, so it carries an (empty) argument list and formats as `minmax()`.
+    fields.indices = "auto_minmax_index_x x TYPE minmax() GRANULARITY 1";
     const auto serialized = makeMetadata(fields).toString();
     auto local_indices = IndicesDescription::parse(fields.indices, columns, /* escape_index_filenames */ true, getContext().context);
 
@@ -633,3 +635,4 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, WindowNameIsSignificant)
     EXPECT_TRUE(diffOf(w_is_ascending, w_is_descending).constraints_changed);
     EXPECT_FALSE(diffOf(w_is_ascending, w_is_ascending).constraints_changed);
 }
+

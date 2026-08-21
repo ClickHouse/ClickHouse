@@ -86,10 +86,10 @@ TEST(TreeHashCompleteness, WithAliasFlagsAndParametrisedAliasAreSignificant)
 TEST(TreeHashCompleteness, JSONRejectsConflictingAliases)
 {
     String json = serializeASTToJSON(*parse("SELECT x AS y"));
-    const String key = R"("alias":"y",)";
+    const String key = R"("alias":"y")";
     const auto pos = json.find(key);
     ASSERT_NE(pos, String::npos);
-    json.insert(pos + key.size(), R"("parametrised_alias":{"type":"QueryParameter","name":"p","param_type":"Identifier"},)");
+    json.insert(pos + key.size(), R"(,"parametrised_alias":{"type":"QueryParameter","name":"p","param_type":"Identifier"})");
 
     EXPECT_THROW(IAST::createFromJSON(json, /*max_depth=*/ 1000, /*max_elements=*/ 100000), Exception);
 }
