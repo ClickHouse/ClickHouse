@@ -128,6 +128,8 @@ ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats
 
 Use `INSERT INTO SELECT` to write data from the MergeTree table into the Iceberg table. In this example, we write only London transactions:
 
+This example requires the [`allow_insert_into_iceberg` setting](/reference/settings/session-settings/allow#allow_insert_into_iceberg). See the [support matrix](/guides/use-cases/data-warehousing/support-matrix) for current maturity and limitations.
+
 ```sql
 SET allow_insert_into_iceberg = 1;
 

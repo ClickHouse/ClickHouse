@@ -447,11 +447,28 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
     return createIcebergDataSnapshotFromSnapshotJSON(object, snapshot_id, local_context);
 }
 
+bool IcebergMetadata::supportsWrites() const
+{
+    return object_storage->getType() != ObjectStorageType::HDFS;
+}
+
+void IcebergMetadata::checkWritesSupported(const ObjectStoragePtr & object_storage)
+{
+    if (object_storage->getType() == ObjectStorageType::HDFS)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Iceberg writes are not supported for HDFS because HDFS cannot perform the conditional writes required for atomic metadata commits");
+    }
+}
+
 bool IcebergMetadata::optimize(
     [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
     [[maybe_unused]] ContextPtr context,
     [[maybe_unused]] const std::optional<FormatSettings> & format_settings)
 {
+    checkWritesSupported();
+
 #if CLICKHOUSE_CLOUD
     if (!compaction_enabled)
         throw Exception(
@@ -493,6 +510,8 @@ bool IcebergMetadata::optimizeManifestFiles(
        std::shared_ptr<DataLake::ICatalog> catalog,
        const StorageID & storage_id)
 {
+    checkWritesSupported();
+
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         /// Reject manifest compaction on format-version 3: the writer does not yet round-trip the row-lineage `first_row_id`, so a rewrite would drop row ids (fail-close).
@@ -650,6 +669,8 @@ void IcebergMetadata::mutate(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const std::optional<FormatSettings> & format_settings)
 {
+    checkWritesSupported();
+
     if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
         throw Exception(
@@ -679,6 +700,8 @@ void IcebergMetadata::mutate(
 
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 {
+    checkWritesSupported();
+
     if (commands.size() > 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg does not support multiple mutation commands in a single ALTER");
 
@@ -691,6 +714,8 @@ void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 
 void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
 {
+    checkWritesSupported();
+
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN
@@ -715,6 +740,8 @@ void IcebergMetadata::alter(
     const StorageID & storage_id,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
+    checkWritesSupported();
+
     if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
         throw Exception(
@@ -735,6 +762,8 @@ Pipe IcebergMetadata::executeCommand(
     ContextPtr context,
     const StorageID & storage_id)
 {
+    checkWritesSupported();
+
     if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
         throw Exception(
@@ -787,6 +816,8 @@ void IcebergMetadata::createInitial(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const StorageID & table_id_)
 {
+    checkWritesSupported(object_storage);
+
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
@@ -1476,6 +1507,8 @@ SinkToStoragePtr IcebergMetadata::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
+    checkWritesSupported();
+
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
@@ -1493,6 +1526,8 @@ void IcebergMetadata::drop(ContextPtr context)
 {
     if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
+        checkWritesSupported();
+
         auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
         for (const auto & file : files)
             object_storage->removeObjectIfExists(StoredObject(file));

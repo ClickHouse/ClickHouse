@@ -104,8 +104,8 @@ public:
         LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
-    bool supportsWrites() const override { return true; }
-    bool supportsParallelInsert() const override { return true; }
+    bool supportsWrites() const override;
+    bool supportsParallelInsert() const override { return supportsWrites(); }
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
@@ -146,7 +146,7 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & storage_id);
-    bool supportsDelete() const override { return true; }
+    bool supportsDelete() const override { return supportsWrites(); }
     void mutate(
         const MutationCommands & commands,
         StoragePtr storage_ptr,
@@ -199,6 +199,9 @@ public:
     }
 
 private:
+    static void checkWritesSupported(const ObjectStoragePtr & object_storage);
+    void checkWritesSupported() const { checkWritesSupported(object_storage); }
+
     static Iceberg::PersistentTableComponents initializePersistentTableComponents(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr configuration,

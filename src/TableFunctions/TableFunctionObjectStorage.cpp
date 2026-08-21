@@ -1794,6 +1794,12 @@ Table function `iceberg` is an alias to `icebergS3` now.
 
 Starting from version 25.7, ClickHouse supports modifications of Iceberg tables on writable storage backends.
 
+Before modifying or maintaining an Iceberg table, enable the [`allow_insert_into_iceberg` setting](/reference/settings/session-settings/allow#allow_insert_into_iceberg). Some operations require additional settings, as noted below:
+
+```sql
+SET allow_insert_into_iceberg = 1;
+```
+
 ### Creating table {#create-iceberg-table}
 
 To create a new standalone Iceberg table on a writable backend, use an Iceberg table engine and specify the schema explicitly.
@@ -1816,12 +1822,6 @@ If you want to compress the metadata.json file, specify the codec name in the `i
 ### INSERT {#writes-inserts}
 
 <BetaBadge/>
-
-Enable Iceberg inserts with:
-
-```sql
-SET allow_insert_into_iceberg = 1;
-```
 
 After creating a new table, you can insert data using the usual ClickHouse syntax.
 
@@ -2200,7 +2200,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 #endif
 #if USE_HDFS
     factory.registerFunction<TableFunctionIcebergHDFS>(
-         {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem.)",
+         {.description = R"(The table function provides read-only access to an existing Iceberg table stored on the HDFS virtual filesystem.)",
             .examples{{IcebergHDFSDefinition::name, "SELECT * FROM icebergHDFS(url)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});

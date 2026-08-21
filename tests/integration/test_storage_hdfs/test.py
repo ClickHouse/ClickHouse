@@ -46,6 +46,14 @@ def test_read_write_storage(started_cluster):
     assert node1.query("select * from SimpleHDFSStorage") == "1\tMark\t72.53\n"
 
 
+def test_iceberg_hdfs_is_read_only(started_cluster):
+    error = node1.query_and_get_error(
+        "CREATE TABLE iceberg_hdfs_write (id UInt64) "
+        "ENGINE = IcebergHDFS('hdfs://hdfs1:9000/iceberg_hdfs_write')"
+    )
+    assert "Iceberg writes are not supported for HDFS" in error
+
+
 def test_read_write_storage_with_globs(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
