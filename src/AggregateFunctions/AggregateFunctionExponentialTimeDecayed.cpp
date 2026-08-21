@@ -23,6 +23,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
+    extern const SettingsFloat exponential_time_decay_aggregate_function_calculation_budget;
 }
 
 namespace ErrorCodes
@@ -53,61 +54,103 @@ struct ExponentialTimeDecayedState
     Float64 weighted_sum = 0;
     Float64 weight = 0;
     Float64 max_time = 0;
-    bool initialized = false;
+    bool empty() const { return weight == 0; }
 
-    void add(Float64 value, Float64 time, Float64 decay_length)
+    Float64 getCalculationIndexTime(Float64 magnitude, Float64 decay_length) const
     {
-        if (!initialized)
-        {
-            weighted_sum = value;
-            weight = 1;
-            max_time = time;
-            initialized = true;
-            return;
-        }
+        if (magnitude == 0)
+            return -std::numeric_limits<Float64>::infinity();
 
-        if (time > max_time)
-        {
-            const Float64 decay = std::exp((max_time - time) / decay_length);
-            weighted_sum = weighted_sum * decay + value;
-            weight = weight * decay + 1;
-            max_time = time;
-        }
-        else if (time < max_time)
-        {
-            const Float64 decay = std::exp((time - max_time) / decay_length);
-            weighted_sum += value * decay;
-            weight += decay;
-        }
-        else
-        {
-            weighted_sum += value;
-            weight += 1;
-        }
+        return max_time + decay_length * std::log(magnitude);
     }
 
-    void merge(const ExponentialTimeDecayedState & rhs, Float64 decay_length)
+    bool isCalculationNegligibleComparedTo(
+        const ExponentialTimeDecayedState & rhs,
+        Float64 decay_length,
+        Float64 max_decay_distance,
+        ExponentialTimeDecayedResult result_kind) const
     {
-        if (!rhs.initialized)
+        const auto index_is_outside_budget = [max_decay_distance](Float64 lhs_index_time, Float64 rhs_index_time)
+        {
+            return rhs_index_time > lhs_index_time && rhs_index_time - lhs_index_time > max_decay_distance;
+        };
+
+        if (result_kind == ExponentialTimeDecayedResult::Count)
+            return index_is_outside_budget(
+                getCalculationIndexTime(weight, decay_length),
+                rhs.getCalculationIndexTime(rhs.weight, decay_length));
+
+        const bool sum_is_negligible = index_is_outside_budget(
+            getCalculationIndexTime(std::abs(weighted_sum), decay_length),
+            rhs.getCalculationIndexTime(std::abs(rhs.weighted_sum), decay_length));
+        if (result_kind == ExponentialTimeDecayedResult::Sum)
+            return sum_is_negligible;
+
+        const bool weight_is_negligible = index_is_outside_budget(
+            getCalculationIndexTime(weight, decay_length),
+            rhs.getCalculationIndexTime(rhs.weight, decay_length));
+
+        /// An average depends on both its numerator and denominator. Discard a
+        /// state only when neither can materially affect the dominant state.
+        return sum_is_negligible && weight_is_negligible;
+    }
+
+    void add(
+        Float64 value,
+        Float64 time,
+        Float64 decay_length,
+        Float64 max_decay_distance,
+        ExponentialTimeDecayedResult result_kind)
+    {
+        ExponentialTimeDecayedState rhs;
+        rhs.weighted_sum = value;
+        rhs.weight = 1;
+        rhs.max_time = time;
+        merge(rhs, decay_length, max_decay_distance, result_kind);
+    }
+
+    void merge(
+        const ExponentialTimeDecayedState & rhs,
+        Float64 decay_length,
+        Float64 max_decay_distance,
+        ExponentialTimeDecayedResult result_kind)
+    {
+        if (rhs.empty())
             return;
 
-        if (!initialized)
+        if (empty())
         {
             *this = rhs;
             return;
         }
 
+        /// Compare contributions by their calculation index timestamps. A distance
+        /// of B decay lengths bounds the smaller magnitude by exp(-B) relative to
+        /// the larger one, independently of their anchor times.
+        if (std::isfinite(max_decay_distance))
+        {
+            if (isCalculationNegligibleComparedTo(rhs, decay_length, max_decay_distance, result_kind))
+            {
+                *this = rhs;
+                return;
+            }
+            if (rhs.isCalculationNegligibleComparedTo(*this, decay_length, max_decay_distance, result_kind))
+                return;
+        }
+
         /// Re-anchor the older state at the shared greatest timestamp before adding them.
         if (rhs.max_time > max_time)
         {
-            const Float64 decay = std::exp((max_time - rhs.max_time) / decay_length);
+            const Float64 distance = rhs.max_time - max_time;
+            const Float64 decay = std::exp(-distance / decay_length);
             weighted_sum = weighted_sum * decay + rhs.weighted_sum;
             weight = weight * decay + rhs.weight;
             max_time = rhs.max_time;
         }
         else if (rhs.max_time < max_time)
         {
-            const Float64 decay = std::exp((rhs.max_time - max_time) / decay_length);
+            const Float64 distance = max_time - rhs.max_time;
+            const Float64 decay = std::exp(-distance / decay_length);
             weighted_sum += rhs.weighted_sum * decay;
             weight += rhs.weight * decay;
         }
@@ -123,7 +166,6 @@ struct ExponentialTimeDecayedState
         writeBinaryLittleEndian(weighted_sum, buf);
         writeBinaryLittleEndian(weight, buf);
         writeBinaryLittleEndian(max_time, buf);
-        writeBinaryLittleEndian(initialized, buf);
     }
 
     void read(ReadBuffer & buf)
@@ -131,7 +173,6 @@ struct ExponentialTimeDecayedState
         readBinaryLittleEndian(weighted_sum, buf);
         readBinaryLittleEndian(weight, buf);
         readBinaryLittleEndian(max_time, buf);
-        readBinaryLittleEndian(initialized, buf);
     }
 };
 
@@ -155,6 +196,7 @@ public:
         const DataTypes & argument_types_,
         const Array & parameters_,
         Float64 decay_length_,
+        Float64 max_decay_distance_,
         bool input_is_decaying_value_ = false)
         : IAggregateFunctionDataHelper<
               ExponentialTimeDecayedState,
@@ -162,6 +204,7 @@ public:
               argument_types_, parameters_, getResultDataType(decay_length_))
         , name(std::move(name_))
         , decay_length(decay_length_)
+        , max_decay_distance(max_decay_distance_)
         , input_is_decaying_value(input_is_decaying_value_)
     {
     }
@@ -176,8 +219,8 @@ public:
         if (input_is_decaying_value)
         {
             const auto & tuple = assert_cast<const ColumnTuple &>(*columns[0]);
-            value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
-            time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
+            const Float64 sign = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
+            const Float64 signed_unit_time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
             const Float64 stored_decay_length
                 = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[row_num];
             if (!std::isfinite(stored_decay_length) || stored_decay_length != decay_length)
@@ -187,8 +230,23 @@ public:
                     stored_decay_length,
                     decay_length,
                     getName());
-            if (value == 0 && std::isnan(time))
+            if (sign == 0)
+            {
+                if (signed_unit_time != 0)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Zero value of aggregate function {} must have zero signed unit time",
+                        getName());
                 return;
+            }
+            if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Input of aggregate function {} is not a canonical ExponentialTimeDecayingFloat64 value",
+                    getName());
+
+            value = sign;
+            time = getExponentialTimeDecayingUnitTime(sign, signed_unit_time);
         }
         else
         {
@@ -203,12 +261,12 @@ public:
         if (!std::isfinite(value))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be finite", getName());
 
-        this->data(place).add(value, time, decay_length);
+        this->data(place).add(value, time, decay_length, max_decay_distance, result_kind);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs), decay_length);
+        this->data(place).merge(this->data(rhs), decay_length, max_decay_distance, result_kind);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -236,9 +294,19 @@ public:
             const Float64 result = result_kind == ExponentialTimeDecayedResult::Sum
                 ? state.weighted_sum
                 : state.weight;
+            const auto normalized = normalizeExponentialTimeDecayingFloat64(
+                result,
+                state.empty() ? 0 : state.max_time,
+                decay_length);
+            if (!std::isfinite(normalized.signed_unit_time))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Result of aggregate function {} cannot be represented by ExponentialTimeDecayingFloat64",
+                    getName());
+
             Tuple decaying_value{
-                Field(result),
-                Field(state.initialized ? state.max_time : std::numeric_limits<Float64>::quiet_NaN()),
+                Field(normalized.sign),
+                Field(normalized.signed_unit_time),
                 Field(decay_length)};
             to.insert(Field(decaying_value));
         }
@@ -249,8 +317,28 @@ public:
 private:
     const String name;
     const Float64 decay_length;
+    const Float64 max_decay_distance;
     const bool input_is_decaying_value;
 };
+
+Float64 getMaxDecayDistance(const String & name, const Settings * settings, Float64 decay_length)
+{
+    if (!settings)
+        return std::numeric_limits<Float64>::infinity();
+
+    const Float64 calculation_budget
+        = static_cast<Float64>((*settings)[Setting::exponential_time_decay_aggregate_function_calculation_budget]);
+    if (!std::isfinite(calculation_budget) || calculation_budget < 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting exponential_time_decay_aggregate_function_calculation_budget must be finite and non-negative for aggregate function {}",
+            name);
+
+    if (calculation_budget == 0)
+        return std::numeric_limits<Float64>::infinity();
+
+    return calculation_budget * decay_length;
+}
 
 Float64 getDecayLength(const String & name, const Array & parameters)
 {
@@ -316,7 +404,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
     const String & name,
     const DataTypes & argument_types,
     const Array & parameters,
-    const Settings *)
+    const Settings * settings)
 {
     if (argument_types.size() == 1)
     {
@@ -335,44 +423,64 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
                     argument_types[0]->getName());
 
             return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Sum>>(
-                name, argument_types, parameters, decay_length, true);
+                name,
+                argument_types,
+                parameters,
+                decay_length,
+                getMaxDecayDistance(name, settings, decay_length),
+                true);
         }
     }
 
     assertValueAndTimeArguments(name, argument_types);
+    const Float64 decay_length = getDecayLength(name, parameters);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Sum>>(
-        name, argument_types, parameters, getDecayLength(name, parameters));
+        name,
+        argument_types,
+        parameters,
+        decay_length,
+        getMaxDecayDistance(name, settings, decay_length));
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayingFloat64(
     const String & name,
     const DataTypes & argument_types,
     const Array & parameters,
-    const Settings *)
+    const Settings * settings)
 {
-    return createAggregateFunctionExponentialTimeDecayedSum(name, argument_types, parameters, nullptr);
+    return createAggregateFunctionExponentialTimeDecayedSum(name, argument_types, parameters, settings);
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedAvg(
     const String & name,
     const DataTypes & argument_types,
     const Array & parameters,
-    const Settings *)
+    const Settings * settings)
 {
     assertValueAndTimeArguments(name, argument_types);
+    const Float64 decay_length = getDecayLength(name, parameters);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Avg>>(
-        name, argument_types, parameters, getDecayLength(name, parameters));
+        name,
+        argument_types,
+        parameters,
+        decay_length,
+        getMaxDecayDistance(name, settings, decay_length));
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedCount(
     const String & name,
     const DataTypes & argument_types,
     const Array & parameters,
-    const Settings *)
+    const Settings * settings)
 {
     assertTimeArgument(name, argument_types);
+    const Float64 decay_length = getDecayLength(name, parameters);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Count>>(
-        name, argument_types, parameters, getDecayLength(name, parameters));
+        name,
+        argument_types,
+        parameters,
+        decay_length,
+        getMaxDecayDistance(name, settings, decay_length));
 }
 
 }

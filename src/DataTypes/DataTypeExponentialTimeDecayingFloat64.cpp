@@ -1,6 +1,11 @@
 #include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -10,7 +15,6 @@
 
 #include <cmath>
 #include <fmt/format.h>
-#include <limits>
 #include <utility>
 
 namespace DB
@@ -55,7 +59,7 @@ std::pair<DataTypePtr, DataTypeCustomDescPtr> create(Float64 decay_length)
             std::make_shared<DataTypeFloat64>(),
             std::make_shared<DataTypeFloat64>(),
             std::make_shared<DataTypeFloat64>()},
-        Names{"value", "time", "decay_length"});
+        Names{"sign", "signed_unit_time", "decay_length"});
 
     return {
         storage_type,
@@ -77,13 +81,13 @@ String DataTypeCustomExponentialTimeDecayingFloat64::getName() const
 
 std::optional<Field> DataTypeCustomExponentialTimeDecayingFloat64::getDefault() const
 {
-    return Tuple{Float64(0), std::numeric_limits<Float64>::quiet_NaN(), decay_length};
+    return Tuple{Float64(0), Float64(0), decay_length};
 }
 
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
 {
     return DataTypeFactory::instance().getCustom(
-        "Tuple(value Float64, time Float64, decay_length Float64)",
+        "Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)",
         std::make_unique<DataTypeCustomDesc>(
             std::make_unique<DataTypeCustomExponentialTimeDecayingFloat64>(decay_length)));
 }
@@ -123,6 +127,59 @@ bool isExponentialTimeDecayingFloat64(const DataTypePtr & type)
     return tryGetExponentialTimeDecayingFloat64DecayLength(type).has_value();
 }
 
+void validateExponentialTimeDecayingFloat64Column(
+    const IColumn & column, Float64 decay_length, const String & operation)
+{
+    ColumnPtr full_column = column.convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(full_column.get());
+
+    ColumnPtr nested_holder;
+    const IColumn * nested_column = full_column.get();
+    if (nullable)
+    {
+        nested_holder = nullable->getNestedColumnPtr()->convertToFullColumnIfLowCardinality();
+        nested_column = nested_holder.get();
+    }
+
+    const auto & tuple = assert_cast<const ColumnTuple &>(*nested_column);
+    const auto & signs = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData();
+    const auto & signed_unit_times = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData();
+    const auto & stored_decay_lengths = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData();
+
+    for (size_t row = 0; row < tuple.size(); ++row)
+    {
+        if (nullable && nullable->isNullAt(row))
+            continue;
+
+        const Float64 stored_decay_length = stored_decay_lengths[row];
+        if (!std::isfinite(stored_decay_length) || stored_decay_length != decay_length)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Malformed ExponentialTimeDecayingFloat64 value in {}: stored decay length {} does not match type decay length {}",
+                operation,
+                stored_decay_length,
+                decay_length);
+
+        const Float64 sign = signs[row];
+        const Float64 signed_unit_time = signed_unit_times[row];
+        if (sign == 0)
+        {
+            if (signed_unit_time != 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Malformed ExponentialTimeDecayingFloat64 value in {}: zero value must have zero signed unit time",
+                    operation);
+        }
+        else if ((sign != -1 && sign != 1) || !std::isfinite(signed_unit_time))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Malformed ExponentialTimeDecayingFloat64 value in {}: expected a canonical sign and finite signed unit time",
+                operation);
+        }
+    }
+}
+
 void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
 {
     factory.registerDataTypeCustom(
@@ -134,13 +191,17 @@ void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
 Represents one or more finite exponentially time-decaying values at a shared anchor time.
 
 The decay length is part of the type: `ExponentialTimeDecayingFloat64(decay_length)`.
-The stored fields are `value Float64`, `time Float64`, and a redundant `decay_length Float64`
-marker. The implicit empty value uses zero value and a `NaN` time sentinel so it remains an identity
-when merged with values whose observed timestamps are negative. DateTime and DateTime64 inputs are represented as seconds. The marker is validated against
+The stored fields form a canonical, order-preserving representation:
+`sign Float64`, `signed_unit_time Float64`, and a redundant `decay_length Float64` marker.
+For a nonzero curve, `unit_time = anchor_time + decay_length * ln(abs(value_at_anchor))` is
+the time at which its magnitude is one. `signed_unit_time` stores `sign * unit_time`.
+This layout makes ClickHouse's regular tuple comparison and sorting order match the numeric order
+of curves with the same decay length. Zero, including the implicit empty value, is represented as
+`(0, 0, decay_length)`.
+
+DateTime and DateTime64 inputs are represented as seconds. The marker is validated against
 the type parameter when a value is combined or evaluated, so incompatible decay lengths are not
 silently mixed even in paths where ClickHouse treats custom tuple storage as layout-compatible.
-
-Use `tupleElement(decaying_value, 'time')` to read the greatest observed or current anchor time.
 The type can be used with `SimpleAggregateFunction(exponentialTimeDecayedSum, ...)` in an
 `AggregatingMergeTree`.
 

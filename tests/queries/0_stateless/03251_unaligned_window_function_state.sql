@@ -1,5 +1,10 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/70569
--- The aggregate form is now experimental. Without the opt-in it must fail
--- before allocating aggregate state, rather than reaching the old unaligned
--- window-state path.
-SELECT anyLast(id), anyLast(time), exponentialTimeDecayedAvg(10)(id, time) FROM values('id Int8, time DateTime', (1,1),(1,2),(2,3),(3,3),(3,5)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+SET allow_experimental_time_decay_aggregate_functions = 1;
+
+-- Exercise the aggregate state itself. This used to expose an unaligned state
+-- access under UBSan; merely checking the disabled-feature error would not.
+SELECT
+    anyLast(id),
+    toUInt32(anyLast(time)),
+    isFinite(exponentialTimeDecayedAvg(10)(id, time))
+FROM values('id Int8, time DateTime', (1,1),(1,2),(2,3),(3,3),(3,5));
