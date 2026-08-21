@@ -1773,10 +1773,11 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     /// The element bytes are tokenized as they arrive, so an element spelling the stored value in
-    /// another representation requires tokens no granule holds. A preprocessor runs first and can
-    /// turn the padding into ordinary token bytes, so it leaves no representation interchangeable.
+    /// another representation requires tokens no granule holds.
     if (!indexed_type || *set_key_position >= types.size()
-        || !textIndexSetElementIsComparable(types[*set_key_position], indexed_type, *tokenizer, has_preprocessor))
+        || !textIndexSetElementIsComparable(
+               types[*set_key_position], indexed_type, *tokenizer, has_preprocessor,
+               has_preprocessor && preprocessor->isLowerOrUpper()))
         return false;
 
     const bool set_column_is_nullable = set_column.isNullable();

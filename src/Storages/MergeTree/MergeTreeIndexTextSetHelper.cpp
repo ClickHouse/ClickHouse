@@ -38,16 +38,22 @@ DataTypePtr preprocessorInputType(const DataTypePtr & index_type)
 }
 
 bool textIndexSetElementIsComparable(
-    const DataTypePtr & set_type, const DataTypePtr & index_type, const ITokenizer & tokenizer, bool has_preprocessor)
+    const DataTypePtr & set_type,
+    const DataTypePtr & index_type,
+    const ITokenizer & tokenizer,
+    bool has_preprocessor,
+    bool preprocessor_is_case_folding)
 {
     auto set_unwrapped = unwrapTextIndexType(set_type);
     auto index_unwrapped = unwrapTextIndexType(index_type);
 
     /// A preprocessor is applied to a set element under `String`, and to the index column under
     /// the type it receives there: the element type for an `Array` carrier, which is rewritten
-    /// through `arrayMap`, and the declared type otherwise. A wrapper the two do not share can
-    /// change the tokens it produces, so the two applications must agree on `String`.
-    if (has_preprocessor && !preprocessorInputType(index_type)->equals(DataTypeString{}))
+    /// through `arrayMap`, and the declared type otherwise. Any other carrier lets the two
+    /// applications read different input and produce different tokens, unless the preprocessor only
+    /// folds case, which reads no type and preserves the byte count.
+    if (has_preprocessor && !preprocessor_is_case_folding
+        && !preprocessorInputType(index_type)->equals(DataTypeString{}))
         return false;
 
     if (set_unwrapped->equals(*index_unwrapped))
