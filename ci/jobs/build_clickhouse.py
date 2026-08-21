@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import shutil
 
@@ -107,6 +108,24 @@ def run_shell(name, command, **kwargs):
     print(f"\n>>>> {name}\n")
     Shell.check(command, **kwargs)
     print(f"\n<<<< {name}\n")
+
+
+def warn_on_low_sccache_hit_rate(info):
+    """Post a non-blocking workflow warning when the sccache hit rate is below 40% (issue #46502)."""
+    stats = Shell.get_output("sccache --show-stats --stats-format json")
+    if not stats:
+        return
+    counts = json.loads(stats)["stats"]
+    hits = sum(counts.get("cache_hits", {}).get("counts", {}).values())
+    misses = sum(counts.get("cache_misses", {}).get("counts", {}).values())
+    total = hits + misses
+    if total == 0:
+        return
+    hit_rate = 100 * hits / total
+    if hit_rate < 40:
+        info.add_workflow_warning(
+            f"Low sccache hit rate {hit_rate:.1f}% ({hits}/{total} compilations cached) - the compiler cache may be degraded or stale"
+        )
 
 
 def setup_build_caches_env(info):
@@ -459,6 +478,8 @@ def main():
                 results.append(retry_cmake)
 
         run_shell("sccache stats", "sccache --show-stats")
+        if not cache_warmup:
+            warn_on_low_sccache_hit_rate(info)
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
