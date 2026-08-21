@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
+#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
@@ -22,6 +23,21 @@ using namespace DB;
 
 namespace
 {
+
+/// A context suitable for resolving `VALID FOR` interval expressions. Resolving a function
+/// expression consults `UserDefinedExecutableFunctionsFactory`, which lazily creates the external
+/// UDF loader on the context. The shared test context has application type `SERVER` (the default),
+/// so that loader would start a process-lifetime periodic-update job in the global thread pool -
+/// and `ThreadPool.GlobalFull1`/`GlobalFull2` later hang forever waiting for the global pool to
+/// drain (this suite registers before them). Create the loader up front and stop its periodic
+/// updater (`enablePeriodicUpdates(false)` joins the thread) so no background job is left behind.
+ContextPtr getResolutionContext()
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    context->getExternalUserDefinedExecutableFunctionsLoader().enablePeriodicUpdates(false);
+    return context;
+}
 
 /// The string literal that `AuthenticationData::toAST` puts into the stored (`ATTACH USER`) form.
 String serializedValidUntil(time_t valid_until)
@@ -292,18 +308,17 @@ TEST(ValidUntilAttachEncoding, HandEditedNumericOverflowFailsToLoad)
 
 TEST(ValidUntilAttachEncoding, HandEditedTrailingCharactersFailToLoad)
 {
-    /// `parseDateTimeBestEffort` stops at the first thing it cannot interpret instead of requiring
-    /// the whole literal to be a datetime, so a value it does not fully consume must be rejected.
-    /// Surrounding whitespace makes an all-digit value bypass the overflow-checked numeric branch
-    /// and reach the best-effort parser, which reads the first 19 digits of a 20-digit string as a
-    /// nanosecond-scale Unix timestamp and leaves the last digit unread - accepting the parsed
-    /// prefix would turn an out-of-range hand-edited deadline into a live one (fail-open).
+    /// A whitespace-surrounded all-digit value is trimmed and handled by the overflow-checked numeric
+    /// branch, so a 20-digit value that exceeds the 64-bit signed range is rejected there - it must not
+    /// fall through to `parseDateTimeBestEffort`, which would read the first 19 digits as a
+    /// nanosecond-scale Unix timestamp and leave the last digit unread; accepting the parsed prefix
+    /// would turn an out-of-range hand-edited deadline into a live one (fail-open).
     /// (Trailing alphabetic garbage after a well-formed datetime, e.g. '2025-01-01 00:00:00 UTC junk',
     /// is rejected by `parseDateTimeBestEffort` itself - "unexpected word" - before the full-consumption
-    /// check is reached; the digit-string forms below are the ones that used to slip through.)
+    /// check is reached.)
     for (const char * literal_value :
-         {" 18446744327111802015", /// leading space: skips the numeric branch, 19 of 20 digits parsed
-          "18446744327111802015 "}) /// trailing space: same bypass
+         {" 18446744327111802015", /// leading space: trimmed, then rejected by the numeric overflow check
+          "18446744327111802015 "}) /// trailing space: same
     {
         ASTPtr literal = make_intrusive<ASTLiteral>(Field(String(literal_value)));
         try
@@ -313,7 +328,7 @@ TEST(ValidUntilAttachEncoding, HandEditedTrailingCharactersFailToLoad)
         }
         catch (const Exception & e)
         {
-            EXPECT_TRUE(e.message().contains("contains trailing characters")) << e.message();
+            EXPECT_TRUE(e.message().contains("cannot be read as a 64-bit signed Unix timestamp")) << e.message();
         }
 
         const auto definition = fmt::format("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '{}';", literal_value);
@@ -324,7 +339,7 @@ TEST(ValidUntilAttachEncoding, HandEditedTrailingCharactersFailToLoad)
         }
         catch (const Exception & e)
         {
-            EXPECT_TRUE(e.message().contains("contains trailing characters")) << e.message();
+            EXPECT_TRUE(e.message().contains("cannot be read as a 64-bit signed Unix timestamp")) << e.message();
         }
     }
 
@@ -462,8 +477,7 @@ TEST(ValidForInterval, PreEpochClockResolvesFailClosed)
     /// that `toDateTime64` clamps to its upper bound, so an already-expired deadline would come out
     /// saturated at `MAX_VALID_UNTIL_TIME` (year 9999) - fail-open - instead of the smallest expired
     /// instant.
-    tryRegisterFunctions();
-    const auto context = getContext().context;
+    const auto context = getResolutionContext();
 
     const auto one_second = makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))));
     /// -1 + 1 = 0 would collide with the "no expiration" sentinel; it must normalize to 1 (expired).
@@ -484,8 +498,7 @@ TEST(ValidForInterval, SubSecondIntervalsAreRejected)
     /// interval could not take effect as requested: `VALID FOR INTERVAL 1 MILLISECOND` would keep the
     /// credential usable until the next whole second. Sub-second interval kinds must be rejected
     /// instead of silently truncated.
-    tryRegisterFunctions();
-    const auto context = getContext().context;
+    const auto context = getResolutionContext();
 
     for (const char * to_interval : {"toIntervalNanosecond", "toIntervalMicrosecond", "toIntervalMillisecond"})
     {
