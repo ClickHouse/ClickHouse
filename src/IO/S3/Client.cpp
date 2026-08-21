@@ -8,7 +8,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 
 #include <aws/core/Aws.h>
@@ -1165,7 +1164,7 @@ size_t ClientCacheRegistry::getClientRefcountForTesting(ClientCache * client)
     return it->second.second;
 }
 
-void ClientCacheRegistry::pruneExpiredCachesLocked()
+void ClientCacheRegistry::pruneUnusedCachesLocked()
 {
     /// The registry itself is the only owner left, so no client can observe the cache disappearing.
     std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.use_count() == 1; });
@@ -1182,11 +1181,13 @@ std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const s
     std::lock_guard lock(cache_by_key_mutex);
 
     if (cache_by_endpoint_bucket.size() >= MAX_CACHES_BY_ENDPOINT_AND_BUCKET)
-        pruneExpiredCachesLocked();
+        pruneUnusedCachesLocked();
 
-    auto & cache = cache_by_endpoint_bucket[key];
-    if (!cache)
-        cache = std::make_shared<ClientCache>();
+    if (auto it = cache_by_endpoint_bucket.find(key); it != cache_by_endpoint_bucket.end())
+        return it->second;
+
+    auto cache = std::make_shared<ClientCache>();
+    cache_by_endpoint_bucket.emplace(key, cache);
 
     return cache;
 }
@@ -1213,6 +1214,7 @@ void ClientCacheRegistry::clearCacheForAll()
 
     {
         std::lock_guard lock(cache_by_key_mutex);
+        pruneUnusedCachesLocked();
         for (const auto & [_, cache] : cache_by_endpoint_bucket)
             cache->clearCache();
     }
