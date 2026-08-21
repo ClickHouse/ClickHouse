@@ -118,23 +118,29 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
         content_type = FileContentType(getValueFromRowByName(row_index, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
     const auto status = ManifestEntryStatus(getValueFromRowByName(row_index, f_status, TypeIndex::Int32).safeGet<UInt64>());
 
-    const auto snapshot_id_value = getValueFromRowByName(row_index, f_snapshot_id);
+    /// Iceberg v2 makes `snapshot_id` optional on the manifest entry: a missing Avro column
+    /// or a null value is inherited from the manifest list (`added_snapshot_id`). Not gated
+    /// on `format_version > 1` because the version comes from the Avro `format-version` key
+    /// or, failing that, from the presence of `sequence_number` -- a writer omitting both
+    /// would be misclassified as v1 and rejected here.
     std::optional<Int64> snapshot_id;
-
-    if (snapshot_id_value.isNull())
+    const bool has_snapshot_id_column = hasPath(f_snapshot_id);
+    if (has_snapshot_id_column)
     {
-        if (status == ManifestEntryStatus::EXISTING)
-        {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without snapshot id",
-                manifest_file_path);
-        }
+        const auto snapshot_id_value = getValueFromRowByName(row_index, f_snapshot_id);
+        if (!snapshot_id_value.isNull())
+            snapshot_id = snapshot_id_value.safeGet<Int64>();
     }
-    else
-    {
-        snapshot_id = snapshot_id_value.safeGet<Int64>();
-    }
+    /// EXISTING entries must carry an explicit snapshot id: Compaction.cpp restores their
+    /// lineage from `parsed_snapshot_id` and would otherwise substitute this manifest's
+    /// `added_snapshot_id`, which is not the snapshot that originally added the file.
+    if (!snapshot_id.has_value() && status == ManifestEntryStatus::EXISTING)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot read Iceberg table: manifest file '{}' has an EXISTING entry without a snapshot id "
+            "(the snapshot_id column is {})",
+            manifest_file_path,
+            has_snapshot_id_column ? "null" : "absent");
 
     std::optional<Int64> sequence_number;
 
