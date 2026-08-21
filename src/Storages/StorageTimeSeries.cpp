@@ -805,7 +805,12 @@ behavior: the Prometheus remote-write and remote-read protocols and the PromQL f
 [`prometheusQuery()`](/reference/functions/table-functions/prometheusQuery) and
 [`timeSeriesSelector()`](/reference/functions/table-functions/timeSeriesSelector) store and read staleness markers as
 their raw `NaN` payload and treat every stored row as non-stale, logging a warning that points at the
-`ALTER TABLE ... ADD COLUMN is_stale_marker UInt8` migration. A non-zero `is_stale_marker` flag written to such a table degrades the same way when its sample value is `NaN`
+`ALTER TABLE ... ADD COLUMN is_stale_marker UInt8` migration. Adding the column is not sufficient on its own: every
+historical row starts at `is_stale_marker = 0`, so markers written before the migration keep reading as ordinary
+samples until they are backfilled with
+`ALTER TABLE ... UPDATE is_stale_marker = 1 WHERE reinterpretAsUInt64(value) = 0x7FF0000000000002`
+(that backfill applies to a `Float64` `value`; a `Float32` one cannot carry the marker payload).
+A non-zero `is_stale_marker` flag written to such a table degrades the same way when its sample value is `NaN`
 (a RemoteWrite stale marker), and is rejected when the sample value is not `NaN`, because the flag would
 otherwise vanish without a trace.
 

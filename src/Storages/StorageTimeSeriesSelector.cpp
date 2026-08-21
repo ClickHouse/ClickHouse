@@ -842,8 +842,11 @@ void StorageTimeSeriesSelector::readImpl(
         LOG_INFO(LogFrequencyLimiter(log, 300),
             "{}: the \"samples\" table {} has no column {}, so Prometheus stale markers stored in it (as raw NaN "
             "samples) are treated as ordinary samples. Run ALTER TABLE {} ADD COLUMN {} UInt8 to enable "
-            "stale-marker handling",
+            "stale-marker handling (existing rows become non-stale; with a Float64 \"value\" backfill markers with "
+            "ALTER TABLE {} UPDATE {} = 1 WHERE reinterpretAsUInt64(value) = 0x7FF0000000000002)",
             config.time_series_storage_id.getNameForLogs(),
+            samples_table_id.getNameForLogs(),
+            TimeSeriesColumnNames::IsStaleMarker,
             samples_table_id.getNameForLogs(),
             TimeSeriesColumnNames::IsStaleMarker,
             samples_table_id.getNameForLogs(),
