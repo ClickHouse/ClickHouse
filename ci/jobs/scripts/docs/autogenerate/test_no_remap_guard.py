@@ -50,6 +50,10 @@ def make_fake_docs(root):
             "        'status': 'matched',\n"
             "        'docusaurus_file': 'docs/sql-reference/statements/select/from.md',\n"
             "        'mintlify_file': 'reference/statements/select/from.mdx',\n"
+            "    }, {\n"
+            "        'status': 'matched',\n"
+            "        'docusaurus_file': 'docs/sql-reference/statements/create/dictionary/sources/local-file.md',\n"
+            "        'mintlify_file': 'reference/statements/create/dictionary/sources/local-file.mdx',\n"
             "    }]\n"
             "    return object(), rows\n")
     open(os.path.join(mig, "slug-map.csv"), "w", encoding="utf-8").close()
@@ -65,6 +69,13 @@ def make_fake_docs(root):
     os.makedirs(statement)
     with open(os.path.join(statement, "from.mdx"), "w", encoding="utf-8") as f:
         f.write("# FROM\n" + marker)
+    # Dictionary-source family: also discovered from the stub file map.
+    ds = os.path.join(
+        root, "reference", "statements", "create", "dictionary", "sources"
+    )
+    os.makedirs(ds)
+    with open(os.path.join(ds, "local-file.mdx"), "w", encoding="utf-8") as f:
+        f.write("# Local file\n" + marker)
     # Aggregate family: discovered from the migrated tree.
     agg = os.path.join(root, "reference", "functions", "aggregate-functions")
     os.makedirs(agg)
@@ -98,7 +109,13 @@ def main():
         # No-remap must fail fast for a full run and for every legacy family,
         # including the ones the earlier guard wrongly allowed.
         expect_blocked(mod, docs, None)
-        for only in ["session-settings", "functions:", "aggregate", "table-engine"]:
+        for only in [
+            "session-settings",
+            "functions:",
+            "aggregate",
+            "table-engine",
+            "dictionary-source",
+        ]:
             expect_blocked(mod, docs, only)
 
         # --remap-legacy (the default) must NOT be blocked. Stub generate() so the
