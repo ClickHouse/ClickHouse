@@ -305,37 +305,10 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 fi
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-# Redirect, not a pipe: the script leaves clients holding its stdout, and a pipe reader waits
-# for those too. `tail --pid` mirrors the capture to the console and ends with the script.
 # The capture path stays outside /test_output, which is uploaded wholesale.
-: > /tmp/stress_script.log
-set +e
-python3 /repo/ci/jobs/scripts/stress/stress.py --test-cmd="/usr/bin/clickhouse-test${test_cmd_opts}" --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" > /tmp/stress_script.log 2>&1 &
-stress_script_pid=$!
-# Count what the mirror actually copied, not the file size after it exits: a descendant
-# can append between `tail`'s last read and a stat, and the flush below would then start
-# past those bytes and never print them. Only `tail` writes to this pipe, so unlike a
-# pipe around the script itself it cannot be held open by an inherited descriptor.
-exec 3>&1
-mirrored_bytes=$(tail -n +1 -f --pid="$stress_script_pid" /tmp/stress_script.log \
-    | tee /dev/fd/3 | wc -c)
-exec 3>&-
-mirrored_bytes=${mirrored_bytes//[^0-9]/}
-wait "$stress_script_pid"
+run_capturing_output /tmp/stress_script.log \
+    python3 /repo/ci/jobs/scripts/stress/stress.py --test-cmd="/usr/bin/clickhouse-test${test_cmd_opts}" --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE"
 stress_script_exit_code=$?
-# The mirror ends with the script, but descendants inherit its stdout and can still
-# append. Only a failure row embeds those bytes, so only it pays the settle wait; the
-# flush is what puts them on the console either way.
-if [ "$stress_script_exit_code" -ne 0 ]
-then
-    drain_capture /tmp/stress_script.log
-else
-    drain_capture /tmp/stress_script.log "$FAILURE_DRAIN_GRACE_OK"
-fi
-finalize_capture /tmp/stress_script.log "$stress_script_exit_code"
-# The capture's writers can outlive the script by more than the settle wait allows, so look
-# once more whenever the job ends, including the early exits below.
-trap 'finalize_capture /tmp/stress_script.log "$stress_script_exit_code"' EXIT
 set -e
 if [ "$stress_script_exit_code" -eq 0 ]
 then

@@ -42,6 +42,10 @@ function drain_capture()
     local grace="${2:-$FAILURE_DRAIN_GRACE}"
     local started="$SECONDS"
     local previous=-1 current stable=0
+    # `local -` restores the caller's options on return, so this `set +x` cannot leak. The
+    # poll would otherwise trace about ten lines a second over the mirrored output.
+    local -
+    set +x
     while [ $(( SECONDS - started )) -lt "$FAILURE_DRAIN_TIMEOUT" ]
     do
         current=$(stat -c %s "$captured" 2>/dev/null || echo 0)
@@ -94,6 +98,52 @@ function finalize_capture()
     fi
 }
 
+function run_capturing_output()
+{
+    # Run "$@" with its output captured to $1, mirrored to this shell's stdout as it
+    # arrives, and left readable by `script_failure_info`. Returns the command's status
+    # with errexit still off, so a caller reads `$?` and restores `set -e` itself.
+    local captured="$1"
+    shift
+    : > "$captured"
+    set +e
+    "$@" > "$captured" 2>&1 &
+    local script_pid=$!
+    # `tee <path>` would `open()` the path, and for a regular-file stdout that is a second
+    # file description with its own offset, so this shell's later writes would overwrite the
+    # mirrored bytes. A named fd, so nothing here clobbers a descriptor a caller holds.
+    local mirror_fd
+    exec {mirror_fd}>&1
+    # Count what the mirror copied, not the file size after it exits: a descendant can append
+    # between `tail`'s last read and a stat, and the flush would then start past those bytes.
+    # Only `tail` writes to this pipe, so an inherited descriptor cannot hold it open.
+    mirrored_bytes=$(tail -n +1 -f --pid="$script_pid" "$captured" \
+        | tee >(cat >&"$mirror_fd") | wc -c)
+    exec {mirror_fd}>&-
+    # Default folded in here rather than at each reader: an empty `wc -c` would otherwise
+    # leave the offset unset and the next flush would reprint the whole capture.
+    mirrored_bytes=${mirrored_bytes//[^0-9]/}
+    mirrored_bytes=${mirrored_bytes:-0}
+    wait "$script_pid"
+    captured_exit_code=$?
+    # The mirror ends with the command, but descendants inherit its stdout and can still
+    # append. Only a failure row embeds those bytes, so only it pays the full settle wait;
+    # the flush is what puts them on the console either way.
+    if [ "$captured_exit_code" -ne 0 ]
+    then
+        drain_capture "$captured"
+    else
+        drain_capture "$captured" "$FAILURE_DRAIN_GRACE_OK"
+    fi
+    finalize_capture "$captured" "$captured_exit_code"
+    # Writers can outlive the settle wait, so look once more whenever the job ends.
+    # `$captured` is local and must expand now; `$captured_exit_code` must not, so a caller
+    # that goes on to exit with a different status is reported with that one.
+    # shellcheck disable=SC2064
+    trap "finalize_capture '$captured' \"\$captured_exit_code\"" EXIT
+    return "$captured_exit_code"
+}
+
 function script_failure_info()
 {
     # `info` cell of a `Test script failed` row: the exit code plus the tail of the wrapped
@@ -109,12 +159,21 @@ function script_failure_info()
         return 0
     fi
 
-    local total
+    local total tail_bytes total_bytes
     # Logical lines, the unit `tail -n` drops. `wc -l` counts newline bytes, so a
     # capture whose last line is unterminated (a killed script) counted one short
     # and presented a truncated tail as the whole output.
     total=$(awk 'END{print NR}' < "$captured")
-    if [ "$total" -gt "$FAILURE_TAIL_LINES" ]
+    total_bytes=$(stat -c %s "$captured" 2>/dev/null || echo 0)
+    tail_bytes=$(tail -n "$FAILURE_TAIL_LINES" "$captured" | wc -c)
+    tail_bytes=${tail_bytes//[^0-9]/}
+    tail_bytes=${tail_bytes:-0}
+    # `escaped_tail` cuts BYTES after `tail -n` cut lines, so a line count alone can claim
+    # more lines than the cell shows. Report whichever limit actually bit, in its own unit.
+    if [ "$tail_bytes" -gt "$FAILURE_TAIL_MAX_BYTES" ]
+    then
+        info="$info (last $FAILURE_TAIL_MAX_BYTES of $total_bytes bytes)"
+    elif [ "$total" -gt "$FAILURE_TAIL_LINES" ]
     then
         info="$info (last $FAILURE_TAIL_LINES of $total lines)"
     fi
