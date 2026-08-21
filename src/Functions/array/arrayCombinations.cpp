@@ -58,7 +58,7 @@ public:
     {
         FunctionArgumentDescriptors args{
             {"array", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-            {"k", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"}
+            {"k", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "(U)Int8/16/32/64"}
         };
         validateFunctionArguments(*this, arguments, args);
 
@@ -164,7 +164,7 @@ REGISTER_FUNCTION(ArrayCombinations)
     FunctionDocumentation::Syntax syntax = "arrayCombinations(arr, k)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The input array.", {"Array(T)"}},
-        {"k", "The number of elements in each combination.", {"(U)Int*"}},
+        {"k", "The number of elements in each combination.", {"(U)Int8/16/32/64"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"An array of arrays, where each inner array is a k-length combination.", {"Array(Array(T))"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayCombinations([1, 2, 3], 2)", "[[1,2],[1,3],[2,3]]"}};

@@ -69,7 +69,7 @@ public:
         {
             FunctionArgumentDescriptors args{
                 {"array", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-                {"k", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"}
+                {"k", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "(U)Int8/16/32/64"}
             };
             validateFunctionArguments(*this, arguments, args);
         }
@@ -239,7 +239,7 @@ REGISTER_FUNCTION(ArrayPartialPermutations)
     FunctionDocumentation::Syntax syntax = "arrayPartialPermutations(arr, k)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The input array.", {"Array(T)"}},
-        {"k", "The number of elements to select.", {"(U)Int*"}},
+        {"k", "The number of elements to select.", {"(U)Int8/16/32/64"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"An array of arrays containing all k-length ordered selections.", {"Array(Array(T))"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayPartialPermutations([1, 2, 3], 2)", "[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]"}};

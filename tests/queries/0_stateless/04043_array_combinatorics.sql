@@ -67,3 +67,24 @@ SELECT arrayPartialPermutations(arrayMap(x -> x + number, range(10)), 6) FROM nu
 SELECT materialize(arrayCombinations(range(toUInt8(18)), 9)) FROM numbers(3) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
 SELECT materialize(arrayPermutations(range(toUInt8(8)))) FROM numbers(4) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
 SELECT materialize(arrayPartialPermutations(range(toUInt8(10)), 6)) FROM numbers(2) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
+
+-- k is read as a native Int64, so wide integer types must be rejected up front instead of
+-- being silently narrowed: toUInt128('18446744073709551617') would otherwise become k = 1.
+SELECT arrayCombinations([1, 2, 3], toUInt128('18446744073709551617')); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT arrayCombinations([1, 2, 3], toInt128(2)); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT arrayCombinations([1, 2, 3], toUInt256(2)); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT arrayCombinations([1, 2, 3], toInt256(2)); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT arrayPartialPermutations([1, 2, 3], toUInt128('18446744073709551617')); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT arrayPartialPermutations([1, 2, 3], toInt128(2)); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT arrayPartialPermutations([1, 2, 3], toUInt256(2)); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT arrayPartialPermutations([1, 2, 3], toInt256(2)); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+
+-- a native UInt64 k above the array length is still rejected as out of range.
+SELECT arrayCombinations([1, 2, 3], toUInt64(18446744073709551615)); -- {serverError BAD_ARGUMENTS}
+SELECT arrayPartialPermutations([1, 2, 3], toUInt64(18446744073709551615)); -- {serverError BAD_ARGUMENTS}
+
+-- all native integer widths remain accepted.
+SELECT arrayCombinations([1, 2, 3], toInt8(2));
+SELECT arrayCombinations([1, 2, 3], toUInt16(2));
+SELECT arrayPartialPermutations([1, 2, 3], toInt32(2));
+SELECT arrayPartialPermutations([1, 2, 3], toUInt64(2));
