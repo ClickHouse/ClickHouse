@@ -836,11 +836,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         if (max_table_size == 0 || data.getTotalActiveSizeInBytes() + block.bytes() <= max_table_size)
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
+            const auto & all_columns = metadata_snapshot->getColumns();
             statistics = collectStatisticsToMaterialize(
-                metadata_snapshot->getColumns(),
+                all_columns,
                 /*materialize_statistics=*/ true,
                 context->getSettingsRef()[Setting::exclude_materialize_statistics_on_insert].toString(),
                 context->getSettingsRef());
+            /// A non-physical column is never present in a written block, so `build` below would
+            /// reject it. Every other absence stays an error.
+            std::erase_if(statistics, [&](const auto & entry) { return !all_columns.hasPhysical(entry.first); });
             statistics.build(block);
         }
     }
@@ -965,7 +969,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->setMinMaxIndex(std::move(minmax_idx));
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
-    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
     /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
