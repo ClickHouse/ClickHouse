@@ -205,20 +205,24 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
 스케줄(`EVERY` 또는 `AFTER`)은 필수입니다. 이 구문은 모든 갱신 매개변수를 한 번에 대체합니다. 지정하지 않은 절(`RANDOMIZE FOR`, `DEPENDS ON`, `SETTINGS`)은 제거되거나 기본값으로 재설정됩니다. 갱신 설정만 변경하려면 현재 스케줄을 다시 지정하십시오.
 
+이 명령은 materialized view 또는 해당 대상 테이블을 다시 생성하거나, 기존 대상 데이터를 지우거나, 이미 실행 중인 갱신을 취소하지 않고 기존 뷰의 갱신 구성을 직접 업데이트합니다. 구성이 변경되는 동안에도 기존 대상 테이블에 대한 읽기는 계속됩니다.
+
+동일한 완전한 `REFRESH` 사양으로 명령을 반복해도 안전합니다. 위에서 설명한 대로 실행할 때마다 모든 갱신 매개변수가 대체되므로, 구성 상태를 유지해야 하는 모든 절을 반드시 반복하십시오.
+
 ```sql
--- 스케줄을 변경합니다.
+-- Change the schedule.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
--- 재시도 설정을 변경합니다 (스케줄을 반드시 반복해야 합니다).
-ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
+-- Change retry settings (schedule must be repeated).
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
 
--- 의존성을 추가하거나 유지합니다.
+-- Add or keep a dependency.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 
--- `DEPENDS ON`을 생략하여 의존성을 삭제합니다.
+-- Drop the dependency by omitting `DEPENDS ON`.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 

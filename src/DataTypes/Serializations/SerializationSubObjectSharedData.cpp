@@ -145,9 +145,11 @@ void SerializationSubObjectSharedData::enumerateStreams(
 
             addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataData);
             addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsMarks);
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
+
+            /// A sub-object always reads whole paths matching the prefix and extracts sub-paths in memory
+            /// (subcolumns of such paths are removed from requested_paths_subcolumns in deserializeBinaryBulkStatePrefix),
+            /// so Substreams/SubstreamsMarks/PathsSubstreamsMetadata are never read here. Don't enumerate them,
+            /// otherwise prefetching opens files we never read.
 
             if (settings.use_specialized_prefixes_and_suffixes_substreams)
                 addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructureSuffix);

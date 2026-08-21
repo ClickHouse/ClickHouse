@@ -8,6 +8,10 @@
 namespace DB
 {
 
+class LazilyReadFromObjectStorage;
+struct LazyObjectStorageFileRegistry;
+using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
+
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
 public:
@@ -55,11 +59,25 @@ public:
     // and is taken from the storage metadata.
     InputOrderInfoPtr getDataOrder() const;
 
+    /// Lazy materialization support (see optimizeLazyMaterialization2).
+    bool canUseLazyMaterialization() const;
+
+    /// Reduces the set of columns this step reads to `required_names` (plus the columns the
+    /// PREWHERE / row-level filter needs, virtual columns and hive partition columns), makes the
+    /// step append a `__global_row_index` column to the output, and returns a step that lazily
+    /// reads the removed columns. Returns nullptr if there is nothing to defer.
+    std::unique_ptr<LazilyReadFromObjectStorage> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names);
+
+    LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
+
 private:
     StorageID storage_id;
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
+
+    /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
+    LazyObjectStorageFileRegistryPtr lazy_row_index_registry;
 
     ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
