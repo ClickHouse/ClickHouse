@@ -154,8 +154,7 @@ SELECT 'tuple subquery set unpacked rows', (SELECT count() FROM t_tuple_key WHER
 -- A preprocessor runs before tokenization and can map the padding onto ordinary token bytes, so it
 -- leaves no representation interchangeable even for `splitByNonAlpha`.
 CREATE TABLE t_preprocessed (b String, INDEX i b TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = hex(b))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
-INSERT INTO t_preprocessed SELECT 'word5' FROM numbers(1);
-INSERT INTO t_preprocessed SELECT 'zz' || toString(number) FROM numbers(999);
+INSERT INTO t_preprocessed SELECT if(number = 5, 'word5', 'zz' || toString(number)) FROM numbers(1000);
 
 SELECT 'preprocessor fixed set rows', (SELECT count() FROM t_preprocessed WHERE b IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed WHERE b IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 SELECT 'preprocessor fixed set count', count() FROM t_preprocessed WHERE b IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1;
@@ -165,8 +164,7 @@ SELECT 'preprocessor string set', extract(explain, 'Granules: \\d+/\\d+') FROM (
 -- A map-element carrier is indexed through `mapValues(map)`, so its stored type comes from that
 -- header column and the same rule applies to it.
 CREATE TABLE t_map (m Map(String, String), INDEX i mapValues(m) TYPE text(tokenizer = ngrams(3))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
-INSERT INTO t_map SELECT map('k', 'word5') FROM numbers(1);
-INSERT INTO t_map SELECT map('k', 'zz' || toString(number)) FROM numbers(999);
+INSERT INTO t_map SELECT map('k', if(number = 5, 'word5', 'zz' || toString(number))) FROM numbers(1000);
 
 SELECT 'map fixed set rows', (SELECT count() FROM t_map WHERE m['k'] IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1) = (SELECT count() FROM t_map WHERE m['k'] IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 SELECT 'map fixed set count', count() FROM t_map WHERE m['k'] IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1;
@@ -205,8 +203,7 @@ SELECT 'preprocessor folded key mixed case rows', (SELECT count() FROM t_preproc
 -- that header column.
 SET enable_json_type = 1;
 CREATE TABLE t_json (j JSON, INDEX i JSONAllValues(j) TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
-INSERT INTO t_json SELECT toJSONString(map('k', 'word5'))::JSON FROM numbers(1);
-INSERT INTO t_json SELECT toJSONString(map('k', 'zz' || toString(number)))::JSON FROM numbers(999);
+INSERT INTO t_json SELECT toJSONString(map('k', if(number = 5, 'word5', 'zz' || toString(number))))::JSON FROM numbers(1000);
 
 SELECT 'json string set', extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json WHERE j.k::String IN (SELECT v FROM t_string_set) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
 SELECT 'json fixed set rows', (SELECT count() FROM t_json WHERE j.k::String IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1) = (SELECT count() FROM t_json WHERE j.k::String IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1, use_skip_indexes = 0);

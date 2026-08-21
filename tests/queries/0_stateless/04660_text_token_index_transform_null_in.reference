@@ -51,11 +51,11 @@ tuple subquery set unpacked rows	1
 preprocessor fixed set rows	1
 preprocessor fixed set count	1
 preprocessor fixed set rows, transform_null_in = 0	1
-preprocessor string set	Granules: 1/251
+preprocessor string set	Granules: 1/250
 map fixed set rows	1
 map fixed set count	1
 map fixed set rows, transform_null_in = 0	1
-map string set	Granules: 1/251
+map string set	Granules: 1/250
 preprocessor wrapped key rows	1
 preprocessor wrapped key count	1
 preprocessor wrapped key rows, transform_null_in = 0	1
@@ -65,7 +65,7 @@ preprocessor plain key still prunes	Granules: 1/250
 preprocessor folded key used	1
 preprocessor folded key rows	1
 preprocessor folded key mixed case rows	1
-json string set	Granules: 1/251
+json string set	Granules: 1/250
 json fixed set rows	1
 json fixed set count	1
 normalized string set	Granules: 1/250
