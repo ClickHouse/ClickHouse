@@ -224,7 +224,7 @@ CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{UC_URL}')
 SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_catalog', vended_credentials = false
         """
     )
-    assert EXPERIMENTAL_SETTING in error, error
+    assert EXPERIMENTAL_SETTING in error
 
 
 def test_list_and_read_delta_tables(started_cluster):
@@ -282,7 +282,7 @@ def test_unreadable_table_is_hidden(started_cluster):
     error = node.query_and_get_error(
         f"SELECT * FROM {db_name}.`{schema_name}.csv_table`"
     )
-    assert "as Delta because it has data_source_format 'CSV'" in error, error
+    assert "as Delta because it has data_source_format 'CSV'" in error
 
 
 def test_uniform_table_reads_as_delta(started_cluster):
@@ -291,8 +291,8 @@ def test_uniform_table_reads_as_delta(started_cluster):
     create_database(node, db_name)
 
     create_table = node.query(f"SHOW CREATE TABLE {db_name}.`{UNIFORM_TABLE}`")
-    assert "DeltaLake" in create_table, create_table
-    assert "Iceberg" not in create_table, create_table
+    assert "DeltaLake" in create_table
+    assert "Iceberg" not in create_table
 
     assert_seeded_rows(node, db_name, UNIFORM_TABLE)
 
@@ -310,8 +310,8 @@ def test_iceberg_table_routes_to_iceberg_arm(started_cluster):
     proxied = node.query(f"SHOW CREATE TABLE {proxied_db}.`{UNIFORM_TABLE}`")
     direct = node.query(f"SHOW CREATE TABLE {direct_db}.`{UNIFORM_TABLE}`")
 
-    assert "Iceberg" in proxied, proxied
-    assert "DeltaLake" in direct, direct
+    assert "Iceberg" in proxied
+    assert "DeltaLake" in direct
 
 
 def test_iceberg_table_is_listed_and_readable(started_cluster):
@@ -324,9 +324,9 @@ def test_iceberg_table_is_listed_and_readable(started_cluster):
     assert UNIFORM_TABLE in show_tables(node, iceberg_db, "default%")
 
     described = node.query(f"DESCRIBE TABLE {iceberg_db}.`{UNIFORM_TABLE}`")
-    assert "id\tNullable(Int32)" in described, described
-    assert "name\tNullable(String)" in described, described
-    assert "marks\tNullable(Int32)" in described, described
+    assert "id\tNullable(Int32)" in described
+    assert "name\tNullable(String)" in described
+    assert "marks\tNullable(Int32)" in described
 
     assert_seeded_rows(node, iceberg_db, UNIFORM_TABLE)
 
@@ -351,5 +351,5 @@ def test_mixed_formats_in_one_database(started_cluster):
     delta_storages = used_storages(DELTA_TABLE)
     iceberg_storages = used_storages(UNIFORM_TABLE)
 
-    assert "DeltaLake" in delta_storages, delta_storages
-    assert "Iceberg" in iceberg_storages, iceberg_storages
+    assert "DeltaLake" in delta_storages
+    assert "Iceberg" in iceberg_storages
