@@ -51,7 +51,10 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    /// Precondition on the destination for the request that makes the object visible. Pass "*" to
+    /// make the copy fail with PreconditionFailed instead of overwriting an existing object.
+    const String & dest_if_none_match = {});
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -74,7 +77,10 @@ void copyS3FileRange(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    /// Precondition on the destination for the request that makes the object visible. Pass "*" to
+    /// make the copy fail with PreconditionFailed instead of overwriting an existing object.
+    const String & dest_if_none_match = {});
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3
@@ -91,7 +97,9 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    /// See copyS3File().
+    const String & dest_if_none_match = {});
 
 }
 

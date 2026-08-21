@@ -33,7 +33,10 @@ void copyAzureBlobStorageFile(
     const ReadSettings & read_settings,
     const std::optional<ObjectAttributes> & object_to_attributes,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-    BlobStorageLogWriterPtr blob_storage_log = {});
+    BlobStorageLogWriterPtr blob_storage_log = {},
+    /// Precondition on the destination blob. Pass "*" to make the copy fail instead of overwriting a
+    /// blob that already exists.
+    const String & dest_if_none_match = {});
 
 
 /// Copies data from any seekable source to AzureBlobStorage.
@@ -50,7 +53,10 @@ void copyDataToAzureBlobStorageFile(
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-    BlobStorageLogWriterPtr blob_storage_log = {});
+    BlobStorageLogWriterPtr blob_storage_log = {},
+    /// Precondition on the destination blob. Pass "*" to make the copy fail instead of overwriting a
+    /// blob that already exists.
+    const String & dest_if_none_match = {});
 
 }
 

@@ -535,6 +535,94 @@ def test_move_after_processing_basename_collision(started_cluster):
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+def test_move_after_processing_existing_destination(started_cluster, engine_name):
+    """A destination that already exists must not be overwritten.
+
+    Only one file is processed, so the in-batch duplicate detection cannot see the collision:
+    the destination is occupied by an object written beforehand, standing in for one written by
+    an earlier batch or by a concurrent mover. The move must fail closed and leave the source.
+    """
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_existing_dst_{engine_name}_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_move_to_prefix"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    is_s3 = engine_name == "S3Queue"
+
+    generate_random_files(
+        started_cluster,
+        files_path,
+        count=1,
+        row_num=1,
+        storage="s3" if is_s3 else "azure",
+        files=[(f"{files_path}/a/part.csv", 0)],
+    )
+
+    # With after_processing_move_preserve_path = 0 the source flattens onto this key.
+    occupied = f"{processed_prefix}/part.csv"
+    sentinel = b"9,9,9\n"
+    if is_s3:
+        put_s3_file_content(started_cluster, occupied, sentinel)
+    else:
+        put_azure_file_content(started_cluster, occupied, sentinel)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name=engine_name,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    for _ in range(100):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+            break
+        time.sleep(1)
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+    # The row was ingested, but the move must have been refused: the source is still there and the
+    # destination still holds the bytes that were there before.
+    def counts():
+        if is_s3:
+            bucket = started_cluster.minio_bucket
+            return (
+                count_minio_objects(started_cluster, bucket, processed_prefix),
+                count_minio_objects(started_cluster, bucket, files_path),
+            )
+        container = started_cluster.azurite_container
+        return (
+            count_azurite_blobs(started_cluster, container, processed_prefix),
+            count_azurite_blobs(started_cluster, container, files_path),
+        )
+
+    for _ in range(30):
+        moved, left = counts()
+        if moved == 1 and left == 1:
+            break
+        time.sleep(1)
+    moved, left = counts()
+    assert moved == 1, f"destination object count changed: {moved}"
+    assert left == 1, f"source must survive a refused move, got {left} objects"
+
+    if is_s3:
+        minio = started_cluster.minio_client
+        data = minio.get_object(started_cluster.minio_bucket, occupied).read()
+    else:
+        client = started_cluster.blob_service_client.get_blob_client(
+            started_cluster.azurite_container, occupied
+        )
+        data = client.download_blob().readall()
+    assert data == sentinel, f"pre-existing destination was overwritten: {data!r}"
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 @pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
 @pytest.mark.parametrize("preserve_move_path", [True, False])
 def test_move_after_processing_preserve_path(started_cluster, engine_name, move_to, preserve_move_path):

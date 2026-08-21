@@ -645,7 +645,7 @@ void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
-    const WriteSettings &,
+    const WriteSettings & write_settings,
     std::optional<ObjectAttributes> object_to_attributes)
 {
     auto current_client = client.get();
@@ -667,7 +667,9 @@ void S3ObjectStorage::copyObject( // NOLINT
         BlobStorageLogWriter::create(disk_name),
         scheduler,
         [&, this]{ return readObject(object_from, read_settings_to_use);},
-        object_to_attributes);
+        object_to_attributes,
+        /// Lets a caller demand that the copy fail rather than overwrite an existing destination.
+        write_settings.object_storage_write_if_none_match);
 }
 
 void S3ObjectStorage::shutdown()

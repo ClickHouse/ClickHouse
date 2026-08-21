@@ -87,7 +87,8 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            const LoggerPtr log_)
+            const LoggerPtr log_,
+            const String & dest_if_none_match_ = {})
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -96,6 +97,7 @@ namespace
             , schedule(schedule_)
             , blob_storage_log(blob_storage_log_)
             , log(log_)
+            , dest_if_none_match(dest_if_none_match_)
             , num_parts(0)
             , normal_part_size(0)
         {
@@ -112,6 +114,9 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
+        /// Destination precondition for the request that makes the object visible. "*" means the copy
+        /// must fail with PreconditionFailed instead of overwriting an object that already exists.
+        const String dest_if_none_match;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -193,6 +198,9 @@ namespace
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
             request.SetUploadId(multipart_upload_id);
+
+            if (!dest_if_none_match.empty())
+                request.SetIfNoneMatch(dest_if_none_match);
 
             Aws::S3::Model::CompletedMultipartUpload multipart_upload;
             for (size_t i = 0; i < multipart_tags.size(); ++i)
@@ -431,8 +439,9 @@ namespace
             const S3::S3RequestSettings & request_settings_,
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-            BlobStorageLogWriterPtr blob_storage_log_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"))
+            BlobStorageLogWriterPtr blob_storage_log_,
+            const String & dest_if_none_match_)
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"), dest_if_none_match_)
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -485,6 +494,9 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
+
+            if (!dest_if_none_match.empty())
+                request.SetIfNoneMatch(dest_if_none_match);
 
             client_ptr->setKMSHeaders(request);
         }
@@ -626,7 +638,8 @@ namespace
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<void()> fallback_method_,
-            bool is_ranged_copy_)
+            bool is_ranged_copy_,
+            const String & dest_if_none_match_)
             : UploadHelper(
                 client_ptr_,
                 dest_bucket_,
@@ -635,7 +648,8 @@ namespace
                 object_metadata_,
                 schedule_,
                 blob_storage_log_,
-                getLogger("copyS3File"))
+                getLogger("copyS3File"),
+                dest_if_none_match_)
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
@@ -716,6 +730,9 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
+
+            if (!dest_if_none_match.empty())
+                request.SetIfNoneMatch(dest_if_none_match);
 
             client_ptr->setKMSHeaders(request);
         }
@@ -876,7 +893,8 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<ObjectAttributes> & object_metadata,
+    const String & dest_if_none_match)
 {
     CopyDataToFileHelper helper{
         create_read_buffer,
@@ -888,7 +906,8 @@ void copyDataToS3File(
         settings,
         object_metadata,
         schedule,
-        blob_storage_log};
+        blob_storage_log,
+        dest_if_none_match};
     helper.performCopy();
 }
 
@@ -913,7 +932,8 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule,
         const CreateReadBuffer & fallback_file_reader,
         const std::optional<ObjectAttributes> & object_metadata,
-        bool is_ranged_copy)
+        bool is_ranged_copy,
+        const String & dest_if_none_match)
     {
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
@@ -930,7 +950,8 @@ namespace
                 settings,
                 blob_storage_log,
                 schedule,
-                object_metadata);
+                object_metadata,
+                dest_if_none_match);
         };
 
         if (!settings[S3RequestSetting::allow_native_copy])
@@ -955,7 +976,8 @@ namespace
             schedule,
             blob_storage_log,
             std::move(fallback_method),
-            is_ranged_copy};
+            is_ranged_copy,
+            dest_if_none_match};
         helper.performCopy();
     }
 }
@@ -973,7 +995,8 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<ObjectAttributes> & object_metadata,
+    const String & dest_if_none_match)
 {
     copyS3FileImpl(
         std::move(src_s3_client),
@@ -991,7 +1014,8 @@ void copyS3File(
         std::move(schedule),
         fallback_file_reader,
         object_metadata,
-        /* is_ranged_copy= */ false);
+        /* is_ranged_copy= */ false,
+        dest_if_none_match);
 }
 
 void copyS3FileRange(
@@ -1009,7 +1033,8 @@ void copyS3FileRange(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<ObjectAttributes> & object_metadata,
+    const String & dest_if_none_match)
 {
     copyS3FileImpl(
         std::move(src_s3_client),
@@ -1027,7 +1052,8 @@ void copyS3FileRange(
         std::move(schedule),
         fallback_file_reader,
         object_metadata,
-        /* is_ranged_copy= */ true);
+        /* is_ranged_copy= */ true,
+        dest_if_none_match);
 }
 
 }
