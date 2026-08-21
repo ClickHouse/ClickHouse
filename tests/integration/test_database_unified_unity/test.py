@@ -75,14 +75,12 @@ def start_unity_catalog(node):
         )
     except Exception:
         # A bare port-wait timeout says nothing about why the server is absent.
-        for description, command in (
-            ("server process", "pgrep -af start-uc-server || echo '(not running)'"),
-            ("log file", f"ls -la {UC_LOG} 2>&1"),
-            ("log tail", f"tail -n 50 {UC_LOG} 2>&1"),
-            ("java", "java -version 2>&1 | head -3"),
-        ):
-            output = node.exec_in_container(["bash", "-c", command], nothrow=True)
-            print(f"Unity Catalog {description}:\n{output}")
+        print(
+            "Unity Catalog log:\n"
+            + node.exec_in_container(
+                ["bash", "-c", f"tail -n 50 {UC_LOG} 2>&1"], nothrow=True
+            )
+        )
         raise
 
 
