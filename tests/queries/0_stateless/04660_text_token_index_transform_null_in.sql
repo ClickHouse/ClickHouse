@@ -192,7 +192,7 @@ INSERT INTO t_preprocessed_map SELECT map('k', if(number = 5, 'word5', 'zz' || t
 SELECT 'preprocessor map carrier still prunes', extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_preprocessed_map WHERE m['k'] IN ('word5') SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
 SELECT 'preprocessor map carrier rows', (SELECT count() FROM t_preprocessed_map WHERE m['k'] IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_map WHERE m['k'] IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 SELECT 'preprocessor plain key still prunes', extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_preprocessed_plain WHERE x IN ('word5') SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
--- Case folding maps bytes one to one and reads no type, so both applications yield the same tokens
+-- Case folding maps bytes without consulting their type, so both applications yield the same tokens
 -- whatever wrappers the carrier has. `force_data_skipping_indices` is the oracle here: a declined
 -- index throws INDEX_NOT_USED, which returning the right rows cannot reveal.
 CREATE TABLE t_preprocessed_folded (x LowCardinality(Nullable(String)), INDEX i x TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(x))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
