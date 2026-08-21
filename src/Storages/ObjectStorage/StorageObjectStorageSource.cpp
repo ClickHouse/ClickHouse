@@ -1318,8 +1318,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// therefore a stable cache identity even when the underlying object storage cannot
             /// provide a strong content ETag, as with HDFS. Do not use HDFS's weak `(mtime, size)`
             /// token here: it can collide for an in-place rewrite outside a data-lake snapshot.
+            /// The synthesized identity must be namespaced (`getUniqueStoragePathIdentifier` with the
+            /// connection info included): the cache key's path component is only the in-storage
+            /// relative path, so a bare `getPath()` token would alias one cache entry across two lake
+            /// tables that expose the same relative path on different backends or namespaces.
             if (configuration->isDataLakeConfiguration() && !object_with_metadata->metadata->isEtagUsableAsCacheKey())
-                object_with_metadata->metadata->etag = "data-lake:" + object_info->getPath();
+                object_with_metadata->metadata->etag
+                    = "data-lake:" + getUniqueStoragePathIdentifier(*configuration, *object_info, /*include_connection_info=*/true);
             if (object_info->isArchive())
                 object_with_metadata->relative_path = object_info->getPath();
             input_format = FormatFactory::instance().getInputWithMetadata(
