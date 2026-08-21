@@ -48,8 +48,9 @@
         "ko/integrations/clickpipes/postgres/postgres-generated-columns",
         "ko/integrations/clickpipes/postgres/parallel-initial-load",
         "ko/integrations/clickpipes/postgres/lifecycle",
+        "ko/integrations/clickpipes/postgres/auth",
         {
-          "group": "Operations",
+          "group": "작업",
           "pages": [
             "ko/integrations/clickpipes/postgres/add-table",
             "ko/integrations/clickpipes/postgres/pause-and-resume",
@@ -61,7 +62,7 @@
           ]
         },
         {
-          "group": "Source",
+          "group": "소스",
           "pages": [
             "ko/integrations/clickpipes/postgres/source/alloydb",
             "ko/integrations/clickpipes/postgres/source/rds",
@@ -117,7 +118,7 @@
         "ko/integrations/clickpipes/mysql/schema-changes",
         "ko/integrations/clickpipes/mysql/lifecycle",
         {
-          "group": "Operations",
+          "group": "작업",
           "pages": [
             "ko/integrations/clickpipes/mysql/add-table",
             "ko/integrations/clickpipes/mysql/pause-and-resume",
@@ -129,7 +130,7 @@
           ]
         },
         {
-          "group": "Source",
+          "group": "소스",
           "pages": [
             "ko/integrations/clickpipes/mysql/source/rds",
             "ko/integrations/clickpipes/mysql/source/aurora",
@@ -152,7 +153,7 @@
         "ko/integrations/clickpipes/mongodb/lifecycle",
         "ko/integrations/clickpipes/mongodb/faq",
         {
-          "group": "Operations",
+          "group": "작업",
           "pages": [
             "ko/integrations/clickpipes/mongodb/add-table",
             "ko/integrations/clickpipes/mongodb/remove-table",
@@ -164,7 +165,7 @@
           ]
         },
         {
-          "group": "Source",
+          "group": "소스",
           "pages": [
             "ko/integrations/clickpipes/mongodb/source/atlas",
             "ko/integrations/clickpipes/mongodb/source/generic",
@@ -182,7 +183,7 @@
       ]
     },
     {
-      "group": "Programmatic access",
+      "group": "프로그래밍 방식 액세스",
       "icon": "code",
       "pages": [
         "ko/integrations/clickpipes/programmatic-access/openapi",
@@ -190,7 +191,7 @@
       ]
     },
     {
-      "group": "Networking",
+      "group": "네트워킹",
       "icon": "network-wired",
       "pages": [
         "ko/integrations/clickpipes/networking/index",
@@ -201,7 +202,7 @@
       ]
     },
     {
-      "group": "Other",
+      "group": "기타",
       "icon": "ellipsis",
       "pages": [
         "ko/integrations/clickpipes/dynamodb",
