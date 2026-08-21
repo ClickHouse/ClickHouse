@@ -27,14 +27,18 @@ jobs:
           echo "Looking for failed PR workflow runs since $cutoff..."
           echo ""
 
-          # Get recent failed runs for the PR workflow that have not been retried yet
+          # Get recent failed runs for the PR workflow that have not been retried yet.
+          # The window is measured from updatedAt (when the run finished), because a run
+          # only becomes listable once it completes: a run longer than the window would
+          # never be inside it when first seen. The list itself is ordered by createdAt,
+          # so a long run sits deep in it and the limit has to be well above the window.
           run_ids=$(gh run list \
             --repo "$GH_REPO" \
             --workflow pull_request.yml \
             --status failure \
-            --limit 50 \
-            --json databaseId,attempt,createdAt \
-            --jq ".[] | select(.attempt == 1 and .createdAt >= \"$cutoff\") | .databaseId")
+            --limit 200 \
+            --json databaseId,attempt,updatedAt \
+            --jq ".[] | select(.attempt == 1 and .updatedAt >= \"$cutoff\") | .databaseId")
 
           if [ -z "$run_ids" ]; then
             echo "No recent failed runs found."
@@ -62,6 +66,9 @@ jobs:
             #   not actual tests — always treated as infrastructure failure), or
             # - it never reached its main "Run" step (failed during checkout/setup), or
             # - the "Run" step was skipped, or
+            # - the "Run" step was cancelled while the job itself failed: the runner went
+            #   away mid-run. A user or cascade cancel makes the job itself "cancelled",
+            #   which the filter above excludes, so it never reaches this arm.
             # - the "Run" step failed almost immediately (under 2 minutes), indicating
             #   a setup/download issue (e.g. missing S3 credentials) rather than a real
             #   test failure
@@ -72,6 +79,7 @@ jobs:
                 [.steps[] | select(.name == "Run")] |
                 if length == 0 then true
                 elif .[0].conclusion == "skipped" then true
+                elif .[0].conclusion == "cancelled" then true
                 elif .[0].conclusion == "failure" then
                   ((.[0].completed_at | fromdateiso8601) -
                    (.[0].started_at | fromdateiso8601)) < 120
