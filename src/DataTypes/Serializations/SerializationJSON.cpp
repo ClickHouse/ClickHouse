@@ -378,7 +378,7 @@ template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object_buffer;
-    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
+    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer, settings.json.max_row_size_for_json_each_row);
     deserializeObject(column, object_view, settings);
 }
 

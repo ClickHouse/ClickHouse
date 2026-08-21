@@ -2801,7 +2801,7 @@ void registerStorageFile(StorageFactory & factory)
         storage_features,
         Documentation{
             .description = R"DOCS_MD(
-The File table engine keeps the data in a file in one of the supported [file formats](/interfaces/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
+The File table engine keeps the data in a file in one of the supported [file formats](/reference/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
 
 Usage scenarios:
 
@@ -2810,7 +2810,7 @@ Usage scenarios:
 - Updating data in ClickHouse via editing a file on a disk.
 
 :::note
-This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/sql-reference/table-functions/s3.md).
+This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/reference/functions/table-functions/s3).
 :::
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
@@ -2822,7 +2822,7 @@ File(Format)
 The `Format` parameter specifies one of the available file formats. To perform
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](/interfaces/formats#formats-overview) section.
+[Formats](/reference/formats#formats-overview) section.
 
 ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](/reference/settings/server-settings/settings/other#path) setting in server configuration.
 
@@ -2890,7 +2890,7 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 `PARTITION BY` — Optional.  It is possible to create separate files by partitioning the data on a partition key. In most cases, you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
 ## Virtual columns {#virtual-columns}
 
