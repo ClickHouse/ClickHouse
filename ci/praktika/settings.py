@@ -113,7 +113,7 @@ class _Settings:
     ENABLE_SUBMODULE_CLONE_AUTH: bool = False
 
     # Exceeding it fails the job, so it must leave room inside the job's own cap.
-    SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC: int = 600
+    SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC: int = 1200
 
     # v2: records carry the producing workflow event, used as the reuse trust
     # signal instead of the branch (see CacheRunnerHooks.configure).

@@ -1,14 +1,14 @@
 """Tests for the config-time CIDB reachability invariant of the workflow filter hooks.
 
-`Config Workflow` is declared with `timeout=SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC + 600`,
-1200s at the default (`ci/praktika/native_jobs.py`), and praktika marks every dependee job
-`DROPPED` when it fails. `CIDB.query` retries 5 times with a 60s per-request timeout and
-exponential backoff, so one query can take 5 * 60 + (2 + 4 + 8 + 16) = 330s. The filter
-hooks run once per job (`ci/praktika/native_jobs.py`), so a single CIDB call in
-`should_skip_job` is multiplied by the number of jobs that reach it: four such queries
-outlast the job's whole allowance, and a transient CIDB slowdown then voids the entire
-test matrix. Half of that allowance is already committed to populating the submodule
-cache (`SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC`), which leaves 600s of slack.
+`Config Workflow` is declared with `timeout=1800` (`ci/praktika/native_jobs.py`), and
+praktika marks every dependee job `DROPPED` when it fails. `CIDB.query` retries 5 times
+with a 60s per-request timeout and exponential backoff, so one query can take
+5 * 60 + (2 + 4 + 8 + 16) = 330s. The filter hooks run once per job
+(`ci/praktika/native_jobs.py`), so a single CIDB call in `should_skip_job` is multiplied by
+the number of jobs that reach it and can outlast the job's whole allowance - a transient
+CIDB slowdown then voids the entire test matrix. Two thirds of that allowance are already
+committed to populating the submodule cache (`SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC`),
+which leaves 600s of slack.
 
 The hooks must therefore issue no CIDB query at all. That is asserted here by
 monkeypatching `requests.post` in `ci.praktika.cidb` (the single network boundary of
@@ -176,29 +176,23 @@ def test_merge_queue_jobs_are_filtered_without_cidb(monkeypatch):
     assert calls == [], f"config-time CIDB requests: {calls}"
 
 
-def test_build_profile_diff_skipped_for_docs_only_changes(monkeypatch):
-    _use_fake_info(
-        monkeypatch,
-        changed_files=("docs/en/development/continuous-integration.md",),
-    )
-
-    assert fj.should_skip_job(fj.JobNames.BUILD_PROFILE_DIFF) == (
-        True,
-        "Skipped, only documentation changed",
-    )
-
-
 @pytest.mark.parametrize(
     "changed_files",
     [
+        ("docs/en/development/continuous-integration.md",),
+        ("utils/exclude-authors.txt",),
         ("src/Core/Settings.cpp",),
-        (
-            "docs/en/development/continuous-integration.md",
-            "src/Core/Settings.cpp",
-        ),
     ],
 )
-def test_build_profile_diff_runs_for_non_docs_changes(monkeypatch, changed_files):
+def test_build_profile_diff_is_not_filtered_by_the_hook(monkeypatch, changed_files):
+    """The hook must not decide whether `Build profile diff` runs.
+
+    Which changed files affect the job is expressed by its `digest_config`, so that a
+    diff which cannot change the profiled build's output also skips the build itself
+    instead of rescuing it through `requires`. A hook gate here would only see the
+    changed files, not the build's own digest, and would drift from it. Scheduling is
+    asserted in ci/tests/test_build_profile_diff_scheduling.py.
+    """
     _use_fake_info(monkeypatch, changed_files=changed_files)
 
     assert fj.should_skip_job(fj.JobNames.BUILD_PROFILE_DIFF) == (False, "")
@@ -346,6 +340,18 @@ def test_get_changed_tests_issues_no_cidb_query(monkeypatch):
     assert calls == [], f"config-time CIDB requests: {calls}"
 
 
+def test_ci_script_change_keeps_sequential_selected_tests_job(monkeypatch):
+    _use_fake_info(monkeypatch, changed_files=("ci/jobs/functional_tests.py",))
+
+    assert fj.should_skip_job(
+        "Stateless tests (amd_tsan, sequential, selected tests)"
+    ) == (False, "")
+    assert fj.should_skip_job("Stateless tests (amd_tsan, sequential)") == (
+        True,
+        "Skipped: only CI scripts changed; running stateless batch 1 only",
+    )
+
+
 def test_config_job_outlives_the_submodule_cache_bound():
     """The job cap must exceed the clone's own bound, or the job watchdog fires first.
 
@@ -387,7 +393,7 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
             return False
 
         @staticmethod
-        def copy_file_to_s3(**_k):
+        def put(**_k):
             return True
 
     class _Cfg:
@@ -449,7 +455,7 @@ def test_submodule_cache_overrun_fails_closed():
             return False
 
         @staticmethod
-        def copy_file_to_s3(s3_path, **_k):
+        def put(s3_path, **_k):
             uploads.append(s3_path)
             return True
 
