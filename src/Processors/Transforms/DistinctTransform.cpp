@@ -111,6 +111,8 @@ DistinctTransform::DistinctTransform(
         const auto & col = header_->getByPosition(pos).column;
         if (col && !isColumnConst(*col))
             key_columns_pos.emplace_back(pos);
+        else if (skip_null_keys && col && col->isNullAt(0))
+            const_null_key = true;
     }
 }
 
@@ -246,6 +248,13 @@ void DistinctTransform::transform(Chunk & chunk)
 
     if (abandon_controller && abandon_controller->isAbandoned())
         return;
+
+    if (const_null_key)
+    {
+        chunk.setColumns(chunk.cloneEmptyColumns(), 0);
+        stopReading();
+        return;
+    }
 
     /// Convert to full column, because SetVariant for sparse column is not implemented.
     removeSpecialColumnRepresentations(chunk);

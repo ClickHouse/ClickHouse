@@ -146,6 +146,10 @@ private:
 
     bool skip_null_keys = false;
 
+    /// A constant NULL key component makes every key contain a NULL, so a consumer that skips NULL
+    /// keys drops all rows; the transform then emits nothing and stops the input.
+    bool const_null_key = false;
+
     /// mask[i] == 0 -> row i is known duplicate (by LC index) and is never inserted.
     template <typename Method>
     void buildFilter(
