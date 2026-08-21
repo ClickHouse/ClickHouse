@@ -166,6 +166,30 @@ using namespace Iceberg;
 
 namespace
 {
+/// A Geometry column is exposed only to a query that opted into the experimental Iceberg geo
+/// reader. The permission belongs to the reading query rather than to the context that constructed
+/// the storage: for a persisted table that context is whatever attached it, and server startup
+/// attaches with the server defaults.
+void rejectGeoTypesIfNotAllowed(const NamesAndTypesList & schema, const ContextPtr & context)
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg])
+        return;
+
+    auto is_geo = [](const IDataType & type)
+    { return type.getCustomName() && type.getCustomName()->getName() == "Geometry"; };
+
+    for (const auto & column : schema)
+    {
+        bool found = is_geo(*column.type);
+        if (!found)
+            column.type->forEachChild([&](const IDataType & child) { found |= is_geo(child); });
+        if (found)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Using geometry/geography types is not allowed without enabled allow_experimental_geo_types_in_iceberg flag");
+    }
+}
+
 Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(StorageMetadataPtr storage_metadata)
 {
     if (!storage_metadata || !storage_metadata->datalake_table_state.has_value())
@@ -208,7 +232,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     }
     auto table_path = configuration->getPathForRead().path;
     return PersistentTableComponents{
-        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
+        .schema_processor = std::make_shared<IcebergSchemaProcessor>(),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
@@ -1322,7 +1346,9 @@ ObjectIterator IcebergMetadata::iterate(
 NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-    return *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
+    auto schema = *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
+    rejectGeoTypesIfNotAllowed(schema, local_context);
+    return schema;
 }
 
 std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
@@ -1338,8 +1364,9 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
     auto result = std::make_unique<StorageInMemoryMetadata>();
-    result->setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
+    auto schema = *persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id);
+    rejectGeoTypesIfNotAllowed(schema, local_context);
+    result->setColumns(ColumnsDescription{schema});
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);
     return result;
