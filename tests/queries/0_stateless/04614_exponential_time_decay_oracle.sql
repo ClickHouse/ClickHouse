@@ -685,6 +685,14 @@ WITH
     CAST([(1., 0., 10.)], 'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))') AS plain
 SELECT decaying IN (plain); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- Compatible direct and nested values must retain normal IN semantics. These
+-- queries stay silent on success and expose a reference diff on a false negative.
+WITH CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS value
+SELECT 'direct decaying IN false negative' WHERE NOT (value IN (value));
+
+WITH CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecayingFloat64(10))') AS value
+SELECT 'nested decaying IN false negative' WHERE NOT (value IN (value));
+
 -- MergeTree set indexes may sort internal blocks without type metadata. Optional
 -- custom-type validation must not change the native sorter for ordinary columns.
 DROP TABLE IF EXISTS time_decay_set_index_sort;
