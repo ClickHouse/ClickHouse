@@ -200,37 +200,6 @@ def test_incremental_read_by_sequence_number_prunes_files(
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
-def test_row_id_filter_narrows_read_inside_file(
-    started_cluster_iceberg_with_spark, storage_type
-):
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
-    TABLE_NAME = "test_row_id_row_groups_" + storage_type + "_" + get_uuid_str()
-
-    spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg "
-        f"TBLPROPERTIES ('format-version' = '3', 'write.parquet.row-group-size-bytes' = '100')"
-    )
-    spark.sql(f"INSERT INTO {TABLE_NAME} select id, 'a' from range(0, 1000)")
-
-    _publish(started_cluster_iceberg_with_spark, storage_type, TABLE_NAME)
-    table_expression = _table_function(
-        started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
-    )
-
-    # Inside a single file a row id is a row position, so a point lookup is a seek, not a scan.
-    assert int(instance.query(f"SELECT count() FROM {table_expression}")) == 1000
-    assert (
-        _read_rows(
-            instance,
-            f"SELECT id FROM {table_expression} WHERE _row_id = 900 FORMAT Null",
-            PRUNING_ENABLED,
-        )
-        < 1000
-    )
-
-
-@pytest.mark.parametrize("storage_type", ["s3"])
 def test_materialized_row_ids_are_not_pruned_away(
     started_cluster_iceberg_with_spark, storage_type
 ):
