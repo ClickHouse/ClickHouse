@@ -1786,14 +1786,7 @@ class JobConfigs:
     # Compares the PR's arm_release build profile (binary and per-object sizes,
     # per-symbol sizes, compile and link time down to individual functions and
     # template instantiations) against the latest master build, and posts a PR
-    # comment when the change is significant. The data comes from the CI logs
-    # cluster: the PR side is uploaded by the arm_release build post-hook
-    # (build_profile_hook.py), the master side by master workflow builds.
-    # Uses the same digest as the builds (build_digest_config): the job compares
-    # build profiles, so it is affected by exactly what affects the build. A PR
-    # that does not touch the build produces no new profile for the head, so the
-    # job is skipped along with the build instead of scheduling a comparison that
-    # cannot exist.
+    # comment when the change is significant.
     build_profile_diff_job = Job.Config(
         name=JobNames.BUILD_PROFILE_DIFF,
         runs_on=RunnerLabels.ARM_SMALL,
@@ -1803,7 +1796,9 @@ class JobConfigs:
         run_in_docker="clickhouse/stateless-test",
         requires=["Build (arm_release)"],
         command="python3 ./ci/jobs/build_profile_diff_job.py",
-        digest_config=build_digest_config,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/build_profile_diff_job.py"],
+        ),
         timeout=1800,
         enable_gh_auth=True,
         # Run on a red head too. This job is the only writer of the
@@ -1862,7 +1857,6 @@ class JobConfigs:
                 integration_test_jobs_required + integration_test_jobs_non_required
             )
         ],
-        run_unless_cancelled=True,
         command="python3 ./ci/jobs/promql_compliance_job.py",
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
