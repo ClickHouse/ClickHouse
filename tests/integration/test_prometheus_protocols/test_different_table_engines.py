@@ -520,9 +520,8 @@ def test_external_samples_table_without_is_stale_marker_keeps_working():
     # A legacy 3-column samples table keeps working with the pre-column behavior: the write
     # succeeds (a stale marker is stored as its raw NaN payload) and a PromQL read treats
     # every stored row as an ordinary non-stale sample.
-    stale_marker = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
     protobuf = convert_time_series_to_protobuf(
-        [({"__name__": "up", "job": "myjob"}, {timestamp: 1.0, timestamp + 10: stale_marker})]
+        [({"__name__": "up", "job": "myjob"}, {timestamp: 1.0, timestamp + 10: PROMETHEUS_STALE_NAN})]
     )
     response = get_response_to_remote_write(node.ip_address, 9093, "/write", protobuf)
     assert response.status_code == requests.codes.no_content
@@ -534,6 +533,30 @@ def test_external_samples_table_without_is_stale_marker_keeps_working():
 
     result = node.query(f"SELECT value FROM prometheusQuery(prometheus, 'up', {timestamp})")
     assert result.strip() == "1"
+
+    # The point of the legacy contract: evaluating *at* the marker must return it as an ordinary
+    # sample rather than reporting the series absent, which is what a recognised stale marker does.
+    # Querying only at `timestamp` above never reaches it, so it would pass either way.
+    result = node.query(
+        f"SELECT value FROM prometheusQuery(prometheus, 'up', {timestamp + 10})"
+    )
+    assert result.strip() == "nan", f"marker was treated as stale on a legacy table: {result!r}"
+
+    # RemoteRead re-emits it as the stored raw NaN, not as a re-synthesised stale marker. Compared as
+    # raw bits because NaNs never compare equal.
+    read_response = receive_protobuf_from_remote_read(
+        node.ip_address,
+        9093,
+        "/read",
+        convert_read_request_to_protobuf("^up$", timestamp - 10, timestamp + 20),
+    )
+    assert len(read_response.results) == 1
+    assert len(read_response.results[0].timeseries) == 1
+    values = [
+        struct.pack("<d", sample.value)
+        for sample in read_response.results[0].timeseries[0].samples
+    ]
+    assert values == [struct.pack("<d", 1.0), struct.pack("<d", PROMETHEUS_STALE_NAN)]
 
 
 # Checks that the `DATA` keyword works as an alias for `SAMPLES`
