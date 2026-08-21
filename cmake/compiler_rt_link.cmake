@@ -81,9 +81,16 @@ if (WITH_COVERAGE)
     # won, the runtime concluded the compiler did not define the bias, and every
     # instrumented process failed continuous-mode startup with "LLVM Profile
     # Error: Neither __llvm_profile_counter_bias nor __llvm_profile_bitmap_bias
-    # is defined" and wrote no profile. CMAKE_<LANG>_STANDARD_LIBRARIES is
-    # appended after the objects and the target link libraries, where the normal
-    # clang driver would put the runtime, so the compiler-emitted bias wins.
-    set (CMAKE_C_STANDARD_LIBRARIES "${CMAKE_C_STANDARD_LIBRARIES} -Wl,--whole-archive ${COMPILER_RT_DIR}/libclang_rt_profile.a -Wl,--no-whole-archive")
-    set (CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES} -Wl,--whole-archive ${COMPILER_RT_DIR}/libclang_rt_profile.a -Wl,--no-whole-archive")
+    # is defined" and wrote no profile.
+    #
+    # This cannot be appended to CMAKE_<LANG>_STANDARD_LIBRARIES here: the
+    # including file (cmake/<os>/default_libs.cmake) OVERWRITES those variables
+    # with DEFAULT_LIBS after this include - the first CI round of this change
+    # did exactly that, the runtime silently vanished from the link (nothing
+    # references it strongly), and every process wrote no profile at all, with
+    # no error to show for it. The consumer splices this fragment into
+    # DEFAULT_LIBS instead, which ends up in CMAKE_<LANG>_STANDARD_LIBRARIES -
+    # after the objects and the target link libraries, where the normal clang
+    # driver would put the runtime, so the compiler-emitted bias wins.
+    set (COMPILER_RT_PROFILE_LIB "-Wl,--whole-archive ${COMPILER_RT_DIR}/libclang_rt_profile.a -Wl,--no-whole-archive")
 endif()
