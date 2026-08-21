@@ -55,7 +55,6 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTUndropQuery.h>
-#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -110,7 +109,6 @@
 #include <Interpreters/misc.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
