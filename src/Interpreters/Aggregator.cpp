@@ -1092,8 +1092,13 @@ void NO_INLINE Aggregator::executeImpl(
         /// below calls `getKeyHolder` a second time for every row, so a method that materializes
         /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
         /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
+        /// A method whose cells carry no mapped value keeps the same number of cells in half the
+        /// bytes, and it is the number of cells - one random lookup each - that decides how many of
+        /// them miss. Comparing bytes would let such a method start prefetching only at twice the
+        /// cardinality of the mapped one, so halve the threshold for it.
+        const size_t min_bytes = State::has_mapped ? min_bytes_for_prefetch : min_bytes_for_prefetch / 2;
         const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-            && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+            && (method.data.getBufferSizeInBytes() > min_bytes);
 
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))

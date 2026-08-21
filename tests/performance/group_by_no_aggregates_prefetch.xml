@@ -1,0 +1,24 @@
+<test>
+    <!--
+        `GROUP BY` without aggregate functions runs on a `HashSet`, whose cells are half the size of a
+        mapped table's with the same number of cells. The prefetch of the aggregation loop is enabled
+        once the table outgrows L2, and comparing bytes made that happen only at twice the cardinality
+        of an equivalent mapped table - right where the table stops fitting is where the prefetch is
+        worth the most.
+    -->
+
+    <settings>
+        <max_threads>8</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE group_by_prefetch (k UInt64) ENGINE = Memory</create_query>
+
+    <!-- 200M rows over ~130k distinct keys: the table lands just above half of a typical L2. -->
+    <fill_query>INSERT INTO group_by_prefetch SELECT cityHash64(number) % 131072 FROM numbers_mt(200000000)</fill_query>
+
+    <query>SELECT k FROM group_by_prefetch GROUP BY k FORMAT Null</query>
+    <query>SELECT k FROM group_by_prefetch GROUP BY k SETTINGS max_threads = 32 FORMAT Null</query>
+    <query>SELECT k FROM group_by_prefetch GROUP BY k SETTINGS max_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS group_by_prefetch</drop_query>
+</test>
