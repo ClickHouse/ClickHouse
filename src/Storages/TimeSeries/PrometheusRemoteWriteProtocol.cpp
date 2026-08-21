@@ -32,6 +32,7 @@
 namespace ProfileEvents
 {
     extern const Event PrometheusRemoteWriteHistograms;
+    extern const Event PrometheusRemoteWriteDroppedHistograms;
 }
 
 namespace DB
@@ -115,7 +116,13 @@ void appendHistogramBuckets(
     if (is_float)
     {
         for (double count : counts)
+        {
+            /// The int flavor is checked after delta decoding below; the float one arrives verbatim.
+            if (count < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram has a negative {} bucket count: {}", what, count);
             out_values.insertValue(count);
+        }
     }
     else
     {
@@ -205,6 +212,13 @@ ColumnPtr makeHistogramsColumn(
             Float64 count = is_float ? histogram.count_float() : static_cast<Float64>(histogram.count_int());
             Float64 zero_count = is_float ? histogram.zero_count_float() : static_cast<Float64>(histogram.zero_count_int());
             Float64 sum = histogram.sum();
+
+            /// Only the float arms can be negative: the int ones are unsigned on the wire. NaN
+            /// compares false here, so a stale marker still gets through.
+            if (count < 0 || zero_count < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram has a negative {}: {}",
+                    count < 0 ? "count" : "zero count", count < 0 ? count : zero_count);
 
             if (histogram.reset_hint() < prometheus::Histogram::UNKNOWN || histogram.reset_hint() > prometheus::Histogram::GAUGE)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -518,10 +532,13 @@ void PrometheusRemoteWriteProtocol::write(
     bool with_histograms = metadata->columns.has(TimeSeriesColumnNames::Histograms)
         && time_series_storage->hasTarget(ViewTarget::Histograms);
     if (num_histograms && !with_histograms)
+    {
+        ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteDroppedHistograms, num_histograms);
         LOG_WARNING(LogFrequencyLimiter(log, 60),
             "{}: Dropping {} native histogram samples: the table has no \"histograms\" target table. "
             "Recreate the TimeSeries table with SETTINGS store_native_histograms = 1 to store them",
             storage_id.getNameForLogs(), num_histograms);
+    }
 
     insertBlock(makeBlock(time_series, metrics_metadata, *metadata, with_histograms && num_histograms), *time_series_storage, getContext());
 
