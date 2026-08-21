@@ -375,6 +375,7 @@ bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spa
 
 void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
 {
+    const auto & parquet_metadata = getFileMetadata();
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
         extended_sample_block.insert(col);
@@ -394,7 +395,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         || options.format.parquet.spatial_filter_push_down)
     {
         geo_meta.emplace(); // Mark as "parsed" upfront; filled in on success, left empty on failure.
-        for (const auto & kv : file_metadata.key_value_metadata)
+        for (const auto & kv : parquet_metadata.key_value_metadata)
         {
             if (kv.key != "geo")
                 continue;
@@ -477,7 +478,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         /// input_format_parquet_allow_missing_columns = 0, turning a readable file into an exception.
         std::unordered_set<String> schema_leaf_paths;
         {
-            const auto & schema = file_metadata.schema;
+            const auto & schema = parquet_metadata.schema;
             if (schema.size() >= 2 && schema.at(0).num_children > 0)
             {
                 size_t schema_idx = 1;
@@ -574,7 +575,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// Pass std::nullopt when allow_geoparquet_parser is disabled so SchemaConverter skips
     /// geo type resolution entirely (it will not re-parse).
     SchemaConverter schemer(
-        file_metadata,
+        parquet_metadata,
         options,
         &extended_sample_block,
         options.format.parquet.allow_geoparquet_parser ? geo_meta : std::nullopt);
@@ -698,9 +699,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
     size_t total_rows = 0;
-    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    for (size_t row_group_idx = 0; row_group_idx < parquet_metadata.row_groups.size(); ++row_group_idx)
     {
-        const auto * meta = &file_metadata.row_groups[row_group_idx];
+        const auto * meta = &parquet_metadata.row_groups[row_group_idx];
         if (meta->num_rows < 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has negative row count: {}", row_group_idx, meta->num_rows);
         if (meta->num_rows == 0)
@@ -989,6 +990,7 @@ void Reader::prepareBloomFilterCondition()
 
 void Reader::initializePrefetches()
 {
+    const auto & parquet_metadata = getFileMetadata();
     bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
         || format_filter_info->rows_to_read
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
@@ -1108,7 +1110,7 @@ void Reader::initializePrefetches()
             /// But leave `data_pages_bytes` unchanged because it's used to check whether there are any
             /// more pages to read, and we don't want to start reading a page inside these 100 bytes.
             size_t data_pages_extra_bytes = 0;
-            if (file_metadata.created_by == "parquet-mr" && !column.meta->meta_data.__isset.dictionary_page_offset && !column.meta->__isset.offset_index_offset)
+            if (parquet_metadata.created_by == "parquet-mr" && !column.meta->meta_data.__isset.dictionary_page_offset && !column.meta->__isset.offset_index_offset)
                 data_pages_extra_bytes = std::min(100ul, prefetcher.getFileSize() - size_t(column.meta->meta_data.data_page_offset) - column.data_pages_bytes);
 
             column.data_pages_prefetch = prefetcher.registerRange(
@@ -1126,8 +1128,8 @@ void Reader::initializePrefetches()
         /// Bloom filter ends when something else starts (or earlier). So we list all possible
         /// "something else" offsets and do binary search for each bloom filter to find where it ends.
         std::vector<size_t> all_offsets;
-        all_offsets.reserve(file_metadata.row_groups.size() * file_metadata.schema.size() * 6);
-        for (const auto & rg : file_metadata.row_groups)
+        all_offsets.reserve(parquet_metadata.row_groups.size() * parquet_metadata.schema.size() * 6);
+        for (const auto & rg : parquet_metadata.row_groups)
         {
             for (const auto & col : rg.columns)
             {
@@ -1860,7 +1862,7 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 {
     if (!computed)
     {
-        value_hashes = hashDictionaryValues(reader.file_metadata, reader.options, column, column_info, reservation, reserved_bytes);
+        value_hashes = hashDictionaryValues(reader.getFileMetadata(), reader.options, column, column_info, reservation, reserved_bytes);
         computed = true;
     }
     /// If the dictionary values couldn't be hashed (e.g. the value set didn't fit the pruning budget),
