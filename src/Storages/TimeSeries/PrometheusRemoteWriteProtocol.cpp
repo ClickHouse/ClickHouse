@@ -13,8 +13,10 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <IO/Progress.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -26,7 +28,6 @@
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
-#include <tuple>
 
 
 namespace DB
@@ -265,7 +266,12 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
             if (result.future.wait_for(std::chrono::milliseconds(timeout_ms)) == std::future_status::timeout)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for asynchronous insert timeout ({} ms) exceeded", timeout_ms);
 
-            std::ignore = result.future.get();
+            const auto progress = result.future.get();
+            if (auto process_list_element = context->getProcessListElement())
+            {
+                process_list_element->updateProgressIn(Progress(ReadProgress(progress.rows, progress.bytes)));
+                process_list_element->updateProgressOut(Progress(WriteProgress(progress.rows, progress.bytes)));
+            }
         }
         else
         {
