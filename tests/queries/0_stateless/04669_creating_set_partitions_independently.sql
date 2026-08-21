@@ -185,6 +185,11 @@ INSERT INTO test_in_nullable_key SELECT if(number % 16 = 0, NULL, number % 64) F
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_nullable_key) SETTINGS allow_creating_set_partitions_independently = 1) WHERE explain LIKE '%Pre-distinct%' OR explain LIKE '%Read each partition through separate port%';
 SELECT (SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_nullable_key) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_nullable_key) SETTINGS allow_creating_set_partitions_independently = 1);
 SELECT (SELECT count() FROM (SELECT if(number % 16 = 0, NULL, number % 64) AS n FROM numbers(100)) WHERE n IN (SELECT a FROM test_in_nullable_key) SETTINGS transform_null_in = 1, allow_creating_set_partitions_independently = 0) = (SELECT count() FROM (SELECT if(number % 16 = 0, NULL, number % 64) AS n FROM numbers(100)) WHERE n IN (SELECT a FROM test_in_nullable_key) SETTINGS transform_null_in = 1, allow_creating_set_partitions_independently = 1);
+-- a constant NULL key component makes every key contain a NULL, so the set fill drops every row and
+-- the set is empty; the preliminary deduplication emits nothing and stops reading instead of
+-- deduplicating the whole input
+SELECT count() FROM numbers(100) WHERE (number, NULL) IN (SELECT coalesce(a, 0), CAST(NULL AS Nullable(UInt8)) FROM test_in_nullable_key) SETTINGS allow_creating_set_partitions_independently = 1;
+SELECT (SELECT count() FROM numbers(100) WHERE (number, NULL) IN (SELECT coalesce(a, 0), CAST(NULL AS Nullable(UInt8)) FROM test_in_nullable_key) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(100) WHERE (number, NULL) IN (SELECT coalesce(a, 0), CAST(NULL AS Nullable(UInt8)) FROM test_in_nullable_key) SETTINGS allow_creating_set_partitions_independently = 1);
 DROP TABLE test_in_nullable_key;
 
 -- LowCardinality(Nullable) key: the set fill strips LowCardinality before it skips rows with a NULL
