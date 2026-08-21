@@ -2203,7 +2203,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 #endif
 #if USE_HDFS
     factory.registerFunction<TableFunctionIcebergHDFS>(
-         {.description = R"(The table function provides read-only access to an existing Iceberg table stored on the HDFS virtual filesystem.)",
+         {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem.)",
             .examples{{IcebergHDFSDefinition::name, "SELECT * FROM icebergHDFS(url)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});

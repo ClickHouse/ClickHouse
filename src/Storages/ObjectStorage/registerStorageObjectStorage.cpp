@@ -1156,8 +1156,6 @@ This engine provides a *data* integration with Apache [Iceberg](https://iceberg.
 
 Without an explicit schema, the Iceberg table must already exist in storage. To create a new standalone Iceberg table on a writable backend, specify its schema in the `CREATE TABLE` statement.
 
-`IcebergHDFS` is read-only because HDFS cannot provide the conditional writes required for atomic Iceberg metadata commits.
-
 ```sql
 CREATE TABLE iceberg_table_s3
     ENGINE = IcebergS3(url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], [,extra_credentials])
@@ -1620,7 +1618,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Apache Iceberg tables stored in HDFS.",
+            .description = "Provides an integration with existing Apache Iceberg tables stored in HDFS.",
             .syntax = "ENGINE = IcebergHDFS(uri)",
             .related = {"Iceberg"}});
 #    endif
