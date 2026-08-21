@@ -1746,12 +1746,14 @@ class JobConfigs:
         command="python3 ./ci/jobs/parser_memory_check.py",
         requires=[ArtifactNames.CLICKHOUSE_EXAMPLES],
         result_name_for_cidb="Tests",
+        # No registry files (ci/defs/*.py, ci/workflows/*.py) in the digest: this
+        # job requires CLICKHOUSE_EXAMPLES, so digesting the registry would make
+        # every registry-only edit rescue Build (arm_release) to produce the
+        # artifact - the waste test_build_profile_diff_scheduling.py pins against.
+        # No other job digests the registry either.
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/defs/defs.py",
-                "./ci/defs/job_configs.py",
                 "./ci/jobs/parser_memory_check.py",
-                "./ci/workflows/pull_request.py",
                 "./utils/parser-memory-profiler/",
             ],
         ),
