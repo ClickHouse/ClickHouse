@@ -406,9 +406,10 @@ struct DeltaLakeMetadataImpl
             LOG_TEST(log, "Found column: {}, type: {}, nullable: {}, physical name: {}",
                         column_name, type, is_nullable, physical_name);
 
-            /// This parser exposes the physical name as the column name, so a caller that knows the
-            /// logical name reads nothing: the data files hold `physical_name`, and a column missing
-            /// from a data file silently reads as default values. Only delta-kernel maps the two names.
+            /// This parser does not translate logical column names to physical ones. If the table
+            /// uses column mapping, a query by the logical name would find no such column in the
+            /// data files and silently return default values. Only delta-kernel handles the mapping
+            /// correctly, so reject such tables here.
             if (physical_name != column_name)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
