@@ -412,18 +412,16 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
 IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfiguration()
 {
     /// Read before the snapshot below: a round records itself only after advancing every partition it
-    /// owes, so a count observed first can never describe more than the snapshot that follows. The
-    /// other order pairs an empty snapshot with a later round, terminating on unread data.
+    /// owes, so a count observed first can never describe more than the snapshot that follows.
     const bool round_applied = subscription->updatesCount() > 0;
 
     const auto result = handleReconfiguration();
 
-    /// Both observations above are already taken here, so what follows depends only on their order.
     FailPointInjection::pauseFailPoint(FailPoints::streaming_bounded_pause_after_snapshot_observed);
 
-    /// A round publishes its partitions one at a time, so a snapshot no round has been applied to
-    /// yet may still be mid-publication, and reading it would count as a finished snapshot. Checked
-    /// after handleReconfiguration so a disabled subscription still finishes.
+    /// A round publishes its partitions one at a time, so a snapshot no round has been applied to yet
+    /// may still be mid-publication and is not a completed one. Checked after handleReconfiguration
+    /// so a disabled subscription still finishes.
     if (!round_applied)
         return result == Status::Ready ? Status::Async : result;
 
