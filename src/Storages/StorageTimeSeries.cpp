@@ -125,37 +125,6 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
         targets.emplace_back(std::move(target));
     }
 
-    /// Create the inner materialized view which feeds the recent samples table from the samples table.
-    if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
-    {
-        auto find_target = [&](ViewTarget::Kind kind) -> const Target *
-        {
-            for (const auto & target : targets)
-            {
-                if (target.kind == kind)
-                    return &target;
-            }
-            return nullptr;
-        };
-
-        const auto * recent_target = find_target(ViewTarget::RecentSamples);
-        if (recent_target && recent_target->is_inner_table)
-        {
-            auto resolve_target_table_id = [&](const Target & target) -> StorageID
-            {
-                if (!target.is_inner_table)
-                    return local_context->tryResolveStorageID(target.table_id);
-                return StorageID{table_id.database_name, getTimeSeriesInnerTableName(target.kind, table_id)};
-            };
-
-            createTimeSeriesRecentSamplesMV(
-                resolve_target_table_id(*find_target(ViewTarget::Samples)),
-                resolve_target_table_id(*recent_target),
-                table_id,
-                local_context);
-        }
-    }
-
     return targets;
 }
 
@@ -218,6 +187,12 @@ const StorageTimeSeries::Target * StorageTimeSeries::tryGetTarget(ViewTarget::Ki
             return &target;
     }
     return nullptr;
+}
+
+
+bool StorageTimeSeries::hasTarget(ViewTarget::Kind target_kind) const
+{
+    return tryGetTarget(target_kind) != nullptr;
 }
 
 
@@ -343,19 +318,6 @@ void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     if (!hasInnerTables())
         return;
-
-    /// Drop the inner materialized view feeding the recent samples table first,
-    /// so that it never outlives its source and destination tables.
-    if (isInnerTable(ViewTarget::RecentSamples))
-    {
-        StorageID mv_table_id{getStorageID().getDatabaseName(), getTimeSeriesRecentSamplesMVName(getStorageID())};
-        if (DatabaseCatalog::instance().isTableExist(mv_table_id, local_context))
-        {
-            bool may_lock_ddl_guard = getStorageID().getQualifiedName() < mv_table_id.getQualifiedName();
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, mv_table_id,
-                                                   sync, /* ignore_sync_setting= */ true, may_lock_ddl_guard);
-        }
-    }
 
     for (auto target_kind : getTargetKinds())
     {
@@ -622,20 +584,6 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
                                 StorageID{new_table_id.database_name, new_inner_table_name}.getNameForLogs());
 
             inner_renames.emplace_back(std::move(inner_table_id), std::move(new_inner_table_name));
-        }
-
-        /// The inner materialized view feeding the recent samples table is renamed the same way.
-        if (isInnerTable(ViewTarget::RecentSamples))
-        {
-            StorageID mv_table_id{old_table_id.database_name, getTimeSeriesRecentSamplesMVName(old_table_id)};
-            if (DatabaseCatalog::instance().isTableExist(mv_table_id, getContext()))
-            {
-                auto new_mv_table_name = getTimeSeriesRecentSamplesMVName(new_table_id);
-                if (DatabaseCatalog::instance().isTableExist(StorageID{new_table_id.database_name, new_mv_table_name}, getContext()))
-                    throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists",
-                                    StorageID{new_table_id.database_name, new_mv_table_name}.getNameForLogs());
-                inner_renames.emplace_back(std::move(mv_table_id), std::move(new_mv_table_name));
-            }
         }
 
         for (const auto & [inner_table_id, new_inner_table_name] : inner_renames)
@@ -1178,7 +1126,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `recent_samples_ttl_seconds` | UInt64 | 0 | When set to a non-zero value, the table creates an additional `recent samples` target table with `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` and an inner materialized view which copies every inserted sample into that table. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). Zero means no recent samples table is created |
+| `recent_samples_ttl_seconds` | UInt64 | 0 | When set to a non-zero value, the table gets an additional `recent samples` target table and every inserted sample is written to it as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). Zero means no recent samples table is used |
 | `recent_samples_partition_by` | Expression | `toDate(timestamp)` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. Requires `recent_samples_ttl_seconds` to be set |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. Requires `recent_samples_ttl_seconds` to be set |
 

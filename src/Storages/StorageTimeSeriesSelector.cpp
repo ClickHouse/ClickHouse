@@ -804,9 +804,13 @@ void StorageTimeSeriesSelector::readImpl(
         /// Any sample with a timestamp >= now() - TTL is guaranteed to be in the recent samples table:
         /// the TTL (with `ttl_only_drop_parts`) drops a part only when the timestamps of all its rows are
         /// older than the drop time minus TTL, and the drop time is never later than the current time.
+        /// A safety margin of one minute is added on top because removing data by TTL and executing the
+        /// query are not synchronized, and the TTL expression works with a whole-second precision while
+        /// timestamps can have a sub-second one.
+        static constexpr Int64 safety_margin_seconds = 60;
         UInt32 timestamp_scale = tryGetDecimalScale(*config.timestamp_data_type).value_or(0);
         Int64 now_seconds = std::time(nullptr);
-        Int64 min_guaranteed_time = (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds))
+        Int64 min_guaranteed_time = (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds)
             * DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
         if ((config.min_time.value >= min_guaranteed_time)
             && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))

@@ -52,6 +52,9 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
+    /// Whether this table has a target of the given kind (the RecentSamples target is optional).
+    bool hasTarget(ViewTarget::Kind target_kind) const;
+
     /// Returns all possible target kinds: Samples, Tags, Metrics, and the optional RecentSamples.
     static constexpr std::array<ViewTarget::Kind, 4> getAllTargetKinds()
     {
@@ -122,7 +125,7 @@ private:
     };
 
     /// Initializes information about the target tables (Samples, Tags, Metrics, and RecentSamples if enabled).
-    /// The function also creates inner tables and the recent samples materialized view (unless this is an ATTACH query).
+    /// The function also creates inner tables (unless this is an ATTACH query).
     static std::vector<Target> buildTargets(
         const ASTCreateQuery & create_query,
         const StorageID & table_id,

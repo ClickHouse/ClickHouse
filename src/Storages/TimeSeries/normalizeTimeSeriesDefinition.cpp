@@ -58,7 +58,7 @@ namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
     extern const int INCORRECT_QUERY;
-    extern const int NOT_IMPLEMENTED;
+    extern const int INVALID_SETTING_VALUE;
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_TABLE;
 }
@@ -762,12 +762,27 @@ namespace
     {
         auto storage = make_intrusive<ASTStorage>();
 
-        auto engine = makeASTFunction("MergeTree");
+        /// The engine follows the replication family of the samples engine, so that a replicated
+        /// samples table gets a replicated recent samples table (otherwise the replicas of the
+        /// recent samples table would diverge and queries would return different results on
+        /// different replicas). The engine arguments are not copied: an explicit ZooKeeper path
+        /// of the samples engine cannot be shared by another table, while the default path is
+        /// derived from each table's own UUID.
+        std::string_view engine_name = "MergeTree";
+        const auto * samples_engine = create_query.getTargetInnerEngine(ViewTarget::Samples);
+        if (samples_engine && samples_engine->engine)
+        {
+            const auto & samples_engine_name = samples_engine->engine->name;
+            if (samples_engine_name.starts_with("Replicated"))
+                engine_name = "ReplicatedMergeTree";
+            else if (samples_engine_name.starts_with("Shared"))
+                engine_name = "SharedMergeTree";
+        }
+        auto engine = makeASTFunction(engine_name);
         engine->setNoEmptyArgs(false);
         storage->set(storage->engine, engine);
 
         /// Mimic the sorting key of the samples table if it's an inner MergeTree table.
-        const auto * samples_engine = create_query.getTargetInnerEngine(ViewTarget::Samples);
         if (samples_engine && samples_engine->engine && samples_engine->engine->name.ends_with("MergeTree") && samples_engine->order_by)
         {
             storage->set(storage->order_by, samples_engine->order_by->clone());
@@ -788,18 +803,28 @@ namespace
             storage->set(storage->partition_by,
                 makeASTFunction("toDate", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
 
-        {
-            auto ttl_element = make_intrusive<ASTTTLElement>(TTLMode::DELETE, DataDestinationType::DELETE, "", /*if_exists=*/ false);
-            ttl_element->setTTL(makeASTOperator("plus",
-                makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
-                makeASTFunction("toIntervalSecond",
-                    make_intrusive<ASTLiteral>(settings[TimeSeriesSetting::recent_samples_ttl_seconds].value))));
-            auto ttl_list = make_intrusive<ASTExpressionList>();
-            ttl_list->children.push_back(std::move(ttl_element));
-            storage->set(storage->ttl_table, ttl_list);
-        }
-
         return storage;
+    }
+
+    /// Sets the TTL of the inner recent samples table from the `recent_samples_ttl_seconds` setting.
+    /// The reader treats that setting as a correctness contract (samples newer than now() - TTL must
+    /// be present in the table), so the TTL is always derived from the setting, overriding any TTL
+    /// from the engine declaration, and engines which don't support TTL are rejected.
+    void applyRecentSamplesTTL(ASTStorage & storage, const TimeSeriesSettings & settings, const StorageID & table_id)
+    {
+        if (!storage.engine || !storage.engine->name.ends_with("MergeTree"))
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                "{}: The inner recent samples table requires a MergeTree-family engine to apply the TTL "
+                "defined by the `recent_samples_ttl_seconds` setting", table_id.getNameForLogs());
+
+        auto ttl_element = make_intrusive<ASTTTLElement>(TTLMode::DELETE, DataDestinationType::DELETE, "", /*if_exists=*/ false);
+        ttl_element->setTTL(makeASTOperator("plus",
+            makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
+            makeASTFunction("toIntervalSecond",
+                make_intrusive<ASTLiteral>(settings[TimeSeriesSetting::recent_samples_ttl_seconds].value))));
+        auto ttl_list = make_intrusive<ASTExpressionList>();
+        ttl_list->children.push_back(std::move(ttl_element));
+        storage.set(storage.ttl_table, ttl_list);
     }
 
     /// Whether the SETTINGS clause of an inner table's engine declaration contains the specified setting.
@@ -1186,16 +1211,6 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
             {
                 StorageID table_id{create_query.getDatabase(), create_query.getTable()};
 
-                /// The inner materialized view feeding the recent samples table is created with a
-                /// non-deterministic UUID, which would diverge between the replicas of a Replicated database.
-                auto database_name = create_query.getDatabase().empty() ? context->getCurrentDatabase() : create_query.getDatabase();
-                if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-                    database && database->getEngineName() == "Replicated")
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "{}: The recent samples table is not supported in Replicated databases yet", table_id.getNameForLogs());
-                }
-
                 /// The inner recent samples table mimics the columns of the samples table
                 /// (with their codecs) unless its columns are declared explicitly.
                 boost::intrusive_ptr<ASTColumns> inner_columns;
@@ -1216,7 +1231,10 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                     create_query.setTargetInnerEngine(kind, generateRecentSamplesInnerEngine(create_query, settings));
 
                 if (auto * inner_engine = create_query.getTargetInnerEngine(kind))
+                {
+                    applyRecentSamplesTTL(*inner_engine, settings, table_id);
                     applyInnerEngineSettings(kind, *inner_engine, settings);
+                }
             }
         }
     }
