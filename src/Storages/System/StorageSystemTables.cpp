@@ -937,7 +937,7 @@ protected:
                 {
                     try
                     {
-                        auto total_rows = table ? table->totalRows(context) : std::nullopt;
+                        auto total_rows = table ? table->totalRows(context_without_sequential_consistency) : std::nullopt;
                         if (total_rows)
                             res_columns[res_index]->insert(*total_rows);
                         else
