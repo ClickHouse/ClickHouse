@@ -748,7 +748,7 @@ public:
     /// Returns sorted list of the parts with specified states
     /// out_states will contain snapshot of each part state
     /// If `need_stop` is provided, it is checked periodically during the enumeration,
-    /// and if it returns true, the enumeration stops and the partial result is returned.
+    /// and if it returns true, the enumeration stops and returns what it has walked so far.
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
@@ -769,7 +769,7 @@ public:
 
     /// Returns absolutely all parts (and snapshot of their states)
     /// If `need_stop` is provided, it is checked periodically during the enumeration,
-    /// and if it returns true, the enumeration stops and the partial result is returned.
+    /// and if it returns true, the enumeration stops and returns what it has walked so far.
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;

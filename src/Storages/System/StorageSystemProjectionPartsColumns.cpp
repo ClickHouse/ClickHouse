@@ -118,12 +118,11 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
     /// Go through the list of projection parts.
     MergeTreeData::DataPartStateVector all_parts_state;
 
-    bool snapshot_stopped = false;
-    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column, query_status, snapshot_stopped);
+    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column, query_status);
 
     for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
-        if (!snapshot_stopped && query_status && !query_status->checkTimeLimit())
+        if (query_status && !query_status->checkTimeLimit())
             break;
 
         slowDownSystemPartsEnumeration(info.table);
@@ -155,7 +154,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         {
             ++column_position;
             slowDownSystemPartsColumnsEnumeration(info.table, column_position);
-            if (!snapshot_stopped && query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
+            if (query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
             {
                 time_limit_exceeded = true;
                 break;

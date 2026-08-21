@@ -103,9 +103,9 @@ StoragesInfo StoragesInfoStreamBase::next()
     {
         /// The check is needed because if many tables were dropped concurrently,
         /// this loop can spend a long time skipping them, retaking the locks.
-        /// If the discovery prepass was stopped in the 'break' mode, drain the already collected
-        /// storages without starting another time-limit check here.
-        if (!discovery_stopped && query_status && !query_status->checkTimeLimit())
+        /// Note: in the 'break' mode `checkTimeLimit` returns false instead of throwing, and the
+        /// enumeration stops here rather than walking the remaining storages.
+        if (query_status && !query_status->checkTimeLimit())
             return {};
 
         StoragesInfo info;
@@ -171,29 +171,29 @@ namespace
 {
 
 /// A callback for the part enumeration in MergeTreeData to stop it on query cancellation or a time limit.
-/// checkTimeLimit returns false (instead of throwing) only in the 'break' overflow mode,
-/// so a stopped enumeration returns partial data, consistent with the 'break' semantics.
-std::function<bool()> makeNeedStopCallback(const QueryStatusPtr & query_status, bool & stopped)
+/// checkTimeLimit returns false (instead of throwing) only in the 'break' overflow mode, where an
+/// enumeration that stops early is consistent with the semantics of the mode.
+/// Note that the whole result of these tables is built as a single chunk after the enumeration, so
+/// a query that runs into its deadline delivers no rows at all: the chunk is never handed over to
+/// the rest of the pipeline. The point of the checkpoints is therefore to stop the work quickly,
+/// not to hand out the rows that were collected before the deadline.
+std::function<bool()> makeNeedStopCallback(const QueryStatusPtr & query_status)
 {
     if (!query_status)
         return {};
 
-    return [query_status, &stopped]
-    {
-        stopped = !query_status->checkTimeLimit();
-        return stopped;
-    };
+    return [query_status] { return !query_status->checkTimeLimit(); };
 }
 
 }
 
 MergeTreeData::DataPartsVector
-StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status, bool & stopped) const
+StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const
 {
     using State = MergeTreeData::DataPartState;
     using Kind = MergeTreeData::DataPartKind;
 
-    auto need_stop = makeNeedStopCallback(query_status, stopped);
+    auto need_stop = makeNeedStopCallback(query_status);
 
     if (need_inactive_parts)
     {
@@ -208,13 +208,13 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 }
 
 MergeTreeData::ProjectionPartsVector
-StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status, bool & stopped) const
+StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const
 {
     auto metadata_snapshot = data->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     if (metadata_snapshot->projections.empty())
         return {};
 
-    auto need_stop = makeNeedStopCallback(query_status, stopped);
+    auto need_stop = makeNeedStopCallback(query_status);
 
     using State = MergeTreeData::DataPartState;
     if (need_inactive_parts)
@@ -277,7 +277,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
             /// Enumerating all tables of all databases can take a long time on a server with many tables,
             /// and this is done eagerly before returning the first row, so check for query cancellation
             /// and time limits here. If the time limit is exceeded in the 'break' mode,
-            /// stop the enumeration and return what was collected so far.
+            /// stop the enumeration instead of walking the remaining storages.
             bool time_limit_exceeded = false;
 
             for (size_t i = 0; i < rows; ++i)
@@ -297,7 +297,6 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                     if (query_status && !query_status->checkTimeLimit())
                     {
                         time_limit_exceeded = true;
-                        discovery_stopped = true;
                         break;
                     }
 
@@ -473,8 +472,18 @@ void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline
 
     MutableColumns res_columns = header->cloneEmptyColumns();
 
+    /// The whole result is built eagerly here, so without this check a cancelled or timed out
+    /// query would keep building rows over every storage until the very end.
+    /// If the time limit is exceeded in the 'break' mode, stop instead of failing the query.
+    QueryStatusPtr query_status = context->getProcessListElement();
+
     while (StoragesInfo info = stream->next())
+    {
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
         storage->processNextStorage(context, res_columns, columns_mask, info, has_state_column);
+    }
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
@@ -550,7 +559,7 @@ bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
 
             /// Throws if the query is cancelled or the time limit is exceeded in the 'throw' overflow mode.
             /// In the 'break' mode it returns false instead: give up on this table, and the caller
-            /// finishes with the rows collected so far.
+            /// stops instead of failing the query.
             if (query_status && !query_status->checkTimeLimit())
                 return false;
         }

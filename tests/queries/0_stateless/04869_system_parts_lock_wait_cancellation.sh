@@ -22,7 +22,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ORDINARY_DB="${CLICKHOUSE_DATABASE}_04869_ordinary"
 
-$CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 --query "
+# Creating the first `Ordinary` database in the lifetime of the server makes it log a deprecation
+# warning, which the client of that very session forwards to stderr, and the test runner treats any
+# stderr output as a failure. Whether this test is the one that creates that first database depends
+# on the order of the tests, so the fixture is created by a client that does not ask for the server
+# logs at all.
+CLICKHOUSE_CLIENT_NO_SERVER_LOGS=$(echo "$CLICKHOUSE_CLIENT" | sed "s/--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:-none}/--send_logs_level=none/g")
+
+$CLICKHOUSE_CLIENT_NO_SERVER_LOGS --allow_deprecated_database_ordinary=1 --query "
 DROP DATABASE IF EXISTS $ORDINARY_DB;
 CREATE DATABASE $ORDINARY_DB ENGINE = Ordinary;
 CREATE TABLE $ORDINARY_DB.t_parts_lock_wait (x UInt64) ENGINE = MergeTree ORDER BY x PARTITION BY x;

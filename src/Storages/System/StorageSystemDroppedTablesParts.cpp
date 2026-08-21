@@ -46,12 +46,9 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
         /// Enumerating the dropped tables can take a long time if there are many of them,
         /// and it is done eagerly before returning the first row, so check for query cancellation
         /// and time limits here. If the time limit is exceeded in the 'break' mode,
-        /// stop the enumeration and return what was collected so far.
+        /// stop the enumeration instead of discovering the remaining storages.
         if (query_status && !query_status->checkTimeLimit())
-        {
-            discovery_stopped = true;
             break;
-        }
 
         StoragePtr storage = dropped_table.table;
         if (!storage)

@@ -46,9 +46,9 @@ struct StoragesInfo
     explicit operator bool() const { return storage != nullptr; }
 
     /// If `query_status` is provided, the part enumeration periodically checks for query cancellation
-    /// and time limits, and if the time limit is exceeded in the 'break' mode, returns the partial result.
-    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status, bool & stopped) const;
-    MergeTreeData::ProjectionPartsVector getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status, bool & stopped) const;
+    /// and time limits, and if the time limit is exceeded in the 'break' mode, stops early.
+    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const;
+    MergeTreeData::ProjectionPartsVector getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const;
 };
 
 /** A helper class that enumerates the storages that match given query. */
@@ -78,7 +78,6 @@ protected:
 
     size_t next_row;
     size_t rows;
-    bool discovery_stopped = false;
 
     using StoragesMap = std::unordered_map<UUID, StoragePtr>;
     StoragesMap storages;

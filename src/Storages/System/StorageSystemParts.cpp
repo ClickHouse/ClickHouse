@@ -158,12 +158,11 @@ void StorageSystemParts::processNextStorage(
 
     QueryStatusPtr query_status = context->getProcessListElement();
 
-    bool snapshot_stopped = false;
-    all_parts = info.getParts(all_parts_state, has_state_column, query_status, snapshot_stopped);
+    all_parts = info.getParts(all_parts_state, has_state_column, query_status);
 
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        if (!snapshot_stopped && query_status && !query_status->checkTimeLimit())
+        if (query_status && !query_status->checkTimeLimit())
             break;
 
         slowDownSystemPartsEnumeration(info.table);

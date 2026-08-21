@@ -21,3 +21,5 @@ fast projection_parts_snap 1
 fast projection_parts_snap_state 1
 fast parts_columns_meta 1
 fast projection_parts_columns_meta 1
+fast parts_columns_snap_wide 1
+fast projection_parts_columns_snap_wide 1
