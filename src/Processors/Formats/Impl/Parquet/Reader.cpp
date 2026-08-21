@@ -1781,7 +1781,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
             /// If the default value can't be hashed, we can't rule out a match.
             if (!default_hash.has_value())
                 return std::nullopt;
-            value_hashes.default_value_hash = *default_hash;
+            value_hashes.default_value_hash = default_hash;
         }
         else
         {
