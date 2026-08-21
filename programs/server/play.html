@@ -2066,6 +2066,24 @@ class QueryProgressElement extends HTMLElement
                     text-align: right;
                 }
 
+                /* The read stats wrap the outstanding numbers - huge row and byte counts, high read
+                   speeds - in <b> (see updateProgress). Paint them in the top tier of the rate
+                   palette of the metrics table, so that an extreme speed reads the same way in both
+                   places, instead of leaving them merely bold.
+
+                   The container paints the whole line through a background-clip: text mask and makes
+                   the text itself transparent to reveal it, so the color has to be given as
+                   -webkit-text-fill-color as well: the inherited transparent fill takes precedence
+                   over the plain color property, so the highlight would have no effect at all.
+                   Stepping out of the mask is also what keeps the highlight readable once the bar has
+                   grown under the stats: this color contrasts with the bar, whereas the progress
+                   color of the old highlight would have blended into it. */
+                #stats b
+                {
+                    color: var(--metric-c6);
+                    -webkit-text-fill-color: var(--metric-c6);
+                }
+
                 /* The elapsed time and the realtime metrics (CPU, memory, disk - shown like
                    clickhouse-client does) share this one element in the left column of the progress
                    area, over the bar. Its glyphs are tinted by the container's text mask (see
