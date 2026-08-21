@@ -7,36 +7,36 @@
       "versionId": "3915da6f92b40e6eff0be61bc108be40668964851aca08d295febd67341da029",
       "translations": {
         "ru": {
-          "updatedAt": "2026-08-21T10:32:28.471Z",
+          "updatedAt": "2026-08-21T10:41:05.576Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-21T10:32:28.647Z",
+          "updatedAt": "2026-08-21T10:41:05.707Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-21T10:32:29.003Z",
+          "updatedAt": "2026-08-21T10:41:05.935Z",
           "fileName": "docs.json",
           "postProcessHash": "c7c37f6a8a686f8764d2d52984649f4bf6630d11f6191cf7cae6c601ef070118"
         },
         "es": {
-          "updatedAt": "2026-08-21T10:32:27.720Z",
+          "updatedAt": "2026-08-21T10:41:04.972Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-21T10:32:27.930Z",
+          "updatedAt": "2026-08-21T10:41:05.154Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-21T10:32:28.112Z",
+          "updatedAt": "2026-08-21T10:41:05.299Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-21T10:32:28.293Z",
+          "updatedAt": "2026-08-21T10:41:05.441Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-21T10:32:28.824Z",
+          "updatedAt": "2026-08-21T10:41:05.817Z",
           "fileName": "docs.json"
         }
       },
@@ -49005,47 +49005,47 @@
     },
     {
       "fileId": "2bed0f105763f5bb10bbcc6146eecab7ab3bbf435b996b1b4631a79cdd041ecd",
-      "versionId": "be44f12058c6be019ac9b939c01a44a35f48d5bf22a3f9964110cff7c3cc68a1",
+      "versionId": "42471ae1dc355574363414b4475bb08de109d2d2a380f4d2f120d3cf9b13d162",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:06.718Z",
+          "updatedAt": "2026-08-21T10:41:08.162Z",
           "fileName": "es/products/managed-postgres/migrations/faq.mdx",
-          "postProcessHash": "560a858a023bf086ce76885c1a17512eb4ccdf6455841a7a0f8ebc605b702e37"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.718Z",
-          "fileName": "ja/products/managed-postgres/migrations/faq.mdx",
-          "postProcessHash": "a0d6ed859be84d3929b69959b5b65abe7c940e62d3d8b5e4d2af38310d953209"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.718Z",
-          "fileName": "ko/products/managed-postgres/migrations/faq.mdx",
-          "postProcessHash": "bb318fb8e56404133215bfda5c4f5a8d31f19ef727f2eaafdf42cb2d7444768a"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.718Z",
-          "fileName": "pt-BR/products/managed-postgres/migrations/faq.mdx",
-          "postProcessHash": "d586ceba46440b11a4d97f986e653f33f6e61d47077b272d0b00a504f88fc9f5"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.718Z",
-          "fileName": "ru/products/managed-postgres/migrations/faq.mdx",
-          "postProcessHash": "15d534c08dd257e83de1b9cc83bf568b72d2c0d8754befb37ea6002e2f88024f"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.719Z",
-          "fileName": "zh/products/managed-postgres/migrations/faq.mdx",
-          "postProcessHash": "d76891ea41c6e1247d31e36d2344ccd42459c0d377218e6e7e507ab27ec74116"
+          "postProcessHash": "5097f1eb5a0c274413b657e6871febc810178054ed42634654a57525d5fc9044"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.719Z",
+          "updatedAt": "2026-08-21T10:41:08.163Z",
           "fileName": "ar/products/managed-postgres/migrations/faq.mdx",
-          "postProcessHash": "a605527a10766de2ef537157a011ec32e60d1978f46100577ef41e185feaace4"
+          "postProcessHash": "452c51b20c1dad1e631786eb509daab0fbd9dfc5048e05f01ced48699fdee806"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.719Z",
+          "updatedAt": "2026-08-21T10:41:08.164Z",
           "fileName": "fr/products/managed-postgres/migrations/faq.mdx",
-          "postProcessHash": "d9363a43e743c76e29af0b67072b536d9da6068491ed605a95a4be3bd9c410fb"
+          "postProcessHash": "650758983f88629bdc88077cb94e9e1fe97f6264ebe1b0e219b0992ab74f342a"
+        },
+        "zh": {
+          "updatedAt": "2026-08-21T10:41:08.164Z",
+          "fileName": "zh/products/managed-postgres/migrations/faq.mdx",
+          "postProcessHash": "ef97250043668f3d4235f48b17f4f550c34b139a0dca32eeab988d67e18ed95d"
+        },
+        "ko": {
+          "updatedAt": "2026-08-21T10:41:08.165Z",
+          "fileName": "ko/products/managed-postgres/migrations/faq.mdx",
+          "postProcessHash": "3e9b2ca92b7ca1a0e03da13968607e91aa5b7254be6cf4443f4fa901b1541e91"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-21T10:41:08.165Z",
+          "fileName": "pt-BR/products/managed-postgres/migrations/faq.mdx",
+          "postProcessHash": "12a785e87b0ec357cf5a28dd36783e667591f64b38181cefcc17f89596993cf1"
+        },
+        "ru": {
+          "updatedAt": "2026-08-21T10:41:08.165Z",
+          "fileName": "ru/products/managed-postgres/migrations/faq.mdx",
+          "postProcessHash": "7fd6ee9bd14fa4cb81806b4319f33e8876ee5c36da7920e490984298c7639286"
+        },
+        "ja": {
+          "updatedAt": "2026-08-21T10:41:08.166Z",
+          "fileName": "ja/products/managed-postgres/migrations/faq.mdx",
+          "postProcessHash": "7444bb96d3d69c2ffe4e32388d8704ca50fe4924dec13a7ee10fb545eb88d9e4"
         }
       },
       "fileName": "products/managed-postgres/migrations/faq.mdx",
@@ -67389,47 +67389,47 @@
     },
     {
       "fileId": "ccce54570b719bb31a06bfb0635ad9651468170ce7d4bdf29e4a2976a449e087",
-      "versionId": "7dccd6a222f286806d630efd901d25b30dd28d4c7c21af30fc79c1d4c05f1abd",
+      "versionId": "08cfea05a292bcb449c3d9bc752f33cbe09b82809df67c8eebe8133d3484fb24",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.661Z",
-          "fileName": "es/reference/statements/alter/projection.mdx",
-          "postProcessHash": "517b53c34d0f6ca8326adf8f369f0c349ca28f94ec26561499e986192858f284"
+        "pt-BR": {
+          "updatedAt": "2026-08-21T10:41:08.164Z",
+          "fileName": "pt-BR/reference/statements/alter/projection.mdx",
+          "postProcessHash": "455829b63e81344c3b7f9f9771bcfdb5222145e3510071210136692a8d8e498b"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:07.661Z",
+          "updatedAt": "2026-08-21T10:41:08.166Z",
           "fileName": "ja/reference/statements/alter/projection.mdx",
-          "postProcessHash": "0ebc613f92ff63bd5910aa963eda8ffea0048d621d68ac0db38890191f836827"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.661Z",
-          "fileName": "ko/reference/statements/alter/projection.mdx",
-          "postProcessHash": "6e8b5f459e273ea7e122a7d49e5358c1536fc830ef78cbca5860f3ba944a08bc"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.661Z",
-          "fileName": "pt-BR/reference/statements/alter/projection.mdx",
-          "postProcessHash": "e5d44b070a5b58553ba9d3164b682462d090db1064975a16120cdca8b22d580c"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.661Z",
-          "fileName": "ru/reference/statements/alter/projection.mdx",
-          "postProcessHash": "7c75d3ee9eb4cb261e60c0e72cb590c5b1e91786d0efc2efc3c8ec73b010cb18"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:07.661Z",
-          "fileName": "zh/reference/statements/alter/projection.mdx",
-          "postProcessHash": "220f73ab485d66923ffe4e2a21ecd116f97e94d3f0b69ce52a2f9230d446bd90"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.662Z",
-          "fileName": "ar/reference/statements/alter/projection.mdx",
-          "postProcessHash": "331caf9678341863f189c6886633dc88a6e7c2f19d976fbfdf1611e1379f44ac"
+          "postProcessHash": "f726e80a77f77b2a3971d51cb0ef59086c7cccf7b2fb0ba61bc68571e401f7a0"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.662Z",
+          "updatedAt": "2026-08-21T10:41:08.166Z",
           "fileName": "fr/reference/statements/alter/projection.mdx",
-          "postProcessHash": "26036bb67ad53f75158a49ce660a16eda17659cbfd6c4e131462d0703e9ccd99"
+          "postProcessHash": "f41d7ebf998a06b1fd8c625ec9775f5705297fbde3133973b1f5807d7d0c2904"
+        },
+        "ru": {
+          "updatedAt": "2026-08-21T10:41:08.166Z",
+          "fileName": "ru/reference/statements/alter/projection.mdx",
+          "postProcessHash": "2476020a425836365ff606b109e39db74616f7a6d1df7650bf0bd5c898d3924c"
+        },
+        "es": {
+          "updatedAt": "2026-08-21T10:41:08.167Z",
+          "fileName": "es/reference/statements/alter/projection.mdx",
+          "postProcessHash": "427bcdf2f7e2c5cfc6ac232c2b8b52e85b907342d923df2e42ee0014b245df39"
+        },
+        "ko": {
+          "updatedAt": "2026-08-21T10:41:08.167Z",
+          "fileName": "ko/reference/statements/alter/projection.mdx",
+          "postProcessHash": "ba16bd416646bf0d5352ef26a2a6995ec57270911196127486342082395a5abf"
+        },
+        "ar": {
+          "updatedAt": "2026-08-21T10:41:08.167Z",
+          "fileName": "ar/reference/statements/alter/projection.mdx",
+          "postProcessHash": "fbf921862faad63bcd9826e9b98d20029dbdc17cfc726307873b0b2988d60d5d"
+        },
+        "zh": {
+          "updatedAt": "2026-08-21T10:41:08.167Z",
+          "fileName": "zh/reference/statements/alter/projection.mdx",
+          "postProcessHash": "02ba0a8b9f560f79eeecfb0d8c9bdf10a1bf32ee19abc8d3779a9da3916749bc"
         }
       },
       "fileName": "reference/statements/alter/projection.mdx",

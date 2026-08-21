@@ -330,6 +330,39 @@ ADD PROJECTION p (
 
 投影设置会覆盖该投影实际生效的表设置，但必须符合验证规则 (例如，无效或不兼容的覆盖会被拒绝) 。
 
+<div id="modify-projection">
+  ### MODIFY PROJECTION
+</div>
+
+使用以下语句可修改现有PROJECTION的 [`WITH SETTINGS`](#with-settings) 子句，而无需重建其数据：
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
+```
+
+对于[PROJECTION索引](/zh/reference/engines/table-engines/mergetree-family/mergetree#projection-index)，请重新声明 `INDEX`，而不是 `SELECT` 查询：
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name INDEX <index_expr> TYPE <index_type> WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
+```
+
+该语句会重新声明完整的PROJECTION定义，但仅 `WITH SETTINGS` 子句可以与现有定义不同。
+PROJECTION查询本身 (对于PROJECTION索引，则是索引表达式和类型) 必须保持不变，因为现有投影 parts 中存储的数据基于此构建；如需更改，请先使用 [`DROP PROJECTION`](#drop-projection)，再使用 [`ADD PROJECTION`](#add-projection)。
+
+该命令仅修改表元数据，不会重写任何数据：现有投影 parts 会保留写入时使用的设置，而后续插入和合并写入的投影 parts 将使用新设置。
+要使用新设置重建现有 parts，请运行 [`MATERIALIZE PROJECTION`](#materialize-projection)。
+
+示例：
+
+```sql
+ALTER TABLE t
+MODIFY PROJECTION p (
+    SELECT x ORDER BY x
+) WITH SETTINGS (
+    index_granularity = 128
+);
+```
+
 <div id="drop-projection">
   ### DROP PROJECTION
 </div>
@@ -363,7 +396,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] n
 ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 ```
 
-命令 `ADD`、`DROP` 和 `CLEAR` 都属于轻量级操作，因为它们只会修改元数据或删除文件。
+命令 `ADD`、`MODIFY`、`DROP` 和 `CLEAR` 都属于轻量级操作，因为它们只会修改元数据或删除文件。
 此外，这些命令支持复制，并通过 ClickHouse Keeper 或 ZooKeeper 同步PROJECTION元数据。
 
 <Note>
