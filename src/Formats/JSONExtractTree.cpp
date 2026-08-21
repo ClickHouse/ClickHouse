@@ -2040,6 +2040,37 @@ private:
 
         if (element.isObject() && (skip_typed_path_check || !typed_path_nodes.contains(current_path) || (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object && hasTypedPathWithPrefix(current_path + "."))))
         {
+            /// An object with no repeated key cannot observe the two passes below: visited_keys can
+            /// never report a repeat, key_element_types[key].size() > 1 requires a repeated key so
+            /// skip_typed is always false, and every duplicate error/skip branch is unreachable.
+            /// The probe must finish before the first recursive call: a duplicate has to be rejected
+            /// before any value is inserted, because a dynamic path created for an earlier key is not
+            /// removed when the row is later abandoned.
+            bool has_duplicated_key = false;
+            {
+                std::unordered_set<std::string_view> probed_keys;
+                for (const auto & key_value : element.getObject())
+                {
+                    if (!probed_keys.insert(key_value.first).second)
+                    {
+                        has_duplicated_key = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!has_duplicated_key)
+            {
+                for (auto [key, value] : element.getObject())
+                {
+                    String path = buildChildPath(current_path, key, insert_settings, is_root);
+                    if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
+                        return false;
+                }
+
+                return true;
+            }
+
             /// First pass: collect the set of distinct element types (LITERAL/OBJECT) per key.
             /// This lets us detect all duplicates upfront so we can:
             ///  - throw errors immediately for invalid duplicates (before any data is inserted),
