@@ -401,3 +401,4 @@ def test_max_waiting_queries_reached() -> None:
     assert "Workload limit `max_waiting_queries` has been reached: 1 of 1" in pool_all.last_error
 
 
+

@@ -84,3 +84,4 @@ private:
 using QuerySlotPtr = std::unique_ptr<QuerySlot>;
 
 }
+

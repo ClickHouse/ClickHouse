@@ -9,21 +9,6 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 
-
-def only_docs(changed_files):
-    for file in changed_files:
-        file = file.removeprefix(".").removeprefix("/")
-        if (
-            file.startswith("docs/")
-            or file.startswith("docker/docs")
-            or file.endswith(".md")
-        ):
-            continue
-        else:
-            return False
-    return True
-
-
 DO_NOT_TEST_JOBS = [
     JobNames.STYLE_CHECK,
     JobNames.DOCKER_BUILDS_ARM,
@@ -264,11 +249,24 @@ def should_skip_job(job_name):
     if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.INTEGRATION)
         or job_name in BUILDS_FOR_TESTS
+        or (
+            job_name == JobNames.PROMQL_COMPLIANCE
+            and Labels.COMP_PROMQL in _info_cache.pr_labels
+        )
     ):
         _add_pipeline_note(Labels.CI_INTEGRATION)
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_INTEGRATION}' - run integration test jobs only",
+        )
+
+    if (
+        job_name == JobNames.PROMQL_COMPLIANCE
+        and Labels.COMP_PROMQL not in _info_cache.pr_labels
+    ):
+        return (
+            True,
+            f"Skipped, PR not labeled '{Labels.COMP_PROMQL}' — PromQL compliance comment job only",
         )
 
     if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and not (
@@ -348,25 +346,13 @@ def should_skip_job(job_name):
             return True, "Skipped, not a bug-fix PR"
 
     if "flaky" in job_name.lower():
-        from ci.jobs.scripts.find_tests import Targeting
-
-        targeter = Targeting(info=_info_cache)
-        # _info_cache.job_name is the hook runner job, not the flaky check job.
-        # Set job_type explicitly from the job_name argument so CIDB queries use
-        # the correct check_name prefix (e.g. 'Stateless%' instead of None).
-        if "stateless" in job_name.lower():
-            targeter.job_type = Targeting.STATELESS_JOB_TYPE
-        elif "integration" in job_name.lower():
-            targeter.job_type = Targeting.INTEGRATION_JOB_TYPE
         changed_files = _info_cache.get_changed_files()
         if "stateless" in job_name.lower():
-            changed_tests = targeter.get_changed_tests()
-            try:
-                previously_failed = targeter.get_previously_failed_tests()
-            except Exception as e:
-                print(f"Warning: failed to fetch previously-failed tests: {e}")
-                previously_failed = []
-            if not changed_tests and not previously_failed:
+            from ci.jobs.scripts.find_tests import Targeting
+
+            # Mirrors the in-job selection in `functional_tests.py`. Runs inside
+            # `Config Workflow`, so it must issue no CIDB query.
+            if not Targeting(info=_info_cache).get_changed_tests():
                 return True, "Skipped, no tests to run"
         if "integration" in job_name.lower() and not has_new_integration_tests(
             changed_files
@@ -419,7 +405,10 @@ def should_skip_job(job_name):
     ):
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
-            if match and match.group(1) != "1" or "sequential" in job_name:
+            if (
+                (match and match.group(1) != "1")
+                or ("sequential" in job_name and "selected tests" not in job_name)
+            ):
                 return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
 
         if JobNames.INTEGRATION in job_name:

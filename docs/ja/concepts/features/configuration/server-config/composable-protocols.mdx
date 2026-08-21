@@ -198,12 +198,12 @@ doc_type: 'reference'
 
 </protocols>
 
-<!-- plain_http (ポート 8123) で使用されるデフォルトハンドラー -->
+<!-- Default handlers used by plain_http (port 8123) -->
 <http_handlers>
     <defaults/>
 </http_handlers>
 
-<!-- alt_http (ポート 8124) で使用される代替ハンドラー -->
+<!-- Alternative handlers used by alt_http (port 8124) -->
 <http_handlers_alt>
     <rule>
         <url>/custom</url>
@@ -221,7 +221,7 @@ doc_type: 'reference'
 を省略した場合、エンドポイント はデフォルトの `<http_handlers>` にフォールバックします。
 
 カスタムハンドラーのセクションは、
-[`<http_handlers>`](/ja/reference/settings/server-settings/settings#http_handlers) と同じ形式です。
+[`<http_handlers>`](/ja/reference/settings/server-settings/settings/http#http_handlers) と同じ形式です。
 カスタムハンドラーのセクションへの変更は設定のリロード時に検出され、対応する
 エンドポイント は自動的に自動的に再起動されます。
 

@@ -37,7 +37,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <fmt/core.h>
 
 using namespace std::literals;
@@ -956,18 +955,23 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!literal || literal->value.getType() != Field::Types::String)
         return;
 
+    /// Only literals actually tokenized from the query carry valid token info; a synthesized
+    /// literal may have inherited a stale map entry from a freed literal that reused its address.
+    if (!literal->hasTokenInfo())
+        return;
+
     /// Look up token position from the map stored in Expected
     if (!expected.literal_token_map)
         return;
 
-    auto it = expected.literal_token_map->find(literal);
-    if (it == expected.literal_token_map->end())
+    const auto * token_info = expected.literal_token_map->find(literal);
+    if (!token_info)
         return;
 
     chassert(is_like || is_regexp);
     expected.highlight({
-       .begin = it->second.begin,
-       .end = it->second.end,
+       .begin = token_info->begin,
+       .end = token_info->end,
        .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
@@ -1040,6 +1044,7 @@ public:
             /// We support trailing commas at the end of the column declaration:
             ///  - SELECT a, b, c, FROM table
             ///  - SELECT 1,
+            ///  - FROM table |> SELECT a, b, c, |> LIMIT 1
 
             /// For this purpose we need to eliminate the following cases:
             ///  1. WITH 1 AS from SELECT 2, from
@@ -1051,8 +1056,9 @@ public:
             auto test_pos = pos;
             ++test_pos;
 
-            /// End of query
-            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon)
+            /// End of query, or the end of a pipe operator: the `|>` token cannot continue an expression list,
+            /// so a comma in front of it is unambiguously a trailing comma.
+            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon && test_pos->type != TokenType::PipeOperator)
             {
                 /// If we can't parse FROM then return
                 if (!ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
@@ -1520,7 +1526,7 @@ public:
         /// expr AS type
         if (state == 0)
         {
-            ASTPtr type_node;
+            std::optional<String> type_text;
 
             if (as_keyword_parser.ignore(pos, expected))
             {
@@ -1528,7 +1534,7 @@ public:
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
                     as_keyword_parser.ignore(pos, expected) &&
-                    ParserDataType().parse(pos, type_node, expected) &&
+                    (type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!insertAlias(alias))
@@ -1537,7 +1543,7 @@ public:
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], type_node)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1560,13 +1566,13 @@ public:
 
                 pos = old_pos;
 
-                if (ParserDataType().parse(pos, type_node, expected) &&
+                if ((type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], type_node)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -4063,11 +4069,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (op.type == OperatorType::Cast)
     {
-        ASTPtr type_ast;
-        if (!ParserDataType().parse(pos, type_ast, expected))
+        std::optional<String> type_text = parseDataTypeAsText(pos, expected);
+        if (!type_text)
             return Action::NONE;
 
-        layers.back()->pushOperand(make_intrusive<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
+        layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
         return Action::OPERATOR;
     }
 

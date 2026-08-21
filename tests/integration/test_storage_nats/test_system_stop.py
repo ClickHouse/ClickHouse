@@ -745,15 +745,14 @@ def test_direct_select_leftover_does_not_pollute_view(nats_cluster):
     )
     jetstream_publish(nats_cluster, subject, 0, n)
 
-    # One direct read returns a single row (block size 1) and leaves the rest of the delivered burst
-    # buffered locally; retry until a read returns, confirming the burst was delivered.
-    for _ in range(40):
-        res = instance.query(
+    # A block-size-1 read returns one row while the broker is still streaming the rest of the burst,
+    # so keep reading until all n are delivered and unacked, leaving stale copies for the view below.
+    deadline = time.time() + 60
+    while time.time() < deadline and jetstream_ack_pending(nats_cluster, stream, durable) < n:
+        instance.query(
             f"SELECT key FROM test.{table} SETTINGS stream_like_engine_allow_direct_select = 1",
             ignore_error=True,
         )
-        if res.strip():
-            break
     assert jetstream_ack_pending(nats_cluster, stream, durable) == n
 
     # Let the unacked messages pass ack_wait so the broker will redeliver them to the next subscription.

@@ -14,7 +14,39 @@ lc	LowCardinality(String)
 7	7	[0,1,2]	1
 8	8	[]	2
 9	9	[0]	0
---- native vs library: data identical? ---
-OK
 --- count only (native) ---
+10
+--- natively written file read by pyarrow ---
+record batches: True
+i	int32
+s	string
+arr	list<item: uint8 not null>
+lc	dictionary<values=string, indices=int32, ordered=0>
+{'i': 0, 's': '0', 'arr': [], 'lc': '0'}
+{'i': 1, 's': '1', 'arr': [0], 'lc': '1'}
+{'i': 2, 's': '2', 'arr': [0, 1], 'lc': '2'}
+{'i': 3, 's': '3', 'arr': [0, 1, 2], 'lc': '0'}
+{'i': 4, 's': '4', 'arr': [], 'lc': '1'}
+{'i': 5, 's': '5', 'arr': [0], 'lc': '2'}
+{'i': 6, 's': '6', 'arr': [0, 1], 'lc': '0'}
+{'i': 7, 's': '7', 'arr': [0, 1, 2], 'lc': '1'}
+{'i': 8, 's': '8', 'arr': [], 'lc': '2'}
+{'i': 9, 's': '9', 'arr': [0], 'lc': '0'}
+--- schema (native reader, pyarrow-produced file) ---
+i	Int32					
+s	String					
+arr	Array(UInt8)					
+lc	LowCardinality(String)					
+--- data (native reader, pyarrow-produced file) ---
+0	0	[]	0
+1	1	[0]	1
+2	2	[0,1]	2
+3	3	[0,1,2]	0
+4	4	[]	1
+5	5	[0]	2
+6	6	[0,1]	0
+7	7	[0,1,2]	1
+8	8	[]	2
+9	9	[0]	0
+--- count only (native reader, pyarrow-produced file) ---
 10

@@ -44,3 +44,4 @@ void RefreshSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 }
+

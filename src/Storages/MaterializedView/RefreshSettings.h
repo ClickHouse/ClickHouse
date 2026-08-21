@@ -34,3 +34,4 @@ private:
     std::unique_ptr<RefreshSettingsImpl> impl;
 };
 }
+

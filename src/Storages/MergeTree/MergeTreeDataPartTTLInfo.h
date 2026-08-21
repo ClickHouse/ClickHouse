@@ -86,4 +86,8 @@ struct MergeTreeDataPartTTLInfos
 /// Selects the most appropriate TTLDescription using TTL info and current time.
 std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max);
 
+/// True if a `RECOMPRESS` TTL entry from `recompression_ttl_entries` is due at `current_time` and its codec is not `Default` (=is explicit).
+bool isExplicitRecompression(
+    const TTLDescriptions & recompression_ttl_entries, const TTLInfoMap & recompression_ttl_info, time_t current_time);
+
 }

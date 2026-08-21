@@ -187,3 +187,4 @@ void QuerySlot::complete(State new_state, const std::exception_ptr & ptr)
 }
 
 }
+
