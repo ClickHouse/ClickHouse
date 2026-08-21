@@ -284,22 +284,29 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("join_use_nulls=1")
 
     if i % 2 == 1:
-        join_alg_num = i // 2
-        if join_alg_num % 6 == 0:
-            client_options.append("join_algorithm='parallel_hash'")
-        if join_alg_num % 6 == 1:
-            client_options.append("join_algorithm='partial_merge'")
-        if join_alg_num % 6 == 2:
-            client_options.append("join_algorithm='full_sorting_merge'")
-        if join_alg_num % 6 == 3 and not upgrade_check:
-            # Some crashes are not fixed in 23.2 yet, so ignore the setting in Upgrade check
-            client_options.append("join_algorithm='grace_hash'")
-        if join_alg_num % 6 == 4:
-            client_options.append("join_algorithm='auto'")
+        # `join_algorithm` accepts a comma-separated priority list: for each query the
+        # first applicable algorithm is used. Pick a random subset in random order, so
+        # every algorithm meets every worker mode (plain, join_use_nulls, replicated
+        # database) and the multi-algorithm fallback paths are covered too.
+        join_algorithms = [
+            "parallel_hash",
+            "partial_merge",
+            "full_sorting_merge",
+            "auto",
+        ]
+        if not upgrade_check:
+            # grace_hash: some crashes are not fixed in 23.2 yet.
+            # parallel_full_sorting_merge, ie_join: the previous release may not know
+            # these values, so ignore them in Upgrade check.
+            join_algorithms += ["grace_hash", "parallel_full_sorting_merge", "ie_join"]
+        selected = random.sample(join_algorithms, k=random.randint(1, 3))
+        if selected == ["ie_join"]:
+            # ie_join applies only to inequality joins; alone it would fail every plain
+            # equality join with NOT_IMPLEMENTED.
+            selected.append("hash")
+        client_options.append("join_algorithm='{}'".format(",".join(selected)))
+        if "auto" in selected:
             client_options.append("max_rows_in_join=1000")
-        if join_alg_num % 6 == 5 and not upgrade_check:
-            # The previous release may not know this value yet, so ignore the setting in Upgrade check
-            client_options.append("join_algorithm='parallel_full_sorting_merge'")
 
     # Rarely enable the query cache; independently, half the time also pin the
     # `*_overflow_mode` settings to 'throw'.
