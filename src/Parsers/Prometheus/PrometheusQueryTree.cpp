@@ -169,7 +169,7 @@ namespace
         if (code_point <= 0xFF)
             return (code_point >= 0x20 && code_point <= 0x7E) || (code_point >= 0xA1 && code_point != 0xAD);
 
-        Poco::Unicode::CharacterProperties properties;
+        Poco::Unicode::CharacterProperties properties{};
         Poco::Unicode::properties(code_point, properties);
         return properties.category == Poco::Unicode::UCP_LETTER
             || properties.category == Poco::Unicode::UCP_MARK
@@ -644,7 +644,7 @@ namespace
 
     String formatPrometheusNode(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree, size_t level)
     {
-        const String flat = formatPrometheusNodeFlat(node, tree);
+        String flat = formatPrometheusNodeFlat(node, tree);
         const String indent(level * 2, ' ');
 
         switch (node.node_type)
