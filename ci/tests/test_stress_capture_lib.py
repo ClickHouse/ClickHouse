@@ -409,7 +409,10 @@ def test_wrapper_mirrors_the_output_whatever_stdout_is(tmp_path, stdout_is_file)
     Each token is expected twice -- once from the mirror, once from the row cell --
     which is what distinguishes a lost mirror from a lost capture."""
     proc, out = _wrap(
-        tmp_path, exit_code=1, late=1, stdout_is_file=stdout_is_file,
+        tmp_path,
+        exit_code=1,
+        late=1,
+        stdout_is_file=stdout_is_file,
         timing=_FAST_TIMING,
     )
     assert proc.returncode == 0, proc.stderr
@@ -441,13 +444,61 @@ def test_wrapper_propagates_the_status_and_gates_the_artifact_on_it(
     as a pass. The artifact is kept only for a failure: a passing run would
     otherwise upload the whole capture on every stress job."""
     proc, out = _wrap(
-        tmp_path, exit_code=exit_code, late=1, stdout_is_file=False,
+        tmp_path,
+        exit_code=exit_code,
+        late=1,
+        stdout_is_file=False,
         timing=_FAST_TIMING,
     )
     assert proc.returncode == 0, proc.stderr
     assert f"STATUS={exit_code}" in out, out
     artifact = tmp_path / "test_output" / "stress_script.log"
     assert artifact.exists() is (exit_code != 0)
+
+
+def test_wrapper_returns_while_a_descendant_still_holds_the_output(tmp_path):
+    """The reason the command is redirected to a file and followed, rather than piped:
+    `stress.py` drops databases with a fire-and-forget `Popen(..., shell=True)` that
+    inherits its stdout and is never reaped, and a pipe reader waits for every such
+    holder. The earlier pipe form of this wrapper cost a 2h09m `Stress test (amd_tsan)`
+    timeout for exactly that reason.
+
+    The holder here outlives the drain and is never reaped inside the wrapper, so a
+    reader that waited on the descriptor could not return at all. Only `tail --pid`
+    ending with the command can, which is what the elapsed bound below asserts."""
+    stub = tmp_path / "s.sh"
+    # Writes once, then leaves a child holding stdout without ever writing or exiting.
+    stub.write_text(
+        "#!/bin/bash\necho early\n( sleep 600 ) &\nexit 1\n", encoding="utf-8"
+    )
+    stub.chmod(0o755)
+    # `timeout` around the wrapper, so a reader that waits on the descriptor fails here
+    # with the bound named rather than by exhausting the harness timeout minutes later.
+    bound = FAILURE_DRAIN_TIMEOUT_CEILING
+    proc = _run(
+        f"""
+started=$SECONDS
+timeout {bound} bash -c '
+    source "$1"
+    run_capturing_output "$2" "$3"
+    echo "status=$?"' _ '{tmp_path}/stress_tests.lib' '{tmp_path}/c.log' '{stub}'
+echo "timeout_status=$?"
+set -e
+echo "elapsed=$(( SECONDS - started ))"
+# Reap the holder only now: the wrapper had to return without its help.
+pkill -P $$ sleep ||:
+""",
+        tmp_path,
+        _FAST_TIMING,
+    )
+    assert proc.returncode == 0, proc.stderr
+    # 124 is `timeout` killing a wrapper that never returned.
+    assert "timeout_status=0" in proc.stdout, proc.stdout
+    assert "status=1" in proc.stdout, proc.stdout
+    elapsed = int(re.search(r"elapsed=(\d+)", proc.stdout).group(1))
+    assert elapsed <= FAILURE_DRAIN_TIMEOUT_CEILING, (elapsed, proc.stdout)
+    # The mirror still ran: the bound is not met by giving up on the output.
+    assert "early" in proc.stdout, proc.stdout
 
 
 def test_wrapper_leaves_errexit_off_for_the_caller(tmp_path):
@@ -472,6 +523,64 @@ echo "opts=$-"
     assert "e" in re.search(r"opts=(\S+)", proc.stdout).group(1)
 
 
+def test_wrapper_keeps_the_artifact_on_a_failing_script_that_the_job_survives(tmp_path):
+    """`upgrade_runner.sh`'s allow-list exits 0 after a failing stress script. The
+    trap must still report the script's own status, so the capture is preserved and
+    refreshed with post-settle bytes: taking the trap's `$?` instead would see 0
+    there and drop the artifact for the run that most needs it."""
+    stub = tmp_path / "s.sh"
+    stub.write_text(
+        "#!/bin/bash\necho early\n" "( sleep 8; echo AFTER-SETTLE ) &\nexit 1\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    console = tmp_path / "c3.log"
+    proc = _run(
+        f"""
+exec > '{console}' 2>/dev/null
+run_capturing_output '{tmp_path}/c.log' '{stub}'
+set -e
+sleep 10
+# The allow-list path: the script failed, the job does not.
+exit 0
+""",
+        tmp_path,
+        _FAST_TIMING,
+    )
+    assert proc.returncode == 0, (proc.returncode, proc.stderr)
+    artifact = tmp_path / "test_output" / "stress_script.log"
+    assert artifact.exists(), "artifact dropped because the job exited 0"
+    assert "AFTER-SETTLE" in artifact.read_text(encoding="utf-8")
+    assert "AFTER-SETTLE" in console.read_text(encoding="utf-8", errors="replace")
+
+
+def test_wrapper_flushes_late_output_of_a_passing_script(tmp_path):
+    """A passing run keeps no artifact, but its late output must still reach the
+    console: the flush is unconditional and only the artifact is gated on status."""
+    stub = tmp_path / "s.sh"
+    stub.write_text(
+        "#!/bin/bash\necho early\n" "( sleep 8; echo LATE-ON-SUCCESS ) &\nexit 0\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    console = tmp_path / "c4.log"
+    proc = _run(
+        f"""
+exec > '{console}' 2>/dev/null
+run_capturing_output '{tmp_path}/c.log' '{stub}'
+set -e
+sleep 10
+exit 0
+""",
+        tmp_path,
+        _FAST_TIMING,
+    )
+    assert proc.returncode == 0, proc.stderr
+    out = console.read_text(encoding="utf-8", errors="replace")
+    assert "LATE-ON-SUCCESS" in out, out
+    assert not (tmp_path / "test_output" / "stress_script.log").exists()
+
+
 def test_wrapper_recovers_output_that_arrives_after_an_early_exit(tmp_path):
     """Both runners exit early after this point -- `start_server` failing, the
     upgrade allow-list `exit 0`. The EXIT trap is what preserves output that
@@ -484,7 +593,7 @@ def test_wrapper_recovers_output_that_arrives_after_an_early_exit(tmp_path):
     stub = tmp_path / "s.sh"
     stub.write_text(
         "#!/bin/bash\necho early\n"
-        "( sleep 9; echo APPEARS-AFTER-SETTLE ) &\nexit 1\n",
+        "( sleep 8; echo APPEARS-AFTER-SETTLE ) &\nexit 1\n",
         encoding="utf-8",
     )
     stub.chmod(0o755)
@@ -497,7 +606,7 @@ set -e
 echo 'Failed to start server'
 # The runners reach their early exit some time after the wrapper returns; give the late
 # writer that long, so the trap has something left to recover.
-sleep 11
+sleep 10
 exit 1
 """,
         tmp_path,
@@ -579,9 +688,7 @@ def test_result_row_appends_rather_than_truncates(tmp_path, exit_code):
 # library calls, a `$?` read and a `set -e`, so the risk here is drift between the
 # two copies and a path mismatch, both of which the text shows.
 
-_RUNNERS = (
-    Path(__file__).resolve().parent.parent.parent / "tests" / "docker_scripts",
-)
+_RUNNERS = (Path(__file__).resolve().parent.parent.parent / "tests" / "docker_scripts",)
 
 
 def _runner_text(name: str) -> str:
@@ -597,7 +704,12 @@ def test_runner_captures_and_reports_through_the_library(runner):
     assert text.count("run_capturing_output ") == 1, runner
     assert text.count("append_script_result_row ") == 1, runner
     # No leftover copy of the block the helpers replaced.
-    for gone in ("tail -n +1 -f --pid=", "drain_capture ", "finalize_capture ", "exec 3>&1"):
+    for gone in (
+        "tail -n +1 -f --pid=",
+        "drain_capture ",
+        "finalize_capture ",
+        "exec 3>&1",
+    ):
         assert gone not in text, (runner, gone)
 
 
@@ -621,9 +733,7 @@ def test_runner_passes_the_same_capture_path_to_both_helpers(runner):
     report every failure as having produced no output."""
     text = _runner_text(runner)
     wrapper_path = re.search(r"run_capturing_output (\S+)", text).group(1)
-    row = re.search(
-        r"append_script_result_row (\S+) (\S+) \\\n\s*(\S+)", text
-    )
+    row = re.search(r"append_script_result_row (\S+) (\S+) \\\n\s*(\S+)", text)
     assert row, runner
     results, status, row_path = row.groups()
     assert row_path == wrapper_path, (runner, wrapper_path, row_path)
