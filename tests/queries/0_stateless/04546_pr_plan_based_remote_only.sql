@@ -23,6 +23,9 @@ SET parallel_replicas_plan_based = 1;
 SET automatic_parallel_replicas_mode = 0;
 -- No local plan: exercise the remote-only branch of createParallelReplicasPlan.
 SET parallel_replicas_local_plan = 0;
+-- The empty fragment header only arises when this pass runs, and the test runner randomizes the
+-- setting off, where the cases below would pass without reaching the shape they are about.
+SET query_plan_remove_unused_columns = 1;
 
 SELECT count(), sum(b), min(a), max(a) FROM t_pr_remote_only WHERE a > 5;
 
@@ -49,6 +52,13 @@ FROM (EXPLAIN optimize = 1, description = 0 SELECT sum(b) FROM t_pr_remote_only 
 -- counted. Each query is followed by the same query without parallel replicas, which is the expected value.
 SELECT count() FROM (SELECT 1 FROM t_pr_remote_only LIMIT 500);
 SELECT count() FROM (SELECT 1 FROM t_pr_remote_only LIMIT 500) SETTINGS enable_parallel_replicas = 0;
+
+-- Local execution produces those same counts, so pin the shape of that query as well: it is
+-- distributed, and the header of the shipped fragment is not empty.
+SELECT
+    countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read,
+    countIf(explain LIKE '%__parallel_replicas_fragment_dummy%') > 0 AS has_fragment_placeholder
+FROM (EXPLAIN header = 1, optimize = 1, description = 0 SELECT count() FROM (SELECT 1 FROM t_pr_remote_only LIMIT 500));
 
 SELECT count() FROM (SELECT 'x' FROM t_pr_remote_only LIMIT 300);
 SELECT count() FROM (SELECT 'x' FROM t_pr_remote_only LIMIT 300) SETTINGS enable_parallel_replicas = 0;
