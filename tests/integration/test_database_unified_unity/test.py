@@ -88,9 +88,8 @@ def start_unity_catalog(node):
 
 
 def link_uniform_table(node):
-    """`marksheet_uniform` is registered at /tmp/marksheet_uniform but ships
-    inside the catalog tree; upstream tells you to put it there before use. Both
-    the catalog server and ClickHouse read it at the registered path."""
+    """`marksheet_uniform` is registered at /tmp/marksheet_uniform but is
+    stored in the catalog tree."""
     table_dir = UC_HOME + "/etc/data/external/unity/default/tables/marksheet_uniform"
     node.exec_in_container(
         [
@@ -107,8 +106,7 @@ PROXY_LOG = "/tmp/uc_proxy.log"
 
 
 def start_proxy(node):
-    """Not `helpers.mock_servers.start_mock_servers`: it copies to a relative path,
-    which the container's uid cannot write to outside CI."""
+    # Copy uc_proxy.py to container.
     node.copy_file_to_container(
         os.path.join(os.path.dirname(__file__), "mock_servers", "uc_proxy.py"),
         PROXY_PATH,
@@ -117,7 +115,7 @@ def start_proxy(node):
         [
             "bash",
             "-c",
-            f"setsid nohup python3 {PROXY_PATH} {PROXY_PORT} > {PROXY_LOG} 2>&1 < /dev/null &",
+            f"python3 {PROXY_PATH} {PROXY_PORT} > {PROXY_LOG} 2>&1 &",
         ]
     )
 

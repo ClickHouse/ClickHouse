@@ -1,19 +1,10 @@
 #!/usr/bin/env python3
-"""Proxy in front of the open-source Unity Catalog server that emulates the two
-Databricks-specific behaviours `UnifiedUnityCatalog` depends on:
+"""Makes the open-source Unity Catalog server look like Databricks to
+`UnifiedUnityCatalog`, for the tables in `UNIFORM_TABLES` only:
 
-1. Databricks serves the Iceberg REST catalog at `{base}/iceberg-rest`, the
-   open-source server at `{base}/iceberg`. Requests are rewritten.
-2. Databricks reports a managed Iceberg table with `data_source_format = DELTA`
-   plus a `securable_kind` of `TABLE_DELTA_ICEBERG_*`. The open-source server
-   never sends `securable_kind` and cannot register an Iceberg table at all, so
-   the kind is injected into the response for the UniForm tables listed below.
-
-It also normalises `file:/tmp/...` to `file:///tmp/...`, which
-`TableMetadata::setLocation` requires. The directory is left as the server
-reports it, so the metadata stays self-consistent and nothing has to be rebased.
-
-Only the tables in `UNIFORM_TABLES` are touched.
+- serves the Iceberg REST catalog at `/iceberg-rest`, not `/iceberg`;
+- reports an Iceberg `securable_kind`, which the open-source server never sends;
+- writes the table location as `file:///tmp/...`, which `setLocation` requires.
 """
 import json
 import re
