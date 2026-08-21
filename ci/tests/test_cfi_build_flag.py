@@ -19,8 +19,6 @@ import importlib.util
 import os
 import types
 
-import pytest
-
 # Measured CXX_FLAGS rows, same as in test_cfi_not_a_sanitizer_build.py (not
 # imported from there: that module pulls in the integration-test helpers and
 # their heavy dependencies just to test a different predicate).
