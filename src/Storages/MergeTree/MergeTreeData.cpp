@@ -10977,6 +10977,16 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
     /// Key: partition_id (or empty string if no GROUP BY)
     std::unordered_map<String, std::pair<Row, std::vector<std::pair<Field, Field>>>> partition_minmax;
 
+    /// Only the aggregate argument columns are needed; loading them explicitly avoids
+    /// deserializing and caching the full per-part statistics map.
+    Names statistics_columns;
+    {
+        NameSet unique_names;
+        for (const auto & name : agg_col_to_physical_name)
+            if (unique_names.insert(name).second)
+                statistics_columns.push_back(name);
+    }
+
     /// Lambda to detect NaN field values (StatisticsBasic::build can produce NaN
     /// bounds for parts whose column is entirely NaN, and NaN comparisons break
     /// the merge loop below since any comparison with NaN is false).
@@ -11005,21 +11015,21 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
                 continue;
         }
 
-        const Estimates estimates = [&]()
+        const ColumnsStatistics statistics = [&]()
         {
             try
             {
-                return part->getEstimates();
+                return part->loadStatistics(statistics_columns);
             }
             catch (const Exception &)
             {
                 tryLogCurrentException(log, fmt::format(
                     "Failed to load statistics for part {}, falling back to normal read",
                     part->name));
-                return Estimates{};
+                return ColumnsStatistics{};
             }
         }();
-        if (estimates.empty())
+        if (statistics.empty())
             return {};
 
         const String agg_key = has_group_by ? part->info.getPartitionId() : String{};
@@ -11044,21 +11054,30 @@ Block MergeTreeData::getColumnStatisticsAggregationBlock(
                 return {};
             }
 
-            auto est_it = estimates.find(arg_col_name);
-            if (est_it == estimates.end()
-                || !est_it->second.estimated_min.has_value()
-                || !est_it->second.estimated_max.has_value()
-                /// The estimate must cover every physical row of the part (e.g. statistics
-                /// carried over a row-reducing mutation do not).
-                || est_it->second.rows_count != part->rows_count)
+            auto est_it = statistics.find(arg_col_name);
+            if (est_it == statistics.end())
             {
                 /// Statistics not available for this part — fallback
                 LOG_TRACE(log, "Column statistics aggregation: part '{}' lacks statistics for column '{}'", part->name, arg_col_name);
                 return {};
             }
 
-            const Field & part_min = *est_it->second.estimated_min;
-            const Field & part_max = *est_it->second.estimated_max;
+            const auto estimate = est_it->second->getEstimate();
+            /// Only `basic` statistics are relied upon; `minmax` statistics are deprecated.
+            if (!estimate.types.contains(StatisticsType::Basic)
+                || !estimate.estimated_min.has_value()
+                || !estimate.estimated_max.has_value()
+                /// The estimate must cover every physical row of the part (e.g. statistics
+                /// carried over a row-reducing mutation do not).
+                || estimate.rows_count != part->rows_count)
+            {
+                /// Statistics not available for this part — fallback
+                LOG_TRACE(log, "Column statistics aggregation: part '{}' lacks statistics for column '{}'", part->name, arg_col_name);
+                return {};
+            }
+
+            const Field & part_min = *estimate.estimated_min;
+            const Field & part_max = *estimate.estimated_max;
 
             /// If either per-part bound is NaN, fall back to a normal aggregation.
             if (isNanField(part_min) || isNanField(part_max))
