@@ -476,6 +476,12 @@ private:
             if (!search_query)
                 continue;
 
+            /// The condition above is analyzed over the canonicalized subtree, while the rewrites below are
+            /// applied to this node. Both consumers may only use an index whose tokenizer the node's own
+            /// tokenizer argument denotes; for any other tokenizer the predicate is left untouched.
+            if (!text_index_condition.canAnswerFunctionNode(function_node))
+                continue;
+
             /// For None mode, the condition is still needed for preprocessing (tokenizer/preprocessor injection).
             if (search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {

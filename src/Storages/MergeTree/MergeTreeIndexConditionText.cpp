@@ -354,6 +354,19 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
     return rpn_element.text_search_queries.front();
 }
 
+bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node & node) const
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.size() != 3)
+        return true;
+
+    RPNBuilderTreeContext rpn_tree_context(getContext());
+    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
+    const auto function_node = rpn_node.toFunctionNode();
+
+    return acceptsTokenizerArgument(node.function_base->getName())
+        && tokenizerArgumentMatchesIndex(function_node.getArgumentAt(2));
+}
+
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
     if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
