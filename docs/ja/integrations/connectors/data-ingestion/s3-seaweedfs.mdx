@@ -1,0 +1,162 @@
+---
+sidebarTitle: 'SeaweedFS'
+slug: /integrations/seaweedfs
+description: 'ClickHouse で SeaweedFS の S3 互換オブジェクトストレージを使用する'
+title: 'SeaweedFS の使用'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+keywords: ['s3', 'seaweedfs', 'オブジェクトストレージ', 'データ読み込み', '互換ストレージ']
+---
+
+import SelfManaged from '/snippets/ja/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+ClickHouse の `s3` テーブル関数と `S3` ディスクタイプは、S3 互換ゲートウェイを備えたオープンソースの分散オブジェクトストアである [SeaweedFS](https://github.com/seaweedfs/seaweedfs) に対応しています。SeaweedFS は path-style リクエストをネイティブに処理するため、セルフホストのストアでもワイルドカード DNS は不要です。SeaweedFS は Iceberg テーブルもサポートしています。テーブルバケットにはテーブルデータが Parquet ファイルとして保存され、組み込みの Iceberg REST カタログがテーブルメタデータを提供します。同じエンドポイント経由でこれらをクエリする方法については、[SeaweedFS カタログガイド](/ja/guides/use-cases/data-warehousing/seaweedfs-catalog)を参照してください。
+
+[SeaweedFS 4.42](https://github.com/seaweedfs/seaweedfs/releases/tag/4.42) 以降を使用してください。以前のバージョンでは、空であるため親フォルダが削除されている間に書き込みがコミットされたオブジェクトが削除されることがあり、書き込みが成功した直後に `Object ... suddenly disappeared` と表示されます。
+
+<div id="running-seaweedfs-locally">
+  ## SeaweedFS をローカルで実行する
+</div>
+
+ローカルでテストするには、S3 認証情報を含む `s3config.json` ファイルを作成します。
+
+```json
+{
+  "identities": [
+    {
+      "name": "analyst",
+      "credentials": [
+        {
+          "accessKey": "your_access_key_id",
+          "secretKey": "your_secret_access_key"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
+```
+
+次に、SeaweedFS スタック全体を単一のコンテナーで起動します。`-bucket` フラグを指定すると、起動時にバケットが作成されます。
+
+```bash
+docker run -d --name seaweedfs -p 8333:8333 \
+  -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
+  chrislusf/seaweedfs:latest \
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
+```
+
+S3 エンドポイントはポート 8333 で待ち受けます。応答するまで待ってから続行してください。
+
+```bash
+until curl -s -o /dev/null http://localhost:8333; do sleep 1; done
+```
+
+`echo "s3.bucket.create -name mybucket" | docker exec -i seaweedfs weed shell` を使用して、いつでもバケットを追加で作成できます。
+
+デフォルトでは、書き込みはオペレーティングシステムに渡された時点で確認応答されます。確認応答前にすべての書き込みをディスクに fsync するには、バケットで fsync を有効にします。
+
+```bash
+echo "fs.configure -locationPrefix=/buckets/clickhouse/ -fsync -apply" | \
+  docker exec -i seaweedfs weed shell
+```
+
+<div id="s3-backed-mergetree">
+  ## S3 バックエンドの MergeTree
+</div>
+
+S3 バックエンドの MergeTree 構成は、軽微な変更を加えることで互換性があります。
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://seaweedfs:8333/clickhouse/tables/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region></region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  エンドポイントには、バケット名 (`clickhouse`) と、それに続くテーブルデータ用のパスプレフィックス (`tables/`) が含まれます。SeaweedFS ではリージョンは不要なため、タグは空のままで構いません。`seaweedfs` は、S3 ゲートウェイを実行しているホストに置き換えてください。
+</Tip>
+
+テーブルは、ストレージポリシーを通じてデータを SeaweedFS に配置します。
+
+```sql
+CREATE TABLE trips (id UInt64, rider String, fare Float64)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main';
+```
+
+頻繁に読み取るデータのローカルキャッシュを保持するには、代わりに `SETTINGS disk = 's3_cache'` を指定してテーブルを作成します。上で定義したキャッシュディスクは、S3 ディスクをラップしています。
+
+<div id="the-s3-table-function">
+  ## s3 テーブル関数
+</div>
+
+`s3` テーブル関数は、同じエンドポイントに対してオブジェクトの読み取りと書き込みを行います。
+
+```sql
+INSERT INTO FUNCTION s3(
+    'http://seaweedfs:8333/clickhouse/sample/trips.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+)
+SELECT number AS id, concat('rider_', toString(number % 10)) AS rider, number * 1.5 AS fare
+FROM numbers(1000);
+
+SELECT count()
+FROM s3(
+    'http://seaweedfs:8333/clickhouse/sample/*.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+);
+```
+
+glob パターンを使用すると、複数のオブジェクトを読み取ることができます。
+
+<div id="backup-and-restore">
+  ## バックアップと復元
+</div>
+
+`BACKUP` と `RESTORE` では、S3 宛先として SeaweedFS エンドポイントを指定できます。
+
+```sql
+BACKUP TABLE trips
+TO S3('http://seaweedfs:8333/clickhouse/backups/trips1', 'your_access_key_id', 'your_secret_access_key');
+
+--- DROP TABLE trips;
+
+RESTORE TABLE trips
+FROM S3('http://seaweedfs:8333/clickhouse/backups/trips1', 'your_access_key_id', 'your_secret_access_key');
+```
