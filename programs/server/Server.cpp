@@ -1116,18 +1116,24 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     try
     {
         UInt64 corrected_errors = 0;
+        UInt64 uncorrected_errors = 0;
         fs::path edac_dir("/sys/devices/system/edac/mc");
         if (fs::exists(edac_dir))
         {
             for (const auto & entry : fs::directory_iterator(edac_dir))
             {
-                auto ce_path = entry.path() / "ce_count";
-                if (!fs::exists(ce_path))
-                    continue;
-                ReadBufferFromFile in(ce_path.string());
-                UInt64 count = 0;
-                readText(count, in);
-                corrected_errors += count;
+                auto read_count = [&](const char * name) -> UInt64
+                {
+                    auto path = entry.path() / name;
+                    if (!fs::exists(path))
+                        return 0;
+                    ReadBufferFromFile in(path.string());
+                    UInt64 count = 0;
+                    readText(count, in);
+                    return count;
+                };
+                corrected_errors += read_count("ce_count");
+                uncorrected_errors += read_count("ue_count");
             }
         }
         if (corrected_errors >= 100)
@@ -1137,6 +1143,43 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                     "Memory controllers reported {} corrected ECC errors: a RAM module may be failing."
                     " Check /sys/devices/system/edac/mc/mc*/ce_count",
                     corrected_errors));
+        if (uncorrected_errors > 0)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_UNCORRECTED_ECC_ERRORS,
+                PreformattedMessage::create(
+                    "Memory controllers reported {} uncorrected ECC errors: memory contents were corrupted."
+                    " The RAM module should be replaced. Check /sys/devices/system/edac/mc/mc*/ue_count",
+                    uncorrected_errors));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        const char * filename = "/proc/sys/vm/zone_reclaim_mode";
+        if (readNumber(filename) != 0)
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_ZONE_RECLAIM_MODE_ENABLED,
+                PreformattedMessage::create(
+                    "NUMA zone reclaim is enabled. It can cause severe latency spikes on multi-socket machines;"
+                    " the recommended value is 0. Check {}", String(filename)));
+    }
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        /// defrag = "always" causes allocation stalls even when THP is only enabled for madvise.
+        const char * defrag_filename = "/sys/kernel/mm/transparent_hugepage/defrag";
+        const char * enabled_filename = "/sys/kernel/mm/transparent_hugepage/enabled";
+        if (readLine(defrag_filename).contains("[always]") && !readLine(enabled_filename).contains("[never]"))
+            server.context()->addOrUpdateWarningMessage(
+                Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_DEFRAG_SET_TO_ALWAYS,
+                PreformattedMessage::create(
+                    "Linux transparent hugepage defragmentation is set to \"always\"."
+                    " It can cause allocation stalls. Check {}", String(defrag_filename)));
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
