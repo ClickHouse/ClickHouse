@@ -121,6 +121,11 @@ class _Settings:
     # their own, so raising this cannot extend the population's total.
     SUBMODULE_CACHE_CLONE_ATTEMPTS: int = 3
 
+    # Held back from the budget for the checks that run after the upload. Those decide
+    # whether a refused conditional write is a lost race or a lost archive, so a deadline
+    # that fires under them reports a failure the run did not have.
+    SUBMODULE_CACHE_CONFIRM_RESERVE_SEC: int = 60
+
     # v2: records carry the producing workflow event, used as the reuse trust
     # signal instead of the branch (see CacheRunnerHooks.configure).
     CACHE_VERSION: int = 2
@@ -234,6 +239,7 @@ _USER_DEFINED_SETTINGS = [
     "ENABLE_SUBMODULE_CLONE_AUTH",
     "SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC",
     "SUBMODULE_CACHE_CLONE_ATTEMPTS",
+    "SUBMODULE_CACHE_CONFIRM_RESERVE_SEC",
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",

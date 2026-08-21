@@ -50,9 +50,29 @@ _workflow_config_job = Job.Config(
     timeout=1800,
 )
 
-# This watchdog covers the whole command and starts before any configuration work, while
-# the population budget starts only when the population does, so the population needs
-# room to report its own overrun; the outer watchdog produces no result at all.
+# Kept clear of the outer watchdog so that an overrunning population still gets to report
+# it: the watchdog covers the whole command and produces no result at all.
+_POPULATE_REPORT_RESERVE_SEC = 60
+
+# Started when the job's own module is imported, which is the closest the job gets to
+# knowing when the watchdog covering it started.
+_JOB_STOPWATCH = Utils.Stopwatch()
+
+
+# Subtracted from the remainder, so a negative one would be added to it instead and hand a
+# step more time than the job has left; one as large as the budget leaves the steps before
+# the confirmation nothing.
+assert (
+    0
+    <= Settings.SUBMODULE_CACHE_CONFIRM_RESERVE_SEC
+    < Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+), (
+    Settings.SUBMODULE_CACHE_CONFIRM_RESERVE_SEC,
+    Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC,
+)
+
+# A configured budget that leaves the job no room of its own, which the runtime clamp in
+# _prepare_submodule_cache can only degrade to seconds rather than repair.
 assert (
     _workflow_config_job.timeout - Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC >= 600
 ), (_workflow_config_job.timeout, Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC)
@@ -248,22 +268,67 @@ def _submodule_auth_env(workflow, timeout=None) -> dict:
     return env
 
 
-def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
+def _prepare_submodule_cache(
+    workflow, workflow_config: RunConfig, job_elapsed_sec: float = None
+) -> Result:
     """Compute a content-addressed hash of submodule SHAs and ensure a cache
     archive exists in S3.  Stores the hash in workflow_config so that downstream
     jobs with needs_submodules=True can restore it."""
     stop_watch = Utils.Stopwatch()
     info = ""
 
+    # The configured budget is what the population may spend when the job started on time;
+    # what the preamble already spent is gone, and a budget reaching past the watchdog is a
+    # budget for a job that is killed before it can report.
+    if job_elapsed_sec is None:
+        job_elapsed_sec = _JOB_STOPWATCH.duration
+    job_left = int(
+        _workflow_config_job.timeout - job_elapsed_sec - _POPULATE_REPORT_RESERVE_SEC
+    )
+    budget = min(Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC, job_left)
+    if budget < Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC:
+        print(
+            f"NOTE: {int(job_elapsed_sec)}s of the {_workflow_config_job.timeout}s job cap is "
+            f"already spent, so the population budget is {budget}s, not "
+            f"{Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC}s"
+        )
+    if job_left <= 0:
+        # Every step would start on a deadline that fires at once, so the population cannot
+        # succeed; running them anyway spends the time the job needs to report this and is
+        # killed with no result at all. Distinct from a budget that is merely small, and
+        # from a misconfigured one, both of which are still attempted.
+        return Result.create_from(
+            name="Submodule Cache",
+            status=Result.Status.FAIL,
+            stopwatch=stop_watch,
+            info=(
+                f"{int(job_elapsed_sec)}s of the {_workflow_config_job.timeout}s job cap was "
+                f"already spent, leaving no time to populate the cache"
+            ),
+        )
+
     def budget_remaining():
         """Seconds left of the budget, negative once it is overspent."""
-        return Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC - int(stop_watch.duration)
+        return budget - int(stop_watch.duration)
 
     def budget_left():
-        """Seconds still available to this path, never zero.
+        """Seconds the producing steps may still spend, never zero.
 
         `timeout 0` enforces no deadline at all, so an exhausted budget has to be
         expressed as a deadline that fires immediately.
+
+        Holds back the confirmation's reserve, so a step that legitimately spends
+        everything it is offered still leaves the checks after it something to run in.
+        """
+        return max(
+            budget_remaining() - Settings.SUBMODULE_CACHE_CONFIRM_RESERVE_SEC, 1
+        )
+
+    def confirm_budget_left():
+        """Seconds for the checks that run after the upload, never zero.
+
+        These decide whether a refused conditional write means somebody else stored the
+        archive or nobody did, so they spend the reserve `budget_left` held back for them.
         """
         return max(budget_remaining(), 1)
 
@@ -357,7 +422,9 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
             # A refused conditional write means somebody else holds the key, but not that
             # the object is readable: a 409 is also raised for a concurrent delete. The
             # hash is only publishable once the object is actually there.
-            if not created and not S3.head_object(s3_path, timeout=budget_left()):
+            if not created and not S3.head_object(
+                s3_path, timeout=confirm_budget_left()
+            ):
                 raise RuntimeError(
                     f"conditional upload was refused and {s3_path} does not exist"
                 )

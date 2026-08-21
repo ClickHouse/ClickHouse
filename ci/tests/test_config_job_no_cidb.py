@@ -372,6 +372,215 @@ def test_config_job_outlives_the_submodule_cache_bound():
     ), (_workflow_config_job.timeout, Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC)
 
 
+def _population_deadlines_after_job_elapsed(job_elapsed_sec, spend_offered=False):
+    """Collect the deadlines the population hands out `job_elapsed_sec` into the job.
+
+    With `spend_offered` every bounded step consumes exactly the deadline it was given,
+    which is the worst case the outer watchdog has to survive: a step is entitled to all
+    the time it is offered, so a deadline is a promise about the job's total.
+    """
+    import ci.praktika.native_jobs as nj
+
+    offered = []
+    clock = [0.0]
+
+    class _FakeStopwatch:
+        start_time = 0.0
+
+        @property
+        def duration(self):
+            return clock[0]
+
+    def _record(command):
+        parts = command.split()
+        if parts[:3] == ["timeout", "-s", "KILL"]:
+            offered.append(int(parts[3]))
+            if spend_offered:
+                clock[0] += int(parts[3])
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **_kwargs):
+            _record(command)
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p, timeout=None):
+            if timeout is not None:
+                offered.append(timeout)
+                if spend_offered:
+                    clock[0] += timeout
+            return False
+
+        @staticmethod
+        def put(timeout=None, **_kwargs):
+            if timeout is not None:
+                offered.append(timeout)
+                if spend_offered:
+                    clock[0] += timeout
+            return True
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        nj.Utils.Stopwatch = _FakeStopwatch
+        nj._prepare_submodule_cache(None, _Cfg(), job_elapsed_sec=job_elapsed_sec)
+    finally:
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch = orig
+    return offered, clock[0]
+
+
+def test_the_elapsed_job_time_is_read_from_the_running_job():
+    """The clamp has to consult the job's own clock, not a default of zero.
+
+    Nothing else supplies the elapsed time in production: the caller passes no argument, so
+    a default that reports a fresh job would leave the clamp arithmetically correct and
+    permanently inert.
+    """
+    import ci.praktika.native_jobs as nj
+
+    original = nj._JOB_STOPWATCH
+    try:
+        # A job that started 900s ago. Only a clamp that reads this shrinks its budget.
+        nj._JOB_STOPWATCH = type(
+            "_SW", (), {"start_time": 0.0, "duration": property(lambda _self: 900.0)}
+        )()
+        late, _ = _population_deadlines_after_job_elapsed(None)
+    finally:
+        nj._JOB_STOPWATCH = original
+
+    on_time, _ = _population_deadlines_after_job_elapsed(0)
+    assert late[0] < on_time[0], (late, on_time)
+
+
+def test_the_population_budget_shrinks_by_what_the_job_already_spent():
+    """The budget must come from what the job has left, not from the setting alone.
+
+    The import-time check compares two configured numbers, so it holds however long the
+    preamble ran; the watchdog does not. A preamble of 900s plus a full 1200s budget is
+    2100s of a 1800s job, which is the SIGTERM with no result that this path exists to
+    replace.
+    """
+    from ci.praktika.settings import Settings
+
+    on_time, _ = _population_deadlines_after_job_elapsed(0)
+    assert on_time[0] <= Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC, on_time
+
+    late, _ = _population_deadlines_after_job_elapsed(900)
+    assert late[0] < on_time[0], (late, on_time)
+
+
+@pytest.mark.parametrize("job_elapsed", [0, 184, 600, 915, 1500])
+def test_the_population_leaves_the_job_room_to_report_its_own_overrun(job_elapsed):
+    """The population must end early enough for the job to still publish a result.
+
+    Every step is entitled to spend its whole deadline, so the deadlines answer for the
+    job's total rather than for the population's share of it. Finishing exactly at the cap
+    is not enough: the result still has to be written, and a watchdog that fires first
+    leaves the matrix undefined.
+
+    A preamble that has itself consumed the reserve is out of reach of any clamp, since the
+    steps still need a deadline they can fire on; the parameters stop short of it.
+    """
+    from ci.praktika.native_jobs import _workflow_config_job
+
+    _offered, spent = _population_deadlines_after_job_elapsed(
+        job_elapsed, spend_offered=True
+    )
+
+    # A fixed margin rather than the constants the clamp itself uses: deriving the bound
+    # from those would accept setting either of them to zero, and the room to report is
+    # exactly what the outer watchdog does not leave. Above the confirmation's reserve, so
+    # that reserve alone cannot satisfy it.
+    assert job_elapsed + spent <= _workflow_config_job.timeout - 90, (
+        job_elapsed,
+        spent,
+        _workflow_config_job.timeout,
+    )
+
+
+@pytest.mark.parametrize("job_elapsed", [1740, 1799, 1800, 10**6])
+def test_a_job_with_no_time_left_does_not_start_populating(job_elapsed):
+    """A preamble that ate the cap must fail without running the steps.
+
+    Each step would start on a deadline that fires at once, so the population cannot
+    succeed; attempting it anyway spends the time the job needs to report why, and the
+    watchdog then kills it with no result at all.
+    """
+    import ci.praktika.native_jobs as nj
+
+    offered, _ = _population_deadlines_after_job_elapsed(job_elapsed)
+    assert offered == [], offered
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    cfg = _Cfg()
+    orig = nj.Digest, nj.GHAuth
+    try:
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        result = nj._prepare_submodule_cache(
+            None, cfg, job_elapsed_sec=float(job_elapsed)
+        )
+    finally:
+        nj.Digest, nj.GHAuth = orig
+
+    assert result.status == "FAIL", result.status
+    assert cfg.submodule_cache_hash == "", cfg.submodule_cache_hash
+
+
+@pytest.mark.parametrize("reserve", [-100, -1, 1200, 5000])
+def test_a_confirmation_reserve_outside_its_range_is_refused(reserve):
+    """The reserve is repository-overridable, so its range is enforced on import.
+
+    A negative one is added to the remainder rather than held back from it, handing a step
+    more time than the job has left and defeating the clamp; one as large as the budget
+    leaves the steps before the confirmation nothing at all. Asserting the default is in
+    range cannot show the check is reachable, so drive values that must be rejected.
+    """
+    import importlib
+
+    import ci.praktika.settings as settings_module
+
+    original = settings_module.Settings.SUBMODULE_CACHE_CONFIRM_RESERVE_SEC
+    try:
+        settings_module.Settings.SUBMODULE_CACHE_CONFIRM_RESERVE_SEC = reserve
+        for name in [m for m in sys.modules if m.endswith("praktika.native_jobs")]:
+            del sys.modules[name]
+        with pytest.raises(AssertionError):
+            importlib.import_module("ci.praktika.native_jobs")
+    finally:
+        settings_module.Settings.SUBMODULE_CACHE_CONFIRM_RESERVE_SEC = original
+        for name in [m for m in sys.modules if m.endswith("praktika.native_jobs")]:
+            del sys.modules[name]
+        importlib.import_module("ci.praktika.native_jobs")
+
+
+def test_the_configured_confirmation_reserve_is_inside_its_range():
+    """The default has to satisfy the check that rejects an override."""
+    from ci.praktika.settings import Settings
+
+    assert (
+        0
+        <= Settings.SUBMODULE_CACHE_CONFIRM_RESERVE_SEC
+        < Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+    ), Settings.SUBMODULE_CACHE_CONFIRM_RESERVE_SEC
+
+
 def test_a_clone_bound_that_crowds_the_job_cap_is_refused():
     """The two durations are set independently, so their relation is enforced on import.
 
@@ -1268,6 +1477,168 @@ def test_a_lost_race_is_a_success_once_the_object_is_there():
     confirm_deadline = heads[1][1]
     assert confirm_deadline, heads
     assert 0 < confirm_deadline <= Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC, heads
+
+
+def _population_over_a_lost_race():
+    """Drive the population to a refused conditional write with the budget spent down.
+
+    Every bounded step consumes exactly the deadline it was handed, which is both the worst
+    case and the only physical one: a step that outran its deadline would have been killed.
+    Returns the deadline the confirmation was given, which is what decides whether a lost
+    race is read as somebody else's success or as nothing having been stored.
+    """
+    import ci.praktika.native_jobs as nj
+
+    heads = []
+    clock = [0.0]
+
+    class _FakeStopwatch:
+        start_time = 0.0
+
+        @property
+        def duration(self):
+            return clock[0]
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **_kwargs):
+            parts = command.split()
+            if parts[:3] == ["timeout", "-s", "KILL"]:
+                clock[0] += int(parts[3])
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p, timeout=None):
+            heads.append(timeout)
+            if timeout is not None:
+                clock[0] += timeout if len(heads) == 1 else 0
+            # False on the cache-miss probe; the later call is the confirmation, which a
+            # deadline of a second or two cannot complete.
+            return len(heads) > 1 and timeout > 2
+
+        @staticmethod
+        def put(timeout=None, **_kwargs):
+            if timeout is not None:
+                clock[0] += timeout
+            return False
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    cfg = _Cfg()
+    orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        nj.Utils.Stopwatch = _FakeStopwatch
+        result = nj._prepare_submodule_cache(None, cfg)
+    finally:
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch = orig
+    return result, cfg, heads
+
+
+def test_a_lost_race_survives_a_budget_the_upload_nearly_emptied():
+    """The confirmation must keep working time after the steps before it spent the budget.
+
+    Population failure is fatal, so a confirmation squeezed to a second turns an ordinary
+    concurrent writer collision into a dropped matrix, even though the winner already stored
+    the archive.
+    """
+    result, cfg, heads = _population_over_a_lost_race()
+
+    assert result.status == "OK", result.status
+    assert cfg.submodule_cache_hash, cfg.submodule_cache_hash
+    assert len(heads) == 2, heads
+    assert heads[1] > 2, heads
+
+
+@pytest.mark.parametrize("job_elapsed", [0, 1710, 1739])
+def test_a_step_starting_inside_the_reserve_still_gets_a_firing_deadline(job_elapsed):
+    """Holding the reserve back must not hand a later step a deadline of zero.
+
+    Subtracting the reserve reaches zero a whole reserve before the budget does, and
+    `timeout 0` enforces no deadline at all, so the very steps this bound exists to cover
+    would be the ones running unbounded. Reached two ways: a budget spent down to inside the
+    reserve, and a job whose whole remainder is already smaller than it.
+    """
+    from ci.praktika.settings import Settings
+
+    # Spends everything it is offered, so later steps start inside the reserve.
+    offered, _ = _population_deadlines_after_job_elapsed(
+        job_elapsed, spend_offered=True
+    )
+
+    assert len(offered) > 1, offered
+    assert all(deadline >= 1 for deadline in offered), offered
+    assert min(offered) <= Settings.SUBMODULE_CACHE_CONFIRM_RESERVE_SEC, offered
+
+
+def test_the_producing_steps_never_get_the_confirmation_reserve():
+    """The reserve only works if the steps before it cannot spend it.
+
+    Reserving time the upload is still free to consume reserves nothing, so the deadline
+    offered to a producing step has to fall short of the remaining budget by the reserve.
+    """
+    from ci.praktika.settings import Settings
+
+    offered, _ = _population_deadlines_after_job_elapsed(0)
+
+    assert offered, offered
+    assert (
+        offered[0]
+        == Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+        - Settings.SUBMODULE_CACHE_CONFIRM_RESERVE_SEC
+    ), offered
+
+
+def test_the_reserve_does_not_excuse_an_unconfirmable_upload():
+    """A refused write that cannot be confirmed must still fail, reserve or not.
+
+    The reserve buys the confirmation time to answer, never permission to skip it: reading
+    a bare refusal as somebody else's success publishes a hash naming an object that may
+    not be there.
+    """
+    import ci.praktika.native_jobs as nj
+
+    class _FakeShell:
+        @staticmethod
+        def check(_command, **_kwargs):
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p, timeout=None):
+            return False
+
+        @staticmethod
+        def put(**_kwargs):
+            return False
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    cfg = _Cfg()
+    orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        result = nj._prepare_submodule_cache(None, cfg)
+    finally:
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
+
+    assert result.status == "FAIL", result.status
+    assert cfg.submodule_cache_hash == "", cfg.submodule_cache_hash
 
 
 if __name__ == "__main__":
