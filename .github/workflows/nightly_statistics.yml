@@ -52,7 +52,8 @@ jobs:
 
   collect_job_duration_statistics:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     name: "Collect Job Duration Statistics"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -86,7 +87,8 @@ jobs:
 
   collect_test_duration_statistics:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     name: "Collect Test Duration Statistics"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

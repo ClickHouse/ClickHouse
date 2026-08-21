@@ -49,7 +49,8 @@ jobs:
 
   dockers_build_amd:
     runs-on: [self-hosted, style-checker]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
     name: "Dockers Build (amd)"
     outputs:
@@ -84,7 +85,8 @@ jobs:
 
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
     outputs:
@@ -119,7 +121,10 @@ jobs:
 
   style_check:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3R5bGUgY2hlY2s=') }}
     name: "Style check"
     outputs:
@@ -154,7 +159,10 @@ jobs:
 
   fast_test:
     runs-on: [self-hosted, amd-large]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RmFzdCB0ZXN0') }}
     name: "Fast test"
     outputs:
@@ -189,7 +197,10 @@ jobs:
 
   build_amd_binary:
     runs-on: [self-hosted, arm-large]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
     outputs:
@@ -224,7 +235,11 @@ jobs:
 
   stateless_tests_amd_binary_flaky_check:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_binary
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBmbGFreSBjaGVjayk=') }}
     name: "Stateless tests (amd_binary, flaky check)"
     outputs:
@@ -259,7 +274,14 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, fast_test, stateless_tests_amd_binary_flaky_check, style_check]
+    needs:
+    - build_amd_binary
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - fast_test
+    - stateless_tests_amd_binary_flaky_check
+    - style_check
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

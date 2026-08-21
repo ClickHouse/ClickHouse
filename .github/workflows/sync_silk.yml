@@ -52,7 +52,8 @@ jobs:
 
   sync_silk_submodule:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     name: "Sync silk submodule"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

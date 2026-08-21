@@ -52,7 +52,8 @@ jobs:
 
   prepare_changelog:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     name: "Prepare changelog"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

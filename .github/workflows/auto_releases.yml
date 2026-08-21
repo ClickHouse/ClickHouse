@@ -61,7 +61,8 @@ jobs:
 
   autoreleaseinfo:
     runs-on: [self-hosted, arm-small]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     name: "AutoReleaseInfo"
     timeout-minutes: 785
     outputs:

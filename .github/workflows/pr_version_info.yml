@@ -59,7 +59,8 @@ jobs:
 
   update_pr_version_info:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     name: "Update PR version info"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
