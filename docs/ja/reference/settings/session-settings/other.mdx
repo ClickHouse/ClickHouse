@@ -16,6 +16,16 @@ import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnly
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
+<div id="adaptive_aggregator_freeze_threshold">
+  ## adaptive_aggregator_freeze_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16384" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "アダプティブアグリゲータ（`enable_adaptive_aggregator`）がスレッドのローカルハッシュテーブルをフリーズするキー数を設定する新しい設定。"}]}]} />
+
+アダプティブアグリゲータがスレッドのローカルハッシュテーブルをフリーズするキー数です (`enable_adaptive_aggregator` を参照) 。値を小さくすると、フリーズされたテーブルはキャッシュに収まりやすくなり、大きくすると頻出キーをより多く保持できます。0 を指定すると、最初の機会にテーブルをフリーズします。この場合、アルゴリズムは分片アグリゲータ (`enable_sharding_aggregator`) と同様に動作します。各キーは hash によってルーティングされ、単一の所有者によって集計されますが、スキャン中にスレッド間で交換されるのではなく、マージフェーズまで処理が延期されます。
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>
@@ -150,6 +160,16 @@ Cloud でのデフォルト値: `1`.
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 読み取り時にチェックサムを検証します。これはデフォルトで有効になっており、本番環境では常に有効にしておくべきです。この設定を無効にしても、利点が得られることはありません。使用するのは、実験やベンチマークの場合のみにしてください。この設定が適用されるのは、MergeTree family のテーブルのみです。その他のテーブルエンジンや、ネットワーク経由でデータを受信する場合は、チェックサムは常に検証されます。
+
+<div id="compression">
+  ## 圧縮
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "レスポンスボディに汎用圧縮を適用するための新しい設定。"}]}]} />
+
+レスポンスボディに汎用圧縮を適用します。例: `compression=gz`。これは `Content-Encoding` (HTTP 圧縮) および従来の `compress` パラメータ (ClickHouse ネイティブ圧縮) とは独立しています。URL パスで圧縮ファイルの拡張子を指定することも同等です。
+
+これは HTTP インターフェイスのレスポンス整形設定です。クエリの実行前に処理され (レスポンスバッファは事前に設定されるため) 、HTTP URL パラメータ、URL パスのファイル拡張子、またはユーザープロファイルを介して指定する必要があります。クエリ内の `SETTINGS` 句で指定しても効果はなく、拒否されます。
 
 <div id="connection_pool_max_wait_ms">
   ## connection_pool_max_wait_ms
@@ -568,6 +588,22 @@ ClickHouse は、テーブルの古いレプリカの中から最も適切なも
 
 prefetch の最大数です。0 は無制限を意味します。prefetch の数を制限したい場合は、設定 `filesystem_prefetches_max_memory_usage` を使用することを推奨します
 
+<div id="filter">
+  ## filter
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリを囲む WHERE 句を追加する新しい設定。"}]}]} />
+
+クエリをラップするサブクエリとして `WHERE` 句を追加します。複数のフィルターは AND で結合されます。HTTP インターフェイスでは複数の `filter` URL パラメータを指定でき、それらは指定順に AND で結合され、この設定の値とも AND で結合されます。
+
+これは、解析済みクエリにエンジンが適用するクエリ構築設定です (派生テーブルとしてラップします) 。そのため既存のクエリと組み合わせて使用でき、すべてのプロトコルで機能します。HTTP URL パラメータ、クエリ内の `SETTINGS` clause、またはユーザープロファイルで指定できます。
+
+結果を返す `SELECT` / `UNION` クエリの形を変更します。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソース `SELECT` 自身の `SETTINGS` clauseに指定されている場合にのみ有効です。プロファイルまたはセッションから継承された値、あるいは `INSERT` / `CREATE` ステートメント自体に設定された値は、ソース `SELECT` には伝播しません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
+
+<Danger>
+  `filter` はアクセス制御の仕組み**ではなく**、[行レベルセキュリティポリシー](/ja/concepts/features/security/access-rights#row-policy-management)や `additional_table_filters` 設定の代替として使用してはなりません。ラップするサブクエリに `WHERE` を追加するだけであるため、フィルターが適用される前に基盤となるデータが読み取られ、処理されます。クエリは処理中にフィルターで除外された行を観測できます (たとえば、`throwIf` を使用してエラーパス経由で情報を漏えいさせることができます) 。ユーザーがアクセスできる行を制限することが目的の場合は、行レベルセキュリティまたは `additional_table_filters` を使用してください。
+</Danger>
+
 <div id="final">
   ## final
 </div>
@@ -691,6 +727,14 @@ ORDER BY tuple()
 SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+<div id="format">
+  ## format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリの入力と出力の両方に対する FORMAT をオーバーライドする新しい設定。"}]}]} />
+
+クエリの入力と出力の両方の `FORMAT` をオーバーライドします。クエリまたはファイル拡張子で指定されたフォーマットよりも優先されます。より具体的な `input_format` および `output_format` 設定は、それぞれ入力と出力について、この汎用的な `format` 設定より優先されます。
 
 <div id="framing_output_format">
   ## framing_output_format
@@ -876,6 +920,14 @@ HSTS の有効期限です。0 は HSTS を無効にします。
 最上位の構造が UNION の場合、&#39;ORDER BY rand()&#39; はすべての child に個別に挿入されます。
 ORDER BY がないとクエリ結果が非決定論的になるため、主にテストや開発でのみ有用です。
 
+<div id="input_format">
+  ## input_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリの入力フォーマットをオーバーライドする新しい設定。"}]}]} />
+
+クエリの入力フォーマットをオーバーライドします。クエリで指定されたフォーマットよりも優先されます。
+
 <div id="interactive_delay">
   ## interactive_delay
 </div>
@@ -916,14 +968,20 @@ INTERSECTクエリのデフォルトモードを設定します。設定可能�
   ## limit
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0" />
 
-クエリ結果から取得する行数の上限を設定します。これは [LIMIT](/ja/reference/statements/select/limit) 句で設定された値を調整し、クエリで指定した制限値がこの設定で定めた上限を超えないようにします。
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "負の値および小数値をサポートするため、型をUInt64からFloatに拡張。ClickHouseネイティブの負の値／小数値の`LIMIT`サポートにそのまま渡されます。"}]}]} />
+
+クエリ結果から取得する最大行数を設定します。[LIMIT](/ja/reference/statements/select/limit)句で設定された値を調整します。この値は`LIMIT`にそのまま渡されるため、負の値 (結果の末尾から数える) や`(0, 1)`の小数 (結果に対する割合として解釈される) を含め、`LIMIT`で受け付けられるすべての値を指定できます。
 
 設定可能な値:
 
 * 0 — 行数は制限されません。
-* 正の整数。
+* 正の整数 — 指定した行数。
+* 負の整数 — 末尾からN行を返します。
+* 開区間`(0, 1)`内の実数 — 結果のその割合を返します。
+
+この設定は、結果を返す`SELECT` / `UNION`クエリに適用されます。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソースの`SELECT`が自身の`SETTINGS` clauseでこの設定を指定している場合にのみ有効です。プロファイルまたはセッションから継承された値、あるいは`INSERT` / `CREATE`ステートメント自体に設定された値は、ソースの`SELECT`には伝播されません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
 
 <div id="load_marks_asynchronously">
   ## load_marks_asynchronously
@@ -1025,14 +1083,18 @@ Cloud でのデフォルト値: `1`.
   ## offset
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0" />
 
-クエリで行を返し始める前にスキップする行数を設定します。[OFFSET](/ja/reference/statements/select/offset) 句で指定した offset を調整するため、これら 2 つの値は合算されます。
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "負の値と小数値をサポートするため、型を UInt64 から Float に拡張。ClickHouse ネイティブの負の値／小数 `OFFSET` サポートにそのまま渡されます。"}]}]} />
+
+クエリ結果の行を返し始める前にスキップする行数を設定します。[OFFSET](/ja/reference/statements/select/offset) 句で設定したオフセットを調整します。この値は `OFFSET` にそのまま渡され、負の値や `(0, 1)` の範囲の小数を含め、`OFFSET` で受け付けられるすべての値を指定できます。
 
 設定可能な値:
 
-* 0 — 行はスキップされません。
+* 0 — 行をスキップしません。
 * 正の整数。
+* 負の整数。
+* 開区間 `(0, 1)` の実数 — 結果のその割合をスキップします。
 
 **例**
 
@@ -1043,7 +1105,7 @@ CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
 INSERT INTO test SELECT number FROM numbers(500);
 ```
 
-クエリ:
+クエリ：
 
 ```sql
 SET limit = 5;
@@ -1051,7 +1113,7 @@ SET offset = 7;
 SELECT * FROM test LIMIT 10 OFFSET 100;
 ```
 
-結果:
+結果：
 
 ```text
 ┌───i─┐
@@ -1060,6 +1122,42 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 │ 109 │
 └─────┘
 ```
+
+この設定は、結果を返す `SELECT` / `UNION` クエリに影響します。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソースの `SELECT` 自身の `SETTINGS` 句でこの設定が指定されている場合にのみ有効です。プロファイルまたはセッションから継承された値や、`INSERT` / `CREATE` ステートメント自体に設定された値は、ソースの `SELECT` には伝播しません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
+
+<div id="order">
+  ## order
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリ全体を囲む ORDER BY 句を追加する新しい設定。"}]}]} />
+
+クエリをラップするサブクエリとして、`ORDER BY` 句を追加します。任意の式のリストを指定できます。
+
+これは、パース済みクエリに対してエンジンが適用するクエリ構築用の設定です (クエリを派生テーブルとしてラップします) 。既存のクエリと組み合わせて使用でき、すべてのプロトコルで機能します。HTTP URL パラメータ、クエリ内の `SETTINGS` 句、またはユーザープロファイルで指定できます。
+
+結果を返す `SELECT` / `UNION` クエリの形を変更します。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソースの `SELECT` 自身の `SETTINGS` 句で指定した場合にのみ有効です。プロファイルまたはセッションから継承した値、あるいは `INSERT` / `CREATE` ステートメント自体に設定した値は、ソースの `SELECT` には伝播しません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
+
+<div id="output_format">
+  ## output_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリの出力フォーマットを上書きするための新しい設定。"}]}]} />
+
+クエリの出力フォーマットを上書きします。クエリ、ファイル拡張子、または `default_format` で指定されたフォーマットよりも優先されます。
+
+<div id="page">
+  ## ページ
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "ページネーションされた HTTP レスポンス用の新しい設定。offset = limit * (page - 1) と同等です。負の値や小数値を扱えるよう Float 型であり（SQL の `LIMIT`\/`OFFSET` にそのまま渡されます）。"}]}]} />
+
+ページネーションされた結果のページ番号を設定します。`offset = limit * (page - 1)` と同等です。`limit` が設定されており、`offset` が設定されていない場合にのみ指定できます。ページ番号は 1 から始まります。`limit` および `offset` と同様に、負の値と小数値をサポートします。
+
+これは、解析済みクエリに対してエンジンが適用するクエリ構築用の設定です (クエリを派生テーブルとしてラップします) 。そのため、既存のクエリと組み合わせて使用でき、すべてのプロトコルで機能します。HTTP URL パラメータ、クエリ内の `SETTINGS` 句、またはユーザープロファイルで指定できます。
+
+結果を返す `SELECT` / `UNION` クエリの形を決定します。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソース `SELECT` 自体の `SETTINGS` 句にこの設定が指定されている場合にのみ有効です。プロファイルまたはセッションから継承された値、あるいは `INSERT` / `CREATE` ステートメント自体に設定された値は、ソース `SELECT` には伝播しません。これは、ほかのすべての設定にも適用される非伝播ルールと同じです。
 
 <div id="paimon_target_snapshot_id">
   ## paimon_target_snapshot_id
@@ -1415,6 +1513,18 @@ FORMAT Null;
 
 インデックスでの一括フィルタリングアルゴリズムを有効にします。通常はこちらのほうが常に優れていると想定されていますが、互換性の確保と制御のためにこの設定を用意しています。
 
+<div id="select">
+  ## select
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリを `SELECT <expr_list> FROM (<query>)` でラップする新しい設定。"}]}]} />
+
+明示的な `SELECT` 式リストを用いて、クエリをサブクエリとしてラップします。空でない場合、結果を返すクエリは `SELECT <expr_list> FROM (<query>)` でラップされます。
+
+これは、パース済みクエリに対してエンジンが適用するクエリ構築設定です (派生テーブルとしてラップします) 。既存のクエリと組み合わせて使用でき、すべてのプロトコルで機能します。HTTP URL パラメータ、クエリ内の `SETTINGS` 句、またはユーザープロファイルで指定できます。
+
+結果を返す `SELECT` / `UNION` クエリの形状を決定します。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソース `SELECT` 自身の `SETTINGS` 句で指定されている場合にのみ有効です。プロファイルまたはセッションから継承された値や、`INSERT` / `CREATE` ステートメント自体に設定された値は、ソース `SELECT` には伝播されません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
+
 <div id="select_sequential_consistency">
   ## select_sequential_consistency
 </div>
@@ -1604,6 +1714,18 @@ TCPHandler でクエリを受信した後のスリープ時間
 
 * `basic` — Hadoop snappy ブロックフォーマット。Hadoop が読み書きするファイルと互換性があります。読み取りと書き込みの両方をサポートします。
 * `framed` — Snappy framing フォーマット。Google が定義した標準的なストリーミングフォーマットです。読み取りと書き込みの両方をサポートします。
+
+<div id="sort">
+  ## ソート
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "クエリをラップする単純な ORDER BY 句を追加する新しい設定。"}]}]} />
+
+クエリを派生テーブルとしてラップするサブクエリに、単純な `ORDER BY` 句を追加します。任意の `+` (ASC) または `-` (DESC) プレフィックスを付けた、識別子または位置カラム参照 (正の整数) のカンマ区切りリストを指定できます。例: `sort=a,-b` は `a` を昇順、`b` を降順でソートします。`sort=1,-2` は 1 番目のカラムを昇順、2 番目のカラムを降順でソートします。`order` とは併用できません。
+
+これは、エンジンがパース済みクエリに適用するクエリ構築設定です (派生テーブルとしてラップされます) 。既存のクエリと組み合わせて使用でき、すべてのプロトコルで機能します。HTTP URL パラメータ、クエリ内の `SETTINGS` 句、またはユーザープロファイルで指定できます。
+
+結果を返す `SELECT` / `UNION` クエリに適用されます。書き込みクエリ (`INSERT … SELECT`、`CREATE … AS SELECT`) では、ソース `SELECT` 自身の `SETTINGS` 句で指定された場合にのみ有効です。プロファイルまたはセッションから継承された値や、`INSERT` / `CREATE` ステートメント自体に設定された値は、ソース `SELECT` には伝播しません。これは、他のすべての設定にも適用される非伝播ルールと同じです。
 
 <div id="sort_overflow_mode">
   ## sort_overflow_mode
