@@ -22,7 +22,7 @@ For example, the subset covers a single day - `2024-12-17` and is available publ
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -39,7 +39,7 @@ The full dataset for this bucket contains over 320 GB of parquet files. In the e
 We assume the user is consuming a stream of this data e.g. from Kafka or object storage, for data after this date. The schema for this data is shown below:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -121,7 +121,7 @@ We populate the main table and associated view with a subset of the data:
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -178,7 +178,7 @@ We populate this with our 2nd subset of approximately the same size and confirm 
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -282,11 +282,11 @@ Larger inserts i.e. more rows, will mean fewer `MOVE PARTITION` operations are r
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
 --continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
@@ -335,7 +335,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
