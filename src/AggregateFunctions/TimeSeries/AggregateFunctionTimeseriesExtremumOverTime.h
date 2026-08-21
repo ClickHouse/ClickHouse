@@ -1,10 +1,12 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
 #include <optional>
+#include <type_traits>
 
 
 #include <DataTypes/DataTypesDecimal.h>
@@ -45,20 +47,45 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
         ValueType second = 0;      /// value of the running extremum
         bool has_value = false;
 
-        /// Total order over (value, timestamp): a real beats NaN, among NaNs the latest timestamp wins, among
+        /// Last tie-break for samples `==` cannot separate at the same timestamp (two NaN payloads,
+        /// or -0.0 against +0.0): raw bits, so the surviving payload does not depend on merge order.
+        static bool hasGreaterBits(ValueType lhs, ValueType rhs)
+        {
+            using Bits = std::conditional_t<sizeof(ValueType) == sizeof(UInt32), UInt32, UInt64>;
+            return std::bit_cast<Bits>(lhs) > std::bit_cast<Bits>(rhs);
+        }
+
+        /// Total order over (value, timestamp, bits): a real beats NaN, among NaNs the latest timestamp wins, among
         /// IEEE-equal reals the earliest wins - matching a time-ordered PromQL scan and keeping add/merge commutative.
         bool shouldReplace(TimestampType timestamp, ValueType value) const
         {
             if (!has_value)
                 return true;
             if (std::isnan(static_cast<double>(second)))
-                return !std::isnan(static_cast<double>(value)) || timestamp > first;
+            {
+                if (!std::isnan(static_cast<double>(value)))
+                    return true;
+                if (timestamp != first)
+                    return timestamp > first;
+                return hasGreaterBits(value, second);
+            }
             if (std::isnan(static_cast<double>(value)))
                 return false;
             if constexpr (is_max)
-                return value > second || (value == second && timestamp < first);
+            {
+                if (value > second)
+                    return true;
+            }
             else
-                return value < second || (value == second && timestamp < first);
+            {
+                if (value < second)
+                    return true;
+            }
+            if (value != second)
+                return false;
+            if (timestamp != first)
+                return timestamp < first;
+            return hasGreaterBits(value, second);
         }
 
         void add(TimestampType timestamp, ValueType value)

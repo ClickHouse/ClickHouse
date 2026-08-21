@@ -139,3 +139,24 @@ SELECT hex(reinterpretAsUInt64((timeSeriesMaxToGridMerge(101, 121, 1, 50)(s))[1]
         FROM ts_nan GROUP BY toUnixTimestamp(timestamp) % 2);
 SELECT hex(reinterpretAsUInt64((timeSeriesMinToGrid(101, 121, 1, 50)(timestamp, value))[1])) FROM ts_nan;
 DROP TABLE ts_nan;
+
+-- Duplicate timestamps leave neither `==` nor the timestamp able to separate the samples, so the
+-- winner must come from a canonical raw-bit tie-break, not from the order the states were merged in.
+SELECT 'same-timestamp ties are order-independent (FFF800000000000A x3, then -inf, -inf):';
+DROP TABLE IF EXISTS ts_tie;
+CREATE TABLE ts_tie (id UInt8, timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO ts_tie VALUES (1, 100, reinterpret(0x7FF8000000000001, 'Float64')), (2, 100, reinterpret(0xFFF800000000000A, 'Float64'));
+SELECT hex(reinterpretAsUInt64((timeSeriesMaxToGrid(101, 121, 1, 50)(timestamp, value))[1])) FROM ts_tie;
+SELECT hex(reinterpretAsUInt64((timeSeriesMaxToGridMerge(101, 121, 1, 50)(s))[1]))
+  FROM (SELECT timeSeriesMaxToGridState(101, 121, 1, 50)(timestamp, value) AS s
+        FROM ts_tie GROUP BY id);
+SELECT hex(reinterpretAsUInt64((timeSeriesMinToGrid(101, 121, 1, 50)(timestamp, value))[1])) FROM ts_tie;
+DROP TABLE ts_tie;
+DROP TABLE IF EXISTS ts_zero_tie;
+CREATE TABLE ts_zero_tie (id UInt8, timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO ts_zero_tie VALUES (1, 100, 0.), (2, 100, -0.);
+SELECT 1 / (timeSeriesMaxToGrid(101, 121, 1, 50)(timestamp, value))[1] FROM ts_zero_tie;
+SELECT 1 / (timeSeriesMaxToGridMerge(101, 121, 1, 50)(s))[1]
+  FROM (SELECT timeSeriesMaxToGridState(101, 121, 1, 50)(timestamp, value) AS s
+        FROM ts_zero_tie GROUP BY id);
+DROP TABLE ts_zero_tie;
