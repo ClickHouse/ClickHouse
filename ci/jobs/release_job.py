@@ -590,13 +590,22 @@ def main():
                     print("ChangeLog already on master — nothing to push")
                     return
                 Shell.check(f"git commit -m {shlex.quote(commit_msg)}", strict=True)
-                Git.push(
-                    "ClickHouse/ClickHouse",
-                    "HEAD:refs/heads/master",
-                    strict=True,
-                    retries=3,
-                    rebase_retries=5,
-                )
+                # Push to protected master as robot-clickhouse (the bypass identity): its commit PAT, not the generic $GH_TOKEN (/github-tokens/robot-1) that branch protection declines.
+                _prev = os.environ.get("GH_TOKEN")
+                os.environ["GH_TOKEN"] = os.environ["ROBOT_CLICKHOUSE_COMMIT_TOKEN"]
+                try:
+                    Git.push(
+                        "ClickHouse/ClickHouse",
+                        "HEAD:refs/heads/master",
+                        strict=True,
+                        retries=3,
+                        rebase_retries=5,
+                    )
+                finally:
+                    if _prev is None:
+                        os.environ.pop("GH_TOKEN", None)
+                    else:
+                        os.environ["GH_TOKEN"] = _prev
             finally:
                 shutil.rmtree(backup_dir, ignore_errors=True)
 
