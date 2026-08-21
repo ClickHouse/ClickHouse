@@ -1815,7 +1815,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 
     if (usage == IndexUsage::HypotheticalIndex)
     {
-        /// `InterpreterHypotheticalIndexQuery` rejects text and vector similarity indexes with `NOT_IMPLEMENTED`
+        /// `InterpreterHypotheticalObjectQuery` rejects text and vector similarity indexes with `NOT_IMPLEMENTED`
         static const std::vector<IndexType> hypothetical_index_types
             = {IndexType::IDX_set,
                IndexType::IDX_minmax,

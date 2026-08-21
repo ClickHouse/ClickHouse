@@ -120,4 +120,114 @@ std::vector<HypotheticalObjectStore::Entry> HypotheticalObjectStore::getAll() co
     return entries;
 }
 
+bool HypotheticalObjectStore::addProjection(const StorageID & table_id, const ProjectionDescription & projection, bool if_not_exists)
+{
+    std::lock_guard lock(mutex);
+    for (const auto & entry : projection_entries)
+    {
+        if (sameTable(entry.table_id, table_id) && entry.projection.name == projection.name)
+        {
+            if (if_not_exists)
+                return false;
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Hypothetical projection '{}' already exists on {}.{}",
+                projection.name,
+                table_id.getDatabaseName(),
+                table_id.getTableName());
+        }
+    }
+
+    /// Same name on the same database.table but a dead UUID: the old table was dropped and
+    /// recreated, so the stale entry can never be looked up again. Reap it.
+    std::erase_if(projection_entries, [&](const ProjectionEntry & e)
+    {
+        if (e.projection.name != projection.name
+            || e.table_id.getDatabaseName() != table_id.getDatabaseName()
+            || e.table_id.getTableName() != table_id.getTableName()
+            || sameTable(e.table_id, table_id))
+            return false;
+
+        if (e.table_id.uuid != UUIDHelpers::Nil
+            && DatabaseCatalog::instance().tryGetByUUID(e.table_id.uuid).second)
+            return false;
+
+        return true;
+    });
+
+    /// ProjectionDescription is move-only, so the caller's descriptor is cloned into the entry
+    projection_entries.push_back({table_id, projection.clone()});
+    return true;
+}
+
+bool HypotheticalObjectStore::removeProjection(const StorageID & table_id, const String & projection_name, bool if_exists)
+{
+    std::lock_guard lock(mutex);
+
+    auto pos = std::find_if(projection_entries.begin(), projection_entries.end(), [&](const ProjectionEntry & e)
+    {
+        return e.projection.name == projection_name && sameTable(e.table_id, table_id);
+    });
+
+    if (pos == projection_entries.end())
+    {
+        pos = std::find_if(projection_entries.begin(), projection_entries.end(), [&](const ProjectionEntry & e)
+        {
+            if (e.projection.name != projection_name
+                || e.table_id.getDatabaseName() != table_id.getDatabaseName()
+                || e.table_id.getTableName() != table_id.getTableName())
+                return false;
+
+            if (e.table_id.uuid != UUIDHelpers::Nil
+                && DatabaseCatalog::instance().tryGetByUUID(e.table_id.uuid).second)
+                return false;
+
+            return true;
+        });
+    }
+
+    if (pos == projection_entries.end())
+    {
+        if (if_exists)
+            return false;
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Hypothetical projection '{}' does not exist on {}.{}",
+            projection_name,
+            table_id.getDatabaseName(),
+            table_id.getTableName());
+    }
+
+    projection_entries.erase(pos);
+    return true;
+}
+
+void HypotheticalObjectStore::clearProjections()
+{
+    std::lock_guard lock(mutex);
+    projection_entries.clear();
+}
+
+std::vector<ProjectionDescription> HypotheticalObjectStore::getProjectionsForTable(const StorageID & table_id) const
+{
+    std::lock_guard lock(mutex);
+    std::vector<ProjectionDescription> result;
+    for (const auto & entry : projection_entries)
+    {
+        if (sameTable(entry.table_id, table_id))
+            result.push_back(entry.projection.clone());
+    }
+    return result;
+}
+
+std::vector<HypotheticalObjectStore::ProjectionEntry> HypotheticalObjectStore::getAllProjections() const
+{
+    std::lock_guard lock(mutex);
+    std::vector<ProjectionEntry> result;
+    result.reserve(projection_entries.size());
+    for (const auto & entry : projection_entries)
+        result.push_back({entry.table_id, entry.projection.clone()});
+    return result;
+}
+
 }

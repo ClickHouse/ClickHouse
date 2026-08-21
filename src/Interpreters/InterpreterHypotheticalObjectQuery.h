@@ -7,10 +7,10 @@ namespace DB
 
 class Context;
 
-class InterpreterHypotheticalIndexQuery : public IInterpreter, WithContext
+class InterpreterHypotheticalObjectQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterHypotheticalIndexQuery(const ASTPtr & query_ptr_, ContextPtr context_)
+    InterpreterHypotheticalObjectQuery(const ASTPtr & query_ptr_, ContextPtr context_)
         : WithContext(context_)
         , query_ptr(query_ptr_)
     {

@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
@@ -74,6 +75,21 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     return joined_tables.getLeftTableStorage();
 }
 
+/// Projections are stored but not estimated yet, so they are reported as candidates that
+/// EXPLAIN WHATIF cannot rate rather than being silently dropped from the output
+void appendProjectionCandidates(WhatIfResult & result, const HypotheticalObjectStore & store, const StorageID & table_id)
+{
+    for (const auto & projection : store.getProjectionsForTable(table_id))
+    {
+        WhatIfCandidateResult r;
+        r.name = projection.name;
+        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "projection (aggregate)" : "projection (normal)";
+        r.status = WhatIfCandidateResult::NotApplicable;
+        r.not_applicable_reason = "EXPLAIN WHATIF does not estimate hypothetical projections yet";
+        result.candidates.push_back(std::move(r));
+    }
+}
+
 /// Nothing was scanned, so mark every candidate not-applicable with the same reason
 WhatIfResult buildResultWithoutScan(
     const MergeTreeData & data, const HypotheticalObjectStore & store, const String & reason)
@@ -90,6 +106,7 @@ WhatIfResult buildResultWithoutScan(
         r.not_applicable_reason = reason;
         result.candidates.push_back(std::move(r));
     }
+    appendProjectionCandidates(result, store, data.getStorageID());
     if (result.candidates.empty())
     {
         WhatIfCandidateResult none;
@@ -445,12 +462,16 @@ WhatIfResult estimateHypotheticalIndexes(
 
     if (hypo_indexes.empty())
     {
-        WhatIfCandidateResult no_index;
-        no_index.name = "(none)";
-        no_index.status = WhatIfCandidateResult::NotApplicable;
-        no_index.not_applicable_reason = "No hypothetical indexes defined for this table. "
-            "Use CREATE HYPOTHETICAL INDEX to define one.";
-        result.candidates.push_back(std::move(no_index));
+        appendProjectionCandidates(result, store, data.getStorageID());
+        if (result.candidates.empty())
+        {
+            WhatIfCandidateResult no_index;
+            no_index.name = "(none)";
+            no_index.status = WhatIfCandidateResult::NotApplicable;
+            no_index.not_applicable_reason = "No hypothetical indexes or projections defined for this table. "
+                "Use CREATE HYPOTHETICAL INDEX or CREATE HYPOTHETICAL PROJECTION to define one.";
+            result.candidates.push_back(std::move(no_index));
+        }
         validate_forced_indices();
         return result;
     }
@@ -537,6 +558,8 @@ WhatIfResult estimateHypotheticalIndexes(
         combined.total_marks = combined_total_marks;
         result.candidates.push_back(std::move(combined));
     }
+
+    appendProjectionCandidates(result, store, data.getStorageID());
 
     return result;
 }

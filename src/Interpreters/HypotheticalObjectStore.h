@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IndicesDescription.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Interpreters/StorageID.h>
 
 #include <mutex>
@@ -9,7 +10,7 @@
 namespace DB
 {
 
-/// Session-scoped store for hypothetical indexes, used by EXPLAIN WHATIF
+/// Session-scoped store for hypothetical indexes and projections, used by EXPLAIN WHATIF
 class HypotheticalObjectStore
 {
 public:
@@ -27,11 +28,26 @@ public:
     };
     std::vector<Entry> getAll() const;
 
+    bool addProjection(const StorageID & table_id, const ProjectionDescription & projection, bool if_not_exists);
+    bool removeProjection(const StorageID & table_id, const String & projection_name, bool if_exists);
+
+    void clearProjections();
+
+    std::vector<ProjectionDescription> getProjectionsForTable(const StorageID & table_id) const;
+
+    struct ProjectionEntry
+    {
+        StorageID table_id;
+        ProjectionDescription projection;
+    };
+    std::vector<ProjectionEntry> getAllProjections() const;
+
 private:
     static bool sameTable(const StorageID & a, const StorageID & b);
 
     mutable std::mutex mutex;
     std::vector<Entry> entries;
+    std::vector<ProjectionEntry> projection_entries;
 };
 
 }

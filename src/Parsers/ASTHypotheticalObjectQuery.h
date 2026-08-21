@@ -9,8 +9,12 @@ namespace DB
 /** CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name ON [db.]table (expr) TYPE type(args) GRANULARITY n
   * DROP HYPOTHETICAL INDEX [IF EXISTS] name ON [db.]table
   * DROP ALL HYPOTHETICAL INDEXES
+  *
+  * CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name ON [db.]table (SELECT ...)
+  * DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table
+  * DROP ALL HYPOTHETICAL PROJECTIONS
   */
-class ASTHypotheticalIndexQuery : public ASTQueryWithTableAndOutput
+class ASTHypotheticalObjectQuery : public ASTQueryWithTableAndOutput
 {
 public:
     enum Kind
@@ -20,10 +24,19 @@ public:
         DropAll,
     };
 
-    Kind kind = Create;
+    /// Which kind of hypothetical object the statement is about
+    enum ObjectKind
+    {
+        Index,
+        Projection,
+    };
 
-    ASTPtr index_decl;  /// ASTIndexDeclaration for Create
-    ASTPtr index_name;  /// Index name for Create and Drop
+    Kind kind = Create;
+    ObjectKind object_kind = Index;
+
+    ASTPtr index_decl;      /// ASTIndexDeclaration, for Create of an index
+    ASTPtr projection_decl; /// ASTProjectionDeclaration, for Create of a projection
+    ASTPtr object_name;     /// Index or projection name, for Create and Drop
 
     bool if_not_exists{false};
     bool if_exists{false};
