@@ -902,6 +902,16 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 استخدم نوع Parquet String بدلًا من Binary لأعمدة String.
 
+<div id="output_format_parquet_wide_integer_as_decimal">
+  ## output_format_parquet_wide_integer_as_decimal
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لكتابة قيم `Int128` و`UInt128` و`Int256` و`UInt256` كقيم `DECIMAL` قياسية في Parquet. تحتفظ القيمة السابقة بتمثيل `FIXED_LEN_BYTE_ARRAY` القديم بترتيب البايتات little-endian."}]}]} />
+
+اكتب قيم `Int128` و`UInt128` و`Int256` و`UInt256` كقيم `DECIMAL` في Parquet متوافقة مع المعايير، بترتيب البايتات big-endian. يحتفظ الإعداد الافتراضي بتمثيل `FIXED_LEN_BYTE_ARRAY` القديم غير المرفق بتعليق توضيحي، بترتيب little-endian، للتوافق مع إصدارات ClickHouse الأقدم. يتيح التمثيل العشري إحصاءات رقمية قابلة للتشغيل البيني، لكن بعض قارئات Parquet لا تدعم دقات تتجاوز 38 أو 76.
+
 <div id="output_format_parquet_write_bloom_filter">
   ## output_format_parquet_write_bloom_filter
 </div>

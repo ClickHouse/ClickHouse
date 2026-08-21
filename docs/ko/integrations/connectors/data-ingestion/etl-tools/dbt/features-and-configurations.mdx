@@ -176,16 +176,16 @@ dbt는 삽입 후 읽기 일관성 모델에 의존합니다. 모든 작업이 �
 S3 테이블 함수의 매개변수를 채우는 데 사용되는 다음
 키를 포함할 수 있습니다:
 
-| Argument Name                     | 설명                                                                                                                                                 |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| bucket                            | 버킷 기준 URL입니다. 예: `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`. 프로토콜이 지정되지 않으면 `https://`를 사용하는 것으로 간주합니다.                  |
-| path                              | 테이블 쿼리에 사용할 S3 경로입니다. 예: `/trips_4.gz`. S3 와일드카드를 지원합니다.                                                                                           |
-| fmt                               | 참조된 S3 객체에 대해 예상되는 ClickHouse 입력 형식(예: `TSV` 또는 `CSVWithNames`)입니다.                                                                                |
-| structure                         | 버킷의 데이터 컬럼 구조로, `['id UInt32', 'date DateTime', 'value String']`와 같은 이름/데이터 유형 쌍 목록입니다. 지정하지 않으면 ClickHouse가 구조를 추론합니다.                            |
-| aws&#95;access&#95;key&#95;id     | S3 액세스 키 ID입니다.                                                                                                                                    |
-| aws&#95;secret&#95;access&#95;key | S3 시크릿 키입니다.                                                                                                                                       |
-| role&#95;arn                      | S3 객체에 안전하게 액세스하는 데 사용할 ClickhouseAccess IAM role의 ARN입니다. 자세한 내용은 이 [문서](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오. |
-| compression                       | S3 객체에 사용되는 압축 방식입니다. 지정하지 않으면 ClickHouse가 파일 이름을 기준으로 압축 방식을 판단하려고 시도합니다.                                                                         |
+| Argument Name                     | 설명                                                                                                                                |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| bucket                            | 버킷 기준 URL입니다. 예: `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`. 프로토콜이 지정되지 않으면 `https://`를 사용하는 것으로 간주합니다. |
+| path                              | 테이블 쿼리에 사용할 S3 경로입니다. 예: `/trips_4.gz`. S3 와일드카드를 지원합니다.                                                                          |
+| fmt                               | 참조된 S3 객체에 대해 예상되는 ClickHouse 입력 형식(예: `TSV` 또는 `CSVWithNames`)입니다.                                                               |
+| structure                         | 버킷의 데이터 컬럼 구조로, `['id UInt32', 'date DateTime', 'value String']`와 같은 이름/데이터 유형 쌍 목록입니다. 지정하지 않으면 ClickHouse가 구조를 추론합니다.           |
+| aws&#95;access&#95;key&#95;id     | S3 액세스 키 ID입니다.                                                                                                                   |
+| aws&#95;secret&#95;access&#95;key | S3 시크릿 키입니다.                                                                                                                      |
+| role&#95;arn                      | 안전한 S3 액세스를 위해 생성된 IAM role의 ARN입니다. 자세한 내용은 이 [문서](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오.      |
+| compression                       | S3 객체에 사용되는 압축 방식입니다. 지정하지 않으면 ClickHouse가 파일 이름을 기준으로 압축 방식을 판단하려고 시도합니다.                                                        |
 
 이 매크로의 사용 예시는
 [S3 test file](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)을
