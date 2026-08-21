@@ -1,3 +1,4 @@
+import math
 import pytest
 import re
 import requests
@@ -556,8 +557,8 @@ def test_external_samples_table_without_is_stale_marker_keeps_working():
     )
     assert result.strip() == "nan", f"marker was treated as stale on a legacy table: {result!r}"
 
-    # RemoteRead re-emits it as the stored raw NaN, not as a re-synthesised stale marker. Compared as
-    # raw bits because NaNs never compare equal.
+    # RemoteRead sanitizes the unflagged marker payload to a plain quiet NaN (the synthesized flag is
+    # 0 on a legacy table, and the flag is the only source of truth). Compared as raw bits.
     read_response = receive_protobuf_from_remote_read(
         node.ip_address,
         9093,
@@ -570,7 +571,9 @@ def test_external_samples_table_without_is_stale_marker_keeps_working():
         struct.pack("<d", sample.value)
         for sample in read_response.results[0].timeseries[0].samples
     ]
-    assert values == [struct.pack("<d", 1.0), struct.pack("<d", PROMETHEUS_STALE_NAN)]
+    assert values[0] == struct.pack("<d", 1.0)
+    assert math.isnan(struct.unpack("<d", values[1])[0])
+    assert values[1] != struct.pack("<d", PROMETHEUS_STALE_NAN)
 
 
 # Checks that the `DATA` keyword works as an alias for `SAMPLES`
