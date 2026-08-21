@@ -264,6 +264,11 @@ def test_format_query_rejects_invalid_query(query):
         "foo and 1",
         "1 == 2",
         "topk(foo, bar)",
+        '{job=~"["}',
+        '{job=~".*"}',
+        '{__name__="foo",__name__="bar"}',
+        "foo + on(job) group_left(job) bar",
+        "foo + on(job) group_right(job) bar",
     ],
 )
 def test_format_query_rejects_semantically_invalid_query(query):
@@ -285,6 +290,10 @@ def test_format_query_rejects_semantically_invalid_query(query):
         "rate(foo[5m])",
         "topk(3, foo)",
         "foo + on(job) group_left(instance) bar",
+        "foo + ignoring(job) group_left(job) bar",
+        "1 + ignoring() 2",
+        "1 + on() 2",
+        '{job=~".+"}',
         'label_replace(foo, "label", "value", "source", "regex")',
     ],
 )
@@ -297,6 +306,17 @@ def test_format_query_accepts_semantically_valid_query(query):
     data = response.json()
     assert data["status"] == "success"
     assert data["data"]
+
+
+@pytest.mark.parametrize("query", ["1 + ignoring() 2", "1 + on() 2"])
+def test_format_query_drops_empty_vector_matching_for_scalars(query):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {"status": "success", "data": "1 + 2"}
 
 
 def test_format_query_does_not_require_a_time_series_table():

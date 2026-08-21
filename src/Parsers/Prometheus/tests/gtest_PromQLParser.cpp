@@ -162,10 +162,18 @@ namespace
             {
                 const auto & lhs_binary = typeid_cast<const PrometheusQueryTree::BinaryOperator &>(*lhs);
                 const auto & rhs_binary = typeid_cast<const PrometheusQueryTree::BinaryOperator &>(*rhs);
+                const bool lhs_on = lhs_binary.on
+                    && (!lhs_binary.labels.empty()
+                        || (lhs_binary.getLeftArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR
+                            && lhs_binary.getRightArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR));
+                const bool rhs_on = rhs_binary.on
+                    && (!rhs_binary.labels.empty()
+                        || (rhs_binary.getLeftArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR
+                            && rhs_binary.getRightArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR));
                 const bool lhs_ignoring = lhs_binary.ignoring && !lhs_binary.labels.empty();
                 const bool rhs_ignoring = rhs_binary.ignoring && !rhs_binary.labels.empty();
                 if (lhs_binary.operator_name != rhs_binary.operator_name
-                    || lhs_binary.on != rhs_binary.on
+                    || lhs_on != rhs_on
                     || lhs_ignoring != rhs_ignoring
                     || !sameStringsIgnoringOrder(lhs_binary.labels, rhs_binary.labels)
                     || lhs_binary.group_left != rhs_binary.group_left
@@ -283,6 +291,8 @@ TEST(PromQLParser, PrometheusFormatting)
     expectPrometheusFormatting(R"(foo + on(inf) group_left(nan) bar)", R"(foo + on ("inf") group_left ("nan") bar)");
     expectPrometheusFormatting(R"(foo + ignoring() bar)", R"(foo + bar)");
     expectPrometheusFormatting(R"(foo + on() group_left() bar)", R"(foo + on () group_left () bar)");
+    expectPrometheusFormatting(R"(1 + ignoring() 2)", R"(1 + 2)");
+    expectPrometheusFormatting(R"(1 + on() 2)", R"(1 + 2)");
     expectPrometheusFormatting(R"(sum by () (foo))", R"(sum(foo))");
     expectPrometheusFormatting(R"(sum without () (foo))", R"(sum without () (foo))");
     expectPrometheusFormatting(R"("\a\v\000\001\037\177")", R"("\a\v\x00\x01\x1f\x7f")");
@@ -299,6 +309,10 @@ TEST(PromQLParser, StaticValidation)
              "rate(foo[5m])",
              "topk(3, foo)",
              "foo + on(job) group_left(instance) bar",
+             "foo + ignoring(job) group_left(job) bar",
+             "1 + ignoring() 2",
+             "1 + on() 2",
+             R"({job=~".+"})",
              R"(label_replace(foo, "label", "value", "source", "regex"))",
          })
     {
@@ -315,6 +329,11 @@ TEST(PromQLParser, StaticValidation)
              "foo and 1",
              "1 == 2",
              "topk(foo, bar)",
+             R"({job=~"["})",
+             R"({job=~".*"})",
+             R"({__name__="foo",__name__="bar"})",
+             "foo + on(job) group_left(job) bar",
+             "foo + on(job) group_right(job) bar",
          })
     {
         PrometheusQueryTree query_tree{query};

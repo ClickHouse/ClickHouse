@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/isValidUTF8.h>
+#include <Common/re2.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/quoteString.h>
@@ -95,6 +96,62 @@ namespace
     bool isScalarOrInstantVector(ResultType type)
     {
         return type == ResultType::SCALAR || type == ResultType::INSTANT_VECTOR;
+    }
+
+    bool matcherMatchesEmpty(const PrometheusQueryTree::Matcher & matcher)
+    {
+        using MatcherType = PrometheusQueryTree::MatcherType;
+        switch (matcher.matcher_type)
+        {
+            case MatcherType::EQ:
+                return matcher.label_value.empty();
+            case MatcherType::NE:
+                return !matcher.label_value.empty();
+            case MatcherType::RE:
+            case MatcherType::NRE:
+            {
+                const re2::RE2 regexp(matcher.label_value);
+                if (!regexp.ok())
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                        "Invalid regular expression in label matcher '{}': {}",
+                        matcher.label_value,
+                        regexp.error());
+                }
+
+                const bool matches_empty = re2::RE2::FullMatch("", regexp);
+                return matcher.matcher_type == MatcherType::RE ? matches_empty : !matches_empty;
+            }
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Prometheus matcher type");
+    }
+
+    void validateInstantSelector(const PrometheusQueryTree::InstantSelector & selector)
+    {
+        size_t metric_name_matcher_count = 0;
+        bool has_non_empty_matcher = false;
+        for (const auto & matcher : selector.matchers)
+        {
+            if (matcher.label_name == "__name__")
+                ++metric_name_matcher_count;
+
+            if (!matcherMatchesEmpty(matcher))
+                has_non_empty_matcher = true;
+        }
+
+        if (metric_name_matcher_count > 1)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY, "metric name must not be set twice");
+        }
+
+        if (selector.metric_name.empty() && !has_non_empty_matcher)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                "vector selector must contain at least one non-empty matcher");
+        }
     }
 
     void validateFunction(const PrometheusQueryTree::Function & function)
@@ -233,7 +290,22 @@ namespace
         const auto left_type = binary.getLeftArgument()->result_type;
         const auto right_type = binary.getRightArgument()->result_type;
         const bool both_vectors = left_type == ResultType::INSTANT_VECTOR && right_type == ResultType::INSTANT_VECTOR;
-        const bool has_vector_matching = binary.on || binary.ignoring || binary.group_left || binary.group_right;
+
+        if (binary.on)
+        {
+            for (const auto & label : binary.labels)
+            {
+                if (std::find(binary.extra_labels.begin(), binary.extra_labels.end(), label) != binary.extra_labels.end())
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                        "label '{}' must not occur in ON and GROUP clause at once",
+                        label);
+                }
+            }
+        }
+
+        const bool has_vector_matching = !binary.labels.empty() || binary.group_left || binary.group_right;
 
         if (binary.operator_name == "and" || binary.operator_name == "or" || binary.operator_name == "unless")
         {
@@ -344,8 +416,10 @@ namespace
                 break;
             case PrometheusQueryTree::NodeType::Scalar:
             case PrometheusQueryTree::NodeType::StringLiteral:
-            case PrometheusQueryTree::NodeType::InstantSelector:
             case PrometheusQueryTree::NodeType::RangeSelector:
+                break;
+            case PrometheusQueryTree::NodeType::InstantSelector:
+                validateInstantSelector(static_cast<const PrometheusQueryTree::InstantSelector &>(*node));
                 break;
         }
     }
@@ -709,9 +783,9 @@ namespace
 
     bool hasPrometheusVectorMatching(const PrometheusQueryTree::BinaryOperator & binary)
     {
-        /// Prometheus drops an empty `ignoring()` modifier when printing, but
-        /// keeps `on()` because the latter changes the matching mode.
-        return binary.on || !binary.labels.empty() || binary.group_left || binary.group_right;
+        const bool both_vectors = binary.getLeftArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR
+            && binary.getRightArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR;
+        return !binary.labels.empty() || (binary.on && both_vectors) || binary.group_left || binary.group_right;
     }
 
     constexpr size_t max_characters_per_line = 100;
