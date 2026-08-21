@@ -30,11 +30,11 @@ mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
 | `with_marks`  | ما إذا كان سيتم تضمين الأعمدة التي تحتوي على العلامات في النتيجة. |
 | `with_minmax` | ما إذا كان سيتم تضمين فهرس الحد الأدنى-الحد الأقصى في النتيجة.    |
 
-<div id="returned_value">
+<div id="returned-value">
   ## القيمة المُعادة
 </div>
 
-كائن جدول يحتوي على أعمدة تتضمن قيماً لـ primary فهرس وفهرس الحد الأدنى-الحد الأقصى (إذا كانا مُمكّنين) في source table، وأعمدة تتضمن قيماً لـ علامات (إذا كانت مُمكّنة) لجميع الملفات المحتملة في data parts الخاصة بـ source table، بالإضافة إلى virtual columns:
+كائن جدول يحتوي على أعمدة تتضمن قيماً لـ primary فهرس وفهرس الحد الأدنى-الحد الأقصى (إذا كانا مُمكّنين) في source جدول، وأعمدة تتضمن قيماً لـ علامات (إذا كانت مُمكّنة) لجميع الملفات المحتملة في data parts الخاصة بـ source جدول، بالإضافة إلى virtual columns:
 
 * `part_name` - اسم data part.
 * `mark_number` - رقم علامة الحالية في data part.
