@@ -253,6 +253,7 @@ TEST(DataPropertyDerivation, AliasPreservesUniqueKey)
     EXPECT_EQ(
         properties.uniqueKeys().front().provenance,
         input_properties.uniqueKeys().front().provenance.transformed(DataPropertyTransformationKind::Identity));
+    EXPECT_FALSE(isProvenStrongBagKey(properties.uniqueKeys().front()));
     ASSERT_EQ(properties.columnLineage().size(), 1u);
     EXPECT_EQ(properties.columnLineage().front().kind, ColumnLineageKind::Identity);
     EXPECT_EQ(properties.columnLineage().front().provenance, lineageProvenance(DataPropertyTransformationKind::Identity));
@@ -415,6 +416,7 @@ TEST(DataPropertyDerivation, AggregationGroupingIsUniqueOnlyInOrdinaryFinalMode)
     ASSERT_EQ(ordinary.uniqueKeys().size(), 1u);
     EXPECT_EQ(ordinary.uniqueKeys().front().columns, (DataPropertyColumnSet{{0, "tenant"}}));
     EXPECT_EQ(ordinary.uniqueKeys().front().provenance, DataPropertyProvenance::aggregationGrouping());
+    EXPECT_TRUE(isProvenStrongBagKey(ordinary.uniqueKeys().front()));
 
     EXPECT_TRUE(deriveDataPropertiesForAggregation(output_header, {"tenant"}, {.final = false}).uniqueKeys().empty());
     EXPECT_TRUE(
@@ -475,6 +477,7 @@ TEST(DataPropertyDerivation, SemiAndAntiJoinsPreserveOnlySubsetSide)
         EXPECT_EQ(
             properties.uniqueKeys().front().provenance,
             DataPropertyProvenance::storageDeclaration().transformed(DataPropertyTransformationKind::JoinPreservation));
+        EXPECT_FALSE(isProvenStrongBagKey(properties.uniqueKeys().front()));
     }
 }
 
@@ -609,6 +612,7 @@ TEST(DataPropertyDerivation, SafeRowSubsetStepsPreserveFacts)
     EXPECT_EQ(
         filtered.uniqueKeys().front().provenance,
         DataPropertyProvenance::storageDeclaration().transformed(DataPropertyTransformationKind::FilterSubset));
+    EXPECT_FALSE(isProvenStrongBagKey(filtered.uniqueKeys().front()));
 }
 
 TEST(DataPropertyDerivation, CompleteFactsPassThroughWithoutModifyingSafeCaller)

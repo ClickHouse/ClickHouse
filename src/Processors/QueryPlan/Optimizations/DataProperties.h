@@ -213,6 +213,12 @@ private:
     ColumnLineageFacts lineage;
 };
 
+bool isProvenStrongBagKey(const DataPropertyProvenance & provenance, DataPropertyEqualityMode equality_mode);
+inline bool isProvenStrongBagKey(const UniqueKeyFact & fact)
+{
+    return isProvenStrongBagKey(fact.provenance, fact.equality_mode);
+}
+
 String dataPropertyOriginToString(DataPropertyOrigin origin);
 String dataPropertyConfidenceToString(DataPropertyConfidence confidence);
 String dataPropertyEqualityModeToString(DataPropertyEqualityMode mode);

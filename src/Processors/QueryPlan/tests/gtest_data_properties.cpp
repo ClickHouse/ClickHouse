@@ -122,6 +122,7 @@ TEST(DataProperties, ProvenanceSeparatesOriginConfidenceAndTransformationHistory
     const auto storage = UniqueKeyFact::fromStorageDeclaration({{0, "id"}});
     EXPECT_EQ(storage.provenance.origin, DataPropertyOrigin::StorageDeclaration);
     EXPECT_EQ(storage.provenance.confidence, DataPropertyConfidence::DiagnosticOnly);
+    EXPECT_FALSE(isProvenStrongBagKey(storage));
 
     const auto transformed = storage.remap(storage.columns, DataPropertyPreservingTransformationKind::FilterSubset);
     EXPECT_EQ(transformed.provenance.origin, DataPropertyOrigin::StorageDeclaration);
@@ -130,12 +131,13 @@ TEST(DataProperties, ProvenanceSeparatesOriginConfidenceAndTransformationHistory
     EXPECT_EQ(
         dataPropertyProvenanceToString(transformed.provenance),
         "origin=storage-declaration, confidence=diagnostic-only, transformations=[filter-subset]");
+    EXPECT_FALSE(isProvenStrongBagKey(transformed));
 
     const UniqueKeyFact header{.columns = {{0, "id"}}, .provenance = {}, .equality_mode = DataPropertyEqualityMode::Unsupported};
-    EXPECT_EQ(header.provenance.confidence, DataPropertyConfidence::Unknown);
+    EXPECT_FALSE(isProvenStrongBagKey(header));
 
     const auto aggregation = UniqueKeyFact::fromAggregationGrouping({{0, "id"}});
-    EXPECT_EQ(aggregation.provenance.confidence, DataPropertyConfidence::Proven);
+    EXPECT_TRUE(isProvenStrongBagKey(aggregation));
 }
 
 TEST(DataProperties, TransformationHistoryOverflowFailsClosed)
@@ -145,6 +147,7 @@ TEST(DataProperties, TransformationHistoryOverflowFailsClosed)
         key = key.remap(key.columns, DataPropertyPreservingTransformationKind::Identity);
 
     EXPECT_EQ(key.provenance.confidence, DataPropertyConfidence::Unknown);
+    EXPECT_FALSE(isProvenStrongBagKey(key));
 }
 
 TEST(DataProperties, NameResolutionRejectsMissingAndAmbiguousOutputs)

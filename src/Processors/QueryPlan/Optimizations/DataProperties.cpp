@@ -110,6 +110,15 @@ FunctionalDependencyFact FunctionalDependencyFact::remap(
         provenance.transformed(toDataPropertyTransformationKind(transformation))};
 }
 
+bool isProvenStrongBagKey(const DataPropertyProvenance & provenance, DataPropertyEqualityMode equality_mode)
+{
+    /// Phase one has exactly one producer of strong bag keys: final aggregation
+    /// grouping. Storage declarations are diagnostic-only and transformations
+    /// preserve, but cannot create, a trusted origin.
+    return provenance.confidence == DataPropertyConfidence::Proven && provenance.origin == DataPropertyOrigin::AggregationGrouping
+        && equality_mode == DataPropertyEqualityMode::NonNullOrdinaryEquality;
+}
+
 bool normalizeColumnSet(ColumnSet & columns)
 {
     std::ranges::sort(columns, {}, &PlanColumnRef::position);
