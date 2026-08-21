@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <vector>
 #include <base/types.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
@@ -50,8 +51,17 @@ public:
 class AsyncTaskExecutor
 {
 public:
-    /// operation_name_ is used as the name of the OpenTelemetry span covering one execution of the task
-    AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_, String operation_name_);
+    /// operation_name_ is used as the name of the OpenTelemetry span covering one execution of the task.
+    /// initial_span_attributes_ are added to that span; attributes that become known only during
+    /// the task execution can be added later with addSpanAttribute.
+    AsyncTaskExecutor(
+        std::unique_ptr<AsyncTask> task_,
+        String operation_name_,
+        std::vector<OpenTelemetry::SpanAttribute> initial_span_attributes_ = {});
+
+    /// Add an attribute to the span covering the current (and any future) execution of the task.
+    /// Thread-safe: can be called both from inside the fiber and from other threads.
+    void addSpanAttribute(OpenTelemetry::SpanAttribute attribute);
 
     /// Resume task execution. This method returns when task is completed or suspended.
     void resume();
@@ -119,6 +129,7 @@ private:
 
     void createFiber();
     void destroyFiber();
+    void flushSpanAttributes(OpenTelemetry::Span & span) noexcept;
 
     FiberStack fiber_stack;
     Fiber fiber;
@@ -134,6 +145,15 @@ private:
 
     /// Spans created inside the task belong to the query trace.
     const OpenTelemetry::TracingContextOnThread parent_trace_context;
+
+    /// Guards span_attributes. A dedicated mutex, not fiber_lock: resume() holds fiber_lock across
+    /// the fiber execution, and addSpanAttribute can be called from inside the fiber, so taking
+    /// fiber_lock here would self-deadlock.
+    std::mutex span_attributes_mutex;
+    /// Attributes for the span covering one execution of the task. Copied onto the span when the
+    /// routine exits (kept afterwards: restart() runs the task again under a new span that must
+    /// get them too).
+    std::vector<OpenTelemetry::SpanAttribute> span_attributes;
 };
 
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description);

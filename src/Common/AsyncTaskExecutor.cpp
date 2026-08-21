@@ -6,11 +6,38 @@
 namespace DB
 {
 
-AsyncTaskExecutor::AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_, String operation_name_)
+AsyncTaskExecutor::AsyncTaskExecutor(
+    std::unique_ptr<AsyncTask> task_,
+    String operation_name_,
+    std::vector<OpenTelemetry::SpanAttribute> initial_span_attributes_)
     : task(std::move(task_))
     , operation_name(std::move(operation_name_))
     , parent_trace_context(OpenTelemetry::CurrentContext())
+    , span_attributes(std::move(initial_span_attributes_))
 {
+}
+
+void AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute)
+{
+    std::lock_guard guard(span_attributes_mutex);
+    span_attributes.push_back(std::move(attribute));
+}
+
+void AsyncTaskExecutor::flushSpanAttributes(OpenTelemetry::Span & span) noexcept
+{
+    /// noexcept: called from a scope guard that can run during the forced unwind
+    /// of a cancelled fiber; attributes are best-effort there, like Span::addAttribute.
+    try
+    {
+        if (!span.isTraceEnabled())
+            return;
+
+        std::lock_guard guard(span_attributes_mutex);
+        span.attributes.insert(span.attributes.end(), span_attributes.begin(), span_attributes.end());
+    }
+    catch (...) /// Ok: noexcept, allocation failure
+    {
+    }
 }
 
 void AsyncTaskExecutor::resume()
@@ -88,6 +115,11 @@ struct AsyncTaskExecutor::Routine
     {
         /// Stores the fiber-local tracing context from the thread that created the executor and open one span per task execution.
         OpenTelemetry::TracingContextHolder trace_context_holder(executor.operation_name, executor.parent_trace_context);
+
+        /// Copy the buffered attributes onto the span right before it is finished. Declared after the
+        /// holder so it runs first on every exit from the routine, including the forced unwind that
+        /// destroys a cancelled fiber.
+        SCOPE_EXIT({ executor.flushSpanAttributes(trace_context_holder.root_span); });
 
         auto async_callback = AsyncCallback{executor, suspend_callback};
         try
