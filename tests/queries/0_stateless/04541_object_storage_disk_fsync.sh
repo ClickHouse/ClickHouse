@@ -75,6 +75,68 @@ run_case compact 1 "compact, fsync on"
 run_case wide 0 "wide, fsync off"
 run_case compact 0 "compact, fsync off"
 
+# The merge path derives its own sync request from min_rows_to_fsync_after_merge /
+# min_compressed_bytes_to_fsync_after_merge, so it needs its own case. args: merge_fsync (1|0), label
+run_merge_case() {
+    local merge_fsync=$1 label=$2
+    local suffix="merge_${merge_fsync}"
+    local merge_setting="min_rows_to_fsync_after_merge = 0, min_compressed_bytes_to_fsync_after_merge = 0"
+    [[ "$merge_fsync" == "1" ]] && merge_setting="min_rows_to_fsync_after_merge = 1"
+
+    # fsync_after_insert = 0 keeps the inserts out of the measurement so only the merge syncs.
+    # max_bytes_to_merge_at_max_space_in_pool = 1 disables background merges, so OPTIMIZE FINAL
+    # (which ignores that limit) is the only merger and its syncs are attributable to its query id.
+    # min_bytes_for_full_part_storage = 0 is randomized in CI; a Packed part is a single blob and
+    # would have no per-stream files to sync.
+    local common="min_bytes_for_wide_part = 0, fsync_after_insert = 0,
+                  max_bytes_to_merge_at_max_space_in_pool = 1, min_bytes_for_full_part_storage = 0,
+                  ${merge_setting}"
+    local disk_name="objd_${suffix}_${CLICKHOUSE_DATABASE}"
+
+    $CLICKHOUSE_CLIENT -m -q "
+        drop table if exists local_${suffix};
+        drop table if exists objstore_${suffix};
+        create table local_${suffix} (id UInt64, v String) engine = MergeTree order by id
+        settings ${common};
+        create table objstore_${suffix} (id UInt64, v String) engine = MergeTree order by id
+        settings disk = disk(name = '${disk_name}', type = object_storage,
+                             object_storage_type = local_blob_storage, path = '${disk_name}/'),
+                 ${common};
+        insert into local_${suffix} select number, toString(number) from numbers(10000);
+        insert into local_${suffix} select number + 10000, toString(number) from numbers(10000);
+        insert into objstore_${suffix} select number, toString(number) from numbers(10000);
+        insert into objstore_${suffix} select number + 10000, toString(number) from numbers(10000);
+    "
+
+    local local_id="local-${suffix}-$CLICKHOUSE_DATABASE"
+    local objstore_id="objstore-${suffix}-$CLICKHOUSE_DATABASE"
+    # optimize_throw_if_noop makes a merge that did not happen a loud failure instead of a 0 reading.
+    $CLICKHOUSE_CLIENT --query_id "$local_id" -q "optimize table local_${suffix} final settings optimize_throw_if_noop = 1, alter_sync = 2"
+    $CLICKHOUSE_CLIENT --query_id "$objstore_id" -q "optimize table objstore_${suffix} final settings optimize_throw_if_noop = 1, alter_sync = 2"
+
+    local local_files local_dirs objstore_files objstore_dirs
+    read -r local_files local_dirs <<<"$(fsync_events "$local_id")"
+    read -r objstore_files objstore_dirs <<<"$(fsync_events "$objstore_id")"
+
+    if [[ "$merge_fsync" == "1" ]]; then
+        echo "${label}: local synced=$((local_files > 0)) objstore syncs more=$((objstore_files > local_files))"
+    else
+        echo "${label}: local FileSync=$((local_files)) objstore FileSync=$((objstore_files))"
+    fi
+
+    $CLICKHOUSE_CLIENT -m -q "
+        select count(), sum(id) from objstore_${suffix};
+        drop table local_${suffix};
+        drop table objstore_${suffix};
+    "
+}
+
+# With min_rows_to_fsync_after_merge the merged part's local metadata must be synced too, so the
+# object-storage disk again issues strictly more syncs than the local disk for the same merge.
+run_merge_case 1 "merge, fsync on"
+# With both merge thresholds at 0 neither disk syncs anything during the merge.
+run_merge_case 0 "merge, fsync off"
+
 # fsync_part_directory alone syncs nothing on these disks, which is what a local disk does for
 # fsync_after_insert = 0: the directory sync is a separate setting from the file contents sync.
 $CLICKHOUSE_CLIENT -m -q "

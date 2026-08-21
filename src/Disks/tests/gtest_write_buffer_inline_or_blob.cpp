@@ -232,3 +232,89 @@ TEST(WriteBufferInlineOrBlob, PreFinalizeThenFinalizeInline)
     ASSERT_TRUE(harness.inline_content.has_value());
     EXPECT_EQ(*harness.inline_content, "hello");
 }
+
+/// The metadata sync request and the metadata write arrive in either order depending on the caller:
+/// wide-part writers sync after finalize, while a compact part (and `writeMetadataFile`) syncs the
+/// buffer before finalizing it. Both orders must end up syncing the metadata file exactly once.
+
+TEST(WriteBufferInlineOrBlob, SyncAfterFinalizeSyncsMetadataInline)
+{
+    InlineBufferHarness harness;
+    auto buf = harness.makeBuffer(/*max_inline_bytes=*/10);
+    buf->write("hello", 5);
+    buf->finalize();
+    EXPECT_EQ(harness.metadata_synced, 0u);
+
+    buf->sync();
+    EXPECT_EQ(harness.metadata_synced, 1u);
+}
+
+TEST(WriteBufferInlineOrBlob, SyncBeforeFinalizeSyncsMetadataInline)
+{
+    InlineBufferHarness harness;
+    auto buf = harness.makeBuffer(/*max_inline_bytes=*/10);
+    buf->write("hello", 5);
+    buf->sync();
+    /// No metadata file exists yet, so the request can only be latched, not honored.
+    EXPECT_EQ(harness.metadata_synced, 0u);
+
+    buf->finalize();
+    EXPECT_EQ(harness.metadata_synced, 1u);
+}
+
+TEST(WriteBufferInlineOrBlob, SyncAfterFinalizeSyncsMetadataBlob)
+{
+    InlineBufferHarness harness;
+    auto buf = harness.makeBuffer(/*max_inline_bytes=*/0);
+    buf->write("hello", 5);
+    buf->finalize();
+    EXPECT_EQ(harness.metadata_synced, 0u);
+
+    buf->sync();
+    EXPECT_EQ(harness.metadata_synced, 1u);
+}
+
+TEST(WriteBufferInlineOrBlob, SyncBeforeFinalizeSyncsMetadataBlob)
+{
+    InlineBufferHarness harness;
+    auto buf = harness.makeBuffer(/*max_inline_bytes=*/0);
+    buf->write("hello", 5);
+    buf->sync();
+    EXPECT_EQ(harness.metadata_synced, 0u);
+
+    buf->finalize();
+    EXPECT_EQ(harness.metadata_synced, 1u);
+}
+
+TEST(WriteBufferInlineOrBlob, NoSyncLeavesMetadataUnsynced)
+{
+    InlineBufferHarness inline_harness;
+    auto inline_buf = inline_harness.makeBuffer(/*max_inline_bytes=*/10);
+    inline_buf->write("hello", 5);
+    inline_buf->finalize();
+    EXPECT_EQ(inline_harness.metadata_synced, 0u);
+
+    InlineBufferHarness blob_harness;
+    auto blob_buf = blob_harness.makeBuffer(/*max_inline_bytes=*/0);
+    blob_buf->write("hello", 5);
+    blob_buf->finalize();
+    EXPECT_EQ(blob_harness.metadata_synced, 0u);
+}
+
+TEST(WriteBufferInlineOrBlob, CancelDropsLatchedSyncRequest)
+{
+    /// A latched request must not be honored by a buffer that never records metadata.
+    InlineBufferHarness inline_harness;
+    auto inline_buf = inline_harness.makeBuffer(/*max_inline_bytes=*/10);
+    inline_buf->write("hello", 5);
+    inline_buf->sync();
+    inline_buf->cancel();
+    EXPECT_EQ(inline_harness.metadata_synced, 0u);
+
+    InlineBufferHarness blob_harness;
+    auto blob_buf = blob_harness.makeBuffer(/*max_inline_bytes=*/0);
+    blob_buf->write("hello", 5);
+    blob_buf->sync();
+    blob_buf->cancel();
+    EXPECT_EQ(blob_harness.metadata_synced, 0u);
+}

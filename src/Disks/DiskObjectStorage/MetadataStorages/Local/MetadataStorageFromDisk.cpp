@@ -37,6 +37,12 @@ const std::string & MetadataStorageFromDisk::getPath() const
 
 void MetadataStorageFromDisk::syncMetadataFile(const std::string & path)
 {
+    /// The shared lock spans the existence check and the open: WriteMode::Append opens with O_CREAT,
+    /// so without it a concurrent commit could unlink the path in between and we would fsync a
+    /// freshly created zero-length metadata record over a valid mapping. Shared is the right
+    /// strength - nothing here mutates metadata, and only the unique_lock commit removes files.
+    std::shared_lock lock(metadata_mutex);
+
     /// Absence here means the caller ran before the metadata was recorded, which no caller is
     /// allowed to do: a silent skip would make the sync invisibly dead.
     if (!disk->existsFile(path))

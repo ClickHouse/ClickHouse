@@ -6,4 +6,8 @@ wide, fsync off: local FileSync=0 objstore FileSync=0 DirectorySync=0
 20000	199990000
 compact, fsync off: local FileSync=0 objstore FileSync=0 DirectorySync=0
 20000	199990000
+merge, fsync on: local synced=1 objstore syncs more=1
+20000	199990000
+merge, fsync off: local FileSync=0 objstore FileSync=0
+20000	199990000
 wide, dir only: FileSync=0 DirectorySync=0
