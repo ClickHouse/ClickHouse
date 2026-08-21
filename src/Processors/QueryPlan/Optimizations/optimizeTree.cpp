@@ -96,6 +96,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
+        optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
     };
 
@@ -221,6 +222,7 @@ void optimizeTreeSecondPass(
         optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
+        optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
     };
 
@@ -353,13 +355,13 @@ void optimizeTreeSecondPass(
     const bool make_distributed_plan = optimization_settings.make_distributed_plan
         && !planContainsLogicalExchange(root);
 
-    /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
-    /// carry, and PASTE JOIN pairs rows by position, which exchanges do not preserve, so such plans
-    /// cannot be distributed. make_distributed_plan is explicit, so fail rather than silently
-    /// running single-node.
+    /// WITH TOTALS / extremes produce extra streams the exchange protocol does not carry, and
+    /// PASTE JOIN pairs rows by position, which exchanges do not preserve, so such plans cannot
+    /// be distributed. make_distributed_plan is explicit, so fail rather than silently running
+    /// single-node.
     if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE, extremes or PASTE JOIN");
+            "make_distributed_plan does not support WITH TOTALS, extremes or PASTE JOIN");
     /// An in-order aggregation (from `force_aggregation_in_order`) relies on its input order,
     /// which the exchanges do not preserve.
     if (make_distributed_plan && planHasInOrderAggregation(root))
