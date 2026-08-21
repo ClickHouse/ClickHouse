@@ -1,3 +1,7 @@
+-- Tags: no-shared-catalog
+-- no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will
+-- continue to merge and can materialize the mutation the on-fly cases need to stay pending
+
 -- A MATERIALIZED column may be defined over an ALIAS column. An ALIAS is computed on read and never
 -- stored, so its name cannot survive into the expression the mutation evaluates: the reference has to
 -- be replaced by the expression it stands for. Without that, analysing the default fails to resolve
