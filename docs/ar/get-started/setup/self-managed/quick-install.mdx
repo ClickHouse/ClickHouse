@@ -11,18 +11,18 @@ doc_type: 'guide'
 إذا لم تكن بحاجة إلى تثبيت ClickHouse لبيئة الإنتاج، فيمكنك تشغيل برنامج نصي للتثبيت باستخدام curl. سيحدّد البرنامج النصي ملفًا تنفيذيًا مناسبًا لنظام التشغيل لديك.
 
 <Steps>
-  <Step>
-    ## ثبّت ClickHouse باستخدام curl
-
+  <Step title="ثبّت ClickHouse باستخدام curl" id="install-clickhouse-using-curl">
     شغّل الأمر التالي لتنزيل ملف تنفيذي واحد لنظام التشغيل لديك.
 
     ```bash
     curl https://clickhouse.com/ | sh
     ```
 
-    على Linux وmacOS، يثبّت هذا أيضًا [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
-    في `~/.local/bin` (مع وصلة رمزية `chctl`) بحيث يمكنك إدارة إصدارات ClickHouse
-    وخوادمه المحلية.
+    على Linux وmacOS، يثبّت هذا أيضًا [`clickhousectl`](/ar/get-started/setup/self-managed/clickhousectl)،
+    وهي واجهة سطر الأوامر لـ ClickHouse، في `~/.local/bin` (مع اسم مستعار `chctl`). يساعدك `clickhousectl`
+    على تثبيت وإدارة عدة إصدارات محلية من ClickHouse، وتشغيل الخوادم في
+    الخلفية، وإدارة ClickHouse Cloud. راجع [صفحة تثبيت clickhousectl](/ar/get-started/setup/self-managed/clickhousectl)
+    للاطلاع على سير العمل المستند إلى واجهة سطر الأوامر.
 
     ولتثبيت الملف التنفيذي `clickhouse` فقط من دون `clickhousectl`، اضبط
     `CLICKHOUSE_ONLY=1`:
@@ -36,9 +36,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## ابدأ clickhouse-local
-
+  <Step title="ابدأ clickhouse-local" id="start-clickhouse-local">
     يتيح لك `clickhouse-local` معالجة الملفات المحلية والبعيدة باستخدام
     بناء SQL القوي في ClickHouse ومن دون الحاجة إلى أي إعدادات. تُخزَّن بيانات الجداول
     في موقع مؤقت، ما يعني أنه بعد إعادة تشغيل `clickhouse-local`
@@ -51,9 +49,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## ابدأ clickhouse-server
-
+  <Step title="ابدأ clickhouse-server" id="start-clickhouse-server">
     إذا كنت ترغب في الاحتفاظ بالبيانات، فستحتاج إلى تشغيل `clickhouse-server`. يمكنك
     بدء تشغيل خادم ClickHouse باستخدام الأمر التالي:
 
@@ -62,9 +58,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## ابدأ clickhouse-client
-
+  <Step title="ابدأ clickhouse-client" id="start-clickhouse-client">
     بعد تشغيل الخادم، افتح نافذة طرفية جديدة وشغّل الأمر التالي
     لتشغيل `clickhouse-client`:
 

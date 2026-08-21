@@ -9,6 +9,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/geometry/core/tags.hpp>
 
+#include <cctype>
 #include <string>
 #include <memory>
 #include <type_traits>
@@ -37,6 +38,17 @@ bool isEmptyPointWKT(const String & str)
         return false;
     auto rest = normalized.substr(strlen("point"));
     boost::trim(rest);
+    /// Strip an optional WKT dimension tag (Z, M or ZM), matched only as a whole space-separated token.
+    for (std::string_view tag : {"zm", "z", "m"})
+    {
+        if (rest.starts_with(tag) && rest.size() > tag.size()
+            && isspace(static_cast<unsigned char>(rest[tag.size()])))
+        {
+            rest.erase(0, tag.size());
+            boost::trim(rest);
+            break;
+        }
+    }
     return rest == "empty";
 }
 
@@ -122,6 +134,7 @@ public:
 class FunctionReadWKTCommon final : public IFunction
 {
 public:
+    /// Must match the global discriminators of the Geometry Variant type.
     enum class WKTTypes
     {
         LineString,
@@ -130,6 +143,7 @@ public:
         Point,
         Polygon,
         Ring,
+        MultiPoint,
     };
 
     explicit FunctionReadWKTCommon() = default;
@@ -157,6 +171,7 @@ public:
         const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
         PointSerializer<CartesianPoint> point_serializer;
+        MultiPointSerializer<CartesianPoint> multipoint_serializer;
         LineStringSerializer<CartesianPoint> linestring_serializer;
         PolygonSerializer<CartesianPoint> polygon_serializer;
         MultiLineStringSerializer<CartesianPoint> multilinestring_serializer;
@@ -243,6 +258,16 @@ public:
                     str, "ring", WKTTypes::Ring))
                 continue;
 
+            if (try_deserialize_type(
+                    [&]
+                    {
+                        MultiPoint<CartesianPoint> multipoint;
+                        readWKT(str, multipoint);
+                        multipoint_serializer.add(multipoint);
+                    },
+                    str, "multipoint", WKTTypes::MultiPoint))
+                continue;
+
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKT format value: {}", str);
         }
 
@@ -253,6 +278,7 @@ public:
         result_columns.push_back(point_serializer.finalize());
         result_columns.push_back(polygon_serializer.finalize());
         result_columns.push_back(ring_serializer.finalize());
+        result_columns.push_back(multipoint_serializer.finalize());
 
         return ColumnVariant::create(std::move(discriminators_column), result_columns);
     }
@@ -270,6 +296,11 @@ struct ReadWKTPointNameHolder
 struct ReadWKTLineStringNameHolder
 {
     static constexpr const char * name = "readWKTLineString";
+};
+
+struct ReadWKTMultiPointNameHolder
+{
+    static constexpr const char * name = "readWKTMultiPoint";
 };
 
 struct ReadWKTMultiLineStringNameHolder
@@ -343,6 +374,40 @@ Parses a Well-Known Text (WKT) representation of a LineString geometry and retur
     FunctionDocumentation function_documentation_linestring = {description_linestring, syntax_linestring, arguments_linestring, {}, returned_value_linestring, examples_linestring, introduced_in_linestring, category_linestring};
 
     factory.registerFunction<FunctionReadWKT<DataTypeLineStringName, CartesianLineString, LineStringSerializer<CartesianPoint>, ReadWKTLineStringNameHolder>>(function_documentation_linestring);
+
+    FunctionDocumentation::Description description_multipoint = R"(
+Parses a Well-Known Text (WKT) representation of a MultiPoint geometry and returns it in the internal ClickHouse format.
+    )";
+    FunctionDocumentation::Syntax syntax_multipoint = "readWKTMultiPoint(wkt_string)";
+    FunctionDocumentation::Arguments arguments_multipoint = {
+        {"wkt_string", "The input WKT string representing a MultiPoint geometry.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_multipoint = {"Returns a ClickHouse internal representation of the multipoint geometry.", {"Geo"}};
+    FunctionDocumentation::Examples examples_multipoint = {
+    {
+        "Usage example",
+        "SELECT readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)');",
+        R"(
+┌─readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)')─┐
+│ [(1,1),(2,2),(3,3)]                             │
+└─────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "MultiPoint example",
+        "SELECT toTypeName(readWKTMultiPoint('MULTIPOINT (1 1, 2 2)'));",
+        R"(
+┌─toTypeName(readWKTMultiPoint('MULTIPOINT (1 1, 2 2)'))─┐
+│ MultiPoint                                             │
+└────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_multipoint = {26, 7};
+    FunctionDocumentation::Category category_multipoint = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_multipoint = {description_multipoint, syntax_multipoint, arguments_multipoint, {}, returned_value_multipoint, examples_multipoint, introduced_in_multipoint, category_multipoint};
+
+    factory.registerFunction<FunctionReadWKT<DataTypeMultiPointName, CartesianMultiPoint, MultiPointSerializer<CartesianPoint>, ReadWKTMultiPointNameHolder>>(function_documentation_multipoint);
 
     FunctionDocumentation::Description description_multilinestring = R"(
 Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.

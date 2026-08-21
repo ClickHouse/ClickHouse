@@ -23,96 +23,88 @@ HTTP Sink 连接器与数据类型无关，因此既不需要 Kafka schema，也
   ### 快速入门步骤
 </div>
 
-<div id="1-gather-your-connection-details">
-  #### 1. 获取连接信息
-</div>
+<Steps>
+  <Step title="收集连接详细信息" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="运行 Kafka Connect 和 HTTP Sink 连接器" id="2-run-kafka-connect-and-the-http-sink-connector">
+    你有两个选项：
 
-<div id="2-run-kafka-connect-and-the-http-sink-connector">
-  #### 2. 运行 Kafka Connect 和 HTTP Sink 连接器
-</div>
+    * **自管理：** 下载 Confluent 软件包并在本地安装。按照[此处](https://docs.confluent.io/kafka-connect-http/current/overview.html)所述的连接器安装说明进行操作。
+      如果你使用 confluent-hub 安装方法，本地配置文件将会被更新。
 
-您有两种选择：
+    * **Confluent Cloud：** 对于使用 Confluent Cloud 托管 Kafka 的用户，可使用完全托管版本的 HTTP Sink。这要求你的 ClickHouse 环境可从 Confluent Cloud 访问。
 
-* **自管理：** 下载 Confluent 软件包并在本地安装。请按照[此处](https://docs.confluent.io/kafka-connect-http/current/overview.html)的说明安装该连接器。
-  如果您使用 `confluent-hub` 安装方式，本地配置文件会被更新。
+    <Note>
+      以下示例使用的是 Confluent Cloud。
+    </Note>
+  </Step>
 
-* **Confluent Cloud：** 如果您使用 Confluent Cloud 托管 Kafka，可以使用完全托管的 HTTP Sink 版本。这要求您的 ClickHouse 环境可被 Confluent Cloud 访问。
+  <Step title="在 ClickHouse 中创建目标端表" id="3-create-destination-table-in-clickhouse">
+    在进行连通性测试之前，我们先在 ClickHouse Cloud 中创建一个测试表，该表将接收来自 Kafka 的数据：
 
-<Note>
-  以下示例使用 Confluent Cloud。
-</Note>
+    ```sql
+    CREATE TABLE default.my_table
+    (
+        `side` String,
+        `quantity` Int32,
+        `symbol` String,
+        `price` Int32,
+        `account` String,
+        `userid` String
+    )
+    ORDER BY tuple()
+    ```
+  </Step>
 
-<div id="3-create-destination-table-in-clickhouse">
-  #### 3. 在 ClickHouse 中创建目标表
-</div>
+  <Step title="配置 HTTP Sink" id="4-configure-http-sink">
+    创建一个 Kafka topic 和一个 HTTP Sink 连接器实例：
 
-在进行连通性测试之前，先在 ClickHouse Cloud 中创建一个测试表，用于接收来自 Kafka 的数据：
+    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="展示如何创建 HTTP Sink 连接器的 Confluent Cloud 界面" border />
 
-```sql
-CREATE TABLE default.my_table
-(
-    `side` String,
-    `quantity` Int32,
-    `symbol` String,
-    `price` Int32,
-    `account` String,
-    `userid` String
-)
-ORDER BY tuple()
-```
+    <br />
 
-<div id="4-configure-http-sink">
-  #### 4. 配置 HTTP Sink
-</div>
+    配置 HTTP Sink 连接器：
 
-创建一个 Kafka topic 和一个 HTTP Sink 连接器实例：
+    * 填写你创建的 topic 名称
+    * 身份验证
+      * `HTTP Url` - 包含已指定 `INSERT` 查询的 ClickHouse Cloud URL：`<protocol>://<clickhouse_host>:<clickhouse_port>?query=INSERT%20INTO%20<database>.<table>%20FORMAT%20JSONEachRow`。**注意**：查询必须经过编码。
+      * `Endpoint Authentication type` - BASIC
+      * `Auth username` - ClickHouse 用户名
+      * `Auth password` - ClickHouse 密码
 
-<Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="展示如何创建 HTTP Sink 连接器的 Confluent Cloud 界面" border />
+    <Note>
+      这个 HTTP Url 很容易出错。请确保转义准确无误，以避免问题。
+    </Note>
 
-<br />
+    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="展示 HTTP Sink 连接器身份验证设置的 Confluent Cloud 界面" border />
 
-配置 HTTP Sink 连接器：
+    <br />
 
-* 填写你创建的 topic 名称
-* 身份验证
-  * `HTTP Url` - 包含已指定 `INSERT` 查询的 ClickHouse Cloud URL：`<protocol>://<clickhouse_host>:<clickhouse_port>?query=INSERT%20INTO%20<database>.<table>%20FORMAT%20JSONEachRow`。**注意**：查询必须经过编码。
-  * `Endpoint Authentication type` - BASIC
-  * `Auth username` - ClickHouse 用户名
-  * `Auth password` - ClickHouse 密码
+    * 配置
+      * `Input Kafka record value format` - 这取决于你的源数据，但大多数情况下为 JSON 或 Avro。以下设置中我们假定使用 `JSON`。
+      * 在 `advanced configurations` 部分中：
+        * `HTTP Request Method` - 设置为 POST
+        * `Request Body Format` - json
+        * `Batch batch size` - 根据 ClickHouse 的建议，将其设置为**至少 1000**。
+        * `Batch json as array` - true
+        * `Retry on HTTP codes` - 400-500，但应按需调整；例如，如果你在 ClickHouse 前面使用了 HTTP proxy，这个设置可能需要变更。
+        * `Maximum Reties` - 默认值 (10) 比较合适，但也可根据需要调整，以获得更稳健的重试行为。
 
-<Note>
-  这个 HTTP Url 很容易出错。请确保转义准确无误，以避免问题。
-</Note>
+    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="展示 HTTP Sink 连接器高级配置选项的 Confluent Cloud 界面" border />
+  </Step>
 
-<Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="展示 HTTP Sink 连接器身份验证设置的 Confluent Cloud 界面" border />
+  <Step title="测试连通性" id="5-testing-the-connectivity">
+    在你的 HTTP Sink 所配置的 topic 中创建一条消息
 
-<br />
+    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="展示如何在 Kafka topic 中创建测试消息的 Confluent Cloud 界面" border />
 
-* 配置
-  * `Input Kafka record value format` - 这取决于你的源数据，但大多数情况下为 JSON 或 Avro。以下设置中我们假定使用 `JSON`。
-  * 在 `advanced configurations` 部分中：
-    * `HTTP Request Method` - 设置为 POST
-    * `Request Body Format` - json
-    * `Batch batch size` - 根据 ClickHouse 的建议，将其设置为**至少 1000**。
-    * `Batch json as array` - true
-    * `Retry on HTTP codes` - 400-500，但应按需调整；例如，如果你在 ClickHouse 前面使用了 HTTP proxy，这个设置可能需要变更。
-    * `Maximum Reties` - 默认值 (10) 比较合适，但也可根据需要调整，以获得更稳健的重试行为。
+    <br />
 
-<Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="展示 HTTP Sink 连接器高级配置选项的 Confluent Cloud 界面" border />
-
-<div id="5-testing-the-connectivity">
-  #### 5. 测试连通性
-</div>
-
-在您的 HTTP Sink 配置的 topic 中创建一条消息
-
-<Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="Confluent Cloud 界面，展示如何在 Kafka topic 中创建测试消息" border />
-
-<br />
-
-并确认该消息已写入您的 ClickHouse 实例。
+    并验证所创建的消息已写入你的 ClickHouse 实例。
+  </Step>
+</Steps>
 
 <div id="troubleshooting">
   ### 故障排查
@@ -151,93 +143,89 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 
 请注意，此示例会保留 GitHub 数据集中的 Array 字段。我们假设在示例环境中已有一个空的 github topic，并使用 [kcat](https://github.com/edenhill/kcat) 向 Kafka 插入消息。
 
-<div id="1-prepare-configuration">
-  ##### 1. 准备配置
-</div>
+<Steps>
+  <Step title="准备配置" id="1-prepare-configuration">
+    请按照[这些说明](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#set-up-a-local-connect-worker-with-cp-install)，根据你的安装类型设置 Connect，并注意独立模式与分布式集群之间的差异。如果使用的是 Confluent Cloud，则应采用分布式配置。
 
-请按照[这些说明](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#set-up-a-local-connect-worker-with-cp-install)，根据你的安装类型设置 Connect，并注意独立模式与分布式集群之间的差异。如果使用的是 Confluent Cloud，则应采用分布式配置。
+    最重要的参数是 `http.api.url`。ClickHouse 的 [HTTP interface](/zh/concepts/features/interfaces/http) 要求你将 INSERT 语句编码为 URL 参数。该参数必须包含格式 (此处为 `JSONEachRow`) 和目标数据库。该格式必须与 Kafka 中的数据保持一致，因为这些数据会在 HTTP 载荷中被转换为字符串。这些参数都必须进行 URL 转义。下面展示了适用于 GitHub 数据集的此类格式示例 (假设你在本地运行 ClickHouse) ：
 
-最重要的参数是 `http.api.url`。ClickHouse 的 [HTTP interface](/zh/concepts/features/interfaces/http) 要求你将 INSERT 语句编码为 URL 参数。该参数必须包含格式 (此处为 `JSONEachRow`) 和目标数据库。该格式必须与 Kafka 中的数据保持一致，因为这些数据会在 HTTP 载荷中被转换为字符串。这些参数都必须进行 URL 转义。下面展示了适用于 GitHub 数据集的此类格式示例 (假设你在本地运行 ClickHouse) ：
+    ```response
+    <protocol>://<clickhouse_host>:<clickhouse_port>?query=INSERT%20INTO%20<database>.<table>%20FORMAT%20JSONEachRow
 
-```response
-<protocol>://<clickhouse_host>:<clickhouse_port>?query=INSERT%20INTO%20<database>.<table>%20FORMAT%20JSONEachRow
+    http://localhost:8123?query=INSERT%20INTO%20default.github%20FORMAT%20JSONEachRow
+    ```
 
-http://localhost:8123?query=INSERT%20INTO%20default.github%20FORMAT%20JSONEachRow
-```
+    以下附加参数与 HTTP Sink 配合 ClickHouse 使用时相关。完整参数列表可在[此处](https://docs.confluent.io/kafka-connect-http/current/connector_config.html)查看：
 
-以下附加参数与 HTTP Sink 配合 ClickHouse 使用时相关。完整参数列表可在[此处](https://docs.confluent.io/kafka-connect-http/current/connector_config.html)查看：
+    * `request.method` - 设置为 **POST**
+    * `retry.on.status.codes` - 设置为 400-500，以便在出现任意错误状态码时重试。请根据数据中预期出现的错误进一步细化。
+    * `request.body.format` - 大多数情况下应为 JSON。
+    * `auth.type` - 如果为 ClickHouse 启用了安全机制，请设置为 BASIC。目前尚不支持其他与 ClickHouse 兼容的身份验证机制。
+    * `ssl.enabled` - 如果使用 SSL，则设置为 true。
+    * `connection.user` - ClickHouse 的用户名。
+    * `connection.password` - ClickHouse 的密码。
+    * `batch.max.size` - 单个批次发送的行数。请确保该值设置得足够大。根据 ClickHouse 的[建议](/zh/reference/statements/insert-into#performance-considerations)，1000 应视为最低值。
+    * `tasks.max` - HTTP Sink 连接器支持运行一个或多个任务，这可用于提升性能。结合批次大小，这是提高性能的主要方式。
+    * `key.converter` - 根据键的类型进行设置。
+    * `value.converter` - 根据 topic 中的数据类型进行设置。这些数据不需要 schema。此处的格式必须与参数 `http.api.url` 中指定的 FORMAT 保持一致。最简单的方式是使用 JSON 和 `org.apache.kafka.connect.json.JsonConverter` 转换器。也可以通过 `org.apache.kafka.connect.storage.StringConverter` 转换器将值视为字符串，不过这会要求用户在 INSERT 语句中使用函数提取值。如果使用 `io.confluent.connect.avro.AvroConverter` 转换器，ClickHouse 也支持 [Avro 格式](/zh/reference/formats/Avro/Avro)。
 
-* `request.method` - 设置为 **POST**
-* `retry.on.status.codes` - 设置为 400-500，以便在出现任意错误状态码时重试。请根据数据中预期出现的错误进一步细化。
-* `request.body.format` - 大多数情况下应为 JSON。
-* `auth.type` - 如果为 ClickHouse 启用了安全机制，请设置为 BASIC。目前尚不支持其他与 ClickHouse 兼容的身份验证机制。
-* `ssl.enabled` - 如果使用 SSL，则设置为 true。
-* `connection.user` - ClickHouse 的用户名。
-* `connection.password` - ClickHouse 的密码。
-* `batch.max.size` - 单个批次发送的行数。请确保该值设置得足够大。根据 ClickHouse 的[建议](/zh/reference/statements/insert-into#performance-considerations)，1000 应视为最低值。
-* `tasks.max` - HTTP Sink 连接器支持运行一个或多个任务，这可用于提升性能。结合批次大小，这是提高性能的主要方式。
-* `key.converter` - 根据键的类型进行设置。
-* `value.converter` - 根据 topic 中的数据类型进行设置。这些数据不需要 schema。此处的格式必须与参数 `http.api.url` 中指定的 FORMAT 保持一致。最简单的方式是使用 JSON 和 `org.apache.kafka.connect.json.JsonConverter` 转换器。也可以通过 `org.apache.kafka.connect.storage.StringConverter` 转换器将值视为字符串，不过这会要求用户在 INSERT 语句中使用函数提取值。如果使用 `io.confluent.connect.avro.AvroConverter` 转换器，ClickHouse 也支持 [Avro 格式](/zh/reference/formats/Avro/Avro)。
+    完整设置列表 (包括如何配置代理、重试和高级 SSL) 可在[此处](https://docs.confluent.io/kafka-connect-http/current/connector_config.html)查看。
 
-完整设置列表 (包括如何配置代理、重试和高级 SSL) 可在[此处](https://docs.confluent.io/kafka-connect-http/current/connector_config.html)查看。
+    GitHub 样本数据的示例配置文件可在[此处](https://github.com/ClickHouse/clickhouse-docs/tree/main/docs/integrations/data-ingestion/kafka/code/connectors/http_sink)找到，前提是 Connect 以独立模式运行，且 Kafka 托管在 Confluent Cloud 中。
+  </Step>
 
-GitHub 样本数据的示例配置文件可在[此处](https://github.com/ClickHouse/clickhouse-docs/tree/main/docs/integrations/data-ingestion/kafka/code/connectors/http_sink)找到，前提是 Connect 以独立模式运行，且 Kafka 托管在 Confluent Cloud 中。
+  <Step title="创建 ClickHouse 表" id="2-create-the-clickhouse-table">
+    请确保该表已创建。下面展示了一个使用标准 MergeTree 的最小 GitHub 数据集示例。
 
-<div id="2-create-the-clickhouse-table">
-  ##### 2. 创建 ClickHouse 表
-</div>
+    ```sql
+    CREATE TABLE github
+    (
+        file_time DateTime,
+        event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4,'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+        actor_login LowCardinality(String),
+        repo_name LowCardinality(String),
+        created_at DateTime,
+        updated_at DateTime,
+        action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+        comment_id UInt64,
+        path String,
+        ref LowCardinality(String),
+        ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+        creator_user_login LowCardinality(String),
+        number UInt32,
+        title String,
+        labels Array(LowCardinality(String)),
+        state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+        assignee LowCardinality(String),
+        assignees Array(LowCardinality(String)),
+        closed_at DateTime,
+        merged_at DateTime,
+        merge_commit_sha String,
+        requested_reviewers Array(LowCardinality(String)),
+        merged_by LowCardinality(String),
+        review_comments UInt32,
+        member_login LowCardinality(String)
+    ) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
 
-确保该表已创建。下面展示了一个使用标准 MergeTree 的最小 GitHub 数据集示例。
+    ```
+  </Step>
 
-```sql
-CREATE TABLE github
-(
-    file_time DateTime,
-    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4,'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
-    actor_login LowCardinality(String),
-    repo_name LowCardinality(String),
-    created_at DateTime,
-    updated_at DateTime,
-    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
-    comment_id UInt64,
-    path String,
-    ref LowCardinality(String),
-    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
-    creator_user_login LowCardinality(String),
-    number UInt32,
-    title String,
-    labels Array(LowCardinality(String)),
-    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
-    assignee LowCardinality(String),
-    assignees Array(LowCardinality(String)),
-    closed_at DateTime,
-    merged_at DateTime,
-    merge_commit_sha String,
-    requested_reviewers Array(LowCardinality(String)),
-    merged_by LowCardinality(String),
-    review_comments UInt32,
-    member_login LowCardinality(String)
-) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+  <Step title="向 Kafka 写入数据" id="3-add-data-to-kafka">
+    将消息写入 Kafka。下面我们使用 [kcat](https://github.com/edenhill/kcat) 写入 1 万条消息。
 
-```
+    ```bash
+    head -n 10000 github_all_columns.ndjson | kcat -b <host>:<port> -X security.protocol=sasl_ssl -X sasl.mechanisms=PLAIN -X sasl.username=<username>  -X sasl.password=<password> -t github
+    ```
 
-<div id="3-add-data-to-kafka">
-  ##### 3. 将数据写入 Kafka
-</div>
+    对目标表 &quot;Github&quot; 执行一次简单查询，应可确认数据已插入。
 
-向 Kafka 写入消息。下面我们使用 [kcat](https://github.com/edenhill/kcat) 写入 1 万条消息。
+    ```sql
+    SELECT count() FROM default.github;
 
-```bash
-head -n 10000 github_all_columns.ndjson | kcat -b <host>:<port> -X security.protocol=sasl_ssl -X sasl.mechanisms=PLAIN -X sasl.username=<username>  -X sasl.password=<password> -t github
-```
+    | count\(\) |
+    | :--- |
+    | 10000 |
 
-对目标表 &quot;Github&quot; 进行一次简单查询，即可确认数据已插入。
-
-```sql
-SELECT count() FROM default.github;
-
-| count\(\) |
-| :--- |
-| 10000 |
-
-```
+    ```
+  </Step>
+</Steps>

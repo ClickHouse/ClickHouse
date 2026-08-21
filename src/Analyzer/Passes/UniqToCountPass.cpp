@@ -135,7 +135,7 @@ public:
             return;
 
         /// Check that query has only single table expression which is subquery
-        auto * subquery_node = query_node->getJoinTree()->as<QueryNode>();
+        auto * subquery_node = query_node->getJoinTreeNode()->as<QueryNode>();
         if (!subquery_node)
             return;
 

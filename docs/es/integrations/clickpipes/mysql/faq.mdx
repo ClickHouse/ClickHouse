@@ -16,6 +16,35 @@ integration:
 
 Sí, el ClickPipe para MySQL es compatible con MariaDB 10.0 y versiones posteriores. Su configuración es muy similar a la de MySQL y utiliza replicación GTID de forma predeterminada.
 
+<div id="mariadb-partial-row-event-unsupported">
+  ### ¿Por qué falló mi pipe debido a un evento de filas parciales no compatible de MariaDB?
+</div>
+
+MariaDB 12.3 y versiones posteriores pueden emitir un [evento de filas parciales](https://mariadb.com/docs/server/server-management/server-monitoring-logs/binary-log/row-binlog-events#partial_rows_log_event) en el binlog, que todavía no admitimos.
+
+Para recuperarte, resincroniza el pipe. Para reducir la probabilidad de que vuelva a ocurrir, también puedes aumentar la configuración `binlog_row_event_fragment_threshold` en el origen para que se fragmenten menos cambios de filas; mantenla por debajo de `max_allowed_packet`, ya que un único evento del binlog sin fragmentar que supere `max_allowed_packet` hará que falle el stream de replicación (consulta [¿Por qué falla mi pipe con un error de binlog de max&#95;allowed&#95;packet?](#binlog-event-exceeded-max-allowed-packet)).
+
+<div id="mariadb-compressed-column-unsupported">
+  ### ¿Por qué falló mi pipe con una columna COMPRESSED no admitida de MariaDB?
+</div>
+
+Si tu pipe falla con un error similar a:
+
+```text
+table <database>.<table> has MariaDB COMPRESSED column(s) [<columns>], which cannot be replicated via CDC;
+convert them to a non-compressed type or remove the table from the mirror
+```
+
+significa que la tabla tiene una o más columnas que usan la [compresión de columnas](https://mariadb.com/kb/en/storage-engine-independent-column-compression/) de MariaDB (`COLUMN_FORMAT COMPRESSED`). No podemos descomprimir estos valores a partir del binlog, por lo que la tabla afectada no se puede replicar mediante CDC.
+
+Para resolverlo:
+
+* **Convierta las columnas comprimidas a un tipo no comprimido** en el origen (o elimine una tabla del pipe):
+  ```sql
+  ALTER TABLE <table> MODIFY <column> <type>; -- sin COLUMN_FORMAT COMPRESSED
+  ```
+* vuelva a resincronizar la tabla o el pipe
+
 <div id="does-the-clickpipe-support-planetscale-vitess">
   ### ¿El ClickPipe para MySQL es compatible con PlanetScale, Vitess o TiDB?
 </div>
@@ -53,6 +82,47 @@ Esto suele deberse a filas que contienen valores `BLOB`, `TEXT` o `JSON` grandes
   ```
   Establécelo también en la configuración del servidor (por ejemplo, `my.cnf` o el grupo de parámetros de la BD) para que persista tras los reinicios.
 * **Si una sola fila supera 1G:** resincroniza el pipe.
+
+<div id="binlog-partial-json-unsupported">
+  ### ¿Por qué falla mi pipe debido a un error de binlog JSON parcial?
+</div>
+
+Si tu pipe falla con un error similar a:
+
+```text
+Received a partial JSON update event while processing <database>.<table>; binlog_row_value_options must be disabled (set to '')
+```
+
+significa que el servidor MySQL de origen tiene [`binlog_row_value_options`](https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_value_options) establecido en `PARTIAL_JSON`. Con esta opción habilitada, MySQL registra las actualizaciones de columnas `JSON` como diferencias parciales (solo las rutas modificadas) en lugar del documento completo. ClickPipes no puede aplicar estas diferencias parciales, por lo que CDC no puede continuar.
+
+Para resolverlo:
+
+* **Deshabilite `PARTIAL_JSON` en el origen.** Vuelva a establecer el valor como vacío:
+  ```sql
+  SET GLOBAL binlog_row_value_options = '';
+  ```
+  Bórrelo también de la configuración del servidor (por ejemplo, `my.cnf` o el grupo de parámetros de la BD) para que el cambio persista tras los reinicios.
+* **Resincronice el pipe** para que la replicación se reanude desde un offset limpio.
+
+<div id="secure-transport-required">
+  ### ¿Por qué falla mi pipe con un error de require_secure_transport?
+</div>
+
+Si tu pipe falla con un error similar a:
+
+```text
+MySQL execute error: handleAuthResult: ERROR 3159 (HY000): Connections using insecure transport
+are prohibited while --require_secure_transport=ON.
+```
+
+significa que el servidor de origen tiene [`require_secure_transport`](https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_require_secure_transport) habilitado — rechaza cualquier conexión que no esté cifrada —, mientras que ClickPipe tiene TLS desactivado. En RDS para MySQL, procede del [grupo de parámetros de la BD](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-ssl-connections.require-ssl.html) de la instancia. En Aurora MySQL, es una configuración del [grupo de parámetros de clúster de la BD](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraMySQL.Security.html#AuroraMySQL.Security.SSL.RequireSSL) y no está disponible en los grupos de parámetros de instancia. Ninguno requiere reiniciarse para que el cambio surta efecto. Además, Aurora MySQL 8.4 lo establece de forma predeterminada en `ON`, mientras que las versiones 2 y 3 lo establecen en `OFF`, por lo que un pipe que se replicaba sin problemas puede empezar a fallar tras un cambio de parámetro o una actualización de versión, sin que haya cambiado nada en el pipe.
+
+Para resolverlo:
+
+* **Vuelva a habilitar TLS en el pipe.** En **Settings** del pipe, abra la configuración de conexión y desactive el toggle **Disable TLS**. Si al guardar aparece un error de certificado, consulte [¿Por qué recibo un error de validación de certificado TLS al conectarme a MySQL?](#tls-certificate-validation-error) para saber cómo configurar un host TLS, cargar una CA raíz u omitir la verificación de certificados.
+* **O desactive `require_secure_transport` en el origen** — en el grupo de parámetros de la BD de RDS o en el grupo de parámetros de clúster de la BD de Aurora — si las conexiones no cifradas son aceptables en su entorno.
+
+La replicación se reanuda desde el punto en que se detuvo cuando la conexión se establece correctamente. Si el pipe estuvo fallando durante más tiempo que el período de retención del binlog (consulte [¿Cómo se administra la replicación?](#how-is-replication-managed)), deberá resincronizarlo.
 
 <div id="tls-certificate-validation-error">
   ### ¿Por qué recibo un error de validación del certificado TLS al conectarme a MySQL?

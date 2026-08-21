@@ -10,17 +10,17 @@ class UncommittedState
 {
     class PathResolver;
 
-    void useDirectory(const std::string & path) const;
-    void useMissingDirectory(const std::string & path) const;
-
 public:
     explicit UncommittedState(std::shared_ptr<FsSnapshot> tx_snapshot_);
+
+    void useDirectory(const std::string & path) const;
+    void useMissingDirectory(const std::string & path) const;
 
     void createDirectory(const std::string & path);
     void removeDirectory(const std::string & path);
     void moveDirectory(const std::string & path_from, const std::string & path_to);
 
-    std::pair<bool, std::optional<DirectoryRemoteInfo>> lookupDirectory(const std::string & path) const;
+    std::optional<DirectoryRemoteInfo> getDirectoryRemoteInfo(const std::string & path) const;
     std::shared_ptr<Preconditions> getTxPreconditions() const;
 
 private:

@@ -51,6 +51,6 @@ open(path, 'wb').write(bytes(data))
 EOF
 
 echo "--- delta dictionary that duplicates a base value is rejected ---"
-${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+${CLICKHOUSE_LOCAL} \
     --query "SELECT d FROM file('${DATA_FILE}', 'ArrowStream') FORMAT Null" 2>&1 \
     | grep -oF 'duplicate values' | head -1 || echo 'FAIL: expected the duplicate merged dictionary value to be rejected'

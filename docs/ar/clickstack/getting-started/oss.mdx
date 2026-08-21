@@ -1,55 +1,61 @@
 ---
 slug: /use-cases/observability/clickstack/getting-started/oss
-title: 'بدء استخدام ClickStack مفتوح المصدر'
+title: 'بدء استخدام ClickStack Open Source'
 sidebarTitle: 'مفتوح المصدر'
-description: 'بدء استخدام ClickStack مفتوح المصدر'
+description: 'شغّل ClickStack Open Source محليًا، وأرسل بيانات اختبار، وتأكد من نجاح الاستيعاب'
 doc_type: 'guide'
-keywords: ['ClickStack Open Source', 'بدء الاستخدام', 'نشر Docker', 'واجهة HyperDX', 'نشر محلي']
+keywords: ['ClickStack Open Source', 'بدء الاستخدام', 'نشر Docker', 'OpenTelemetry', 'نشر محلي']
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-لنشر **ClickStack Open Source**، حيث تتولى تشغيل ClickHouse وClickStack UI وإدارتهما بنفسك، نوفر صور Docker جاهزة تجمع واجهة المستخدم وOpenTelemetry Collector وClickHouse في حاوية واحدة، مما يجعل بدء التطوير المحلي والاختبار وعمليات النشر المُدارة ذاتيًا أمرًا سهلًا.
+شغّل ClickStack Open Source محليًا، وأرسل حدثًا اختباريًا عبر OpenTelemetry Collector الخاص به، ثم تأكد من ظهور الحدث في ClickStack UI.
+
+باستخدام ClickStack Open Source، تتولى تشغيل وإدارة الواجهة الخلفية لـ ClickHouse وClickStack UI وخط أنابيب الاستيعاب. تجمع صورة الكل في واحد هذه المكونات مع MongoDB في حاوية Docker واحدة للتقييم والاختبار محليًا.
 
 <Tip>
   تتوفر أيضًا نسخة مُدارة من ClickStack — راجع [Managed ClickStack](/ar/clickstack/getting-started/managed).
 </Tip>
 
-تعتمد هذه الصور على حزمة Debian الرسمية الخاصة بـ ClickHouse، وهي متاحة في عدة توزيعات لتناسب حالات استخدام مختلفة.
+تستخدم الخطوات أدناه صورة الكل في واحد التي تتطلب مصادقة. إذا أردت واجهة مستخدم محلية دون إنشاء حساب، فاتبع [دليل الوضع المحلي باستخدام Docker](/ar/clickstack/deployment/local-mode-only) بدلًا من ذلك.
 
-أبسط خيار هو **توزيعة أحادية الصورة** تتضمن جميع المكونات الأساسية للحزمة مجمّعة معًا:
+<div id="before-you-begin">
+  ## قبل البدء
+</div>
 
-* **HyperDX UI**
-* **OpenTelemetry (OTel) Collector**
-* **ClickHouse**
+ثبّت [Docker](https://docs.docker.com/get-docker/) وتأكد من إتاحة المنافذ التالية:
 
-تتيح لك هذه الصورة المتكاملة تشغيل الحزمة بالكامل بأمر واحد، مما يجعلها مثالية للاختبار والتجربة أو لعمليات النشر المحلية السريعة.
+* `8080` لـ ClickStack UI
+* `4317` لبروتوكول OTLP عبر gRPC
+* `4318` لبروتوكول OTLP عبر HTTP
+* `8123` لواجهة ClickHouse HTTP
 
-<Steps>
-  <Step>
-    ## انشر الحزمة باستخدام docker
+لأحمال العمل المستمرة أو أحمال عمل الإنتاج، راجع [خيارات النشر مفتوحة المصدر](/ar/clickstack/deployment/oss) و[الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production).
 
-    سيؤدي الأمر التالي إلى تشغيل OpenTelemetry Collector (على المنفذين 4317 و4318)، وHyperDX UI (على المنفذ 8080)، وClickHouse (على المنفذ 8123).
+<div id="set-up-clickstack-open-source">
+  ## إعداد ClickStack Open Source باستخدام صورة الكل في واحد
+</div>
+
+<Steps titleSize="h3">
+  <Step title="بدء ClickStack" id="deploy-stack-with-docker">
+    شغّل صورة الكل في واحد:
 
     ```shell
-    docker run --name clickstack -p 8123:8123 -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest clickstack
+    docker run \
+      --name clickstack \
+      -p 8123:8123 \
+      -p 8080:8080 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
     ```
 
-    <Info>
-      **تحديث اسم الصورة**
+    تعمل الحاوية في الواجهة الأمامية. اترك هذه الواجهة الطرفية مفتوحة واستخدم واجهة طرفية ثانية لتنفيذ الأوامر المتبقية في هذا الدليل.
 
-      تُنشر صور ClickStack الآن باسم `clickhouse/clickstack-*` (وكانت سابقًا `docker.hyperdx.io/hyperdx/*`).
-    </Info>
-
-    <Tip>
-      **الاحتفاظ بالبيانات والإعدادات**
-
-      للاحتفاظ بالبيانات والإعدادات عبر عمليات إعادة تشغيل الحاوية، يمكنك تعديل أمر docker أعلاه لتركيب المسارات `/data/db` و`/var/lib/clickhouse` و`/var/log/clickhouse-server`.
-
-      على سبيل المثال:
+    <Accordion title="الاحتفاظ بالبيانات والإعدادات">
+      للاحتفاظ بإعدادات ClickStack وبيانات ClickHouse وسجلات ClickHouse بعد إزالة الحاوية، شغّل الأمر التالي بدلًا من ذلك:
 
       ```shell
-      # عدّل الأمر لتركيب المسارات
       docker run \
         --name clickstack \
         -p 8123:8123 \
@@ -61,87 +67,152 @@ import { Image } from "/snippets/ar/components/Image.jsx";
         -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
         clickhouse/clickstack-all-in-one:latest
       ```
-    </Tip>
+
+      يشير `$(pwd)` إلى دليلك الحالي. يخزّن هذا الأمر الملفات الدائمة في دليل `.volumes` ضمن ذلك الموقع.
+    </Accordion>
   </Step>
 
-  <Step>
-    ## انتقل إلى ClickStack UI
+  <Step title="فتح ClickStack" id="navigate-to-hyperdx-ui">
+    بعد بدء ClickStack، افتح [http://localhost:8080](http://localhost:8080) وأنشئ حسابًا.
 
-    زُر [http://localhost:8080](http://localhost:8080) للوصول إلى ClickStack UI ‏(HyperDX).
+    يتصل ClickStack تلقائيًا بمثيل ClickHouse المضمّن وينشئ مصادر بيانات للسجلات والتتبعات والمقاييس والجلسات.
 
-    أنشئ مستخدمًا بإدخال اسم مستخدم وكلمة مرور يستوفيان متطلبات التعقيد.
+    #### نسخ مفتاح API للاستيعاب
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
-
-    سيتصل HyperDX تلقائيًا بالعنقود المحلي وينشئ مصادر البيانات الخاصة بالسجلات والتتبعات والمقاييس والجلسات، مما يتيح لك استكشاف المنتج فورًا.
+    في قسم **بدء الاستخدام** ضمن القائمة اليسرى، اختر **إضافة بيانات**، ثم انسخ **مفتاح API للاستيعاب**. يجب أن تتضمن بيانات القياس عن بُعد المُرسلة إلى OpenTelemetry Collector المضمّن هذا المفتاح في ترويسة `authorization`.
   </Step>
 
-  <Step>
-    ## استكشف المنتج
-
-    بعد نشر الحزمة، جرّب إحدى مجموعات البيانات التجريبية لدينا.
-
-    لمتابعة استخدام العنقود المحلي:
-
-    * [Example dataset](/ar/clickstack/example-datasets/sample-data) - حمّل مجموعة بيانات تجريبية من العرض التوضيحي العام لدينا. شخّص مشكلة بسيطة.
-    * [Local files and metrics](/ar/clickstack/example-datasets/local-data) - حمّل ملفات محلية وراقب النظام على OSX أو Linux باستخدام OpenTelemetry Collector محلي.
-
-    <br />
-
-    بدلاً من ذلك، يمكنك الاتصال بعنقود تجريبي حيث يمكنك استكشاف مجموعة بيانات أكبر:
-
-    * [Remote demo dataset](/ar/clickstack/example-datasets/remote-demo-data) - استكشف مجموعة بيانات تجريبية في ClickHouse service التجريبية الخاصة بنا.
-  </Step>
-</Steps>
-
-<div id="alternative-deployment-models">
-  ## نماذج النشر البديلة
-</div>
-
-<div id="local-mode">
-  ### الوضع المحلي
-</div>
-
-الوضع المحلي هو طريقة لنشر HyperDX من دون الحاجة إلى المصادقة.
-
-**المصادقة غير مدعومة**.
-
-هذا الوضع مخصص للاختبارات السريعة والتطوير والعروض التوضيحية وحالات استخدام استكشاف الأخطاء وإصلاحها، حيث لا تكون المصادقة أو حفظ الإعدادات ضرورية.
-
-لمزيد من التفاصيل حول نموذج النشر هذا، راجع [&quot;الوضع المحلي فقط&quot;](/ar/clickstack/deployment/local-mode-only).
-
-<div id="hosted-version">
-  ### الإصدار المستضاف
-</div>
-
-يمكنك استخدام نسخة مستضافة من ClickStack في الوضع المحلي، وهي متاحة على [play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com).
-
-<div id="self-hosted-version">
-  ### الإصدار المستضاف ذاتيًا
-</div>
-
-<Steps>
-  <Step>
-    ### التشغيل باستخدام Docker
-
-    تأتي صورة الوضع المحلي للإصدار المستضاف ذاتيًا مزوّدة مسبقًا بكلٍّ من OpenTelemetry Collector وClickStack UI وClickHouse server. وهذا يسهّل استقبال بيانات telemetry من تطبيقاتك وعرضها بأقل قدر من الإعدادات الخارجية. للبدء بالإصدار المستضاف ذاتيًا، ما عليك سوى تشغيل حاوية Docker مع إعادة توجيه المنافذ المناسبة:
+  <Step title="إرسال بيانات اختبار" id="send-test-data">
+    في الواجهة الطرفية الثانية، صدّر مفتاح API للاستيعاب:
 
     ```shell
-    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    export CLICKSTACK_API_KEY=<your_ingestion_api_key>
     ```
 
-    وعلى خلاف صورة &quot;All in one&quot;، لن يُطلب منك إنشاء مستخدم لأن **الوضع المحلي لا يتضمن مصادقة**.
+    أرسل سجل OTLP بالطابع الزمني الحالي:
+
+    ```shell
+    NOW_NANO="$(date +%s)000000000"
+
+    curl -i "http://localhost:4318/v1/logs" \
+      -H "Content-Type: application/json" \
+      -H "authorization: ${CLICKSTACK_API_KEY}" \
+      --data-binary @- <<EOF
+    {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [{
+            "key": "service.name",
+            "value": {"stringValue": "clickstack-docs-test"}
+          }]
+        },
+        "scopeLogs": [{
+          "scope": {"name": "clickstack-docs-test"},
+          "logRecords": [{
+            "timeUnixNano": "${NOW_NANO}",
+            "severityText": "INFO",
+            "body": {"stringValue": "ClickStack ingestion test"}
+          }]
+        }]
+      }]
+    }
+    EOF
+    ```
+
+    يعيد الطلب الناجح `HTTP/1.1 200 OK`.
   </Step>
 
-  <Step>
-    ### أكمل بيانات اعتماد الاتصال
+  <Step title="تأكيد الاستيعاب" id="confirm-ingestion">
+    افتح عرض **Search** في ClickStack وابحث عن `ClickStack ingestion test`.
 
-    للاتصال بـ **تجمّع ClickHouse خارجي** خاص بك، يمكنك إدخال بيانات اعتماد الاتصال يدويًا.
+    يجب أن تتضمن النتيجة حدث الاختبار باسم الخدمة `clickstack-docs-test`.
 
-    وبدلاً من ذلك، لاستكشاف المنتج بسرعة، يمكنك أيضًا النقر على **Connect to Demo Server** للوصول إلى مجموعات بيانات محمّلة مسبقًا وتجربة ClickStack من دون أي إعداد.
-
-    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="بيانات الاعتماد" size="md" />
-
-    إذا كنت تتصل بخادم Demo، فيمكنك استكشاف مجموعة البيانات باستخدام [إرشادات demo dataset](/ar/clickstack/example-datasets/remote-demo-data).
+    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="عرض سجلات ClickStack Open Source يُظهر حدث اختبار استيعاب ClickStack" border />
   </Step>
 </Steps>
+
+لديك الآن مثيل ClickStack محلي ونقطة نهاية استيعاب عاملة وحدث اختبار يمكنك فحصه في ClickStack.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+<div id="send-application-and-infrastructure-data">
+  ### إرسال بيانات التطبيق والبنية التحتية
+</div>
+
+اختر الدليل المناسب للبيانات التي تريد إرسالها إلى ClickStack:
+
+<CardGroup cols={2}>
+  <Card title="إضافة القياس عن بُعد إلى تطبيق" icon="code" href="/ar/clickstack/ingesting-data/sdks/index">
+    أرسل تتبعات التطبيق وسجلاته باستخدام SDK متوافق مع OpenTelemetry.
+  </Card>
+
+  <Card title="جمع سجلات المضيف" icon="server" href="/ar/clickstack/integration-examples/host-logs">
+    أعد توجيه سجلات المضيف من OpenTelemetry Collector يعمل بدور الوكيل.
+  </Card>
+
+  <Card title="مراقبة Kubernetes" icon="cubes" href="/ar/clickstack/integration-examples/kubernetes">
+    اجمع السجلات والمقاييس والتتبعات من عنقود Kubernetes.
+  </Card>
+
+  <Card title="استكشاف عمليات التكامل الأخرى" icon="plug" href="/ar/clickstack/integration-examples/index">
+    اعثر على أدلة لتطبيقات ومصادر بيانات قياس عن بُعد إضافية.
+  </Card>
+</CardGroup>
+
+<div id="explore-sample-data">
+  ### استكشاف بيانات نموذجية
+</div>
+
+استخدم مجموعة بيانات نموذجية لاستكشاف ClickStack ببيانات قياس عن بُعد أغنى:
+
+<CardGroup cols={2}>
+  <Card title="سجلات وتتبّع ومقاييس نموذجية" href="/ar/clickstack/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+
+    حمّل البيانات من العرض التوضيحي العام وشخّص مشكلة.
+  </Card>
+
+  <Card title="السجلات والمقاييس المحلية" href="/ar/clickstack/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+
+    اجمع الملفات المحلية ومقاييس النظام على macOS أو Linux.
+  </Card>
+</CardGroup>
+
+لاستكشاف البيانات المحمّلة مسبقًا دون تثبيت Docker، استخدم [العرض التوضيحي المستضاف لـ ClickStack](/ar/clickstack/example-datasets/remote-demo-data).
+
+<div id="generate-synthetic-data">
+  ### إنشاء بيانات اصطناعية
+</div>
+
+استخدم مولِّدًا لاختبار استيعاب البيانات دون الحاجة إلى تطبيق أو مجموعة بيانات موجودة:
+
+<CardGroup cols={2}>
+  <Card title="إنشاء بيانات باستخدام otelgen" icon="terminal" href="/ar/clickstack/example-datasets/otelgen">
+    أرسل دفعة قصيرة من سجلات OTLP وتتبّع والمقاييس الاصطناعية.
+  </Card>
+
+  <Card title="إنشاء بيانات باستخدام telemetrygen" icon="terminal" href="/ar/clickstack/example-datasets/telemetrygen">
+    أنشئ إشارات OpenTelemetry قابلة للتهيئة عبر عدة خدمات.
+  </Card>
+</CardGroup>
+
+اطّلع على [جميع البيانات النموذجية والعروض التوضيحية لـ ClickStack](/ar/clickstack/example-datasets/index).
+
+<div id="prepare-for-production">
+  ### الاستعداد للإنتاج
+</div>
+
+راجع إرشادات النشر والإنتاج قبل استخدام ClickStack لأحمال عمل مستمرة:
+
+<CardGroup cols={2}>
+  <Card title="الانتقال إلى بيئة الإنتاج" icon="shield" href="/ar/clickstack/managing/production">
+    راجع بيانات اعتماد الاستيعاب والأمان والاستبقاء والإرشادات التشغيلية.
+  </Card>
+
+  <Card title="اختر نموذج النشر" icon="server" href="/ar/clickstack/deployment/oss">
+    قارن خيارات النشر مفتوحة المصدر المناسبة لبيئتك.
+  </Card>
+</CardGroup>

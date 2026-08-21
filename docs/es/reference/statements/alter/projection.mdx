@@ -234,6 +234,57 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
+<div id="example-projection-with-where">
+  ### Proyección de ejemplo con cláusula `WHERE`
+</div>
+
+Las proyecciones pueden incluir una cláusula `WHERE` para almacenar solo un subconjunto de filas. Esto resulta útil cuando las consultas filtran con frecuencia según un predicado conocido: la proyección materializa únicamente las filas que coinciden, lo que reduce el almacenamiento y mejora el rendimiento de las consultas.
+
+Crear una tabla y añadir una proyección filtrada:
+
+```sql
+CREATE TABLE events
+(
+    `event_type` String,
+    `time` DateTime,
+    `message` String
+)
+ENGINE = MergeTree()
+ORDER BY time;
+
+ALTER TABLE events ADD PROJECTION proj_pageview (
+    SELECT event_type, time, message
+    WHERE event_type = 'pageview'
+    ORDER BY time
+);
+
+ALTER TABLE events MATERIALIZE PROJECTION proj_pageview;
+```
+
+Inserción de datos:
+
+```sql
+INSERT INTO events VALUES
+    ('pageview', '2024-01-01', 'homepage'),
+    ('click', '2024-01-02', 'button'),
+    ('pageview', '2024-01-03', 'about');
+```
+
+Cuando la cláusula `WHERE` de una consulta **implica** la cláusula `WHERE` de la proyección (es decir, cada condición del filtro de la proyección también está presente en el filtro de la consulta), el optimizador puede usar automáticamente la proyección cuando determina que resulta beneficioso:
+
+```sql
+-- This query implies the projection's WHERE, so the projection may be used:
+SELECT time, message FROM events WHERE event_type = 'pageview';
+
+-- A stricter query also implies the projection's WHERE:
+SELECT time, message FROM events WHERE event_type = 'pageview' AND time > '2024-01-01';
+
+-- This query does NOT imply the projection, so the base table is scanned:
+SELECT time, message FROM events WHERE event_type = 'click';
+```
+
+La comprobación de implicación es conservadora: se basa en una coincidencia exacta de conjunciones sobre la forma canónica de la expresión. Puede pasar por alto algunas oportunidades de optimización válidas (p. ej., implicaciones de rango), pero nunca producirá resultados incorrectos.
+
 <div id="manipulating-projections">
   ## Gestión de proyecciones
 </div>
@@ -244,11 +295,19 @@ Están disponibles las siguientes operaciones con [proyecciones](/es/reference/e
   ### ADD PROJECTION
 </div>
 
-Utilice la siguiente sentencia para añadir una descripción de la proyección a los metadatos de una tabla:
+Use la siguiente sentencia para añadir la descripción de una proyección a los metadatos de una tabla:
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+-- Normal projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+
+-- Aggregate projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+<Note>
+  Cuando una proyección define una cláusula `WHERE`, solo se materializan las filas que cumplen el predicado. El optimizador puede usar esa proyección cuando el `WHERE` de la consulta implica lógicamente el `WHERE` de la proyección y esta resulta ventajosa para el plan de consulta. Esto se aplica tanto a las proyecciones normales como a las de agregación.
+</Note>
 
 <div id="with-settings">
   #### Cláusula `WITH SETTINGS`
@@ -331,9 +390,9 @@ De forma similar, si la tabla se almacena usando el motor de tabla `AggregatingM
 
 Antes de ClickHouse v24.8, las partes de proyección o bien quedaban desincronizadas silenciosamente con los datos principales, o bien ciertas operaciones, como actualizaciones y eliminaciones, no podían ejecutarse en absoluto, ya que la base de datos lanzaba automáticamente una excepción si la tabla tenía proyecciones.
 
-Desde la versión v24.8, una nueva configuración a nivel de tabla [`deduplicate_merge_projection_mode`](/es/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode) controla el comportamiento cuando las operaciones en segundo plano de fusión no triviales mencionadas anteriormente se producen en partes de la tabla original.
+Desde la versión v24.8, una nueva configuración a nivel de tabla [`deduplicate_merge_projection_mode`](/es/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode) controla el comportamiento cuando las operaciones en segundo plano de fusión no triviales mencionadas anteriormente se producen en partes de la tabla original.
 
-Las mutaciones de eliminación son otro ejemplo de operaciones de fusión de partes que eliminan filas en las partes de la tabla original. Desde la versión v24.7, también disponemos de una configuración para controlar el comportamiento con respecto a las mutaciones de eliminación activadas por eliminaciones ligeras: [`lightweight_mutation_projection_mode`](/es/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode).
+Las mutaciones de eliminación son otro ejemplo de operaciones de fusión de partes que eliminan filas en las partes de la tabla original. Desde la versión v24.7, también disponemos de una configuración para controlar el comportamiento con respecto a las mutaciones de eliminación activadas por eliminaciones ligeras: [`lightweight_mutation_projection_mode`](/es/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode).
 
 A continuación se indican los posibles valores tanto de `deduplicate_merge_projection_mode` como de `lightweight_mutation_projection_mode`:
 

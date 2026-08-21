@@ -1,9 +1,9 @@
 ---
 sidebarTitle: 'أنشئ أول خدمة Cloud لك'
 title: 'أنشئ أول خدمة Cloud لك وحمّل بيانات تجريبية'
-useCases: ['All']
+useCases: ['الكل']
 products: ['Cloud']
-description: 'أنشئ خدمة ClickHouse Cloud، واستكشف SQL Console، وحمّل مجموعة بيانات تجريبية لبدء الاستعلام عن بيانات حقيقية خلال دقائق.'
+description: 'أنشئ خدمة ClickHouse Cloud، واستكشف وحدة تحكم SQL، وحمّل مجموعة بيانات نموذجية لبدء الاستعلام عن بيانات حقيقية خلال دقائق.'
 ---
 
 import BackToQuickstarts from '/get-started/quickstarts/_back-to-quickstarts.mdx'
@@ -17,7 +17,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   <Badge size="lg" color="blue">التحليلات اللحظية</Badge>
   <Badge size="lg" color="blue">مستودعات البيانات</Badge>
   <Badge size="lg" color="blue">قابلية الرصد</Badge>
-  <Badge size="lg" color="blue">الذكاء الاصطناعي/تعلّم الآلة</Badge>
+  <Badge size="lg" color="blue">AI/ML</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
 
@@ -37,9 +37,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 وفي النهاية، ستكون لديك خدمة ClickHouse Cloud قيد التشغيل بعد تحميل البيانات، جاهزة للاستخدام كأساس لبقية سلسلة الأدلة السريعة.
 
 <Steps titleSize="h3">
-  <Step>
-    ### أنشئ حسابًا في ClickHouse Cloud
-
+  <Step title="أنشئ حسابًا في ClickHouse Cloud" id="sign-up-for-clickhouse-cloud">
     انتقل إلى [console.clickhouse.cloud](https://console.clickhouse.cloud/). ستظهر لك صفحة تسجيل الدخول. انقر على **Register** بجوار &quot;Don&#39;t have an account yet?&quot; في أسفل الصفحة.
 
     <Frame caption="انقر على Register لإنشاء حساب جديد">
@@ -66,9 +64,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     بعد التحقق، سجّل الدخول باستخدام بريدك الإلكتروني الجديد وكلمة المرور.
   </Step>
 
-  <Step>
-    ### أنشئ خدمة جديدة
-
+  <Step title="أنشئ خدمة جديدة" id="create-a-new-service">
     بعد تسجيل الدخول للمرة الأولى، ستُنقَل مباشرةً إلى صفحة تهيئة الخدمة. اضبط ما يلي:
 
     | الإعداد              | التوصية                                                                                                |
@@ -91,9 +87,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     </Frame>
   </Step>
 
-  <Step>
-    ### تحميل مجموعة بيانات نموذجية
-
+  <Step title="تحميل مجموعة بيانات نموذجية" id="load-an-example-dataset">
     انقر على **مصادر البيانات** في الشريط الجانبي الأيسر. ستظهر لك عدة خيارات لإدخال البيانات إلى خدمتك.
 
     <Frame caption="صفحة مصادر البيانات مع خيارات لتحميل البيانات">
@@ -115,9 +109,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     سيستغرق الاستيراد دقيقة أو دقيقتين. وبعد اكتماله، ستكون جاهزًا للاستعلام عن البيانات.
   </Step>
 
-  <Step>
-    ### الاستعلام عن البيانات
-
+  <Step title="الاستعلام عن البيانات" id="query-the-data">
     انقر على **SQL Console** في الشريط الجانبي الأيسر لفتح محرّر الاستعلامات المضمّن. هنا يمكنك كتابة استعلامات SQL وتشغيلها مباشرةً من المتصفح، من دون الحاجة إلى أي أدوات خارجية.
 
     جرّب بعض الاستعلامات لاستكشاف بيانات أسعار العقارات في المملكة المتحدة.
@@ -152,7 +144,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## الخطوات التالية
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
 
 لديك الآن خدمة ClickHouse Cloud عاملة ومحمّلة بـ 30 مليون صف من البيانات الحقيقية. وتُستخدم هذه الخدمة ومجموعة البيانات هذه في بقية سلسلة الأدلة السريعة.
 

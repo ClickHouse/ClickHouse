@@ -100,7 +100,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
     auto maybe_query = tryGetExternalDatabaseQuery(
-        args[1], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::Regular);
+        args[1], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::SQLite);
     for (size_t i = 0; i < args.size(); ++i)
     {
         if (i == 1 && maybe_query)
@@ -135,7 +135,7 @@ sqlite('db_path', 'table_name')
 - `db_path` — Path to a file with an SQLite database. [String](/reference/data-types/string).
 - `table_name` — Name of a table in the SQLite database, or a query passed to SQLite as is (see [Passing a query instead of a table name](#passing-a-query)). [String](/reference/data-types/string).
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 - A table object with the same columns as in the original `SQLite` table.
 
@@ -153,7 +153,7 @@ Such a table is read-only: `INSERT` into it is not allowed. The same syntax is s
 <Note>
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized before being sent to SQLite. It must therefore be valid ClickHouse SQL. To pass SQLite-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to SQLite verbatim.
 
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from SQLite, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from SQLite, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
 </Note>
 
 ## Example {#example}
