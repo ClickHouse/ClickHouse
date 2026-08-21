@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS t_preprocessed_wrapped;
 DROP TABLE IF EXISTS t_preprocessed_plain;
 DROP TABLE IF EXISTS t_preprocessed_map;
 DROP TABLE IF EXISTS t_preprocessed_folded;
+DROP TABLE IF EXISTS t_map_fixed;
 
 CREATE TABLE t_text (x Nullable(String), INDEX i x TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 INSERT INTO t_text SELECT if(number % 100 = 7, NULL, 'word' || toString(number)) FROM numbers(1000);
@@ -199,6 +200,15 @@ INSERT INTO t_preprocessed_folded SELECT if(number = 5, 'word5', 'zz' || toStrin
 SELECT 'preprocessor folded key used', count() FROM t_preprocessed_folded WHERE x IN ('word5') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
 SELECT 'preprocessor folded key rows', (SELECT count() FROM t_preprocessed_folded WHERE x IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_folded WHERE x IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 SELECT 'preprocessor folded key mixed case rows', (SELECT count() FROM t_preprocessed_folded WHERE x IN ('WORD5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_folded WHERE x IN ('WORD5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+-- A row whose map lacks the key reads the value type's default, which `mapValues` never stored, so
+-- a set holding that default must keep every granule. An all-NUL `FixedString` default is nonempty,
+-- so the empty-element refusal above does not cover it.
+CREATE TABLE t_map_fixed (m Map(String, FixedString(4)), INDEX i mapValues(m) TYPE text(tokenizer = array)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_map_fixed SELECT map('k', toFixedString('v' || toString(number % 7), 4)) FROM numbers(1000);
+
+SELECT 'map fixed default rows', (SELECT count() FROM t_map_fixed WHERE m['absent'] IN (toFixedString('', 4)) SETTINGS transform_null_in = 1) = (SELECT count() FROM t_map_fixed WHERE m['absent'] IN (toFixedString('', 4)) SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+SELECT 'map fixed default rows, transform_null_in = 0', (SELECT count() FROM t_map_fixed WHERE m['absent'] IN (toFixedString('', 4)) SETTINGS transform_null_in = 0) = (SELECT count() FROM t_map_fixed WHERE m['absent'] IN (toFixedString('', 4)) SETTINGS transform_null_in = 0, use_skip_indexes = 0);
+SELECT 'map fixed stored value still prunes', count() FROM t_map_fixed WHERE m['k'] IN (toFixedString('v3', 4)) SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
 
 -- A JSON subcolumn carrier is indexed through `JSONAllValues(json)`, so its stored type comes from
 -- that header column.
@@ -252,3 +262,4 @@ DROP TABLE t_preprocessed_wrapped;
 DROP TABLE t_preprocessed_plain;
 DROP TABLE t_preprocessed_map;
 DROP TABLE t_preprocessed_folded;
+DROP TABLE t_map_fixed;

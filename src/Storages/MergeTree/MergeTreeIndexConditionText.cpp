@@ -29,6 +29,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/inlined_vector.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -370,6 +371,16 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
 
 namespace
 {
+
+/// Whether `bytes` is what a map element of a carrier storing `type` reads when the key is absent.
+/// `mapValues` gives the values as an array, so the default belongs to its element type.
+bool isDefaultMapValue(const DataTypePtr & type, std::string_view bytes)
+{
+    const auto * array = typeid_cast<const DataTypeArray *>(type.get());
+    const auto & value_type = array ? array->getNestedType() : type;
+    auto default_column = value_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+    return default_column->getDataAt(0) == bytes;
+}
 
 /// Returns whether a text search query may match some row in current_range,
 /// given the per-granule analysis state of the query (query_builder).
@@ -1669,6 +1680,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     std::optional<size_t> set_key_position;
     /// Type of the values the matched carrier stores.
     DataTypePtr indexed_type;
+    /// A map element reads the value type's default when the key is absent, and the index holds only
+    /// stored values.
+    bool indexed_map_element = false;
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
@@ -1697,6 +1711,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
                 : tryParseMapSubcolumnName(node.getColumnName())->first);
             if (header.has(map_values_name))
                 indexed_type = header.getByName(map_values_name).type;
+            indexed_map_element = true;
             return true;
         }
 
@@ -1799,6 +1814,14 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
         if (ref.empty())
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+
+        /// A row whose map lacks the key reads the value type's default, which the index does not
+        /// store, so such an element must keep every granule.
+        if (indexed_map_element && indexed_type && isDefaultMapValue(indexed_type, ref))
         {
             out.text_search_queries.clear();
             return false;
