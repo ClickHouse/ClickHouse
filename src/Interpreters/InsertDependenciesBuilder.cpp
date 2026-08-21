@@ -6,6 +6,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
+#include <Processors/Transforms/ShrinkColumnsTransform.h>
 #include <Processors/Transforms/RemovingSparseTransform.h>
 #include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -106,6 +107,8 @@ namespace Setting
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsFloat shrink_over_allocated_columns_min_waste_ratio;
+    extern const SettingsUInt64 shrink_over_allocated_columns_min_waste_bytes;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
@@ -1478,6 +1481,12 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     }
 
     chassert(storage);
+
+    /// `InterpreterInsertQuery` refreshes only the root target; do the same here, once per storage, in the parent view's context.
+    /// Views are skipped: only a non-view `current` has a view parent, and a regular root table is keyed as `root_view` (`{}`).
+    if (current != init_table_id && !storage->isView() && !metadata_snapshots.contains(current))
+        storage->updateExternalDynamicMetadataIfExists(insert_contexts.at(parent));
+
     auto metadata = storage->getInMemoryMetadataPtr(init_context, false);
     auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get());
 
@@ -1801,6 +1810,17 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
 
     inner_metadata->check(result.getOutputHeader().getColumnsWithTypeAndName());
 
+    /// Shrink over-allocated columns produced by materialization (e.g. a String materialized into a
+    /// JSON column over-allocates its buffers) to fit, right after they are built and before the sink,
+    /// to reduce peak memory usage on INSERT.
+    const auto & insert_settings = insert_context->getSettingsRef();
+    const double shrink_min_waste_ratio = static_cast<double>(insert_settings[Setting::shrink_over_allocated_columns_min_waste_ratio]);
+    if (shrink_min_waste_ratio > 1.0)
+        result.addSink(std::make_shared<ShrinkColumnsTransform>(
+            result.getOutputSharedHeader(),
+            shrink_min_waste_ratio,
+            insert_settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
+
     return result;
 }
 
@@ -1956,6 +1976,19 @@ static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 }
 
 
+/// A half-built view can reach the log with its query stored but not its context. The context
+/// only supplies the log cut-off, so the init one stands in for a missing one.
+String InsertDependenciesBuilder::getViewQueryForLog(StorageID view_id) const
+{
+    auto query_it = select_queries.find(view_id);
+    if (query_it == select_queries.end())
+        return {};
+
+    auto context_it = select_contexts.find(view_id);
+    return getCleanQueryAst(query_it->second, context_it == select_contexts.end() ? init_context : context_it->second);
+}
+
+
 void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start) const
 {
     const auto & settings = init_context->getSettingsRef();
@@ -2000,7 +2033,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
             element.view_name = view_id.getFullTableName();
             element.view_uuid = view_id.uuid;
             element.view_type = view_type;
-            element.view_query = getCleanQueryAst(select_queries.at(view_id), select_contexts.at(view_id));
+            element.view_query = getViewQueryForLog(view_id);
             element.view_target = inner_table_id.getFullTableName();
 
             element.peak_memory_usage = thread_group->memory_tracker.getPeak() > 0 ? thread_group->memory_tracker.getPeak() : 0;
