@@ -448,7 +448,7 @@ timeSeriesIdToGroup(id)
 
 **Arguments**
 
-- `id` — Identifier of a time series. [`UInt64`](/reference/data-types/int-uint) or [`UInt128`](/reference/data-types/int-uint) or [`UUID`](/reference/data-types/uuid) or [`FixedString(16)`](/reference/data-types/fixedstring)
+- `id` — Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/reference/data-types/index)
 
 **Returned value**
 
@@ -492,7 +492,7 @@ timeSeriesIdToTags(id)
 
 **Arguments**
 
-- `id` — Identifier of a time series. [`UInt64`](/reference/data-types/int-uint) or [`UInt128`](/reference/data-types/int-uint) or [`UUID`](/reference/data-types/uuid) or [`FixedString(16)`](/reference/data-types/fixedstring)
+- `id` — Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags). [`Any`](/reference/data-types/index)
 
 **Returned value**
 
@@ -809,7 +809,7 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **Arguments**
 
-- `id` — Identifier of a time series. [`UInt64`](/reference/data-types/int-uint) or [`UInt128`](/reference/data-types/int-uint) or [`UUID`](/reference/data-types/uuid) or [`FixedString(16)`](/reference/data-types/fixedstring)
+- `id` — Identifier of a time series. Can be of any comparable type. Rows with NULL identifiers are skipped. [`Any`](/reference/data-types/index)
 - `tags_array` — Array of pairs (tag_name, tag_value). [`Array(Tuple(String, String))`](/reference/data-types/array) or [`NULL`](/reference/syntax#null)
 - `separate_tag_name_i` — The name of a tag. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
 - `separate_tag_value_i` — The value of a tag. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable)
