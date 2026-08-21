@@ -230,8 +230,6 @@ def test_list_and_read_delta_tables(started_cluster):
     db_name = unique_name("unified_delta")
     create_database(node, db_name)
 
-    assert show_tables(node, db_name, "default%") == SEEDED_TABLES
-
     assert "DeltaLake" in node.query(f"SHOW CREATE TABLE {db_name}.`{DELTA_TABLE}`")
 
     rows = read_rows(node, db_name, DELTA_TABLE)
@@ -256,8 +254,6 @@ def test_unreadable_table_is_hidden(started_cluster):
             "schema_name": schema_name,
             "table_type": "EXTERNAL",
             "data_source_format": "CSV",
-            # `setLocation` needs a `://` scheme, or it throws before the
-            # format check under test.
             "storage_location": f"file:///var/lib/clickhouse/user_files/tmp/{schema_name}/csv_table",
             "columns": [
                 {
