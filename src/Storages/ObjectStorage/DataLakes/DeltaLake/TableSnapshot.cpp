@@ -66,6 +66,19 @@ namespace DB::FailPoints
 namespace DeltaLake
 {
 
+namespace
+{
+
+/// A file's `numRecords` statistic counts rows that a deletion vector still logically removes,
+/// so it is not a row count for such a file. delta-kernel states this alongside the statistic
+/// itself (`kernel/src/scan/state.rs`) and names `has_vector` as the flag to consult.
+bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
+{
+    return dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr);
+}
+
+}
+
 class TableSnapshot::Iterator final : public DB::IObjectIterator
 {
 private:
@@ -551,6 +564,9 @@ public:
         if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
             transform_handle.emplace(transform.some._0);
 
+        /// Read before `dv_info_handle` is moved into `data_files` below.
+        const bool has_deletion_vector = hasDeletionVector(dv_info_handle.get());
+
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
         if (context->shutdown)
         {
@@ -608,7 +624,7 @@ public:
 
         context->total_data_files += 1;
         context->total_bytes += size;
-        if (stats && context->total_rows.has_value())
+        if (stats && !has_deletion_vector && context->total_rows.has_value())
             context->total_rows.value() += stats->num_records;
         else
             context->total_rows = std::nullopt;
@@ -777,7 +793,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
             visitor->total_data_files += 1;
             visitor->total_bytes += static_cast<size_t>(size);
-            if (stats && visitor->total_rows.has_value())
+            if (stats && !hasDeletionVector(dv_info_handle.get()) && visitor->total_rows.has_value())
                 visitor->total_rows.value() += stats->num_records;
             else
                 visitor->total_rows = std::nullopt;

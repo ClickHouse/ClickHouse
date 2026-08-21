@@ -4824,6 +4824,99 @@ deltaLake{suffix}({cluster}
     # (not 3 because third deleted row is inside a different partition and represents a single row inside it)
     assert node.contains_in_log("Row indexes size 2 for file")
 
+    # A bare `count()` is eligible for the trivial-count optimization, which answers from the
+    # `numRecords` statistics of the surviving files: 4 here, because the deletion vector removes
+    # 2 more rows that those statistics still include. The assertions above use `ORDER BY all`,
+    # which resolves to `count()` and so makes `applyTrivialCountIfPossible` see the aggregate
+    # twice and decline, which is why they never exercised this path.
+    trivial_count_step = "ReadFromPreparedSource (Optimized trivial count)"
+
+    count_query_id = f"test_dv_count_{table_name}"
+    assert 2 == int(
+        node.query(
+            f"SELECT count() FROM {delta_function}", query_id=count_query_id
+        ).strip()
+    )
+    assert trivial_count_step not in node.query(
+        f"EXPLAIN SELECT count() FROM {delta_function}"
+    )
+    # That count went through the metadata-only stats scan, one of the two places the row counts
+    # are accumulated.
+    node.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{count_query_id}' "
+            "AND message LIKE '%Updated statistics for snapshot version%'"
+        )
+    )
+
+    # Pinning a version before the DELETE keeps the pre-deletion count: that snapshot carries no
+    # deletion vector, so the optimization still applies there.
+    assert 5 == int(
+        node.query(
+            f"SELECT count() FROM {delta_function} SETTINGS delta_lake_snapshot_version = 1"
+        ).strip()
+    )
+
+    if on_cluster:
+        return
+
+    # An engine table keeps one metadata object across queries, which is what reaches the second
+    # accumulation site: the scan callback publishes the statistics a later `count()` then reads,
+    # whereas a table function rebuilds its metadata per query and only ever reaches the
+    # metadata-only stats scan.
+    engine_table = table_name + "_engine"
+    node.query(f"DROP TABLE IF EXISTS {engine_table}")
+    node.query(
+        f"CREATE TABLE {engine_table} ENGINE=DeltaLake(s3, filename = '{table_name}/', "
+        f"format=Parquet, url = 'http://minio1:9001/{bucket}/')"
+    )
+    scan_query_id = f"test_dv_scan_{table_name}"
+    node.query(f"SELECT * FROM {engine_table} FORMAT Null", query_id=scan_query_id)
+    node.query("SYSTEM FLUSH LOGS")
+    assert 1 == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE query_id = '{scan_query_id}' "
+            "AND message LIKE '%Updated statistics from data files iterator for snapshot version%'"
+        )
+    )
+
+    assert 2 == int(node.query(f"SELECT count() FROM {engine_table}").strip())
+    assert trivial_count_step not in node.query(
+        f"EXPLAIN SELECT count() FROM {engine_table}"
+    )
+    # `system.tables.total_rows` reads the same seam, so it reports NULL rather than an
+    # over-count. `IcebergMetadata::totalRows` behaves the same way under delete files.
+    assert 1 == int(
+        node.query(
+            f"SELECT total_rows IS NULL FROM system.tables WHERE name = '{engine_table}'"
+        ).strip()
+    )
+    # total_bytes is the size of the data files, which a deletion vector does not change.
+    assert 0 < int(
+        node.query(
+            f"SELECT total_bytes FROM system.tables WHERE name = '{engine_table}'"
+        ).strip()
+    )
+
+    # Positive control: a table with no deletion vector keeps the optimization, so the arms
+    # above distinguish "declined for this file" from "disabled for every Delta table".
+    plain_table = randomize_table_name("test_dv_plain")
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 5), f"/{plain_table}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{plain_table}", "")
+    create_delta_table(node, "s3", plain_table, started_cluster)
+    assert 5 == int(node.query(f"SELECT count() FROM {plain_table}").strip())
+    assert trivial_count_step in node.query(
+        f"EXPLAIN SELECT count() FROM {plain_table}"
+    )
+    assert 5 == int(
+        node.query(
+            f"SELECT total_rows FROM system.tables WHERE name = '{plain_table}'"
+        ).strip()
+    )
+
 
 @pytest.mark.parametrize("cluster", [False, True])
 def test_partition_columns_jumbled(started_cluster, cluster):
