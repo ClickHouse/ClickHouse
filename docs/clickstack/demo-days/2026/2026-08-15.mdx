@@ -30,7 +30,6 @@ Builder charts use the same variable substitution in most editable fields, acros
 Alerts have one hard rule: every variable is evaluated using its empty value. If an alert query references variables, the editor warns you before you save it. The preview and generated SQL show the empty expansion, including on the alert detail page, and the alert task applies those empty values when it runs.
 
 
-Variables and macros used as macro arguments are now expanded too, so `$__timeFilter($TimeColumn)` works as expected.
 
 Variable configuration remains behind `NEXT_PUBLIC_ENABLE_DASHBOARD_VARIABLES`. With no variables configured, dashboard behaviour is unchanged.
 
