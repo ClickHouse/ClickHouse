@@ -14,7 +14,7 @@ import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatu
 Você pode usar o [AWS PrivateLink](https://aws.amazon.com/privatelink/) para estabelecer conectividade segura entre VPCs, serviços da AWS, seus sistemas on-premise e o ClickHouse Cloud sem expor o tráfego à internet pública. Este documento descreve as etapas para se conectar ao ClickHouse Cloud usando o AWS PrivateLink.
 
 <Warning>
-  O AWS PrivateLink oferece suporte apenas a conexões iniciadas da sua AWS VPC para o ClickHouse Cloud. Ele não pode ser usado para conexões iniciadas do ClickHouse Cloud para serviços na sua VPC, como um [banco de dados privado](#connecting-to-a-remote-database).
+  O AWS PrivateLink oferece suporte apenas a conexões iniciadas da sua VPC da AWS para o ClickHouse Cloud. Ele não pode ser usado para conexões iniciadas do ClickHouse Cloud para serviços na sua VPC, como um [banco de dados privado](#connecting-to-a-remote-database).
 </Warning>
 
 Para restringir o acesso aos seus serviços do ClickHouse Cloud exclusivamente por meio de endereços do AWS PrivateLink, siga as instruções fornecidas pelo ClickHouse Cloud em [IP Access Lists](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters).
@@ -42,6 +42,7 @@ Para restringir o acesso aos seus serviços do ClickHouse Cloud exclusivamente p
   * ap-northeast-2
   * ap-northeast-3
   * ap-south-1
+  * ap-southeast-5
   * ap-southeast-4
   * ap-southeast-3
   * ap-south-2
