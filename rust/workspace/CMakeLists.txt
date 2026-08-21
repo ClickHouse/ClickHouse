@@ -20,10 +20,8 @@ option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
 option (ENABLE_VORTEX "Enable the Vortex file format" ${ENABLE_LIBRARIES})
 
-# MSan: the MSan-instrumented Vortex library (with origin tracking) adds so much code
-# that linking `unit_tests_dbms` overflows `R_X86_64_PC32` relocations - the binary
-# exceeds the 2 GiB range of the small code model. Disable it under MSan, like
-# wasmtime and delta-kernel-rs.
+# Instrumented for MSan this library grows enough that linking `unit_tests_dbms` runs out of
+# `R_X86_64_PC32` relocations - the binary no longer fits the 2 GiB the small code model allows.
 if (SANITIZE STREQUAL "memory")
     set (ENABLE_VORTEX OFF)
 endif()

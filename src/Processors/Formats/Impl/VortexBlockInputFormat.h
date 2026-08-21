@@ -10,6 +10,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <base/defines.h>
 
 #include <array>
 #include <condition_variable>
@@ -20,12 +21,11 @@
 namespace arrow { class Schema; }
 namespace arrow::io { class RandomAccessFile; }
 
-struct VortexFFIRuntime;
-struct VortexFFIReader;
-struct VortexFFIScan;
-enum class VortexFFIQueue : int32_t;
+struct FFI_VortexRuntime;
+struct FFI_VortexReader;
+struct FFI_VortexScan;
+enum class FFI_VortexTaskQueue : int32_t;
 
-/// The Arrow C Data Interface struct the scan hands its chunks over in (`arrow/c/abi.h`).
 struct ArrowArray;
 
 namespace DB
@@ -35,28 +35,14 @@ class ArrowColumnToCHColumn;
 class ShutdownHelper;
 struct VortexReadContext;
 
-/// Reads Vortex files (https://github.com/vortex-data/vortex, https://docs.vortex.dev/) through
-/// the Rust `vortex` library, see `rust/workspace/vortex`. The library reads the file through a
-/// callback backed by a seekable ClickHouse read buffer (or by an in-memory copy of the file if
-/// the buffer is not seekable), and returns decoded chunks over the Arrow C Data Interface,
-/// which are then converted to ClickHouse columns the same way as in the Arrow format.
-///
-/// Threading. The library owns no threads: it turns the work of a scan into tasks in two queues
-/// (CPU: decoding, filtering, Arrow export; I/O: the read callback) and calls `onNotify` whenever a
-/// task becomes runnable. ClickHouse then runs those tasks the same way it runs any other work: a
-/// driver task on `parser_shared_resources->parsing_runner` (or `io_runner` for the I/O queue,
-/// which is the same split as in `ParquetV3BlockInputFormat`) calls `vortex_ffi_runtime_run` until
-/// the queue is empty. The number of drivers per queue is capped by this reader's share of
-/// `max_parsing_threads` and `max_download_threads`.
-///
-/// Chunks are pushed, not pulled: the task that produced a chunk calls `onChunk`, which converts it
-/// to a `Chunk` on that same thread (so the conversion is parallel too) and puts it into the
-/// delivery queue; `read` takes chunks from there and returns the capacity to the scan, which
-/// bounds how far ahead of the query the scan may run. The scan reports its end, or its first
-/// error, to `onScanFinish`.
-///
-/// With `max_parsing_threads <= 1` there is no thread pool at all: `read` runs the tasks itself,
-/// on the calling thread, as the Parquet reader does in the same case.
+/// Reads Vortex files (https://docs.vortex.dev/) through the Rust bindings in
+/// `rust/workspace/vortex`. The bindings own no threads: a scan is split into tasks that wait in
+/// two queues, one for decoding and one for reads, and ClickHouse decides when and on which thread
+/// each of them runs. The library calls `onNotify` when it queues a task, driver tasks on the
+/// parsing and download pools run them in batches, and a decoded chunk arrives at `onChunk` on the
+/// thread that decoded it, so the conversion to ClickHouse columns is parallel too. `read` takes
+/// finished chunks from `delivered`; returning one lets the scan start another split, which is what
+/// keeps it from running far ahead of the query.
 class VortexBlockInputFormat final : public IInputFormat
 {
 public:
@@ -79,119 +65,120 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
-    /// Called by the library (through a C callback) when a task of the given queue became runnable.
-    /// Any thread, including one that is already running tasks of this reader.
-    void onNotify(VortexFFIQueue queue) noexcept;
+    /// Schedules a driver task to run the work the library has just queued for `queue`, unless this
+    /// reader already has as many drivers running as its share of the thread pool allows. Called by
+    /// the library from the thread that queued the work, which may be one already running tasks of
+    /// this reader.
+    void onNotify(FFI_VortexTaskQueue queue) noexcept;
 
-    /// Called by a scan task with the chunk it produced (a null `array` means the split matched no
-    /// rows) and the index of its row split. Returns 0 on success, 1 to stop the scan.
+    /// Converts the Arrow array a split task decoded into a `Chunk` and puts it in the delivery
+    /// queue under `split_index`, where `read` picks it up. Runs on the thread that decoded the
+    /// split. A null `array` means the split matched no rows, so there is nothing to convert.
+    /// Returns 0, or non-zero to make the library stop the scan.
     int32_t onChunk(::ArrowArray * array, UInt64 split_index) noexcept;
 
-    /// Called by the scan when it ends: `error` is null on success. (Not `onFinish`: that is the
-    /// hook `ISource` calls when the source is done, see `IInputFormat::onFinish`.)
+    /// Records the outcome of the scan and wakes `read` so that it stops waiting for more chunks.
+    /// `error` is null when the scan read the file to the end.
     void onScanFinish(const char * error) noexcept;
 
 private:
-    /// A chunk of the scan, converted and waiting to be returned from `read`.
     struct DeliveredChunk
     {
         Chunk chunk;
         BlockMissingValues missing_values;
-        /// Whether the split produced no rows: nothing to return, but the index has to be consumed
-        /// to keep the file order.
+        /// There is nothing to return, but the index still has to be consumed to keep file order.
         bool empty = false;
-        /// Whether the scan is holding capacity for this chunk until `read` returns it.
+        /// The scan counts this chunk against its in-flight limit until `read` releases it.
         bool holds_permit = false;
     };
 
     static constexpr size_t NUM_QUEUES = 2;
 
-    Chunk read() override;
+    /// Unlocks and re-locks `delivery_mutex` inside its wait loop, which the thread-safety
+    /// analysis cannot follow.
+    Chunk read() override TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     void onCancel() noexcept override;
 
     void prepareReader();
     void closeReader();
 
-    /// Produces chunks for queries that need no columns from the file (e.g. `SELECT count()`),
-    /// where only the number of rows matters.
     Chunk readWithoutColumns();
 
-    /// Runs the tasks of one queue until it is empty. The body of a driver task.
-    void driveQueue(VortexFFIQueue queue, std::shared_ptr<ShutdownHelper> shutdown_) noexcept;
+    /// Runs the queued tasks of `queue`, and of the other queue too when both share a thread pool,
+    /// until nothing is left to run. This is the body of a driver task. `shutdown_` is passed by
+    /// value because the task may still be waiting in the pool when the reader is destroyed.
+    void driveQueue(FFI_VortexTaskQueue queue, std::shared_ptr<ShutdownHelper> shutdown_) noexcept;
 
-    /// The maximum number of drivers of the given queue this reader may have running.
-    size_t maxDrivers(VortexFFIQueue queue) const;
+    size_t maxDrivers(FFI_VortexTaskQueue queue) const;
 
-    /// The runner the drivers of the given queue are scheduled on.
-    ThreadPoolCallbackRunnerFast & runnerFor(VortexFFIQueue queue) const;
+    ThreadPoolCallbackRunnerFast & runnerFor(FFI_VortexTaskQueue queue) const;
 
-    /// Whether the reads have a pool of their own (`max_download_threads`), or share the parsing one.
     bool hasSeparateIORunner() const;
 
-    /// The queue whose drivers run the tasks of `queue`: with one shared runner, the drivers of the
-    /// CPU queue run both, so that the pool is not oversubscribed.
-    VortexFFIQueue driverQueue(VortexFFIQueue queue) const;
+    /// The queue whose drivers are responsible for running the tasks of `queue`. Without a separate
+    /// download pool that is the CPU queue for both, so that one pool does not get two sets of
+    /// drivers competing for it.
+    FFI_VortexTaskQueue driverQueueFor(FFI_VortexTaskQueue queue) const;
 
-    /// Cancels the scan (thread-safe): the tasks stop as soon as they can.
     void cancelScan() noexcept;
 
-    /// Cancels the scan and waits for the drivers, so that no task of this reader runs afterwards.
     void stopTasks();
 
-    /// Records the first error of a background task and wakes up `read`. Also cancels the scan, as
-    /// the rest of it is not needed anymore, unless `cancel_scan` is false: cancelling enters the
-    /// library, which `onNotify` must not do (see there).
+    /// Stores the first failure, so that `read` rethrows it, and wakes `read` up. Also stops the
+    /// scan, unless `cancel_scan` is false - which is needed where stopping it would re-enter this
+    /// reader through the notification callback.
     void setBackgroundException(std::exception_ptr exception, bool cancel_scan = true) noexcept;
 
     std::unique_ptr<ArrowColumnToCHColumn> createConverter() const;
 
+    /// Takes a converter out of the pool, creating one if the pool is empty, and returns it there
+    /// afterwards. They are pooled because each caches dictionaries and cannot be used by two
+    /// threads at once.
+    std::unique_ptr<ArrowColumnToCHColumn> takeConverter();
+    void returnConverter(std::unique_ptr<ArrowColumnToCHColumn> converter);
+
     std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
     std::unique_ptr<VortexReadContext> read_context;
-    VortexFFIRuntime * runtime = nullptr;
-    VortexFFIReader * reader = nullptr;
+    FFI_VortexRuntime * runtime = nullptr;
+    FFI_VortexReader * reader = nullptr;
     std::shared_ptr<arrow::Schema> file_schema;
 
-    /// The scan and the schema of the chunks it produces. `onCancel` may run concurrently with
-    /// `read`, so the creation, cancellation and destruction of the scan are serialized by the mutex.
+    /// Cancellation can arrive on any thread, so the lifetime of the scan handle is serialized.
     std::mutex scan_mutex;
-    VortexFFIScan * scan = nullptr;
+    FFI_VortexScan * scan TSA_GUARDED_BY(scan_mutex) = nullptr;
+    /// Set before the first task exists and cleared after the last one has stopped, so the tasks
+    /// can read it without holding a lock.
     std::shared_ptr<arrow::Schema> scan_schema;
 
-    /// Everything up to `converters_mutex` is guarded by `delivery_mutex`.
     std::mutex delivery_mutex;
-    /// Notified when a chunk is delivered, when the scan ends, and on cancellation.
     std::condition_variable delivery_cv;
-    /// Converted chunks by split index.
-    std::map<UInt64, DeliveredChunk> delivered;
-    /// The split index the next chunk must have when `preserve_order` is set.
-    UInt64 next_split_index = 0;
-    /// The scan reported its end (or its cancellation).
-    bool scan_finished = false;
-    /// The first error of a background task or of the scan; rethrown by `read`.
-    std::exception_ptr background_exception;
+    /// Finished chunks waiting for `read`, keyed by the position of their split in the file.
+    std::map<UInt64, DeliveredChunk> delivered TSA_GUARDED_BY(delivery_mutex);
+    /// Which split `read` hands out next while `input_format_vortex_preserve_order` is on.
+    UInt64 next_split_index TSA_GUARDED_BY(delivery_mutex) = 0;
+    /// The scan reported that it reached the end. Stays false when it was cancelled instead.
+    bool scan_finished TSA_GUARDED_BY(delivery_mutex) = false;
+    /// Only the first failure is kept; `read` rethrows it.
+    std::exception_ptr background_exception TSA_GUARDED_BY(delivery_mutex);
 
-    /// The converters of the threads that deliver chunks (`ArrowColumnToCHColumn` caches
-    /// dictionaries and is not thread-safe, so a thread takes one for the duration of a conversion).
     std::mutex converters_mutex;
-    std::vector<std::unique_ptr<ArrowColumnToCHColumn>> converters;
+    std::vector<std::unique_ptr<ArrowColumnToCHColumn>> converters TSA_GUARDED_BY(converters_mutex);
 
-    /// Drivers running or scheduled per queue. Not under `delivery_mutex`: `onNotify` is called
-    /// from the library, including from inside a task, and must not take a lock that a delivering
-    /// thread may hold.
+    /// Atomic rather than guarded by `delivery_mutex`: the library reports new tasks from inside a
+    /// running task, and that thread may already be holding the mutex.
     std::array<std::atomic<size_t>, NUM_QUEUES> running_drivers{};
 
-    /// Guards `this` against the driver tasks: they hold it shared while running, and `stopTasks`
-    /// waits for them. Recreated for every scan.
+    /// Every running driver holds a shared lock on it, and closing the reader waits for them all to
+    /// let go. Replaced by a fresh one whenever a scan starts.
     std::shared_ptr<ShutdownHelper> tasks_shutdown;
-    /// Set while the reader is being closed: no new drivers are scheduled.
+    /// Set while the reader is being closed, so that no new driver is scheduled.
     std::atomic<bool> closing{false};
 
-    /// The number of rows left to return for queries that read no columns from the file.
+    /// For queries that touch no column of the file at all and need only its number of rows.
     UInt64 pending_rows_without_columns = 0;
     bool count_returned = false;
 
-    /// The missing values and the read bytes of the last chunk returned from `read`.
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;
     size_t previous_approx_bytes_read = 0;
@@ -221,12 +208,12 @@ private:
 
     std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
     std::unique_ptr<VortexReadContext> read_context;
-    /// A runtime of its own, driven by the calling thread: reading the schema needs no parallelism.
-    VortexFFIRuntime * runtime = nullptr;
-    VortexFFIReader * reader = nullptr;
+    /// Reading a footer takes a few small reads, so the calling thread runs this runtime itself.
+    FFI_VortexRuntime * runtime = nullptr;
+    FFI_VortexReader * reader = nullptr;
     std::shared_ptr<arrow::Schema> file_schema;
 
-    /// Never set; the file wrapper created by asArrowFile keeps a reference to it.
+    /// Never set: it only exists because the Arrow file wrapper takes a cancellation flag.
     std::atomic<int> is_stopped{0};
 };
 

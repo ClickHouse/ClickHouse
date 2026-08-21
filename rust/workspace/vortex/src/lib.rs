@@ -1,28 +1,20 @@
-//! C FFI bindings for the Vortex columnar file format (https://github.com/vortex-data/vortex),
-//! used by ClickHouse's `Vortex` input/output formats.
+//! C bindings over the `vortex` crate for ClickHouse's `Vortex` input and output formats. Arrays
+//! cross the boundary as Arrow C Data Interface structs, and reads and writes are delegated back
+//! through callbacks, so a file is always accessed through ClickHouse's own buffers - local disk,
+//! S3, HTTP - with their throttling and accounting.
 //!
-//! Data crosses the FFI boundary through the Arrow C Data Interface: the reader hands every scanned
-//! chunk to a consumer callback as a `struct ArrowArray` (with one `struct ArrowSchema` per scan),
-//! and the writer accepts record batches in the same representation. IO is delegated back to
-//! ClickHouse through callbacks, so all reads and writes go through ClickHouse's own buffers (local
-//! files, S3, HTTP, throttling, and so on).
+//! Nothing here owns a thread. An `FFI_VortexRuntime` is two queues of pending work plus a way to
+//! report that something became runnable; who runs it, when, and on how many threads is the
+//! caller's decision, and the two queues can go to different thread pools. Without a notification
+//! callback the runtime only advances on the thread already inside a call, which is enough for
+//! opening a file and for writing one.
 //!
-//! Threading model: the library owns no threads and no executor of its own. A `VortexFFIRuntime` is
-//! a pair of task queues (CPU and IO) plus a notification callback: whenever a task becomes
-//! runnable, the callback tells the host, and the host runs tasks by calling
-//! `vortex_ffi_runtime_run` from as many of its own threads as it wants. This is the same shape as
-//! any other work in ClickHouse - the host schedules short tasks on its thread pools - and it lets
-//! CPU work and IO work go to different pools. A runtime with no notification callback is driven
-//! only by the library itself, on the thread that is inside an FFI call (`vortex_ffi_reader_open`,
-//! the writer functions), which is what the schema reader and the writer use.
-//!
-//! Scan results are pushed: the split task that produced a chunk calls the consumer's `on_chunk` on
-//! whichever host thread ran it, so the conversion of the chunk happens in parallel too, and the
-//! scan reports its end (or its first error) through `on_finish`. The number of chunks that may be
-//! outstanding is bounded by `in_flight`; the host returns capacity with `vortex_ffi_scan_release`.
-//!
-//! Error convention: fallible functions take a `char ** error` out-parameter. On failure it is
-//! set to a heap-allocated message that must be freed with `vortex_ffi_free_string`.
+//! Anything that can fail takes a `char ** error`. On failure it points at a message the caller has
+//! to release with `vortex_ffi_free_string`.
+
+// The handle and value types spell out that they live on the C boundary, the way `FFI_ArrowSchema`
+// and `FFI_ArrowArray` do in the signatures right next to them.
+#![allow(non_camel_case_types)]
 
 use std::any::Any;
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -59,53 +51,49 @@ use vortex::scalar_fn::ScalarFnVTableExt;
 use vortex::session::VortexSession;
 use vortex::VortexSessionDefault;
 
-/// Reads `length` bytes at `offset` into `out`. Returns 0 on success, non-zero on failure.
-pub type VortexFFIReadCallback =
+/// Reads `length` bytes at `offset` into `out`. Returns zero on success.
+pub type FFI_VortexReadCallback =
     unsafe extern "C" fn(context: *mut c_void, offset: u64, length: u64, out: *mut u8) -> i32;
 
-/// Consumes `length` bytes from `data`. Returns 0 on success, non-zero on failure.
-pub type VortexFFIWriteCallback =
+/// Consumes `length` bytes of the file being written. Returns zero on success.
+pub type FFI_VortexWriteCallback =
     unsafe extern "C" fn(context: *mut c_void, data: *const u8, length: u64) -> i32;
 
-/// The queue a task belongs to.
 #[repr(i32)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum VortexFFIQueue {
-    /// Decoding, filtering, Arrow export: tasks that use the CPU.
+pub enum FFI_VortexTaskQueue {
+    /// Decoding, filtering and exporting to Arrow: work that needs a core.
     CPU = 0,
-    /// Tasks that call the read callback.
+    /// Work that calls the read callback and blocks until it returns.
     IO = 1,
 }
 
 const NUM_QUEUES: usize = 2;
 
-/// Called when a task becomes runnable on the given queue of the runtime. It must not call back
-/// into the library; the host is expected to schedule `vortex_ffi_runtime_run` somewhere and return.
-/// May be called from any thread, including from inside `vortex_ffi_runtime_run` itself.
-pub type VortexFFINotifyCallback = unsafe extern "C" fn(context: *mut c_void, queue: VortexFFIQueue);
+/// Reports that a task of this queue became runnable. It must not call back into the library:
+/// schedule `vortex_ffi_runtime_run` somewhere and return. Can be called on any thread, and
+/// synchronously from inside any call that woke a task.
+pub type FFI_VortexTaskReadyCallback =
+    unsafe extern "C" fn(context: *mut c_void, queue: FFI_VortexTaskQueue);
 
-/// The task queues of one reader (or writer) and the way to tell the host that a task is runnable.
-///
-/// This is the whole of the library's threading: futures spawned by Vortex become `Runnable`s in
-/// one of the two queues, and they only ever run inside `vortex_ffi_runtime_run` (or inside
-/// `block_on`, on the thread of an FFI call).
+/// The whole of the threading in this crate. Futures that Vortex spawns become `Runnable`s in one
+/// of the two queues, and a `Runnable` only ever runs inside `vortex_ffi_runtime_run` or
+/// `block_on`.
 struct HostRuntime {
     queues: [ConcurrentQueue<Runnable>; NUM_QUEUES],
-    notify: Option<VortexFFINotifyCallback>,
-    /// The opaque host pointer passed to `notify`, as an integer so that the struct stays `Send`.
+    notify: Option<FFI_VortexTaskReadyCallback>,
+    /// The caller's pointer, as an integer to keep this struct `Send`.
     context: usize,
-    /// A weak reference to itself, used by the schedule functions: a task that outlives the runtime
-    /// must be dropped instead of queued.
+    /// Used when scheduling: work whose runtime is already gone is dropped rather than queued.
     weak_self: Weak<HostRuntime>,
-    /// The threads that are inside `block_on` on this runtime and have to be woken up when a task
-    /// is queued (they may be parked waiting for it).
+    /// Threads inside `block_on` on this runtime, which have to be woken when work is queued.
     parked: Mutex<Vec<(u64, parking::Unparker)>>,
     num_parked: AtomicUsize,
     next_parked_id: AtomicU64,
 }
 
 impl HostRuntime {
-    fn new(context: usize, notify: Option<VortexFFINotifyCallback>) -> Arc<Self> {
+    fn new(context: usize, notify: Option<FFI_VortexTaskReadyCallback>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             queues: [ConcurrentQueue::unbounded(), ConcurrentQueue::unbounded()],
             notify,
@@ -117,24 +105,27 @@ impl HostRuntime {
         })
     }
 
-    /// A handle for Vortex to spawn tasks with. It is a weak reference: the runtime is kept alive by
-    /// the reader or writer that owns it.
+    /// The handle Vortex spawns through. Deliberately a weak reference: the runtime is kept alive
+    /// by the reader or writer that owns it.
     fn handle(self: &Arc<Self>) -> Handle {
         let executor: Arc<dyn Executor> = self.clone();
         Handle::new(Arc::downgrade(&executor))
     }
 
-    fn spawn_on(&self, queue: VortexFFIQueue, future: BoxFuture<'static, ()>) -> AbortHandleRef {
+    fn spawn_on(
+        &self,
+        queue: FFI_VortexTaskQueue,
+        future: BoxFuture<'static, ()>,
+    ) -> AbortHandleRef {
         let weak = self.weak_self.clone();
         let schedule = move |runnable: Runnable| match weak.upgrade() {
-            // Dropping the runnable drops the future: the task is cancelled, which is what should
-            // happen to work scheduled after its runtime is gone.
+            // Dropping a `Runnable` drops its future, which is what should happen to work
+            // scheduled after its runtime is gone.
             None => drop(runnable),
             Some(runtime) => runtime.enqueue(queue, runnable),
         };
-        // `Runnable::run` re-raises a panic of the future on the thread that runs it; catch it here
-        // so that a panic in a Vortex task never unwinds into the host's thread pool. The task's
-        // own error reporting (the scan consumer) is done by the future itself.
+        // `Runnable::run` re-raises a panic of the future on the thread that ran it, and that
+        // thread belongs to the caller's pool. Catch it before it gets there.
         let (runnable, task) = async_task::spawn(
             async move {
                 let _ = AssertUnwindSafe(future).catch_unwind().await;
@@ -145,8 +136,8 @@ impl HostRuntime {
         Box::new(HostAbortHandle { task: Some(task) })
     }
 
-    fn enqueue(&self, queue: VortexFFIQueue, runnable: Runnable) {
-        // The queues are unbounded and never closed, so pushing cannot fail.
+    fn enqueue(&self, queue: FFI_VortexTaskQueue, runnable: Runnable) {
+        // Unbounded and never closed, so this cannot fail.
         let _ = self.queues[queue as usize].push(runnable);
         if let Some(notify) = self.notify {
             unsafe { notify(self.context as *mut c_void, queue) };
@@ -159,8 +150,7 @@ impl HostRuntime {
         }
     }
 
-    /// Runs at most `max_tasks` tasks of the queue, returning how many were run.
-    fn run(&self, queue: VortexFFIQueue, max_tasks: usize) -> usize {
+    fn run(&self, queue: FFI_VortexTaskQueue, max_tasks: usize) -> usize {
         let mut count = 0;
         while count < max_tasks {
             match self.queues[queue as usize].pop() {
@@ -174,15 +164,12 @@ impl HostRuntime {
         count
     }
 
-    fn pending(&self, queue: VortexFFIQueue) -> usize {
+    fn pending(&self, queue: FFI_VortexTaskQueue) -> usize {
         self.queues[queue as usize].len()
     }
 
-    /// Runs the runtime on the calling thread until `future` completes.
-    ///
-    /// Used for the operations that are synchronous from the host's point of view (opening a file,
-    /// writing a batch): the calling thread runs the tasks they spawn, so they work with or without
-    /// a host driving the runtime.
+    /// Runs this runtime on the calling thread until `future` completes. This is what lets the
+    /// calls that are synchronous from outside work whether or not the caller drives the queues.
     fn block_on<F: Future>(self: &Arc<Self>, future: F) -> F::Output {
         let parker = parking::Parker::new();
         let unparker = parker.unparker();
@@ -191,8 +178,8 @@ impl HostRuntime {
             let mut parked = self.parked.lock().unwrap_or_else(|e| e.into_inner());
             parked.push((id, unparker.clone()));
         }
-        // Published after the unparker is in the list, so that a concurrent `enqueue` that observes
-        // the count also observes the unparker.
+        // Published only after the unparker is in the list, so that whoever observes the count
+        // also observes the unparker.
         self.num_parked.fetch_add(1, Ordering::Release);
 
         let waker = Waker::from(unparker);
@@ -202,9 +189,10 @@ impl HostRuntime {
             if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
                 break output;
             }
-            // A host thread may be running the same queues in parallel; whoever gets the task runs
-            // it, and the waker wakes this thread up when the future can make progress.
-            if self.run(VortexFFIQueue::CPU, 1) > 0 || self.run(VortexFFIQueue::IO, 1) > 0 {
+            // The caller's threads may be draining the same queues; whichever gets the task runs
+            // it, and the waker wakes this thread when the future can make progress.
+            if self.run(FFI_VortexTaskQueue::CPU, 1) > 0 || self.run(FFI_VortexTaskQueue::IO, 1) > 0
+            {
                 continue;
             }
             parker.park();
@@ -221,24 +209,24 @@ impl HostRuntime {
 
 impl Executor for HostRuntime {
     fn spawn(&self, future: BoxFuture<'static, ()>) -> AbortHandleRef {
-        self.spawn_on(VortexFFIQueue::CPU, future)
+        self.spawn_on(FFI_VortexTaskQueue::CPU, future)
     }
 
     fn spawn_io(&self, future: BoxFuture<'static, ()>) -> AbortHandleRef {
-        self.spawn_on(VortexFFIQueue::IO, future)
+        self.spawn_on(FFI_VortexTaskQueue::IO, future)
     }
 
     fn spawn_cpu(&self, task: Box<dyn FnOnce() + Send + 'static>) -> AbortHandleRef {
-        self.spawn_on(VortexFFIQueue::CPU, async move { task() }.boxed())
+        self.spawn_on(FFI_VortexTaskQueue::CPU, async move { task() }.boxed())
     }
 
     fn spawn_blocking_io(&self, task: Box<dyn FnOnce() + Send + 'static>) -> AbortHandleRef {
-        self.spawn_on(VortexFFIQueue::IO, async move { task() }.boxed())
+        self.spawn_on(FFI_VortexTaskQueue::IO, async move { task() }.boxed())
     }
 }
 
-/// Aborting cancels the task: dropping an `async_task::Task` drops the future as soon as the task is
-/// idle. Dropping the handle without aborting detaches the task, which then runs to completion.
+/// Aborting drops the `async_task::Task`, which drops the future as soon as the task is idle.
+/// Dropping the handle without aborting detaches the task instead, and it runs to completion.
 struct HostAbortHandle {
     task: Option<async_task::Task<()>>,
 }
@@ -257,93 +245,93 @@ impl Drop for HostAbortHandle {
     }
 }
 
-/// The FFI handle of a `HostRuntime`.
-pub struct VortexFFIRuntime {
+pub struct FFI_VortexRuntime {
     inner: Arc<HostRuntime>,
 }
 
-/// Creates a runtime. `notify` (which may be null, together with `context`) is called whenever a
-/// task becomes runnable; the host is then expected to call `vortex_ffi_runtime_run` for that queue
-/// from one of its threads. A runtime without a callback only ever runs tasks on the threads that
-/// are inside FFI calls on it.
-///
-/// The runtime must outlive the readers, scans and writers created on it.
+/// Creates a runtime. A null `notify`, together with `context`, gives one that only advances
+/// inside FFI calls. It has to outlive every reader, scan and writer created on it.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_runtime_new(
     context: *mut c_void,
-    notify: Option<VortexFFINotifyCallback>,
-) -> *mut VortexFFIRuntime {
-    Box::into_raw(Box::new(VortexFFIRuntime { inner: HostRuntime::new(context as usize, notify) }))
+    notify: Option<FFI_VortexTaskReadyCallback>,
+) -> *mut FFI_VortexRuntime {
+    Box::into_raw(Box::new(FFI_VortexRuntime {
+        inner: HostRuntime::new(context as usize, notify),
+    }))
 }
 
-/// Runs at most `max_tasks` runnable tasks of the given queue (0 means no limit) and returns how
-/// many were run, or -1 if a task panicked (the panic does not cross the FFI boundary).
+/// Runs up to `max_tasks` runnable tasks of the queue, 0 meaning no limit, and returns how many
+/// were run. Returns -1 if a panic was caught; no panic ever crosses the boundary.
 ///
-/// Thread-safe: any number of threads may run the same queue at once. A task may queue more tasks,
-/// including on the other queue, which is reported through the notification callback.
+/// Any number of threads may run the same queue at once. A task may queue further tasks, on either
+/// queue, which is reported through the notification callback.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_runtime_run(
-    runtime: *const VortexFFIRuntime,
-    queue: VortexFFIQueue,
+    runtime: *const FFI_VortexRuntime,
+    queue: FFI_VortexTaskQueue,
     max_tasks: u32,
     error: *mut *mut c_char,
 ) -> i64 {
     unsafe {
         ffi_wrap(error, -1, || {
             let runtime = &*runtime;
-            let max_tasks = if max_tasks == 0 { usize::MAX } else { max_tasks as usize };
+            let max_tasks = if max_tasks == 0 {
+                usize::MAX
+            } else {
+                max_tasks as usize
+            };
             Ok(runtime.inner.run(queue, max_tasks) as i64)
         })
     }
 }
 
-/// Returns the number of tasks waiting in the given queue. Thread-safe.
+/// Returns the number of tasks waiting in the given queue. Safe to call from any thread.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_runtime_pending(
-    runtime: *const VortexFFIRuntime,
-    queue: VortexFFIQueue,
+    runtime: *const FFI_VortexRuntime,
+    queue: FFI_VortexTaskQueue,
 ) -> u64 {
     unsafe { (*runtime).inner.pending(queue) as u64 }
 }
 
-/// Frees the runtime. Everything created on it must be freed first, and no thread may be inside
+/// Frees the runtime. Everything created on it has to be freed first, and no thread may be inside
 /// `vortex_ffi_runtime_run` on it.
 #[no_mangle]
-pub unsafe extern "C" fn vortex_ffi_runtime_free(runtime: *mut VortexFFIRuntime) {
+pub unsafe extern "C" fn vortex_ffi_runtime_free(runtime: *mut FFI_VortexRuntime) {
     if !runtime.is_null() {
         unsafe { drop(Box::from_raw(runtime)) };
     }
 }
 
-pub struct VortexFFIReader {
+pub struct FFI_VortexReader {
     session: VortexSession,
     runtime: Arc<HostRuntime>,
     file: VortexFile,
     schema: SchemaRef,
 }
 
-pub struct VortexFFIScan {
-    /// The canonical Arrow schema of the projected columns.
+pub struct FFI_VortexScan {
+    /// What every chunk of this scan is exported with: the file schema cut to the columns asked for.
     schema: SchemaRef,
-    /// The capacity of the scan: a permit is taken before a split task is spawned and returned when
-    /// the host releases the chunk it produced. Closing it cancels the scan.
+    /// How much the scan is allowed to have in the air. One is claimed before a split is started
+    /// and comes back when the caller is done with the chunk. Closing the channel calls the scan
+    /// off entirely.
     permits: kanal::AsyncReceiver<()>,
-    /// The task that spawns the split tasks and reports the end of the scan. Dropping it cancels
-    /// the scan together with the split tasks it owns.
+    /// Starts the split tasks and announces the end. Dropping it takes them down with it.
     driver: Mutex<Option<Task<()>>>,
 }
 
-/// A node of a filter expression built through `vortex_ffi_expr_*`.
-pub struct VortexFFIExpression(Expression);
+pub struct FFI_VortexExpression(Expression);
 
-pub struct VortexFFIWriter {
+pub struct FFI_VortexWriter {
     session: VortexSession,
     runtime: Arc<HostRuntime>,
     schema: SchemaRef,
     writer: Option<vortex::file::Writer<'static>>,
 }
-unsafe fn set_error(error: *mut *mut c_char, message: String)
-{
+
+unsafe fn set_error(error: *mut *mut c_char, message: String) {
     if error.is_null() {
         return;
     }
@@ -354,7 +342,6 @@ unsafe fn set_error(error: *mut *mut c_char, message: String)
     }
 }
 
-/// The message of a caught panic.
 fn panic_message(panic: &(dyn Any + Send)) -> String {
     let message = panic
         .downcast_ref::<&str>()
@@ -364,8 +351,8 @@ fn panic_message(panic: &(dyn Any + Send)) -> String {
     format!("panic: {message}")
 }
 
-/// Runs `f`, catching both errors and panics. On failure stores the message into `error` and
-/// returns `on_error`.
+/// Runs `f` and turns anything that goes wrong, an error or a panic, into a message in `error` and
+/// a return of `on_error`.
 unsafe fn ffi_wrap<T, F>(error: *mut *mut c_char, on_error: T, f: F) -> T
 where
     F: FnOnce() -> Result<T, String>,
@@ -383,19 +370,15 @@ where
     }
 }
 
-/// A `VortexReadAt` implementation on top of a ClickHouse read callback.
-///
-/// A read is a task on the IO queue, so it blocks whichever host thread runs that queue (the
-/// callback is synchronous) while the CPU queue keeps decoding. Up to `concurrency` reads may be in
-/// flight at once.
+/// `VortexReadAt` on top of the caller's read callback. A read is queued as IO work, so it holds
+/// whichever thread picked it up for as long as the callback takes, while decoding carries on.
 #[derive(Clone)]
 struct CallbackReader {
     context: usize,
-    read: VortexFFIReadCallback,
+    read: FFI_VortexReadCallback,
     size: u64,
     concurrency: usize,
-    /// How the file's segment source merges nearby segment reads into one callback invocation.
-    /// `None` means one callback per segment.
+    /// When to merge neighbouring segment reads into one call. `None` asks for one call apiece.
     coalesce: Option<CoalesceConfig>,
     handle: Handle,
 }
@@ -423,11 +406,14 @@ impl VortexReadAt for CallbackReader {
         let this = self.clone();
         self.handle
             .spawn_blocking(move || {
-                if offset.checked_add(length as u64).is_none_or(|end| end > this.size) {
+                if offset
+                    .checked_add(length as u64)
+                    .is_none_or(|end| end > this.size)
+                {
                     return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
                 }
-                // The callback either fills all `length` bytes or fails, so the buffer does not
-                // need to be zero-initialized.
+                // The callback either writes all `length` bytes or fails, so there is nothing to
+                // gain from zeroing this first.
                 let mut buffer = ByteBufferMut::with_capacity_aligned(length, alignment);
                 let result = unsafe {
                     (this.read)(
@@ -451,35 +437,31 @@ fn make_session(runtime: &Arc<HostRuntime>) -> VortexSession {
     VortexSession::default().with_handle(runtime.handle())
 }
 
-/// Options of `vortex_ffi_reader_open`. A zero-initialized struct means: one read at a time and
-/// no coalescing.
+/// Zero-initialize for one read at a time and no merging.
 #[repr(C)]
-pub struct VortexFFIReaderOptions {
-    /// The maximum number of reads the library may have in flight at once (0 or 1 = one). The
-    /// read callback must be thread-safe if it is greater than 1.
+pub struct FFI_VortexReaderOptions {
+    /// How many reads may be outstanding, 0 and 1 both meaning one. Above that the read callback
+    /// has to tolerate being on several threads at once.
     pub io_concurrency: u32,
-    /// Nearby segment reads are merged into one callback invocation when the gap between them is
-    /// at most `coalesce_distance` bytes and the merged read is at most `coalesce_max_size` bytes.
-    /// Both zero disables coalescing: one callback per segment.
-    pub coalesce_distance: u64,
-    pub coalesce_max_size: u64,
+    /// Two segment reads are merged into one call when no more than `coalesce_max_gap_bytes`
+    /// separate them and the result stays under `coalesce_max_read_bytes`. Both zero disables
+    /// merging.
+    pub coalesce_max_gap_bytes: u64,
+    pub coalesce_max_read_bytes: u64,
 }
 
-/// Opens a Vortex file for reading on the given runtime. The file is accessed through `read` with
-/// the given opaque `context`; `file_size` must be the exact file size in bytes; `options` may be
-/// null (the defaults).
-///
-/// Reading the footer needs IO, which happens on the calling thread (the tasks it spawns are run by
-/// it), so this function does not require the host to be driving the runtime yet.
+/// Opens a file for reading. It is accessed through `read` with the given `context`; `file_size`
+/// has to be the exact size of the file, and `options` may be null. Reading the footer happens on
+/// the calling thread, so the runtime does not have to be driven yet. Returns null on failure.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_reader_open(
-    runtime: *const VortexFFIRuntime,
+    runtime: *const FFI_VortexRuntime,
     context: *mut c_void,
-    read: VortexFFIReadCallback,
+    read: FFI_VortexReadCallback,
     file_size: u64,
-    options: *const VortexFFIReaderOptions,
+    options: *const FFI_VortexReaderOptions,
     error: *mut *mut c_char,
-) -> *mut VortexFFIReader {
+) -> *mut FFI_VortexReader {
     unsafe {
         ffi_wrap(error, std::ptr::null_mut(), || {
             let runtime = (*runtime).inner.clone();
@@ -488,9 +470,11 @@ pub unsafe extern "C" fn vortex_ffi_reader_open(
             if !options.is_null() {
                 let options = &*options;
                 concurrency = std::cmp::max(options.io_concurrency, 1) as usize;
-                if options.coalesce_distance != 0 || options.coalesce_max_size != 0 {
-                    coalesce =
-                        Some(CoalesceConfig::new(options.coalesce_distance, options.coalesce_max_size));
+                if options.coalesce_max_gap_bytes != 0 || options.coalesce_max_read_bytes != 0 {
+                    coalesce = Some(CoalesceConfig::new(
+                        options.coalesce_max_gap_bytes,
+                        options.coalesce_max_read_bytes,
+                    ));
                 }
             }
             let session = make_session(&runtime);
@@ -503,7 +487,12 @@ pub unsafe extern "C" fn vortex_ffi_reader_open(
                 handle: runtime.handle(),
             };
             let file = runtime
-                .block_on(session.open_options().with_file_size(file_size).open_read(source))
+                .block_on(
+                    session
+                        .open_options()
+                        .with_file_size(file_size)
+                        .open_read(source),
+                )
                 .map_err(|e| e.to_string())?;
             let schema = Arc::new(
                 session
@@ -511,22 +500,27 @@ pub unsafe extern "C" fn vortex_ffi_reader_open(
                     .to_arrow_schema(file.dtype())
                     .map_err(|e| e.to_string())?,
             );
-            Ok(Box::into_raw(Box::new(VortexFFIReader { session, runtime, file, schema })))
+            Ok(Box::into_raw(Box::new(FFI_VortexReader {
+                session,
+                runtime,
+                file,
+                schema,
+            })))
         })
     }
 }
 
 /// Returns the total number of rows in the file.
 #[no_mangle]
-pub unsafe extern "C" fn vortex_ffi_reader_row_count(reader: *const VortexFFIReader) -> u64 {
+pub unsafe extern "C" fn vortex_ffi_reader_row_count(reader: *const FFI_VortexReader) -> u64 {
     unsafe { (*reader).file.row_count() }
 }
 
-/// Exports the file schema into `out_schema` (an Arrow C Data Interface `struct ArrowSchema`).
-/// The caller takes ownership and must release it. Returns 0 on success.
+/// Exports the file schema into `out_schema`, which the caller then owns and has to release.
+/// Returns zero on success.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_reader_schema(
-    reader: *const VortexFFIReader,
+    reader: *const FFI_VortexReader,
     out_schema: *mut FFI_ArrowSchema,
     error: *mut *mut c_char,
 ) -> i32 {
@@ -541,21 +535,34 @@ pub unsafe extern "C" fn vortex_ffi_reader_schema(
     }
 }
 
+/// Frees the reader. Every scan created on it has to be freed first.
 #[no_mangle]
-pub unsafe extern "C" fn vortex_ffi_reader_free(reader: *mut VortexFFIReader) {
+pub unsafe extern "C" fn vortex_ffi_reader_free(reader: *mut FFI_VortexReader) {
     if !reader.is_null() {
         unsafe { drop(Box::from_raw(reader)) };
     }
 }
-struct CallbackWrite {
+
+/// A `VortexWrite` on top of the caller's write callback. Writing never leaves the calling thread,
+/// so the callback only ever runs from inside an FFI call.
+struct CallbackWriter {
     context: usize,
-    write: VortexFFIWriteCallback,
+    write: FFI_VortexWriteCallback,
 }
 
-impl VortexWrite for CallbackWrite {
-    fn write_all<B: IoBuf>(&mut self, buffer: B) -> impl std::future::Future<Output = std::io::Result<B>> {
+impl VortexWrite for CallbackWriter {
+    fn write_all<B: IoBuf>(
+        &mut self,
+        buffer: B,
+    ) -> impl std::future::Future<Output = std::io::Result<B>> {
         let slice = buffer.as_slice();
-        let result = unsafe { (self.write)(self.context as *mut c_void, slice.as_ptr(), slice.len() as u64) };
+        let result = unsafe {
+            (self.write)(
+                self.context as *mut c_void,
+                slice.as_ptr(),
+                slice.len() as u64,
+            )
+        };
         std::future::ready(if result == 0 {
             Ok(buffer)
         } else {
@@ -572,71 +579,74 @@ impl VortexWrite for CallbackWrite {
     }
 }
 
-
-/// Options of a scan, see `vortex_ffi_scan_create`. All fields are optional: a zero-initialized
-/// struct scans all rows of all columns.
+/// Nothing here is required: zero-initialize to read every row of every column.
 #[repr(C)]
-pub struct VortexFFIScanOptions {
-    /// The names of the top-level columns to read, in the given order. Null means all columns.
+pub struct FFI_VortexScanOptions {
+    /// The top-level columns to read, in this order. Null means all of them.
     pub columns: *const *const c_char,
     pub num_columns: u64,
-    /// The filter expression; only the rows matching it are returned. Null means no filter.
-    pub filter: *const VortexFFIExpression,
-    /// The row range `[row_range_begin, row_range_end)` to scan. Both zero means the whole file.
+    /// Only the rows matching it are returned, and the scan skips the statistics zones it rules
+    /// out. Null means no filter.
+    pub filter: *const FFI_VortexExpression,
+    /// The row range `[row_range_begin, row_range_end)`. Both zero means the whole file.
     pub row_range_begin: u64,
     pub row_range_end: u64,
-    /// The maximum number of chunks that may be in flight at once: being read, decoded, or already
-    /// handed to `on_chunk` and not yet released with `vortex_ffi_scan_release` (0 = default).
-    /// This bounds both the memory the scan holds and the amount of IO lookahead.
-    pub in_flight: u32,
+    /// The number of splits that may be in flight at once: being read, being decoded, or already
+    /// handed over and not yet released. 0 selects the default. This is what keeps the scan from
+    /// running ahead of the caller; the reads underneath are bounded separately by
+    /// `io_concurrency` and `coalesce_max_read_bytes`.
+    pub max_splits_in_flight: u32,
 }
 
-/// The callbacks a scan reports to. They are called on the host threads that run the scan's tasks,
-/// concurrently, and must not call back into the library (except `vortex_ffi_scan_release`, which
-/// must not be called from `on_chunk` itself).
+/// The callbacks a scan reports to. Both run on the caller's own threads, possibly several at a
+/// time. The only calls back into the library they may make are `vortex_ffi_scan_cancel`, which is
+/// allowed from either of them, and `vortex_ffi_scan_release`, which is not allowed from
+/// `on_chunk`.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct VortexFFIScanConsumer {
+pub struct FFI_VortexScanCallbacks {
     pub context: *mut c_void,
-    /// Receives one chunk of the scan: an Arrow struct array in the scan schema, whose ownership
-    /// passes to the consumer, and the 0-based index of its row split in file order. A null array
-    /// means the split matched no rows (reported so that the consumer can restore the file order).
-    /// Returns 0 on success; a non-zero return stops the scan and is reported as an error to
-    /// `on_finish`.
+    /// Delivers one chunk: an Arrow struct array in the scan's schema, which the caller now owns
+    /// and has to release, together with the position of its split in the file. A null array means
+    /// the split matched no rows; it is still reported so that the caller can restore the file
+    /// order. Returning non-zero stops the scan and surfaces from `on_finish` as an error.
     pub on_chunk: unsafe extern "C" fn(
         context: *mut c_void,
         array: *mut FFI_ArrowArray,
         split_index: u64,
     ) -> i32,
-    /// Called exactly once when the scan ends: with null when all splits were delivered, or with an
-    /// error message (valid only during the call) when the scan failed. Not called when the scan is
-    /// cancelled with `vortex_ffi_scan_cancel`.
+    /// Reports the end of the scan, exactly once: null if every split was delivered, otherwise a
+    /// message that is only valid for the duration of the call. Never called for a scan that was
+    /// cancelled. After a failure a split task already in flight can still reach `on_chunk`, so the
+    /// context has to outlive the caller's last pass over the queues.
     pub on_finish: unsafe extern "C" fn(context: *mut c_void, error: *const c_char),
 }
 
-/// The consumer as it is captured by the tasks: the raw pointer is kept as an integer so that the
-/// struct is `Send`. The host guarantees the context outlives the scan.
+/// The callbacks as the tasks carry them: the pointer is kept as an integer so that the struct
+/// stays `Send`. The caller guarantees the context outlives the scan.
 #[derive(Clone, Copy)]
-struct Consumer {
+struct ScanCallbacks {
     context: usize,
     on_chunk: unsafe extern "C" fn(*mut c_void, *mut FFI_ArrowArray, u64) -> i32,
     on_finish: unsafe extern "C" fn(*mut c_void, *const c_char),
 }
 
-impl Consumer {
+impl ScanCallbacks {
     fn deliver(&self, array: Option<FFI_ArrowArray>, split_index: u64) -> VortexResult<()> {
         let empty = array.is_none();
         let result = match array {
             None => unsafe {
-                (self.on_chunk)(self.context as *mut c_void, std::ptr::null_mut(), split_index)
+                (self.on_chunk)(
+                    self.context as *mut c_void,
+                    std::ptr::null_mut(),
+                    split_index,
+                )
             },
             Some(array) => {
-                // The ownership of the array passes to the consumer, which either imports it or
-                // releases it, so it must not be dropped (released) here as well.
+                // Ownership of the array passes to the caller, which either imports or releases
+                // it, so it must not be released here as well.
                 let mut array = std::mem::ManuallyDrop::new(array);
-                unsafe {
-                    (self.on_chunk)(self.context as *mut c_void, &mut *array, split_index)
-                }
+                unsafe { (self.on_chunk)(self.context as *mut c_void, &mut *array, split_index) }
             }
         };
         if result != 0 {
@@ -653,42 +663,44 @@ impl Consumer {
         match error {
             None => unsafe { (self.on_finish)(self.context as *mut c_void, std::ptr::null()) },
             Some(message) => {
-                let message = CString::new(message.replace('\0', " "))
-                    .unwrap_or_else(|_| CString::new("invalid error message").expect("valid literal"));
+                let message = CString::new(message.replace('\0', " ")).unwrap_or_else(|_| {
+                    CString::new("invalid error message").expect("valid literal")
+                });
                 unsafe { (self.on_finish)(self.context as *mut c_void, message.as_ptr()) };
             }
         }
     }
 }
 
-/// Reports the end of a scan to the consumer exactly once, also when the driver task panics: the
-/// host waits for `on_finish` and would otherwise wait forever. Nothing is reported when the driver
-/// is cancelled (dropped without a panic), as the contract of `vortex_ffi_scan_cancel` requires.
+/// Reports the end of a scan exactly once, including when the driver panics: the caller waits for
+/// `on_finish` and would otherwise wait forever. A driver that was cancelled reports nothing, which
+/// is what cancellation guarantees.
 struct FinishGuard {
-    consumer: Consumer,
+    callbacks: ScanCallbacks,
     finished: bool,
 }
 
 impl FinishGuard {
     fn finish(mut self, error: Option<String>) {
         self.finished = true;
-        self.consumer.finish(error);
+        self.callbacks.finish(error);
     }
 }
 
 impl Drop for FinishGuard {
     fn drop(&mut self) {
-        // The locals of the driver are dropped while its panic unwinds out of `poll`, before the
-        // runtime catches the panic, so this tells a panic from a cancellation.
+        // A panicking driver drops its locals while unwinding out of `poll`, before the runtime
+        // catches the panic, so this is how a panic is distinguished from a cancellation.
         if !self.finished && std::thread::panicking() {
-            self.consumer.finish(Some("panic in the scan driver".to_string()));
+            self.callbacks
+                .finish(Some("panic in the scan driver".to_string()));
         }
     }
 }
 
-const DEFAULT_IN_FLIGHT: usize = 4;
+const DEFAULT_MAX_SPLITS_IN_FLIGHT: usize = 4;
 
-/// The error of one joined split task, if it failed or panicked.
+/// The error of a joined split task, if it failed or panicked.
 fn scan_task_error(outcome: Result<VortexResult<()>, Box<dyn Any + Send>>) -> Option<String> {
     match outcome {
         Ok(Ok(())) => None,
@@ -697,28 +709,33 @@ fn scan_task_error(outcome: Result<VortexResult<()>, Box<dyn Any + Send>>) -> Op
     }
 }
 
-/// Creates a scan over the file and starts it: the split tasks are spawned onto the reader's
-/// runtime as capacity allows, and every chunk they produce is handed to `consumer.on_chunk` on the
-/// thread that ran the task. The end of the scan (or its first error) is reported to
-/// `consumer.on_finish`.
+/// Creates a scan and starts it. Optimizing the expression and computing the splits happens here,
+/// on the calling thread; from then on the scan is a driver task that spawns one task per split, as
+/// far ahead as the `max_splits_in_flight` permits allow. A split task reads, decodes and exports
+/// its data, then calls `on_chunk` on the thread it is running on, and the permit it took is only
+/// returned when the caller releases that chunk - so the caller sets the pace.
 ///
-/// Expression optimization and split computation happen here, on the calling thread. The reader and
-/// the consumer's context must stay alive for the whole lifetime of the scan; `filter` is not
-/// consumed. Returns null on error.
+/// A split that matched no rows returns its own permit, as there is nothing for the caller to
+/// release. The driver joins finished tasks even while it is waiting for a permit: with every
+/// permit held by the caller, a split that failed would otherwise never be noticed, having
+/// delivered nothing.
+///
+/// The reader and the callbacks' context both have to outlive the scan. `filter` is borrowed, not
+/// consumed. Returns null on failure.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_scan_create(
-    reader: *const VortexFFIReader,
-    options: *const VortexFFIScanOptions,
-    consumer: *const VortexFFIScanConsumer,
+    reader: *const FFI_VortexReader,
+    options: *const FFI_VortexScanOptions,
+    callbacks: *const FFI_VortexScanCallbacks,
     error: *mut *mut c_char,
-) -> *mut VortexFFIScan {
+) -> *mut FFI_VortexScan {
     unsafe {
         ffi_wrap(error, std::ptr::null_mut(), || {
             let reader = &*reader;
             let mut builder = reader.file.scan().map_err(|e| e.to_string())?;
 
             let mut schema = reader.schema.clone();
-            let mut in_flight = DEFAULT_IN_FLIGHT;
+            let mut max_splits_in_flight = DEFAULT_MAX_SPLITS_IN_FLIGHT;
 
             if !options.is_null() {
                 let options = &*options;
@@ -734,11 +751,17 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                     let mut fields = Vec::with_capacity(names.len());
                     for name in &names {
                         fields.push(
-                            reader.schema.field_with_name(name).map_err(|e| e.to_string())?.clone(),
+                            reader
+                                .schema
+                                .field_with_name(name)
+                                .map_err(|e| e.to_string())?
+                                .clone(),
                         );
                     }
-                    let field_names: Vec<FieldName> =
-                        names.iter().map(|name| FieldName::from(name.as_str())).collect();
+                    let field_names: Vec<FieldName> = names
+                        .iter()
+                        .map(|name| FieldName::from(name.as_str()))
+                        .collect();
                     builder = builder.with_projection(select(field_names, root()));
                     schema = Arc::new(Schema::new(fields));
                 }
@@ -754,32 +777,35 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                             options.row_range_begin, options.row_range_end
                         ));
                     }
-                    builder = builder.with_row_range(options.row_range_begin..options.row_range_end);
+                    builder =
+                        builder.with_row_range(options.row_range_begin..options.row_range_end);
                 }
 
-                if options.in_flight != 0 {
-                    in_flight = options.in_flight as usize;
+                if options.max_splits_in_flight != 0 {
+                    max_splits_in_flight = options.max_splits_in_flight as usize;
                 }
             }
 
-            let consumer = {
-                let consumer = &*consumer;
-                Consumer {
-                    context: consumer.context as usize,
-                    on_chunk: consumer.on_chunk,
-                    on_finish: consumer.on_finish,
+            let callbacks = {
+                let callbacks = &*callbacks;
+                ScanCallbacks {
+                    context: callbacks.context as usize,
+                    on_chunk: callbacks.on_chunk,
+                    on_finish: callbacks.on_finish,
                 }
             };
 
-            // Every chunk is exported to Arrow inside its split task, i.e. on whichever host thread
-            // runs the task, and checked against the scan schema so that the consumer can import all
-            // chunks with the single schema returned by `vortex_ffi_scan_schema`.
+            // The export to Arrow happens inside the split task, on the caller's thread, and is
+            // checked against the scan schema so that every chunk can be imported with the single
+            // schema `vortex_ffi_scan_schema` returns.
             let session = reader.session.clone();
             let struct_field = Field::new_struct("", schema.fields().clone(), false);
             let expected_type = struct_field.data_type().clone();
             let builder = builder.map(move |chunk| {
                 let mut ctx = session.create_execution_ctx();
-                let arrow = session.arrow().execute_arrow(chunk, Some(&struct_field), &mut ctx)?;
+                let arrow = session
+                    .arrow()
+                    .execute_arrow(chunk, Some(&struct_field), &mut ctx)?;
                 if arrow.data_type() != &expected_type {
                     return Err(vortex_err!(
                         "Vortex chunk exported as {} instead of the scan schema {}",
@@ -790,41 +816,35 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                 Ok(FFI_ArrowArray::new(&arrow.as_struct().to_data()))
             });
 
-            // Note: `ScanBuilder::into_stream` / `into_iter` are deliberately not used here. They
-            // wrap the scan in the library's `LazyScanStream`, which offloads `ScanBuilder::prepare`
-            // to the `blocking` crate's global thread pool and joins it through a `oneshot`
-            // channel. That contradicts our threading model (see the module documentation): work
-            // would run on threads ClickHouse knows nothing about. `prepare` and `execute` are
-            // pure, synchronous computation (expression optimization and split computation, no
-            // IO), so we run them here and spawn the resulting per-split tasks ourselves.
+            // `into_stream` and `into_iter` are on offer and are not what we want: they give back
+            // a `Stream` that somebody would have to keep polling, pick their own concurrency, and
+            // quietly swallow the splits that kept no rows. We need the chunks pushed instead,
+            // held to `max_splits_in_flight`, and each labelled with the split it came from. `prepare` and
+            // `execute` are just computation with no IO in them, so they belong right here.
             let tasks = builder
                 .prepare()
                 .and_then(|scan| scan.execute(None))
                 .map_err(|e| e.to_string())?;
 
-            let in_flight = std::cmp::max(in_flight, 1);
-            // One permit per chunk that may be outstanding. A permit is taken before its split task
-            // is spawned and returned when the host releases the chunk (or right away for a split
-            // that produced no rows), so the scan never runs further ahead than the host consumes.
-            // Closing the channel cancels the scan.
-            let (permit_sender, permits) = kanal::bounded_async::<()>(in_flight);
+            let max_splits_in_flight = std::cmp::max(max_splits_in_flight, 1);
+            // Closing this channel is what cancels the scan.
+            let (permit_sender, permits) = kanal::bounded_async::<()>(max_splits_in_flight);
 
             let handle = reader.runtime.handle();
             let spawner = handle.clone();
             let permits_for_tasks = permits.clone();
 
-            // The driver: it spawns one task per split as capacity allows, and joins the spawned
-            // tasks to observe their errors. The tasks themselves run independently on the host's
-            // threads, so the driver blocking on a permit does not hold the scan back.
             let driver = handle.spawn(async move {
                 let mut spawned = futures::stream::FuturesUnordered::new();
                 let mut error: Option<String> = None;
-                let guard = FinishGuard { consumer, finished: false };
+                let guard = FinishGuard {
+                    callbacks,
+                    finished: false,
+                };
 
                 for (split_index, task) in tasks.into_iter().enumerate() {
-                    // Waits until the host releases a chunk, joining the split tasks that finish
-                    // meanwhile: an error must stop the scan even while the host holds every
-                    // permit, since a failed split delivers nothing that the host could release.
+                    // Joining while waiting for a permit is what lets a failed split stop the
+                    // scan when the caller is holding all of them.
                     let mut send = pin!(permit_sender.send(()).fuse());
                     loop {
                         futures::select_biased! {
@@ -835,8 +855,8 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                                 }
                             }
                             result = send => {
-                                // Fails only when the scan is cancelled, and then there is nobody
-                                // to report to.
+                                // Only fails once the scan is cancelled, and then there is
+                                // nobody left to report to.
                                 if result.is_err() {
                                     return;
                                 }
@@ -852,19 +872,18 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                     let permits = permits_for_tasks.clone();
                     let task = spawner.spawn(async move {
                         match task.await {
-                            Ok(Some(array)) => consumer.deliver(Some(array), split_index),
+                            Ok(Some(array)) => callbacks.deliver(Some(array), split_index),
                             Ok(None) => {
-                                // No rows: nothing is delivered to the host, so the permit of this
-                                // split has to be returned here.
-                                let result = consumer.deliver(None, split_index);
+                                // Nothing was delivered, so the permit is returned here.
+                                let result = callbacks.deliver(None, split_index);
                                 let _ = permits.try_recv();
                                 result
                             }
                             Err(e) => Err(e),
                         }
                     });
-                    // A panic in the split task is re-raised when the task is joined; catch it here
-                    // so that it reaches the consumer as an error.
+                    // Joining a panicking task re-raises the panic; catching it here turns it
+                    // into an error the caller can be told about.
                     spawned.push(AssertUnwindSafe(task).catch_unwind());
                 }
 
@@ -875,13 +894,12 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                     }
                 }
 
-                // Cancels the split tasks that are still in flight after an error, before the
-                // consumer is told that the scan is over.
+                // Cancel whatever is still running after a failure, before reporting the end.
                 drop(spawned);
                 guard.finish(error);
             });
 
-            Ok(Box::into_raw(Box::new(VortexFFIScan {
+            Ok(Box::into_raw(Box::new(FFI_VortexScan {
                 schema,
                 permits,
                 driver: Mutex::new(Some(driver)),
@@ -890,12 +908,11 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
     }
 }
 
-/// Exports the schema of the chunks produced by the scan into `out_schema` (an Arrow C Data
-/// Interface `struct ArrowSchema`). The caller takes ownership and must release it. Returns 0 on
-/// success.
+/// Exports the schema of the scan's chunks into `out_schema`, which the caller then owns and has
+/// to release. Returns zero on success.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_scan_schema(
-    scan: *const VortexFFIScan,
+    scan: *const FFI_VortexScan,
     out_schema: *mut FFI_ArrowSchema,
     error: *mut *mut c_char,
 ) -> i32 {
@@ -910,13 +927,11 @@ pub unsafe extern "C" fn vortex_ffi_scan_schema(
     }
 }
 
-/// Returns the capacity of `count` chunks that were delivered to `on_chunk` and are not needed by
-/// the host anymore, letting the scan read that many splits further ahead.
-///
-/// Thread-safe, and safe to call after the scan has finished or was cancelled (it does nothing
-/// then). Must not be called from inside `on_chunk`.
+/// Returns the capacity taken by `count` chunks the caller has finished with, letting the scan
+/// read that many splits further ahead. Safe from any thread and a no-op once the scan has ended.
+/// Must not be called from inside `on_chunk`.
 #[no_mangle]
-pub unsafe extern "C" fn vortex_ffi_scan_release(scan: *const VortexFFIScan, count: u64) {
+pub unsafe extern "C" fn vortex_ffi_scan_release(scan: *const FFI_VortexScan, count: u64) {
     if scan.is_null() {
         return;
     }
@@ -928,36 +943,35 @@ pub unsafe extern "C" fn vortex_ffi_scan_release(scan: *const VortexFFIScan, cou
     }
 }
 
-/// Cancels the scan. Thread-safe. The pending split tasks are dropped; `on_chunk` and `on_finish`
-/// are not called anymore once this returns, except from a task that is running at that moment, so
-/// the host must stop running the runtime's queues before it frees the consumer's context.
+/// Cancels the scan; safe from any thread. Pending tasks are dropped and no callback happens after
+/// this returns, except from a task that was already running - so stop driving the queues before
+/// releasing the callbacks' context.
 #[no_mangle]
-pub unsafe extern "C" fn vortex_ffi_scan_cancel(scan: *const VortexFFIScan) {
+pub unsafe extern "C" fn vortex_ffi_scan_cancel(scan: *const FFI_VortexScan) {
     if scan.is_null() {
         return;
     }
     let scan = unsafe { &*scan };
-    // Stops the spawner: no more split tasks are created.
+    // Stops the driver from spawning any more split tasks.
     let _ = scan.permits.close();
     // Dropping the driver task cancels it, together with the split tasks it owns.
     let driver = scan.driver.lock().unwrap_or_else(|e| e.into_inner()).take();
     drop(driver);
 }
 
-/// Frees the scan. The host must have stopped running the runtime's queues (no task of this scan
-/// may be running).
+/// Frees the scan. The queues must no longer be driven: no task of it may still be running.
 #[no_mangle]
-pub unsafe extern "C" fn vortex_ffi_scan_free(scan: *mut VortexFFIScan) {
+pub unsafe extern "C" fn vortex_ffi_scan_free(scan: *mut FFI_VortexScan) {
     if !scan.is_null() {
         unsafe { drop(Box::from_raw(scan)) };
     }
 }
-/// The primitive type of a literal built through `vortex_ffi_expr_literal_*`. Must match the
-/// exact type of the file column it is compared with: Vortex comparisons require both sides to
-/// have the same type.
+
+/// The type of a literal. It has to be exactly the type of the file column it is compared with:
+/// Vortex requires both sides of a comparison to have the same type.
 #[repr(i32)]
 #[derive(Clone, Copy)]
-pub enum VortexFFIPType {
+pub enum FFI_VortexPrimitiveType {
     I8 = 0,
     I16 = 1,
     I32 = 2,
@@ -970,10 +984,9 @@ pub enum VortexFFIPType {
     F64 = 9,
 }
 
-/// A comparison operator for `vortex_ffi_expr_compare`.
 #[repr(i32)]
 #[derive(Clone, Copy)]
-pub enum VortexFFIComparison {
+pub enum FFI_VortexComparisonOperator {
     Eq = 0,
     NotEq = 1,
     Lt = 2,
@@ -982,12 +995,12 @@ pub enum VortexFFIComparison {
     Gte = 5,
 }
 
-/// The expression builders below return null on invalid input. They do not consume their
-/// arguments: every returned handle must be freed with `vortex_ffi_expr_free`.
+// Every builder below returns null for input it cannot use, borrows rather than consumes its
+// arguments, and returns a handle that has to be freed with `vortex_ffi_expr_free`.
 
 /// Creates an expression referencing the top-level column `name`.
 #[no_mangle]
-pub unsafe extern "C" fn vortex_ffi_expr_column(name: *const c_char) -> *mut VortexFFIExpression {
+pub unsafe extern "C" fn vortex_ffi_expr_column(name: *const c_char) -> *mut FFI_VortexExpression {
     if name.is_null() {
         return std::ptr::null_mut();
     }
@@ -995,100 +1008,98 @@ pub unsafe extern "C" fn vortex_ffi_expr_column(name: *const c_char) -> *mut Vor
         return std::ptr::null_mut();
     };
     let expr = get_item(FieldName::from(name), root());
-    Box::into_raw(Box::new(VortexFFIExpression(expr)))
+    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
 }
 
 /// Creates a signed integer literal of the given type. Returns null if the value does not fit.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_literal_int(
-    ptype: VortexFFIPType,
+    ptype: FFI_VortexPrimitiveType,
     value: i64,
-) -> *mut VortexFFIExpression {
+) -> *mut FFI_VortexExpression {
     let nullability = Nullability::NonNullable;
     let scalar = match ptype {
-        VortexFFIPType::I8 => match i8::try_from(value) {
+        FFI_VortexPrimitiveType::I8 => match i8::try_from(value) {
             Ok(v) => Scalar::primitive(v, nullability),
             Err(_) => return std::ptr::null_mut(),
         },
-        VortexFFIPType::I16 => match i16::try_from(value) {
+        FFI_VortexPrimitiveType::I16 => match i16::try_from(value) {
             Ok(v) => Scalar::primitive(v, nullability),
             Err(_) => return std::ptr::null_mut(),
         },
-        VortexFFIPType::I32 => match i32::try_from(value) {
+        FFI_VortexPrimitiveType::I32 => match i32::try_from(value) {
             Ok(v) => Scalar::primitive(v, nullability),
             Err(_) => return std::ptr::null_mut(),
         },
-        VortexFFIPType::I64 => Scalar::primitive(value, nullability),
+        FFI_VortexPrimitiveType::I64 => Scalar::primitive(value, nullability),
         _ => return std::ptr::null_mut(),
     };
-    Box::into_raw(Box::new(VortexFFIExpression(lit(scalar))))
+    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
 }
 
 /// Creates an unsigned integer literal of the given type. Returns null if the value does not fit.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_literal_uint(
-    ptype: VortexFFIPType,
+    ptype: FFI_VortexPrimitiveType,
     value: u64,
-) -> *mut VortexFFIExpression {
+) -> *mut FFI_VortexExpression {
     let nullability = Nullability::NonNullable;
     let scalar = match ptype {
-        VortexFFIPType::U8 => match u8::try_from(value) {
+        FFI_VortexPrimitiveType::U8 => match u8::try_from(value) {
             Ok(v) => Scalar::primitive(v, nullability),
             Err(_) => return std::ptr::null_mut(),
         },
-        VortexFFIPType::U16 => match u16::try_from(value) {
+        FFI_VortexPrimitiveType::U16 => match u16::try_from(value) {
             Ok(v) => Scalar::primitive(v, nullability),
             Err(_) => return std::ptr::null_mut(),
         },
-        VortexFFIPType::U32 => match u32::try_from(value) {
+        FFI_VortexPrimitiveType::U32 => match u32::try_from(value) {
             Ok(v) => Scalar::primitive(v, nullability),
             Err(_) => return std::ptr::null_mut(),
         },
-        VortexFFIPType::U64 => Scalar::primitive(value, nullability),
+        FFI_VortexPrimitiveType::U64 => Scalar::primitive(value, nullability),
         _ => return std::ptr::null_mut(),
     };
-    Box::into_raw(Box::new(VortexFFIExpression(lit(scalar))))
+    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
 }
 
-/// Creates a floating-point literal of the given type. For `F32` the value must be exactly
-/// representable as `f32`, otherwise null is returned (a rounded bound would change the
-/// comparison result).
+/// Creates a floating-point literal of the given type. An `F32` value has to be exactly
+/// representable as `f32`; a rounded bound would change which rows the comparison matches.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_literal_float(
-    ptype: VortexFFIPType,
+    ptype: FFI_VortexPrimitiveType,
     value: f64,
-) -> *mut VortexFFIExpression {
+) -> *mut FFI_VortexExpression {
     let nullability = Nullability::NonNullable;
     let scalar = match ptype {
-        VortexFFIPType::F32 => {
+        FFI_VortexPrimitiveType::F32 => {
             let narrowed = value as f32;
             if f64::from(narrowed) != value {
                 return std::ptr::null_mut();
             }
             Scalar::primitive(narrowed, nullability)
         }
-        VortexFFIPType::F64 => Scalar::primitive(value, nullability),
+        FFI_VortexPrimitiveType::F64 => Scalar::primitive(value, nullability),
         _ => return std::ptr::null_mut(),
     };
-    Box::into_raw(Box::new(VortexFFIExpression(lit(scalar))))
+    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
 }
 
 /// Creates a boolean literal.
 #[no_mangle]
-pub unsafe extern "C" fn vortex_ffi_expr_literal_bool(value: bool) -> *mut VortexFFIExpression {
+pub unsafe extern "C" fn vortex_ffi_expr_literal_bool(value: bool) -> *mut FFI_VortexExpression {
     let scalar = Scalar::bool(value, Nullability::NonNullable);
-    Box::into_raw(Box::new(VortexFFIExpression(lit(scalar))))
+    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
 }
 
-/// Creates a string literal: `Utf8` if `is_utf8` is true (the bytes must be valid UTF-8,
-/// otherwise null is returned), `Binary` otherwise. A null `data` is accepted only for an empty
-/// literal (`length` 0), which is the empty string.
+/// Creates a string literal. `is_utf8` selects a `Utf8` literal, whose bytes have to be valid
+/// UTF-8, or a `Binary` one. A null `data` is only accepted for length 0.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_literal_string(
     data: *const u8,
     length: u64,
     is_utf8: bool,
-) -> *mut VortexFFIExpression {
+) -> *mut FFI_VortexExpression {
     // `from_raw_parts` requires a non-null, aligned pointer even for an empty slice.
     let bytes: &[u8] = if data.is_null() {
         if length != 0 {
@@ -1106,115 +1117,116 @@ pub unsafe extern "C" fn vortex_ffi_expr_literal_string(
     } else {
         Scalar::binary(bytes.to_vec(), Nullability::NonNullable)
     };
-    Box::into_raw(Box::new(VortexFFIExpression(lit(scalar))))
+    Box::into_raw(Box::new(FFI_VortexExpression(lit(scalar))))
 }
 
-/// Creates a comparison `lhs op rhs`. A comparison with a null value yields null, which the
-/// scan treats as "row does not match".
+/// Creates a comparison `lhs op rhs`. A comparison with a null value yields null, which the scan
+/// treats as a row that does not match.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_compare(
-    comparison: VortexFFIComparison,
-    lhs: *const VortexFFIExpression,
-    rhs: *const VortexFFIExpression,
-) -> *mut VortexFFIExpression {
+    comparison: FFI_VortexComparisonOperator,
+    lhs: *const FFI_VortexExpression,
+    rhs: *const FFI_VortexExpression,
+) -> *mut FFI_VortexExpression {
     if lhs.is_null() || rhs.is_null() {
         return std::ptr::null_mut();
     }
     let operator = match comparison {
-        VortexFFIComparison::Eq => Operator::Eq,
-        VortexFFIComparison::NotEq => Operator::NotEq,
-        VortexFFIComparison::Lt => Operator::Lt,
-        VortexFFIComparison::Lte => Operator::Lte,
-        VortexFFIComparison::Gt => Operator::Gt,
-        VortexFFIComparison::Gte => Operator::Gte,
+        FFI_VortexComparisonOperator::Eq => Operator::Eq,
+        FFI_VortexComparisonOperator::NotEq => Operator::NotEq,
+        FFI_VortexComparisonOperator::Lt => Operator::Lt,
+        FFI_VortexComparisonOperator::Lte => Operator::Lte,
+        FFI_VortexComparisonOperator::Gt => Operator::Gt,
+        FFI_VortexComparisonOperator::Gte => Operator::Gte,
     };
-    let expr =
-        unsafe { Binary.new_expr(operator, [(*lhs).0.clone(), (*rhs).0.clone()]) };
-    Box::into_raw(Box::new(VortexFFIExpression(expr)))
+    let expr = unsafe { Binary.new_expr(operator, [(*lhs).0.clone(), (*rhs).0.clone()]) };
+    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
 }
 
-/// Creates a Kleene (three-valued) AND of two boolean expressions.
+/// Creates a Kleene, three-valued AND of two boolean expressions.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_and(
-    lhs: *const VortexFFIExpression,
-    rhs: *const VortexFFIExpression,
-) -> *mut VortexFFIExpression {
+    lhs: *const FFI_VortexExpression,
+    rhs: *const FFI_VortexExpression,
+) -> *mut FFI_VortexExpression {
     if lhs.is_null() || rhs.is_null() {
         return std::ptr::null_mut();
     }
-    let expr =
-        unsafe { Binary.new_expr(Operator::And, [(*lhs).0.clone(), (*rhs).0.clone()]) };
-    Box::into_raw(Box::new(VortexFFIExpression(expr)))
+    let expr = unsafe { Binary.new_expr(Operator::And, [(*lhs).0.clone(), (*rhs).0.clone()]) };
+    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
 }
 
-/// Creates a Kleene (three-valued) OR of two boolean expressions.
+/// Creates a Kleene, three-valued OR of two boolean expressions.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_or(
-    lhs: *const VortexFFIExpression,
-    rhs: *const VortexFFIExpression,
-) -> *mut VortexFFIExpression {
+    lhs: *const FFI_VortexExpression,
+    rhs: *const FFI_VortexExpression,
+) -> *mut FFI_VortexExpression {
     if lhs.is_null() || rhs.is_null() {
         return std::ptr::null_mut();
     }
-    let expr =
-        unsafe { Binary.new_expr(Operator::Or, [(*lhs).0.clone(), (*rhs).0.clone()]) };
-    Box::into_raw(Box::new(VortexFFIExpression(expr)))
+    let expr = unsafe { Binary.new_expr(Operator::Or, [(*lhs).0.clone(), (*rhs).0.clone()]) };
+    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
 }
 
-/// Creates a logical NOT of a boolean expression (NOT of null is null).
+/// Creates a logical NOT of a boolean expression. NOT of a null is null.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_not(
-    child: *const VortexFFIExpression,
-) -> *mut VortexFFIExpression {
+    child: *const FFI_VortexExpression,
+) -> *mut FFI_VortexExpression {
     if child.is_null() {
         return std::ptr::null_mut();
     }
     let expr = unsafe { not((*child).0.clone()) };
-    Box::into_raw(Box::new(VortexFFIExpression(expr)))
+    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
 }
 
-/// Creates an expression that is true where the child expression is null.
+/// Creates an expression that is true for the rows where the child expression is null.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_expr_is_null(
-    child: *const VortexFFIExpression,
-) -> *mut VortexFFIExpression {
+    child: *const FFI_VortexExpression,
+) -> *mut FFI_VortexExpression {
     if child.is_null() {
         return std::ptr::null_mut();
     }
     let expr = unsafe { is_null((*child).0.clone()) };
-    Box::into_raw(Box::new(VortexFFIExpression(expr)))
+    Box::into_raw(Box::new(FFI_VortexExpression(expr)))
 }
 
+/// Frees an expression handle.
 #[no_mangle]
-pub unsafe extern "C" fn vortex_ffi_expr_free(expr: *mut VortexFFIExpression) {
+pub unsafe extern "C" fn vortex_ffi_expr_free(expr: *mut FFI_VortexExpression) {
     if !expr.is_null() {
         unsafe { drop(Box::from_raw(expr)) };
     }
 }
 
-
-/// Creates a writer producing a Vortex file with the given schema (consumed). The bytes of the
-/// file are sent to `write` with the given opaque `context`.
-///
-/// The writer drives its own runtime on the calling thread, so writing needs no host threads.
+/// Creates a writer for a file with the given schema, which it consumes. The bytes are sent to
+/// `write` with the given `context`. It drives a runtime of its own on the calling thread, so
+/// writing needs no threads from the caller. Returns null on failure.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_writer_create(
     context: *mut c_void,
-    write: VortexFFIWriteCallback,
+    write: FFI_VortexWriteCallback,
     schema: *mut FFI_ArrowSchema,
     error: *mut *mut c_char,
-) -> *mut VortexFFIWriter {
+) -> *mut FFI_VortexWriter {
     unsafe {
         ffi_wrap(error, std::ptr::null_mut(), || {
             let ffi_schema = std::ptr::read(schema);
             let arrow_schema = Schema::try_from(&ffi_schema).map_err(|e| e.to_string())?;
             let runtime = HostRuntime::new(0, None);
             let session = make_session(&runtime);
-            let dtype =
-                session.arrow().from_arrow_schema(&arrow_schema).map_err(|e| e.to_string())?;
-            let sink = CallbackWrite { context: context as usize, write };
+            let dtype = session
+                .arrow()
+                .from_arrow_schema(&arrow_schema)
+                .map_err(|e| e.to_string())?;
+            let sink = CallbackWriter {
+                context: context as usize,
+                write,
+            };
             let writer = session.write_options().writer(sink, dtype);
-            Ok(Box::into_raw(Box::new(VortexFFIWriter {
+            Ok(Box::into_raw(Box::new(FFI_VortexWriter {
                 session,
                 runtime,
                 schema: Arc::new(arrow_schema),
@@ -1224,11 +1236,11 @@ pub unsafe extern "C" fn vortex_ffi_writer_create(
     }
 }
 
-/// Appends one record batch (Arrow C Data Interface, consumed) to the file. The batch must have
-/// the same schema the writer was created with. Returns 0 on success.
+/// Appends one record batch, which it consumes, in the schema the writer was created with.
+/// Returns zero on success.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_writer_write(
-    writer: *mut VortexFFIWriter,
+    writer: *mut FFI_VortexWriter,
     array: *mut FFI_ArrowArray,
     schema: *mut FFI_ArrowSchema,
     error: *mut *mut c_char,
@@ -1258,18 +1270,20 @@ pub unsafe extern "C" fn vortex_ffi_writer_write(
     }
 }
 
-/// Flushes the remaining data and writes the file footer. Must be called exactly once before
-/// `vortex_ffi_writer_free`. Returns 0 on success.
+/// Flushes the remaining data and writes the file footer. Must be called exactly once, before
+/// freeing the writer. Returns zero on success.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_writer_finish(
-    writer: *mut VortexFFIWriter,
+    writer: *mut FFI_VortexWriter,
     error: *mut *mut c_char,
 ) -> i32 {
     unsafe {
         ffi_wrap(error, -1, || {
             let writer = &mut *writer;
-            let vortex_writer =
-                writer.writer.take().ok_or_else(|| "writer is already finished".to_string())?;
+            let vortex_writer = writer
+                .writer
+                .take()
+                .ok_or_else(|| "writer is already finished".to_string())?;
             writer
                 .runtime
                 .block_on(vortex_writer.finish())
@@ -1279,14 +1293,15 @@ pub unsafe extern "C" fn vortex_ffi_writer_finish(
     }
 }
 
+/// Frees the writer. Without a preceding `vortex_ffi_writer_finish` the file is left incomplete.
 #[no_mangle]
-pub unsafe extern "C" fn vortex_ffi_writer_free(writer: *mut VortexFFIWriter) {
+pub unsafe extern "C" fn vortex_ffi_writer_free(writer: *mut FFI_VortexWriter) {
     if !writer.is_null() {
         unsafe { drop(Box::from_raw(writer)) };
     }
 }
 
-/// Frees a string returned by this library (for example an error message).
+/// Frees a string returned by this library, such as an error message.
 #[no_mangle]
 pub unsafe extern "C" fn vortex_ffi_free_string(string: *mut c_char) {
     if !string.is_null() {
@@ -1310,17 +1325,21 @@ mod tests {
         0
     }
 
-    /// An in-memory file that counts the read callback invocations.
+    /// A file in memory that keeps count of how often the read callback was entered.
     struct TestFile {
         data: Vec<u8>,
         reads: AtomicUsize,
-        /// Makes every read fail, to test the I/O error path.
+        /// Turns every read into a failure.
         fail_reads: AtomicBool,
     }
 
     impl TestFile {
         fn new(data: Vec<u8>) -> Self {
-            Self { data, reads: AtomicUsize::new(0), fail_reads: AtomicBool::new(false) }
+            Self {
+                data,
+                reads: AtomicUsize::new(0),
+                fail_reads: AtomicBool::new(false),
+            }
         }
 
         fn context(&mut self) -> *mut c_void {
@@ -1343,7 +1362,9 @@ mod tests {
         if file.fail_reads.load(Ordering::Relaxed) {
             return 1;
         }
-        let Some(end) = offset.checked_add(length) else { return 1 };
+        let Some(end) = offset.checked_add(length) else {
+            return 1;
+        };
         if end > file.data.len() as u64 {
             return 1;
         }
@@ -1357,10 +1378,9 @@ mod tests {
         0
     }
 
-    /// A host of a runtime: worker threads that run the runtime's queues when notified, like
-    /// ClickHouse's thread pools do.
+    /// Stands in for ClickHouse: worker threads that drain the queues whenever notified.
     struct TestHost {
-        runtime: *mut VortexFFIRuntime,
+        runtime: *mut FFI_VortexRuntime,
         state: Arc<TestHostState>,
         workers: Vec<std::thread::JoinHandle<()>>,
     }
@@ -1373,7 +1393,7 @@ mod tests {
         panicked: AtomicBool,
     }
 
-    unsafe extern "C" fn test_notify(context: *mut c_void, _queue: VortexFFIQueue) {
+    unsafe extern "C" fn test_notify(context: *mut c_void, _queue: FFI_VortexTaskQueue) {
         let state = unsafe { &*(context as *const TestHostState) };
         {
             let mut ready = state.mutex.lock().unwrap_or_else(|e| e.into_inner());
@@ -1399,14 +1419,25 @@ mod tests {
                 .map(|_| {
                     let state = Arc::clone(&state);
                     std::thread::spawn(move || {
-                        let runtime = state.runtime.load(Ordering::Acquire) as *const VortexFFIRuntime;
+                        let runtime =
+                            state.runtime.load(Ordering::Acquire) as *const FFI_VortexRuntime;
                         while !state.stop.load(Ordering::Relaxed) {
                             let mut error: *mut c_char = std::ptr::null_mut();
                             let cpu = unsafe {
-                                vortex_ffi_runtime_run(runtime, VortexFFIQueue::CPU, 8, &mut error)
+                                vortex_ffi_runtime_run(
+                                    runtime,
+                                    FFI_VortexTaskQueue::CPU,
+                                    8,
+                                    &mut error,
+                                )
                             };
                             let io = unsafe {
-                                vortex_ffi_runtime_run(runtime, VortexFFIQueue::IO, 8, &mut error)
+                                vortex_ffi_runtime_run(
+                                    runtime,
+                                    FFI_VortexTaskQueue::IO,
+                                    8,
+                                    &mut error,
+                                )
                             };
                             if cpu < 0 || io < 0 {
                                 state.panicked.store(true, Ordering::Relaxed);
@@ -1428,15 +1459,18 @@ mod tests {
                 })
                 .collect();
 
-            Self { runtime, state, workers }
+            Self {
+                runtime,
+                state,
+                workers,
+            }
         }
 
-        fn runtime(&self) -> *const VortexFFIRuntime {
+        fn runtime(&self) -> *const FFI_VortexRuntime {
             self.runtime
         }
 
-        /// Stops the worker threads: no task runs afterwards, so the scans and readers on the
-        /// runtime can be freed (they must be freed before the runtime is, which `drop` does).
+        /// Brings the workers down, so that scans and readers can be freed with nothing running.
         fn stop(&mut self) {
             self.state.stop.store(true, Ordering::Relaxed);
             self.state.condvar.notify_all();
@@ -1453,17 +1487,17 @@ mod tests {
         }
     }
 
-    /// Collects the chunks of a scan, like `VortexBlockInputFormat` does.
+    /// Collects the chunks of a scan the way the ClickHouse reader does.
     struct TestConsumer {
         schema: Mutex<Option<SchemaRef>>,
         chunks: Mutex<Vec<(u64, RecordBatch)>>,
         finished: Mutex<Option<Option<String>>>,
         condvar: Condvar,
-        /// Fail the conversion of this split, to test the error path.
+        /// Rejects this one split.
         fail_on_split: Option<u64>,
-        /// Fail the conversion of every chunk, to test the error path with no chunk to release.
+        /// Rejects every chunk, leaving no permit for anyone to give back.
         fail_all: bool,
-        /// The chunks that were delivered and not released yet, and the maximum ever seen.
+        /// Delivered and not yet released, and the high-water mark of that.
         outstanding: AtomicUsize,
         max_outstanding: AtomicUsize,
     }
@@ -1473,7 +1507,6 @@ mod tests {
             Self::with_failures(fail_on_split, false)
         }
 
-        /// A consumer that rejects every chunk.
         fn new_failing_all() -> Arc<Self> {
             Self::with_failures(None, true)
         }
@@ -1491,21 +1524,20 @@ mod tests {
             })
         }
 
-        fn callbacks(self: &Arc<Self>) -> VortexFFIScanConsumer {
-            VortexFFIScanConsumer {
+        fn scan_callbacks(self: &Arc<Self>) -> FFI_VortexScanCallbacks {
+            FFI_VortexScanCallbacks {
                 context: Arc::as_ptr(self) as *mut c_void,
                 on_chunk: test_on_chunk,
                 on_finish: test_on_finish,
             }
         }
 
-        /// Waits for `on_finish` and returns its error message, if any.
         fn wait(&self) -> Option<String> {
-            self.wait_for(std::time::Duration::from_secs(60)).expect("the scan did not finish")
+            self.wait_for(std::time::Duration::from_secs(60))
+                .expect("the scan did not finish")
         }
 
-        /// Waits for `on_finish` for at most `timeout`: `None` if it was not called in time,
-        /// otherwise its error message, if any.
+        /// `None` if the end never arrived within `timeout`.
         fn wait_for(&self, timeout: std::time::Duration) -> Option<Option<String>> {
             let deadline = std::time::Instant::now() + timeout;
             let mut finished = self.finished.lock().unwrap_or_else(|e| e.into_inner());
@@ -1553,19 +1585,20 @@ mod tests {
         split_index: u64,
     ) -> i32 {
         let consumer = unsafe { &*(context as *const TestConsumer) };
+        // Rejecting a chunk does not hand it back: releasing it is still on us.
         if consumer.fail_all || consumer.fail_on_split == Some(split_index) {
-            // The array is still owned by the consumer even when it reports a failure.
             if !array.is_null() {
                 drop(unsafe { std::ptr::read(array) });
             }
             return 1;
         }
         if array.is_null() {
-            // A split with no rows.
             return 0;
         }
         let outstanding = consumer.outstanding.fetch_add(1, Ordering::Relaxed) + 1;
-        consumer.max_outstanding.fetch_max(outstanding, Ordering::Relaxed);
+        consumer
+            .max_outstanding
+            .fetch_max(outstanding, Ordering::Relaxed);
 
         let schema = consumer
             .schema
@@ -1589,7 +1622,11 @@ mod tests {
         let message = if error.is_null() {
             None
         } else {
-            Some(unsafe { CStr::from_ptr(error) }.to_string_lossy().into_owned())
+            Some(
+                unsafe { CStr::from_ptr(error) }
+                    .to_string_lossy()
+                    .into_owned(),
+            )
         };
         {
             let mut finished = consumer.finished.lock().unwrap_or_else(|e| e.into_inner());
@@ -1606,43 +1643,58 @@ mod tests {
         ]));
         RecordBatch::try_new(
             schema,
-            vec![Arc::new(Int64Array::from(ids)), Arc::new(StringArray::from(names))],
+            vec![
+                Arc::new(Int64Array::from(ids)),
+                Arc::new(StringArray::from(names)),
+            ],
         )
         .expect("valid batch")
     }
 
-    fn scan_options() -> VortexFFIScanOptions {
-        VortexFFIScanOptions {
+    fn scan_options() -> FFI_VortexScanOptions {
+        FFI_VortexScanOptions {
             columns: std::ptr::null(),
             num_columns: 0,
             filter: std::ptr::null(),
             row_range_begin: 0,
             row_range_end: 0,
-            in_flight: 0,
+            max_splits_in_flight: 0,
         }
     }
 
-    fn reader_options(io_concurrency: u32, coalesce: Option<(u64, u64)>) -> VortexFFIReaderOptions {
-        let (coalesce_distance, coalesce_max_size) = coalesce.unwrap_or((0, 0));
-        VortexFFIReaderOptions { io_concurrency, coalesce_distance, coalesce_max_size }
+    fn reader_options(
+        io_concurrency: u32,
+        coalesce: Option<(u64, u64)>,
+    ) -> FFI_VortexReaderOptions {
+        let (coalesce_max_gap_bytes, coalesce_max_read_bytes) = coalesce.unwrap_or((0, 0));
+        FFI_VortexReaderOptions {
+            io_concurrency,
+            coalesce_max_gap_bytes,
+            coalesce_max_read_bytes,
+        }
     }
 
-    /// Opens a reader over `file` with the given options, panicking on error.
     unsafe fn open_reader(
-        runtime: *const VortexFFIRuntime,
+        runtime: *const FFI_VortexRuntime,
         file: &mut TestFile,
-        options: &VortexFFIReaderOptions,
-    ) -> *mut VortexFFIReader {
+        options: &FFI_VortexReaderOptions,
+    ) -> *mut FFI_VortexReader {
         let mut error: *mut c_char = std::ptr::null_mut();
         let file_size = file.data.len() as u64;
         let reader = unsafe {
-            vortex_ffi_reader_open(runtime, file.context(), read_from_vec, file_size, options, &mut error)
+            vortex_ffi_reader_open(
+                runtime,
+                file.context(),
+                read_from_vec,
+                file_size,
+                options,
+                &mut error,
+            )
         };
         assert!(!reader.is_null(), "{:?}", unsafe { CStr::from_ptr(error) });
         reader
     }
 
-    /// Writes a file with the given batches into a `Vec<u8>`.
     unsafe fn write_file(batches: Vec<RecordBatch>) -> Vec<u8> {
         let mut file = Vec::<u8>::new();
         let mut error: *mut c_char = std::ptr::null_mut();
@@ -1673,51 +1725,61 @@ mod tests {
         file
     }
 
-    /// The schema of the chunks of a scan with `options`: the file schema projected to the requested
-    /// columns. The consumer needs it before the scan is created, as the scan starts producing right
-    /// away (this is what `VortexBlockInputFormat` does too).
-    unsafe fn expected_scan_schema(reader: *mut VortexFFIReader, options: &VortexFFIScanOptions) -> SchemaRef {
+    /// The consumer has to be told the scan's schema before the scan exists, because it starts
+    /// producing immediately.
+    unsafe fn expected_scan_schema(
+        reader: *mut FFI_VortexReader,
+        options: &FFI_VortexScanOptions,
+    ) -> SchemaRef {
         let mut error: *mut c_char = std::ptr::null_mut();
         let mut ffi_schema = FFI_ArrowSchema::empty();
-        assert_eq!(unsafe { vortex_ffi_reader_schema(reader, &mut ffi_schema, &mut error) }, 0);
+        assert_eq!(
+            unsafe { vortex_ffi_reader_schema(reader, &mut ffi_schema, &mut error) },
+            0
+        );
         let file_schema = Schema::try_from(&ffi_schema).expect("schema");
         if options.columns.is_null() {
             return Arc::new(file_schema);
         }
         let fields: Vec<Field> = (0..options.num_columns as usize)
             .map(|i| {
-                let name = unsafe { CStr::from_ptr(*options.columns.add(i)) }.to_str().expect("utf-8 name");
-                file_schema.field_with_name(name).expect("a column of the file").clone()
+                let name = unsafe { CStr::from_ptr(*options.columns.add(i)) }
+                    .to_str()
+                    .expect("utf-8 name");
+                file_schema
+                    .field_with_name(name)
+                    .expect("a column of the file")
+                    .clone()
             })
             .collect();
         Arc::new(Schema::new(fields))
     }
 
-    /// Gives `consumer` the schema of the scan, creates the scan and checks that it reports the same
-    /// schema, panicking on error.
     unsafe fn start_scan(
-        reader: *mut VortexFFIReader,
-        options: &VortexFFIScanOptions,
+        reader: *mut FFI_VortexReader,
+        options: &FFI_VortexScanOptions,
         consumer: &Arc<TestConsumer>,
-    ) -> *mut VortexFFIScan {
+    ) -> *mut FFI_VortexScan {
         let schema = unsafe { expected_scan_schema(reader, options) };
         *consumer.schema.lock().expect("lock") = Some(schema.clone());
 
-        let callbacks = consumer.callbacks();
+        let scan_callbacks = consumer.scan_callbacks();
         let mut error: *mut c_char = std::ptr::null_mut();
-        let scan = unsafe { vortex_ffi_scan_create(reader, options, &callbacks, &mut error) };
+        let scan = unsafe { vortex_ffi_scan_create(reader, options, &scan_callbacks, &mut error) };
         assert!(!scan.is_null(), "{:?}", unsafe { CStr::from_ptr(error) });
 
         let mut ffi_schema = FFI_ArrowSchema::empty();
-        assert_eq!(unsafe { vortex_ffi_scan_schema(scan, &mut ffi_schema, &mut error) }, 0);
+        assert_eq!(
+            unsafe { vortex_ffi_scan_schema(scan, &mut ffi_schema, &mut error) },
+            0
+        );
         assert_eq!(Schema::try_from(&ffi_schema).expect("schema"), *schema);
         scan
     }
 
-    /// Runs a whole scan and returns its consumer.
     unsafe fn run_scan(
-        reader: *mut VortexFFIReader,
-        options: &VortexFFIScanOptions,
+        reader: *mut FFI_VortexReader,
+        options: &FFI_VortexScanOptions,
         fail_on_split: Option<u64>,
         release: bool,
     ) -> Arc<TestConsumer> {
@@ -1725,7 +1787,6 @@ mod tests {
         let scan = unsafe { start_scan(reader, options, &consumer) };
 
         if release {
-            // Release the chunks as they arrive, like the host does when it returns them.
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
             loop {
                 let released = consumer.outstanding.swap(0, Ordering::Relaxed);
@@ -1735,7 +1796,10 @@ mod tests {
                 if consumer.finished.lock().expect("lock").is_some() {
                     break;
                 }
-                assert!(std::time::Instant::now() < deadline, "the scan did not finish");
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the scan did not finish"
+                );
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
         }
@@ -1744,9 +1808,11 @@ mod tests {
         consumer
     }
 
-    /// The names of the threads of this process (Linux only; empty elsewhere).
+    /// Names of this process's threads. Linux only; empty anywhere else.
     fn thread_names() -> Vec<String> {
-        let Ok(tasks) = std::fs::read_dir("/proc/self/task") else { return Vec::new() };
+        let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
+            return Vec::new();
+        };
         tasks
             .flatten()
             .filter_map(|task| std::fs::read_to_string(task.path().join("comm")).ok())
@@ -1773,18 +1839,22 @@ mod tests {
             assert_eq!(vortex_ffi_reader_row_count(reader), 5);
 
             let mut ffi_schema = FFI_ArrowSchema::empty();
-            assert_eq!(vortex_ffi_reader_schema(reader, &mut ffi_schema, &mut error), 0);
+            assert_eq!(
+                vortex_ffi_reader_schema(reader, &mut ffi_schema, &mut error),
+                0
+            );
             let schema = Schema::try_from(&ffi_schema).expect("schema");
             assert_eq!(schema.field(0).name(), "id");
             assert_eq!(schema.field(1).name(), "name");
 
-            // The whole file.
             let consumer = run_scan(reader, &scan_options(), None, true);
             assert_eq!(consumer.rows(), 5);
             let indices = consumer.split_indices();
-            assert!(indices.iter().enumerate().all(|(i, index)| *index == i as u64));
+            assert!(indices
+                .iter()
+                .enumerate()
+                .all(|(i, index)| *index == i as u64));
 
-            // A single projected column.
             let column = CString::new("name").expect("valid name");
             let columns = [column.as_ptr()];
             let mut options = scan_options();
@@ -1797,11 +1867,11 @@ mod tests {
             assert_eq!(chunks[0].1.schema().field(0).name(), "name");
             drop(chunks);
 
-            // A pushed-down filter: id > 2 matches rows 3, 4 and 5.
             let id = CString::new("id").expect("valid name");
             let id_column = vortex_ffi_expr_column(id.as_ptr());
-            let threshold = vortex_ffi_expr_literal_int(VortexFFIPType::I64, 2);
-            let filter = vortex_ffi_expr_compare(VortexFFIComparison::Gt, id_column, threshold);
+            let threshold = vortex_ffi_expr_literal_int(FFI_VortexPrimitiveType::I64, 2);
+            let filter =
+                vortex_ffi_expr_compare(FFI_VortexComparisonOperator::Gt, id_column, threshold);
             assert!(!filter.is_null());
             let mut options = scan_options();
             options.filter = filter;
@@ -1811,14 +1881,12 @@ mod tests {
             vortex_ffi_expr_free(id_column);
             assert_eq!(consumer.rows(), 3);
 
-            // A row range.
             let mut options = scan_options();
             options.row_range_begin = 1;
             options.row_range_end = 4;
             let consumer = run_scan(reader, &options, None, true);
             assert_eq!(consumer.rows(), 3);
 
-            // A failing consumer stops the scan and is told why.
             let consumer = run_scan(reader, &scan_options(), Some(0), true);
             let error_message = consumer.wait().expect("the scan must fail");
             assert!(error_message.contains("convert"), "{error_message}");
@@ -1826,7 +1894,6 @@ mod tests {
             vortex_ffi_reader_free(reader);
         }
 
-        // A truncated file must produce an error, not a panic or a crash.
         unsafe {
             let mut truncated = TestFile::new(file[0..file.len() / 2].to_vec());
             let options = reader_options(1, None);
@@ -1844,8 +1911,8 @@ mod tests {
         }
     }
 
-    /// A file with many splits, scanned by several host threads: every row arrives exactly once, and
-    /// the scan never runs further ahead than the host lets it.
+    /// Many splits over several worker threads: every row shows up once, and the scan never gets
+    /// further ahead than it was allowed to.
     #[test]
     fn ffi_scan_on_host_threads() {
         let batches: Vec<RecordBatch> = (0..64)
@@ -1860,9 +1927,13 @@ mod tests {
 
         let host = TestHost::new(4);
         unsafe {
-            let reader = open_reader(host.runtime(), &mut file, &reader_options(4, Some((1 << 20, 4 << 20))));
+            let reader = open_reader(
+                host.runtime(),
+                &mut file,
+                &reader_options(4, Some((1 << 20, 4 << 20))),
+            );
             let mut options = scan_options();
-            options.in_flight = 3;
+            options.max_splits_in_flight = 3;
             let consumer = run_scan(reader, &options, None, true);
             assert_eq!(consumer.rows(), total_rows);
 
@@ -1885,24 +1956,26 @@ mod tests {
             assert_eq!(ids.len(), total_rows);
             assert!(ids.iter().enumerate().all(|(i, id)| *id == i as i64));
 
-            // The split indices are dense: the consumer can restore the file order from them.
             let indices = consumer.split_indices();
             assert!(indices.len() > 1, "the file must have several splits");
-            assert!(indices.iter().enumerate().all(|(i, index)| *index == i as u64));
+            assert!(indices
+                .iter()
+                .enumerate()
+                .all(|(i, index)| *index == i as u64));
 
-            // Never more chunks outstanding than the scan was allowed to have in flight.
             assert!(
-                consumer.max_outstanding.load(Ordering::Relaxed) <= options.in_flight as usize,
-                "{} chunks were outstanding, in_flight is {}",
+                consumer.max_outstanding.load(Ordering::Relaxed)
+                    <= options.max_splits_in_flight as usize,
+                "{} chunks were outstanding, max_splits_in_flight is {}",
                 consumer.max_outstanding.load(Ordering::Relaxed),
-                options.in_flight
+                options.max_splits_in_flight
             );
 
             vortex_ffi_reader_free(reader);
         }
     }
 
-    /// Cancelling a scan stops it without reporting an end to the consumer.
+    /// A cancelled scan stops without announcing an end.
     #[test]
     fn ffi_scan_cancel() {
         let batches: Vec<RecordBatch> = (0..32)
@@ -1916,17 +1989,18 @@ mod tests {
 
         let mut host = TestHost::new(2);
         unsafe {
-            let reader = open_reader(host.runtime(), &mut file, &reader_options(2, Some((1 << 20, 4 << 20))));
+            let reader = open_reader(
+                host.runtime(),
+                &mut file,
+                &reader_options(2, Some((1 << 20, 4 << 20))),
+            );
             let consumer = TestConsumer::new(None);
             let mut options = scan_options();
-            options.in_flight = 2;
+            options.max_splits_in_flight = 2;
             let scan = start_scan(reader, &options, &consumer);
 
-            // Let the scan produce something, then cancel it without releasing anything.
             std::thread::sleep(std::time::Duration::from_millis(50));
             vortex_ffi_scan_cancel(scan);
-            // The host stops running the queues before freeing anything the tasks may use, and
-            // frees the runtime last.
             host.stop();
             assert!(
                 consumer.finished.lock().expect("lock").is_none(),
@@ -1938,14 +2012,11 @@ mod tests {
         }
     }
 
-    /// The driver of a scan waits for a permit while the host holds all `in_flight` chunks, and it
-    /// must still notice the failure of the split tasks: an I/O error hits every in-flight split at
-    /// once (one coalesced read serves several of them), nothing is delivered, so the host has
-    /// nothing to release, and the error must reach `on_finish` right away all the same.
+    /// One I/O failure takes down every split in the air at once, so nothing is delivered and there
+    /// is no chunk for the host to release. The driver is stuck waiting on a permit and still has
+    /// to report.
     #[test]
     fn ffi_scan_reports_io_error_while_blocked_on_permits() {
-        // Incompressible data, so that the file is much larger than the initial footer read
-        // (64 KiB) and the segments are actually read through the callback during the scan.
         let mut state: u64 = 0x9E3779B97F4A7C15;
         let mut next = move || {
             state ^= state << 13;
@@ -1961,17 +2032,24 @@ mod tests {
             })
             .collect();
         let data = unsafe { write_file(batches) };
-        assert!(data.len() > 1 << 20, "test file is only {} bytes", data.len());
+        assert!(
+            data.len() > 1 << 20,
+            "test file is only {} bytes",
+            data.len()
+        );
         let mut file = TestFile::new(data);
 
         let mut host = TestHost::new(2);
         unsafe {
-            let reader = open_reader(host.runtime(), &mut file, &reader_options(2, Some((1 << 20, 4 << 20))));
-            // Every read after the footer fails, i.e. every split task fails.
+            let reader = open_reader(
+                host.runtime(),
+                &mut file,
+                &reader_options(2, Some((1 << 20, 4 << 20))),
+            );
             file.fail_reads.store(true, Ordering::Relaxed);
             let consumer = TestConsumer::new(None);
             let mut options = scan_options();
-            options.in_flight = 4;
+            options.max_splits_in_flight = 4;
             let scan = start_scan(reader, &options, &consumer);
 
             let outcome = consumer.wait_for(std::time::Duration::from_secs(10));
@@ -1980,15 +2058,17 @@ mod tests {
             let error_message = outcome
                 .expect("on_finish was never called after an I/O error")
                 .expect("the scan must fail");
-            assert!(error_message.contains("read callback failed"), "{error_message}");
+            assert!(
+                error_message.contains("read callback failed"),
+                "{error_message}"
+            );
             vortex_ffi_scan_free(scan);
             vortex_ffi_reader_free(reader);
         }
     }
 
-    /// The same with the errors coming from the consumer: it rejects every chunk (without cancelling
-    /// the scan itself), so the permits of the rejected chunks are never returned, and the driver
-    /// must report the first rejection to `on_finish` instead of waiting for a permit forever.
+    /// The same standoff from the other side: the consumer rejects everything without cancelling,
+    /// so no permit ever returns, and the first rejection still has to come out.
     #[test]
     fn ffi_scan_reports_error_when_every_chunk_is_rejected() {
         let batches: Vec<RecordBatch> = (0..64)
@@ -2002,10 +2082,14 @@ mod tests {
 
         let mut host = TestHost::new(2);
         unsafe {
-            let reader = open_reader(host.runtime(), &mut file, &reader_options(2, Some((1 << 20, 4 << 20))));
+            let reader = open_reader(
+                host.runtime(),
+                &mut file,
+                &reader_options(2, Some((1 << 20, 4 << 20))),
+            );
             let consumer = TestConsumer::new_failing_all();
             let mut options = scan_options();
-            options.in_flight = 2;
+            options.max_splits_in_flight = 2;
             let scan = start_scan(reader, &options, &consumer);
 
             let outcome = consumer.wait_for(std::time::Duration::from_secs(10));
@@ -2020,11 +2104,9 @@ mod tests {
         }
     }
 
-    /// With coalescing, nearby segments are read with one callback invocation.
+    /// Merging turns neighbouring segments into a single call.
     #[test]
     fn ffi_read_coalescing() {
-        // Incompressible data, so that the file is much larger than the initial footer read
-        // (64 KiB) and the segments are actually read through the callback.
         let mut state: u64 = 0x9E3779B97F4A7C15;
         let mut next = move || {
             state ^= state << 13;
@@ -2040,7 +2122,11 @@ mod tests {
             })
             .collect();
         let data = unsafe { write_file(batches) };
-        assert!(data.len() > 1 << 20, "test file is only {} bytes", data.len());
+        assert!(
+            data.len() > 1 << 20,
+            "test file is only {} bytes",
+            data.len()
+        );
 
         let reads = |coalesce: Option<(u64, u64)>| -> usize {
             let host = TestHost::new(2);
@@ -2056,11 +2142,13 @@ mod tests {
 
         let plain = reads(None);
         let coalesced = reads(Some((1 << 20, 4 << 20)));
-        assert!(coalesced < plain, "coalesced {coalesced} reads, plain {plain} reads");
+        assert!(
+            coalesced < plain,
+            "coalesced {coalesced} reads, plain {plain} reads"
+        );
     }
 
-    /// The library owns no threads: reading and writing must not leave a reactor (`async-io`) or a
-    /// blocking-pool (`blocking-*`) thread behind.
+    /// Nothing in here owns a thread: no reactor and no blocking pool may be left standing.
     #[test]
     fn ffi_spawns_no_threads() {
         let batches: Vec<RecordBatch> = (0..8)
@@ -2074,8 +2162,11 @@ mod tests {
         {
             let host = TestHost::new(2);
             unsafe {
-                let reader =
-                    open_reader(host.runtime(), &mut file, &reader_options(2, Some((1 << 20, 4 << 20))));
+                let reader = open_reader(
+                    host.runtime(),
+                    &mut file,
+                    &reader_options(2, Some((1 << 20, 4 << 20))),
+                );
                 let consumer = run_scan(reader, &scan_options(), None, true);
                 assert_eq!(consumer.rows(), 80_000);
                 vortex_ffi_reader_free(reader);
@@ -2083,13 +2174,15 @@ mod tests {
         }
         let names = thread_names();
         assert!(
-            !names.iter().any(|name| name.starts_with("async-io") || name.starts_with("blocking")),
+            !names
+                .iter()
+                .any(|name| name.starts_with("async-io") || name.starts_with("blocking")),
             "unexpected library threads: {names:?}"
         );
     }
 
-    /// A runtime without a notification callback runs its tasks on the thread of the FFI call, so a
-    /// scan can be driven by the host alone, without any worker threads.
+    /// Without a notification callback the runtime advances on the thread inside the call, so one
+    /// thread on its own can carry a whole scan.
     #[test]
     fn ffi_scan_without_host_threads() {
         let batches: Vec<RecordBatch> = (0..8)
@@ -2104,25 +2197,30 @@ mod tests {
 
         unsafe {
             let runtime = vortex_ffi_runtime_new(std::ptr::null_mut(), None);
-            let reader = open_reader(runtime, &mut file, &reader_options(1, Some((1 << 20, 4 << 20))));
+            let reader = open_reader(
+                runtime,
+                &mut file,
+                &reader_options(1, Some((1 << 20, 4 << 20))),
+            );
             let consumer = TestConsumer::new(None);
             let mut options = scan_options();
-            options.in_flight = 2;
+            options.max_splits_in_flight = 2;
             let scan = start_scan(reader, &options, &consumer);
 
-            // The only thread there is runs the queues and releases what it received, exactly like
-            // `VortexBlockInputFormat` in the single-threaded mode.
             let mut error: *mut c_char = std::ptr::null_mut();
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
             while consumer.finished.lock().expect("lock").is_none() {
-                let cpu = vortex_ffi_runtime_run(runtime, VortexFFIQueue::CPU, 4, &mut error);
-                let io = vortex_ffi_runtime_run(runtime, VortexFFIQueue::IO, 4, &mut error);
+                let cpu = vortex_ffi_runtime_run(runtime, FFI_VortexTaskQueue::CPU, 4, &mut error);
+                let io = vortex_ffi_runtime_run(runtime, FFI_VortexTaskQueue::IO, 4, &mut error);
                 assert!(cpu >= 0 && io >= 0, "a task panicked");
                 let released = consumer.outstanding.swap(0, Ordering::Relaxed);
                 if released > 0 {
                     vortex_ffi_scan_release(scan, released as u64);
                 }
-                assert!(std::time::Instant::now() < deadline, "the scan did not finish");
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the scan did not finish"
+                );
             }
             assert_eq!(consumer.wait(), None);
             assert_eq!(consumer.rows(), total_rows);

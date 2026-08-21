@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
-# ^ the Vortex format is not included in the fast test and MSan builds
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Vortex has no address type, so `IPv4` goes out as `U32` and is inferred back as `UInt32`;
+# naming the type explicitly gets `IPv4` back.
+
 DATA_FILE=$CUR_DIR/test_$CLICKHOUSE_TEST_UNIQUE_NAME.vortex
 
-# `IPv4` is written as `U32` because Vortex has no type for IP addresses,
-# so schema inference reads it back as `UInt32`; an explicit schema reads it back as `IPv4`.
 
 echo "Schema inference:"
 $CLICKHOUSE_LOCAL -q "

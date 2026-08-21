@@ -11,7 +11,7 @@ Filter pushdown with several threads:
 10
 10
 9999	4999569993
-Stopping early does not hang or leak the helpers:
+Stopping early does not hang or leave a driver behind:
 5
-A file with a single split needs no helpers:
+A file with a single split needs no extra drivers:
 45

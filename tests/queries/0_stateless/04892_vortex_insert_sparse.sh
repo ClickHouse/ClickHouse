@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
-# ^ the Vortex format is not included in the fast test and MSan builds
 
-# The `Vortex` format is excluded from the loop over every format in
-# `03251_insert_sparse_all_formats`, so parsing into the sparse serialization is covered here.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+# Left out of `03251_insert_sparse_all_formats` for the same reason, so parsing into the sparse
+# serialization is covered here.
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_vortex_sparse;
@@ -15,7 +15,6 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9;
 "
 
-# `b` and `c` are constant, so they are stored with the sparse serialization.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "INSERT INTO t_vortex_sparse(a) SELECT number FROM numbers(1000)"
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number AS a, 0::UInt64 AS b, '' AS c FROM numbers(1000) FORMAT Vortex" \

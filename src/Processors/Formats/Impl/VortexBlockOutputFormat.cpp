@@ -24,8 +24,8 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-/// The context of the write callback passed to the Rust vortex library. The library calls the
-/// callback only from inside FFI calls, on the calling thread, so no synchronization is needed.
+/// What the write callback needs. Writing runs entirely on the thread that called us, so there is
+/// nothing here to synchronize.
 struct VortexWriteContext
 {
     WriteBuffer * out = nullptr;
@@ -79,15 +79,14 @@ VortexBlockOutputFormat::~VortexBlockOutputFormat()
 void VortexBlockOutputFormat::initWriter(const Chunk * chunk)
 {
     CHColumnToArrowColumn::Settings arrow_settings;
-    /// ClickHouse strings are arbitrary byte sequences, while Vortex validates that `Utf8` values
-    /// are valid UTF-8 (e.g. when computing statistics), so strings must be written as `Binary`.
+    /// A ClickHouse string is any sequence of bytes, while Vortex insists that `Utf8` really is
+    /// UTF-8, so strings leave as `Binary`.
     arrow_settings.output_string_as_string = false;
-    /// Vortex has no fixed-size binary type.
+    /// There is no fixed-width binary type on the Vortex side either.
     arrow_settings.output_fixed_string_as_fixed_byte_array = false;
-    /// Write `DateTime` as `vortex.timestamp` with second precision instead of the generic `U32`,
-    /// so the temporal type is preserved on round-trip (it is read back as `DateTime64(0)`).
+    /// As a plain `U32` a `DateTime` would come back as a number; as a timestamp with second
+    /// precision it survives the round trip, arriving as `DateTime64(0)`.
     arrow_settings.output_datetime_as_timestamp = true;
-    /// Write the `Nothing` type (e.g. `SELECT NULL`) as the Vortex `Null` type.
     arrow_settings.output_nothing_as_null = true;
 
     ch_column_to_arrow_column
@@ -136,7 +135,8 @@ void VortexBlockOutputFormat::consume(Chunk chunk)
 
 void VortexBlockOutputFormat::finalizeImpl()
 {
-    /// If no rows were written, produce a valid empty file with the schema from the header.
+    /// Not a single row came through, but the file still has to be a valid one with the header's
+    /// schema in it.
     if (!writer)
         initWriter(nullptr);
 
@@ -147,9 +147,8 @@ void VortexBlockOutputFormat::finalizeImpl()
 
 void VortexBlockOutputFormat::resetFormatterImpl()
 {
-    /// The formatter can be reused to write another file into the same output buffer (this is how
-    /// `MessageQueueSink` formats every message). The Rust writer is consumed by
-    /// `vortex_ffi_writer_finish`, so drop it and start the next file from scratch.
+    /// The same formatter may be asked for another file into the same buffer, and finishing the
+    /// previous one has already consumed the Rust writer.
     if (writer)
     {
         vortex_ffi_writer_free(writer);
@@ -167,7 +166,7 @@ void registerOutputFormatVortex(FormatFactory & factory)
         [](WriteBuffer & buf,
            const Block & sample,
            const FormatSettings & format_settings,
-           FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
+           FormatFilterInfoPtr /* format_filter_info */) -> OutputFormatPtr
         {
             return std::make_shared<VortexBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
         });
