@@ -1,9 +1,9 @@
 -- Tags: zookeeper, no-fasttest, no-replicated-database, no-shared-merge-tree
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
--- Tag no-replicated-database: `DatabaseReplicated::dropTable` does not drop `TimeSeries` inner tables synchronously, so the deferred inner DROPs are rejected with "ON CLUSTER is not allowed for Replicated database".
+-- Tag no-replicated-database: `DatabaseReplicated` does not drop `TimeSeries` inner tables synchronously; deferred DROPs are rejected.
 -- Tag no-shared-merge-tree: the test relies on the block-hash insert deduplication of `ReplicatedMergeTree`.
 
--- The sink writes every samples block to the recent samples table as well. Insert deduplication stays consistent between the two tables because both writes carry the same content: a retried block deduplicates by its hash in each table independently, so the tables cannot diverge under retries.
+-- The sink writes each samples block to both tables; identical content means a retried block deduplicates in both, so they cannot diverge.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';

@@ -750,13 +750,13 @@ namespace
         return storage;
     }
 
-    /// Makes the default engine of the inner "recent samples" table: it mimics the sorting key of the samples table and is partitioned by `recent_samples_partition_by`.
+    /// Makes the default engine of the inner "recent samples" table: the samples sorting key, partitioned by `recent_samples_partition_by`.
     boost::intrusive_ptr<ASTStorage> generateRecentSamplesInnerEngine(
         const ASTCreateQuery & create_query, const TimeSeriesSettings & settings)
     {
         auto storage = make_intrusive<ASTStorage>();
 
-        /// Follow the replication family of the samples engine (otherwise the replicas of the recent samples table would diverge), but don't copy its arguments: an explicit ZooKeeper path cannot be shared by another table.
+        /// Follow the samples engine's replication family (else replicas diverge), but not its arguments: ZooKeeper paths cannot be shared.
         std::string_view engine_name = "MergeTree";
         const auto * samples_engine = create_query.getTargetInnerEngine(ViewTarget::Samples);
         if (samples_engine && samples_engine->engine)
@@ -786,7 +786,7 @@ namespace
                     make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
         }
 
-        /// `toDateTime` makes the default partition expression work for any supported timestamp type (for example a raw `UInt32`), same as the TTL expression.
+        /// `toDateTime` makes the default partition key work for any timestamp type (e.g. a raw `UInt32`), same as the TTL expression.
         if (const auto & partition_by = settings[TimeSeriesSetting::recent_samples_partition_by].value)
             storage->set(storage->partition_by, partition_by->clone());
         else
@@ -798,7 +798,7 @@ namespace
         return storage;
     }
 
-    /// The reader treats `recent_samples_ttl_seconds` as a correctness contract, so the TTL of the inner recent samples table is always derived from the setting (overriding any TTL from the engine declaration), and engines which don't support TTL are rejected.
+    /// `recent_samples_ttl_seconds` is a correctness contract for the reader: the TTL always comes from it; non-TTL engines are rejected.
     void applyRecentSamplesTTL(ASTStorage & storage, const TimeSeriesSettings & settings, const StorageID & table_id)
     {
         if (!storage.engine || !storage.engine->name.ends_with("MergeTree"))
@@ -844,7 +844,7 @@ namespace
 
         const auto & engine_name = storage.engine->name;
 
-        /// The `*_index_granularity` settings set `index_granularity` of the corresponding inner MergeTree tables; a setting set explicitly overrides `index_granularity` from the engine declaration.
+        /// The `*_index_granularity` settings set `index_granularity` of the inner MergeTree tables, overriding the engine declaration.
         if ((kind == ViewTarget::Samples || kind == ViewTarget::Tags || kind == ViewTarget::RecentSamples)
             && engine_name.ends_with("MergeTree"))
         {
@@ -857,7 +857,7 @@ namespace
                 setInnerEngineSetting(storage, "index_granularity", Field(index_granularity.value));
         }
 
-        /// The recent samples table is partitioned by a time-based expression, so `ttl_only_drop_parts` makes the TTL drop whole expired parts instead of rewriting them row by row.
+        /// The table is partitioned by time, so `ttl_only_drop_parts` lets the TTL drop whole expired parts instead of rewriting them.
         if (kind == ViewTarget::RecentSamples && engine_name.ends_with("MergeTree")
             && !hasInnerEngineSetting(storage, "ttl_only_drop_parts"))
         {
@@ -1139,7 +1139,7 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
             settings.loadFromQuery(*create_query.storage);
         checkTimeSeriesSettings(settings);
 
-        /// The recent samples table is on by default: at CREATE time the effective `recent_samples_ttl_seconds` is pinned into the query's SETTINGS clause, so `SHOW CREATE`, DDL log entries and backups are self-describing, and queries created by older versions don't get the feature retroactively on replay.
+        /// On by default: the TTL is pinned into the query at CREATE time, so old tables and replayed queries aren't enabled retroactively.
         bool recent_samples_ttl_in_query = settings[TimeSeriesSetting::recent_samples_ttl_seconds].isChanged();
         if ((mode == LoadingStrictnessLevel::CREATE) && !recent_samples_ttl_in_query && create_query.storage)
         {
@@ -1205,7 +1205,7 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
             {
                 StorageID table_id{create_query.getDatabase(), create_query.getTable()};
 
-                /// The inner recent samples table mimics the columns of the samples table (with their codecs) unless its columns are declared explicitly.
+                /// The inner table mimics the samples table's columns (with codecs) unless declared explicitly.
                 boost::intrusive_ptr<ASTColumns> inner_columns;
                 if (auto * declared_columns = create_query.getTargetInnerColumns(kind))
                     inner_columns = boost::static_pointer_cast<ASTColumns>(declared_columns->clone());

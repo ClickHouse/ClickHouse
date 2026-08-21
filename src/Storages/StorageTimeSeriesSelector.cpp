@@ -795,12 +795,12 @@ void StorageTimeSeriesSelector::readImpl(
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
-    /// Prefer the recent samples table when the whole requested time range fits in its TTL window: it contains a copy of all the recent samples and is much smaller than the main samples table.
+    /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
     auto samples_table_kind = ViewTarget::Samples;
     const auto recent_samples_ttl_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_ttl_seconds].value;
     if (recent_samples_ttl_seconds && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
     {
-        /// Any sample with a timestamp >= now() - TTL is guaranteed to be in the recent samples table (`ttl_only_drop_parts` drops a part only when all its rows have expired); the one-minute margin covers the asynchrony between TTL drops and query execution and the whole-second precision of the TTL expression against sub-second timestamps.
+        /// `ttl_only_drop_parts` keeps samples >= now() - TTL present; the margin covers TTL asynchrony and its whole-second precision.
         static constexpr Int64 safety_margin_seconds = 60;
         UInt32 timestamp_scale = tryGetDecimalScale(*config.timestamp_data_type).value_or(0);
         Int64 now_seconds = std::time(nullptr);

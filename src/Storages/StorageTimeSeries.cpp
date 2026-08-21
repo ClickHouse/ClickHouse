@@ -86,7 +86,7 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     std::vector<Target> targets;
     for (auto target_kind : getAllTargetKinds())
     {
-        /// The recent samples target is optional: it exists only if the normalized create query has a RECENT SAMPLES clause (added by the normalization when the recent samples table is enabled).
+        /// The recent samples target exists only if the normalized create query has a RECENT SAMPLES clause.
         if ((target_kind == ViewTarget::RecentSamples)
             && (!create_query.targets || !create_query.targets->tryGetTarget(target_kind)))
             continue;
