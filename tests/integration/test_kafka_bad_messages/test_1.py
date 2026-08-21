@@ -1,9 +1,4 @@
-import logging
-
-from kafka import KafkaAdminClient
-import pytest
-
-from helpers.cluster import ClickHouseCluster
+from helpers.kafka.common_direct import *
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
@@ -33,7 +28,7 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
     k.kafka_create_topic(admin_client, "visible")
     k.kafka_create_topic(admin_client, "hidden")
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS kafka_grant_visible;
         DROP TABLE IF EXISTS kafka_grant_hidden;
 
@@ -57,7 +52,7 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
     """
     )
 
-    instance.query_with_retry(
+    result_system_kafka_consumers = instance.query_with_retry(
         """
         SELECT count(1) FROM system.kafka_consumers WHERE table LIKE 'kafka_grant%'
         """,
@@ -68,7 +63,7 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
     # both kafka_grant_hidden and kafka_grant_visible tables are visible
 
     instance.query(
-        """
+        f"""
         DROP USER IF EXISTS restricted;
         CREATE USER restricted;
         GRANT SHOW ON default.kafka_grant_visible TO restricted;
@@ -86,7 +81,7 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
     k.kafka_delete_topic(admin_client, "visible")
     k.kafka_delete_topic(admin_client, "hidden")
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS kafka_grant_visible;
         DROP TABLE IF EXISTS kafka_grant_hidden;
         DROP USER IF EXISTS restricted;

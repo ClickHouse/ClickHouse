@@ -52,7 +52,7 @@ private:
 
     std::mutex step_mutex;
     std::unique_ptr<ThreadFromGlobalPool> collecting_thread;
-    size_t collect_interval_milliseconds{};
+    size_t collect_interval_milliseconds;
     std::atomic<bool> is_shutdown_metric_thread{false};
 };
 

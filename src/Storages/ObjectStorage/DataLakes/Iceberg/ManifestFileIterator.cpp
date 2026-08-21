@@ -5,7 +5,6 @@
 
 #include <compare>
 #include <optional>
-#include <unordered_set>
 
 #include <Interpreters/IcebergMetadataLog.h>
 
@@ -18,7 +17,6 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Poco/JSON/Parser.h>
-#include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
@@ -161,43 +159,24 @@ bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesSortedBySor
     return true;
 }
 
-bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const
+std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
 {
-    /// Equality deletes force reading all physical columns of the data files they apply to
-    /// (see IcebergMetadata::getInitialSchemaByPath), so the pruned main read is impossible.
-    if (!equality_delete_files->empty())
-        return false;
-
-    for (const auto & file : *data_files)
-    {
-        /// Only the Parquet reader provides physical row numbers (ChunkInfoRowNumbers)
-        /// for the main read and positional re-reads (FormatFilterInfo::rows_to_read)
-        /// for the lazy read.
-        if (Poco::toUpper(file->parsed_entry->file_format) != "PARQUET")
-            return false;
-
-        /// Schema evolution forces reading all physical columns as well.
-        if (file->resolved_schema_id != table_schema_id)
-            return false;
-    }
-    return true;
-}
-
-std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
-{
-    UInt64 result = 0;
-    /// `record_count` is a required file-level field in all format versions, so the sum is
-    /// exact: no fallback to optional per-column statistics is needed. The field is parsed
-    /// as a raw Int64 though, so a corrupted manifest file may carry a negative value; it
-    /// is reported as "count unavailable" rather than summed (a negative contribution would
-    /// silently produce a wrong -- or, after the conversion to size_t, absurdly huge --
-    /// count) and rather than rejected (the count is only an optimization, a malformed
-    /// value must not make the table unreadable).
+    Int64 result = 0;
     for (const auto & file : getFilesWithoutDeleted(content))
     {
-        if (file->parsed_entry->record_count < 0)
+        /// Have at least one column with rows count
+        bool found = false;
+        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
+        {
+            if (column_info.rows_count.has_value())
+            {
+                result += *column_info.rows_count;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
             return std::nullopt;
-        result += static_cast<UInt64>(file->parsed_entry->record_count);
     }
     return result;
 }
@@ -255,7 +234,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 {
     insertRowToLogTable(
         context_,
-        [&] { return manifest_file_deserializer_->getMetadataContent(); },
+        manifest_file_deserializer_->getMetadataContent(),
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
         path_resolver_.getTableRoot(),
         path_to_manifest_file_,
@@ -274,6 +253,10 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
 
+    if (manifest_format_version > 1 && !manifest_file_deserializer_->hasPath(f_sequence_number))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
+
     Poco::JSON::Parser parser;
 
     auto partition_spec_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue("partition-spec");
@@ -284,7 +267,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
     DB::NamesAndTypesList partition_columns_description;
-    std::unordered_set<String> partition_columns_seen;
     auto partition_key_ast = make_intrusive<ASTFunction>();
     partition_key_ast->name = "tuple";
     partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
@@ -326,11 +308,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             continue;
 
         partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
-        /// One source column may back several partition fields (e.g. hours(ts) and identity ts).
-        /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
-        /// against these input columns, which must contain each source column at most once.
-        if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
+        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
 
     std::optional<DB::KeyDescription> partition_key_description;
@@ -407,7 +385,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     {
         insertRowToLogTable(
             context,
-            [&] { return manifest_file_deserializer->getContent(row_index); },
+            manifest_file_deserializer->getContent(row_index),
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
             path_resolver.getTableRoot(),
             path_to_manifest_file,
@@ -418,7 +396,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
     /// Compute inherited/resolved fields
 
-    Int64 resolved_snapshot_id = 0;
+    Int64 resolved_snapshot_id;
     if (parsed_entry->parsed_snapshot_id.has_value())
     {
         resolved_snapshot_id = *parsed_entry->parsed_snapshot_id;
@@ -520,7 +498,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
     insertRowToLogTable(
         context,
-        [&] { return manifest_file_deserializer->getContent(row_index); },
+        manifest_file_deserializer->getContent(row_index),
         DB::IcebergMetadataLogLevel::ManifestFileEntry,
         path_resolver.getTableRoot(),
         path_to_manifest_file,

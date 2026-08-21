@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDetachedTables.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
 #include <Core/NamesAndTypes.h>
@@ -29,7 +28,7 @@ namespace DB
 namespace
 {
 
-class DetachedTablesBlockSource final : public ISource
+class DetachedTablesBlockSource : public ISource
 {
 public:
     DetachedTablesBlockSource(
@@ -257,6 +256,3 @@ void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pip
     pipeline.init(std::move(pipe));
 }
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedTables) }

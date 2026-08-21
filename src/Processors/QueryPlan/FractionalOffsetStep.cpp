@@ -61,13 +61,12 @@ void FractionalOffsetStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr FractionalOffsetStep::deserialize(Deserialization & ctx)
 {
-    Float64 offset = 0;
+    Float64 offset;
     readFloatBinary(offset, ctx.in);
 
     return std::make_unique<FractionalOffsetStep>(ctx.input_headers.front(), offset);
 }
 
-void registerFractionalOffsetStep(QueryPlanStepRegistry & registry);
 void registerFractionalOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("FractionalOffset", FractionalOffsetStep::deserialize);

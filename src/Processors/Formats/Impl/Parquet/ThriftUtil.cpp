@@ -8,11 +8,6 @@
 
 #include <sstream>
 
-namespace DB::ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
 namespace DB::Parquet
 {
 
@@ -51,22 +46,15 @@ size_t deserializeThriftStruct(T & out, const char * buf, size_t limit)
         /// so it should be ok to const_cast.
         uint8_t * cast_buf = const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(buf));
 
-        /// A container of N elements or an N-byte string occupies at least N bytes on the wire, and
-        /// only `limit` bytes exist, so no real length can exceed this while forged ones do.
-        /// Must not be `static`: the bound is per-call.
-        const auto size_limit = int32_t(std::min(limit, size_t(std::numeric_limits<int32_t>::max())));
-        auto configuration = std::make_shared<apache::thrift::TConfiguration>(/*maxMessageSize=*/ size_limit);
+        /// Set max message size to avoid 'apache::thrift::transport::TTransportException: MaxMessageSize reached' on big files
+        /// Similar to https://github.com/ClickHouse/arrow/blob/5cfccd8ea65f33d4517e7409815d761c7650b45d/cpp/src/parquet/thrift_internal.h#L437
+        static auto configuration = std::make_shared<apache::thrift::TConfiguration>(/*maxMessageSize=*/ std::numeric_limits<int>::max());
 
         auto trans = std::make_shared<apache::thrift::transport::TMemoryBuffer>(cast_buf, uint32_t(limit), apache::thrift::transport::TMemoryBuffer::OBSERVE, configuration);
-        apache::thrift::protocol::TCompactProtocolT<apache::thrift::transport::TMemoryBuffer> proto(
-            trans, /*string_limit=*/ size_limit, /*container_limit=*/ size_limit);
+        apache::thrift::protocol::TCompactProtocolT<apache::thrift::transport::TMemoryBuffer> proto(trans);
         uint32_t bytes_read = out.read(&proto);
         chassert(size_t(bytes_read + trans->available_read()) == limit);
         return size_t(bytes_read);
-    }
-    catch (const apache::thrift::TException & e)
-    {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to parse Parquet Thrift metadata from {} bytes: {}", limit, e.what());
     }
     catch (const std::exception & e)
     {
