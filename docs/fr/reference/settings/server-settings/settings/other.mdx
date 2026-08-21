@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SystemLogParameters from '/snippets/fr/_system-log-parameters.mdx';
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
@@ -23,13 +24,15 @@ Ces paramètres configurent le serveur ClickHouse et sont générés automatique
   ## allowed_disks_for_table_engines
 </div>
 
-Liste des disques pouvant être utilisés avec Iceberg
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Liste des disques pouvant être utilisés avec Iceberg
 
 <div id="auth_use_forwarded_address">
   ## auth_use_forwarded_address
 </div>
 
 Utiliser l’adresse d’origine pour l’authentification des clients connectés via un proxy.
+
+* **Par défaut :** `false`
 
 <Note>
   Ce paramètre doit être utilisé avec une extrême prudence, car les adresses transmises peuvent être facilement usurpées : les serveurs qui acceptent ce type d’authentification ne doivent pas être accessibles directement, mais uniquement via un proxy de confiance.
@@ -41,6 +44,8 @@ Utiliser l’adresse d’origine pour l’authentification des clients connecté
 
 Facteur de travail pour le type d’authentification `bcrypt_password`, qui utilise l’[algorithme Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 Le facteur de travail détermine la quantité de calculs et le temps nécessaires pour calculer le hachage et vérifier le mot de passe.
+
+* **Par défaut :** `12`
 
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
@@ -137,7 +142,7 @@ Paramètres de compression des données pour les tables du moteur [MergeTree](/f
 * `min_part_size` – Taille minimale d’une partie de données.
 * `min_part_size_ratio` – Ratio entre la taille de la partie de données et la taille de la table.
 * `method` – Méthode de compression. Valeurs acceptables : `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
-* `level` – Niveau de compression. Voir [Codecs](/fr/reference/statements/create/table#general-purpose-codecs).
+* `level` – Niveau de compression. Voir [Codecs](/fr/reference/statements/create/table/codec#general-purpose-codecs).
 
 <Note>
   Vous pouvez configurer plusieurs sections `<case>`.
@@ -236,6 +241,36 @@ Le fichier de configuration du serveur `config.xml` contient la section de param
 </crash_log>
 ```
 
+<div id="create_union_system_log_tables">
+  ## create_union_system_log_tables
+</div>
+
+Demande la création de tables `all_...` en parallèle des tables de logs système (`system.all_query_log` pour `system.query_log`, `system.all_text_log` pour `system.text_log`, etc.). Une telle table est l’union de la table de logs correspondante, de ses versions ayant fait l’objet d’une rotation (`query_log_0`, `query_log_1`, ...) et/ou des mêmes tables sur toutes les répliques d’un cluster. Elle permet de les interroger toutes à la fois sans avoir à retenir des constructions telles que `clusterAllReplicas(default, merge(system, '^query_log'))`.
+
+Cette section est facultative. Si elle est présente, au moins l’un des paramètres suivants doit être spécifié :
+
+| Paramètre              | Description                                                                                                                                                                                                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `merge_rotated_tables` | Si `true`, la table `all_...` sélectionne les données de la table de logs et de ses versions ayant fait l’objet d’une rotation à l’aide de la fonction de table `merge`.                                                                                                                      |
+| `cluster`              | Si ce paramètre est spécifié, la table `all_...` sélectionne les données de toutes les répliques de ce cluster à l’aide de la fonction de table `clusterAllReplicas` (avec `SETTINGS skip_unavailable_shards = 1`, afin que les répliques indisponibles ne fassent pas échouer les requêtes). |
+
+Si les deux paramètres sont spécifiés, la table est l’union des tables ayant fait l’objet d’une rotation sur toutes les répliques du cluster.
+
+L’option s’applique à toutes les tables de logs système ; elle ne permet pas de configurer différemment les différents logs système. Les tables sont créées dans la même base de données que les tables de logs système lors du premier flush de chaque log, puis automatiquement recréées lorsque la structure de la table de logs change (lors d’une rotation). Elles n’ont pas d’état ; vous pouvez donc les supprimer à tout moment sans risque. La création est prise en charge uniquement pour les moteurs de base de données `Atomic`, `Replicated` et `Shared`.
+
+<Note>
+  Lorsque le paramètre `cluster` est utilisé, la définition de la table fait référence au cluster, qui doit exister pour que la table soit chargée. Si vous supprimez le cluster de la configuration, supprimez également les tables `all_...` (elles seront recréées conformément à la nouvelle configuration lors du prochain flush).
+</Note>
+
+**Exemple**
+
+```xml
+<create_union_system_log_tables>
+    <merge_rotated_tables>true</merge_rotated_tables>
+    <cluster>default</cluster>
+</create_union_system_log_tables>
+```
+
 <div id="database_atomic_delay_before_drop_table_sec">
   ## database_atomic_delay_before_drop_table_sec
 </div>
@@ -288,7 +323,7 @@ Lorsqu&#39;il est activé, le serveur attend que la suppression du blob en arri�
 Active ou désactive l’affichage des secrets dans les requêtes `SHOW` et `SELECT` pour les tables, les bases de données, les fonctions de table et les dictionnaires.
 
 Pour voir les secrets, l’utilisateur doit également avoir activé le
-[`paramètre de format format_display_secrets_in_show_and_select`](/fr/reference/settings/formats#format_display_secrets_in_show_and_select)
+[`paramètre de format format_display_secrets_in_show_and_select`](/fr/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 et disposer du privilège
 [`displaySecretsInShowAndSelect`](/fr/reference/statements/grant#displaysecretsinshowandselect).
 
@@ -328,7 +363,7 @@ Au redémarrage du serveur, le répertoire est parcouru pour rechercher les fich
   ## chiffrement
 </div>
 
-Configure une commande permettant d’obtenir une clé à utiliser avec les [codecs de chiffrement](/fr/reference/statements/create/table#encryption-codecs). La ou les clés doivent être stockées dans des variables d’environnement ou définies dans le fichier de configuration.
+Configure une commande permettant d’obtenir une clé à utiliser avec les [codecs de chiffrement](/fr/reference/statements/create/table/codec#encryption-codecs). La ou les clés doivent être stockées dans des variables d’environnement ou définies dans le fichier de configuration.
 
 Les clés peuvent être hexadécimales ou être des chaînes de 16 octets de long.
 
@@ -457,6 +492,8 @@ Pour désactiver le paramètre `error_log`, créez le fichier suivant `/etc/clic
   ## filesystem_caches_path
 </div>
 
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
+
 Ce paramètre définit le chemin du cache.
 
 **Exemple**
@@ -489,7 +526,7 @@ Définit un répertoire contenant des fichiers .proto pour les types Protobuf.
   ## hdfs.libhdfs3_conf
 </div>
 
-Dirige libhdfs3 vers l’emplacement correct de sa configuration.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Dirige libhdfs3 vers l’emplacement correct de sa configuration.
 
 <div id="hsts_max_age">
   ## hsts_max_age
@@ -517,28 +554,35 @@ Durée d&#39;expiration de HSTS, en secondes.
   ## ignore_empty_sql_security_in_create_view_query
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Non" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-Si la valeur est true, ClickHouse n’écrit pas les valeurs par défaut lorsqu’une instruction SQL security est vide dans les requêtes `CREATE VIEW`.
+Si la valeur est true, une requête `CREATE VIEW` ou `CREATE MATERIALIZED VIEW` qui ne spécifie ni `DEFINER` ni `SQL SECURITY` est stockée telle quelle, et la vue reçoit un type de sécurité SQL vide. Spécifier uniquement `DEFINER` équivaut à `SQL SECURITY DEFINER` ; une telle requête n&#39;est donc pas affectée par ce paramètre. Une vue ordinaire avec un type de sécurité SQL vide s&#39;exécute avec les permissions de l&#39;appelant. Pour une vue matérialisée avec une table cible explicitement spécifiée, les contrôles d&#39;accès à la table cible sont ignorés : l&#39;insertion dans la table source ne nécessite pas le privilège `INSERT` sur la table cible, et la lecture de la vue ne nécessite pas le privilège `SELECT` sur celle-ci.
+
+Si la valeur est false, les valeurs par défaut des paramètres [`default_normal_view_sql_security`](/fr/reference/settings/session-settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/fr/reference/settings/session-settings#default_materialized_view_sql_security) et [`default_view_definer`](/fr/reference/settings/session-settings#default_view_definer) sont écrites dans la définition de la vue lors de sa création. Avec les valeurs par défaut de ces paramètres, une vue matérialisée créée sans aucune de ces clauses enregistre l&#39;utilisateur qui l&#39;a créée comme définisseur et s&#39;exécute avec les permissions de cet utilisateur.
+
+Les vues matérialisées actualisables reçoivent toujours les valeurs par défaut, indépendamment de ce paramètre.
 
 <Note>
-  Ce paramètre n’est nécessaire que durant la période de migration et deviendra obsolète à partir de la version 24.4
+  La modification de ce paramètre n&#39;affecte que les vues créées ultérieurement ; les définitions stockées des vues existantes restent inchangées.
 </Note>
 
 <div id="include_from">
   ## include_from
 </div>
 
-<SettingsInfoBlock type="String" default_value="/etc/metrika.xml" changeable_without_restart="Non" />
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
 Chemin vers le fichier contenant les substitutions. Les formats XML et YAML sont pris en charge.
 
-Pour plus d’informations, consultez la section [Fichiers de configuration](/fr/concepts/features/configuration/server-config/configuration-files).
+Pour plus d&#39;informations, consultez la section [Fichiers de configuration](/fr/concepts/features/configuration/server-config/configuration-files).
+Vide par défaut, ce qui signifie qu&#39;aucun fichier de substitutions n&#39;est utilisé. Avant la version 26.8, le fichier `/etc/metrika.xml` était utilisé implicitement dès lors qu&#39;il existait ; si vous vous appuyez sur ce fichier, indiquez explicitement son chemin.
+
+Notez que les fichiers de configuration chargés séparément de la configuration principale du serveur — la configuration des utilisateurs (par ex. `users.xml` lorsqu&#39;elle n&#39;est pas incluse dans le fichier principal) et les configurations de dictionnaires XML — lisent l&#39;élément `include_from` dans leur propre contenu, et non dans la configuration du serveur. Chaque fichier de ce type qui utilise des substitutions doit contenir son propre élément `include_from`.
 
 **Exemple**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
 <div id="insert_deduplication_version">
@@ -847,7 +891,7 @@ Les propriétés des logs peuvent être omises en commentant la propriété corr
   ## logger.errorlog
 </div>
 
-Le chemin du fichier de log d’erreurs.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Le chemin du fichier de log d’erreurs.
 
 <div id="logger.formatting.type">
   ## logger.formatting.type
@@ -865,7 +909,7 @@ Le chemin du fichier de log d’erreurs.
   ## logger.log
 </div>
 
-Chemin d&#39;accès au fichier de log.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Chemin d&#39;accès au fichier de log.
 
 <div id="logger.rotation">
   ## logger.rotation
@@ -877,7 +921,7 @@ Chemin d&#39;accès au fichier de log.
   ## logger.shutdown_level
 </div>
 
-Le niveau d&#39;arrêt sert à définir le niveau du logger racine lors de l&#39;arrêt du serveur.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Le niveau d&#39;arrêt sert à définir le niveau du root logger lors de l&#39;arrêt du serveur.
 
 <div id="logger.size">
   ## logger.size
@@ -889,7 +933,7 @@ Le niveau d&#39;arrêt sert à définir le niveau du logger racine lors de l&#39
   ## logger.startup_level
 </div>
 
-Le niveau de démarrage permet de définir le niveau du logger racine lors du démarrage du serveur. Une fois le serveur démarré, le niveau de journalisation revient au paramètre `<level>`.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Le niveau de démarrage permet de définir le niveau du root logger lors du démarrage du serveur. Une fois le serveur démarré, le niveau de journalisation revient au paramètre `<level>`.
 
 <div id="logger.stream_compress">
   ## logger.stream_compress
@@ -999,6 +1043,16 @@ Permet de réguler la manière dont les ressources sont utilisées et partagées
 
 * [Planification des workloads](/fr/concepts/features/configuration/server-config/workload-scheduling)
 
+<div id="named_collections_storage.type">
+  ## named_collections_storage.type
+</div>
+
+<SettingsInfoBlock type="String" default_value="local" changeable_without_restart="No" />
+
+Le type de stockage des collections nommées. Valeurs possibles : `local`, `local_encrypted`, `keeper`,
+`keeper_encrypted`, `zookeeper` et `zookeeper_encrypted`.
+Se configure avec `named_collections_storage.type` (`<named_collections_storage><type>` en XML).
+
 <div id="oom_score">
   ## oom_score
 </div>
@@ -1072,7 +1126,7 @@ Clés des paramètres client/serveur :
   ## openSSL.client.caConfig
 </div>
 
-Chemin vers le fichier ou le répertoire contenant les certificats d’AC de confiance. S’il pointe vers un fichier, celui-ci doit être au format PEM et peut contenir plusieurs certificats d’AC. S’il pointe vers un répertoire, celui-ci doit contenir un fichier `.pem` par certificat d’AC. Les noms de fichier sont recherchés à l’aide de la valeur de hachage du nom du sujet de l’AC. Pour plus de détails, consultez la page de manuel de [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Chemin vers le fichier ou le répertoire contenant les certificats d’autorité de certification de confiance. S’il pointe vers un fichier, celui-ci doit être au format PEM et peut contenir plusieurs certificats d’autorité de certification. S’il pointe vers un répertoire, celui-ci doit contenir un fichier `.pem` par certificat d’autorité de certification. Les noms de fichier sont recherchés à l’aide de la valeur de hachage du nom du sujet de l’AC. Pour plus de détails, consultez la page de manuel de [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
 
 <div id="openssl.client.cachesessions">
   ## openSSL.client.cacheSessions
@@ -1084,7 +1138,7 @@ Chemin vers le fichier ou le répertoire contenant les certificats d’AC de con
   ## openSSL.client.certificateFile
 </div>
 
-Chemin du fichier de certificat client/serveur au format PEM. Vous pouvez l’omettre si `<privateKeyFile>` contient le certificat.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Chemin du fichier de certificat client/serveur au format PEM. Vous pouvez l’omettre si `<privateKeyFile>` contient le certificat.
 
 <div id="openssl.client.cipherlist">
   ## openSSL.client.cipherList
@@ -1096,7 +1150,7 @@ Chemin du fichier de certificat client/serveur au format PEM. Vous pouvez l’om
   ## openSSL.client.disableProtocols
 </div>
 
-Protocoles dont l’utilisation est interdite.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Protocoles dont l’utilisation est interdite.
 
 <div id="openssl.client.extendedverification">
   ## openSSL.client.extendedVerification
@@ -1132,7 +1186,7 @@ Protocoles dont l’utilisation est interdite.
   ## openSSL.client.privateKeyFile
 </div>
 
-Chemin d’accès au fichier contenant la clé privée du certificat PEM. Le fichier peut contenir à la fois une clé et un certificat.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Chemin vers le fichier contenant la clé privée du certificat PEM. Le fichier peut contenir à la fois une clé et un certificat.
 
 <div id="openssl.client.privatekeypassphrasehandler.name">
   ## openSSL.client.privateKeyPassphraseHandler.name
@@ -1156,7 +1210,7 @@ Chemin d’accès au fichier contenant la clé privée du certificat PEM. Le fic
   ## openSSL.server.caConfig
 </div>
 
-Chemin vers le fichier ou le répertoire contenant les certificats CA de confiance. S’il s’agit d’un fichier, il doit être au format PEM et peut contenir plusieurs certificats CA. S’il s’agit d’un répertoire, il doit contenir un fichier .pem par certificat CA. Les noms de fichiers sont recherchés à partir de la valeur de hachage du nom du sujet de la CA. Pour plus de détails, consultez la page de manuel de [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Chemin vers le fichier ou le répertoire contenant les certificats CA de confiance. S’il s’agit d’un fichier, il doit être au format PEM et peut contenir plusieurs certificats CA. S’il s’agit d’un répertoire, il doit contenir un fichier .pem par certificat CA. Les noms de fichiers sont recherchés à partir de la valeur de hachage du nom du sujet de la CA. Pour plus de détails, consultez la page de manuel de [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
 
 <div id="openssl.server.cachesessions">
   ## openSSL.server.cacheSessions
@@ -1168,7 +1222,7 @@ Chemin vers le fichier ou le répertoire contenant les certificats CA de confian
   ## openSSL.server.certificateFile
 </div>
 
-Chemin du fichier de certificat client/serveur au format PEM. Vous pouvez l&#39;omettre si `<privateKeyFile>` contient le certificat.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Chemin du fichier de certificat client/serveur au format PEM. Vous pouvez l&#39;omettre si `<privateKeyFile>` contient le certificat.
 
 <div id="openssl.server.cipherlist">
   ## openSSL.server.cipherList
@@ -1180,7 +1234,7 @@ Chemin du fichier de certificat client/serveur au format PEM. Vous pouvez l&#39;
   ## openSSL.server.disableProtocols
 </div>
 
-Protocoles dont l’utilisation est interdite.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Protocoles dont l’utilisation est interdite.
 
 <div id="openssl.server.extendedverification">
   ## openSSL.server.extendedVerification
@@ -1216,7 +1270,7 @@ Protocoles dont l’utilisation est interdite.
   ## openSSL.server.privateKeyFile
 </div>
 
-Chemin vers le fichier contenant la clé privée du certificat PEM. Le fichier peut contenir à la fois une clé et un certificat.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Chemin vers le fichier contenant la clé privée du certificat PEM. Le fichier peut contenir à la fois une clé et un certificat.
 
 <div id="openssl.server.privatekeypassphrasehandler.name">
   ## openSSL.server.privateKeyPassphraseHandler.name
@@ -1419,10 +1473,11 @@ Paramètres :
 * `events` – Expose les métriques de la table [system.events](/fr/reference/system-tables/events).
 * `asynchronous_metrics` – Expose les valeurs actuelles des métriques de la table [system.asynchronous&#95;metrics](/fr/reference/system-tables/asynchronous_metrics).
 * `errors` - Expose le nombre d’erreurs par code d’erreur depuis le dernier redémarrage du serveur. Ces informations peuvent également être obtenues via [system.errors](/fr/reference/system-tables/errors).
+* `labels` – Étiquettes constantes ajoutées à chaque métrique exposée. Chaque élément enfant définit une étiquette : le nom de l’élément est le nom de l’étiquette (doit correspondre à `[a-zA-Z_][a-zA-Z0-9_]*`) et la valeur de l’élément est la valeur de l’étiquette. Les valeurs d’étiquette prennent en charge les substitutions de configuration standard, telles que l’attribut `from_env`. Un nom d’étiquette est rejeté lorsqu’il commence par `__` (réservé par Prometheus) ou lorsqu’il entrerait en conflit avec une étiquette que ce point de terminaison écrit déjà pour l’une de ses sections activées, car un échantillon porterait alors deux fois le même nom d’étiquette. L’ensemble des noms réservés dépend donc des éléments activement exportés par le point de terminaison : `le` lorsque `histograms` est activé ; les étiquettes `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) lorsque `info` est activé ; et toute étiquette utilisée par un histogramme exposé ou une famille de métriques dimensionnelles (par exemple `group`, `direction` ou `operation_type`) lorsque `histograms`/`dimensional_metrics` est activé. Comme cela dépend de ce que le point de terminaison expose réellement, un nom peut être valide sur un point de terminaison mais rejeté sur un autre — par exemple, un point de terminaison Keeper `keeper_metrics_only` n’expose que les familles `keeper_*`, donc les étiquettes utilisées uniquement par les familles du serveur y sont acceptées.
 
 **Exemple**
 
-```xml highlight={5-12}
+```xml highlight={5-16}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1434,6 +1489,10 @@ Paramètres :
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
+        <labels>
+            <environment>production</environment>
+            <shard from_env="SHARD_NAME"></shard>
+        </labels>
     </prometheus>
 </clickhouse>
 ```
@@ -1617,7 +1676,7 @@ Nom du groupe de répliques pour la base de données Replicated.
 Le cluster créé par la base de données Replicated sera constitué de répliques appartenant au même groupe.
 Les requêtes DDL n’attendront que les répliques appartenant au même groupe.
 
-Vide par défaut.
+* **Par défaut :** `""`
 
 **Exemple**
 
@@ -1703,7 +1762,11 @@ Exemple :
   ## table_engines_require_grant
 </div>
 
+<CloudNotSupportedBadge />
+
 Si la valeur est définie sur true, les utilisateurs doivent disposer d&#39;un privilège pour créer une table avec un engine spécifique, par ex. `GRANT TABLE ENGINE ON TinyLog to user`.
+
+* **Par défaut :** `false`
 
 <Note>
   Par défaut, pour assurer la rétrocompatibilité, la création d&#39;une table avec un table engine spécifique ne tient pas compte des privilèges ; vous pouvez toutefois modifier ce comportement en définissant cette valeur sur true.
@@ -1811,7 +1874,7 @@ Le fuseau horaire est nécessaire pour les conversions entre les formats String 
 
 **Voir aussi**
 
-* [session&#95;timezone](/fr/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/fr/reference/settings/session-settings/other#session_timezone)
 
 <div id="trace_log">
   ## trace_log
@@ -1833,7 +1896,7 @@ Le fichier de configuration du serveur par défaut `config.xml` contient la sect
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>false</symbolize>
+    <symbolize>true</symbolize>
 </trace_log>
 ```
 
@@ -1905,6 +1968,6 @@ que tous les dictionnaires aient terminé leur chargement (avec succès ou non) 
   ## webterminal_allowed_origins
 </div>
 
-Liste d’origines complètes séparées par des virgules (`scheme` + `host` + `port` facultatif) autorisées à ouvrir des sessions WebSocket `/webterminal`. Lorsqu’elle est vide, la politique de même origine est appliquée strictement (`Origin` doit correspondre au `scheme`, au `host` et au `port` de la `request`). Définissez ce paramètre pour les déploiements derrière un proxy inverse avec terminaison TLS, où `request.isSecure()` vaut `false` même si le navigateur utilise `https`. Exemple : `https://example.com,https://app.example.com:8443`.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Liste d’origines complètes séparées par des virgules (`scheme` + `host` + `port` facultatif) autorisées à ouvrir des sessions WebSocket `/webterminal`. Lorsqu’elle est vide, la politique de même origine est appliquée strictement (`Origin` doit correspondre au `scheme`, au `host` et au `port` de la `request`). Définissez ce paramètre pour les déploiements derrière un proxy inverse avec terminaison TLS, où `request.isSecure()` vaut `false` même si le navigateur utilise `https`. Exemple : `https://example.com,https://app.example.com:8443`.
 
 {/*AUTOGENERATED_END*/}

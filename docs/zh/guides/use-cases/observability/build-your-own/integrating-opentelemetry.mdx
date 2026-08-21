@@ -570,10 +570,10 @@ SETTINGS ttl_only_drop_parts = 1
 关于此 schema，有几点重要说明：
 
 * 默认情况下，该表通过 `PARTITION BY toDate(Timestamp)` 按日期分区，因此可以高效删除过期数据。
-* 生存时间 (TTL) 通过 `TTL toDateTime(Timestamp) + toIntervalDay(3)` 设置，并与 collector 配置中设置的值一致。[`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings#ttl_only_drop_parts) 表示仅当某个 part 中包含的所有行都已过期时，才会丢弃整个 part。这比删除 part 内部的行更高效，因为后者会触发代价高昂的删除操作。我们建议始终启用此设置。更多详情请参见[使用 TTL 进行数据管理](/zh/guides/use-cases/observability/build-your-own/managing-data#data-management-with-ttl-time-to-live)。
+* 生存时间 (TTL) 通过 `TTL toDateTime(Timestamp) + toIntervalDay(3)` 设置，并与 collector 配置中设置的值一致。[`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings/other#ttl_only_drop_parts) 表示仅当某个 parts 中包含的所有行都已过期时，才会丢弃整个 parts。这比删除 parts 内部的行更高效，因为后者会触发代价高昂的删除操作。我们建议始终启用此设置。更多详情请参见[使用生存时间 (TTL) 进行数据管理](/zh/guides/use-cases/observability/build-your-own/managing-data#data-management-with-ttl-time-to-live)。
 * 该表使用经典的 [`MergeTree` 引擎](/zh/reference/engines/table-engines/mergetree-family/mergetree)。这对于日志和链路追踪是推荐选择，通常无需修改。
 * 该表按 `ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)` 排序。这意味着查询会针对 `ServiceName`、`SeverityText`、`Timestamp` 和 `TraceId` 上的过滤条件进行优化——列表中越靠前的列，过滤速度越快。例如，按 `ServiceName` 过滤会明显快于按 `TraceId` 过滤。你应根据预期的访问模式调整此排序方式——参见[选择主键](/zh/guides/use-cases/observability/build-your-own/schema-design#choosing-a-primary-ordering-key)。
-* 上述 schema 对各列应用了 `ZSTD(1)`。这能为日志提供最佳压缩效果。你可以提高 ZSTD 压缩级别 (高于默认值 1) 以获得更好的压缩率，不过这种收益通常不大。提高该值会在写入时 (压缩期间) 带来更高的 CPU 开销，但解压缩性能 (以及查询性能) 应基本保持不变。更多详情见[这里](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)。此外，还对 Timestamp 额外应用了 [delta 编码](/zh/reference/statements/create/table#delta)，以减少其磁盘占用。
+* 上述 schema 对各列应用了 `ZSTD(1)`。这能为日志提供最佳压缩效果。你可以提高 ZSTD 压缩级别 (高于默认值 1) 以获得更好的压缩率，不过这种收益通常不大。提高该值会在写入时 (压缩期间) 带来更高的 CPU 开销，但解压缩性能 (以及查询性能) 应基本保持不变。更多详情见[这里](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)。此外，还对 Timestamp 额外应用了 [delta 编码](/zh/reference/statements/create/table/codec#delta)，以减少其磁盘占用。
 * 注意，[`ResourceAttributes`](https://opentelemetry.io/docs/specs/otel/resource/sdk/)、[`LogAttributes`](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-attributes) 和 [`ScopeAttributes`](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-instrumentationscope) 都是 Map。理解它们之间的区别非常重要。关于如何访问这些 Map，以及如何优化其中键的访问，请参见[“Using maps”](/zh/guides/use-cases/observability/build-your-own/schema-design#using-maps)。
 * 这里大多数其他类型也都已做过优化，例如 `ServiceName` 使用了 LowCardinality。另请注意，在我们的示例日志中，`Body` 虽然是 JSON，但存储为 String。
 * 布隆过滤器已应用于 Map 的键和值，以及 `Body` 列。它们旨在提升访问这些列的查询性能，但通常并非必需。参见[二级索引 / 数据跳过索引](/zh/guides/use-cases/observability/build-your-own/schema-design#secondarydata-skipping-indices)。
@@ -656,7 +656,7 @@ SETTINGS ttl_only_drop_parts = 1
 
 要为 collector 启用异步插入，请在 connection string 中添加 `async_insert=1`。我们建议使用 `wait_for_async_insert=1` (默认值) 以获得交付保障——更多详情请参见[这里](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。
 
-异步插入的数据会在 ClickHouse buffer flush 后写入。当超过 [`async_insert_max_data_size`](/zh/reference/settings/session-settings#async_insert_max_data_size) 时，或自第一条 INSERT 查询起经过 [`async_insert_busy_timeout_ms`](/zh/reference/settings/session-settings#async_insert_max_data_size) 毫秒后，就会发生这种情况。如果 `async_insert_stale_timeout_ms` 设置为非零值，则会在距上一条查询过去 `async_insert_stale_timeout_ms milliseconds` 后插入数据。你可以调整这些设置，以控制管道的端到端延迟。更多可用于调优 buffer flush 的设置见[这里](/zh/reference/settings/session-settings#async_insert)。通常，默认值就很合适。
+异步插入的数据会在 ClickHouse buffer flush 后写入。当超过 [`async_insert_max_data_size`](/zh/reference/settings/session-settings/async-insert#async_insert_max_data_size) 时，或自第一条 INSERT 查询起经过 [`async_insert_busy_timeout_ms`](/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) 毫秒后，就会发生这种情况。如果 `async_insert_stale_timeout_ms` 设置为非零值，则会在距上一条查询过去 `async_insert_stale_timeout_ms milliseconds` 后插入数据。你可以调整这些设置，以控制管道的端到端延迟。更多可用于调优 buffer flush 的设置见[这里](/zh/reference/settings/session-settings/async-insert#async_insert)。通常，默认值就很合适。
 
 <Info>
   **考虑自适应异步插入**
@@ -664,7 +664,7 @@ SETTINGS ttl_only_drop_parts = 1
   在 agent 数量较少、吞吐量较低但端到端延迟要求严格的场景下，[自适应异步插入](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts)可能会有帮助。一般来说，它们并不适用于 ClickHouse 常见的高吞吐量可观测性用例。
 </Info>
 
-最后，使用异步插入时，之前与 ClickHouse 同步插入相关的去重行为默认不会启用。如有需要，请参见设置 [`async_insert_deduplicate`](/zh/reference/settings/session-settings#async_insert_deduplicate)。
+最后，使用异步插入时，之前与 ClickHouse 同步插入相关的去重行为默认不会启用。如有需要，请参见设置 [`async_insert_deduplicate`](/zh/reference/settings/session-settings/async-insert#async_insert_deduplicate)。
 
 有关此功能配置的完整说明，请参见[这里](/zh/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)；深入说明请参见[这里](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。
 

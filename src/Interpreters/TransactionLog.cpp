@@ -23,6 +23,8 @@
 namespace DB
 {
 
+std::atomic<Int64> TransactionLog::async_tables_loading_job_number{0};
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;

@@ -469,7 +469,7 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-You can use the [dictGet\*](/sql-reference/functions/ext-dict-functions) functions to get the dictionary data in this format.
+You can use the [dictGet\*](/reference/functions/regular-functions/ext-dict-functions) functions to get the dictionary data in this format.
 
 This view isn't helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
 
@@ -501,7 +501,7 @@ SELECT * FROM products LIMIT 1;
 
 **See Also**
 
-- [Dictionary function](/sql-reference/table-functions/dictionary)
+- [Dictionary function](/reference/functions/table-functions/dictionary)
 )DOCS_MD",
         .syntax = "ENGINE = Dictionary(dictionary_name)"});
 }

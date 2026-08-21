@@ -173,7 +173,15 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
         res = std::make_shared<DataTypeString>();
 
     if (is_nullable)
-        res = std::make_shared<DataTypeNullable>(res);
+    {
+        /// A mapped type that cannot be inside `Nullable` (the `Array`/`Variant`-based geometric
+        /// types) falls back to `Nullable(String)` holding MySQL's own bytes (SRID prefix + WKB),
+        /// matching the result-set path.
+        if (res->canBeInsideNullable())
+            res = std::make_shared<DataTypeNullable>(res);
+        else
+            res = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+    }
 
     return res;
 }

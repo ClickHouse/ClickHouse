@@ -1,0 +1,54 @@
+---
+description: 'Contains one row per node of the data tree stored on the local in-process ClickHouse Keeper node.'
+keywords: ['system table', 'keeper_storage']
+sidebarTitle: 'keeper_storage'
+slug: /operations/system-tables/keeper_storage
+title: 'system.keeper_storage'
+doc_type: 'reference'
+---
+
+import SystemTableCloud from '/snippets/_system_table_cloud.mdx';
+
+<SystemTableCloud/>
+
+## Description {#description}
+
+The table only exists for ClickHouse Keeper deployments that use the `clickhouse server` (and not `clickhouse keeper`) process. It contains one row per node of the data tree stored on the local Keeper node, including the `/keeper` system nodes.
+
+Unlike `system.zookeeper`, this table does not send requests to a Keeper cluster. It reads the committed state of the local Keeper directly from a consistent lock-free view, without affecting request processing. Reading the table does not require a path condition and returns the whole tree, so it is suitable for queries that scan all nodes, such as finding the nodes with the most children or the largest data.
+
+## Columns {#columns}
+
+- `path` ([String](/reference/data-types/string)) — Absolute path of the node.
+- `data` ([String](/reference/data-types/string)) — Data stored in the node.
+- `czxid` ([Int64](/reference/data-types/int-uint)) — ID of the transaction that created the node.
+- `mzxid` ([Int64](/reference/data-types/int-uint)) — ID of the transaction that last modified the node.
+- `ctime` ([DateTime64(3)](/reference/data-types/datetime64)) — Time when the node was created.
+- `mtime` ([DateTime64(3)](/reference/data-types/datetime64)) — Time when the node was last modified.
+- `version` ([Int32](/reference/data-types/int-uint)) — Number of modifications of the node data.
+- `cversion` ([Int32](/reference/data-types/int-uint)) — Number of modifications of the node children.
+- `aversion` ([Int32](/reference/data-types/int-uint)) — Number of modifications of the node ACL.
+- `ephemeral_owner` ([Int64](/reference/data-types/int-uint)) — ID of the session that owns the node if it is ephemeral, `0` otherwise.
+- `data_length` ([UInt32](/reference/data-types/int-uint)) — Size of the node data in bytes.
+- `num_children` ([Int32](/reference/data-types/int-uint)) — Number of children of the node.
+- `pzxid` ([Int64](/reference/data-types/int-uint)) — ID of the transaction that last added or removed children of the node.
+- `seq_num` ([Int64](/reference/data-types/int-uint)) — Counter used to generate names of sequential children of the node.
+- `ttl` ([Int64](/reference/data-types/int-uint)) — TTL of the node in milliseconds if it is a TTL node, `0` otherwise.
+- `acl_id` ([UInt32](/reference/data-types/int-uint)) — Internal ID of the node ACL, `0` if the node has no ACL.
+
+## Example {#example}
+
+```sql
+SELECT path, num_children, data_length
+FROM system.keeper_storage
+ORDER BY num_children DESC
+LIMIT 3;
+```
+
+```text
+┌─path──────────────┬─num_children─┬─data_length─┐
+│ /                 │            3 │           0 │
+│ /clickhouse/tasks │            2 │           0 │
+│ /keeper           │            1 │           0 │
+└───────────────────┴──────────────┴─────────────┘
+```

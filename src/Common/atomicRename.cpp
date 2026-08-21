@@ -183,8 +183,13 @@ bool supportsAtomicRename(std::string * out_message)
 
 #else
 
+/// Emscripten's libc declares these even though it cannot honour them, so do not redefine.
+#ifndef RENAME_NOREPLACE
 #define RENAME_NOREPLACE -1
+#endif
+#ifndef RENAME_EXCHANGE
 #define RENAME_EXCHANGE -1
+#endif
 
 namespace DB
 {

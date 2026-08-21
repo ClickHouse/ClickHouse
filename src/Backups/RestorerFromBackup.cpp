@@ -14,6 +14,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
@@ -256,7 +257,7 @@ void RestorerFromBackup::logNumberOfDatabasesAndTablesToRestore() const
 
 void RestorerFromBackup::loadSystemAccessTables()
 {
-    if (restore_settings.structure_only)
+    if (!restore_settings.shouldRestoreAccessEntities())
         return;
 
     /// Special handling for ACL-related system tables.
@@ -289,7 +290,25 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             AccessFlags flags;
 
             if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
+            {
                 flags |= AccessType::CREATE_DATABASE;
+
+                /// The last point on this path that still runs as the real user. An existing local
+                /// database means nothing is created here, and `create_fn` authorizes it if it is
+                /// dropped in between. Under CHECK_ACCESS_ONLY the creating host is a different one,
+                /// so a local existence answer says nothing about it.
+                const bool database_exists_so_nothing_is_created
+                    = (mode != Mode::CHECK_ACCESS_ONLY) && DatabaseCatalog::instance().isDatabaseExist(database_name);
+
+                if (!context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+                    && !database_exists_so_nothing_is_created && database_info.create_database_query)
+                {
+                    const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
+                    if (create.storage && create.storage->engine && create.storage->engine->name == "Backup"
+                        && create.storage->engine->arguments)
+                        DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, context);
+                }
+            }
 
             if (!flags)
                 flags = AccessType::SHOW_DATABASES;
@@ -304,7 +323,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 if (isSystemFunctionsTableName(table_name))
                 {
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
-                    if (!restore_settings.structure_only && table_info.has_data)
+                    if (table_info.has_data && restore_settings.shouldRestoreFunctions())
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
                 }
                 /// Privileges required to restore ACL system tables are checked separately
@@ -332,7 +351,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_TABLE;
             }
 
-            if (!restore_settings.structure_only && table_info.has_data)
+            if (restore_settings.shouldRestoreTableData() && table_info.has_data)
             {
                 flags |= AccessType::INSERT;
             }
@@ -951,8 +970,20 @@ void RestorerFromBackup::insertDataToTables()
 
 void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name)
 {
-    if (restore_settings.structure_only)
+    if (isSystemAccessTableName(table_name))
+    {
+        if (!restore_settings.shouldRestoreAccessEntities())
+            return;
+    }
+    else if (isSystemFunctionsTableName(table_name))
+    {
+        if (!restore_settings.shouldRestoreFunctions())
+            return;
+    }
+    else if (!restore_settings.shouldRestoreTableData())
+    {
         return;
+    }
 
     {
         std::lock_guard lock{mutex};
@@ -1047,8 +1078,8 @@ void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)
 {
     throw Exception(
         ErrorCodes::CANNOT_RESTORE_TABLE,
-        "Cannot restore the table {} because it already contains some data. You can set structure_only=true or "
-        "allow_non_empty_tables=true to overcome that in the way you want",
+        "Cannot restore the table {} because it already contains some data. You can set structure_only=true, "
+        "restore_table_data=false or allow_non_empty_tables=true to overcome that in the way you want",
         storage_id.getFullTableName());
 }
 }
