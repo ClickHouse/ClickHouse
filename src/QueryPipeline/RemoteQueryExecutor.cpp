@@ -449,6 +449,23 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     return res;
 }
 
+std::vector<OpenTelemetry::SpanAttribute> RemoteQueryExecutor::getFragmentSpanAttributes() const
+{
+    /// Keys follow the conventions of the spans of `DistributedSink`.
+    std::vector<OpenTelemetry::SpanAttribute> attributes;
+    if (!shard_scope.cluster.empty())
+        attributes.emplace_back("clickhouse.cluster", shard_scope.cluster);
+    if (shard_scope.shard_num != 0)
+        attributes.emplace_back("clickhouse.shard_num", static_cast<UInt64>(shard_scope.shard_num));
+    attributes.emplace_back("clickhouse.processed_stage", QueryProcessingStage::toString(stage));
+    const auto & client_info = context->getClientInfo();
+    if (!client_info.current_query_id.empty())
+        attributes.emplace_back("clickhouse.query_id", client_info.current_query_id);
+    if (!client_info.initial_query_id.empty())
+        attributes.emplace_back("clickhouse.initial_query_id", client_info.initial_query_id);
+    return attributes;
+}
+
 void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
 {
     /// Query cannot be canceled in the middle of the send query,
@@ -472,6 +489,13 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (sent_query || was_cancelled)
         return;
 
+    /// On the asynchronous sending path this code runs inside the read context fiber, and the fiber
+    /// span (`RemoteQueryExecutor::execute`) covers it. On the synchronous path there is no fiber,
+    /// so open a span here covering connection establishing and query sending.
+    std::optional<OpenTelemetry::SpanHolder> sync_send_span;
+    if (!read_context && OpenTelemetry::CurrentContext().isTraceEnabled())
+        sync_send_span.emplace("RemoteQueryExecutor::sendQuery", OpenTelemetry::SpanKind::INTERNAL, getFragmentSpanAttributes());
+
     connections = create_connections(async_callback);
     AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
 
@@ -494,6 +518,15 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     }
 
     established = true;
+
+    /// The target addresses become known only once the connections are established.
+    if (OpenTelemetry::CurrentContext().isTraceEnabled())
+    {
+        if (sync_send_span)
+            sync_send_span->addAttribute("clickhouse.target_host", connections->dumpAddresses());
+        else if (read_context)
+            read_context->addSpanAttribute({"clickhouse.target_host", connections->dumpAddresses()});
+    }
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
@@ -578,7 +611,9 @@ int RemoteQueryExecutor::sendQueryAsync()
         read_context = std::make_unique<ReadContext>(
             *this,
             /*suspend_when_query_sent*/ true,
-            read_packet_type_separately);
+            read_packet_type_separately,
+            OpenTelemetry::CurrentContext().isTraceEnabled() ? getFragmentSpanAttributes()
+                                                             : std::vector<OpenTelemetry::SpanAttribute>{});
 
     /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
     /// because we can still be in process of sending scalars or external tables.
@@ -670,7 +705,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         read_context = std::make_unique<ReadContext>(
             *this,
             /*suspend_when_query_sent*/ false,
-            read_packet_type_separately);
+            read_packet_type_separately,
+            OpenTelemetry::CurrentContext().isTraceEnabled() ? getFragmentSpanAttributes()
+                                                             : std::vector<OpenTelemetry::SpanAttribute>{});
     }
 
     while (true)

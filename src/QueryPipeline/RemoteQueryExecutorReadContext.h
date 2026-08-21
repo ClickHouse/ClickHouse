@@ -26,7 +26,10 @@ class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:
     explicit RemoteQueryExecutorReadContext(
-        RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_);
+        RemoteQueryExecutor & executor_,
+        bool suspend_when_query_sent_,
+        bool read_packet_type_separately_,
+        std::vector<OpenTelemetry::SpanAttribute> initial_span_attributes_ = {});
 
     ~RemoteQueryExecutorReadContext() override;
 

@@ -3,6 +3,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/UniqueLock.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
@@ -59,6 +60,14 @@ public:
         std::shared_ptr<TaskIterator> task_iterator = nullptr;
         std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
         std::optional<IConnections::ReplicaInfo> replica_info = {};
+    };
+
+    /// Identifies the shard this executor reads for, for introspection (OpenTelemetry span
+    /// attributes). Filled only where the caller acts on behalf of a cluster shard.
+    struct ShardScope
+    {
+        String cluster;
+        UInt32 shard_num = 0;
     };
 
     /// Takes a connection pool for a node (not cluster)
@@ -213,6 +222,9 @@ public:
 
     void setMainTable(StorageID main_table_) { main_table = std::move(main_table_); }
 
+    /// Must be called before sending the query.
+    void setShardScope(ShardScope shard_scope_) { chassert(!sent_query); shard_scope = std::move(shard_scope_); }
+
     void setLogger(LoggerPtr logger) { log = logger; }
 
     void setUnavailableShardTracker(UnavailableShardTrackerPtr tracker) { unavailable_shard_tracker = std::move(tracker); }
@@ -273,6 +285,9 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
+
+    /// Shard identification for the OpenTelemetry span covering this executor.
+    ShardScope shard_scope;
 
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
@@ -377,6 +392,10 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
+
+    /// Attributes identifying the query fragment this executor runs, for the OpenTelemetry span
+    /// covering it (the read context fiber span or the synchronous sendQuery span).
+    std::vector<OpenTelemetry::SpanAttribute> getFragmentSpanAttributes() const;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);
