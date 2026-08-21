@@ -6258,8 +6258,9 @@ the durability of in-memory data or data managed by external systems.
 
 For example, `ReplicatedMergeTree`, in-memory engines such as `Memory` and `Buffer`, metadata-only engines
 such as `Merge` and `Alias`, and external-storage or data lake engines such as `S3` and `AzureBlobStorage` are
-allowed. Non-replicated engines that store table data on disk, such as `MergeTree`, `Log`, and `Set`, are
-rejected, including when their writable storage policy uses remote disks.
+allowed. Non-replicated engines that store table data on disk, such as `MergeTree`, `Log`, `File`, and `Set`, are
+rejected, including when their writable storage policy uses remote disks. `Set` and `Join` tables created with
+`SETTINGS persistent = 0` keep their data only in memory and are allowed.
 
 `Distributed`, `Remote`, and `RemoteSecure` tables are allowed. Their optional local background `INSERT` queue
 is a transient send buffer, not data of the table itself. It is not replicated, and setting
