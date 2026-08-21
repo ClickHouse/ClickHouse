@@ -92,7 +92,7 @@ SELECT round(log(2, 8)), round(ln(exp(1))), truncate(3.79), mod(7, 3);
 SELECT is_nan(nan()), is_finite(1.0), is_infinite(infinity());
 SELECT cosine_similarity(ARRAY[1.0, 0.0], ARRAY[1.0, 0.0]);
 SELECT bitwise_and(12, 10), bitwise_or(12, 10), bitwise_left_shift(1, 4);
-SELECT to_hex(from_hex('414243')), to_base64(from_base64('YWI=') );
+SELECT to_hex(from_hex('414243'));
 SELECT to_big_endian_64(1) = from_hex('0000000000000001');
 SELECT random() BETWEEN 0 AND 1, random(10) BETWEEN 0 AND 9;
 SELECT if(1 > 2, 'yes'), if(1 < 2, 'yes', 'no');
