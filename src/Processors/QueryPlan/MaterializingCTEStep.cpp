@@ -155,6 +155,11 @@ std::vector<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsSt
     std::vector<ClaimedCTE> claimed;
     for (auto & materialized_cte : step.ctes)
     {
+        /// Every claimed entry carries a plan, so the attach site can dereference it. Skipping
+        /// before the claim leaves the flag for whoever holds the subquery that will plan it.
+        if (!materialized_cte->plan)
+            continue;
+
         if (materialized_cte->is_materialization_planned.exchange(true))
             continue;
 

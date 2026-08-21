@@ -14,6 +14,7 @@
 -- GLOBAL IN, and a GLOBAL JOIN reading the CTE
 1
 3
--- the index is still used to prune granules
-Parts: 1 | Granules: 1
-Granules: 1/1
+-- the primary key still prunes granules under the gate
+1	1
+-- and it does not prune when the in-with-subqueries index path is off
+0	0
