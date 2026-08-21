@@ -79,9 +79,9 @@ echo "-- absent_over_time(nonexistent_metric[5m]): no samples anywhere, so a sin
 echo "-- with value 1 is emitted (with the labels inferred from the selector: none here)."
 promql_client -q "absent_over_time(nonexistent_metric[5m])"
 
-echo "-- absent_over_time({__name__=~\"up|up2\",instance=\"host1\"}[3m]): both metrics have samples in the"
-echo "-- range; series differing only by __name__ must not clash inside the internal presence grid."
-promql_client -q 'absent_over_time({__name__=~"up|up2",instance="host1"}[3m])'
+echo "-- absent_over_time({__name__!=\"\",instance=\"host1\"}[3m]): host1 has both up and up2, and both have"
+echo "-- samples in the range; series differing only by __name__ must not clash inside the presence grid."
+promql_client -q 'absent_over_time({__name__!="",instance="host1"}[3m])'
 
 echo "-- absent_over_time(up{instance=\"nohost\"}[5m]): no series matches, so the synthetic series"
 echo "-- carries the equality-matcher label instance=\"nohost\"."
