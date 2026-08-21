@@ -66,8 +66,13 @@ public:
     bool hasNext() const;
 
 private:
-    /// Nested element column (+ element type) of each joined column for the window [current_row, current_row + window_rows).
-    Block extractJoinedNested(const ColumnPtr & cut_any_col, const ColumnArray & cut_any_array, size_t window_rows) const;
+    /// Element-space filtered variant of next(): filters the nested element columns of a window and
+    /// expands only the surviving elements.
+    Block nextWithElementFilter();
+
+    /// Nested element column (+ element type) of one joined column for the window [current_row, current_row + window_rows).
+    /// Shared by next() and nextWithElementFilter().
+    ColumnWithTypeAndName getJoinedNestedColumn(const String & name, const ColumnPtr & cut_any_col, const ColumnArray & cut_any_array, size_t window_rows) const;
 
     const ArrayJoinAction * array_join;
     Block block;
