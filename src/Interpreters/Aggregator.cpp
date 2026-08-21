@@ -371,7 +371,8 @@ Aggregator::Params::Params(
     bool enable_parallel_single_level_merge_,
     bool enable_packed_string_keys_,
     bool enable_adaptive_aggregator_,
-    UInt64 adaptive_aggregator_freeze_threshold_)
+    UInt64 adaptive_aggregator_freeze_threshold_,
+    UInt64 adaptive_aggregator_freeze_threshold_bytes_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -396,6 +397,7 @@ Aggregator::Params::Params(
     , stats_collecting_params(stats_collecting_params_)
     , enable_adaptive_aggregator(enable_adaptive_aggregator_)
     , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
+    , adaptive_aggregator_freeze_threshold_bytes(adaptive_aggregator_freeze_threshold_bytes_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
@@ -1990,9 +1992,21 @@ bool Aggregator::executeOnBlock(Columns columns,
             /// The freeze replaces the local two-level conversion: from now on the local table
             /// only updates the keys it already holds, so it stays single-level and bounded by
             /// the threshold, and the frozen kernel pairs it with its two-level twin.
-            if (adaptive->isLearning() && result_size >= params.adaptive_aggregator_freeze_threshold
-                && result.isConvertibleToTwoLevel())
-                freezeAdaptive(result, *adaptive);
+            if (adaptive->isLearning())
+            {
+                /// The byte twin of the key-count freeze bound. The measure is the local
+                /// table's own footprint, its hash-table buffer plus its arenas, checked
+                /// between blocks like the baseline's conversion thresholds; the mid-block
+                /// freeze crossing checks only the key count, so a byte-triggered freeze
+                /// lands on a block boundary. The query-wide tracked memory is deliberately
+                /// not used: it sums every thread's allocations, so it would freeze all the
+                /// tables off each other's growth.
+                const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
+                    && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
+                if ((result_size >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
+                    && result.isConvertibleToTwoLevel())
+                    freezeAdaptive(result, *adaptive);
+            }
 
             if (adaptive->isFrozen())
             {

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# The adaptive aggregator freezes a thread's local table at whichever of the key-count and the
+# byte thresholds is reached first. Each query pins both thresholds explicitly, because the
+# runner's settings randomization must not move the freeze point. The no-freeze cell runs
+# first, while the freeze counter is still zero, so every assertion can test the counter's
+# absolute value instead of a delta. Everything runs in one clickhouse-local process, so the
+# counters in `system.events` belong to these queries alone. The hash-table statistics are
+# disabled to keep the cells independent: a size hint recorded by an earlier cell would
+# pre-size a later cell's table past the tiny byte bound at birth, and the freeze under test
+# should come from the table growing across blocks.
+$CLICKHOUSE_LOCAL --query "
+SET max_threads = 4;
+SET enable_adaptive_aggregator = 1;
+SET group_by_two_level_threshold = 100000;
+SET group_by_two_level_threshold_bytes = 500000000;
+SET max_block_size = 65536;
+SET collect_hash_table_stats_during_aggregation = 0;
+
+-- The byte bound disabled with an unreachable key bound: the tables must never freeze.
+SELECT intHash64(number) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k FORMAT Null
+SETTINGS adaptive_aggregator_freeze_threshold = 1000000000, adaptive_aggregator_freeze_threshold_bytes = 0;
+SELECT 'no freeze when disabled', count() FROM system.events WHERE event = 'AdaptiveAggregationLocalFreezes' AND value > 0;
+
+-- A tiny byte bound with the same unreachable key bound: the tables must freeze by bytes.
+SELECT intHash64(number) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k FORMAT Null
+SETTINGS adaptive_aggregator_freeze_threshold = 1000000000, adaptive_aggregator_freeze_threshold_bytes = 65536;
+SELECT 'freezes by bytes', count() FROM system.events WHERE event = 'AdaptiveAggregationLocalFreezes' AND value > 0;
+
+-- The result of a byte-triggered freeze matches the ordinary aggregation.
+SELECT 'exact', count(), sum(c), sum(k % 1000 = 0 ? c : 0) FROM (
+    SELECT intHash64(number) % 500000 AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k
+    SETTINGS adaptive_aggregator_freeze_threshold = 1000000000, adaptive_aggregator_freeze_threshold_bytes = 65536
+);
+SELECT 'exact', count(), sum(c), sum(k % 1000 = 0 ? c : 0) FROM (
+    SELECT intHash64(number) % 500000 AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k
+    SETTINGS enable_adaptive_aggregator = 0
+);
+"
