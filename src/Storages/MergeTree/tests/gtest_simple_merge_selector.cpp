@@ -186,10 +186,8 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAgeCompactsTheSmallTail)
         settings.min_partition_age_to_force_merge = 3600;
 
         /// The tail ends up in the merge, and not because this setting disables the right-tail
-        /// heuristic - it does not. That heuristic only trims a range of three parts or more, and
-        /// forcing by partition age also lifts the `min_parts_to_merge_at_once` floor (see `allow`),
-        /// so the cheapest candidate here is the two-part range ending at the tail, which the trim
-        /// never applies to.
+        /// heuristic - it does not. That heuristic only trims a range of three parts or more, so
+        /// the cheapest candidate here is the two-part range ending at the tail.
         auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
         ASSERT_EQ(selected.size(), 1);
         ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(1), partName(2)}));

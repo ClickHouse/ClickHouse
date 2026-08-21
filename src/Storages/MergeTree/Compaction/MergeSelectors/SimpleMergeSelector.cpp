@@ -155,9 +155,6 @@ bool allow(
     if (range_filter && !range_filter({begin, end}))
         return false;
 
-    if (force_merge_by_partition_age)
-        return true;
-
     if (settings.min_age_to_force_merge && min_age >= static_cast<double>(settings.min_age_to_force_merge))
         return true;
 
@@ -165,6 +162,10 @@ bool allow(
 
     if (settings.min_parts_to_merge_at_once && size < settings.min_parts_to_merge_at_once)
         return false;
+
+    /// Only the size-ratio heuristic below is bypassed; every other knob still applies on its own.
+    if (force_merge_by_partition_age)
+        return true;
 
     /// Map size to 0..1 using logarithmic scale
     /// Use log(1 + x) instead of log1p(x) because our sum_size is always integer.
