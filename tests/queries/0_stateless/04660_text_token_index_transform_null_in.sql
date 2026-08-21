@@ -7,6 +7,8 @@ DROP TABLE IF EXISTS t_null_set;
 DROP TABLE IF EXISTS t_free_set;
 DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_normalized;
+DROP TABLE IF EXISTS t_preprocessed_wrapped;
+DROP TABLE IF EXISTS t_preprocessed_plain;
 
 CREATE TABLE t_text (x Nullable(String), INDEX i x TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 INSERT INTO t_text SELECT if(number % 100 = 7, NULL, 'word' || toString(number)) FROM numbers(1000);
@@ -170,6 +172,18 @@ SELECT 'map fixed set count', count() FROM t_map WHERE m['k'] IN (SELECT v FROM 
 SELECT 'map fixed set rows, transform_null_in = 0', (SELECT count() FROM t_map WHERE m['k'] IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 0) = (SELECT count() FROM t_map WHERE m['k'] IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 0, use_skip_indexes = 0);
 SELECT 'map string set', extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map WHERE m['k'] IN (SELECT v FROM t_string_set) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
 
+-- A preprocessor is applied to the index column under the index's declared type but to a set
+-- element under `String`, so a wrapper the two do not share changes the tokens it produces.
+CREATE TABLE t_preprocessed_wrapped (x Nullable(String), INDEX i x TYPE text(tokenizer = ngrams(3), preprocessor = concat(toTypeName(x), ':', x))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_preprocessed_wrapped SELECT if(number = 5, 'word5', 'zz' || toString(number)) FROM numbers(1000);
+CREATE TABLE t_preprocessed_plain (x String, INDEX i x TYPE text(tokenizer = ngrams(3), preprocessor = concat(toTypeName(x), ':', x))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_preprocessed_plain SELECT if(number = 5, 'word5', 'zz' || toString(number)) FROM numbers(1000);
+
+SELECT 'preprocessor wrapped key rows', (SELECT count() FROM t_preprocessed_wrapped WHERE x IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_wrapped WHERE x IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+SELECT 'preprocessor wrapped key count', count() FROM t_preprocessed_wrapped WHERE x IN ('word5') SETTINGS transform_null_in = 1;
+SELECT 'preprocessor wrapped key rows, transform_null_in = 0', (SELECT count() FROM t_preprocessed_wrapped WHERE x IN ('word5') SETTINGS transform_null_in = 0) = (SELECT count() FROM t_preprocessed_wrapped WHERE x IN ('word5') SETTINGS transform_null_in = 0, use_skip_indexes = 0);
+SELECT 'preprocessor plain key still prunes', extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_preprocessed_plain WHERE x IN ('word5') SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
+
 -- A JSON subcolumn carrier is indexed through `JSONAllValues(json)`, so its stored type comes from
 -- that header column.
 SET enable_json_type = 1;
@@ -219,3 +233,5 @@ DROP TABLE t_map;
 DROP TABLE t_text_ngrams;
 DROP TABLE t_json;
 DROP TABLE t_normalized;
+DROP TABLE t_preprocessed_wrapped;
+DROP TABLE t_preprocessed_plain;

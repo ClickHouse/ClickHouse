@@ -56,6 +56,10 @@ map fixed set rows	1
 map fixed set count	1
 map fixed set rows, transform_null_in = 0	1
 map string set	Granules: 1/251
+preprocessor wrapped key rows	1
+preprocessor wrapped key count	1
+preprocessor wrapped key rows, transform_null_in = 0	1
+preprocessor plain key still prunes	Granules: 1/250
 json string set	Granules: 1/251
 json fixed set rows	1
 json fixed set count	1

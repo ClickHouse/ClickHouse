@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 
 namespace DB
 {
@@ -32,6 +33,12 @@ bool textIndexSetElementIsComparable(
 {
     auto set_unwrapped = unwrapTextIndexType(set_type);
     auto index_unwrapped = unwrapTextIndexType(index_type);
+
+    /// A preprocessor is applied to the index column under the index's own declared type but to a
+    /// set element under `String`, so a wrapper the two do not share can change the tokens it
+    /// produces. Only an index column already declared `String` keeps the two applications equal.
+    if (has_preprocessor && !index_type->equals(DataTypeString{}))
+        return false;
 
     if (set_unwrapped->equals(*index_unwrapped))
         return true;
