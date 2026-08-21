@@ -75,6 +75,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Planner.h>
@@ -9356,6 +9357,36 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
     };
     if (contains_deferred_set(predicate, contains_deferred_set))
+        return std::nullopt;
+
+    /// A query-time non-deterministic constant (e.g. `now` or `today`) is folded to its
+    /// submission-time value by this analysis, but the stored mutation re-evaluates it during
+    /// the asynchronous execution - possibly much later, or on another replica. That happens
+    /// when `allow_nondeterministic_mutations = 1` and the initiator did not rewrite the
+    /// predicate to literals (`mutations_execute_nondeterministic_on_initiator = 0`). The two
+    /// evaluations can disagree, and a partition matching only the execution-time value would
+    /// be missing from the mutation scope and escape the mutation. The same holds for a
+    /// foreground lightweight update, whose predicate is evaluated once more after this
+    /// analysis. Prune only predicates built from deterministic functions; a predicate already
+    /// rewritten to literals on the initiator passes this check naturally. A function unknown
+    /// to the factory (e.g. a user-defined function) is conservatively treated as
+    /// non-deterministic.
+    auto contains_nondeterministic_function = [&](const ASTPtr & ast, const auto & self) -> bool
+    {
+        /// Being deterministic for a lambda expression is completely determined by the
+        /// contents of its definition, so just proceed to the children.
+        if (const auto * function = ast->as<ASTFunction>(); function && function->name != "lambda")
+        {
+            if (!FunctionFactory::instance().has(function->name))
+                return true;
+
+            if (!FunctionFactory::instance().get(function->name, query_context)->isDeterministic())
+                return true;
+        }
+
+        return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
+    };
+    if (contains_nondeterministic_function(predicate, contains_nondeterministic_function))
         return std::nullopt;
 
     auto predicate_clone = predicate->clone();

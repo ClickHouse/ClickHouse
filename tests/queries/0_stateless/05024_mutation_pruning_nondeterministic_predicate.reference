@@ -1,0 +1,9 @@
+a predicate with a query-time constant is not pruned
+1	1	1
+2	2	0
+a predicate rewritten to literals on the initiator is pruned
+1	1	2
+2	2	0
+affected partitions per mutation
+['1','2']
+['1']
