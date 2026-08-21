@@ -75,8 +75,21 @@ WITH ct AS MATERIALIZED (SELECT 1 AS c),
      rs AS MATERIALIZED (SELECT * FROM dist_gate WHERE c GLOBAL IN (SELECT c FROM mid_pop WHERE c IN (SELECT c FROM ct)))
 SELECT count() FROM rs AS a, rs AS b;
 
+-- The CTE is named twice so it stays materialized instead of being inlined, and the second
+-- column is fed by the joined right-hand side, so it drops to 0 if the CTE contributes no rows.
 WITH ct AS MATERIALIZED (SELECT 1 AS c)
-SELECT count() FROM dist_gate GLOBAL ANY LEFT JOIN ct USING (c);
+SELECT count(), sum(j1.c) FROM dist_gate
+GLOBAL ANY LEFT JOIN ct AS j1 USING (c)
+GLOBAL ANY LEFT JOIN ct AS j2 USING (c);
+
+-- ... and that arm reads a materialized CTE rather than an inlined subquery.
+SELECT count() > 0 FROM (
+    EXPLAIN
+    WITH ct AS MATERIALIZED (SELECT 1 AS c)
+    SELECT count(), sum(j1.c) FROM dist_gate
+    GLOBAL ANY LEFT JOIN ct AS j1 USING (c)
+    GLOBAL ANY LEFT JOIN ct AS j2 USING (c)
+) WHERE explain ILIKE '%MaterializingCTEs%';
 
 -- The primary key still prunes granules in the gated plan: one line names the index path that
 -- ran, the other requires the selected granule count to be strictly below the total. Both need a
