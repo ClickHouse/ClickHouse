@@ -5,6 +5,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/StringValueFilter.h>
 
 namespace DB
 {
@@ -87,6 +88,10 @@ struct MergeTreeReaderSettings
     /// maintain selectivity counters for system.predicate_statistics_log. When
     /// false (the default), the readers skip the per-granule counter work.
     bool collect_predicate_statistics = false;
+    /// Per-column filters extracted from substring search conditions in PREWHERE.
+    /// String values that do not match are replaced with empty strings during deserialization.
+    /// Set only for reading with PREWHERE that is guaranteed to filter the rows (see `StringValueFilter`).
+    StringValueFiltersPtr string_value_filters;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove

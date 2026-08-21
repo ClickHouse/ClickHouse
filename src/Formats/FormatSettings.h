@@ -372,6 +372,8 @@ struct FormatSettings
         size_t dictionary_filter_push_down = 1024 * 1024;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
+        /// Copied from the `apply_string_filters_during_scan` query setting.
+        bool apply_string_filters = false;
 
         bool enable_json_parsing = true;
         bool preserve_order = false;

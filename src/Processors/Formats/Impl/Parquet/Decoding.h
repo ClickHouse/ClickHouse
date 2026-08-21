@@ -13,6 +13,7 @@ namespace DB::ErrorCodes
 namespace DB
 {
 class IDataType;
+class StringValueFilter;
 }
 
 namespace DB::Parquet
@@ -42,6 +43,11 @@ struct Dictionary
     PaddedPODArray<UInt32> offsets; // if !fixed_size
     size_t count = 0;
 
+    /// If not empty, `string_value_filter_mask[i]` says whether the i-th dictionary entry matches
+    /// the string filter from PREWHERE; `index` materializes empty strings for non-matching entries.
+    /// Filled by `buildStringValueFilterMask`, only for `StringPlain` mode.
+    PaddedPODArray<UInt8> string_value_filter_mask;
+
     /// Points into `col`, or `decompressed_buf`, or into Prefetcher's memory (kept alive by dictionary_page_prefetch).
     std::span<const char> data;
 
@@ -56,6 +62,8 @@ struct Dictionary
     size_t allocatedBytes() const;
     void index(const ColumnUInt32 & indexes_col, IColumn & out);
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
+    /// Checks every dictionary entry against the filter, see `string_value_filter_mask`.
+    void buildStringValueFilterMask(const StringValueFilter & filter);
 
     /// Upper bound on `allocatedBytes()` after `decode()` with the given arguments, computed from the
     /// page header *before* decoding anything. Lets a memory-bounded caller (the dictionary-filter
@@ -184,7 +192,10 @@ struct PageDecoderInfo
 
     /// [data, end) must be padded, i.e. have at least PADDING_FOR_SIMD bytes of readable memory
     /// before `data` and after `end`.
-    std::unique_ptr<PageDecoder> makeDecoder(parq::Encoding::type, std::span<const char> data) const;
+    /// If `string_value_filter` is not nullptr, string values that do not match it may be decoded
+    /// as empty strings (used for substring search conditions pushed down from PREWHERE).
+    std::unique_ptr<PageDecoder> makeDecoder(
+        parq::Encoding::type, std::span<const char> data, const StringValueFilter * string_value_filter = nullptr) const;
 
     /// Decode a min/max value from Statistics.
     /// If not supported, allow_stats is false, or the value doesn't survive the conversion to

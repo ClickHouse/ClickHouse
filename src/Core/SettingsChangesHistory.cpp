@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"query_plan_push_down_volume_reducing_functions", false, true, "New setting to push volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`) below `Sorting` and `Filter` steps, so the wide argument column is replaced by the fixed-size result. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no push down)."},
+            {"apply_string_filters_during_scan", false, false, "New setting to push down substring search conditions on String columns from PREWHERE into the column scan."},
             {"enable_alp_codec", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."},
             {"enable_quantized_codec", false, false, "New setting to enable the experimental `Quantized` compression codec individually, without the `allow_experimental_codecs`."},
             {"enable_sz3_codec", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."},

@@ -9,6 +9,7 @@
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Common/StringValueFilter.h>
 
 #include <deque>
 #include <optional>
@@ -201,6 +202,11 @@ struct Reader
         std::vector<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
+
+        /// A filter extracted from a substring search condition on this column in PREWHERE.
+        /// String values that do not match it are decoded as empty strings (they are guaranteed
+        /// to be filtered out by PREWHERE afterwards). See `StringValueFilter`.
+        StringValueFilterPtr string_value_filter;
 
         bool used_by_key_condition = false;
         bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
