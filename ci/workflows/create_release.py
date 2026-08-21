@@ -27,6 +27,16 @@ release_job = Job.Config(
 # (enable_gh_auth). --skip-repo/--skip-docker drop package export and image
 # builds. "new" cuts from master; release_job.py makes master a local branch when
 # the checkout is detached (the PR case) so its checkout("master") resolves.
+_release_dry_run_digest = Job.CacheDigestConfig(
+    include_paths=[
+        "./.github/workflows/create_release.yml",
+        "./ci/workflows/create_release.py",
+        "./ci/jobs/release_job.py",
+        "./ci/jobs/scripts/create_release.py",
+        "./ci/jobs/scripts/clickhouse_version.py",
+    ],
+)
+
 release_dry_run_new_job = Job.Config(
     name="Release Dry Run (new)",
     runs_on=RunnerLabels.ARM_SMALL,
@@ -35,19 +45,27 @@ release_dry_run_new_job = Job.Config(
         " --ref master --release-type new --dry-run --skip-repo --skip-docker"
     ),
     enable_gh_auth=True,
-    digest_config=Job.CacheDigestConfig(
-        include_paths=[
-            "./.github/workflows/create_release.yml",
-            "./ci/workflows/create_release.py",
-            "./ci/jobs/release_job.py",
-            "./ci/jobs/scripts/create_release.py",
-            "./ci/jobs/scripts/clickhouse_version.py",
-        ],
-    ),
+    digest_config=_release_dry_run_digest,
     timeout=1800,
 )
 
-PR_DRY_RUN_JOBS = [release_dry_run_new_job]
+# "patch" rehearses a patch release; --ref auto picks the newest unreleased
+# release-branch commit (a pass when none exists). It exercises the generic
+# prepare/setup path — the changelog-push-to-master and R2/package/docker steps
+# are real-only, so a dry run never reaches them.
+release_dry_run_patch_job = Job.Config(
+    name="Release Dry Run (patch)",
+    runs_on=RunnerLabels.ARM_SMALL,
+    command=(
+        "PYTHONPATH=. python3 ./ci/jobs/release_job.py"
+        " --ref auto --release-type patch --dry-run --skip-repo --skip-docker"
+    ),
+    enable_gh_auth=True,
+    digest_config=_release_dry_run_digest,
+    timeout=1800,
+)
+
+PR_DRY_RUN_JOBS = [release_dry_run_new_job, release_dry_run_patch_job]
 
 workflow = Workflow.Config(
     name="CreateRelease",
