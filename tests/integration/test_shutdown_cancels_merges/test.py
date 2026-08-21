@@ -9,6 +9,8 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance("node", stay_alive=True)
+node1 = cluster.add_instance("node1", with_zookeeper=True)
+node2 = cluster.add_instance("node2", with_zookeeper=True, stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -70,3 +72,54 @@ def test_shutdown_cancels_running_merge(started_cluster):
     assert node.query("SELECT count() FROM t_shutdown_merge") == "160000\n"
 
     node.query("DROP TABLE t_shutdown_merge SYNC")
+
+
+def test_shutdown_cancels_running_fetch(started_cluster):
+    """A graceful shutdown must also cancel in-flight fetches of parts from
+    other replicas: a fetch runs inside a single step of a background task, so
+    the executors' `wait` would otherwise block for the whole download. The
+    sender is throttled to 1 MiB/s and the part is ~150 MB of incompressible
+    data, so without cancellation the fetch holds the shutdown for ~150
+    seconds.
+    """
+    node1.query(
+        """
+        CREATE TABLE t_shutdown_fetch (k UInt64, v String)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_shutdown_fetch', 'r1')
+        ORDER BY k
+        SETTINGS max_replicated_sends_network_bandwidth = 1048576
+        """
+    )
+    node1.query("INSERT INTO t_shutdown_fetch SELECT number, randomString(1000) FROM numbers(150000)")
+
+    node2.query(
+        """
+        CREATE TABLE t_shutdown_fetch (k UInt64, v String)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_shutdown_fetch', 'r2')
+        ORDER BY k
+        """
+    )
+
+    for _ in range(300):
+        fetches = node2.query("SELECT count() FROM system.replicated_fetches WHERE table = 't_shutdown_fetch'").strip()
+        if fetches != "0":
+            break
+        time.sleep(0.2)
+    else:
+        raise Exception("The fetch did not start")
+
+    start = time.time()
+    assert node2.stop_clickhouse(stop_wait_sec=90) is True
+    elapsed = time.time() - start
+    assert elapsed < 90, f"Shutdown took {elapsed} seconds"
+
+    # The fetch was aborted by the cancellation of the `ReplicatedFetchList`
+    # entry (the message includes the part name), not by anything else.
+    assert node2.contains_in_log("Fetching of part all_")
+
+    node2.start_clickhouse()
+
+    # After the restart the fetch is retried; dropping the table cancels it
+    # again, through the per-storage blockers.
+    node2.query("DROP TABLE t_shutdown_fetch SYNC")
+    node1.query("DROP TABLE t_shutdown_fetch SYNC")

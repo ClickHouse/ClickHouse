@@ -98,6 +98,12 @@ struct ReplicatedFetchReadCallback
 
     void operator() (size_t bytes_count)
     {
+        /// The entry is cancelled on server shutdown - there is no point in finishing
+        /// the download, its result would be discarded anyway.
+        if (replicated_fetch_entry->is_cancelled)
+            throw Exception(ErrorCodes::ABORTED,
+                "Fetching of part {} was cancelled", replicated_fetch_entry->result_part_name);
+
         replicated_fetch_entry->bytes_read_compressed.store(bytes_count, std::memory_order_relaxed);
 
         /// It's possible when we fetch part from very old clickhouse version
