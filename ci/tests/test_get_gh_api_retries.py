@@ -385,9 +385,8 @@ def test_bare_429_gets_no_failover(monkeypatch):
     assert sleeps == [3, 6, 12, 24]
 
 
-# Row 12: the shim must translate praktika's RuntimeError into APIException. report.py
-# catches APIException specifically and falls back to a run URL rather than failing the
-# job, so a leaked RuntimeError would kill a job that used to degrade.
+# Row 12: the shim must translate praktika's RuntimeError into APIException, which is the
+# error boundary its callers already handle. A leaked RuntimeError would cross it.
 def test_shim_raises_apiexception_not_runtimeerror(monkeypatch):
     sleeps: list = []
     _install_fake_transport(monkeypatch, [504], b"", None, sleeps)
@@ -398,7 +397,7 @@ def test_shim_raises_apiexception_not_runtimeerror(monkeypatch):
     with pytest.raises(bdh.APIException):
         bdh.get_gh_api(URL)
 
-    # Mirrors report.py:48,58 — the fallback there depends on this class being catchable.
+    # The class has to stay catchable, which is what `report.py` relies on.
     try:
         bdh.get_gh_api(URL)
     except bdh.APIException:
@@ -467,13 +466,24 @@ def test_failover_sends_the_fetched_token(monkeypatch):
     )
 
     with pytest.raises(bdh.APIException):
-        bdh.get_gh_api(URL, params={"page": 1})
+        bdh.get_gh_api(
+            URL,
+            sleep=0,
+            params={"page": 1},
+            headers={"Accept": "application/vnd.github.v3.diff"},
+            timeout=10,
+        )
 
     assert auth_seen[0] is False and auth_seen[1] is True
     _, before = calls["requests"][0]
-    _, after = calls["requests"][1]
     assert "Authorization" not in (before.get("headers") or {})
-    assert after["headers"]["Authorization"] == "Bearer fetched-token"
-    # The failover restarts the budget, so it is also where a caller option can be lost.
-    for _, sent in calls["requests"]:
+    # The failover restarts the budget, so it is also where a caller option, the bearer, or
+    # the caller's sleep can be lost. Assert them on every post-reset attempt, not just the
+    # first authenticated one.
+    assert calls["count"] == bdh.DOWNLOAD_RETRIES_COUNT + 1
+    for _, sent in calls["requests"][1:]:
         assert sent["params"] == {"page": 1}
+        assert sent["headers"]["Accept"] == "application/vnd.github.v3.diff"
+        assert sent["headers"]["Authorization"] == "Bearer fetched-token"
+        assert sent["timeout"] == 10
+    assert sleeps == [0, 0, 0, 0]
