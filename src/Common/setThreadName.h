@@ -25,6 +25,7 @@ namespace DB
     M(AZURE_COPY_POOL, "AzureObjCopy") \
     M(AZURE_LIST_POOL, "AzureObjList") \
     M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
+    M(BACKGROUND_QUERY, "BackgroundQuery") \
     M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
     M(BACKGROUND_STREAMING_SCHEDULE_POOL, "BgStrmSchPool") \
     M(BACKUP_ASYNC, "BackupAsync") \
@@ -63,6 +64,7 @@ namespace DB
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
     M(EXTERNAL_LOADER, "ExternalLoader") \
+    M(FILESYSTEM_CACHE_DROP, "FSCacheDropKeys") \
     M(GRPC_SERVER_CALL, "gRPCServerCall") \
     M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
@@ -154,6 +156,7 @@ namespace DB
     M(SESSION_CLEANUP, "SessionCleanup") \
     M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
     M(SIGNAL_LISTENER, "SignalListnr") \
+    M(SNAPSHOT_ASYNC, "SnapshotAsync") \
     M(SSH_HANDLER, "SSHHandler") \
     M(SUGGEST, "Suggest") \
     M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \

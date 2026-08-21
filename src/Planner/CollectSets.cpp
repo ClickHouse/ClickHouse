@@ -125,7 +125,7 @@ public:
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
             auto set = getSetElementsForConstantValue(
-                in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(),
+                in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(),
                 GetSetElementParams{
                     .transform_null_in = settings[Setting::transform_null_in],
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],

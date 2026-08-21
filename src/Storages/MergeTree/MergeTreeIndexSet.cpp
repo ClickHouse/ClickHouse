@@ -384,9 +384,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     , index_data_types(index_description.data_types)
     , condition(buildCondition(index_description, filter_dag, context))
 {
-    for (const auto & name : index_description.sample_block.getNames())
-        if (!key_columns.contains(name))
-            key_columns.insert(name);
+    for (const auto & column : index_description.sample_block)
+        key_columns.emplace(column.name, column.type);
 
     if (!filter_dag.predicate)
         return;
@@ -660,19 +659,51 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
     auto column_name = tree_node.getColumnName();
-    if (key_columns.contains(column_name))
+    if (auto key_column_it = key_columns.find(column_name); key_column_it != key_columns.end())
     {
+        /// A name match does not imply a type match: the query-side node can carry a `Nullable` the
+        /// granule does not.
+        const auto & index_type = key_column_it->second;
+        const bool restore_nullable = !node.result_type->equals(*index_type);
+
+        /// INPUT cannot be re-typed: a second input under the same name would be
+        /// left unbound, because `ExpressionActions::execute` maps each name to one block column.
+        if (restore_nullable && node.type == ActionsDAG::ActionType::INPUT)
+            return nullptr;
+
+        /// Only a `Nullable` the query side added is reconcilable: dropping a `Nullable` the granule
+        /// holds would substitute values for its NULLs.
+        if (restore_nullable && !makeNullableOrLowCardinalityNullable(index_type)->equals(*node.result_type))
+            return nullptr;
+
+        const ActionsDAG::Node * result_node = nullptr;
+
         /// Check if we already created an INPUT for this key column
         auto it = key_column_inputs.find(column_name);
         if (it != key_column_inputs.end())
-            return it->second;
+        {
+            result_node = it->second;
+        }
+        else
+        {
+            result_node = node_to_check;
 
-        const auto * result_node = node_to_check;
+            /// Bind to the type the granule block holds, not the query-side type.
+            if (node.type != ActionsDAG::ActionType::INPUT)
+                result_node = &result_dag.addInput(column_name, index_type);
 
-        if (node.type != ActionsDAG::ActionType::INPUT)
-            result_node = &result_dag.addInput(column_name, node.result_type);
+            key_column_inputs[column_name] = result_node;
+        }
 
-        key_column_inputs[column_name] = result_node;
+        /// Restore the query-side type for the enclosing function. `toNullable` wraps the type
+        /// without introducing a NULL, so the mask the granule drives is unchanged.
+        if (restore_nullable)
+        {
+            auto to_nullable_function = FunctionFactory::instance().get("toNullable", context);
+            result_node = &result_dag.addFunction(to_nullable_function, {result_node}, {});
+        }
+
+        chassert(result_node->result_type->equals(*node.result_type));
         return result_node;
     }
 
@@ -692,6 +723,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
             return nullptr;
     }
 
+    /// Children carry their query-side types, so `node.function_base` still declares the right type.
     return &result_dag.addFunction(node.function_base, children, {});
 }
 
