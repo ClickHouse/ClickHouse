@@ -495,9 +495,10 @@ def test_missing_codec_file_fails_closed_for_modern_part(start_cluster):
     # keep the descendant attachable even though its new `checksums.txt` is a modern ZSTD frame.
     node4.exec_in_container(
         [
-            "bash",
+            "python3",
             "-c",
-            f"printf UNKNOWN > {data_path}detached/{part_name}/default_compression_codec.txt",
+            "import sys; open(sys.argv[1], 'w').write('UNKNOWN')",
+            f"{data_path}detached/{part_name}/default_compression_codec.txt",
         ]
     )
     node4.query(f"ALTER TABLE no_codec_file ATTACH PART '{part_name}'")
@@ -511,11 +512,7 @@ def test_missing_codec_file_fails_closed_for_modern_part(start_cluster):
     ).strip()
     assert (
         node4.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"cat {data_path}{mutated_part_name}/default_compression_codec.txt",
-            ]
+            ["cat", f"{data_path}{mutated_part_name}/default_compression_codec.txt"]
         ).strip()
         == "UNKNOWN"
     )
@@ -1052,11 +1049,7 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
     # modern `checksums.txt` as legacy provenance when every hardlinked column has an explicit codec.
     assert (
         node5.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"cat {data_path}{mutated_part_name}/default_compression_codec.txt",
-            ]
+            ["cat", f"{data_path}{mutated_part_name}/default_compression_codec.txt"]
         ).strip()
         == "UNKNOWN"
     )
