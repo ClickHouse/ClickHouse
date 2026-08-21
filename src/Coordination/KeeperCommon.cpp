@@ -46,6 +46,22 @@ std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path)
     return fmt::format("snapshot_{}.bin{}", up_to_log_idx, snapshot_path.ends_with(".zstd") ? ".zstd" : "");
 }
 
+int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log)
+{
+    if (value > std::numeric_limits<int32_t>::max())
+    {
+        LOG_WARNING(
+            log,
+            "Got {} value for setting '{}' which is bigger than int32_t max value, lowering value to {}.",
+            value,
+            name,
+            std::numeric_limits<int32_t>::max());
+        return std::numeric_limits<int32_t>::max();
+    }
+
+    return static_cast<int32_t>(value);
+}
+
 void moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,

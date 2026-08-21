@@ -29,7 +29,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 * `promql_query` - [PromQL 構文](https://prometheus.io/docs/prometheus/latest/querying/basics/)で記述されたクエリ。
 * `evaluation_time - 評価時刻のタイムスタンプ。現在時刻でクエリを評価するには、`evaluation&#95;time`として`now()&#96; を使用します。
 
-<div id="returned_value">
+<div id="returned-value">
   ## 戻り値
 </div>
 
@@ -58,7 +58,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 | カテゴリ     | 関数                                                                                               |
 | -------- | ------------------------------------------------------------------------------------------------ |
-| 範囲       | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| 範囲       | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | 数学       | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | 三角関数     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |

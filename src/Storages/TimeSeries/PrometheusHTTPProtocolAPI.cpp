@@ -127,6 +127,9 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
         getContext()->setSetting("enable_materialized_cte", true);
 
+    /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
+    getContext()->setSetting("allow_experimental_analyzer", true);
+
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     try

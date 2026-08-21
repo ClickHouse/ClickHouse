@@ -91,6 +91,7 @@ namespace FailPoints
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
+    extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
 }
 
@@ -116,6 +117,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
@@ -154,6 +156,7 @@ namespace ErrorCodes
     extern const int PART_IS_LOCKED;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int FAULT_INJECTED;
+    extern const int INVALID_TRANSACTION;
 }
 
 namespace ActionLocks
@@ -974,10 +977,49 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     /// mutex across the file I/O would block merge selection for its full duration.
     auto prepared = prepareMutationEntry(commands, query_context);
     Int64 version = prepared.version;
+    String mutation_id = prepared.mutation_id;
+    FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_register_mutation);
+
+    std::optional<MergeTreeMutationEntry> rolled_back_entry;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
         addPreparedMutationEntry(std::move(prepared));
+
+        /// `prepareMutationEntry` added the mutation to the transaction before the entry
+        /// was registered in `current_mutations_by_version`. A rollback in that window
+        /// (e.g. KILL TRANSACTION) calls `killMutation`, which finds nothing to remove,
+        /// and the entry registered above would be orphaned: its transaction is gone and
+        /// its CSN will never be assigned, which aborts background jobs and blocks all
+        /// subsequent mutations of the affected parts. Re-check the transaction state
+        /// under the same lock as the registration: a rollback that starts after this
+        /// critical section finds the entry and removes it via `killMutation`; a rollback
+        /// that started before is detected here and the entry is removed immediately.
+        /// Holding the lock across both steps also keeps the orphaned entry invisible to
+        /// `selectPartsToMutate`, which reads the map under the same lock.
+        auto txn = query_context->getCurrentTransaction();
+        if (txn && txn->getState() == MergeTreeTransaction::ROLLED_BACK)
+        {
+            auto it = current_mutations_by_version.find(version);
+            chassert(it != current_mutations_by_version.end());
+            if (it != current_mutations_by_version.end())
+            {
+                decrementMutationsCounters(mutation_counters, *it->second.commands);
+                rolled_back_entry.emplace(std::move(it->second));
+                current_mutations_by_version.erase(it);
+            }
+        }
     }
+
+    if (rolled_back_entry)
+    {
+        rolled_back_entry->removeFile();
+        LOG_INFO(log, "Removed mutation {}: transaction {} was rolled back concurrently with its registration",
+                 mutation_id, rolled_back_entry->tid);
+        throw Exception(ErrorCodes::INVALID_TRANSACTION,
+                        "Transaction {} was rolled back while mutation {} was being registered, the mutation was removed",
+                        rolled_back_entry->tid, mutation_id);
+    }
+
     return version;
 }
 
@@ -1192,13 +1234,17 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
-    auto pipeline = updateLightweightImpl(commands, context_copy);
-    auto patch_metadata = DB::getPatchPartMetadata(pipeline.getHeader(), context_copy);
-    auto sink = std::make_shared<MergeTreeSinkPatch>(*this, std::move(patch_metadata), std::move(update_holder), context_copy);
+    auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
+
+    auto sink = std::make_shared<MergeTreeSinkPatch>(
+        *this,
+        std::move(patch_metadata),
+        std::move(update_holder),
+        context_copy);
 
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
-    return pipeline;
+    return std::move(pipeline);
 }
 
 namespace
@@ -2537,6 +2583,7 @@ struct FutureNewEmptyPart
     std::string part_name;
     /// Metadata of the source part being covered; see `MergeTreeData::createEmptyPart`.
     StorageMetadataPtr metadata_snapshot;
+    std::optional<PatchPartIndex> patch_part_index;
 
     StorageMergeTree::MutableDataPartPtr data_part;
 };
@@ -2565,6 +2612,9 @@ static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector &
         new_part.partition = old_part->partition;
         new_part.part_name = old_part->getNewName(new_part.part_info);
         new_part.metadata_snapshot = old_part->getMetadataSnapshot();
+
+        if (old_part->info.isPatch())
+            new_part.patch_part_index = old_part->getPatchPartIndex().cloneEmpty();
     }
 
     return future_parts;
@@ -2576,7 +2626,7 @@ static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_gua
     std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> data_parts;
     for (auto & part: future_parts)
     {
-        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn);
+        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn, std::move(part.patch_part_index));
         data_parts.first.emplace_back(std::move(new_data_part));
         data_parts.second.emplace_back(std::move(tmp_dir_holder));
     }

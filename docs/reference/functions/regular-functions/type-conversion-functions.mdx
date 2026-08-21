@@ -2828,7 +2828,7 @@ SELECT toDate(20297)
 Introduced in: v21.9.0
 
 Converts the argument to the [Date32](/reference/data-types/date32) data type.
-If the value is outside the range, `toDate32` returns the border values supported by [Date32](/reference/data-types/date32).
+If the value is outside the `[0000-01-01, 9999-12-31]` range, `toDate32` returns the border values supported by [Date32](/reference/data-types/date32).
 If the argument is of type [`Date`](/reference/data-types/date), it's bounds are taken into account.
     
 
@@ -2862,7 +2862,7 @@ value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**Outside range**
+**Before 1900**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2872,7 +2872,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2880,7 +2880,7 @@ toTypeName(value): Date32
 
 Introduced in: v21.11.0
 
-Converts the argument to the [Date32](/reference/data-types/date32) data type. If the argument cannot be converted, which includes a numeric value outside of the range of [Date32](/reference/data-types/date32), the function returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date32](/reference/data-types/date32). If the argument has [Date](/reference/data-types/date) type, its borders are taken into account.
+Converts the argument to the [Date32](/reference/data-types/date32) data type. If the argument cannot be converted, which includes a numeric value outside of the range of [Date32](/reference/data-types/date32), the function returns a default value which is either the second argument (if specified), or otherwise `1900-01-01`, the historical default value of [Date32](/reference/data-types/date32) (not its lower boundary, which is `0000-01-01`). If the argument has [Date](/reference/data-types/date) type, its borders are taken into account.
 
 Note that, unlike [toDate32](#toDate32), this function does not saturate an out-of-range numeric argument to the boundaries of [Date32](/reference/data-types/date32); such an argument is treated as unconvertible.
     
@@ -2972,8 +2972,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 Introduced in: v21.9.0
 
-Converts an input value to a value of type [Date32](/reference/data-types/date32) but returns the lower boundary of [Date32](/reference/data-types/date32) if an invalid argument is received.
-The same as [toDate32](#toDate32) but returns lower boundary of [Date32](/reference/data-types/date32) if an invalid argument is received.
+Converts an input value to a value of type [Date32](/reference/data-types/date32) but returns the default value `1900-01-01` if an invalid argument is received.
+The same as [toDate32](#toDate32) but returns `1900-01-01` if an invalid argument is received.
+Note that `1900-01-01` is a historical default value for invalid input, not the lower boundary of [Date32](/reference/data-types/date32), which is `0000-01-01`.
 
 See also:
 - [`toDate32`](#toDate32)
@@ -2993,7 +2994,7 @@ toDate32OrZero(x)
 
 **Returned value**
 
-Returns a Date32 value if successful, otherwise the lower boundary of Date32 (`1900-01-01`). [`Date32`](/reference/data-types/date32)
+Returns a Date32 value if successful, otherwise the historical default value for invalid input (`1900-01-01`). [`Date32`](/reference/data-types/date32)
 
 **Examples**
 

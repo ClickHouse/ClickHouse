@@ -278,10 +278,13 @@ REGISTER_FUNCTION(AiSimilarity)
         .description = R"(
 Computes the semantic similarity of two texts using the configured embedding provider.
 
-Calculates the embedding of both texts and returns the cosine similarity of the two vectors
-in the range `[-1, 1]`: `1` means the texts are semantically identical, `0` means unrelated,
-and negative values mean opposite. This is the complement of `cosineDistance` over the
-same embeddings (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
+Calculates the vector embeddings of both texts and returns their
+[cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity). A score of `-1` is given to
+opposite embedding vectors, semantically this means texts with scores approaching `-1` are opposite in
+meaning. A score of `0` means the vectors are orthogonal: semantically unrelated. Finally, a score of `1`
+means the embedding vectors are pointing in the same direction, texts with scores approaching `1` are
+similar in meaning. This is the complement of `cosineDistance` over the same embeddings
+(`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
 
 Batching, credentials, and the `dimensions` parameter match `aiEmbed`, including the
 `ai_function_embedding_default_credentials` default-credentials setting.
@@ -294,7 +297,7 @@ named collection or the parameter map.
         = {{"text1", "First text.", {"String"}},
            {"text2", "Second text.", {"String"}},
            {"model", "Embedding model name.", {"const String"}},
-           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the embeddings; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
+           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the embeddings; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The cosine similarity in `[-1, 1]`, or NULL if either text is NULL or empty, an embedding request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Nullable(Float32)"}},
         .examples
         = {{"Compare two strings (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},

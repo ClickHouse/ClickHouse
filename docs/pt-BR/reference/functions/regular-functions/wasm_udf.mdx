@@ -236,11 +236,11 @@ RETURNS return_type
 * `ABI`: Versão da Interface Binária de Aplicação
   * `ROW_DIRECT`: Mapeamento direto de tipos, processamento linha por linha
   * `BUFFERED_V1`: Processamento baseado em blocos com serialização
-  * `ASSEMBLYSCRIPT`: Processamento linha por linha para módulos produzidos pelo compilador [AssemblyScript](https://www.assemblyscript.org). Tipos numéricos são mapeados para primitivos do AssemblyScript; `String` do ClickHouse é mapeado para `string` do AssemblyScript.
+  * `ASSEMBLYSCRIPT`: Processamento linha por linha para módulos produzidos pelo compilador [AssemblyScript](https://www.assemblyscript.org). Tipos numéricos são mapeados para tipos primitivos do AssemblyScript; `String` do ClickHouse é mapeado para `string` do AssemblyScript.
 * `DETERMINISTIC`: Declara a função como determinística — sempre retorna a mesma saída para a mesma entrada. Quando especificado, o ClickHouse pode fazer o constant folding de chamadas em que todos os argumentos são constantes: a função é avaliada uma vez durante a análise da consulta, e o resultado é reutilizado para cada linha.
 * `SHA256_HASH`: Hash esperado do módulo para verificação (preenchido automaticamente se omitido); pode ser usado para garantir que o módulo WASM correto seja carregado em diferentes réplicas.
 * `SETTINGS`: Configurações por função
-  * `serialization_format` String — Formato de serialização para a ABI, caso ela exija. Valores compatíveis: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary` e `Buffers`. Padrão: `MsgPack`. Formatos baseados em blocos, como `Buffers`, devem retornar uma única coluna cujo tipo corresponda à assinatura da função declarada.
+  * `serialization_format` String — Formato usado para serializar blocos de argumentos passados ao módulo e analisar o resultado retornado. Usado apenas por `ABI BUFFERED_V1`. Valores compatíveis: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary` e `Buffers`. Padrão: `MsgPack`. Formatos baseados em blocos, como `Buffers`, devem retornar uma única coluna cujo tipo corresponda à assinatura da função declarada.
   * `webassembly_udf_enable_fuel` Bool — Habilita um orçamento finito de fuel para a função. Padrão: `true`. Quando `false`, a configuração no nível da consulta `webassembly_udf_max_fuel` é ignorada para esta função. Desabilitar os limites de fuel pode melhorar o desempenho ao usar o engine `wasmtime`. No entanto, para código guest não confiável ou com bugs, isso pode aumentar o risco de execução descontrolada.
 
 <div id="abis-versions">
@@ -283,52 +283,162 @@ O WebAssembly não faz distinção entre argumentos com sinal e sem sinal; em ve
 </div>
 
 <Note>
-  Esta ABI é experimental e pode mudar em versões futuras.
+  Esta ABI é experimental e está sujeita a alterações em lançamentos futuros.
 </Note>
 
-Processa blocos inteiros de uma só vez usando (de)serialização por meio da memória WASM. Suporta quaisquer tipos de argumento e de retorno.
+Processa blocos inteiros de uma só vez usando (des)serialização por meio da memória WASM. Compatível com quaisquer tipos de argumentos e de retorno.
 
-Os dados serializados são copiados para a memória wasm, passada para a função UDF como um ponteiro para o buffer (que consiste em um ponteiro para os dados e no tamanho dos dados), junto com o número de linhas na entrada. Assim, a user-defined function em wasm sempre aceita dois argumentos `i32` e retorna um único valor `i32`.
-O código guest processa os dados e retorna um ponteiro para o buffer de resultado com os dados serializados do resultado.
+Os dados são trocados por meio de buffers na memória WASM. Um buffer é uma estrutura de 8 bytes que contém um ponteiro para os dados e o tamanho deles (dois valores `u32` little-endian). Os buffers são passados por identificador — um ponteiro para essa estrutura, e não para os próprios dados. O código guest deve exportar duas funções para criar e destruir esses buffers.
 
-O código guest deve fornecer duas funções para criar e destruir esses buffers.
+Para cada bloco de entrada, o ClickHouse:
+
+1. Serializa as colunas de argumentos usando o `serialization_format` da função (`MsgPack` por padrão). Formatos baseados em linhas gravam os valores linha a linha, com os valores dos argumentos na ordem em que são declarados em `ARGUMENTS`; formatos com campos nomeados usam os nomes dos argumentos, portanto, declare-os em `ARGUMENTS` ao usar esses formatos.
+2. Chama `clickhouse_create_buffer`, exportada pelo módulo, e copia os dados serializados para a memória apontada pelo buffer retornado.
+3. Chama a função definida pelo usuário com dois argumentos `i32`: o identificador do buffer de entrada (`0` se a função não tiver argumentos) e o número de linhas. A função retorna um único `i32` — o identificador do buffer de resultado, que o próprio código guest aloca; retornar `0` faz a consulta falhar com um erro.
+4. Lê o buffer de resultado: ele deve conter exatamente uma coluna com exatamente o mesmo número de linhas, serializada no mesmo formato. Para formatos com campos nomeados, como `JSONEachRow`, a coluna de resultado deve se chamar `result`.
+5. Chama `clickhouse_destroy_buffer` nos identificadores dos buffers de entrada (se houver) e de resultado. O código guest não deve liberar o buffer de resultado por conta própria nem retornar o identificador de entrada como resultado — caso contrário, ele seria destruído duas vezes.
+
+A função é invocada uma vez por bloco de entrada: uma consulta grande é dividida em vários blocos pelo pipeline de consulta (o número máximo de linhas por chamada também pode ser limitado pela configuração `webassembly_udf_max_input_block_size`). Portanto, a contagem de linhas passada em cada chamada corresponde ao tamanho desse bloco, e não ao da consulta inteira.
+
+<Note>
+  Os bytes exatos dentro dos buffers são definidos pelo formato escolhido, e o código guest deve decodificá-los e codificá-los por conta própria. Em particular, para valores `String`:
+
+  * `MsgPack`: o ClickHouse grava valores `String` usando a família de tipos `bin` (`0xc4`/`0xc5`/`0xc6`), e não a família `str`. Ambas as famílias são aceitas durante a conversão do resultado.
+  * `RowBinary`: cada `String` é prefixada com seu comprimento em bytes como um varint sem sinal ([LEB128](https://en.wikipedia.org/wiki/LEB128)), e não como um inteiro de largura fixa.
+  * `JSONEachRow`: cada linha de resultado deve ser um objeto com a chave `result`, por exemplo, `{"result":"value"}`.
+</Note>
 
 ```
 (module
-  ;; Aloca um novo buffer do tamanho especificado
-  ;; Retorna: handle para a estrutura Buffer (não um ponteiro direto para os dados!) com ponteiro para os dados e tamanho
+  ;; Allocate a new buffer of specified size
+  ;; Returns: handle to Buffer structure (not direct data pointer!) with pointer to data and size
   (func (export "clickhouse_create_buffer")
-    (param $size i32)    ;; Tamanho dos dados a alocar
-    (result i32))        ;; Retorna handle do buffer com espaço suficiente
+    (param $size i32)    ;; Size of data to allocate
+    (result i32))        ;; Returns buffer handle with enough space
 
-  ;; Libera um buffer pelo seu handle
+  ;; Free a buffer by its handle
   (func (export "clickhouse_destroy_buffer")
-    (param $handle i32)  ;; Handle do buffer a liberar
-    (result))            ;; Sem valor de retorno
+    (param $handle i32)  ;; Buffer handle to free
+    (result))            ;; No return value
 
-    ;; Função definida pelo usuário
+    ;; User-defined function
     (func (export "user_defined_function1")
-      (param $input_buffer_handle i32)  ;; Handle do buffer de entrada
-      (param $n i32)                    ;; Número de linhas na entrada
-      (result i32))                     ;; Retorna handle do buffer de saída
+      (param $input_buffer_handle i32)  ;; Input buffer handle
+      (param $n i32)                    ;; Number of rows in input
+      (result i32))                     ;; Returns output buffer handle
 )
 ```
 
-Exemplo de definições em C:
+Um exemplo completo em C freestanding: `str_reverse` inverte os bytes de cada string de entrada usando `serialization_format = 'RowBinary'`. As instâncias do módulo são reutilizadas entre blocos, portanto `clickhouse_destroy_buffer` precisa realmente liberar a memória — aqui, o allocator é redefinido quando todos os buffers são destruídos.
 
 ```c
+#include <stdint.h>
+
 typedef struct {
     uint8_t * data;
     uint32_t size;
 } ClickhouseBuffer;
 
-ClickhouseBuffer * clickhouse_create_buffer(uint32_t size) { /* ... */ }
+#define HEAP_SIZE (1 << 24)
+static _Alignas(16) uint8_t heap[HEAP_SIZE];
+static uint32_t heap_pos = 0;
+static uint32_t live_buffers = 0;
 
-void clickhouse_destroy_buffer(ClickhouseBuffer * data) { /* ... */ }
+__attribute__((export_name("clickhouse_create_buffer")))
+ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
+{
+    uint32_t total = (sizeof(ClickhouseBuffer) + size + 15u) & ~15u;
+    if (heap_pos + total > HEAP_SIZE)
+        return 0; /* a zero handle makes the host fail the query with an error */
+    ClickhouseBuffer * buf = (ClickhouseBuffer *) &heap[heap_pos];
+    buf->data = &heap[heap_pos + sizeof(ClickhouseBuffer)];
+    buf->size = size;
+    heap_pos += total;
+    ++live_buffers;
+    return buf;
+}
 
-/// Exemplo de funções definidas pelo usuário
-ClickhouseBuffer * user_defined_function1(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
-ClickhouseBuffer * user_defined_function2(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
+__attribute__((export_name("clickhouse_destroy_buffer")))
+void clickhouse_destroy_buffer(ClickhouseBuffer * buf)
+{
+    if (--live_buffers == 0)
+        heap_pos = 0;
+}
+
+/* RowBinary prefixes each String with its byte length as an unsigned varint (LEB128) */
+static uint64_t read_varint(const uint8_t ** pp)
+{
+    uint64_t value = 0;
+    for (int shift = 0;; shift += 7)
+    {
+        uint8_t b = *(*pp)++;
+        value |= (uint64_t)(b & 0x7f) << shift;
+        if (!(b & 0x80))
+            return value;
+    }
+}
+
+static void write_varint(uint8_t ** pp, uint64_t value)
+{
+    while (value >= 0x80)
+    {
+        *(*pp)++ = (uint8_t)(value | 0x80);
+        value >>= 7;
+    }
+    *(*pp)++ = (uint8_t)value;
+}
+
+/* Reverses the bytes of each input string */
+__attribute__((export_name("str_reverse")))
+ClickhouseBuffer * str_reverse(ClickhouseBuffer * input, uint32_t num_rows)
+{
+    ClickhouseBuffer * out = clickhouse_create_buffer(input->size);
+    if (!out)
+        return 0;
+    const uint8_t * in = input->data;
+    uint8_t * o = out->data;
+    for (uint32_t row = 0; row < num_rows; ++row)
+    {
+        uint64_t len = read_varint(&in);
+        write_varint(&o, len);
+        for (uint64_t i = 0; i < len; ++i)
+            o[i] = in[len - 1 - i];
+        in += len;
+        o += len;
+    }
+    out->size = (uint32_t)(o - out->data);
+    return out;
+}
+```
+
+Compile usando clang e `wasm-ld` (incluídos no LLVM/lld):
+
+```bash
+clang --target=wasm32 -ffreestanding -nostdlib -fno-builtin -c str_reverse.c
+wasm-ld --no-entry str_reverse.o -o str_reverse.wasm
+```
+
+As funções devem estar visíveis nas exportações do módulo: marque-as com `__attribute__((export_name("...")))`, como acima, ou faça a vinculação com `wasm-ld --export-all`. `-fno-builtin` impede que o clang converta loops simples de bytes em chamadas a `memcpy`/`memset`, que não estão disponíveis sem uma biblioteca padrão.
+
+Carregue o módulo e crie a função:
+
+```bash
+cat str_reverse.wasm | clickhouse client -q "INSERT INTO system.webassembly_modules (name, code) SELECT 'str_reverse', code FROM input('code String') FORMAT RawBlob"
+```
+
+```sql
+CREATE FUNCTION str_reverse LANGUAGE WASM ABI BUFFERED_V1
+FROM 'str_reverse' :: 'str_reverse'
+ARGUMENTS (s String) RETURNS String
+SETTINGS serialization_format = 'RowBinary';
+
+SELECT str_reverse(toString(number + 100)) FROM numbers(3);
+```
+
+```text
+001
+101
+201
 ```
 
 <div id="abi-assemblyscript">

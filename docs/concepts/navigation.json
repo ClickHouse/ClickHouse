@@ -197,6 +197,7 @@
           "group": "Backup and restore",
           "pages": [
             "concepts/features/backup-restore/overview",
+            "concepts/features/backup-restore/restore-settings",
             "concepts/features/backup-restore/local-disk",
             "concepts/features/backup-restore/s3-endpoint",
             "concepts/features/backup-restore/azure-blob-storage",
@@ -218,7 +219,7 @@
                 "concepts/features/interfaces/tcp",
                 "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
-                "concepts/features/interfaces/odbc",
+                { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
                 "concepts/features/interfaces/prometheus",
                 "concepts/features/interfaces/ssh",

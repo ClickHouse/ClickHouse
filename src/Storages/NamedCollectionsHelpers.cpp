@@ -85,11 +85,13 @@ namespace
 
     /// A TLS credential can be given either as a path to a file (`ssl_ca`) or as its contents
     /// (`ssl_ca_pem`) - two spellings of one setting. Only the contents form is accepted from a query
-    /// (see `StorageMySQL::getSSLParams`), where it replaces the path inherited from the collection.
+    /// (see `StorageMySQL::getSSLParams` and `StoragePostgreSQL::getSSLParams`), where it replaces the
+    /// path inherited from the collection.
     /// Returns the path key a contents key replaces, if the key is a contents key.
     std::optional<std::string> tlsCredentialsPathKeyFor(const std::string & key)
     {
-        static constexpr std::string_view tls_credentials_path_keys[] = {"ssl_ca", "ssl_cert", "ssl_key"};
+        static constexpr std::string_view tls_credentials_path_keys[]
+            = {"ssl_ca", "ssl_cert", "ssl_key", "sslrootcert", "sslcert", "sslkey"};
 
         for (const auto & path_key : tls_credentials_path_keys)
         {
@@ -216,8 +218,11 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
+        /// Marked before the value is written: the mark remembers the stored value the override
+        /// replaces, so consumers can tell an override that drops a collection-provided value
+        /// from one that never had anything to drop (see `StorageMySQL::getSSLParams`).
         collection_copy->markQueryOverridden(key);
+        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
     }
 
     if (dependent_table_id)
@@ -250,11 +255,12 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         if (auto forbidding_key = findOverrideForbiddingKey(*collection_copy, key, allow_override_by_default))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", *forbidding_key);
 
-        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
         /// The keys of a dictionary created with a DDL query come from the query, so mark them the
         /// same way as the AST-based overload above: `StorageMySQL::getSSLParams` distinguishes a
         /// credential supplied at the point of use from one defined in the collection itself.
+        /// Marked before the value is written so the mark remembers the replaced stored value.
         collection_copy->markQueryOverridden(key);
+        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
     }
 
     /// Register the dictionary that uses this named collection as a dependency,

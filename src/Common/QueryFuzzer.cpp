@@ -428,7 +428,7 @@ Field QueryFuzzer::getRandomField(int type)
         }
         case 3: {
             /// Date/Date32 boundary values as strings — stress date parsing and arithmetic.
-            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [1900-01-01, 2299-12-31].
+            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [0000-01-01, 9999-12-31].
             static constexpr const char * date_values[]
                 = {"0000-01-01",
                    "1899-12-31",
@@ -3427,7 +3427,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 
     static const std::unordered_map<ASTExplainQuery::ExplainKind, DB::Strings> settings_by_kind = {
         {ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
-        {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes"}},
+        {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes", "single_record"}},
         {ASTExplainQuery::QueryTree, {"run_passes", "dump_tree", "dump_passes", "dump_ast", "passes"}},
         {ASTExplainQuery::ExplainKind::QueryPlan,
          {"header",
@@ -4805,6 +4805,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"empty", "notEmpty", "length", "lengthUTF8"},
         /// Array/string containment checks
         {"has",
+         "notHas",
          "hasAll",
          "hasAny",
          "hasToken",
@@ -5215,7 +5216,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// AI function, so it is not grouped for name-swapping.
         {"aiSimilarity"},
         /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
-        {"aiClassify", "aiExtract", "aiTranslate"},
+        {"aiClassify", "aiExtract", "aiTranslate", "aiFilter", "aiRedact"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
         /// Geo coordinate projections (longitude, latitude[, zone/precision] → Tuple/String)

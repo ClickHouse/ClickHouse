@@ -98,23 +98,23 @@ SELECT L1Norm((1, 2))
 
 Добавленный в: v21.11.0
 
-Вычисляет единичный вектор заданного вектора (элементы кортежа — координаты) в пространстве `L1` ([таксомоторная геометрия](https://en.wikipedia.org/wiki/Taxicab_geometry)).
+Вычисляет единичный вектор заданного вектора (элементы кортежа или массива — координаты) в пространстве `L1` ([таксомоторная геометрия](https://en.wikipedia.org/wiki/Taxicab_geometry)).
 
 **Синтаксис**
 
 ```sql
-L1Normalize(tuple)
+L1Normalize(vector)
 ```
 
 **Псевдонимы**: `normalizeL1`
 
 **Аргументы**
 
-* `tuple` — Кортеж из числовых значений. [`Tuple(T)`](/ru/reference/data-types/tuple)
+* `vector` — Кортеж или массив числовых значений. [`Tuple(T)`](/ru/reference/data-types/tuple) или [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает единичный вектор. [`Tuple(Float64)`](/ru/reference/data-types/tuple)
+Возвращает единичный вектор. Для входных данных типа `Array` возвращает `Array(Float32)`, если наименьший общий супертип типов элементов — `Float32` или `BFloat16`; в противном случае — `Array(Float64)`. Для входных данных типа `Tuple` всегда возвращает `Tuple(Float64)`. [`Tuple(Float64)`](/ru/reference/data-types/tuple) или [`Array(Float32)`](/ru/reference/data-types/array) или [`Array(Float64)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -289,25 +289,25 @@ SELECT L2Norm((1, 2))
   ## L2Normalize
 </div>
 
-Добавленный в: v21.11.0
+Добавлена в: v21.11.0
 
-Вычисляет единичный вектор для заданного вектора (элементы кортежа служат координатами) в евклидовом пространстве (с помощью [евклидова расстояния](https://en.wikipedia.org/wiki/Euclidean_distance)).
+Вычисляет единичный вектор для заданного вектора (элементы кортежа или массива являются координатами) в евклидовом пространстве (с использованием [евклидова расстояния](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
 **Синтаксис**
 
 ```sql
-L2Normalize(tuple)
+L2Normalize(vector)
 ```
 
 **Псевдонимы**: `normalizeL2`
 
 **Аргументы**
 
-* `tuple` — Кортеж числовых значений. [`Tuple(T)`](/ru/reference/data-types/tuple)
+* `vector` — кортеж или массив числовых значений. [`Tuple(T)`](/ru/reference/data-types/tuple) или [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает единичный вектор. [`Tuple(Float64)`](/ru/reference/data-types/tuple)
+Возвращает единичный вектор. Для входных данных `Array` возвращает `Array(Float32)`, если наименьший общий супертип типов элементов — `Float32` или `BFloat16`; в противном случае — `Array(Float64)`. Для входных данных `Tuple` всегда возвращает `Tuple(Float64)`. [`Tuple(Float64)`](/ru/reference/data-types/tuple) или [`Array(Float32)`](/ru/reference/data-types/array) или [`Array(Float64)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -483,23 +483,23 @@ SELECT LinfNorm((1, -2))
 
 Добавленный в: v21.11.0
 
-Вычисляет единичный вектор для заданного вектора (элементы кортежа служат координатами) в пространстве `L_{inf}` (с использованием [максимальной нормы](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))).
+Вычисляет единичный вектор для заданного вектора (элементы кортежа или массива служат координатами) в пространстве `L_{inf}` (с использованием [максимальной нормы](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))).
 
 **Синтаксис**
 
 ```sql
-LinfNormalize(tuple)
+LinfNormalize(vector)
 ```
 
 **Псевдонимы**: `normalizeLinf`
 
 **Аргументы**
 
-* `tuple` — Кортеж из числовых значений. [`Tuple(T)`](/ru/reference/data-types/tuple)
+* `vector` — Кортеж или массив числовых значений. [`Tuple(T)`](/ru/reference/data-types/tuple) или [`Array(T)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает единичный вектор. [`Tuple(Float64)`](/ru/reference/data-types/tuple)
+Возвращает единичный вектор. Для входных данных `Array` возвращает `Array(Float32)`, если наименьший общий супертип типов элементов — `Float32` или `BFloat16`; в противном случае возвращает `Array(Float64)`. Для входных данных `Tuple` всегда возвращает `Tuple(Float64)`. [`Tuple(Float64)`](/ru/reference/data-types/tuple) или [`Array(Float32)`](/ru/reference/data-types/array) или [`Array(Float64)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -535,7 +535,7 @@ LpDistance(vector1, vector2, p)
 
 * `vector1` — Первый вектор. [`Tuple(T)`](/ru/reference/data-types/tuple) или [`Array(T)`](/ru/reference/data-types/array)
 * `vector2` — Второй вектор. [`Tuple(T)`](/ru/reference/data-types/tuple) или [`Array(T)`](/ru/reference/data-types/array)
-* `p` — Степень. Возможные значения: действительное число в диапазоне `[1; inf)`. [`UInt*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float)
+* `p` — Степень. Возможные значения: действительное число в диапазоне `[1; inf)`. [`UInt*`](/ru/reference/data-types/int-uint) или [`Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float)
 
 **Возвращаемое значение**
 
@@ -567,7 +567,7 @@ SELECT LpDistance((1, 2), (2, 3), 3)
 
 * При p=1 эквивалентна L1Norm (манхэттенское расстояние).
 * При p=2 эквивалентна L2Norm (евклидово расстояние).
-* При p=∞ эквивалентна LinfNorm (максимальная норма).
+* Значение `p` должно быть конечным числом не меньше единицы; для максимальной нормы (предел при p→∞) используйте `LinfNorm`.
 
 **Синтаксис**
 
@@ -580,7 +580,7 @@ LpNorm(vector, p)
 **Аргументы**
 
 * `vector` — Вектор или кортеж числовых значений. [`Tuple(T)`](/ru/reference/data-types/tuple) или [`Array(T)`](/ru/reference/data-types/array)
-* `p` — Степень. Возможные значения — действительные числа в диапазоне `[1; inf)`. [`UInt*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float)
+* `p` — Степень. Возможные значения — действительные числа в диапазоне `[1; inf)`. [`UInt*`](/ru/reference/data-types/int-uint) или [`Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float)
 
 **Возвращаемое значение**
 
@@ -604,26 +604,26 @@ SELECT LpNorm((1, -2), 2)
   ## LpNormalize
 </div>
 
-Добавленный в: v21.11.0
+Добавлена в версии: v21.11.0
 
-Вычисляет единичный вектор для заданного вектора (элементы кортежа служат координатами) в пространстве `Lp` (с использованием [p-нормы](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)).
+Вычисляет единичный вектор заданного вектора (элементы кортежа или массива являются координатами) в пространстве `Lp` (с использованием [p-нормы](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)).
 
 **Синтаксис**
 
 ```sql
-LpNormalize(tuple, p)
+LpNormalize(vector, p)
 ```
 
 **Псевдонимы**: `normalizeLp`
 
 **Аргументы**
 
-* `tuple` — Кортеж из числовых значений. [`Tuple(T)`](/ru/reference/data-types/tuple)
-* `p` — Степень. Возможные значения — любое число в диапазоне `[1; inf)`. [`UInt*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float)
+* `vector` — кортеж или массив числовых значений. [`Tuple(T)`](/ru/reference/data-types/tuple) или [`Array(T)`](/ru/reference/data-types/array)
+* `p` — степень. Допустимые значения: действительные числа в диапазоне `[1; inf)`. [`UInt*`](/ru/reference/data-types/int-uint) или [`Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float)
 
 **Возвращаемое значение**
 
-Возвращает единичный вектор. [`Tuple(Float64)`](/ru/reference/data-types/tuple)
+Возвращает единичный вектор. Для входных значений типа `Array` возвращает `Array(Float32)`, если наименьший общий супертип типов элементов — `Float32` или `BFloat16`; в противном случае — `Array(Float64)`. Для входных значений типа `Tuple` всегда возвращает `Tuple(Float64)`. [`Tuple(Float64)`](/ru/reference/data-types/tuple) или [`Array(Float32)`](/ru/reference/data-types/array) или [`Array(Float64)`](/ru/reference/data-types/array)
 
 **Примеры**
 

@@ -98,23 +98,23 @@ SELECT L1Norm((1, 2))
 
 أُضيفت في: v21.11.0
 
-تحسب متجه الوحدة لمتجه معيّن (عناصر الـ Tuple هي الإحداثيات) في فضاء `L1` ([هندسة مانهاتن](https://en.wikipedia.org/wiki/Taxicab_geometry)).
+تحسب متجه الوحدة لمتجه معيّن (عناصر الـ Tuple أو الـ Array هي الإحداثيات) في فضاء `L1` ([هندسة مانهاتن](https://en.wikipedia.org/wiki/Taxicab_geometry)).
 
-**البنية**
+**الصيغة**
 
 ```sql
-L1Normalize(tuple)
+L1Normalize(vector)
 ```
 
-**الأسماء المستعارة**: `normalizeL1`
+**الأسماء البديلة**: `normalizeL1`
 
-**الوسائط**
+**الوسيطات**
 
-* `tuple` — Tuple من القيم العددية. [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `vector` — Tuple أو Array من القيم العددية. [`Tuple(T)`](/ar/reference/data-types/tuple) أو [`Array(T)`](/ar/reference/data-types/array)
 
 **القيمة المُعادة**
 
-تُرجع متجه الوحدة. [`Tuple(Float64)`](/ar/reference/data-types/tuple)
+تُرجع متجه الوحدة. بالنسبة إلى مُدخلات `Array`، تُرجع `Array(Float32)` إذا كان النوع الفائق المشترك الأدنى لأنواع العناصر هو `Float32` أو `BFloat16`، وإلا فتُرجع `Array(Float64)`. بالنسبة إلى مُدخلات `Tuple`، تُرجع دائمًا `Tuple(Float64)`. [`Tuple(Float64)`](/ar/reference/data-types/tuple) أو [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Float64)`](/ar/reference/data-types/array)
 
 **أمثلة**
 
@@ -289,25 +289,25 @@ SELECT L2Norm((1, 2))
   ## L2Normalize
 </div>
 
-قُدِّمت في: v21.11.0
+أُضيف في: v21.11.0
 
-يحسب متجه الوحدة لمتجه معيّن (عناصر الـ Tuple هي الإحداثيات) في الفضاء الإقليدي (باستخدام [المسافة الإقليدية](https://en.wikipedia.org/wiki/Euclidean_distance)).
+يحسب متجه الوحدة لمتجه معيّن (إذ تمثل عناصر الـ Tuple أو الـ Array الإحداثيات) في الفضاء الإقليدي (باستخدام [المسافة الإقليدية](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
 **الصيغة**
 
 ```sql
-L2Normalize(tuple)
+L2Normalize(vector)
 ```
 
 **الأسماء البديلة**: `normalizeL2`
 
 **الوسيطات**
 
-* `tuple` — قيمة من النوع Tuple تتألف من قيم رقمية. [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `vector` — Tuple أو Array من القيم العددية. [`Tuple(T)`](/ar/reference/data-types/tuple) أو [`Array(T)`](/ar/reference/data-types/array)
 
-**القيمة المعادة**
+**القيمة المُعادة**
 
-يعيد متجه الوحدة. [`Tuple(Float64)`](/ar/reference/data-types/tuple)
+يُرجع متجه الوحدة. بالنسبة إلى مدخلات `Array`، يُرجع `Array(Float32)` إذا كان النوع الفائق المشترك الأدنى لأنواع العناصر هو `Float32` أو `BFloat16`، وإلا يُرجع `Array(Float64)`. وبالنسبة إلى مدخلات `Tuple`، يُرجع دائمًا `Tuple(Float64)`. [`Tuple(Float64)`](/ar/reference/data-types/tuple) أو [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Float64)`](/ar/reference/data-types/array)
 
 **أمثلة**
 
@@ -483,23 +483,23 @@ SELECT LinfNorm((1, -2))
 
 أُضيفت في: v21.11.0
 
-تحسب متجه الوحدة لمتجه معيّن (عناصر الـ Tuple هي الإحداثيات) في فضاء `L_{inf}` (باستخدام [المعيار الأعظمي](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))).
+تحسب متجه الوحدة لمتجه معيّن (عناصر الـ Tuple أو المصفوفة هي الإحداثيات) في فضاء `L_{inf}` (باستخدام [المعيار الأعظمي](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))).
 
 **الصيغة**
 
 ```sql
-LinfNormalize(tuple)
+LinfNormalize(vector)
 ```
 
 **الأسماء البديلة**: `normalizeLinf`
 
-**المعاملات**
+**وسيطات الدالة**
 
-* `tuple` — Tuple من القيم الرقمية. [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `vector` — Tuple أو Array من القيم الرقمية. [`Tuple(T)`](/ar/reference/data-types/tuple) أو [`Array(T)`](/ar/reference/data-types/array)
 
 **القيمة المُعادة**
 
-تُرجع متجه الوحدة. [`Tuple(Float64)`](/ar/reference/data-types/tuple)
+تُرجع متجه الوحدة. بالنسبة إلى مُدخلات `Array`، تُرجع `Array(Float32)` إذا كان النوع الأعلى المشترك الأدنى لأنواع العناصر هو `Float32` أو `BFloat16`، وإلا فتُرجع `Array(Float64)`. بالنسبة إلى مُدخلات `Tuple`، تُرجع دائمًا `Tuple(Float64)`. [`Tuple(Float64)`](/ar/reference/data-types/tuple) أو [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Float64)`](/ar/reference/data-types/array)
 
 **أمثلة**
 
@@ -523,7 +523,7 @@ SELECT LinfNormalize((3, 4))
 
 تحسب المسافة بين نقطتين (عناصر المتجهات هي الإحداثيات) في فضاء `Lp` ([مسافة معيار p](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)).
 
-**البنية**
+**صيغة**
 
 ```sql
 LpDistance(vector1, vector2, p)
@@ -531,15 +531,15 @@ LpDistance(vector1, vector2, p)
 
 **الأسماء البديلة**: `distanceLp`
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `vector1` — المتجه الأول. [`Tuple(T)`](/ar/reference/data-types/tuple) أو [`Array(T)`](/ar/reference/data-types/array)
 * `vector2` — المتجه الثاني. [`Tuple(T)`](/ar/reference/data-types/tuple) أو [`Array(T)`](/ar/reference/data-types/array)
-* `p` — الأس. القيم الممكنة: عدد حقيقي ضمن `[1; inf)`. [`UInt*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `p` — الأس. القيم الممكنة: عدد حقيقي ضمن `[1; inf)`. [`UInt*`](/ar/reference/data-types/int-uint) أو [`Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المُعادة**
 
-تُرجِع مسافة معيار p. بالنسبة إلى مُدخلات `Array`، تُرجِع `Float32` إذا كان أقل نوع فائق مشترك لأنواع العناصر هو `Float32` أو `BFloat16`، وإلا فتُرجِع `Float64`. أما بالنسبة إلى مُدخلات `Tuple`، فتُرجِع دائمًا `Float64`. [`Float*`](/ar/reference/data-types/float)
+تُرجِع مسافة معيار p. بالنسبة إلى مُدخلات `Array`، تُرجِع `Float32` إذا كان النوع الأعلى المشترك الأدنى لأنواع العناصر هو `Float32` أو `BFloat16`، وإلا فتُرجِع `Float64`. أما بالنسبة إلى مُدخلات `Tuple`، فتُرجِع دائمًا `Float64`. [`Float*`](/ar/reference/data-types/float)
 
 **أمثلة**
 
@@ -567,9 +567,9 @@ SELECT LpDistance((1, 2), (2, 3), 3)
 
 * عندما تكون p=1، فإنها تكافئ L1Norm (مسافة مانهاتن).
 * عندما تكون p=2، فإنها تكافئ L2Norm (المسافة الإقليدية).
-* عندما تكون p=∞، فإنها تكافئ LinfNorm (المعيار الأعظمي).
+* يجب أن تكون قيمة `p` عددًا محدودًا لا يقل عن واحد؛ لاستخدام المعيار الأعظمي (حدّ p→∞)، استخدم `LinfNorm` بدلًا من ذلك.
 
-**البنية**
+**صيغة**
 
 ```sql
 LpNorm(vector, p)
@@ -577,10 +577,10 @@ LpNorm(vector, p)
 
 **الأسماء البديلة**: `normLp`
 
-**المعاملات**
+**وسيطات الدالة**
 
-* `vector` — متجه أو `Tuple` من القيم العددية. [`Tuple(T)`](/ar/reference/data-types/tuple) أو [`Array(T)`](/ar/reference/data-types/array)
-* `p` — الأسّ. القيم الممكنة هي أعداد حقيقية ضمن النطاق `[1; inf)`. [`UInt*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `vector` — متجه أو `Tuple` من قيم رقمية. [`Tuple(T)`](/ar/reference/data-types/tuple) أو [`Array(T)`](/ar/reference/data-types/array)
+* `p` — الأسّ. القيم الممكنة هي أعداد حقيقية ضمن النطاق `[1; inf)`. [`UInt*`](/ar/reference/data-types/int-uint) أو [`Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المعادة**
 
@@ -604,26 +604,26 @@ SELECT LpNorm((1, -2), 2)
   ## LpNormalize
 </div>
 
-أُضيفت في: v21.11.0
+تم تقديمه في: v21.11.0
 
-تحسب متجه الوحدة لمتجه معيّن (تمثل عناصر الـ Tuple الإحداثيات) في فضاء `Lp` (باستخدام [p-norm](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)).
+يحسب متجه الوحدة لمتجه معيّن (حيث تمثل عناصر الـTuple أو الـArray الإحداثيات) في فضاء `Lp` (باستخدام [معيار p](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)).
 
-**البنية**
+**صيغة**
 
 ```sql
-LpNormalize(tuple, p)
+LpNormalize(vector, p)
 ```
 
-**الأسماء المستعارة**: `normalizeLp`
+**الأسماء البديلة**: `normalizeLp`
 
-**الوسائط**
+**وسيطات الدالة**
 
-* `tuple` — قيمة `Tuple` من القيم العددية. [`Tuple(T)`](/ar/reference/data-types/tuple)
-* `p` — الأس. القيم الممكنة هي أي عدد ضمن المجال `[1; inf)`. [`UInt*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `vector` — Tuple أو مصفوفة من قيم رقمية. [`Tuple(T)`](/ar/reference/data-types/tuple) أو [`Array(T)`](/ar/reference/data-types/array)
+* `p` — الأس. القيم الممكنة هي أعداد حقيقية ضمن النطاق `[1; inf)`. [`UInt*`](/ar/reference/data-types/int-uint) أو [`Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المُعادة**
 
-تُرجع متجه الوحدة. [`Tuple(Float64)`](/ar/reference/data-types/tuple)
+تُرجع متجه الوحدة. بالنسبة إلى مدخلات `Array`، تُرجع `Array(Float32)` إذا كان النوع الأعلى المشترك الأدنى لأنواع العناصر هو `Float32` أو `BFloat16`، وإلا فتُرجع `Array(Float64)`. أما بالنسبة إلى مدخلات `Tuple`، فتُرجع دائمًا `Tuple(Float64)`. [`Tuple(Float64)`](/ar/reference/data-types/tuple) أو [`Array(Float32)`](/ar/reference/data-types/array) أو [`Array(Float64)`](/ar/reference/data-types/array)
 
 **أمثلة**
 

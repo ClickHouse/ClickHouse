@@ -19,7 +19,6 @@ struct NATSConfiguration
     String password;
     String token;
     String credential_file;
-    String credentials;
 
     UInt64 max_connect_tries{};
     int reconnect_wait{};
