@@ -113,6 +113,31 @@ for i in 1 2; do
 done
 echo -e "shared ancestor synced by both:\t$(( $(dir_sync_of "$qid_shared2") == $(dir_sync_of "$qid_shared1") ))"
 
+# The plain Disk assertion above is only a lower bound, so it also holds if the writer recorded the
+# destination root alone and never descended to the directories actually holding the files. Each part
+# lives in its own directory, so a table with two more parts must fsync exactly two directories more.
+# That difference is zero unless the ancestors of every written file are recorded. Merges would change
+# the part count, so they are stopped; the two tables are otherwise identical, which is what makes the
+# difference exactly the extra part directories rather than a property of the payload.
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
+    DROP TABLE IF EXISTS p1 SYNC;
+    DROP TABLE IF EXISTS p3 SYNC;
+    CREATE TABLE p1 (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE p3 (id UInt64) ENGINE = MergeTree ORDER BY id;
+    SYSTEM STOP MERGES p1;
+    SYSTEM STOP MERGES p3;
+    INSERT INTO p1 SELECT number FROM numbers(1000);
+    INSERT INTO p3 SELECT number FROM numbers(1000);
+    INSERT INTO p3 SELECT number + 1000 FROM numbers(1000);
+    INSERT INTO p3 SELECT number + 2000 FROM numbers(1000);
+"
+for n in 1 3; do
+    $CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "${CLICKHOUSE_TEST_UNIQUE_NAME}_parts$n" \
+        -q "BACKUP TABLE p$n TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_parts$n') SETTINGS fsync_backup_files = 1"
+done
+echo -e "disk 3-part dir_sync - 1-part dir_sync = 2:\t$(( $(dir_sync_of "${CLICKHOUSE_TEST_UNIQUE_NAME}_parts3") - $(dir_sync_of "${CLICKHOUSE_TEST_UNIQUE_NAME}_parts1") == 2 ))"
+$CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "DROP TABLE p1 SYNC; DROP TABLE p3 SYNC;"
+
 # With fsync_backup_files=0 no fsync is issued (opt-out, matches the pre-fix behavior).
 qid_off="${CLICKHOUSE_TEST_UNIQUE_NAME}_off"
 $CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid_off" \
