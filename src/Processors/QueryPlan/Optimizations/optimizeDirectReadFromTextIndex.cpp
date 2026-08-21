@@ -1,6 +1,7 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -163,6 +164,8 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
 /// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
 void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
 {
+    auto component_guard = Coordination::setCurrentComponent("optimizeDirectReadFromTextIndex");
+
     const auto & indexes = read_from_merge_tree_step->getIndexes();
     if (!indexes || indexes->skip_indexes.useful_indices.empty())
         return;
@@ -845,7 +848,18 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
             for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
                 required_columns_by_readers.insert(name);
 
-        std::erase_if(result.removed_columns, [&](const String & column) { return required_columns_by_readers.contains(column); });
+        const auto & read_header = *read_from_merge_tree_step.getOutputHeader();
+        std::erase_if(result.removed_columns, [&](const String & column)
+        {
+            if (!required_columns_by_readers.contains(column))
+                return false;
+
+            /// ActionsDAG::updateHeader appends a header column that is not an input of the DAG,
+            /// which would widen this step's output header.
+            if (read_header.has(column))
+                filter_dag.addInput(read_header.getByName(column));
+            return true;
+        });
     }
 
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");

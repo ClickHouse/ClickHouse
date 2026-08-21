@@ -475,7 +475,7 @@ The above materialized views rely on implicit casting - especially in the case o
 <Info>
 **Avoid Nullable**
 
-Avoid using [Nullable](/reference/data-types/nullable) in Clickhouse for Observability data. It is rarely required in logs and traces to be able to distinguish between empty and null. This feature incurs an additional storage overhead and will negatively impact query performance. See [here](/guides/clickhouse/data-modelling/schema-design#optimizing-types) for further details.
+Avoid using [Nullable](/reference/data-types/nullable) in ClickHouse for Observability data. It is rarely required in logs and traces to be able to distinguish between empty and null. This feature incurs an additional storage overhead and will negatively impact query performance. See [here](/guides/clickhouse/data-modelling/schema-design#optimizing-types) for further details.
 </Info>
 
 ## Choosing a primary (ordering) key {#choosing-a-primary-ordering-key}
@@ -611,7 +611,7 @@ By default, `SELECT *` excludes ALIAS columns. This behavior can be disabled by 
 
 ## Optimizing types {#optimizing-types}
 
-The [general Clickhouse best practices](/guides/clickhouse/data-modelling/schema-design#optimizing-types) for optimizing types apply to the ClickHouse use case.
+The [general ClickHouse best practices](/guides/clickhouse/data-modelling/schema-design#optimizing-types) for optimizing types apply to the ClickHouse use case.
 
 ## Using codecs {#using-codecs}
 
@@ -929,11 +929,11 @@ CREATE TABLE regexp_device
 These tables can be populated from the following publicly hosted CSV files, using the url table function:
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
 With our memory tables populated, we can load our Regular Expression dictionaries. Note that we need to specify the key values as columns - these will be the attributes we can extract from the user agent.

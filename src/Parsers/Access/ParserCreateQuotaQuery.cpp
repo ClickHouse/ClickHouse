@@ -12,6 +12,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
+#include <base/insertAtEnd.h>
 #include <base/range.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
@@ -263,7 +264,7 @@ namespace
         if (!ParserList::parseUtil(pos, expected, parse_interval_with_limits, false))
             return false;
 
-        all_limits = std::move(res_all_limits);
+        insertAtEnd(all_limits, std::move(res_all_limits));
         return true;
     }
 
