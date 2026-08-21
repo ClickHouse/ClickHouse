@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/castColumn.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -10,6 +11,7 @@
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <limits>
 #include <unordered_set>
 
 namespace DB
@@ -100,7 +102,11 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
 
     columns_for_aggregator.resize(description.aggregate_descriptions.size());
     const Settings & settings = storage_.getContext()->getSettingsRef();
-    const UInt64 max_bytes_before_external_group_by = storage_.getContext()->getTempDataOnDisk()
+    /// Only the unsorted path can accumulate the whole part's expired keys at once, so only it gets
+    /// the external-aggregation bound. The sorted path holds a single key run at a time and flushes
+    /// on every key change, so its hash table never outgrows one group.
+    const UInt64 max_bytes_before_external_group_by
+        = (!input_sorted_by_group_by_keys_ && storage_.getContext()->getTempDataOnDisk())
         ? (*storage_.getSettings())[MergeTreeSetting::ttl_group_by_unsorted_max_bytes_before_external_group_by]
         : 0;
 
@@ -114,7 +120,10 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /*max_rows_to_group_by_=*/0,
         OverflowMode::THROW,
         /*group_by_two_level_threshold*/ 0,
-        /*group_by_two_level_threshold_bytes*/ 0,
+        /// The `Aggregator` can spill only a two-level hash table, so the two-level conversion must
+        /// trigger no later than the external bound; with both thresholds at 0 the table would stay
+        /// single-level and the bound above would be dead letter.
+        /*group_by_two_level_threshold_bytes*/ max_bytes_before_external_group_by,
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
             max_bytes_before_external_group_by,
             /*max_bytes_ratio_before_external_group_by=*/0),
@@ -151,7 +160,9 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
     if (block.empty()) /// Empty block -- no more data, but we may still have some accumulated rows
     {
-        if (!aggregation_result.empty()) /// Still have some aggregated data, let's update TTL
+        /// The state may live in memory (aggregation_result) or, when the unsorted path spilled,
+        /// in temporary files on disk -- possibly only there, with the in-memory table empty.
+        if (!aggregation_result.empty() || aggregator->hasTemporaryData())
         {
             finalizeAggregates(result_columns);
             some_rows_were_aggregated = true;
@@ -337,70 +348,131 @@ void TTLAggregationAlgorithm::calculateAggregates(const MutableColumns & aggrega
 
 void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns)
 {
-    if (!aggregation_result.empty())
+    if (aggregator->hasTemporaryData())
+    {
+        /// The unsorted path spilled partially-aggregated data to disk. Flush the in-memory
+        /// remainder too and merge everything back bucket by bucket, so the memory high-water mark
+        /// of the merge-back stays at one bucket instead of the whole part (the same scheme the
+        /// external aggregation of a query uses). Every spilled block is two-level, so the
+        /// remainder must be converted before it can be written.
+        if (aggregation_result.isConvertibleToTwoLevel())
+            aggregation_result.convertToTwoLevel();
+        if (aggregation_result.hasData())
+            aggregator->writeToTemporaryFile(aggregation_result);
+
+        auto res_header = aggregator->getParams().getHeader(header, true);
+        auto tmp_streams = aggregator->detachTemporaryData();
+
+        std::vector<TemporaryBlockStreamReaderHolder> readers;
+        std::vector<Block> heads;
+        readers.reserve(tmp_streams.size());
+        heads.reserve(tmp_streams.size());
+        for (auto & tmp_stream : tmp_streams)
+        {
+            tmp_stream.finishWriting();
+            readers.emplace_back(tmp_stream.getReadStream());
+            heads.emplace_back(readers.back()->read());
+        }
+
+        /// Each stream holds one flush generation with its buckets in ascending order, so a k-way
+        /// pass over the streams' heads visits each bucket exactly once. A block with no columns
+        /// means the stream is exhausted; a zero-row bucket block does not.
+        std::atomic<bool> is_cancelled{false};
+        while (true)
+        {
+            constexpr Int32 no_bucket = std::numeric_limits<Int32>::max();
+            Int32 min_bucket = no_bucket;
+            for (const auto & head : heads)
+                if (!head.empty())
+                    min_bucket = std::min(min_bucket, head.info.bucket_num);
+            if (min_bucket == no_bucket)
+                break;
+
+            Aggregator::AggregatedChunks bucket_chunks;
+            for (size_t i = 0; i < heads.size(); ++i)
+            {
+                while (!heads[i].empty() && heads[i].info.bucket_num == min_bucket)
+                {
+                    Aggregator::AggregatedChunk bucket_chunk;
+                    bucket_chunk.bucket_num = heads[i].info.bucket_num;
+                    bucket_chunk.is_overflows = heads[i].info.is_overflows;
+                    const size_t num_rows = heads[i].rows();
+                    bucket_chunk.chunk = Chunk(heads[i].getColumns(), num_rows);
+                    bucket_chunks.push_back(std::move(bucket_chunk));
+                    heads[i] = readers[i]->read();
+                }
+            }
+
+            auto merged = aggregator->mergeBlocks(bucket_chunks, /*final=*/true, is_cancelled, /*dataflow_cache_updater=*/nullptr);
+            if (merged.chunk.getNumRows())
+                appendAggregatedBlock(res_header.cloneWithColumns(merged.chunk.detachColumns()), result_columns);
+        }
+    }
+    else if (!aggregation_result.empty())
     {
         auto aggregated_res = aggregator->convertToChunks(aggregation_result, true);
         auto res_header = aggregator->getParams().getHeader(header, true);
 
         for (auto & agg_chunk : aggregated_res)
-        {
-            auto agg_block = res_header.cloneWithColumns(agg_chunk.chunk.detachColumns());
-
-            for (const auto & it : description.set_parts)
-            {
-                it.expression->execute(agg_block);
-
-                /// The SET expression result type may diverge from the declared column type:
-                /// aggregation strips LowCardinality, and the mismatch can be nested (e.g. a Tuple
-                /// whose element wrapper differs). result_columns expects the declared type exactly,
-                /// so coerce the result to it before inserting to keep the block structure valid.
-                const auto & result_column_type = header.getByName(it.column_name).type;
-                auto & column_with_type = agg_block.getByName(it.expression_result_column_name);
-                if (!column_with_type.type->equals(*result_column_type))
-                {
-                    column_with_type.column = castColumn(column_with_type, result_column_type);
-                    column_with_type.type = result_column_type;
-                }
-            }
-
-            /// Since there might be intersecting columns between GROUP BY and SET, we prioritize
-            /// the SET values over the GROUP BY because doing it the other way causes unexpected
-            /// results.
-            std::unordered_set<String> columns_added;
-            for (const auto & it : description.set_parts)
-            {
-                /// insertRangeFrom requires the source to be of the same class as the destination.
-                auto values_column = agg_block.getByName(it.expression_result_column_name).column->convertToFullIfWrapped();
-                auto & result_column = result_columns[header.getPositionByName(it.column_name)];
-                result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
-                columns_added.emplace(it.column_name);
-            }
-
-            for (const auto & name : description.group_by_keys)
-            {
-                if (!columns_added.contains(name))
-                {
-                    /// Aggregation strips LowCardinality from GROUP BY keys too. This can be a
-                    /// subcolumn of a nested type, so coerce it back to the stream's declared
-                    /// type before inserting into the result column, just as for a SET result
-                    /// above.
-                    const auto & result_column_type = header.getByName(name).type;
-                    auto & column_with_type = agg_block.getByName(name);
-                    if (!column_with_type.type->equals(*result_column_type))
-                    {
-                        column_with_type.column = castColumn(column_with_type, result_column_type);
-                        column_with_type.type = result_column_type;
-                    }
-
-                    const IColumn * values_column = column_with_type.column.get();
-                    auto & result_column = result_columns[header.getPositionByName(name)];
-                    result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
-                }
-            }
-        }
+            appendAggregatedBlock(res_header.cloneWithColumns(agg_chunk.chunk.detachColumns()), result_columns);
     }
 
     aggregation_result.invalidate();
+}
+
+void TTLAggregationAlgorithm::appendAggregatedBlock(Block agg_block, MutableColumns & result_columns)
+{
+    for (const auto & it : description.set_parts)
+    {
+        it.expression->execute(agg_block);
+
+        /// The SET expression result type may diverge from the declared column type:
+        /// aggregation strips LowCardinality, and the mismatch can be nested (e.g. a Tuple
+        /// whose element wrapper differs). result_columns expects the declared type exactly,
+        /// so coerce the result to it before inserting to keep the block structure valid.
+        const auto & result_column_type = header.getByName(it.column_name).type;
+        auto & column_with_type = agg_block.getByName(it.expression_result_column_name);
+        if (!column_with_type.type->equals(*result_column_type))
+        {
+            column_with_type.column = castColumn(column_with_type, result_column_type);
+            column_with_type.type = result_column_type;
+        }
+    }
+
+    /// Since there might be intersecting columns between GROUP BY and SET, we prioritize
+    /// the SET values over the GROUP BY because doing it the other way causes unexpected
+    /// results.
+    std::unordered_set<String> columns_added;
+    for (const auto & it : description.set_parts)
+    {
+        /// insertRangeFrom requires the source to be of the same class as the destination.
+        auto values_column = agg_block.getByName(it.expression_result_column_name).column->convertToFullIfWrapped();
+        auto & result_column = result_columns[header.getPositionByName(it.column_name)];
+        result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+        columns_added.emplace(it.column_name);
+    }
+
+    for (const auto & name : description.group_by_keys)
+    {
+        if (!columns_added.contains(name))
+        {
+            /// Aggregation strips LowCardinality from GROUP BY keys too. This can be a
+            /// subcolumn of a nested type, so coerce it back to the stream's declared
+            /// type before inserting into the result column, just as for a SET result
+            /// above.
+            const auto & result_column_type = header.getByName(name).type;
+            auto & column_with_type = agg_block.getByName(name);
+            if (!column_with_type.type->equals(*result_column_type))
+            {
+                column_with_type.column = castColumn(column_with_type, result_column_type);
+                column_with_type.type = result_column_type;
+            }
+
+            const IColumn * values_column = column_with_type.column.get();
+            auto & result_column = result_columns[header.getPositionByName(name)];
+            result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+        }
+    }
 }
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const

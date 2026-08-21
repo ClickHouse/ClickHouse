@@ -402,15 +402,16 @@ SELECT 'const folded tuple rows', count() FROM t_const_folded_tuple;
 SELECT 'const folded tuple value', tup.ts = toDateTime(0) FROM t_const_folded_tuple;
 DROP TABLE t_const_folded_tuple;
 
--- A `SET` in an earlier GROUP BY TTL changes the grouping key of the later TTL, so the latter
+-- A `SET` in an earlier GROUP BY TTL rewrites the grouping key of the later TTL, so the latter
 -- must use its unsorted hash-aggregation path. Its dedicated table setting bounds that path,
 -- independently of the global ratio gate: with a one-byte limit it must spill rather than retain
--- the whole part in memory.
+-- the whole part in memory. The `SET a = max(b)` maps key a to 100 - a, a bijection, so the later
+-- TTL still sees 100 distinct groups and the row count is preserved.
 DROP TABLE IF EXISTS t_unsorted_group_by_spill;
 CREATE TABLE t_unsorted_group_by_spill (a UInt32, b UInt32, ts DateTime)
 ENGINE = MergeTree ORDER BY a
-TTL ts + toIntervalDay(1) GROUP BY a SET b = max(b),
-    ts + toIntervalDay(2) GROUP BY b SET a = max(a)
+TTL ts + toIntervalDay(1) GROUP BY a SET a = max(b),
+    ts + toIntervalDay(2) GROUP BY a SET b = max(b)
 SETTINGS min_bytes_for_full_part_storage = 128, ttl_group_by_unsorted_max_bytes_before_external_group_by = 1;
 SYSTEM STOP MERGES t_unsorted_group_by_spill;
 INSERT INTO t_unsorted_group_by_spill

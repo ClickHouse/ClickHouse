@@ -32,6 +32,9 @@ private:
     /// Finalize aggregation_result into result_columns
     void finalizeAggregates(MutableColumns & result_columns);
 
+    /// Apply the SET expressions to one finalized aggregated block and append it to result_columns
+    void appendAggregatedBlock(Block agg_block, MutableColumns & result_columns);
+
     /// Streaming path for input already ordered by group_by_keys: flush each key run as soon as a
     /// new key is observed.
     void executeSorted(Block & block, MutableColumns & result_columns, bool & some_rows_were_aggregated);
