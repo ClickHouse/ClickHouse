@@ -268,9 +268,8 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
     }
 
     /// The cast above narrows without reporting loss, so UInt64(256) reaches a UInt8 dictionary as 0
-    /// and UInt32(4294967295) reaches an Int32 one as -1, each denoting an element the constant is not
-    /// equal to. A constant the element type cannot represent equals no element, whether or not the
-    /// index it wrapped onto is the default slot.
+    /// and UInt32(4294967295) an Int32 one as -1, each denoting an element the constant is not equal
+    /// to. A constant the element type cannot represent equals no element.
     if (!target_type->equals(*value_type_without_low_cardinality)
         && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
         return false;
