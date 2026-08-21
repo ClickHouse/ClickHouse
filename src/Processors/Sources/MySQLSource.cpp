@@ -325,6 +325,12 @@ namespace
                 if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
                 {
                     size_t n = value.size();
+                    /// The length comes from the remote server, while `BIT` holds at most 64 bits.
+                    if (n > sizeof(UInt64))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Value of a BIT field is {} bytes long, while at most {} bytes are expected",
+                            n, sizeof(UInt64));
+
                     UInt64 val = 0UL;
                     char * to = reinterpret_cast<char *>(&val);
                     memcpy(to, const_cast<char *>(value.data()), n);

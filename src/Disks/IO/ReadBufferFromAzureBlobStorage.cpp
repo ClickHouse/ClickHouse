@@ -391,7 +391,10 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
-            bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), body_stream->Length(), azure_context);
+            /// The length of the body comes from the remote endpoint and can be larger than the
+            /// requested range, while the destination buffer only has room for `n` bytes.
+            const size_t bytes_to_copy = std::min(static_cast<size_t>(body_stream->Length()), n);
+            bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), bytes_to_copy, azure_context);
 
             LOG_TEST(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);
 
