@@ -24,6 +24,8 @@ indexOf	0	0
 indexOf rep	1	1
 countEqual	0	0
 countEqual rep	1	1
+notHas	1	1
+notHas rep	0	0
 -- indexOfAssumeSorted: the binary search ordering must match the equality
 sorted UInt64/Int64	0	0
 sorted UInt64/Int64 rep	2	2

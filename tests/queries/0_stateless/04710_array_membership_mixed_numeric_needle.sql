@@ -1,6 +1,6 @@
 -- Array membership must use the same value comparison as the scalar `=` operator, so a needle is
--- never matched against an element it is not equal to. Every row prints the function result next to
--- an independent oracle built from `=`; the two must agree.
+-- never matched against an element it is not equal to. Most rows print the function result next to
+-- an independent oracle built from `=`, and the two must agree; the rest pin a value directly.
 
 -- Not rewritten into `has`, otherwise the oracle would be the function under test.
 SET optimize_rewrite_array_exists_to_has = 0;
@@ -54,6 +54,8 @@ SELECT 'indexOf', indexOf(v, 4294967295::UInt32) AS got, arrayFirstIndex(x -> x 
 SELECT 'indexOf rep', indexOf(v, 1::UInt32) AS got, arrayFirstIndex(x -> x = 1::UInt32, v) AS oracle FROM i32;
 SELECT 'countEqual', countEqual(v, 4294967295::UInt32) AS got, length(arrayFilter(x -> x = 4294967295::UInt32, v)) AS oracle FROM i32;
 SELECT 'countEqual rep', countEqual(v, 1::UInt32) AS got, length(arrayFilter(x -> x = 1::UInt32, v)) AS oracle FROM i32;
+SELECT 'notHas', notHas(v, 4294967295::UInt32) AS got, NOT arrayExists(x -> x = 4294967295::UInt32, v) AS oracle FROM i32;
+SELECT 'notHas rep', notHas(v, 1::UInt32) AS got, NOT arrayExists(x -> x = 1::UInt32, v) AS oracle FROM i32;
 
 SELECT '-- indexOfAssumeSorted: the binary search ordering must match the equality';
 CREATE TABLE su64 (v Array(UInt64)) ENGINE = Memory;
