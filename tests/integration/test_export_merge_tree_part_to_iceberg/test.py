@@ -501,33 +501,11 @@ REJECTED_PART_EXPORT_CASES = [
     pytest.param(
         RejectedPartExportCase(
             src_columns="a Int32, b Int32, c Int32, val String",
-            src_partition_by="(a, b, c)",
-            dst_columns="a Int32, b Int32, c Int32, val String",
-            dst_partition_by="(c, b, a)",
-            insert_values="(1, 2, 3, 'x')",
-            error_substrings=("partition field 0 mismatch",),
-        ),
-        id="multi_column_partition_key_order_mismatch",
-    ),
-    pytest.param(
-        RejectedPartExportCase(
-            src_columns="a Int32, b Int32, c Int32, val String",
-            src_partition_by="(a, b, c)",
-            dst_columns="a Int32, b Int32, c Int32, val String",
-            dst_partition_by="(a, b)",
-            insert_values="(1, 2, 3, 'x')",
-            error_substrings=("partition scheme mismatch",),
-        ),
-        id="multi_column_partition_key_fewer_in_destination",
-    ),
-    pytest.param(
-        RejectedPartExportCase(
-            src_columns="a Int32, b Int32, c Int32, val String",
             src_partition_by="(a, b)",
             dst_columns="a Int32, b Int32, c Int32, val String",
             dst_partition_by="(a, b, c)",
             insert_values="(1, 2, 3, 'x')",
-            error_substrings=("partition scheme mismatch",),
+            error_substrings=("column 'c', which is not part of the source MergeTree partition key",),
         ),
         id="multi_column_partition_key_more_in_destination",
     ),
@@ -576,7 +554,10 @@ def test_export_part_partition_key_mismatch_variants_are_rejected(cluster, case)
     node.query(f"DROP TABLE IF EXISTS {iceberg}")
 
 
-def test_export_part_multi_column_partition_key_success(cluster):
+@pytest.mark.parametrize("dst_partition_by", ["(a, b, c)", "(c, b, a)", "(a, b)"])
+def test_export_part_multi_column_partition_key_success(cluster, dst_partition_by):
+    """The source key pins a, b and c, so any destination spec over those columns holds the whole
+    part in one partition, whatever order or subset of them it lists."""
     node = cluster.instances["node1"]
     sfx = unique_suffix()
     mt = f"mt_multi_pkey_ok_{sfx}"
@@ -584,7 +565,7 @@ def test_export_part_multi_column_partition_key_success(cluster):
 
     cols = "a Int32, b Int32, c Int32, val String"
     make_mt(node, mt, cols, "(a, b, c)")
-    make_iceberg_s3(node, iceberg, cols, "(a, b, c)")
+    make_iceberg_s3(node, iceberg, cols, dst_partition_by)
 
     node.query(f"INSERT INTO {mt} VALUES (1, 2, 3, 'x'), (1, 2, 3, 'y')")
 
@@ -1181,9 +1162,10 @@ def test_export_part_tuple_subcolumn_partition_key_iceberg_rejected(cluster):
         f"SETTINGS allow_experimental_export_merge_tree_part = 1, "
         f"allow_experimental_insert_into_iceberg = 1"
     )
-    assert "Unknown field to partition" in export_error, (
-        f"Expected export validation to reject the tuple subcolumn partition key of {mt}, "
-        f"got: {export_error!r}"
+    assert "different Tuple element layout" in export_error, (
+        f"The destination declares the elements of `t` in the opposite order, so the export "
+        f"of the tuple subcolumn partition key of {mt} has to be rejected, got: "
+        f"{export_error!r}"
     )
 
     count = int(node.query(f"SELECT count() FROM {iceberg}").strip())

@@ -300,16 +300,7 @@ MatchedTrees::Matches matchTrees(
 }
 
 
-struct PossiblyMonotonicChain
-{
-    const ActionsDAG::Node * input_node = nullptr;
-    std::vector<size_t> non_const_arg_pos;
-    bool changes_order = false;
-    bool is_strict = true;
-};
-
-/// Build a chain of functions which may be monotonic.
-static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node * node)
+PossiblyMonotonicChain buildPossiblyMonotonicChain(const ActionsDAG::Node * node)
 {
     std::vector<size_t> chain;
 
@@ -362,8 +353,7 @@ static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node
     return {node, std::move(chain)};
 }
 
-/// Check whether all the function in chain are monotonic
-static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
+bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
 {
     auto it = chain.non_const_arg_pos.begin();
     while (node != chain.input_node)
@@ -443,7 +433,7 @@ void applyActionsToSortDescription(
         if (output == output_to_skip)
             continue;
 
-        auto chain = buildPossiblyMonitinicChain(output);
+        auto chain = buildPossiblyMonotonicChain(output);
         if (!chain.input_node)
             break;
 

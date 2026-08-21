@@ -586,16 +586,17 @@ def test_rejected_column_mismatch(export_cluster):
 
 
 def test_rejected_transform_mismatch(export_cluster):
-    """Spark years(dt) — RMT PARTITION BY dt (identity, not year-transform)."""
+    """Spark days(dt) destination — RMT PARTITION BY toStartOfMonth(dt): a month partition spans
+    several days, so it cannot map to a single Iceberg day partition."""
     error = run_rejected(
         export_cluster,
         "rej_xform_mismatch",
         spark_ddl="CREATE TABLE {TABLE} (id BIGINT, dt DATE)"
-                  " USING iceberg PARTITIONED BY (years(dt)) OPTIONS('format-version'='2')",
+                  " USING iceberg PARTITIONED BY (days(dt)) OPTIONS('format-version'='2')",
         ch_schema="id Int64, dt Date",
         rmt_columns="id Int64, dt Date",
-        rmt_partition_by="dt",
-        insert_values="(1, '2021-06-01')",
+        rmt_partition_by="toStartOfMonth(dt)",
+        insert_values="(1, '2021-06-01'), (2, '2021-06-15')",
     )
     assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS, got: {error!r}"
 
@@ -616,47 +617,17 @@ def test_rejected_bucket_count_mismatch(export_cluster):
 
 
 def test_rejected_truncate_width_mismatch(export_cluster):
-    """Spark truncate(4, category) — RMT icebergTruncate(8, category): wrong width."""
+    """Spark truncate(8, category) destination — RMT icebergTruncate(4, category): the coarser
+    width-4 source partition splits across several width-8 destination buckets."""
     error = run_rejected(
         export_cluster,
         "rej_trunc_w",
         spark_ddl="CREATE TABLE {TABLE} (id BIGINT, category STRING)"
-                  " USING iceberg PARTITIONED BY (truncate(4, category)) OPTIONS('format-version'='2')",
+                  " USING iceberg PARTITIONED BY (truncate(8, category)) OPTIONS('format-version'='2')",
         ch_schema="id Int64, category String",
         rmt_columns="id Int64, category String",
-        rmt_partition_by="icebergTruncate(8, category)",
-        insert_values="(1, 'clickhouse')",
-    )
-    assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS, got: {error!r}"
-
-
-def test_rejected_field_count_mismatch(export_cluster):
-    """Spark 1-field identity(year) — RMT 2-field (year, region)."""
-    error = run_rejected(
-        export_cluster,
-        "rej_field_n",
-        spark_ddl="CREATE TABLE {TABLE} (id BIGINT, year INT, region STRING)"
-                  " USING iceberg PARTITIONED BY (identity(year)) OPTIONS('format-version'='2')",
-        ch_schema="id Int64, year Int32, region String",
-        rmt_columns="id Int64, year Int32, region String",
-        rmt_partition_by="(year, region)",
-        insert_values="(1, 2024, 'EU')",
-    )
-    assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS, got: {error!r}"
-
-
-def test_rejected_compound_order_reversed(export_cluster):
-    """Spark (identity(year), identity(region)) — RMT (region, year): reversed order."""
-    error = run_rejected(
-        export_cluster,
-        "rej_compound_rev",
-        spark_ddl="CREATE TABLE {TABLE} (id BIGINT, year INT, region STRING)"
-                  " USING iceberg PARTITIONED BY (identity(year), identity(region))"
-                  " OPTIONS('format-version'='2')",
-        ch_schema="id Int64, year Int32, region String",
-        rmt_columns="id Int64, year Int32, region String",
-        rmt_partition_by="(region, year)",
-        insert_values="(1, 2024, 'EU')",
+        rmt_partition_by="icebergTruncate(4, category)",
+        insert_values="(1, 'clickhouse'), (2, 'clickfast')",
     )
     assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS, got: {error!r}"
 
