@@ -68,13 +68,21 @@ def main():
             install_introspection,
             install_clickbench_cache,
         ]
+
+        def configure_log_export(config_dir, var_lib_dir):
+            # `start_log_exports` guards on `log_export_host`, so an unconfigured
+            # export is a supported state. Returns truthy: `ClickHouseService`
+            # treats a hook returning exactly `False` as a failed hook.
+            try:
+                return ch.create_log_export_config(config_dir)
+            except Exception as e:
+                print(f"WARNING: Failed to configure log export: {e}")
+                info.add_workflow_warning(f"Failed to configure log export: {e}")
+                return True
+
         if not info.is_local_run:
             config_hooks.append(install_ci_logs_sender)
-            config_hooks.append(
-                lambda config_dir, var_lib_dir: ch.create_log_export_config(
-                    config_dir
-                )
-            )
+            config_hooks.append(configure_log_export)
 
         with ClickHouseService(
             results=results,

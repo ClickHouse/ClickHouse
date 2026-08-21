@@ -877,9 +877,16 @@ def main():
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
 
         def configure_log_export():
+            # `start_log_exports` guards on `log_export_host`, so an unconfigured
+            # export is a supported state.
             if not info.is_local_run:
                 print("prepare log export config")
-                return CH.create_log_export_config()
+                try:
+                    return CH.create_log_export_config()
+                except Exception as e:
+                    print(f"WARNING: Failed to configure log export: {e}")
+                    info.add_workflow_warning(f"Failed to configure log export: {e}")
+                    return True
             else:
                 print("skip log export config for local run")
 

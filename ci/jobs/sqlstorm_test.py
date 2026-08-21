@@ -359,8 +359,14 @@ def main():
             return False
         # Configure export of system log tables to the central CI logs cluster
         # (skipped for local runs, where the credentials are not available).
+        # `start_log_exports` guards on `log_export_host`, so an unconfigured
+        # export is a supported state.
         if not info.is_local_run:
-            ch.create_log_export_config()
+            try:
+                ch.create_log_export_config()
+            except Exception as e:
+                print(f"WARNING: Failed to configure log export: {e}")
+                info.add_workflow_warning(f"Failed to configure log export: {e}")
         if not ch.start():
             return False
         if not info.is_local_run:
