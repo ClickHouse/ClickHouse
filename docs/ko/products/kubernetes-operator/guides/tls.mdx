@@ -294,7 +294,7 @@ spec:
 
 머지는 키별로 수행됩니다. 설정한 값만 대체되며, 생략한 생성 키
 (인증서 경로, CA 구성)는 유지됩니다. 사용 가능한 옵션은
-[`openSSL` server 설정](/ko/reference/settings/server-settings/settings#openssl)
+[`openSSL` 서버 설정](/ko/reference/settings/server-settings/settings/other#openssl)
 을 참조하고, `extraConfig`가 어떻게 머지되는지는
 [구성 → 내장 추가 구성](/ko/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 을 참조하십시오.
@@ -332,4 +332,4 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
 * [구성 → TLS/SSL 구성](/ko/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — 필드 참조
 * [구성 → `additionalPorts`](/ko/products/kubernetes-operator/guides/configuration#additional-ports) — 예약 포트
 * [API 참조 → ClusterTLSSpec](/ko/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-* [`openSSL` 서버 설정](/ko/reference/settings/server-settings/settings#openssl) — `extraConfig`를 통해 재정의할 수 있는 TLS 옵션
+* [`openSSL` 서버 설정](/ko/reference/settings/server-settings/settings/other#openssl) — `extraConfig`를 통해 재정의할 수 있는 TLS 옵션

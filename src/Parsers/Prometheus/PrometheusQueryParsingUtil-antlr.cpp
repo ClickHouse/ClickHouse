@@ -1,7 +1,9 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 
 #include "config.h"
 
@@ -131,17 +133,54 @@ namespace
     /// byte. Only the first error is ever reported and a parse with a recorded error always fails,
     /// so lexing the remainder is wasted work - a megabyte of NUL bytes used to keep a thread busy
     /// for minutes, uncancellable because parsing happens during query analysis.
+    /// It also validates multiline STRING tokens as they are emitted, before a later lexer or parser
+    /// error can hide an earlier invalid quoted string.
     class PromQLLexerBailingOutOnError : public antlr4_grammars::PromQLLexer
     {
     public:
-        using antlr4_grammars::PromQLLexer::PromQLLexer;
+        explicit PromQLLexerBailingOutOnError(
+            antlr4::CharStream * input_, std::string_view promql_query_, ErrorListener & error_listener_)
+            : PromQLLexer(input_), promql_query(promql_query_), error_listener(error_listener_) {}
+
+        std::unique_ptr<antlr4::Token> nextToken() override
+        {
+            auto next_token = PromQLLexer::nextToken();
+            if (!error_listener.hasError() && next_token->getType() == STRING && next_token->getLine() != getLine())
+            {
+                const String token_text = next_token->getText();
+                if (!token_text.starts_with('`'))
+                {
+                    String parsed_string;
+                    String error_message;
+                    size_t error_pos = 0;
+                    if (!PrometheusQueryParsingUtil::tryParseStringLiteral(
+                            token_text, parsed_string, &error_message, &error_pos))
+                    {
+                        const size_t token_pos = convertCodePointPositionToByteOffset(promql_query, next_token->getStartIndex());
+                        error_listener.setError(error_message, token_pos + error_pos);
+                        stopLexing();
+                    }
+                }
+            }
+            return next_token;
+        }
 
         void recover(const antlr4::LexerNoViableAltException &) override
         {
             /// Pretend the input ended here, so that the lexer emits EOF and stops.
+            stopLexing();
+        }
+
+    private:
+        void stopLexing()
+        {
             antlr4::CharStream * stream = getInputStream();
             stream->seek(stream->size());
+            hitEOF = true;
         }
+
+        std::string_view promql_query;
+        ErrorListener & error_listener;
     };
 
     [[noreturn]] void throwInconsistentSchema(std::string_view context_name, std::string_view token)
@@ -194,6 +233,11 @@ namespace
         }
 
         static size_t getStartPos(const antlr4::ParserRuleContext * ctx) { return ctx->getStart()->getStartIndex(); }
+
+        size_t getStartPos(const antlr4::Token * token) const
+        {
+            return convertCodePointPositionToByteOffset(promql_query, token->getStartIndex());
+        }
 
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {
@@ -313,6 +357,30 @@ namespace
         /// Extracts a label name.
         String getLabelName(antlr4_grammars::PromQLParser::LabelNameContext * ctx) const { return ctx->getText(); }
 
+        bool getSelectorIdentifier(antlr4_grammars::PromQLParser::SelectorIdentifierContext * ctx, String & identifier)
+        {
+            if (auto * label_name_ctx = ctx->labelName())
+            {
+                identifier = getLabelName(label_name_ctx);
+                return true;
+            }
+
+            auto * string_ctx = ctx->STRING();
+            if (!string_ctx)
+                throwInconsistentSchema("SelectorIdentifier", ctx->getText());
+
+            if (!parseStringLiteral(string_ctx, identifier))
+                return false;
+
+            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(identifier.data()), identifier.size()))
+            {
+                error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
+                return false;
+            }
+
+            return true;
+        }
+
         /// Extracts multiple label names separated by comma.
         Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx) const
         {
@@ -328,13 +396,14 @@ namespace
         /// Extracts a matcher.
         bool getMatcher(antlr4_grammars::PromQLParser::LabelMatcherContext * ctx, Matcher & res_matcher)
         {
-            auto * label_name_ctx = ctx->labelName();
+            auto * selector_identifier_ctx = ctx->selectorIdentifier();
             auto * label_value_ctx = ctx->STRING();
             auto * op_ctx = ctx->labelMatcherOperator();
-            if (!label_name_ctx || !label_value_ctx || !op_ctx)
+            if (!selector_identifier_ctx || !label_value_ctx || !op_ctx)
                 throwInconsistentSchema("LabelMatcher", ctx->getText());
 
-            res_matcher.label_name = getLabelName(label_name_ctx);
+            if (!getSelectorIdentifier(selector_identifier_ctx, res_matcher.label_name))
+                return false;
 
             MatcherType matcher_type = {};
             if (op_ctx->EQ())
@@ -356,6 +425,27 @@ namespace
                 return false;
             }
 
+            return true;
+        }
+
+        bool getMatcherForQuotedMetricName(antlr4_grammars::PromQLParser::LabelMatcherContext * ctx, Matcher & res_matcher)
+        {
+            auto * string_ctx = ctx->STRING();
+            if (!string_ctx)
+                throwInconsistentSchema("LabelMatcher", ctx->getText());
+
+            res_matcher.label_name = "__name__";
+            if (!parseStringLiteral(string_ctx, res_matcher.label_value))
+                return false;
+
+            if (res_matcher.label_value.empty()
+                || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(res_matcher.label_value.data()), res_matcher.label_value.size()))
+            {
+                error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
+                return false;
+            }
+
+            res_matcher.matcher_type = MatcherType::EQ;
             return true;
         }
 
@@ -427,33 +517,14 @@ namespace
             return false;
         }
 
-        bool validateSelectorDoesNotSetMetricNameTwice(const MatcherList & matchers, bool has_outside_metric_name, size_t error_pos)
-        {
-            if (!has_outside_metric_name)
-                return true;
-
-            /// Prometheus allows multiple `__name__` matchers inside braces, but not an outside
-            /// metric name together with another metric-name matcher inside the selector.
-            for (size_t i = 1; i < matchers.size(); ++i)
-            {
-                if (matchers[i].label_name == "__name__")
-                {
-                    error_listener.setError("metric name must not be set twice", error_pos);
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
         /// Makes a node for an instant selector.
         Node * makeInstantSelector(antlr4_grammars::PromQLParser::InstantSelectorContext * ctx)
         {
             auto new_node = std::make_unique<InstantSelector>();
 
             MatcherList matchers;
-            const bool has_outside_metric_name = ctx->metricName() != nullptr;
-            if (auto * metric_name_ctx = ctx->metricName())
+            auto * metric_name_ctx = ctx->metricName();
+            if (metric_name_ctx)
                 matchers.push_back(getMatcherForMetricName(metric_name_ctx));
 
             if (auto * label_matcher_list_ctx = ctx->labelMatcherList())
@@ -462,19 +533,27 @@ namespace
                 for (size_t i = 0; (label_matcher_ctx = label_matcher_list_ctx->labelMatcher(i)) != nullptr; ++i)
                 {
                     Matcher matcher;
-                    if (!getMatcher(label_matcher_ctx, matcher))
+                    bool parsed = label_matcher_ctx->selectorIdentifier()
+                        ? getMatcher(label_matcher_ctx, matcher)
+                        : getMatcherForQuotedMetricName(label_matcher_ctx, matcher);
+                    if (!parsed)
                     {
                         chassert(error_listener.hasError());
                         return nullptr;
                     }
+
+                    if (metric_name_ctx && matcher.label_name == "__name__")
+                    {
+                        error_listener.setError(
+                            "metric name must not be set twice", getStartPos(label_matcher_ctx->getStart()));
+                        return nullptr;
+                    }
+
                     matchers.push_back(std::move(matcher));
                 }
             }
 
             if (!validateSelectorHasNonEmptyMatcher(matchers, getStartPos(ctx)))
-                return nullptr;
-
-            if (!validateSelectorDoesNotSetMetricNameTwice(matchers, has_outside_metric_name, getStartPos(ctx)))
                 return nullptr;
 
             new_node->matchers = std::move(matchers);
@@ -536,11 +615,22 @@ namespace
 
             if (auto * timestamp_ctx = ctx->timestamp())
             {
-                auto * number_ctx = timestamp_ctx->NUMBER();
-                if (!number_ctx)
+                if (auto * number_ctx = timestamp_ctx->NUMBER())
+                {
+                    new_node->at_modifier = Offset::AtModifier::Timestamp;
+                    auto & timestamp = new_node->at_timestamp.emplace();
+                    ok &= parseTimestamp(number_ctx, timestamp);
+                }
+                else if (timestamp_ctx->START())
+                {
+                    new_node->at_modifier = Offset::AtModifier::Start;
+                }
+                else if (timestamp_ctx->END())
+                {
+                    new_node->at_modifier = Offset::AtModifier::End;
+                }
+                else
                     throwInconsistentSchema("OffsetOp", ctx->getText());
-                auto & timestamp = new_node->at_timestamp.emplace();
-                ok &= parseTimestamp(number_ctx, timestamp);
             }
 
             if (auto * offset_value_ctx = ctx->offsetValue())
@@ -791,6 +881,7 @@ namespace
                 throwInconsistentSchema("Aggregation", ctx->getText());
 
             auto operator_name = getText(operator_name_ctx);
+            toLowerASCII(operator_name);
             return makeAggregationOperator(operator_name, arguments, ctx->by(), ctx->without());
         }
 
@@ -1007,7 +1098,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     ErrorListener error_listener{input};
     antlr4::ANTLRInputStream input_stream{input};
 
-    PromQLLexerBailingOutOnError promql_lexer{&input_stream};
+    PromQLLexerBailingOutOnError promql_lexer{&input_stream, input, error_listener};
     promql_lexer.removeErrorListeners();
     promql_lexer.addErrorListener(&error_listener);
 

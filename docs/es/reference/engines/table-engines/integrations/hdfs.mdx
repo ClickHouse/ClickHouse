@@ -267,14 +267,15 @@ libhdfs3 admite HA para el NameNode de HDFS.
 * `_file` — Nombre del archivo. Tipo: `LowCardinality(String)`.
 * `_size` — Tamaño del archivo en bytes. Tipo: `Nullable(UInt64)`. Si se desconoce el tamaño, el valor es `NULL`.
 * `_time` — Fecha y hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
+* `_etag` — ETag del archivo. Tipo: `LowCardinality(String)`. HDFS no tiene un ETag nativo, por lo que el valor se genera a partir de la hora de modificación y el tamaño del archivo como `<mtime_seconds>_<size>`. Dado que `libhdfs3` expone la hora de modificación solo con precisión de un segundo, una reescritura dentro del mismo segundo que mantiene el mismo tamaño genera el mismo valor; por ese motivo, este ETag generado no se utiliza como clave de caché de contenido.
 
 <div id="storage-settings">
   ## Configuración de almacenamiento
 </div>
 
-* [hdfs&#95;truncate&#95;on&#95;insert](/es/reference/settings/session-settings#hdfs_truncate_on_insert) - permite truncar el archivo antes de insertar datos en él. Deshabilitado de forma predeterminada.
-* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/es/reference/settings/session-settings#hdfs_create_new_file_on_insert) - permite crear un archivo nuevo en cada inserción si el formato tiene un sufijo. Deshabilitado de forma predeterminada.
-* [hdfs&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings#hdfs_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Deshabilitado de forma predeterminada.
+* [hdfs&#95;truncate&#95;on&#95;insert](/es/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - permite truncar el archivo antes de insertar datos en él. Deshabilitado de forma predeterminada.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/es/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - permite crear un archivo nuevo en cada inserción si el formato tiene un sufijo. Deshabilitado de forma predeterminada.
+* [hdfs&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Deshabilitado de forma predeterminada.
 
 **Véase también**
 
