@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationWrapper.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <cmath>
@@ -58,6 +59,142 @@ Float64 getDecayLength(const ASTPtr & parameters)
     return decay_length;
 }
 
+class SerializationExponentialTimeDecayingFloat64 final : public SerializationWrapper
+{
+public:
+    SerializationExponentialTimeDecayingFloat64(SerializationPtr nested_serialization_, Float64 decay_length_)
+        : SerializationWrapper(nested_serialization_)
+        , decay_length(decay_length_)
+    {
+    }
+
+    /// The validation parameter is part of this wrapper and must not be pooled
+    /// with a serialization for a different decay length.
+    bool supportsPooling() const override { return false; }
+
+    void deserializeBinaryBulk(
+        IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const override
+    {
+        const size_t previous_size = column.size();
+        nested_serialization->deserializeBinaryBulk(column, istr, rows_offset, limit, avg_value_size_hint);
+        validateNewRows(column, previous_size);
+    }
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override
+    {
+        const size_t previous_size = column->size();
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(
+            column, rows_offset, limit, settings, state, cache);
+        validateNewRows(*column, previous_size);
+    }
+
+    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        nested_serialization->deserializeBinary(column, istr, settings);
+        validateNewRows(column, previous_size);
+    }
+
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        nested_serialization->deserializeTextEscaped(column, istr, settings);
+        validateNewRows(column, previous_size);
+    }
+
+    bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        const bool result = nested_serialization->tryDeserializeTextEscaped(column, istr, settings);
+        if (result)
+            validateNewRows(column, previous_size);
+        return result;
+    }
+
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        nested_serialization->deserializeTextQuoted(column, istr, settings);
+        validateNewRows(column, previous_size);
+    }
+
+    bool tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        const bool result = nested_serialization->tryDeserializeTextQuoted(column, istr, settings);
+        if (result)
+            validateNewRows(column, previous_size);
+        return result;
+    }
+
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        nested_serialization->deserializeTextCSV(column, istr, settings);
+        validateNewRows(column, previous_size);
+    }
+
+    bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        const bool result = nested_serialization->tryDeserializeTextCSV(column, istr, settings);
+        if (result)
+            validateNewRows(column, previous_size);
+        return result;
+    }
+
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        nested_serialization->deserializeWholeText(column, istr, settings);
+        validateNewRows(column, previous_size);
+    }
+
+    bool tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        const bool result = nested_serialization->tryDeserializeWholeText(column, istr, settings);
+        if (result)
+            validateNewRows(column, previous_size);
+        return result;
+    }
+
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        nested_serialization->deserializeTextJSON(column, istr, settings);
+        validateNewRows(column, previous_size);
+    }
+
+    bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        const size_t previous_size = column.size();
+        const bool result = nested_serialization->tryDeserializeTextJSON(column, istr, settings);
+        if (result)
+            validateNewRows(column, previous_size);
+        return result;
+    }
+
+private:
+    void validateNewRows(const IColumn & column, size_t previous_size) const
+    {
+        if (column.size() <= previous_size)
+            return;
+
+        const auto new_rows = column.cut(previous_size, column.size() - previous_size);
+        validateExponentialTimeDecayingFloat64Column(
+            *new_rows, decay_length, "deserialization");
+    }
+
+    const Float64 decay_length;
+};
+
 std::pair<DataTypePtr, DataTypeCustomDescPtr> create(Float64 decay_length)
 {
     auto storage_type = std::make_shared<DataTypeTuple>(
@@ -67,10 +204,14 @@ std::pair<DataTypePtr, DataTypeCustomDescPtr> create(Float64 decay_length)
             std::make_shared<DataTypeFloat64>()},
         Names{"sign", "signed_unit_time", "decay_length"});
 
+    auto serialization = std::make_shared<SerializationExponentialTimeDecayingFloat64>(
+        storage_type->getDefaultSerialization(), decay_length);
+
     return {
         storage_type,
         std::make_unique<DataTypeCustomDesc>(
-            std::make_unique<DataTypeCustomExponentialTimeDecayingFloat64>(decay_length))};
+            std::make_unique<DataTypeCustomExponentialTimeDecayingFloat64>(decay_length),
+            std::move(serialization))};
 }
 
 std::pair<DataTypePtr, DataTypeCustomDescPtr> createFromParameters(const ASTPtr & parameters)
@@ -92,10 +233,9 @@ std::optional<Field> DataTypeCustomExponentialTimeDecayingFloat64::getDefault() 
 
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
 {
+    auto [storage_type, customization] = create(decay_length);
     return DataTypeFactory::instance().getCustom(
-        "Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)",
-        std::make_unique<DataTypeCustomDesc>(
-            std::make_unique<DataTypeCustomExponentialTimeDecayingFloat64>(decay_length)));
+        storage_type->getName(), std::move(customization));
 }
 
 std::optional<Float64> tryGetExponentialTimeDecayingFloat64DecayLength(const IDataType & type)

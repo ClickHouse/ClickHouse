@@ -19,6 +19,16 @@ SELECT
     AND tupleElement(defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)'), 'signed_unit_time') = 0
     AND tupleElement(defaultValueOfTypeName('ExponentialTimeDecayingFloat64(10)'), 'decay_length') = 10;
 
+-- Direct typed input uses the validating serialization, including when nested.
+SELECT tupleElement(value, 'decay_length') = 10
+FROM VALUES('value ExponentialTimeDecayingFloat64(10)', ((1., 0., 10.)));
+SELECT tupleElement(values[1], 'decay_length') = 10
+FROM VALUES('values Array(ExponentialTimeDecayingFloat64(10))', ([(1., 0., 10.)]));
+SELECT *
+FROM VALUES('value ExponentialTimeDecayingFloat64(10)', ((1., 0., 20.))); -- { serverError BAD_ARGUMENTS }
+SELECT *
+FROM VALUES('values Array(ExponentialTimeDecayingFloat64(10))', ([(1., 0., 20.)])); -- { serverError BAD_ARGUMENTS }
+
 CREATE TABLE time_decay_default_insert
 (
     id UInt8,
