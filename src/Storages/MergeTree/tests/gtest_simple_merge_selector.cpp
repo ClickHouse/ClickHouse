@@ -15,12 +15,17 @@ using namespace DB;
 namespace
 {
 
+std::string partName(size_t index)
+{
+    return "all_" + std::to_string(index) + "_" + std::to_string(index) + "_0";
+}
+
 PartsRange makePartsRange(const std::vector<size_t> & sizes, time_t age)
 {
     PartsRange parts_range;
     for (size_t i = 0; i < sizes.size(); ++i)
     {
-        std::string part_name = "all_" + std::to_string(i) + "_" + std::to_string(i) + "_0";
+        std::string part_name = partName(i);
         parts_range.push_back(PartProperties
         {
             .name = part_name,
@@ -32,6 +37,17 @@ PartsRange makePartsRange(const std::vector<size_t> & sizes, time_t age)
     }
 
     return parts_range;
+}
+
+/// The names makePartsRange assigns, so a test can assert *which* parts were selected: a range
+/// length alone cannot tell a correctly trimmed range apart from a differently placed one.
+std::vector<std::string> partNames(const PartsRange & range)
+{
+    std::vector<std::string> names;
+    names.reserve(range.size());
+    for (const auto & part : range)
+        names.push_back(part.name);
+    return names;
 }
 
 PartitionsStatistics makeStatistics(const PartsRange & parts_range, time_t partition_min_age)
@@ -127,7 +143,7 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAge)
 
         auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
         ASSERT_EQ(selected.size(), 1);
-        ASSERT_EQ(selected[0].size(), 2);
+        ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
     }
 }
 
@@ -160,10 +176,12 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAgeLeavesRightTailHeuristicAlone)
         settings.min_partition_age_to_force_merge = 3600;
 
         /// The right-tail heuristic still drops the trailing small part: forcing merges by
-        /// partition age does not silently turn another heuristic off.
+        /// partition age does not silently turn another heuristic off. Assert the parts by name -
+        /// a length of 2 would also match merging the tail as [10 * MiB, 1024], the regression
+        /// this test exists to catch.
         auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
         ASSERT_EQ(selected.size(), 1);
-        ASSERT_EQ(selected[0].size(), 2);
+        ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
     }
 
     {
@@ -175,7 +193,7 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAgeLeavesRightTailHeuristicAlone)
         /// Merging the tail in too is opted into explicitly.
         auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
         ASSERT_EQ(selected.size(), 1);
-        ASSERT_EQ(selected[0].size(), 3);
+        ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
     }
 }
 
@@ -207,8 +225,10 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAgeIgnoresWindow)
         settings.partitions_stats = &statistics;
         settings.min_partition_age_to_force_merge = 3600;
 
+        /// By name again: the point is that the two leading parts - the ones the window would have
+        /// skipped - are the range that gets picked, not merely that some pair of parts was.
         auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
         ASSERT_EQ(selected.size(), 1);
-        ASSERT_EQ(selected[0].size(), 2);
+        ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
     }
 }
