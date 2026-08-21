@@ -903,12 +903,14 @@ and fresh (below `merge_selector_small_parts_max_age`), require at least this ma
 to allow the merge. Reduces the number of merge operations under rapid small-part insertion.
 0 means disabled. Works for Simple and StochasticSimple merge selectors.
 
-The selector never considers merge candidates wider than `max_parts_to_merge_at_once`, so an
-explicitly configured `max_parts_to_merge_at_once` below this minimum is a contradictory
-configuration: small fresh parts then merge only after `merge_selector_small_parts_max_age`.
+The selector never considers merge candidates wider than `max_parts_to_merge_at_once`, nor
+candidates reaching further back than `merge_selector_window_size` parts, so configuring
+either of them below this minimum is a contradictory configuration: small fresh parts then
+merge only after `merge_selector_small_parts_max_age`. Keep both at or above this minimum.
 (If the built-in fullness heuristic temporarily lowers its effective cap below this minimum,
 the selector still considers the first all-small, all-fresh candidate of this width. Stale or
-large candidates retain the lowered cap.)
+large candidates, and candidates that already reached `min_age_to_force_merge`, retain the
+lowered cap.)
 )", 0) \
     DECLARE(UInt64, merge_selector_small_parts_max_age, 600, R"(
 Age limit in seconds for the small-parts restriction: as soon as any part in a range

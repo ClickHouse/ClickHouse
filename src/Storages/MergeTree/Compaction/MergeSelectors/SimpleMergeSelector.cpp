@@ -361,9 +361,17 @@ void selectWithinPartsRange(
                 /// The fullness heuristic may lower the cap below small_parts_min_count.
                 /// Extend enumeration only through the first eligible all-small, all-fresh
                 /// batch, so stale or large ranges retain the heuristic's original cap.
+                ///
+                /// A range whose min_age already reached min_age_to_force_merge is exempt:
+                /// `allow` returns true for it before ever reaching the small-parts gate, so
+                /// the gate is not what blocks the narrower candidate and there is nothing to
+                /// compensate for. min_age only decreases as `end` grows, so the narrower
+                /// range at the lowered cap was force-merge eligible as well and has already
+                /// been considered.
                 if (end - begin > settings.small_parts_min_count
                     || !all_small_and_fresh
-                    || settings.max_parts_to_merge_at_once < settings.small_parts_min_count)
+                    || settings.max_parts_to_merge_at_once < settings.small_parts_min_count
+                    || (settings.min_age_to_force_merge && min_age >= settings.min_age_to_force_merge))
                     break;
             }
 

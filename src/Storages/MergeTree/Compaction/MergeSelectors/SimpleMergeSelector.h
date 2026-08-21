@@ -183,10 +183,19 @@ public:
           * default-on enable_heuristic_to_lower_max_parts_to_merge_at_once therefore
           * enumerates the first all-small, all-fresh candidate of that width even when the
           * heuristic has lowered its cap. This is the only case where the setting can add a
-          * candidate; stale or large ranges retain the lowered cap. An explicitly configured
-          * max_parts_to_merge_at_once still takes precedence: setting it below
-          * small_parts_min_count is a contradictory configuration in which small fresh parts
-          * merge only once small_parts_max_age (or min_age_to_force_merge) lifts the gate.
+          * candidate; stale or large ranges retain the lowered cap, and so do ranges that
+          * already qualify for force merge (min_age >= min_age_to_force_merge), because for
+          * those `allow` short-circuits before the gate and the cap is not what blocks them.
+          * An explicitly configured max_parts_to_merge_at_once still takes precedence: setting
+          * it below small_parts_min_count is a contradictory configuration in which small
+          * fresh parts merge only once small_parts_max_age (or min_age_to_force_merge) lifts
+          * the gate.
+          *
+          * Interaction with the window: enumeration also starts no earlier than
+          * parts_count - window_size, so a window_size below small_parts_min_count is
+          * contradictory in the same way - a wide enough all-small, all-fresh candidate is
+          * never formed. The window is a global anti-snowball protection, so it is not
+          * widened for the gate; configure window_size >= small_parts_min_count.
           */
         size_t small_parts_threshold = 10 * 1024 * 1024;   /// 10 MB
         size_t small_parts_min_count = 0;                   /// 0 = disabled

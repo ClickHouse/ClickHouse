@@ -712,3 +712,48 @@ TEST(SimpleMergeSelector, SmallPartsMinCountDoesNotLiftCapForStaleParts)
     ASSERT_EQ(selected.size(), 1);
     ASSERT_EQ(selected[0].size(), 6);
 }
+
+
+TEST(SimpleMergeSelector, SmallPartsMinCountDoesNotLiftCapForForceMergeEligibleParts)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 2;
+    settings.small_parts_threshold = 10 * 1024 * 1024;
+    settings.small_parts_min_count = 8;
+    settings.small_parts_max_age = 600;
+    /// These parts are fresh enough for the gate but old enough to be force merged.
+    settings.min_age_to_force_merge = 100;
+
+    PartsRange parts;
+    for (int64_t i = 0; i < 8; ++i)
+    {
+        auto name = fmt::format("all_{0}_{0}_0", i);
+        parts.push_back(PartProperties{
+            .name = name,
+            .info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING),
+            .size = 1024 * 1024,
+            .age = 200,
+            .rows = 1000,
+        });
+    }
+
+    /// A nearly full partition, so the fullness heuristic lowers the effective cap to 6.
+    PartitionsStatistics statistics;
+    statistics["all"] = PartitionStatistics{
+        .min_age = 200,
+        .part_count = 2990,
+        .total_size = 2990ULL * 1024 * 1024,
+    };
+    settings.partitions_stats = &statistics;
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    PartsRanges selected = selector.select({parts}, constraints, nullptr);
+
+    /// `allow` accepts these ranges through `min_age_to_force_merge` before the small-parts
+    /// gate is ever evaluated, so the gate is not what blocks the 6-part candidate and the
+    /// cap extension must not fire. Otherwise enabling `small_parts_min_count` would widen
+    /// the emitted force merge from 6 to 8 parts on saturated partitions.
+    ASSERT_EQ(selected.size(), 1);
+    ASSERT_EQ(selected[0].size(), 6);
+}
