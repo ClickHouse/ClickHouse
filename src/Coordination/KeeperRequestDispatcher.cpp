@@ -3,6 +3,8 @@
 #if USE_NURAFT
 
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
@@ -12,6 +14,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Common/assert_cast.h>
 #include <base/sleep.h>
 
 template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
@@ -96,69 +99,6 @@ static size_t getResponseBytesCost(const Coordination::ZooKeeperResponse & respo
     return response.bytesSize() + sizeof(Coordination::ZooKeeperResponse);
 }
 
-static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
-{
-    if (request->getOpNum() == Coordination::OpNum::Create
-        || request->getOpNum() == Coordination::OpNum::Create2
-        || request->getOpNum() == Coordination::OpNum::CreateContainer
-        || request->getOpNum() == Coordination::OpNum::CreateTTL
-        || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
-        || request->getOpNum() == Coordination::OpNum::Set)
-    {
-        return true;
-    }
-    if (request->getOpNum() == Coordination::OpNum::Multi)
-    {
-        Coordination::ZooKeeperMultiRequest & multi_req = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request);
-        /// Add up sizes of create/set requests, subtract sizes of remove requests.
-        /// This doesn't really make sense because we're interested in memory usage of znodes, not requests.
-        /// But we don't know znode sizes at this point (is the Remove removing a small or big znode?),
-        /// so can't do much better here. Maybe it would make sense to move this check to preprocessRequest,
-        /// where we have access to the znode states.
-        Int64 memory_delta = 0;
-        for (const auto & sub_req : multi_req.requests)
-        {
-            auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_req);
-            switch (sub_zk_request->getOpNum())
-            {
-                case Coordination::OpNum::Create:
-                case Coordination::OpNum::Create2:
-                case Coordination::OpNum::CreateContainer:
-                case Coordination::OpNum::CreateTTL:
-                case Coordination::OpNum::CreateIfNotExists: {
-                    Coordination::ZooKeeperCreateRequest & create_req
-                        = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
-                    memory_delta += create_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::Set: {
-                    Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
-                    memory_delta += set_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::Remove:
-                case Coordination::OpNum::TryRemove: {
-                    Coordination::ZooKeeperRemoveRequest & remove_req
-                        = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::RemoveRecursive: {
-                    Coordination::ZooKeeperRemoveRecursiveRequest & remove_req
-                        = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
-                    break;
-                }
-                default:
-                    break;
-            }
-        }
-        return memory_delta > 0;
-    }
-
-    return false;
-}
-
 /// A helper for sleeping while there's no work to do. Sleep duration starts at short_sleep, then
 /// after long_sleep/2 time it exponentially backs off up to long_sleep. So if we get at least one
 /// request every long_sleep/2 the sleeping will add at most short_sleep to request latency.
@@ -202,11 +142,15 @@ struct BusyWaitBackoff
     }
 };
 
-KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_)
+KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_)
     : server(server_)
     , keeper_context(server->getKeeperContext())
+    , special_response_router(std::move(special_response_router_))
     , log(getLogger("KeeperRequestDispatcher"))
 {
+    if (!special_response_router)
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcher requires a special response router");
+
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
     size_t max_request_queue_size = coordination_settings[CoordinationSetting::max_request_queue_size];
     requests_queue.init(max_request_queue_size);
@@ -1065,7 +1009,10 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     response->zxid = 0;
     response->error = error;
     response->enqueue_ts = std::chrono::steady_clock::now();
-    onResponse(DB::KeeperResponseForSession{request_for_session.session_id, response});
+    DB::KeeperResponseForSession response_for_session{request_for_session.session_id, response};
+    if (special_response_router(response_for_session))
+        return;
+    onResponse(std::move(response_for_session));
 }
 
 void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session)
@@ -1097,6 +1044,18 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         req.request->xid != request_for_session.request->xid)
     {
         return;
+    }
+
+    /// SessionID requests all carry session_id -1 and xid 0, so the check above matches any of them,
+    /// including ones originating on other servers (onCommit runs for every committed entry on every
+    /// node). Their identity is (server_id, internal_id).
+    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
+    {
+        /// Session id -1 is reserved for SessionID requests, so the matching head is one too.
+        const auto & head = assert_cast<const Coordination::ZooKeeperSessionIDRequest &>(*req.request);
+        const auto & committed = assert_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
+        if (head.server_id != committed.server_id || head.internal_id != committed.internal_id)
+            return;
     }
 
     if (current_stream_is_suspect.load())

@@ -291,7 +291,7 @@ spec:
 
 La fusion s’effectue clé par clé : seules les valeurs que vous définissez sont remplacées, et les clés générées que vous
 laissez de côté (chemins des certificats, configuration de la CA) sont conservées. Consultez les
-[paramètres du serveur `openSSL`](/fr/reference/settings/server-settings/settings#openssl)
+[paramètres du serveur `openSSL`](/fr/reference/settings/server-settings/settings/other#openssl)
 pour connaître les options disponibles, ainsi que
 [Configuration → Configuration supplémentaire intégrée](/fr/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 pour savoir comment `extraConfig` est fusionné.
@@ -326,7 +326,7 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
   ## Voir aussi
 </div>
 
-* [Configuration → Configuration de TLS/SSL](/fr/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — référence des champs
+* [Configuration → Configuration TLS/SSL](/fr/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — référence des champs
 * [Configuration → `additionalPorts`](/fr/products/kubernetes-operator/guides/configuration#additional-ports) — ports réservés
-* [Référence API → ClusterTLSSpec](/fr/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-* [Paramètres du serveur `openSSL`](/fr/reference/settings/server-settings/settings#openssl) — options TLS que vous pouvez surcharger via `extraConfig`
+* [référence de l’API → ClusterTLSSpec](/fr/products/kubernetes-operator/reference/api-reference#clustertlsspec)
+* [Paramètres du serveur `openSSL`](/fr/reference/settings/server-settings/settings/other#openssl) — options TLS que vous pouvez surcharger via `extraConfig`
