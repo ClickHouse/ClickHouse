@@ -522,6 +522,101 @@ public:
         invokeCheckNullMaps<false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
     }
 };
+
+/// `Array(FixedString(N))` never satisfies `Impl::String`'s `ColumnString`-only shape, so it used
+/// to fall through to `executeGeneric`, which computes a common supertype (String) and casts both
+/// sides via `castColumn`. `CAST(FixedString AS String)` strips trailing zero-padding -- but a
+/// needle that is already a String keeps its literal bytes untouched by that same cast. So a
+/// materialized FixedString(3) array element storing 'V0\0' got cast down to bare "V0" (2 bytes),
+/// which no longer byte-matches a literal String needle 'V0\0' (3 bytes) even though the two are
+/// byte-identical before the cast. This mirrors `Impl::String`'s processImpl/invokeCheckNullMaps/
+/// process split, keyed off a fixed stride instead of ColumnString offsets, and comparing via
+/// memcmpSmallLikeZeroPaddedAllowOverflow15 (zero-pad-aware) in place of the exact-length
+/// memequalSmallAllowOverflow15, since executeConst's arrayIndexFieldsEqual already established
+/// zero-pad-aware comparison as the correct semantics for FixedString-vs-String equality here.
+template <typename ConcreteAction>
+struct FixedString
+{
+private:
+    using ResultType = typename ConcreteAction::ResultType;
+
+    template <bool HasNullMapData, bool HasNullMapItem, typename GetNeedle>
+    static void processImpl(
+        const ColumnFixedString::Chars & data,
+        size_t left_n,
+        const ColumnArray::Offsets & offsets,
+        GetNeedle && get_needle,
+        PaddedPODArray<ResultType> & result,
+        [[maybe_unused]] const NullMap * data_map,
+        [[maybe_unused]] const NullMap * item_map)
+    {
+        const size_t size = offsets.size();
+        result.resize(size);
+
+        ColumnArray::Offset current_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            const ColumnArray::Offset array_size = offsets[i] - current_offset;
+            const auto [needle_data, needle_size] = get_needle(i);
+
+            ResultType current = 0;
+
+            for (size_t j = 0; j < array_size; ++j)
+            {
+                if constexpr (HasNullMapData)
+                {
+                    if ((*data_map)[current_offset + j])
+                    {
+                        if constexpr (!HasNullMapItem)
+                            continue;
+
+                        if (!(*item_map)[i])
+                            continue;
+                    }
+                    else if (0 != memcmpSmallLikeZeroPaddedAllowOverflow15(
+                                 needle_data, needle_size, &data[(current_offset + j) * left_n], left_n))
+                        continue;
+                }
+                else if (0 != memcmpSmallLikeZeroPaddedAllowOverflow15(
+                             needle_data, needle_size, &data[(current_offset + j) * left_n], left_n))
+                    continue;
+
+                ConcreteAction::apply(current, j);
+
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
+            }
+
+            result[i] = current;
+            current_offset = offsets[i];
+        }
+    }
+
+    template <typename GetNeedle>
+    static void invokeCheckNullMaps(
+        const ColumnFixedString::Chars & data, size_t left_n, const ColumnArray::Offsets & offsets,
+        GetNeedle && get_needle, PaddedPODArray<ResultType> & result,
+        const NullMap * data_map, const NullMap * item_map)
+    {
+        if (data_map && item_map)
+            processImpl<true, true>(data, left_n, offsets, get_needle, result, data_map, item_map);
+        else if (data_map)
+            processImpl<true, false>(data, left_n, offsets, get_needle, result, data_map, item_map);
+        else
+            processImpl<false, false>(data, left_n, offsets, get_needle, result, data_map, item_map);
+    }
+
+public:
+    template <typename GetNeedle>
+    static void process(
+        const ColumnFixedString::Chars & data, size_t left_n, const ColumnArray::Offsets & offsets,
+        GetNeedle && get_needle, PaddedPODArray<ResultType> & result,
+        const NullMap * data_map, const NullMap * item_map)
+    {
+        invokeCheckNullMaps(data, left_n, offsets, get_needle, result, data_map, item_map);
+    }
+};
 }
 
 template <typename ConcreteAction, typename Name>
@@ -728,6 +823,7 @@ private:
               || (res = executeIntegral<INTEGRAL_PACK>(arguments))
               || (res = executeConst(arguments, result_type))
               || (res = executeString(arguments))
+              || (res = executeFixedString(arguments))
               || (res = executeGeneric(arguments))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
 
@@ -1201,6 +1297,79 @@ private:
                 result->getData(),
                 null_map_data,
                 null_map_item);
+        }
+        else
+        {
+            return nullptr;
+        }
+
+        return result;
+    }
+
+    static ColumnPtr executeFixedString(const ColumnsWithTypeAndName & arguments)
+    {
+        const auto * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+        if (!array)
+            return nullptr;
+
+        const auto * left = checkAndGetColumn<ColumnFixedString>(&array->getData());
+        if (!left)
+            return nullptr;
+
+        const size_t left_n = left->getN();
+        const auto & right = *arguments[1].column;
+        const auto [null_map_data, null_map_item] = getNullMaps(arguments);
+
+        auto result = ResultColumnType::create();
+
+        if (const auto * item_arg_const = checkAndGetColumnConstStringOrFixedString(&right))
+        {
+            const auto * item_const_string = checkAndGetColumn<ColumnString>(&item_arg_const->getDataColumn());
+            const auto * item_const_fixedstring = checkAndGetColumn<ColumnFixedString>(&item_arg_const->getDataColumn());
+
+            const UInt8 * needle_data;
+            size_t needle_size;
+            if (item_const_string)
+            {
+                auto ref = item_const_string->getDataAt(0);
+                needle_data = reinterpret_cast<const UInt8 *>(ref.data());
+                needle_size = ref.size();
+            }
+            else if (item_const_fixedstring)
+            {
+                auto ref = item_const_fixedstring->getDataAt(0);
+                needle_data = reinterpret_cast<const UInt8 *>(ref.data());
+                needle_size = ref.size();
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnConst contains not String nor FixedString column");
+
+            Impl::FixedString<ConcreteAction>::process(
+                left->getChars(), left_n, array->getOffsets(),
+                [&](size_t) { return std::make_pair(needle_data, needle_size); },
+                result->getData(), null_map_data, null_map_item);
+        }
+        else if (const auto * item_vector_string = checkAndGetColumn<ColumnString>(&right))
+        {
+            Impl::FixedString<ConcreteAction>::process(
+                left->getChars(), left_n, array->getOffsets(),
+                [&](size_t i)
+                {
+                    auto ref = item_vector_string->getDataAt(i);
+                    return std::make_pair(reinterpret_cast<const UInt8 *>(ref.data()), ref.size());
+                },
+                result->getData(), null_map_data, null_map_item);
+        }
+        else if (const auto * item_vector_fixedstring = checkAndGetColumn<ColumnFixedString>(&right))
+        {
+            Impl::FixedString<ConcreteAction>::process(
+                left->getChars(), left_n, array->getOffsets(),
+                [&](size_t i)
+                {
+                    auto ref = item_vector_fixedstring->getDataAt(i);
+                    return std::make_pair(reinterpret_cast<const UInt8 *>(ref.data()), ref.size());
+                },
+                result->getData(), null_map_data, null_map_item);
         }
         else
         {
