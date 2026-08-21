@@ -214,6 +214,10 @@ class JobConfigs:
                 # two files, so a change to either must run this job.
                 "./tests/clickhouse-test",
                 "./tests/queries/shell_config.sh",
+                # The CFI build-classification guards read these two, so a change to either
+                # must run this job instead of reusing a cached result.
+                "./tests/config/install.sh",
+                "./tests/integration/helpers/cluster.py",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
@@ -1140,6 +1144,10 @@ class JobConfigs:
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
+                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
+                # not cover ./tests/ci.
+                "./tests/ci/get_previous_release_tag.py",
+                "./tests/ci/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
@@ -1814,12 +1822,6 @@ class JobConfigs:
     # comment when the change is significant. The data comes from the CI logs
     # cluster: the PR side is uploaded by the arm_release build post-hook
     # (build_profile_hook.py), the master side by master workflow builds.
-    # No digest_config, i.e. not cacheable: the job's output is a PR comment
-    # about one concrete commit (it embeds the head sha and links this run's
-    # report). Reusing a cached result would leave that comment describing an
-    # older commit of the PR - including a change that the head has already
-    # reverted - so the comparison is redone for every head. The job is cheap:
-    # it only queries the CI logs cluster.
     build_profile_diff_job = Job.Config(
         name=JobNames.BUILD_PROFILE_DIFF,
         runs_on=RunnerLabels.ARM_SMALL,
@@ -1831,6 +1833,15 @@ class JobConfigs:
         command="python3 ./ci/jobs/build_profile_diff_job.py",
         timeout=1800,
         enable_gh_auth=True,
+        # `requires` folds the build's digest in, so selection and result reuse
+        # both follow the source state. A file added to this job's own pipeline
+        # later is not covered automatically.
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/build_profile_diff_job.py",
+                "./ci/jobs/scripts/log_cluster.py",
+            ],
+        ),
         # Run on a red head too. This job is the only writer of the
         # `build-profile-diff` PR comment, so skipping it leaves the comment
         # posted for an older commit pinned to the PR, reading as if it
