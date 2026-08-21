@@ -947,9 +947,13 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
 
         auto context = CurrentThread::tryGetQueryContext();
         chassert(context);
+        /// The query's single decision on where the plan runs. Every consumer below derives from it,
+        /// directly or from `task_to_host_map` being null, so none of them re-reads the setting from
+        /// the ambient context, which a subquery-scoped SETTINGS clause can leave disagreeing.
+        const bool execute_locally = optimization_settings.distributed_plan_execute_locally;
         /// Local execution runs every task in-process and needs no worker hosts; constructing
         /// TaskToHostMap would require a configured worker cluster and fail on a plain single server.
-        TaskToHostMapPtr task_to_host_map = optimization_settings.distributed_plan_execute_locally
+        TaskToHostMapPtr task_to_host_map = execute_locally
             ? nullptr
             : std::make_shared<TaskToHostMap>(distributed_plan, context);
 
@@ -975,7 +979,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             exchange_descriptions,
             task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
             temporary_files,
-            context);
+            context,
+            execute_locally);
 
         auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
         {
