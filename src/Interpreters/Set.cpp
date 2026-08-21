@@ -463,6 +463,9 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
+        assertExponentialTimeDecayingFloat64TypesCompatible(
+            column_before_cast.type, data_types[i], "IN");
+
         /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
         /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
         /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.

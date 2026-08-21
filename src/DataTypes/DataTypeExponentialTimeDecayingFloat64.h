@@ -70,6 +70,11 @@ bool isExponentialTimeDecayingFloat64(const DataTypePtr & type);
 bool containsExponentialTimeDecayingFloat64(const IDataType & type);
 bool containsExponentialTimeDecayingFloat64(const DataTypePtr & type);
 
+/// Rejects pairwise use when decaying values occupy different nested positions
+/// or have different decay lengths.
+void assertExponentialTimeDecayingFloat64TypesCompatible(
+    const DataTypePtr & left_type, const DataTypePtr & right_type, const String & operation);
+
 /// Rejects rows whose redundant marker or canonical ordering fields do not match the type.
 /// Used before generic tuple comparison and sorting, which cannot see the custom type name.
 void validateExponentialTimeDecayingFloat64Column(

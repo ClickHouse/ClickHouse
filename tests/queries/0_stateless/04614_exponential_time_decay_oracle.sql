@@ -663,6 +663,28 @@ WITH
     _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS valid
 SELECT malformed NOT IN (valid); -- { serverError BAD_ARGUMENTS }
 
+-- Pairwise compatibility is enforced recursively before generic tuple
+-- comparison and set hashing.
+WITH
+    CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecayingFloat64(10))') AS left_value,
+    CAST([(1., 0., 20.)], 'Array(ExponentialTimeDecayingFloat64(20))') AS right_value
+SELECT left_value = right_value; -- { serverError BAD_ARGUMENTS }
+
+WITH
+    CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecayingFloat64(10))') AS decaying,
+    CAST([(1., 0., 10.)], 'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))') AS plain
+SELECT decaying = plain; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+WITH
+    CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS decaying,
+    CAST((1., 0., 10.), 'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)') AS plain
+SELECT decaying IN (plain); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+WITH
+    CAST([(1., 0., 10.)], 'Array(ExponentialTimeDecayingFloat64(10))') AS decaying,
+    CAST([(1., 0., 10.)], 'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))') AS plain
+SELECT decaying IN (plain); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- MergeTree set indexes may sort internal blocks without type metadata. Optional
 -- custom-type validation must not change the native sorter for ordinary columns.
 DROP TABLE IF EXISTS time_decay_set_index_sort;

@@ -1781,27 +1781,8 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto left_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeLowCardinalityAndNullable(arguments[0]));
-        const auto right_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeLowCardinalityAndNullable(arguments[1]));
-        if (left_decay_length || right_decay_length)
-        {
-            if (!left_decay_length || !right_decay_length)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} cannot compare ExponentialTimeDecayingFloat64 with {}",
-                    getName(),
-                    left_decay_length ? arguments[1]->getName() : arguments[0]->getName());
-
-            if (*left_decay_length != *right_decay_length)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Function {} cannot compare ExponentialTimeDecayingFloat64 values with different decay lengths: {} and {}",
-                    getName(),
-                    *left_decay_length,
-                    *right_decay_length);
-        }
+        assertExponentialTimeDecayingFloat64TypesCompatible(
+            arguments[0], arguments[1], getName());
 
         if ((name == NameEquals::name || name == NameNotEquals::name))
         {

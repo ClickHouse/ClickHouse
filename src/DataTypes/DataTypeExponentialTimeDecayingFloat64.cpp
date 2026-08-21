@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
 }
@@ -289,6 +290,119 @@ bool containsExponentialTimeDecayingFloat64(const IDataType & type)
 bool containsExponentialTimeDecayingFloat64(const DataTypePtr & type)
 {
     return type && containsExponentialTimeDecayingFloat64(*type);
+}
+
+namespace
+{
+
+DataTypePtr removeExponentialTimeDecayingTransparentWrappers(DataTypePtr type)
+{
+    while (type)
+    {
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        {
+            type = low_cardinality_type->getDictionaryType();
+            continue;
+        }
+
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        {
+            type = nullable_type->getNestedType();
+            continue;
+        }
+
+        break;
+    }
+
+    return type;
+}
+
+void assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
+    DataTypePtr left_type, DataTypePtr right_type, const String & operation)
+{
+    left_type = removeExponentialTimeDecayingTransparentWrappers(std::move(left_type));
+    right_type = removeExponentialTimeDecayingTransparentWrappers(std::move(right_type));
+
+    const bool left_contains = containsExponentialTimeDecayingFloat64(left_type);
+    const bool right_contains = containsExponentialTimeDecayingFloat64(right_type);
+    if (!left_contains && !right_contains)
+        return;
+
+    if (!left_contains || !right_contains)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "{} cannot combine incompatible types {} and {} containing ExponentialTimeDecayingFloat64",
+            operation,
+            left_type->getName(),
+            right_type->getName());
+
+    const auto left_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(left_type);
+    const auto right_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(right_type);
+    if (left_decay_length || right_decay_length)
+    {
+        if (!left_decay_length || !right_decay_length)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "{} cannot combine ExponentialTimeDecayingFloat64 with {}",
+                operation,
+                left_decay_length ? right_type->getName() : left_type->getName());
+
+        if (*left_decay_length != *right_decay_length)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "{} cannot combine ExponentialTimeDecayingFloat64 values with different decay lengths: {} and {}",
+                operation,
+                *left_decay_length,
+                *right_decay_length);
+        return;
+    }
+
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left_type.get()))
+    {
+        const auto * right_array = typeid_cast<const DataTypeArray *>(right_type.get());
+        if (right_array)
+        {
+            assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
+                left_array->getNestedType(), right_array->getNestedType(), operation);
+            return;
+        }
+    }
+    else if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_type.get()))
+    {
+        const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_type.get());
+        if (right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
+                    left_tuple->getElements()[i], right_tuple->getElements()[i], operation);
+            return;
+        }
+    }
+    else if (const auto * left_map = typeid_cast<const DataTypeMap *>(left_type.get()))
+    {
+        const auto * right_map = typeid_cast<const DataTypeMap *>(right_type.get());
+        if (right_map)
+        {
+            assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
+                left_map->getNestedType(), right_map->getNestedType(), operation);
+            return;
+        }
+    }
+
+    throw Exception(
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        "{} cannot combine incompatible types {} and {} containing ExponentialTimeDecayingFloat64",
+        operation,
+        left_type->getName(),
+        right_type->getName());
+}
+
+}
+
+void assertExponentialTimeDecayingFloat64TypesCompatible(
+    const DataTypePtr & left_type, const DataTypePtr & right_type, const String & operation)
+{
+    assertExponentialTimeDecayingFloat64TypesCompatibleImpl(left_type, right_type, operation);
 }
 
 void validateExponentialTimeDecayingFloat64Column(
