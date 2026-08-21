@@ -171,13 +171,13 @@ std::optional<Field> roundTimeConstant(const IDataType & type, const Field & val
             Int64 whole_seconds = *seconds;
             Int64 fraction = ticks - whole_seconds * multiplier; /// In [0, multiplier).
 
-            Int64 rounded_seconds;
+            Int64 rounded_seconds = 0;
             if (round_up)
                 rounded_seconds = ceilToGridStep(fraction == 0 ? whole_seconds : whole_seconds + 1, *step, lut);
             else
                 rounded_seconds = floorToGridStep(whole_seconds, *step, lut);
 
-            Int64 rounded_ticks;
+            Int64 rounded_ticks = 0;
             if (common::mulOverflow(rounded_seconds, multiplier, rounded_ticks))
                 return std::nullopt;
             return Field(DecimalField<DateTime64>(DateTime64(rounded_ticks), scale));
