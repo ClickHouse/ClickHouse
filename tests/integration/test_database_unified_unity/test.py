@@ -184,10 +184,7 @@ SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_catalog',
 
 
 def show_tables(node, db_name, pattern):
-    result = node.query(
-        f"SHOW TABLES FROM {db_name} LIKE '{pattern}'",
-        settings={"use_hive_partitioning": "0"},
-    ).strip()
+    result = node.query(f"SHOW TABLES FROM {db_name} LIKE '{pattern}'").strip()
     return sorted(result.split("\n")) if result else []
 
 
