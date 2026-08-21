@@ -50,12 +50,12 @@ const MaterializedColumnDependencies::Column * MaterializedColumnDependencies::a
     if (it == materialized_columns.end())
         return nullptr;
 
-    if (analysed[column_name])
+    if (it->second.expression)
         return &it->second;
 
     const auto & source_columns_ = getSourceColumns();
-    auto & materialized = it->second;
 
+    Column materialized;
     materialized.expression = columns.get(column_name).default_desc.expression->clone();
 
     /// A MATERIALIZED default may read an ALIAS column, and an ALIAS is computed on read and never
@@ -77,8 +77,9 @@ const MaterializedColumnDependencies::Column * MaterializedColumnDependencies::a
     materialized.reads_ephemeral = std::ranges::any_of(
         materialized.dependencies, [&](const auto & dependency) { return ephemeral_columns.contains(dependency); });
 
-    analysed[column_name] = true;
-    return &materialized;
+    /// One assignment, so the entry is either untouched or complete.
+    it->second = std::move(materialized);
+    return &it->second;
 }
 
 const MaterializedColumnDependencies::Column * MaterializedColumnDependencies::tryGet(const String & column_name) const
@@ -91,15 +92,22 @@ bool MaterializedColumnDependencies::willBeRecalculated(const String & column_na
     if (changed_columns.empty())
         return false;
 
+    /// Checked once per entry into the walk, not once per recursive step.
     if (memo_changed_columns != changed_columns)
     {
         memo_changed_columns = changed_columns;
         will_be_recalculated.clear();
     }
 
-    /// `false` while a column is being answered, so a cycle in the graph terminates instead of
-    /// recursing forever. A cyclic set of defaults cannot be recomputed at all, which is what
-    /// `false` says.
+    return willBeRecalculatedImpl(column_name, changed_columns);
+}
+
+bool MaterializedColumnDependencies::willBeRecalculatedImpl(const String & column_name, const NameSet & changed_columns) const
+{
+    /// The insertion doubles as an in-progress marker: a walk that comes back into a column still
+    /// being answered reads the `false` left here and stops. `CREATE TABLE` already rejects cyclic
+    /// defaults (`CYCLIC_ALIASES`), so this is not reachable today — but it costs nothing, because the
+    /// marker is the memo entry itself, and it makes the recursion total without relying on that.
     auto [it, inserted] = will_be_recalculated.emplace(column_name, false);
     if (!inserted)
         return it->second;
@@ -110,10 +118,10 @@ bool MaterializedColumnDependencies::willBeRecalculated(const String & column_na
 
     bool result = std::ranges::any_of(materialized->dependencies, [&](const auto & dependency)
     {
-        return changed_columns.contains(dependency) || willBeRecalculated(dependency, changed_columns);
+        return changed_columns.contains(dependency) || willBeRecalculatedImpl(dependency, changed_columns);
     });
 
-    /// Re-find: the recursion above can rehash the map.
+    /// Not through `it`: the recursion above can rehash the map, which invalidates iterators.
     will_be_recalculated[column_name] = result;
     return result;
 }

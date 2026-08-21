@@ -53,15 +53,19 @@ public:
     bool willBeRecalculated(const String & column_name, const NameSet & changed_columns) const;
 
 private:
+    /// @changed_columns is already the memoised one, so the recursion does not re-check it.
+    bool willBeRecalculatedImpl(const String & column_name, const NameSet & changed_columns) const;
+
     const Column * analyse(const String & column_name) const;
     const NamesAndTypesList & getSourceColumns() const;
 
     const ColumnsDescription & columns;
     ContextPtr context;
 
-    /// Every MATERIALIZED column of the table, with `dependencies` filled in on first use.
+    /// Every MATERIALIZED column of the table. An entry is created empty and filled in on first use;
+    /// a set `expression` is what marks it analysed, and it is assigned in one step at the end of the
+    /// analysis, so a throw part-way leaves the entry untouched rather than half-filled.
     mutable std::unordered_map<String, Column> materialized_columns;
-    mutable std::unordered_map<String, bool> analysed;
 
     /// Physical columns plus EPHEMERAL ones, which `getAllPhysical` omits although a MATERIALIZED
     /// expression may read one. Built on the first analysis, not before.
