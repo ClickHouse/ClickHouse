@@ -313,6 +313,24 @@ std::shared_ptr<ExecutingGraph::PendingRemovalGroup> ExecutingGraph::findGroupRe
     return nullptr;
 }
 
+ExecutingGraph::RemoveGroupResult ExecutingGraph::removeReadyGroups(Processors & delayed_destruction)
+{
+    RemoveGroupResult result;
+
+    std::unique_lock lock(nodes_mutex);
+
+    /// Retire everything that is removable right now: a group is only looked at again when some node
+    /// is prepared, so leaving a ready group behind may keep its processors in the pipeline forever.
+    while (auto group = findGroupReadyForRemoval())
+    {
+        auto group_result = removePendingGroup(*group, delayed_destruction);
+        result.removed_nodes.insert_range(group_result.removed_nodes);
+        result.removed_edges.insert_range(group_result.removed_edges);
+    }
+
+    return result;
+}
+
 void ExecutingGraph::accountFinishedProcessorInGroup(const ProcessorPtr & processor)
 {
     auto group_it = removed_processors.find(processor);
@@ -529,7 +547,14 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                 }();
 
                 if (update_status != UpdateNodeStatus::Done)
+                {
+                    /// `updatePipeline` has already queued its removals, but this thread is leaving the graph
+                    /// for good and nobody is going to prepare a node again, so the queue would never be
+                    /// looked at. Retire what is already removable, otherwise those processors stay in the
+                    /// pipeline until the whole query is destroyed.
+                    removeReadyGroups(delayed_destruction);
                     return update_status;
+                }
 
                 /// Add itself back to be prepared again.
                 updated_processors.push_front(current);
@@ -542,15 +567,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
             {
                 read_lock.unlock();
 
-                RemoveGroupResult remove_result = [&]() -> RemoveGroupResult
-                {
-                    std::unique_lock lock(nodes_mutex);
-
-                    if (auto group = findGroupReadyForRemoval())
-                        return removePendingGroup(*group, delayed_destruction);
-
-                    return {};
-                }();
+                RemoveGroupResult remove_result = removeReadyGroups(delayed_destruction);
 
                 if (!remove_result.removed_edges.empty())
                 {
