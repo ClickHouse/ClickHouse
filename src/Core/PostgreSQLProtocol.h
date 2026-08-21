@@ -1519,23 +1519,56 @@ public:
 
 class ScrambleSHA256Auth : public AuthenticationMethod
 {
-    std::optional<String> getScramSalt(const String & user_name, Session & session) const
+    enum class ScramSaltKind : uint8_t
+    {
+        /// The user has no `scram_sha256_password` at all.
+        NoScram,
+        /// Exactly one live verifier, which PostgreSQL SCRAM can offer on the wire.
+        Live,
+        /// Only expired verifiers: the salt is still usable to run the exchange and report invalid credentials.
+        ExpiredOnly,
+        /// Live verifiers that PostgreSQL SCRAM cannot represent: a second factor, or several salts to choose from.
+        UnsupportedConfiguration,
+    };
+
+    struct ScramSalt
+    {
+        ScramSaltKind kind = ScramSaltKind::NoScram;
+        String salt;
+        /// The user has another live authentication method that the PostgreSQL protocol can offer on the wire.
+        bool has_live_alternative = false;
+    };
+
+    ScramSalt getScramSalt(const String & user_name, Session & session) const
     {
         const auto & access_control = session.globalContext()->getAccessControl();
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+        ScramSalt result;
         std::optional<String> expired_scram_salt;
         std::optional<String> live_scram_salt;
+        bool unsupported_configuration = false;
+
         if (auto id = access_control.find<User>(user_name))
         {
             if (auto user = access_control.tryRead<User>(*id))
             {
                 for (const auto & auth_method : user->authentication_methods)
                 {
-                    if (auth_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
-                        continue;
-
                     const auto valid_until = auth_method.getValidUntil();
-                    if (valid_until && now > valid_until)
+                    const bool expired = valid_until && now > valid_until;
+
+                    if (auth_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
+                    {
+                        /// The only other authentication methods the PostgreSQL protocol can offer on the wire.
+                        if (!expired
+                            && (auth_method.getType() == AuthenticationType::NO_PASSWORD
+                                || auth_method.getType() == AuthenticationType::PLAINTEXT_PASSWORD))
+                            result.has_live_alternative = true;
+                        continue;
+                    }
+
+                    if (expired)
                     {
                         if (!expired_scram_salt)
                             expired_scram_salt = auth_method.getSalt();
@@ -1544,13 +1577,30 @@ class ScrambleSHA256Auth : public AuthenticationMethod
 
                     /// PostgreSQL SCRAM cannot represent a second factor or choose between several salts.
                     if (auth_method.getOneTimePassword() || live_scram_salt)
-                        return std::nullopt;
+                    {
+                        unsupported_configuration = true;
+                        continue;
+                    }
 
                     live_scram_salt = auth_method.getSalt();
                 }
             }
         }
-        return live_scram_salt ? live_scram_salt : expired_scram_salt;
+
+        if (unsupported_configuration)
+            result.kind = ScramSaltKind::UnsupportedConfiguration;
+        else if (live_scram_salt)
+        {
+            result.kind = ScramSaltKind::Live;
+            result.salt = *live_scram_salt;
+        }
+        else if (expired_scram_salt)
+        {
+            result.kind = ScramSaltKind::ExpiredOnly;
+            result.salt = *expired_scram_salt;
+        }
+
+        return result;
     }
 
     static size_t findPatternPosition(const String & key, const String & pattern)
@@ -1606,7 +1656,18 @@ class ScrambleSHA256Auth : public AuthenticationMethod
 public:
     bool isSupportedForUser(const String & user_name, Session & session) const override
     {
-        return getScramSalt(user_name, session).has_value();
+        const auto scram_salt = getScramSalt(user_name, session);
+
+        if (scram_salt.kind == ScramSaltKind::NoScram)
+            return false;
+        if (scram_salt.kind == ScramSaltKind::Live)
+            return true;
+
+        /// Neither an expired verifier nor a configuration that the protocol cannot represent can lead to a successful
+        /// login. Select SCRAM in these cases only if nothing else can succeed either, so that an expired verifier is
+        /// reported as invalid credentials and an unsupported configuration is reported as such, instead of shadowing
+        /// a method that would have worked.
+        return !scram_salt.has_live_alternative;
     }
 
     static String generateNonce()
@@ -1668,6 +1729,11 @@ public:
 
         String auth_message;
 
+        const auto scram_salt = getScramSalt(user_name, session);
+        if (scram_salt.kind == ScramSaltKind::UnsupportedConfiguration || scram_salt.kind == ScramSaltKind::NoScram)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "PostgreSQL protocol does not support this `scram_sha256_password` authentication configuration");
+
         mt.send(Messaging::AuthenticationSASL(), true);
         auto rsp = mt.receive<Messaging::SASLInitialResponse>();
 
@@ -1676,11 +1742,7 @@ public:
         auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
         auto nonce = client_nonce + server_nonce;
 
-        const auto salt = getScramSalt(user_name, session);
-        if (!salt)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PostgreSQL protocol does not support this `scram_sha256_password` authentication configuration");
-
-        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, *salt, num_iterations);
+        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, scram_salt.salt, num_iterations);
         mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
         auth_message += "," + sasl_continue_message;
         auto rsp_continue = mt.receive<Messaging::SASLResponse>();

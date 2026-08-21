@@ -294,6 +294,7 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
         "user_plaintext_and_two_scram": "plaintext_password BY 'p123', scram_sha256_password BY 'p123', scram_sha256_password BY 'other_password'",
         "user_expired_then_live_scram": "scram_sha256_password BY 'expired' VALID UNTIL '2010-01-01', scram_sha256_password BY 'p123'",
         "user_expired_only_scram": "scram_sha256_password BY 'p123' VALID UNTIL '2010-01-01'",
+        "user_plaintext_and_expired_scram": "plaintext_password BY 'p123', scram_sha256_password BY 'old' VALID UNTIL '2010-01-01'",
     }
     try:
         for name, methods in users.items():
@@ -301,7 +302,8 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
             node.query(f"GRANT SELECT ON system.one TO {name}", password="123")
 
             if name == "user_two_scram":
-                with pytest.raises(py_psql.OperationalError, match="Authentication method is not supported"):
+                # Two live verifiers: PostgreSQL SCRAM cannot choose between their salts.
+                with pytest.raises(py_psql.OperationalError, match="Authentication configuration is not supported"):
                     py_psql.connect(
                         host=node.ip_address,
                         port=server_port,
