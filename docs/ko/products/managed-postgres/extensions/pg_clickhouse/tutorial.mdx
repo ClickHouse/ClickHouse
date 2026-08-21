@@ -509,7 +509,7 @@ CSV 파일을 기반으로 합니다.
    딕셔너리를 채우십시오:
 
    ```sql
-   SELECT clickhouse_raw_query($$
+   CALL clickhouse_perform('taxi_srv', $$
        CREATE DICTIONARY taxi.taxi_zone_dictionary (
            LocationID Int64 DEFAULT 0,
            Borough String,
@@ -520,68 +520,68 @@ CSV 파일을 기반으로 합니다.
        SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
        LIFETIME(MIN 0 MAX 0)
        LAYOUT(HASHED_ARRAY())
-   $$, 'host=localhost dbname=taxi');
+   $$);
    ```
 
-<Note>
-  `LIFETIME`을 0으로 설정하면 불필요한
-  S3 버킷 트래픽을 방지하기 위해 자동 업데이트가 비활성화됩니다.
-  다른 경우에는 다르게 구성할 수도 있습니다. 자세한 내용은 [LIFETIME을 사용한 딕셔너리 데이터
-  갱신](/ko/reference/statements/create/dictionary/lifetime)을 참조하십시오.
-</Note>
+   <Note>
+     `LIFETIME`을 0으로 설정하면 불필요한
+     S3 버킷 트래픽을 방지하기 위해 자동 업데이트가 비활성화됩니다.
+     다른 경우에는 다르게 구성할 수도 있습니다. 자세한 내용은 [LIFETIME을 사용한 딕셔너리 데이터
+     갱신](/ko/reference/statements/create/dictionary/lifetime)을 참조하십시오.
+   </Note>
 
-2. 이제 이를 가져오십시오:
+   2. 이제 이를 가져오십시오:
 
-```sql
-    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
-    FROM SERVER taxi_srv INTO taxi;
-```
+   ```sql
+   IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
+   FROM SERVER taxi_srv INTO taxi;
+   ```
 
-3. 쿼리가 가능한지 확인합니다:
+   3. 쿼리가 가능한지 확인합니다:
 
-```pgsql
-    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
-     LocationID |  Borough  |                     Zone                      | service_zone
-    ------------+-----------+-----------------------------------------------+--------------
-             77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
-            106 | Brooklyn  | Gowanus                                       | Boro Zone
-            103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
-    (3 rows)
-```
+   ```pgsql
+   taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
+    LocationID |  Borough  |                     Zone                      | service_zone
+   ------------+-----------+-----------------------------------------------+--------------
+            77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
+           106 | Brooklyn  | Gowanus                                       | Boro Zone
+           103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
+   (3 rows)
+   ```
 
-4. 좋습니다. 이제 `dictGet` 함수를 사용해
-   쿼리에서 자치구 이름을 가져오십시오. 이 쿼리는
-   LaGuardia 또는 JFK 공항에서 끝나는 자치구별 택시
-   운행 횟수의 합계를 계산합니다:
+   4. 좋습니다. 이제 `dictGet` 함수를 사용해
+      쿼리에서 자치구 이름을 가져오십시오. 이 쿼리는
+      LaGuardia 또는 JFK 공항에서 끝나는 자치구별 택시
+      운행 횟수의 합계를 계산합니다:
 
-```pgsql
-    taxi=# SELECT
-            count(1) AS total,
-            COALESCE(NULLIF(dictGet(
-                'taxi.taxi_zone_dictionary', 'Borough',
-                toUInt64(pickup_nyct2010_gid)
-            ), ''), 'Unknown') AS borough_name
-        FROM taxi.trips
-        WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-        GROUP BY borough_name
-        ORDER BY total DESC;
-     total | borough_name
-    -------+---------------
-     23683 | Unknown
-      7053 | Manhattan
-      6828 | Brooklyn
-      4458 | Queens
-      2670 | Bronx
-       554 | Staten Island
-        53 | EWR
-    (7 rows)
+   ```pgsql
+   taxi=# SELECT
+           count(1) AS total,
+           COALESCE(NULLIF(dictGet(
+               'taxi.taxi_zone_dictionary', 'Borough',
+               toUInt64(pickup_nyct2010_gid)
+           ), ''), 'Unknown') AS borough_name
+       FROM taxi.trips
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY borough_name
+       ORDER BY total DESC;
+    total | borough_name
+   -------+---------------
+    23683 | Unknown
+     7053 | Manhattan
+     6828 | Brooklyn
+     4458 | Queens
+     2670 | Bronx
+      554 | Staten Island
+       53 | EWR
+   (7 rows)
 
-    Time: 66.245 ms
-```
+   Time: 66.245 ms
+   ```
 
-이 쿼리는 LaGuardia 또는 JFK 공항에서 끝나는 택시 운행 건수를
-borough별로 합산합니다. 승차한 지역을 알 수 없는 운행도
-상당히 많다는 점에 유의하십시오.
+   이 쿼리는 LaGuardia 또는 JFK 공항에서 끝나는 택시 운행 건수를
+   borough별로 합산합니다. 승차한 지역을 알 수 없는 운행도
+   상당히 많다는 점에 유의하십시오.
 
 <div id="perform-a-join">
   ## 조인 수행
@@ -615,31 +615,31 @@ borough별로 합산합니다. 승차한 지역을 알 수 없는 운행도
    Time: 48.449 ms
    ```
 
-<Note>
-  위 `JOIN` 쿼리의 출력은 앞서 본 `dictGet`
-  쿼리와 동일합니다(`Unknown` 값이 포함되지 않는다는 점만 제외). 내부적으로는
-  ClickHouse가 실제로 `taxi_zone_dictionary` 딕셔너리에 대해 `dictGet` 함수를 호출하지만,
-  `JOIN` 구문이 SQL 개발자에게는 더 익숙합니다.
-</Note>
+   <Note>
+     위 `JOIN` 쿼리의 출력은 앞서 본 `dictGet`
+     쿼리와 동일합니다(`Unknown` 값이 포함되지 않는다는 점만 제외). 내부적으로는
+     ClickHouse가 실제로 `taxi_zone_dictionary` 딕셔너리에 대해 `dictGet` 함수를 호출하지만,
+     `JOIN` 구문이 SQL 개발자에게는 더 익숙합니다.
+   </Note>
 
-```pgsql
-    taxi=# explain SELECT
-            count(1) AS total,
-            "Borough"
-        FROM taxi.trips
-        JOIN taxi.taxi_zone_dictionary
-          ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
-        WHERE pickup_nyct2010_gid > 0
-          AND dropoff_nyct2010_gid IN (132, 138)
-        GROUP BY "Borough"
-        ORDER BY total DESC;
-                                  QUERY PLAN
-    -----------------------------------------------------------------------
-     Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
-       Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
-    (2 rows)
-    Time: 2.012 ms
-```
+   ```pgsql
+   taxi=# explain SELECT
+           count(1) AS total,
+           "Borough"
+       FROM taxi.trips
+       JOIN taxi.taxi_zone_dictionary
+         ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
+       WHERE pickup_nyct2010_gid > 0
+         AND dropoff_nyct2010_gid IN (132, 138)
+       GROUP BY "Borough"
+       ORDER BY total DESC;
+                                 QUERY PLAN
+   -----------------------------------------------------------------------
+    Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
+      Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
+   (2 rows)
+   Time: 2.012 ms
+   ```
 
 2. 이 쿼리는 팁 금액이 가장 높은 1000건의 운행에 해당하는 행을 반환한 다음,
    각 행을 딕셔너리와 내부 조인합니다:
@@ -665,7 +665,7 @@ borough별로 합산합니다. 승차한 지역을 알 수 없는 운행도
 
 [EXPLAIN]: https://www.postgresql.org/docs/current/sql-explain.html "SQL 문: EXPLAIN"
 
-[dictionary]: /reference/statements/create/dictionary
+[딕셔너리]: /reference/statements/create/dictionary
 
 [PGXN]: https://pgxn.org/dist/pg_clickhouse "PGXN의 pg_clickhouse"
 
