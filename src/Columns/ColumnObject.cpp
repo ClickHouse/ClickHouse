@@ -2517,7 +2517,7 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
 
     if (shared_data_candidates.size() <= ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
     {
-        for (auto & [path, size] : shared_data_candidates)
+        for (const auto & [path, size] : shared_data_candidates)
             calculated_statistics->shared_data_paths_statistics.emplace(path, size);
     }
     else
@@ -2573,7 +2573,7 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
     /// Select top MAX_SHARED_DATA_STATISTICS_SIZE paths by total size for shared data statistics.
     if (shared_data_candidates.size() <= Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
     {
-        for (auto & [path, size] : shared_data_candidates)
+        for (const auto & [path, size] : shared_data_candidates)
             new_statistics.shared_data_paths_statistics.emplace(path, size);
     }
     else
