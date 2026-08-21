@@ -1094,6 +1094,10 @@ void PostgreSQLHandler::processDescribeQuery()
 
 void PostgreSQLHandler::processExecuteQuery()
 {
+    /// Output position before the statement, mirroring `processQuery`: keeping
+    /// the session alive after a failure is only safe while nothing has been
+    /// sent for the failed statement.
+    size_t out_bytes_before_statement = out->count();
     try
     {
         std::unique_ptr<PostgreSQLProtocol::Messaging::ExecuteQuery> query =
@@ -1131,11 +1135,22 @@ void PostgreSQLHandler::processExecuteQuery()
     }
     catch (const Exception & e)
     {
+        bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        ignore_until_sync = true;
+        /// Recovering to `Sync` is only safe while nothing has been sent for the
+        /// failed statement - otherwise the output stream may be cut in the
+        /// middle of a message and continuing would desynchronize the protocol
+        /// framing, so in that case tear the connection down (as `processQuery`
+        /// does for the simple-query protocol).
+        if (nothing_sent_for_failed_statement)
+        {
+            ignore_until_sync = true;
+            return;
+        }
+        throw;
     }
 }
 
@@ -1295,7 +1310,12 @@ SELECT * FROM VALUES(
     /// by hashing the name, consistently with `relnamespace` in `pg_class` below.
     /// The offset 16384 mirrors PostgreSQL, where oids below 16384 are reserved for
     /// the system, so synthesized oids cannot collide with the well-known ones.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace SQL SECURITY DEFINER AS
+    /// `SQL SECURITY INVOKER` makes the view run with the privileges of the session
+    /// user. `system.databases` is implicitly SELECTable by every user and hides
+    /// the databases the user has no `SHOW` privilege for, so the view exposes
+    /// exactly the metadata already visible to that user - definer rights would
+    /// bypass this filtering and leak the existence of unrelated databases.
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'oid UInt32, nspname String',
     (11,    'pg_catalog'),
@@ -1313,7 +1333,9 @@ FROM system.databases)");
     /// The rest are the tables of the current database - the analog of the PostgreSQL
     /// search path - which makes commands like `\d` in psql list the actual tables.
     /// `relam` is the access method: 2 (`heap`) for tables and 0 for views, as in PostgreSQL.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class SQL SECURITY DEFINER AS
+    /// `SQL SECURITY INVOKER` for the same reason as `pg_namespace` above:
+    /// `system.tables` hides the tables the session user cannot `SHOW`.
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
     'oid UInt32, relname String, relnamespace UInt32, relowner UInt32, relam UInt32, relkind String',
     (1259, '', 11, 10, 2, 'r'),

@@ -280,6 +280,33 @@ def test_prepared_query_error_keeps_connection(started_cluster):
     ch.close()
 
 
+def test_prepared_query_error_after_output_closes_connection(started_cluster):
+    node = cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        dbname="default",
+    )
+    cur = ch.cursor()
+
+    # When an extended-protocol `Execute` fails after some result bytes were
+    # already sent, the output stream may be cut in the middle of a protocol
+    # message, so the server must tear the connection down instead of
+    # returning to the `ReadyForQuery` state.
+    with pytest.raises(Exception):
+        cur.execute(
+            "SELECT throwIf(number = 100000) FROM numbers(1000000)", prepare=True
+        )
+
+    with pytest.raises(Exception):
+        cur.execute("SELECT 1", prepare=True)
+
+    ch.close()
+
+
 def test_psql_client_secure(started_cluster):
     node = cluster.instances["node_secure"]
 
@@ -663,4 +690,73 @@ def test_restricted_user_cannot_bypass_grants(started_cluster):
     )
     cur = ch.cursor()
     cur.execute("DROP USER IF EXISTS pg_restricted")
+    ch.close()
+
+
+def test_restricted_user_catalog_visibility(started_cluster):
+    """The pg_namespace / pg_class compatibility views must expose only the
+    metadata visible to the session user: a user granted a single table must
+    not be able to enumerate other databases or ungranted tables through
+    them."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("CREATE DATABASE IF NOT EXISTS pg_visible_db")
+    cur.execute("CREATE DATABASE IF NOT EXISTS pg_hidden_db")
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS pg_visible_db.t_granted (id Int32) ENGINE = Memory"
+    )
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS pg_visible_db.t_ungranted (id Int32) ENGINE = Memory"
+    )
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS pg_hidden_db.t_hidden (id Int32) ENGINE = Memory"
+    )
+    cur.execute(
+        "CREATE USER IF NOT EXISTS pg_narrow IDENTIFIED WITH plaintext_password BY 'narrow123'"
+    )
+    cur.execute("GRANT SELECT ON pg_visible_db.t_granted TO pg_narrow")
+    ch.close()
+
+    narrow = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="pg_narrow",
+        password="narrow123",
+        dbname="pg_visible_db",
+    )
+    cur = narrow.cursor()
+
+    # pg_namespace must list the granted database but not unrelated ones.
+    cur.execute("SELECT nspname FROM pg_namespace")
+    namespaces = {row[0] for row in cur.fetchall()}
+    assert "pg_visible_db" in namespaces
+    assert "pg_hidden_db" not in namespaces
+
+    # pg_class (behind psql's \d) must list only the granted table.
+    cur.execute("SELECT relname FROM pg_class WHERE relname != ''")
+    relations = {row[0] for row in cur.fetchall()}
+    assert "t_granted" in relations
+    assert "t_ungranted" not in relations
+    assert "t_hidden" not in relations
+
+    narrow.close()
+
+    # Clean up
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP USER IF EXISTS pg_narrow")
+    cur.execute("DROP DATABASE IF EXISTS pg_visible_db")
+    cur.execute("DROP DATABASE IF EXISTS pg_hidden_db")
     ch.close()
