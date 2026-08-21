@@ -6,7 +6,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
@@ -15,21 +14,25 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Storages/StatisticsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Common/Exception.h>
 
 using namespace DB;
 
@@ -276,19 +279,75 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
+ColumnStatisticsPtr buildStringStats(
+    const DataTypePtr & data_type,
+    size_t total,
+    size_t null_every = 0,
+    const String & value = "abcdef",
+    const std::vector<StatisticsType> & types = {StatisticsType::Basic})
+{
+    MutableColumnPtr col = data_type->createColumn();
+    if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()))
+    {
+        for (size_t i = 0; i < total; ++i)
+        {
+            if (null_every && i % null_every == 0)
+                nullable_col->insertDefault();
+            else
+                nullable_col->insert(value);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < total; ++i)
+            col->insert(value);
+    }
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(col));
+    return stats;
+}
+
+StorageMetadataPtr makeSingleColumnMetadata(const String & column_name, const DataTypePtr & data_type)
+{
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(ColumnsDescription{ColumnDescription(column_name, data_type)});
+    return metadata;
+}
+
 /// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
 template <class Estimator>
-Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+Float64 estimateRowsFor(Estimator & estimator, const StorageMetadataPtr & metadata, const String & expression)
 {
     ParserExpressionWithOptionalAlias exp_parser(false);
     ContextPtr context = getContext().context;
     RPNBuilderTreeContext tree_context(
-        context,
-        Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}},
-        {});
+        context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
     ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
     RPNBuilderTreeNode node(ast.get(), tree_context);
-    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+    return static_cast<Float64>(estimator->estimateRelationProfile(metadata, node).rows);
+}
+
+template <class Estimator>
+Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+{
+    return estimateRowsFor(estimator, nullptr, expression);
+}
+
+Float64 estimateRowsForDAG(
+    const ConditionSelectivityEstimatorPtr & estimator,
+    const StorageMetadataPtr & metadata,
+    const String & function_name,
+    const String & column_name,
+    const DataTypePtr & column_type,
+    const String & needle)
+{
+    ActionsDAG dag;
+    const auto & column_node = dag.addInput(column_name, column_type);
+    const auto & needle_node = dag.addColumn(DataTypeString().createColumnConst(0, needle), std::make_shared<DataTypeString>(), "needle");
+    auto resolver = FunctionFactory::instance().get(function_name, getContext().context);
+    const auto & function_node = dag.addFunction(resolver, {&column_node, &needle_node}, "predicate");
+    return static_cast<Float64>(estimator->estimateRelationProfile(metadata, &function_node).rows);
 }
 
 }
@@ -385,6 +444,38 @@ TEST(Statistics, NullableEstimatorWithBasic)
     check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
 }
 
+TEST(Statistics, NullableEstimatorFallbackPreservesNullDomain)
+{
+    tryRegisterFunctions();
+
+    auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+    auto metadata = makeSingleColumnMetadata("a", nullable_type);
+    auto tdigest_stats = buildNullableInt32Stats({StatisticsType::TDigest}, /*total=*/1000, /*null_every=*/5);
+    ASSERT_FALSE(tdigest_stats->hasNullCount());
+
+    auto check
+        = [&](const ConditionSelectivityEstimatorPtr & estimator, const String & expression, Float64 expected, Float64 eps = 1e-6)
+    {
+        EXPECT_NEAR(estimateRowsFor(estimator, metadata, expression), expected, eps) << "Expression: " << expression;
+    };
+
+    /// TDigest has no NULL count, so the default 1% NULL share must still survive range folding.
+    ConditionSelectivityEstimatorBuilder tdigest_builder(getContext().context);
+    tdigest_builder.addStatistics("a", tdigest_stats);
+    tdigest_builder.incrementRowCount(1000);
+    auto tdigest_estimator = tdigest_builder.getEstimator();
+    check(tdigest_estimator, "a > 0", 990.0);
+    check(tdigest_estimator, "NOT(a > 500 OR a IS NULL)", 390.0);
+
+    /// The no-statistics range fallback must preserve the same NULL domain from metadata.
+    ConditionSelectivityEstimatorBuilder fallback_builder(getContext().context);
+    fallback_builder.addStatistics("other", tdigest_stats);
+    fallback_builder.incrementRowCount(1000);
+    auto fallback_estimator = fallback_builder.getEstimator();
+    check(fallback_estimator, "NOT(a > 0)", 660.0, 1.0);
+    check(fallback_estimator, "NOT(a > 0 OR a IS NULL)", 660.0, 1.0);
+}
+
 TEST(Statistics, LikeSelectivity)
 {
     /// Build a simple estimator to test LIKE / NOT LIKE / ILIKE / NOT ILIKE
@@ -449,6 +540,216 @@ TEST(Statistics, LikeSelectivity)
     /// notILike function directly: 0.9 * 10000 = 9000 rows.
     UInt64 notilike_direct_rows = estimate("a not ilike '%pattern%'");
     EXPECT_EQ(notilike_direct_rows, 9000u);
+}
+
+TEST(Statistics, StringPredicateFunctionSelectivity)
+{
+    tryRegisterFunctions();
+
+    auto string_type = std::make_shared<DataTypeString>();
+    auto nullable_string_type = std::make_shared<DataTypeNullable>(string_type);
+    auto fixed_string_type = std::make_shared<DataTypeFixedString>(8);
+    auto short_fixed_string_type = std::make_shared<DataTypeFixedString>(2);
+    auto nullable_short_fixed_string_type = std::make_shared<DataTypeNullable>(short_fixed_string_type);
+
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(
+        ColumnsDescription{
+            ColumnDescription{"s", string_type},
+            ColumnDescription{"ns", nullable_string_type},
+            ColumnDescription{"fs", fixed_string_type},
+            ColumnDescription{"fs2", short_fixed_string_type},
+            ColumnDescription{"nfs2", nullable_short_fixed_string_type},
+        });
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("s", buildStringStats(string_type, 10000));
+    builder.addStatistics("ns", buildStringStats(nullable_string_type, 10000, /*null_every=*/4));
+    builder.addStatistics("fs", buildStringStats(fixed_string_type, 10000, /*null_every=*/0, "abcdefgh"));
+    builder.addStatistics("fs2", buildStringStats(short_fixed_string_type, 10000, /*null_every=*/0, "ab"));
+    builder.addStatistics("nfs2", buildStringStats(nullable_short_fixed_string_type, 10000, /*null_every=*/4, "ab"));
+    builder.incrementRowCount(10000);
+    auto estimator = builder.getEstimator();
+
+    auto check = [&](const String & expression, Float64 expected, Float64 eps = 1e-6)
+    {
+        Float64 actual = estimateRowsFor(estimator, metadata, expression);
+        EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
+    };
+
+    for (const String & function_name : Strings{
+             "startsWith",
+             "startsWithCaseInsensitive",
+             "startsWithUTF8",
+             "startsWithCaseInsensitiveUTF8",
+         })
+    {
+        check(function_name + "(s, 'abc')", 156.0);
+    }
+
+    for (const String & function_name : Strings{
+             "endsWith",
+             "endsWithCaseInsensitive",
+             "endsWithUTF8",
+             "endsWithCaseInsensitiveUTF8",
+         })
+    {
+        check(function_name + "(s, 'abc')", 428.0);
+    }
+
+    check("startsWith(s, '')", 10000.0);
+    check("endsWith(s, '')", 10000.0);
+    check("startsWithUTF8(s, '你')", 1000.0);
+    check("endsWithUTF8(s, '你')", 1000.0);
+    check("not(startsWith(s, 'abc'))", 9843.0);
+    check("not(startsWith(s, ''))", 0.0);
+
+    /// Same-column pattern predicates are correlated; prefix implication must not be folded as independence.
+    check("startsWith(s, 'ab') AND startsWith(s, 'abc')", 156.0);
+    check("startsWith(s, 'ab') OR startsWith(s, 'abc')", 625.0);
+    check("startsWith(s, 'ab') AND startsWith(s, 'ab')", 625.0);
+    check("endsWith(s, 'ab') AND endsWith(s, 'cab')", 428.0);
+    check("endsWith(s, 'ab') OR endsWith(s, 'cab')", 1000.0);
+
+    /// Nullable(String), 10000 rows, every 4th row NULL: 2500 NULLs and 7500 non-NULLs.
+    check("startsWith(ns, '')", 7500.0);
+    check("endsWith(ns, '')", 7500.0);
+    check("not(startsWith(ns, ''))", 0.0);
+    check("startsWith(ns, 'abc')", 117.0);
+    check("endsWithCaseInsensitive(ns, 'xyz')", 321.0);
+    check("not(startsWith(ns, 'abc'))", 7382.0);
+    check("startsWith(ns, 'ab') AND startsWith(ns, 'abc')", 117.0);
+    check("startsWith(ns, 'ab') OR startsWith(ns, 'abc')", 468.0);
+    check("(startsWith(ns, 'ab') OR ns IS NULL) AND startsWith(ns, 'abc')", 117.0);
+    check("(startsWith(ns, 'ab') AND ns IS NOT NULL) OR startsWith(ns, 'abc')", 468.0);
+    check("startsWith(ns, '') AND ns IS NULL", 0.0);
+    check("startsWith(ns, '') OR ns IS NULL", 10000.0);
+    check("startsWith(ns, 'abc') OR ns IS NULL", 2617.0);
+    check("startsWith(ns, 'abc') AND ns IS NOT NULL", 117.0);
+    check("(startsWith(ns, 'abc') OR ns IS NULL) AND ns IS NOT NULL", 117.0);
+    check("(startsWith(ns, 'abc') OR ns IS NULL) AND ns IS NULL", 2500.0);
+    check("startsWith(ns, '') OR ns IS NOT NULL", 7500.0);
+    check("not(startsWith(ns, '')) OR ns IS NULL", 2500.0);
+
+    /// Non-UTF8 variants support FixedString, while UTF8 variants require String and fall back safely.
+    check("startsWith(fs, 'abc')", 156.0);
+    check("endsWith(fs, 'xyz')", 428.0);
+    check("startsWith(fs2, 'abc')", 0.0);
+    check("endsWith(fs2, 'abc')", 0.0);
+    check("not(startsWith(fs2, 'abc'))", 10000.0);
+    check("startsWith(nfs2, 'abc')", 0.0);
+    check("not(startsWith(nfs2, 'abc'))", 7500.0);
+    check("startsWithUTF8(fs, 'abc')", 3300.0);
+
+    EXPECT_NEAR(estimateRowsForDAG(estimator, metadata, "startsWith", "s", string_type, "abc"), 156.0, 1e-6);
+}
+
+TEST(Statistics, LikePatternSelectivityWithMetadata)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypePtr string_type = std::make_shared<DataTypeString>();
+    DataTypePtr nullable_string_type = std::make_shared<DataTypeNullable>(string_type);
+    DataTypePtr fixed_string_type = std::make_shared<DataTypeFixedString>(5);
+
+    auto metadata = makeSingleColumnMetadata("a", string_type);
+    auto nullable_metadata = makeSingleColumnMetadata("a", nullable_string_type);
+    auto fixed_metadata = makeSingleColumnMetadata("a", fixed_string_type);
+
+    auto stats = buildStringStats(string_type, /*total=*/1000);
+    auto nullable_stats = buildStringStats(nullable_string_type, /*total=*/1000, /*null_every=*/5);
+    auto fixed_stats = buildStringStats(
+        fixed_string_type, /*total=*/1000, /*null_every=*/0, "abcde", {StatisticsType::Basic, StatisticsType::Uniq});
+    ASSERT_EQ(nullable_stats->getNonNullRowCount(), 800u);
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", stats);
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    ConditionSelectivityEstimatorBuilder nullable_builder(getContext().context);
+    nullable_builder.addStatistics("a", nullable_stats);
+    nullable_builder.incrementRowCount(1000);
+    auto nullable_estimator = nullable_builder.getEstimator();
+
+    ConditionSelectivityEstimatorBuilder fixed_builder(getContext().context);
+    fixed_builder.addStatistics("a", fixed_stats);
+    fixed_builder.incrementRowCount(1000);
+    auto fixed_estimator = fixed_builder.getEstimator();
+
+    auto estimate
+        = [&](const String & expression) -> UInt64 { return static_cast<UInt64>(estimateRowsFor(estimator, metadata, expression)); };
+    auto estimate_nullable = [&](const String & expression) -> UInt64
+    { return static_cast<UInt64>(estimateRowsFor(nullable_estimator, nullable_metadata, expression)); };
+    auto estimate_fixed = [&](const String & expression) -> UInt64
+    { return static_cast<UInt64>(estimateRowsFor(fixed_estimator, fixed_metadata, expression)); };
+
+    /// Exact case-sensitive LIKE is estimated as equality, not as the legacy 0.1 fallback.
+    EXPECT_EQ(estimate("a LIKE 'abc'"), 10u);
+    EXPECT_EQ(estimate("a NOT LIKE 'abc'"), 990u);
+    EXPECT_EQ(estimate("not(a LIKE 'abc')"), estimate("a NOT LIKE 'abc'"));
+
+    /// ILIKE exact patterns are not equality ranges, but use the same equality-like heuristic.
+    EXPECT_EQ(estimate("a ILIKE 'abc'"), 10u);
+    EXPECT_EQ(estimate("a NOT ILIKE 'abc'"), 990u);
+
+    /// Match-everything patterns are TRUE only on non-NULL strings and stay NULL on NULL inputs.
+    EXPECT_EQ(estimate("a LIKE '%'"), 1000u);
+    EXPECT_EQ(estimate("a LIKE '%%'"), 1000u);
+    EXPECT_EQ(estimate("a NOT LIKE '%'"), 0u);
+    EXPECT_EQ(estimate("not(a LIKE '%')"), 0u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%'"), 800u);
+    EXPECT_EQ(estimate_nullable("a NOT LIKE '%'"), 0u);
+    EXPECT_EQ(estimate_nullable("not(a LIKE '%')"), 0u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%' AND a IS NOT NULL"), 800u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%' OR a IS NULL"), 1000u);
+    EXPECT_EQ(estimate_nullable("a NOT LIKE '%' OR a IS NULL"), 200u);
+
+    /// Same-column grouping survives nesting: the OR sub-clause must not flatten into the outer AND.
+    EXPECT_EQ(estimate_nullable("(a LIKE '%' OR a LIKE 'x%') AND a IS NOT NULL"), 800u);
+    EXPECT_EQ(estimate_nullable("(a LIKE '%' OR a IS NULL) AND a IS NOT NULL"), 800u);
+
+    /// NULL patterns produce SQL NULL for every row; WHERE therefore has zero TRUE rows.
+    EXPECT_EQ(estimate("a LIKE NULL"), 0u);
+    EXPECT_EQ(estimate("a NOT LIKE NULL"), 0u);
+    EXPECT_EQ(estimate("not(a LIKE NULL)"), 0u);
+
+    /// Pattern shape drives the heuristic: prefix < suffix < contains < generic fallback.
+    EXPECT_EQ(estimate("a LIKE 'abc%'"), 15u);
+    EXPECT_EQ(estimate("a LIKE '%abc'"), 42u);
+    EXPECT_EQ(estimate("a LIKE '%abc%'"), 91u);
+
+    /// Same-column LIKE prefixes retain implication and idempotence instead of assuming independence.
+    EXPECT_EQ(estimate("a LIKE 'ab%' AND a LIKE 'abc%'"), 15u);
+    EXPECT_EQ(estimate("a LIKE 'ab%' OR a LIKE 'abc%'"), 62u);
+    EXPECT_EQ(estimate("a LIKE 'ab%' AND a LIKE 'ab%'"), 62u);
+    EXPECT_EQ(estimate_nullable("a LIKE 'ab%' AND a LIKE 'abc%'"), 12u);
+    EXPECT_EQ(estimate_nullable("a LIKE 'ab%' OR a LIKE 'abc%'"), 50u);
+
+    /// Complex patterns keep the old fixed fallback while retaining the column's NULL domain.
+    EXPECT_EQ(estimate("a LIKE '%a%b%'"), 100u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%a%b%'"), 80u);
+    EXPECT_EQ(estimate_nullable("a NOT LIKE '%a%b%'"), 720u);
+    EXPECT_EQ(estimate_nullable("a NOT ILIKE '%a%b%'"), 720u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%a%b%' AND a IS NULL"), 0u);
+    EXPECT_EQ(estimate_nullable("a NOT LIKE '%a%b%' AND a IS NULL"), 0u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%a%b%' OR a IS NULL"), 280u);
+
+    /// Escaped wildcards and supported custom ESCAPE syntax normalize to exact LIKE.
+    EXPECT_EQ(estimate(R"(a LIKE 'a\\%b')"), 10u);
+    EXPECT_EQ(estimate("like(a, 'a#%b', '#')"), 10u);
+
+    /// FixedString exact LIKE only uses equality when pattern byte length matches FixedString(N).
+    EXPECT_EQ(estimate_fixed("a LIKE 'abcde'"), 1000u);
+    EXPECT_EQ(estimate_fixed("a NOT LIKE 'abcde'"), 0u);
+    EXPECT_EQ(estimate_fixed("a LIKE 'abc'"), 0u);
+    EXPECT_EQ(estimate_fixed("a NOT LIKE 'abc'"), 1000u);
+    EXPECT_EQ(estimate_fixed("a ILIKE 'abc'"), 0u);
+    EXPECT_EQ(estimate_fixed("a NOT ILIKE 'abc'"), 1000u);
+
+    /// Prefix literals longer than FixedString(N) can never match.
+    EXPECT_EQ(estimate_fixed("a LIKE 'abcdef%'"), 0u);
+    EXPECT_EQ(estimate_fixed("a NOT LIKE 'abcdef%'"), 1000u);
 }
 
 /// STID 3524-3a4b (nullability) and STID 2404-35eb (value type): a statistics collector is declared

@@ -1,24 +1,29 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
-#include <stack>
+#include <algorithm>
 #include <cmath>
+#include <stack>
+#include <utility>
 
-#include <Common/logger_useful.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/misc.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Formats/ParseError.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/MergeTree/RPNBuilder.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/misc.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Formats/ParseError.h>
+#include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Common/UTF8Helpers.h>
+#include <Common/likePatternToRegexp.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -107,8 +112,230 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     return column->type->equals(*stats->getDataType());
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
+namespace
 {
+
+enum class StringPatternKind
+{
+    Unsupported,
+    /// Matches every non-NULL value, e.g. `LIKE '%'` or an empty startsWith/endsWith needle.
+    MatchEverything,
+    /// A LIKE pattern without unescaped wildcards, e.g. `LIKE 'abc'`.
+    Exact,
+    /// `startsWith(col, 'abc')` / `col LIKE 'abc%'`.
+    Prefix,
+    /// `endsWith(col, 'abc')` / `col LIKE '%abc'`.
+    Suffix,
+    /// `col LIKE '%abc%'`.
+    Contains,
+};
+
+struct StringPredicateTraits
+{
+    StringPatternKind kind;
+    bool is_utf8;
+    bool case_insensitive;
+};
+
+bool getStringPredicateTraits(const String & function_name, StringPredicateTraits & traits)
+{
+    if (function_name == "startsWith")
+        traits = {StringPatternKind::Prefix, false, false};
+    else if (function_name == "startsWithCaseInsensitive")
+        traits = {StringPatternKind::Prefix, false, true};
+    else if (function_name == "startsWithUTF8")
+        traits = {StringPatternKind::Prefix, true, false};
+    else if (function_name == "startsWithCaseInsensitiveUTF8")
+        traits = {StringPatternKind::Prefix, true, true};
+    else if (function_name == "endsWith")
+        traits = {StringPatternKind::Suffix, false, false};
+    else if (function_name == "endsWithCaseInsensitive")
+        traits = {StringPatternKind::Suffix, false, true};
+    else if (function_name == "endsWithUTF8")
+        traits = {StringPatternKind::Suffix, true, false};
+    else if (function_name == "endsWithCaseInsensitiveUTF8")
+        traits = {StringPatternKind::Suffix, true, true};
+    else
+        return false;
+
+    return true;
+}
+
+bool isSupportedStringPredicateType(const DataTypePtr & type, bool is_utf8)
+{
+    DataTypePtr nested_type = removeLowCardinalityAndNullable(type);
+    const WhichDataType which(nested_type);
+    return is_utf8 ? which.isString() : which.isStringOrFixedString();
+}
+
+Float64 clampSelectivity(Float64 value)
+{
+    if (!std::isfinite(value))
+        return 0.0;
+    return std::max(0.0, std::min(1.0, value));
+}
+
+Float64 estimateStringPatternFactor(StringPatternKind kind, size_t literal_size, Float64 fallback)
+{
+    /// Pattern-shape heuristics shared by startsWith/endsWith and the equivalent LIKE patterns:
+    /// a longer literal is more selective, and a prefix constrains more than a suffix, which
+    /// constrains more than a substring. Capped by the generic LIKE fallback so a pattern-shape
+    /// estimate never looks less selective than an opaque LIKE.
+    Float64 base = 0.45; /// StringPatternKind::Contains
+    if (kind == StringPatternKind::Prefix)
+        base = 0.25;
+    else if (kind == StringPatternKind::Suffix)
+        base = 0.35;
+    return std::min(fallback, std::pow(base, static_cast<Float64>(std::min<size_t>(literal_size, 4))));
+}
+
+struct LikePatternClassification
+{
+    StringPatternKind kind = StringPatternKind::Unsupported;
+    String literal;
+};
+
+/// Classify a LIKE pattern by shape and extract its single literal, mirroring the escape
+/// semantics of likePatternToRegexp(): only `\%`, `\_` and `\\` are escape sequences; for an
+/// unknown escape sequence the backslash is a literal character. Patterns with `_`, with more
+/// than one literal segment, or with a trailing backslash are Unsupported.
+LikePatternClassification classifyLikePattern(std::string_view pattern)
+{
+    String current_literal;
+    current_literal.reserve(pattern.size());
+    std::vector<String> literal_segments;
+
+    bool starts_with_percent = false;
+    bool ends_with_percent = false;
+    bool in_percent_run = false;
+    bool saw_anything = false;
+    size_t percent_runs = 0;
+
+    auto finish_literal_segment = [&]()
+    {
+        if (!current_literal.empty())
+        {
+            literal_segments.push_back(current_literal);
+            current_literal.clear();
+        }
+    };
+
+    const char * pos = pattern.data();
+    const char * const end = pattern.data() + pattern.size();
+    while (pos < end)
+    {
+        switch (*pos)
+        {
+            case '%': {
+                if (!in_percent_run)
+                {
+                    ++percent_runs;
+                    if (!saw_anything)
+                        starts_with_percent = true;
+                    finish_literal_segment();
+                    in_percent_run = true;
+                }
+                ends_with_percent = true;
+                saw_anything = true;
+                ++pos;
+                break;
+            }
+            case '_': return {};
+            case '\\': {
+                in_percent_run = false;
+                ends_with_percent = false;
+                saw_anything = true;
+                ++pos;
+                if (pos == end)
+                    return {};
+
+                /// Match likePatternToRegexp(): only %, _ and \ are special escape sequences.
+                /// For an unknown escape sequence the backslash is literal and the following
+                /// character is processed normally on the next iteration.
+                if (*pos == '%' || *pos == '_' || *pos == '\\')
+                {
+                    current_literal += *pos;
+                    ++pos;
+                }
+                else
+                {
+                    current_literal += '\\';
+                }
+                break;
+            }
+            default: {
+                in_percent_run = false;
+                ends_with_percent = false;
+                saw_anything = true;
+                current_literal += *pos;
+                ++pos;
+                break;
+            }
+        }
+    }
+    finish_literal_segment();
+
+    if (percent_runs == 0)
+        return {StringPatternKind::Exact, literal_segments.empty() ? String{} : literal_segments.front()};
+
+    if (literal_segments.empty())
+        return {StringPatternKind::MatchEverything, {}};
+
+    if (literal_segments.size() != 1)
+        return {};
+
+    if (!starts_with_percent && ends_with_percent && percent_runs == 1)
+        return {StringPatternKind::Prefix, literal_segments.front()};
+
+    if (starts_with_percent && !ends_with_percent && percent_runs == 1)
+        return {StringPatternKind::Suffix, literal_segments.front()};
+
+    if (starts_with_percent && ends_with_percent && percent_runs == 2)
+        return {StringPatternKind::Contains, literal_segments.front()};
+
+    return {};
+}
+
+}
+
+RelationProfile
+ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
+{
+    auto get_single_referenced_column = [](const RPNElement & element) -> std::pair<bool, String>
+    {
+        bool has_column = false;
+        String result;
+
+        auto add_column = [&](const String & column_name)
+        {
+            if (!has_column)
+            {
+                result = column_name;
+                has_column = true;
+                return true;
+            }
+            return result == column_name;
+        };
+
+        for (const auto & [column_name, _] : element.column_ranges)
+            if (!add_column(column_name))
+                return {false, {}};
+        for (const auto & [column_name, _] : element.column_selectivities)
+            if (!add_column(column_name))
+                return {false, {}};
+        for (const auto & [column_name, _] : element.column_not_ranges)
+            if (!add_column(column_name))
+                return {false, {}};
+        for (const auto & column_name : element.null_check_columns)
+            if (!add_column(column_name))
+                return {false, {}};
+        for (const auto & column_name : element.not_null_check_columns)
+            if (!add_column(column_name))
+                return {false, {}};
+
+        return {has_column, result};
+    };
+
     /// walk through the tree and calculate selectivity for every rpn node.
     std::stack<RPNElement *> rpn_stack;
     for (auto & element : rpn)
@@ -140,8 +367,18 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                 {
                     left_element->finalize(column_estimators, metadata);
                     right_element->finalize(column_estimators, metadata);
+                    auto [left_has_single_column, left_column] = get_single_referenced_column(*left_element);
+                    auto [right_has_single_column, right_column] = get_single_referenced_column(*right_element);
+                    if (left_has_single_column && right_has_single_column && left_column == right_column)
+                    {
+                        if (element.function == RPNElement::FUNCTION_AND)
+                            element.selectivity = left_element->selectivity.applyAndSameColumn(right_element->selectivity);
+                        else
+                            element.selectivity = left_element->selectivity.applyOrSameColumn(right_element->selectivity);
+                        element.column_selectivities.emplace(left_column, element.selectivity);
+                    }
                     /// P(c1 and c2) = P(c1) * P(c2)
-                    if (element.function == RPNElement::FUNCTION_AND)
+                    else if (element.function == RPNElement::FUNCTION_AND)
                         element.selectivity = left_element->selectivity.applyAnd(right_element->selectivity);
                     /// P(c1 or c2) = 1 - (1 - P(c1)) * (1 - P(c2))
                     else
@@ -159,6 +396,8 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                 else
                 {
                     std::swap(last_element->column_ranges, last_element->column_not_ranges);
+                    for (auto & [_, column_selectivity] : last_element->column_selectivities)
+                        column_selectivity = column_selectivity.applyNot();
                     std::swap(last_element->null_check_columns, last_element->not_null_check_columns);
                     switch (last_element->function)
                     {
@@ -242,7 +481,209 @@ bool ConditionSelectivityEstimator::isStale(const RangesInDataParts & parts) con
     return false;
 }
 
-bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
+Float64 ConditionSelectivityEstimator::estimateColumnNullShare(
+    const StorageMetadataPtr & metadata, const DataTypePtr & column_type, const String & column_name) const
+{
+    if (!isNullableOrLowCardinalityNullable(column_type))
+        return 0.0;
+
+    auto it = column_estimators.find(column_name);
+    if (it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name))
+        return clampSelectivity(it->second.stats->estimateIsNull());
+
+    return default_cond_equal_factor;
+}
+
+bool ConditionSelectivityEstimator::tryExtractStringPredicateAtom(
+    const StorageMetadataPtr & metadata, const RPNBuilderFunctionTreeNode & func, RPNElement & out) const
+{
+    StringPredicateTraits traits{StringPatternKind::Prefix, false, false};
+    if (!getStringPredicateTraits(func.getFunctionName(), traits))
+        return false;
+
+    if (!metadata || func.getArgumentsSize() != 2)
+        return false;
+
+    const auto column_arg = func.getArgumentAt(0);
+    const String column_name = column_arg.getColumnName();
+    const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+    if (!column_desc || !isSupportedStringPredicateType(column_desc->type, traits.is_utf8))
+        return false;
+
+    Field needle_value;
+    DataTypePtr needle_type;
+    const auto needle_arg = func.getArgumentAt(1);
+    if (!needle_arg.tryGetConstant(needle_value, needle_type) || needle_value.getType() != Field::Types::String)
+        return false;
+
+    /// DAG constants carry their real type, so reject array/numeric overloads and keep UTF8
+    /// support aligned with FunctionStartsEndsWith: UTF8 variants accept String, not FixedString.
+    /// For legacy AST tests the constant type can be the synthetic `_dummy` type, so the Field
+    /// type check above is the reliable literal check there.
+    if (!needle_arg.getASTNode() && needle_type && !isSupportedStringPredicateType(needle_type, traits.is_utf8))
+        return false;
+
+    const Float64 null_sel = estimateColumnNullShare(metadata, column_desc->type, column_name);
+    const Float64 non_null_sel = std::max(0.0, 1.0 - null_sel);
+
+    const String & needle = needle_value.safeGet<String>();
+    if (!traits.is_utf8)
+    {
+        DataTypePtr nested_column_type = removeLowCardinalityAndNullable(column_desc->type);
+        if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(nested_column_type.get());
+            fixed_string_type && needle.size() > fixed_string_type->getN())
+        {
+            out.function = RPNElement::FUNCTION_IN_RANGE;
+            out.column_selectivities.emplace(column_name, Selectivity{0.0, null_sel});
+            return true;
+        }
+    }
+
+    Float64 true_sel = non_null_sel;
+    if (!needle.empty())
+    {
+        size_t literal_size = needle.size();
+        if (traits.is_utf8)
+            literal_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(needle.data()), needle.size());
+
+        true_sel = non_null_sel * estimateStringPatternFactor(traits.kind, literal_size, default_like_factor);
+        /// Case-insensitive matching may be slightly less selective, but the estimator has no
+        /// case distribution statistics yet, so use the same heuristic as case-sensitive LIKE.
+        (void)traits.case_insensitive;
+    }
+
+    out.function = RPNElement::FUNCTION_IN_RANGE;
+    out.column_selectivities.emplace(column_name, Selectivity{std::min(non_null_sel, clampSelectivity(true_sel)), null_sel});
+    return true;
+}
+
+bool ConditionSelectivityEstimator::tryExtractLikePredicateAtom(
+    const StorageMetadataPtr & metadata, const RPNBuilderFunctionTreeNode & func, RPNElement & out) const
+{
+    const String func_name = func.getFunctionName();
+    if (func_name != "like" && func_name != "ilike" && func_name != "notLike" && func_name != "notILike")
+        return false;
+
+    const bool negated = func_name == "notLike" || func_name == "notILike";
+    const bool case_insensitive = func_name == "ilike" || func_name == "notILike";
+
+    /// The optional third argument is a custom ESCAPE character.
+    const size_t num_args = func.getArgumentsSize();
+    if (!metadata || (num_args != 2 && num_args != 3))
+        return false;
+
+    const String column_name = func.getArgumentAt(0).getColumnName();
+    const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+    if (!column_desc)
+        return false;
+
+    DataTypePtr nested_column_type = removeLowCardinalityAndNullable(column_desc->type);
+    if (!isStringOrFixedString(nested_column_type))
+        return false;
+    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(nested_column_type.get());
+
+    Field pattern_value;
+    DataTypePtr pattern_type;
+    if (!func.getArgumentAt(1).tryGetConstant(pattern_value, pattern_type))
+        return false;
+
+    if (pattern_value.isNull())
+    {
+        /// `x LIKE NULL` and `x NOT LIKE NULL` evaluate to SQL NULL for every row, so WHERE
+        /// sees zero TRUE rows. Keep the NULL state finalized so an outer NOT preserves it.
+        out.selectivity = Selectivity{0.0, 1.0};
+        out.finalized = true;
+        return true;
+    }
+
+    if (pattern_value.getType() != Field::Types::String)
+        return false;
+
+    String pattern = pattern_value.safeGet<String>();
+    if (num_args == 3)
+    {
+        /// Normalize `LIKE pattern ESCAPE 'c'` into a backslash-escaped pattern. The escape
+        /// argument restrictions (a single ASCII character) mirror FunctionsStringSearch.
+        Field escape_value;
+        DataTypePtr escape_type;
+        if (!func.getArgumentAt(2).tryGetConstant(escape_value, escape_type))
+            return false;
+        if (escape_value.isNull() || escape_value.getType() != Field::Types::String)
+            return false;
+
+        const String & escape_string = escape_value.safeGet<String>();
+        if (escape_string.size() != 1 || static_cast<unsigned char>(escape_string[0]) > 0x7F)
+            return false;
+
+        try
+        {
+            pattern = likePatternWithCustomEscapeToLikePattern(pattern, escape_string[0]);
+        }
+        catch (const Exception &)
+        {
+            /// An invalid escape sequence throws at execution time as well; no estimate needed.
+            return false;
+        }
+    }
+
+    const LikePatternClassification classification = classifyLikePattern(pattern);
+    if (classification.kind == StringPatternKind::Unsupported)
+    {
+        /// Keep the legacy fixed fallback for complex patterns, but retain the column's NULL domain
+        /// so same-column combinations with IS NULL / IS NOT NULL use three-valued logic.
+        const Float64 null_sel = estimateColumnNullShare(metadata, column_desc->type, column_name);
+        const Float64 non_null_sel = std::max(0.0, 1.0 - null_sel);
+        Selectivity selectivity{non_null_sel * default_like_factor, null_sel};
+        if (negated)
+            selectivity = selectivity.applyNot();
+
+        out.function = RPNElement::FUNCTION_IN_RANGE;
+        out.column_selectivities.emplace(column_name, selectivity);
+        return true;
+    }
+
+    /// Case-sensitive LIKE without wildcards is plain equality, so reuse the range machinery and
+    /// per-column statistics. Exact LIKE on FixedString(N) matches all N bytes, so it is equality
+    /// only when the literal is exactly N bytes long (unlike `=`, which ignores the trailing NUL
+    /// padding of a shorter String literal).
+    if (classification.kind == StringPatternKind::Exact && !case_insensitive
+        && (!fixed_string_type || classification.literal.size() == fixed_string_type->getN()))
+    {
+        atom_map.at(negated ? "notEquals" : "equals")(out, column_name, Field(classification.literal));
+        return true;
+    }
+
+    const Float64 null_sel = estimateColumnNullShare(metadata, column_desc->type, column_name);
+    const Float64 non_null_sel = std::max(0.0, 1.0 - null_sel);
+
+    /// LIKE matches the full N bytes of a FixedString(N), so an exact literal of a different
+    /// length and a prefix/suffix/substring literal longer than N can never match.
+    const bool literal_fits_column = !fixed_string_type
+        || (classification.kind == StringPatternKind::Exact ? classification.literal.size() == fixed_string_type->getN()
+                                                            : classification.literal.size() <= fixed_string_type->getN());
+
+    Float64 true_sel = 0.0;
+    if (!literal_fits_column)
+        true_sel = 0.0;
+    else if (classification.kind == StringPatternKind::MatchEverything)
+        true_sel = non_null_sel;
+    else if (classification.kind == StringPatternKind::Exact)
+        /// ILIKE without wildcards: equality up to character case.
+        true_sel = non_null_sel * default_cond_equal_factor;
+    else
+        true_sel = non_null_sel * estimateStringPatternFactor(classification.kind, classification.literal.size(), default_like_factor);
+
+    Selectivity selectivity{std::min(non_null_sel, clampSelectivity(true_sel)), null_sel};
+    if (negated)
+        selectivity = selectivity.applyNot();
+
+    out.function = RPNElement::FUNCTION_IN_RANGE;
+    out.column_selectivities.emplace(column_name, selectivity);
+    return true;
+}
+
+bool ConditionSelectivityEstimator::extractAtomFromTree(
+    const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
     if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
@@ -263,10 +704,16 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         size_t num_args = func.getArgumentsSize();
 
         String func_name = func.getFunctionName();
+        if (tryExtractStringPredicateAtom(metadata, func, out))
+            return true;
+
+        if (tryExtractLikePredicateAtom(metadata, func, out))
+            return true;
+
         auto atom_it = atom_map.find(func_name);
         if (atom_it == atom_map.end())
         {
-            /// LIKE/ILIKE cannot be represented as a range. Pre-set selectivity
+            /// LIKE/ILIKE cannot always be represented as a range. Pre-set selectivity
             /// so the estimator uses a tighter default than `default_unknown_cond_factor`.
             if (func_name == "like" || func_name == "ilike")
                 out.selectivity.true_sel = default_like_factor;
@@ -534,9 +981,62 @@ ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstima
     return has_data ? estimator : nullptr;
 }
 
+namespace
+{
+
+enum class NullTruthValue
+{
+    False,
+    Null,
+    True,
+};
+
+NullTruthValue applyAndToNullTruthValue(NullTruthValue left, NullTruthValue right)
+{
+    if (left == NullTruthValue::False || right == NullTruthValue::False)
+        return NullTruthValue::False;
+    if (left == NullTruthValue::Null || right == NullTruthValue::Null)
+        return NullTruthValue::Null;
+    return NullTruthValue::True;
+}
+
+NullTruthValue applyOrToNullTruthValue(NullTruthValue left, NullTruthValue right)
+{
+    if (left == NullTruthValue::True || right == NullTruthValue::True)
+        return NullTruthValue::True;
+    if (left == NullTruthValue::Null || right == NullTruthValue::Null)
+        return NullTruthValue::Null;
+    return NullTruthValue::False;
+}
+
+}
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::isNull(Float64 input_null_sel_)
+{
+    input_null_sel_ = clampSelectivity(input_null_sel_);
+    return {input_null_sel_, 0.0, input_null_sel_, input_null_sel_, 0.0};
+}
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::isNotNull(Float64 input_null_sel_)
+{
+    input_null_sel_ = clampSelectivity(input_null_sel_);
+    return {1.0 - input_null_sel_, 0.0, input_null_sel_, 0.0, 0.0};
+}
+
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const
 {
-    return {1.0 - true_sel - null_sel, null_sel};
+    const Float64 input_null = clampSelectivity(input_null_sel);
+    const Float64 true_on_null = std::min(input_null, clampSelectivity(true_on_null_sel));
+    const Float64 null_on_null = std::min(input_null - true_on_null, clampSelectivity(null_on_null_sel));
+    const Float64 false_on_null = std::max(0.0, input_null - true_on_null - null_on_null);
+
+    return {
+        clampSelectivity(1.0 - true_sel - null_sel),
+        clampSelectivity(null_sel),
+        input_null,
+        false_on_null,
+        null_on_null,
+    };
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyOr(const Selectivity & other) const
@@ -546,16 +1046,134 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Select
     /// case3: TRUE or (...) = TRUE
     /// case4: FALSE/NULL or TRUE = TRUE
     return {
-        true_sel + (1 - true_sel) * other.true_sel,
-        null_sel * (1 - other.true_sel) + (1 - null_sel - true_sel) * other.null_sel,
+        clampSelectivity(true_sel + (1 - true_sel) * other.true_sel),
+        clampSelectivity(null_sel * (1 - other.true_sel) + (1 - null_sel - true_sel) * other.null_sel),
+        0.0,
+        0.0,
+        0.0,
     };
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyAnd(const Selectivity & other) const
 {
     return {
-        true_sel * other.true_sel,
-        null_sel * (other.true_sel + other.null_sel) + true_sel * other.null_sel,
+        clampSelectivity(true_sel * other.true_sel),
+        clampSelectivity(null_sel * (other.true_sel + other.null_sel) + true_sel * other.null_sel),
+        0.0,
+        0.0,
+        0.0,
+    };
+}
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyOrSameColumn(const Selectivity & other) const
+{
+    const Float64 input_null = clampSelectivity(std::max(input_null_sel, other.input_null_sel));
+    const Float64 non_null = std::max(0.0, 1.0 - input_null);
+
+    auto null_truth_value = [input_null](const Selectivity & selectivity)
+    {
+        if (input_null == 0.0)
+            return NullTruthValue::False;
+
+        const Float64 true_on_null = std::min(input_null, clampSelectivity(selectivity.true_on_null_sel));
+        const Float64 null_on_null = std::min(input_null - true_on_null, clampSelectivity(selectivity.null_on_null_sel));
+        constexpr Float64 eps = 1e-12;
+        if (true_on_null >= input_null - eps)
+            return NullTruthValue::True;
+        if (null_on_null >= input_null - eps)
+            return NullTruthValue::Null;
+        return NullTruthValue::False;
+    };
+
+    const Float64 left_true_non_null = std::max(0.0, clampSelectivity(true_sel) - std::min(input_null, clampSelectivity(true_on_null_sel)));
+    const Float64 right_true_non_null
+        = std::max(0.0, clampSelectivity(other.true_sel) - std::min(input_null, clampSelectivity(other.true_on_null_sel)));
+    const Float64 left_null_non_null = std::max(0.0, clampSelectivity(null_sel) - std::min(input_null, clampSelectivity(null_on_null_sel)));
+    const Float64 right_null_non_null
+        = std::max(0.0, clampSelectivity(other.null_sel) - std::min(input_null, clampSelectivity(other.null_on_null_sel)));
+
+    const Float64 left_true_rate = non_null == 0.0 ? 0.0 : clampSelectivity(left_true_non_null / non_null);
+    const Float64 right_true_rate = non_null == 0.0 ? 0.0 : clampSelectivity(right_true_non_null / non_null);
+    const Float64 left_null_rate = non_null == 0.0 ? 0.0 : clampSelectivity(left_null_non_null / non_null);
+    const Float64 right_null_rate = non_null == 0.0 ? 0.0 : clampSelectivity(right_null_non_null / non_null);
+
+    /// Same-polarity predicates on one column are correlated. Until the carrier records enough
+    /// structure to prove overlap or disjointness, use the fully-correlated bound. This is exact
+    /// for implication cases such as startsWith(s, 'ab') OR startsWith(s, 'abc'). Keep the previous
+    /// independence fallback for mixed-polarity predicates, which may be complements.
+    const bool same_polarity = (left_true_rate <= 0.5 && right_true_rate <= 0.5)
+        || (left_true_rate >= 0.5 && right_true_rate >= 0.5);
+    const Float64 true_non_null_rate = same_polarity
+        ? std::max(left_true_rate, right_true_rate)
+        : left_true_rate + (1.0 - left_true_rate) * right_true_rate;
+    const Float64 null_non_null_rate = left_null_rate * (1.0 - right_true_rate) + (1.0 - left_null_rate - left_true_rate) * right_null_rate;
+
+    const NullTruthValue result_on_null = applyOrToNullTruthValue(null_truth_value(*this), null_truth_value(other));
+    const Float64 true_on_null = result_on_null == NullTruthValue::True ? input_null : 0.0;
+    const Float64 null_on_null = result_on_null == NullTruthValue::Null ? input_null : 0.0;
+
+    return {
+        clampSelectivity(non_null * true_non_null_rate + true_on_null),
+        clampSelectivity(non_null * null_non_null_rate + null_on_null),
+        input_null,
+        true_on_null,
+        null_on_null,
+    };
+}
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyAndSameColumn(const Selectivity & other) const
+{
+    const Float64 input_null = clampSelectivity(std::max(input_null_sel, other.input_null_sel));
+    const Float64 non_null = std::max(0.0, 1.0 - input_null);
+
+    auto null_truth_value = [input_null](const Selectivity & selectivity)
+    {
+        if (input_null == 0.0)
+            return NullTruthValue::False;
+
+        const Float64 true_on_null = std::min(input_null, clampSelectivity(selectivity.true_on_null_sel));
+        const Float64 null_on_null = std::min(input_null - true_on_null, clampSelectivity(selectivity.null_on_null_sel));
+        constexpr Float64 eps = 1e-12;
+        if (true_on_null >= input_null - eps)
+            return NullTruthValue::True;
+        if (null_on_null >= input_null - eps)
+            return NullTruthValue::Null;
+        return NullTruthValue::False;
+    };
+
+    const Float64 left_true_non_null = std::max(0.0, clampSelectivity(true_sel) - std::min(input_null, clampSelectivity(true_on_null_sel)));
+    const Float64 right_true_non_null
+        = std::max(0.0, clampSelectivity(other.true_sel) - std::min(input_null, clampSelectivity(other.true_on_null_sel)));
+    const Float64 left_null_non_null = std::max(0.0, clampSelectivity(null_sel) - std::min(input_null, clampSelectivity(null_on_null_sel)));
+    const Float64 right_null_non_null
+        = std::max(0.0, clampSelectivity(other.null_sel) - std::min(input_null, clampSelectivity(other.null_on_null_sel)));
+
+    const Float64 left_true_rate = non_null == 0.0 ? 0.0 : clampSelectivity(left_true_non_null / non_null);
+    const Float64 right_true_rate = non_null == 0.0 ? 0.0 : clampSelectivity(right_true_non_null / non_null);
+    const Float64 left_null_rate = non_null == 0.0 ? 0.0 : clampSelectivity(left_null_non_null / non_null);
+    const Float64 right_null_rate = non_null == 0.0 ? 0.0 : clampSelectivity(right_null_non_null / non_null);
+
+    /// Same-polarity predicates on one column are correlated. Until the carrier records enough
+    /// structure to prove overlap or disjointness, use the fully-correlated bound. This is exact
+    /// for implication cases such as startsWith(s, 'ab') AND startsWith(s, 'abc'). Keep the previous
+    /// independence fallback for mixed-polarity predicates, which may be complements.
+    const bool same_polarity = (left_true_rate <= 0.5 && right_true_rate <= 0.5)
+        || (left_true_rate >= 0.5 && right_true_rate >= 0.5);
+    const Float64 true_non_null_rate = same_polarity
+        ? std::min(left_true_rate, right_true_rate)
+        : left_true_rate * right_true_rate;
+    const Float64 null_non_null_rate = left_null_rate * (right_true_rate + right_null_rate) + left_true_rate * right_null_rate;
+
+    const NullTruthValue result_on_null = applyAndToNullTruthValue(null_truth_value(*this), null_truth_value(other));
+    const Float64 true_on_null = result_on_null == NullTruthValue::True ? input_null : 0.0;
+    const Float64 null_on_null = result_on_null == NullTruthValue::Null ? input_null : 0.0;
+
+    return {
+        clampSelectivity(non_null * true_non_null_rate + true_on_null),
+        clampSelectivity(non_null * null_non_null_rate + null_on_null),
+        input_null,
+        true_on_null,
+        null_on_null,
     };
 }
 
@@ -580,7 +1198,9 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
     /// disjoint ranges (e.g. IN with many values) on a column with a large NULL share can
     /// produce `true_sel = 1, null_sel = 0.9`, leaving `false_sel = 1 - true_sel - null_sel`
     /// negative — which then breaks `applyAnd` / `applyOr` / `applyNot`.
-    Float64 null_sel = static_cast<Float64>(stats->getNullCount()) / rows;
+    Float64 null_sel = 0.0;
+    if (isNullableOrLowCardinalityNullable(stats->getDataType()))
+        null_sel = clampSelectivity(stats->estimateIsNull());
     Float64 non_null_share = std::max(0.0, 1.0 - null_sel);
     return {std::max(0.0, std::min(non_null_share, selectivity)), null_sel};
 }
@@ -694,10 +1314,14 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 || e.function == FUNCTION_IS_NOT_NULL
                 /// if the sub-clause is also cnf/dnf, it's good to merge
                 || e.function == function_to_merge
-                /// if the sub-clause is different, but has only one column, it also works, e.g
-                /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10)
+                /// if the sub-clause is different, but has only one per-column carrier, it also works, e.g
+                /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10).
+                /// Count every carrier map: an element with e.g. one selectivity entry and one null-check
+                /// for the same column preserves grouping that is unsafe to flatten through the opposite
+                /// operator.
                 || (e.column_ranges.size() + e.column_not_ranges.size()
-                    + e.null_check_columns.size() + e.not_null_check_columns.size()) == 1
+                    + e.null_check_columns.size() + e.not_null_check_columns.size()
+                    + e.column_selectivities.size()) == 1
                 || e.function == FUNCTION_UNKNOWN)
                 && !e.finalized;
     };
@@ -724,9 +1348,28 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 result_ranges.emplace(column_name, ranges);
         }
     };
+
+    auto combine_same_column_selectivities = [this](const Selectivity & left, const Selectivity & right)
+    { return function == FUNCTION_OR ? left.applyOrSameColumn(right) : left.applyAndSameColumn(right); };
+
+    auto merge_column_selectivities = [&](ColumnSelectivities & result, ColumnSelectivities & left, ColumnSelectivities & right)
+    {
+        for (const auto & [column_name, column_selectivity] : left)
+            result.emplace(column_name, column_selectivity);
+
+        for (const auto & [column_name, column_selectivity] : right)
+        {
+            auto it = result.find(column_name);
+            if (it == result.end())
+                result.emplace(column_name, column_selectivity);
+            else
+                it->second = combine_same_column_selectivities(it->second, column_selectivity);
+        }
+    };
     if (can_merge_with(lhs, function) && can_merge_with(rhs, function))
     {
         merge_column_ranges(column_ranges, lhs.column_ranges, rhs.column_ranges, false);
+        merge_column_selectivities(column_selectivities, lhs.column_selectivities, rhs.column_selectivities);
         merge_column_ranges(column_not_ranges, lhs.column_not_ranges, rhs.column_not_ranges, true);
         null_check_columns.insert(lhs.null_check_columns.begin(), lhs.null_check_columns.end());
         null_check_columns.insert(rhs.null_check_columns.begin(), rhs.null_check_columns.end());
@@ -763,20 +1406,29 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         return;
     }
 
-    auto estimate_unknown_ranges = [&](const PlainRanges & ranges) -> Selectivity
+    auto estimate_unknown_ranges = [&](const String & column_name, const PlainRanges & ranges) -> Selectivity
     {
+        Float64 null_sel = 0.0;
+        if (metadata)
+        {
+            if (const auto * column = metadata->getColumns().tryGet(column_name);
+                column && isNullableOrLowCardinalityNullable(column->type))
+                null_sel = default_cond_equal_factor;
+        }
+        const Float64 non_null_sel = std::max(0.0, 1.0 - null_sel);
+
         Float64 equal_selectivity = 0;
         for (const Range & range : ranges.ranges)
         {
             if (range.isInfinite())
-                return Selectivity{1.0, 0.0};
+                return Selectivity{non_null_sel, null_sel};
 
             if (range.left == range.right)
                 equal_selectivity += default_cond_equal_factor;
             else
-                return Selectivity{default_cond_range_factor, 0};
+                return Selectivity{std::min(default_cond_range_factor, non_null_sel), null_sel};
         }
-        return Selectivity{std::min(equal_selectivity, 1.0), 0};
+        return Selectivity{std::min(equal_selectivity, non_null_sel), null_sel};
     };
 
     auto get_estimator = [&](const String & column_name) -> const ColumnEstimator *
@@ -789,14 +1441,30 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     /// Per-column accumulator. The map enforces independence across columns: each column
     /// contributes a single `Selectivity` to the final AND/OR product, with intra-column
-    /// merging (e.g. `col > 0 AND col IS NOT NULL`) folded in via `applyAnd`/`applyOr`.
+    /// merging (e.g. `col > 0 AND col IS NOT NULL`) folded in below.
     std::unordered_map<String, Selectivity> estimate_results;
+
+    auto combine_same_column_estimates = [this](const Selectivity & left, const Selectivity & right)
+    {
+        if (function == FUNCTION_OR || function == FUNCTION_IN_RANGE)
+            return left.applyOrSameColumn(right);
+        return left.applyAndSameColumn(right);
+    };
+
+    auto add_column_selectivity = [&](const String & column_name, const Selectivity & value)
+    {
+        auto it = estimate_results.find(column_name);
+        if (it == estimate_results.end())
+            estimate_results.emplace(column_name, value);
+        else
+            it->second = combine_same_column_estimates(it->second, value);
+    };
     for (const auto & [column_name, ranges] : column_ranges)
     {
         if (const auto * est = get_estimator(column_name))
-            estimate_results.emplace(column_name, est->estimateRanges(ranges));
+            add_column_selectivity(column_name, est->estimateRanges(ranges));
         else
-            estimate_results.emplace(column_name, estimate_unknown_ranges(ranges));
+            add_column_selectivity(column_name, estimate_unknown_ranges(column_name, ranges));
     }
 
     for (const auto & [column_name, ranges] : column_not_ranges)
@@ -805,111 +1473,49 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         if (const auto * est = get_estimator(column_name))
             not_ranges_selectivity = est->estimateRanges(ranges).applyNot();
         else
-            not_ranges_selectivity = estimate_unknown_ranges(ranges).applyNot();
+            not_ranges_selectivity = estimate_unknown_ranges(column_name, ranges).applyNot();
 
-        auto it = estimate_results.find(column_name);
-        if (it == estimate_results.end())
-        {
-            estimate_results.emplace(column_name, not_ranges_selectivity);
-        }
-        else if (function == FUNCTION_AND)
-        {
-            it->second = it->second.applyAnd(not_ranges_selectivity);
-        }
-        else /// FUNCTION_OR or FUNCTION_IN_RANGE
-        {
-            it->second = it->second.applyOr(not_ranges_selectivity);
-        }
+        add_column_selectivity(column_name, not_ranges_selectivity);
     }
 
-    if (function == FUNCTION_AND)
-    {
-        /// `x IS NULL AND x IS NOT NULL` is a contradiction → selectivity = 0.
-        /// Note: the previous explicit check for `x IS NULL AND (range on x)` is no longer
-        /// needed — `applyAnd` over `Selectivity` reduces it to `true_sel = 0` automatically
-        /// because range predicates have `true_sel = 0` on rows where the column is NULL.
-        for (const auto & col : null_check_columns)
-        {
-            if (not_null_check_columns.contains(col))
-            {
-                selectivity = Selectivity();
-                return;
-            }
-        }
-    }
-    else if (function == FUNCTION_OR)
-    {
-        /// `x IS NULL OR x IS NOT NULL` is a tautology → selectivity = 1
-        for (const auto & col : null_check_columns)
-        {
-            if (not_null_check_columns.contains(col))
-            {
-                selectivity = Selectivity(1, 0);
-                return;
-            }
-        }
-    }
+    for (const auto & [column_name, column_selectivity] : column_selectivities)
+        add_column_selectivity(column_name, column_selectivity);
 
     for (const auto & column_name : null_check_columns)
     {
-        Float64 cur_selectivity = default_cond_equal_factor;
+        Float64 null_selectivity = default_cond_equal_factor;
         if (const auto * est = get_estimator(column_name))
-            cur_selectivity = est->stats->estimateIsNull();
+            null_selectivity = est->stats->estimateIsNull();
 
-        if (!estimate_results.contains(column_name))
-        {
-            estimate_results.emplace(column_name, Selectivity{cur_selectivity, 0});
-        }
-        else if (function == FUNCTION_AND)
-        {
-            /// `x IS NULL AND <other predicate on x>`: any non-IS-NULL predicate on the same
-            /// column has `true_sel = 0` on NULL rows, so the AND's `true_sel` is 0. The NULL
-            /// share is `P(x IS NULL)` — IS NULL is TRUE there but the range predicate is NULL,
-            /// so the AND evaluates to NULL on those rows. Store this per-column result so the
-            /// final cross-column AND keeps folding in predicates on other columns.
-            estimate_results[column_name] = Selectivity(0, cur_selectivity);
-        }
-        else
-        {
-            Float64 is_true = std::min(1.0, estimate_results[column_name].true_sel + cur_selectivity);
-            estimate_results[column_name] = Selectivity(is_true, 0);
-        }
+        add_column_selectivity(column_name, Selectivity::isNull(null_selectivity));
     }
 
     for (const auto & column_name : not_null_check_columns)
     {
-        Float64 cur_selectivity = 1.0 - default_cond_equal_factor;
+        Float64 not_null_selectivity = 1.0 - default_cond_equal_factor;
         if (const auto * est = get_estimator(column_name))
-            cur_selectivity = est->stats->estimateIsNotNull();
+            not_null_selectivity = est->stats->estimateIsNotNull();
 
-        if (!estimate_results.contains(column_name))
-        {
-            estimate_results.emplace(column_name, Selectivity{cur_selectivity, 0});
-        }
-        else if (function == FUNCTION_OR)
-        {
-            /// Under OR, `IS NOT NULL` dominates any range predicate on the same column,
-            /// because non-NULL rows where the range is FALSE still satisfy IS NOT NULL.
-            estimate_results[column_name].true_sel = cur_selectivity;
-        }
-        else
-        {
-            /// Under AND, the range predicate already filters NULLs; the only effect of
-            /// `IS NOT NULL` is to zero out the column's NULL share.
-            estimate_results[column_name].null_sel = 0;
-        }
+        add_column_selectivity(column_name, Selectivity::isNotNull(1.0 - clampSelectivity(not_null_selectivity)));
     }
 
-    if (function == FUNCTION_OR)
-        selectivity = Selectivity();
+    if (estimate_results.size() == 1)
+    {
+        selectivity = estimate_results.begin()->second;
+    }
     else
-        selectivity = Selectivity(1, 0);
-    for (const auto & estimate_result : estimate_results)
     {
         if (function == FUNCTION_OR)
-            selectivity = selectivity.applyOr(estimate_result.second);
+            selectivity = Selectivity();
         else
-            selectivity = selectivity.applyAnd(estimate_result.second);
+            selectivity = Selectivity(1, 0);
+        for (const auto & estimate_result : estimate_results)
+        {
+            if (function == FUNCTION_OR)
+                selectivity = selectivity.applyOr(estimate_result.second);
+            else
+                selectivity = selectivity.applyAnd(estimate_result.second);
+        }
     }
 
     /// Clamp to valid probability range. Selectivity can exceed [0, 1] when

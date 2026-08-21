@@ -220,3 +220,172 @@ SELECT position(prewhere_line, 'b.null') < position(prewhere_line, 'a.null') AS 
 );
 
 DROP TABLE test_const_null;
+
+-- =============================================================================
+-- String startsWith/endsWith predicates: statistics-based cardinality estimates
+-- should participate in PREWHERE reordering. The WHERE clauses deliberately put
+-- the less selective string predicate first; the estimated rows should move the
+-- more selective predicate to the front of PREWHERE.
+-- =============================================================================
+SET move_all_conditions_to_prewhere = 1;
+
+DROP TABLE IF EXISTS test_string_predicate_prewhere;
+
+CREATE TABLE test_string_predicate_prewhere
+(
+    id UInt64,
+    s_prefix_short String STATISTICS(basic),
+    s_prefix_long String STATISTICS(basic),
+    s_suffix_short String STATISTICS(basic),
+    s_suffix_long String STATISTICS(basic),
+    s_utf8_short String STATISTICS(basic),
+    s_utf8_long String STATISTICS(basic),
+    s_nullable Nullable(String) STATISTICS(basic),
+    s_not String STATISTICS(basic),
+    fs FixedString(8) STATISTICS(basic)
+) ENGINE = MergeTree()
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
+
+INSERT INTO test_string_predicate_prewhere
+SELECT
+    number,
+    'abcdef',
+    'abcdef',
+    'abcdefxyz',
+    'abcdefxyz',
+    '你好abcdef',
+    '你好abcdef',
+    if(number % 10 = 0, 'abcdef', NULL),
+    'abcdef',
+    'abcdefgh'
+FROM numbers(10000);
+
+ALTER TABLE test_string_predicate_prewhere MATERIALIZE STATISTICS
+    s_prefix_short,
+    s_prefix_long,
+    s_suffix_short,
+    s_suffix_long,
+    s_utf8_short,
+    s_utf8_long,
+    s_nullable,
+    s_not,
+    fs;
+
+SELECT 'String predicates: startsWith literal length drives prewhere ordering';
+SELECT position(prewhere_line, 's_prefix_long') < position(prewhere_line, 's_prefix_short') AS longer_prefix_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_string_predicate_prewhere
+        WHERE startsWith(s_prefix_short, 'a') AND startsWith(s_prefix_long, 'abc')
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'String predicates: endsWith literal length drives prewhere ordering';
+SELECT position(prewhere_line, 's_suffix_long') < position(prewhere_line, 's_suffix_short') AS longer_suffix_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_string_predicate_prewhere
+        WHERE endsWith(s_suffix_short, 'x') AND endsWith(s_suffix_long, 'xyz')
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'String predicates: UTF8 literal length uses code points';
+SELECT position(prewhere_line, 's_utf8_long') < position(prewhere_line, 's_utf8_short') AS longer_utf8_prefix_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_string_predicate_prewhere
+        WHERE startsWithCaseInsensitiveUTF8(s_utf8_short, '你') AND startsWithCaseInsensitiveUTF8(s_utf8_long, '你好')
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'String predicates: nullable empty prefix uses basic null count';
+SELECT position(prewhere_line, 's_nullable') < position(prewhere_line, 's_prefix_short') AS nullable_empty_prefix_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_string_predicate_prewhere
+        WHERE startsWith(s_prefix_short, '') AND startsWith(s_nullable, '')
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'String predicates: NOT inverts startsWith selectivity';
+SELECT position(prewhere_line, 's_prefix_long') < position(prewhere_line, 's_not') AS positive_prefix_before_negated_prefix FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_string_predicate_prewhere
+        WHERE not(startsWith(s_not, 'abc')) AND startsWith(s_prefix_long, 'abc')
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'String predicates: FixedString startsWith is estimated';
+SELECT position(prewhere_line, 'fs') < position(prewhere_line, 's_prefix_short') AS fixed_string_prefix_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_string_predicate_prewhere
+        WHERE startsWith(s_prefix_short, 'a') AND startsWith(fs, 'abc')
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+DROP TABLE test_string_predicate_prewhere;
+
+-- =============================================================================
+-- LIKE selectivity: constant LIKE patterns should participate in statistics-based
+-- prewhere ordering, keep same-column NULL correlation, and avoid treating short
+-- FixedString exact LIKE patterns as equality because equality ignores trailing
+-- NUL padding while LIKE matches FixedString(N)'s full byte sequence.
+-- =============================================================================
+DROP TABLE IF EXISTS test_like_selectivity;
+
+CREATE TABLE test_like_selectivity
+(
+    id UInt64,
+    a Nullable(String) STATISTICS(basic),
+    fixed FixedString(5) STATISTICS(uniq),
+    probe UInt64 STATISTICS(tdigest)
+) ENGINE = MergeTree()
+ORDER BY id
+SETTINGS auto_statistics_types = '';
+
+INSERT INTO test_like_selectivity
+SELECT
+    number,
+    if(number % 5 = 0, NULL, concat('value', toString(number))),
+    toFixedString('abcde', 5),
+    number
+FROM numbers(1000);
+
+SELECT 'LIKE contains pattern is more selective than range';
+SELECT position(prewhere_line, 'like') < position(prewhere_line, 'probe') AS like_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count() FROM test_like_selectivity
+        WHERE a LIKE '%9999%' AND probe < 50
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'LIKE match-all with IS NOT NULL keeps same-column nullable selectivity';
+SELECT position(prewhere_line, 'probe') < position(prewhere_line, 'like') AS probe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count() FROM test_like_selectivity
+        WHERE a LIKE '%' AND a IS NOT NULL AND probe < 700
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'Nested same-column LIKE OR with IS NOT NULL keeps correlation';
+SELECT position(prewhere_line, 'probe') < position(prewhere_line, 'like') AS probe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count() FROM test_like_selectivity
+        WHERE (a LIKE '%' OR a LIKE 'x%') AND a IS NOT NULL AND probe < 700
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'FixedString exact LIKE length mismatch is not estimated as equality';
+SELECT position(prewhere_line, 'like') < position(prewhere_line, 'probe') AS like_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count() FROM test_like_selectivity
+        WHERE fixed LIKE 'abc' AND probe < 500
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+SELECT 'FixedString exact LIKE matching length may use equality estimate';
+SELECT position(prewhere_line, 'probe') < position(prewhere_line, 'like') AS probe_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count() FROM test_like_selectivity
+        WHERE fixed LIKE 'abcde' AND probe < 500
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+DROP TABLE test_like_selectivity;
