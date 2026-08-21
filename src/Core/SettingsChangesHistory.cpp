@@ -43,6 +43,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"enable_alp_codec", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."},
+            {"enable_quantized_codec", false, false, "New setting to enable the experimental `Quantized` compression codec individually, without the `allow_experimental_codecs`."},
+            {"enable_sz3_codec", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."},
+            {"enable_zxc_codec", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."},
             {"resumable_backup_from_snapshot", false, false, "New experimental setting to enable resumable `BACKUP FROM SNAPSHOT`."},
             {"framing_output_format", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
@@ -114,6 +118,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_arrow_use_native_reader", true, true, "Obsolete setting, the native ClickHouse reader is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based reader has been removed)."},
             {"output_format_arrow_use_native_writer", true, true, "Obsolete setting, the native ClickHouse writer is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based writer has been removed)."},
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
+            {"iceberg_delete_manifest_decode_concurrency", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row."},
             {"run_query_in_background", false, false, "New setting to run a query in the background, detached from the connection that submitted it, discarding the result."},
             {"enable_cascades_optimizer", false, false, "New experimental setting."},
             {"merge_tree_min_bytes_per_read_stream", 0, (64 * 1024), "New setting to cap the number of streams for ordinary local unordered `MergeTree` narrow-column scans using a sqrt cost model, reducing per-stream overhead on high-core-count machines. previous_value=0 (disabled) so `compatibility` with versions before 26.8 restores the pre-existing stream count."},
@@ -140,7 +145,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
-            {"input_format_json_max_object_size", 512 * 1024 * 1024, 512 * 1024 * 1024, "New setting to limit the maximum size of a single JSON object in bytes"},
             {"parallel_replicas_plan_based", false, false, "New setting"},
             {"use_paimon_metadata_files_cache", false, false, "New setting to enable in-memory caching of parsed Paimon metadata files (manifest lists and manifests). For persistent Paimon table engines it must be enabled before metadata initialization; table functions evaluate it per query. Avoids repeated downloads and deserialization of metadata files from object storage on subsequent queries."},
             {"optimize_or_like_chain", false, true, "Enable by default: optimize OR chains of LIKE/ILIKE/match into multiSearchAny (pure-substring patterns) or multiMatchAny (other patterns, when Hyperscan/Vectorscan is permitted); when neither fast path applies the original OR chain is kept unchanged."},

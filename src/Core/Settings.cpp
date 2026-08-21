@@ -2299,21 +2299,24 @@ Possible values:
 \
     DECLARE(DeduplicateInsertMode, deduplicate_insert, DeduplicateInsertMode::ENABLE, R"(
 Enables or disables block deduplication of  `INSERT INTO` (for Replicated\* tables).
-The setting overrides `insert_deduplicate` and `async_insert_deduplicate` settings.
+The setting applies to both synchronous and asynchronous inserts, and it supersedes the `insert_deduplicate` and `async_insert_deduplicate` settings.
 That setting has three possible values:
 - disable — Deduplication is disabled for `INSERT INTO` query.
 - enable — Deduplication is enabled for `INSERT INTO` query.
 - backward_compatible_choice — Deduplication is enabled if `insert_deduplicate` or `async_insert_deduplicate` are enabled for specific insert type.
+
+For `INSERT SELECT` queries, [`deduplicate_insert_select`](#deduplicate_insert_select) is consulted first. Deduplication also requires the destination table to keep a deduplication log, see [replicated_deduplication_window](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) and [non_replicated_deduplication_window](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 )", 0) \
 \
     DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
 Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
-The setting overrids `insert_deduplicate` and `deduplicate_insert` for `INSERT SELECT` queries.
+For `INSERT SELECT` queries this setting is consulted before [`deduplicate_insert`](#deduplicate_insert).
+A `SELECT` is stable when it carries `ORDER BY ALL` and its pipeline ends in a single stream. A non-empty [`insert_deduplication_token`](#insert_deduplication_token) is an equivalent substitute for stability.
 That setting has four possible values:
 - disable — Deduplication is disabled for `INSERT SELECT` query.
-- force_enable — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
-- enable_when_possible — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
-- enable_even_for_bad_queries - Deduplication is enabled if `insert_deduplicate` is enable. If select result is not stable, warning is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
+- force_enable — Deduplication is enabled for `INSERT SELECT` query, regardless of `deduplicate_insert`. If select result is not stable and no token is provided, exception is thrown.
+- enable_when_possible — Deduplication is enabled if it is enabled by `deduplicate_insert` and the select result is stable, otherwise disabled.
+- enable_even_for_bad_queries - Deduplication is enabled if it is enabled by `deduplicate_insert`, regardless of whether the select result is stable. If select result is not stable, a message is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
 )", 0) \
 \
     DECLARE(Bool, insert_deduplicate, true, R"(
@@ -5975,6 +5978,15 @@ Possible values:
     DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
 If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0) \
+    DECLARE(NonZeroUInt64, iceberg_delete_manifest_decode_concurrency, 4, R"(
+Maximum number of Iceberg delete manifest files decoded concurrently during query execution before any data file is read.
+
+All delete manifests must be decoded before any data file is read, so this work sits on the critical path before the first row is returned. Decoding several at a time overlaps both the object storage round-trips and the per-row pruning work.
+
+Higher values raise peak memory during query initialization when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
+
+Must be greater than zero; `1` decodes the manifests one at a time.
+)", 0) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 
@@ -8642,7 +8654,19 @@ implementation.
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
-If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
+If it is set to true, allow to specify any experimental compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_alp_codec, false, R"(
+Allows using the experimental `ALP` compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_quantized_codec, false, R"(
+Allows using the experimental `Quantized` compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_sz3_codec, false, R"(
+Allows using the experimental `SZ3` compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_zxc_codec, false, R"(
+Allows using the experimental `ZXC` compression codec.
 )", EXPERIMENTAL) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction

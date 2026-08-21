@@ -50,6 +50,10 @@ def make_fake_docs(root):
             "        'mintlify_file': 'reference/engines/table-engines/mergetree-family/mergetree.mdx',\n"
             "    }, {\n"
             "        'status': 'matched',\n"
+            "        'docusaurus_file': 'docs/sql-reference/statements/create/dictionary/sources/local-file.md',\n"
+            "        'mintlify_file': 'reference/statements/create/dictionary/sources/local-file.mdx',\n"
+            "    }, {\n"
+            "        'status': 'matched',\n"
             "        'docusaurus_file': 'docs/sql-reference/statements/create/dictionary/layouts/flat.md',\n"
             "        'mintlify_file': 'reference/statements/create/dictionary/layouts/flat.mdx',\n"
             "    }]\n"
@@ -62,6 +66,13 @@ def make_fake_docs(root):
     os.makedirs(te)
     with open(os.path.join(te, "mergetree.mdx"), "w", encoding="utf-8") as f:
         f.write("# MergeTree\n" + marker)
+    # Dictionary-source family: also discovered from the stub file map.
+    ds = os.path.join(
+        root, "reference", "statements", "create", "dictionary", "sources"
+    )
+    os.makedirs(ds)
+    with open(os.path.join(ds, "local-file.mdx"), "w", encoding="utf-8") as f:
+        f.write("# Local file\n" + marker)
     # Dictionary-layout family: also discovered from the stub file map.
     layouts = os.path.join(
         root, "reference", "statements", "create", "dictionary", "layouts"
@@ -107,6 +118,7 @@ def main():
             "functions:",
             "aggregate",
             "table-engine",
+            "dictionary-source",
             "dictionary-layout",
         ]:
             expect_blocked(mod, docs, only)
