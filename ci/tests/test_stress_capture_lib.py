@@ -468,8 +468,12 @@ def test_wrapper_returns_while_a_descendant_still_holds_the_output(tmp_path):
     ending with the command can, which is what the elapsed bound below asserts."""
     stub = tmp_path / "s.sh"
     # Writes once, then leaves a child holding stdout without ever writing or exiting.
+    # Its PID goes to a file: the holder is reparented to init when the timed shell
+    # exits, so afterwards nothing can find it by parentage.
+    holder = tmp_path / "holder.pid"
     stub.write_text(
-        "#!/bin/bash\necho early\n( sleep 600 ) &\nexit 1\n", encoding="utf-8"
+        f"#!/bin/bash\necho early\n( sleep 600 ) &\necho $! > '{holder}'\nexit 1\n",
+        encoding="utf-8",
     )
     stub.chmod(0o755)
     # `timeout` around the wrapper, so a reader that waits on the descriptor fails here
@@ -477,6 +481,9 @@ def test_wrapper_returns_while_a_descendant_still_holds_the_output(tmp_path):
     bound = FAILURE_DRAIN_TIMEOUT_CEILING
     proc = _run(
         f"""
+# Reap the holder however this exits, the timeout path included: it outlives its own
+# shell, so leaking it would leave a `sleep 600` in the job's container.
+trap 'kill "$(cat {holder} 2>/dev/null)" 2>/dev/null ||:' EXIT
 started=$SECONDS
 timeout {bound} bash -c '
     source "$1"
@@ -485,8 +492,6 @@ timeout {bound} bash -c '
 echo "timeout_status=$?"
 set -e
 echo "elapsed=$(( SECONDS - started ))"
-# Reap the holder only now: the wrapper had to return without its help.
-pkill -P $$ sleep ||:
 """,
         tmp_path,
         _FAST_TIMING,
@@ -725,6 +730,25 @@ def test_runner_reads_the_status_and_restores_errexit(runner):
     assert lines[i].endswith("\\"), lines[i]
     assert lines[i + 2] == "stress_script_exit_code=$?", lines[i + 2]
     assert lines[i + 3] == "set -e", lines[i + 3]
+
+
+@pytest.mark.parametrize("runner", ["stress_runner.sh", "upgrade_runner.sh"])
+def test_runner_does_not_neutralize_the_wrapped_script_status(runner):
+    """`$?` is only worth reading if the wrapped command still carries the script's
+    status. A suffix such as `|| true` on that line makes the read yield zero and
+    emits an `OK` row for a failed stress script -- and it is the one line the other
+    runner guards skip, precisely because it is what legitimately differs between
+    the two runners."""
+    lines = _runner_text(runner).splitlines()
+    i = next(
+        i for i, l in enumerate(lines) if l.strip().startswith("run_capturing_output ")
+    )
+    command = lines[i + 1].strip()
+    # The command is the last line of the invocation: a continuation would mean the
+    # offsets the sibling guards rely on no longer describe this file.
+    assert not command.endswith("\\"), command
+    for transform in ("||", "&&", ";", "|"):
+        assert transform not in command, (runner, transform, command)
 
 
 @pytest.mark.parametrize("runner", ["stress_runner.sh", "upgrade_runner.sh"])
