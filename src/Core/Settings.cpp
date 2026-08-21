@@ -6550,6 +6550,15 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_top_k_through_array_join, false, R"(
+Toggles a query-plan-level optimization which pushes `ORDER BY ... LIMIT n` down through an `ARRAY JOIN` when the sort key does not reference any joined column. An extra `ORDER BY ... LIMIT n` is applied to the input of the `ARRAY JOIN`, so the expansion only has to run for the rows the `LIMIT` can keep. For an inner `ARRAY JOIN` a filter that discards rows whose arrays are all empty is inserted below the added sort, because such rows produce no output.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
     DECLARE(Bool, query_plan_split_filter, true, R"(
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.

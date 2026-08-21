@@ -181,9 +181,13 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Push ORDER BY ... LIMIT n down through an ARRAY JOIN when the sort key does not reference any
+/// joined column. Restricts how many rows the ARRAY JOIN has to expand.
+size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 20> optimizations = {{
+    static const std::array<Optimization, 21> optimizations = {{
         /// Run first, before splitFilter/pushDownFilter/mergeFilterIntoJoinCondition, so the
         /// constant-false ON condition is still intact on the JoinStepLogical (those passes would
         /// otherwise lower it into a CROSS + Filter on one input and hide it from this optimization).
@@ -207,6 +211,9 @@ inline const auto & getOptimizations()
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
+        /// Runs after liftUpArrayJoin/liftUpFunctions/mergeExpressions, so the sort key computation
+        /// has already been pushed below the ARRAY JOIN and the SortingStep is usually its direct parent.
+        {tryTopKThroughArrayJoin, "topKThroughArrayJoin", &QueryPlanOptimizationSettings::top_k_through_array_join},
     }};
 
     return optimizations;
