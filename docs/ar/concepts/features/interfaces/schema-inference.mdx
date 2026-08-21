@@ -145,12 +145,12 @@ clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM
   ## استخدام البنية من جدول الإدراج
 </div>
 
-عند استخدام دوال الجداول `file/s3/url/hdfs` لإدراج البيانات في جدول،
+عند استخدام دالة الجدول `file/s3/url/hdfs` لإدراج البيانات في جدول،
 يتوفر خيار لاستخدام البنية من جدول الإدراج بدلًا من استخلاصها من البيانات.
 يمكن أن يحسّن ذلك أداء الإدراج لأن استنتاج المخطط قد يستغرق بعض الوقت. كما يكون ذلك مفيدًا عندما يكون للجدول مخطط مُحسَّن، بحيث
 لن تُجرى أي تحويلات بين الأنواع.
 
-يوجد إعداد خاص [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/ar/reference/settings/session-settings#use_structure_from_insertion_table_in_table_functions)
+يوجد إعداد خاص [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/ar/reference/settings/session-settings/use#use_structure_from_insertion_table_in_table_functions)
 يتحكم في هذا السلوك. وله 3 قيم ممكنة:
 
 * 0 - ستستخلص دالة الجدول البنية من البيانات.
@@ -196,7 +196,7 @@ CREATE TABLE hobbies2
 ORDER BY id;
 ```
 
-وأدرِج البيانات من ملف `hobbies.jsonl`:
+وأدخِل البيانات من الملف `hobbies.jsonl`:
 
 ```sql
 INSERT INTO hobbies2 SELECT id, age, hobbies FROM file(hobbies.jsonl)
@@ -220,7 +220,7 @@ CREATE TABLE hobbies3
 ORDER BY identifier;
 ```
 
-وأدرِج البيانات من الملف `hobbies.jsonl`:
+وأدخِل البيانات من الملف `hobbies.jsonl`:
 
 ```sql
 INSERT INTO hobbies3 SELECT id, age, hobbies FROM file(hobbies.jsonl)
@@ -243,13 +243,13 @@ CREATE TABLE hobbies4
 ORDER BY id;
 ```
 
-وأدرِج البيانات من الملف `hobbies.jsonl`:
+وأدخِل البيانات من الملف `hobbies.jsonl`:
 
 ```sql
 INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hobbies.jsonl)
 ```
 
-في هذه الحالة، تُجرى بعض العمليات على العمود `hobbies` في استعلام `SELECT` لإدراجه في الجدول، لذلك لا يمكن لـ ClickHouse استخدام البنية الخاصة بجدول الإدراج، وسيُستخدم استدلال المخطط.
+في هذه الحالة، تُجرى بعض العمليات على العمود `hobbies` في استعلام `SELECT` لإدراجه في الجدول، لذلك لا يمكن لـ ClickHouse استخدام البنية الخاصة بجدول الإدراج، وسيُستخدم استنتاج المخطط.
 
 <div id="schema-inference-cache">
   ## ذاكرة التخزين المؤقت لاستنتاج المخطط
@@ -1810,7 +1810,7 @@ DESC format(JSONEachRow, $$
   #### input_format_try_infer_datetimes_only_datetime64
 </div>
 
-إذا كان مفعّلًا، فسيستنتج ClickHouse دائمًا `DateTime64(9)` عند تفعيل `input_format_try_infer_datetimes` حتى إذا كانت قيم التاريخ والوقت لا تحتوي على جزء عشري.
+إذا كان مفعّلًا، فسيستنتج ClickHouse دائمًا `DateTime64(9)` عند تفعيل `input_format_try_infer_datetimes` حتى إذا كانت قيم التاريخ والوقت لا تحتوي على جزء كسري.
 
 يكون معطّلًا افتراضيًا.
 
@@ -1832,7 +1832,7 @@ DESC format(JSONEachRow, $$
 └────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-ملاحظة: يراعي تحليل قيم التاريخ والوقت أثناء استدلال المخطط الإعداد [date&#95;time&#95;input&#95;format](/ar/reference/settings/formats#date_time_input_format)
+ملاحظة: يراعي تحليل قيم التاريخ والوقت أثناء استدلال المخطط الإعداد [date&#95;time&#95;input&#95;format](/ar/reference/settings/formats/date-time#date_time_input_format)
 
 <div id="input-format-try-infer-dates">
   #### input_format_try_infer_dates
@@ -2007,7 +2007,7 @@ $$)
   ### Avro
 </div>
 
-في صيغة Avro، يستخلص ClickHouse المخطط من البيانات ويحوّله إلى مخطط ClickHouse باستخدام مطابقات الأنواع التالية:
+في صيغة Avro، يقرأ ClickHouse المخطط من البيانات ويحوّله إلى مخطّط ClickHouse باستخدام مطابقات الأنواع التالية:
 
 | نوع بيانات Avro                    | نوع بيانات ClickHouse                                                 |
 | ---------------------------------- | --------------------------------------------------------------------- |
@@ -2026,7 +2026,7 @@ $$)
 | `string (uuid)` *                  | [UUID](/ar/reference/data-types/uuid)                                    |
 | `binary (decimal)` *               | [Decimal(P, S)](/ar/reference/data-types/decimal)                        |
 
-* [الأنواع المنطقية في Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+* [الأنواع المنطقية في Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 أنواع Avro الأخرى غير مدعومة.
 
@@ -2094,7 +2094,7 @@ $$)
   ### ORC
 </div>
 
-في تنسيق ORC، يقرأ ClickHouse المخطط من البيانات ويحوّله إلى مخطط ClickHouse وفق تطابقات الأنواع التالية:
+في تنسيق ORC، يقرأ ClickHouse المخطط من البيانات ويحوّله إلى مخطط ClickHouse وفق مطابقات الأنواع التالية:
 
 | نوع بيانات ORC                       | نوع بيانات ClickHouse                          |
 | ------------------------------------ | ---------------------------------------------- |
@@ -2112,6 +2112,7 @@ $$)
 | `List`                               | [Array](/ar/reference/data-types/array)           |
 | `Struct`                             | [Tuple](/ar/reference/data-types/tuple)           |
 | `Map`                                | [Map](/ar/reference/data-types/map)               |
+| `Union`                              | [Variant](/ar/reference/data-types/variant)       |
 
 أنواع ORC الأخرى غير مدعومة.
 

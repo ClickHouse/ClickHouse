@@ -18,7 +18,7 @@ Fonction d’agrégation qui prend des données de séries temporelles sous form
 Alias : `timeSeriesLastToGrid`.
 
 <Warning>
-  Cette fonction est expérimentale, activez-la en définissant `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Cette fonction est expérimentale, activez-la en définissant `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
 
 **Syntaxe**
@@ -31,10 +31,10 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
 
 **Paramètres**
 
-* `start_timestamp` — Spécifie le début de la grille. [`UInt32`](/fr/reference/data-types/int-uint) ou [`DateTime`](/fr/reference/data-types/datetime)
-* `end_timestamp` — Spécifie la fin de la grille. [`UInt32`](/fr/reference/data-types/int-uint) ou [`DateTime`](/fr/reference/data-types/datetime)
-* `grid_step` — Spécifie le pas de la grille en secondes. [`UInt32`](/fr/reference/data-types/int-uint)
-* `staleness_window` — Spécifie l&#39;ancienneté maximale de l&#39;échantillon le plus récent, en secondes. [`UInt32`](/fr/reference/data-types/int-uint)
+* `start_timestamp` — Spécifie le début de la grille. Avec un argument d&#39;horodatage `DateTime64`, il peut également s&#39;agir d&#39;un nombre fractionnaire ou d&#39;une chaîne contenant un nombre ou un texte de date et d&#39;heure. [`UInt32`](/fr/reference/data-types/int-uint) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
+* `end_timestamp` — Spécifie la fin de la grille. Avec un argument d&#39;horodatage `DateTime64`, il peut également s&#39;agir d&#39;un nombre fractionnaire ou d&#39;une chaîne contenant un nombre ou un texte de date et d&#39;heure. [`UInt32`](/fr/reference/data-types/int-uint) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
+* `grid_step` — Spécifie le pas de la grille en secondes. Avec un argument d&#39;horodatage `DateTime64`, il peut également s&#39;agir d&#39;un nombre fractionnaire ou d&#39;une chaîne contenant un nombre ou une durée telle que &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
+* `staleness_window` — Spécifie l&#39;ancienneté maximale de l&#39;échantillon le plus récent, en secondes. Avec un argument d&#39;horodatage `DateTime64`, il peut également s&#39;agir d&#39;un nombre fractionnaire ou d&#39;une chaîne contenant un nombre ou une durée telle que &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`String`](/fr/reference/data-types/string)
 
 **Arguments**
 
@@ -50,6 +50,7 @@ Renvoie les valeurs de la série temporelle rééchantillonnées sur la grille s
 **Utilisation de base avec des paires horodatage-valeur individuelles**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to staleness window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -71,13 +72,14 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,1,3,4,4,NULL,5,8]                                                                           │
-└────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,1,3,4,4,NULL,5,8]                                                                            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Utilisation d&#39;arguments de type Array**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -90,8 +92,8 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
 
 ```response title=Response
 ┌─timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,1,3,4,4,NULL,5,8]                                                                             │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,1,3,4,4,NULL,5,8]                                                                              │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

@@ -20,9 +20,7 @@ ClickHouse CLI (`clickhousectl`) を使用すると、ローカルの ClickHouse
 インストールと管理、サーバーの起動、クエリの実行を行えます。
 
 <Steps>
-  <Step>
-    ## ClickHouse CLI をインストールする
-
+  <Step title="ClickHouse CLI をインストールする" id="install-the-cli">
     ```bash
     curl https://clickhouse.com/cli | sh
     ```
@@ -30,9 +28,7 @@ ClickHouse CLI (`clickhousectl`) を使用すると、ローカルの ClickHouse
     利便性のため、`chctl` エイリアスも自動的に作成されます。
   </Step>
 
-  <Step>
-    ## ClickHouse をインストールする
-
+  <Step title="ClickHouse をインストールする" id="cli-install-clickhouse">
     最新バージョンの ClickHouse をインストールし、デフォルトに設定します。
 
     ```bash
@@ -62,9 +58,7 @@ ClickHouse CLI (`clickhousectl`) を使用すると、ローカルの ClickHouse
     </Info>
   </Step>
 
-  <Step>
-    ## clickhouse-server を起動する
-
+  <Step title="clickhouse-server を起動する" id="cli-start-clickhouse-server">
     ```bash
     clickhousectl local server start
     ```
@@ -76,9 +70,7 @@ ClickHouse CLI (`clickhousectl`) を使用すると、ローカルの ClickHouse
     ```
   </Step>
 
-  <Step>
-    ## clickhouse-client を起動する
-
+  <Step title="clickhouse-client を起動する" id="cli-start-clickhouse-client">
     ```bash
     clickhousectl local client
     ```

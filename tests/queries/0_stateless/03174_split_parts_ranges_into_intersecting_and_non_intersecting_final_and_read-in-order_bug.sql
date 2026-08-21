@@ -1,5 +1,8 @@
--- Tags: no-tsan, no-asan, no-msan, no-fasttest
+-- Tags: long, no-tsan, no-asan, no-msan, no-fasttest
 -- Test is slow
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(229376, None); merge_max_block_size=(8192, None)
+-- A small granule size multiplies the mark count of this 1e7-row FINAL merge by orders of magnitude,
+-- which can push it past the client's receive timeout. merge_max_block_size is bounded as a precaution.
 create table tab (x DateTime('UTC'), y UInt32, v Int32) engine = ReplacingMergeTree(v) order by x;
 insert into tab select toDateTime('2000-01-01', 'UTC') + number, number, 1 from numbers(1e7);
 optimize table tab final;

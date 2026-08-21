@@ -7,7 +7,7 @@ title: '머티리얼라이즈'
 doc_type: 'guide'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -202,7 +202,16 @@ models:
   ### 프로젝션
 </div>
 
-`projections` 구성을 사용하면 `table` 및 `distributed_table` 머티리얼라이제이션에 [프로젝션](/ko/concepts/features/projections/projections)을 추가할 수 있습니다.
+`projections` 구성을 사용하면 `table` 및 `distributed_table` 머티리얼라이즈에 [프로젝션](/ko/concepts/features/projections/projections)을 추가할 수 있습니다. 각 프로젝션 항목에는 `query` 또는 `index` 키 중 하나만 필요합니다(둘 다 지정할 수 없음).
+
+**참고**: 분산 테이블에서는 프로젝션이 분산 프록시 테이블이 아니라 `_local` 테이블에 적용됩니다.
+**참고**: 동일한 프로젝션 항목에 `query`와 `index`를 모두 지정하면 컴파일 시간 오류가 발생합니다.
+
+<div id="query-projections">
+  #### 쿼리 프로젝션
+</div>
+
+`query`를 사용하여 전체 프로젝션 쿼리를 정의합니다:
 
 ```sql
 {{ config(
@@ -216,7 +225,42 @@ models:
 ) }}
 ```
 
-**참고**: 분산 테이블에서는 프로젝션이 분산 프록시 테이블이 아니라 `_local` 테이블에 적용됩니다.
+<div id="index-projections">
+  #### 인덱스 프로젝션
+</div>
+
+`_part_offset` 가상 컬럼을 사용하는 경량 [인덱스 프로젝션](https://clickhouse.com/blog/clickhouse-release-25-06#index-projections)의 구문 단축형으로 `index`를 사용합니다. 정렬 기준으로 단일 컬럼명 또는 컬럼명 목록을 전달합니다:
+
+```sql
+{{ config(
+       materialized='table',
+       projections=[
+           {
+               'name': 'proj_by_age',
+               'index': 'age'
+           }
+       ]
+) }}
+```
+
+```sql
+{{ config(
+       materialized='table',
+       projections=[
+           {
+               'name': 'proj_by_dept_age',
+               'index': ['department', 'age']
+           }
+       ]
+) }}
+```
+
+dbt-clickhouse는 버전에 맞는 DDL을 자동으로 생성합니다:
+
+| ClickHouse 버전 | 생성된 SQL                                                         |
+| ------------- | --------------------------------------------------------------- |
+| 26.1+         | `ADD PROJECTION proj_by_age INDEX age TYPE basic`               |
+| 25.8 – 26.0   | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
 
 <div id="materialization-incremental">
   ## 머티리얼라이즈: incremental

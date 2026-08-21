@@ -31,32 +31,24 @@ doc_type: 'guide'
 </div>
 
 <Steps>
-  <Step>
-    #### Настройте двойную ингестию
-
+  <Step title="Настройте двойную ингестию" id="configure-dual-ingestion">
     Настройте конвейер сбора данных так, чтобы он одновременно отправлял данные в Elastic и ClickStack.
 
     Способ реализации зависит от того, какие агенты вы сейчас используете для сбора данных, — см. [&quot;Миграция агентов&quot;](/ru/clickstack/migration/elastic/migrating-agents).
   </Step>
 
-  <Step>
-    #### Скорректируйте сроки хранения
-
+  <Step title="Скорректируйте сроки хранения" id="adjust-retention-period">
     Настройте параметры TTL в Elastic в соответствии с требуемым сроком хранения. Настройте [TTL](/ru/clickstack/managing/production#configure-ttl) в ClickStack так, чтобы данные хранились тот же период времени.
   </Step>
 
-  <Step>
-    #### Проверьте и сравните
-
+  <Step title="Проверьте и сравните" id="validate-and-compare">
     * Выполните запросы к обеим системам, чтобы убедиться в согласованности данных
     * Сравните производительность запросов и их результаты
     * Перенесите панели мониторинга и оповещения в ClickStack. Сейчас это делается вручную.
     * Убедитесь, что все критически важные панели мониторинга и оповещения в ClickStack работают должным образом
   </Step>
 
-  <Step>
-    #### Постепенный переход
-
+  <Step title="Постепенный переход" id="graudal-transition">
     * По мере естественного истечения срока хранения данных в Elastic вы будете всё больше полагаться на ClickStack
     * Когда вы убедитесь в надёжности ClickStack, можно будет начать перенаправлять запросы и панели мониторинга
   </Step>
@@ -141,9 +133,7 @@ ClickHouse использует [предложения `TTL`](/ru/clickstack/ma
 Следующие шаги позволяют выполнить миграцию одного индекса Elasticsearch в ClickHouse.
 
 <Steps>
-  <Step>
-    ### Миграция схемы
-
+  <Step title="Миграция схемы" id="migrate-scheme">
     Создайте таблицу в ClickHouse для индекса, переносимого из Elasticsearch. Вы можете сопоставить [типы Elasticsearch с их эквивалентами в ClickHouse](/ru/clickstack/migration/elastic/types). Либо можно воспользоваться типом данных JSON в ClickHouse, который будет динамически создавать столбцы соответствующего типа по мере вставки данных.
 
     Рассмотрим следующий маппинг Elasticsearch для индекса, содержащего данные `syslog`:
@@ -578,9 +568,7 @@ ClickHouse использует [предложения `TTL`](/ru/clickstack/ma
     Подробнее об использовании типа JSON в схемах и способах его эффективного применения см. в руководстве [&quot;Проектирование схемы&quot;](/ru/guides/clickhouse/data-formats/json/schema).
   </Step>
 
-  <Step>
-    ### Установите `elasticdump`
-
+  <Step title={<>Установите <code>elasticdump</code></>} id="install-elasticdump">
     Мы рекомендуем использовать [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) для экспорта данных из Elasticsearch. Для работы этого инструмента требуется `node`, поэтому его следует установить на машине, имеющей сетевую доступность и к Elasticsearch, и к ClickHouse. Для большинства задач экспорта мы рекомендуем выделенный сервер как минимум с 4 ядрами и 16 ГБ оперативной памяти.
 
     ```shell
@@ -596,19 +584,15 @@ ClickHouse использует [предложения `TTL`](/ru/clickstack/ma
     По возможности мы рекомендуем запускать ClickHouse, Elasticsearch и `elastic dump` в одной зоне доступности или в одном дата-центре, чтобы минимизировать исходящий сетевой трафик и добиться максимальной пропускной способности.
   </Step>
 
-  <Step>
-    ### Установите клиент ClickHouse
-
+  <Step title="Установите клиент ClickHouse" id="install-clickhouse-client">
     Убедитесь, что ClickHouse [установлен на сервере](/ru/get-started/setup/install), где находится `elasticdump`. **Не запускайте сервер ClickHouse** — для выполнения этих шагов нужен только клиент.
   </Step>
 
-  <Step>
-    ### Потоковая передача данных
-
+  <Step title="Потоковая передача данных" id="stream-data">
     Чтобы передавать данные между Elasticsearch и ClickHouse в потоковом режиме, используйте команду `elasticdump`, направляя вывод напрямую в клиент ClickHouse. Следующая команда вставляет данные в нашу хорошо организованную таблицу `logs_system_syslog`.
 
     ```shell
-    # экспортировать url и учётные данные
+    # export url and credentials
     export ELASTICSEARCH_INDEX=.ds-logs-system.syslog-default-2025.06.03-000001
     export ELASTICSEARCH_URL=
     export ELASTICDUMP_INPUT_USERNAME=
@@ -617,7 +601,7 @@ ClickHouse использует [предложения `TTL`](/ru/clickstack/ma
     export CLICKHOUSE_PASSWORD=
     export CLICKHOUSE_USER=default
 
-    # команда для запуска - измените при необходимости
+    # command to run - modify as required
     elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
     clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
     --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONEachRow"
@@ -660,9 +644,7 @@ ClickHouse использует [предложения `TTL`](/ru/clickstack/ma
     </Info>
   </Step>
 
-  <Step>
-    ### Преобразование данных (необязательно)
-
+  <Step title="Преобразование данных (необязательно)" id="transform-data">
     Приведённые выше команды предполагают соответствие полей Elasticsearch столбцам ClickHouse в соотношении 1:1. Часто перед вставкой в ClickHouse данные Elasticsearch нужно отфильтровать и преобразовать.
 
     Это можно сделать с помощью табличной функции [`input`](/ru/reference/functions/table-functions/input), которая позволяет выполнять любой запрос `SELECT` к stdout.

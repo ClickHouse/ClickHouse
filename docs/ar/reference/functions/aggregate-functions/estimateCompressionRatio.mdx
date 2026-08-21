@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 أُضيف في: v25.4.0
 
-تُقدِّر نسبة الضغط لعمود معيّن دون ضغطه فعليًا.
+تُقدِّر الضغط لعمود معيّن دون ضغطه فعليًا.
 
 <Note>
   في الأمثلة أدناه، ستختلف النتيجة بحسب ترميز الضغط الافتراضي للخادم.
@@ -29,7 +29,7 @@ estimateCompressionRatio([codec, block_size_bytes])(column)
 **المعلمات**
 
 * `codec` — قيمة `String` تحتوي على codec ضغط واحد أو عدة codecs مفصولة بفواصل ضمن سلسلة واحدة. [`String`](/ar/reference/data-types/string)
-* `block_size_bytes` — حجم كتلة البيانات المضغوطة. وهذا يشبه ضبط كلٍّ من [`max_compress_block_size`](/ar/reference/settings/merge-tree-settings#max_compress_block_size) و[`min_compress_block_size`](/ar/reference/settings/merge-tree-settings#min_compress_block_size). القيمة الافتراضية هي 1 MiB ‏(1048576 بايت). والحد الأقصى المسموح به هو 256 MiB ‏(268435456 بايت). [`UInt64`](/ar/reference/data-types/int-uint)
+* `block_size_bytes` — حجم كتلة البيانات المضغوطة. وهذا يشبه ضبط كلٍّ من [`max_compress_block_size`](/ar/reference/settings/merge-tree-settings/max#max_compress_block_size) و[`min_compress_block_size`](/ar/reference/settings/merge-tree-settings/min#min_compress_block_size). القيمة الافتراضية هي 1 MiB ‏(1048576 بايت). والحد الأقصى المسموح به هو 256 MiB ‏(268435456 بايت). [`UInt64`](/ar/reference/data-types/int-uint)
 
 **الوسائط**
 
@@ -37,7 +37,7 @@ estimateCompressionRatio([codec, block_size_bytes])(column)
 
 **القيمة المرجعة**
 
-تعيد قيمة تقديرية لنسبة الضغط للعمود المحدد. [`Float64`](/ar/reference/data-types/float)
+تعيد قيمة تقديرية للضغط للعمود المحدد. [`Float64`](/ar/reference/data-types/float)
 
 **أمثلة**
 

@@ -165,7 +165,7 @@ Values 포맷을 제외한 어떤 데이터 포맷에서도 `now()`, `1 + 2` 등
 
 `SELECT` 절에 테이블 함수 [input()](/ko/reference/functions/table-functions/input)가 포함된 경우, `FORMAT` 절은 쿼리의 마지막에 지정해야 합니다.
 
-널을 허용하지 않는 데이터 타입의 컬럼에 `NULL` 대신 기본값을 삽입하려면 [insert&#95;null&#95;as&#95;default](/ko/reference/settings/session-settings#insert_null_as_default) 설정을 활성화하십시오.
+널을 허용하지 않는 데이터 타입의 컬럼에 `NULL` 대신 기본값을 삽입하려면 [insert&#95;null&#95;as&#95;default](/ko/reference/settings/session-settings/insert#insert_null_as_default) 설정을 활성화하십시오.
 
 `INSERT`는 CTE(common table expression)도 지원합니다. 예를 들어, 다음 두 SQL 문은 동일합니다:
 
@@ -306,7 +306,7 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
   ### 비동기 삽입
 </div>
 
-작지만 빈번한 삽입 작업에서도 데이터를 비동기적으로 삽입할 수 있습니다. 이렇게 삽입된 데이터는 배치로 묶인 다음 안전하게 테이블에 삽입됩니다. 비동기 삽입을 사용하려면 [`async_insert`](/ko/reference/settings/session-settings#async_insert) 설정을 활성화하십시오.
+작지만 빈번한 삽입 작업에서도 데이터를 비동기적으로 삽입할 수 있습니다. 이렇게 삽입된 데이터는 배치로 묶인 다음 안전하게 테이블에 삽입됩니다. 비동기 삽입을 사용하려면 [`async_insert`](/ko/reference/settings/session-settings/async-insert#async_insert) 설정을 활성화하십시오.
 
 `async_insert` 또는 [`Buffer` 테이블 엔진](/ko/reference/engines/table-engines/special/buffer)을 사용하면 추가 버퍼링이 발생합니다.
 
@@ -314,13 +314,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
   ### 대용량 또는 장시간 실행되는 삽입
 </div>
 
-대량의 데이터를 삽입할 때 ClickHouse는 &quot;squashing&quot;이라는 과정을 통해 쓰기 성능을 최적화합니다. 메모리에 있는 작은 데이터 블록은 디스크에 기록되기 전에 머지되어 더 큰 블록으로 합쳐집니다. squashing은 각 쓰기 작업에 수반되는 오버헤드를 줄여줍니다. 이 과정에서 삽입된 데이터는 ClickHouse가 각 [`max_insert_block_size`](/ko/reference/settings/session-settings#max_insert_block_size)개의 행을 기록한 후 쿼리할 수 있습니다.
+대량의 데이터를 삽입할 때 ClickHouse는 &quot;squashing&quot;이라는 과정을 통해 쓰기 성능을 최적화합니다. 메모리에 있는 작은 데이터 블록은 디스크에 기록되기 전에 머지되어 더 큰 블록으로 합쳐집니다. squashing은 각 쓰기 작업에 수반되는 오버헤드를 줄여줍니다. 이 과정에서 삽입된 데이터는 ClickHouse가 각 [`max_insert_block_size`](/ko/reference/settings/session-settings/max-insert#max_insert_block_size)개의 행을 기록한 후 쿼리할 수 있습니다.
 
 **관련 항목**
 
-* [async&#95;insert](/ko/reference/settings/session-settings#async_insert)
-* [wait&#95;for&#95;async&#95;insert](/ko/reference/settings/session-settings#wait_for_async_insert)
-* [wait&#95;for&#95;async&#95;insert&#95;timeout](/ko/reference/settings/session-settings#wait_for_async_insert_timeout)
-* [async&#95;insert&#95;max&#95;data&#95;size](/ko/reference/settings/session-settings#async_insert_max_data_size)
-* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/ko/reference/settings/session-settings#async_insert_busy_timeout_max_ms)
-* [async&#95;insert&#95;stale&#95;timeout&#95;ms](/ko/reference/settings/session-settings#async_insert_max_data_size)
+* [async&#95;insert](/ko/reference/settings/session-settings/async-insert#async_insert)
+* [wait&#95;for&#95;async&#95;insert](/ko/reference/settings/session-settings/wait-for#wait_for_async_insert)
+* [wait&#95;for&#95;async&#95;insert&#95;timeout](/ko/reference/settings/session-settings/wait-for#wait_for_async_insert_timeout)
+* [async&#95;insert&#95;max&#95;data&#95;size](/ko/reference/settings/session-settings/async-insert#async_insert_max_data_size)
+* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/ko/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)
+* `async_insert_stale_timeout_ms`

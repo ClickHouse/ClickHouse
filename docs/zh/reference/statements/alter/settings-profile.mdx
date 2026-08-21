@@ -15,6 +15,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
@@ -63,10 +64,12 @@ SHOW CREATE SETTINGS PROFILE p;
 * `ADD SETTINGS variable = value [constraints]` — 添加尚未存在的设置。
 * `MODIFY SETTINGS variable = value [constraints]` — 替换单个设置条目。整个条目 (值和约束) 都会被覆盖，因此如果你想保留 `MIN`/`MAX`/`READONLY`/等内容，需要重新指定。
 * `DROP SETTINGS variable [,...]` — 删除列出的设置。
-* `ADD PROFILES 'profile_name' [,...]` / `DROP PROFILES 'profile_name' [,...]` — 添加或删除父级 profile (继承的 profile) 。
+* `ADD PROFILES 'profile_name' [,...]` / `DROP PROFILES 'profile_name' [,...]` — 添加或删除父级 (继承的) profile。
 * `DROP ALL SETTINGS` / `DROP ALL PROFILES` — 删除所有设置或所有父级 profile。
 
 其中的多个子句可以组合在同一条语句中，例如 `DROP SETTINGS a ADD SETTINGS b = 1`。
+
+`SET variable = value` 是 `MODIFY SETTINGS variable = value` 的别名。之所以提供这种写法，是因为 `SET` 更符合直觉，而且在本想进行增量修改时，误写成用于替换的 `SETTINGS` 子句是很常见的错误。
 
 <div id="examples">
   ## 示例

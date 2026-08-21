@@ -2,32 +2,32 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Query insights do Postgres'
-description: 'Telemetria por instrução para o Managed Postgres: cada padrão de consulta executado pelo seu banco de dados, classificado por impacto, com os contadores de diagnóstico que explicam por que cada um é lento'
+description: 'Telemetria por instrução para o ClickHouse Managed Postgres: cada padrão de consulta executado pelo seu banco de dados, classificado por impacto, com os contadores de diagnóstico que explicam por que cada um é lento'
 keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'consultas lentas', 'latência p99', 'padrões de consulta', 'desempenho do postgres', 'blocos temporários', 'workers paralelos', 'wal']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 O Query Insights captura a telemetria por instrução da sua
-[Managed Postgres](/pt-BR/products/managed-postgres/overview) instância e classifica cada padrão de consulta
+[ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview) instância e classifica cada padrão de consulta
 por impacto, para que você possa passar de &quot;o p99 está aumentando aos poucos&quot; para &quot;este padrão
 está gravando em disco&quot; sem sair do Cloud Console.
 
 Os dados vêm de [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch),
 a extensão de código aberto do Postgres que envia contadores por instrução para o
 ClickHouse Cloud. A telemetria é normalizada no Postgres antes de sair
-do banco de dados — os literais são removidos e substituídos por marcadores, para que os
+do banco de dados — os literais são removidos e substituídos por placeholders, para que os
 valores exatos consultados por você nunca entrem no fluxo de telemetria.
 
 <div id="open">
   ## Abrir o Query insights
 </div>
 
-Abra sua instância do Managed Postgres no Cloud Console e clique em
+Abra sua instância do ClickHouse Managed Postgres no Cloud Console e clique em
 **Query insights** na barra lateral esquerda. A página é dividida em quatro
 seções, na ordem em que você provavelmente vai usá-las:
 
@@ -124,7 +124,7 @@ instância realmente executou.
 
 Abaixo da tabela de padrões, o painel **Consultas recentes** lista execuções
 individuais em ordem cronológica inversa — uma linha por
-comando executado, não uma linha por padrão. Use-o quando quiser o fluxo bruto de
+instrução executada, não uma linha por padrão. Use-o quando quiser o fluxo bruto de
 eventos em vez de um agregado, por exemplo para conferir se uma correção
 foi aplicada ou para encontrar o momento exato em que um erro ocorreu.
 
@@ -188,12 +188,12 @@ Tudo de que você precisa para diagnosticar um padrão lento está em um só lug
   ## API do Query Insights
 </div>
 
-A mesma telemetria também está disponível programaticamente por meio da
+A mesma telemetria está disponível programaticamente por meio da
 [OpenAPI do ClickHouse Cloud](/pt-BR/products/managed-postgres/openapi#query-insights).
 A tabela [Padrões lentos](#slow-patterns) corresponde ao
-endpoint de [listar padrões de consultas lentas](/pt-BR/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList),
+endpoint de [listar padrões de consultas lentas](/pt-BR/products/cloud/api-reference/postgres/slow-query-patterns-get-list),
 e o [painel lateral de detalhes](#detail) corresponde ao
-endpoint de [obter um padrão de consulta lenta](/pt-BR/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet),
+endpoint de [obter um padrão de consulta lenta](/pt-BR/products/cloud/api-reference/postgres/slow-query-pattern-get),
 que retorna as métricas agregadas de um padrão junto com suas
 execuções recentes.
 
@@ -252,6 +252,6 @@ ClickHouse. O código-fonte e as issues estão em
 
 * [Dashboard de monitoramento](/pt-BR/products/managed-postgres/monitoring/dashboard) — gráficos integrados de recursos e atividade
 * [endpoint do Prometheus](/pt-BR/products/managed-postgres/monitoring/prometheus) — colete métricas no nível do host na sua própria stack de observabilidade
-* [OpenAPI do Managed Postgres](/pt-BR/products/managed-postgres/openapi#query-insights) — consulte Padrões lentos e execuções recentes de forma programática
-* [Extensões](/pt-BR/products/managed-postgres/extensions) — as extensões disponíveis nas instâncias do Managed Postgres
+* [OpenAPI do ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/openapi#query-insights) — consulte Padrões lentos e execuções recentes de forma programática
+* [Extensões](/pt-BR/products/managed-postgres/extensions) — as extensões disponíveis nas instâncias do ClickHouse Managed Postgres
 * [`pg_stat_ch` no GitHub](https://github.com/clickhouse/pg_stat_ch) — a extensão de código aberto que dá suporte ao Query Insights

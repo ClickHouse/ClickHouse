@@ -499,11 +499,19 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
         #
         # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
-        # visibility the build succeeds (with `-Wunique-object-duplication` suppressed) but the
-        # resulting binary crashes with SIGSEGV before main runs, because inline-static singletons
-        # like `Context::global_context_instance` and `BaseSettings::unknown_settings` get
-        # duplicated per translation unit and singleton identity is broken. Validated empirically
-        # by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with signal 11.
+        # visibility the resulting binary crashes with SIGSEGV before main runs. Validated
+        # empirically by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with
+        # signal 11.
+        #
+        # That crash was originally attributed to inline-static singletons like
+        # `Context::global_context_instance` being duplicated per shared object. That is not the
+        # cause. Every `-Wunique-object-duplication` site has since been fixed (the warning now
+        # reports nothing under `-fvisibility=hidden`) and the crash is unchanged: it is
+        # `numa_init()`, a pre-main libc constructor, calling `free()` — which this binary
+        # interposes in `Common/malloc.cpp` — and reaching jemalloc before jemalloc has
+        # initialised. Whether it fires at all depends on static-initialisation order, so it can
+        # appear to come and go with unrelated changes. Fixing that is what would let CFI use
+        # `hidden`; the duplication fixes on their own do not.
         # CFI vtable visibility is still satisfied for in-binary types because
         # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
         # the linker to treat all vtables as internal to the binary.
@@ -560,6 +568,8 @@ elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
 elseif (OS_SUNOS)
     include(cmake/sunos/default_libs.cmake)
+elseif (OS_WASM)
+    include(cmake/wasm/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)

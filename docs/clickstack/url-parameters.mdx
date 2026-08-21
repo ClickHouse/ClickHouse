@@ -1,0 +1,234 @@
+---
+slug: /use-cases/observability/clickstack/url-parameters
+title: 'Deep links'
+sidebarTitle: 'Deep links'
+description: 'Link directly to ClickStack pages using URL query parameters'
+doc_type: 'reference'
+keywords: ['ClickStack', 'URL parameters', 'query parameters', 'deep linking', 'permalink', 'HyperDX']
+---
+
+ClickStack pages can be opened with deep links using URL query parameters, so you can jump straight into a specific search, dashboard, or panel from an external system (an alert notification, a runbook, a CI job, a chat message, and so on).
+
+The examples on this page use `<YOUR_CLICKSTACK_URL>`. Replace this with your ClickStack URL — for example `http://localhost:8080` for a local Open Source deployment, or `https://hyperdx.clickhouse.cloud` for Managed ClickStack in ClickHouse Cloud.
+
+<Note>
+The examples show query parameters without URL encoding for readability. When constructing links programmatically, URL-encode each query parameter value.
+</Note>
+
+<Info>
+**Managed ClickStack Service ID Parameter**
+
+When using Managed ClickStack in ClickHouse Cloud, links should include a `?chcServiceId=` parameter to identify which ClickHouse Cloud service should be loaded if the authenticated user following the link is authorized to use more than one ClickHouse Cloud service.
+
+Example: Open Search against a specific Cloud service
+
+```text
+https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
+```
+</Info>
+
+## Search — `/search` {#search}
+
+The primary log/trace search view. See [Search](/clickstack/features/search) for details on search syntax.
+
+| Param | Format | Description |
+| --- | --- | --- |
+| `source` | string | The source to search — accepts either a source ID or a source **name** (e.g. `Logs`). Only Log and Trace sources are supported on this page. |
+| `where` | string | Filter query text, in either Lucene or SQL syntax (see `whereLanguage`). |
+| `whereLanguage` | `lucene` \| `sql` | Which query language `where` is written in. |
+| `select` | string | SQL column/expression list to display in the results table. |
+| `filters` | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | Structured facet filters, applied in addition to `where`. |
+| `orderBy` | string | SQL sort expression for the results table. |
+| `mode` | `results` \| `delta` \| `pattern` | Which analysis mode is active. `delta` is available only for trace sources. |
+| `isLive` | `true` \| `false` | Whether live tail is enabled (default `true`). |
+| `traceId` | string | Jumps directly to a trace waterfall view for the given trace ID. |
+| `from`, `to` | epoch milliseconds | Absolute time range. If omitted, defaults to the last 15 minutes. |
+
+A saved search can also be opened directly at `/search/<savedSearchId>`.
+
+### Example: Search the `Logs` source for errors in the `checkout` service in a time range {#example-search-errors}
+
+```text
+<YOUR_CLICKSTACK_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
+```
+
+### Example: Jump straight to a trace's waterfall view {#example-search-trace}
+
+```text
+<YOUR_CLICKSTACK_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
+```
+
+## Saved Searches — `/search/list` {#saved-searches}
+
+The list of saved searches.
+
+| Param | Format | Description |
+| --- | --- | --- |
+| `tag` | string | Filter the list to saved searches with this tag. |
+
+### Example: List saved searches tagged `production` {#example-saved-searches-tag}
+
+```text
+<YOUR_CLICKSTACK_URL>/search/list?tag=production
+```
+
+## Dashboards — `/dashboards/<dashboardId>` {#dashboards}
+
+A saved dashboard. Omit `<dashboardId>` (`/dashboards`) to open a temporary, unsaved dashboard. See [Dashboards](/clickstack/features/dashboards/overview) for details on building dashboards.
+
+| Param | Format | Description |
+| --- | --- | --- |
+| `from`, `to` | epoch milliseconds | Time range applied to all tiles. If omitted, defaults to the last 15 minutes. |
+| `where` | string | Dashboard-level filter query text, applied across all tiles. |
+| `whereLanguage` | `lucene` \| `sql` | Which query language `where` is written in. |
+| `filters` | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | Structured dashboard filter values, selecting two items in a `ServiceName` filter drop-down. |
+| `granularity` | `auto` \| `30 second` \| `1 minute` \| `5 minute` \| `10 minute` \| `15 minute` \| `30 minute` \| `1 hour` \| `12 hour` \| `1 day` \| `7 day` | Bucket size for time-series tiles. `auto` picks a bucket size based on the selected time range. |
+| `highlightedTileId` | string | Scrolls to and highlights a specific tile — useful when linking from an alert. |
+
+### Example: Open a dashboard for a time range with one tile highlighted {#example-dashboard-highlight}
+
+Useful when linking from an alert notification straight to the tile that fired it.
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+## Dashboards List — `/dashboards/list` {#dashboards-list}
+
+| Param | Format | Description |
+| --- | --- | --- |
+| `tag` | string | Filter the dashboard list by tag. |
+
+### Example: List dashboards tagged `infra` {#example-dashboards-list-tag}
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/list?tag=infra
+```
+
+## Chart Explorer — `/chart` {#chart-explorer}
+
+An ad-hoc, shareable chart builder.
+
+| Param | Format | Description |
+| --- | --- | --- |
+| `config` | JSON | The full chart configuration (source, select, where, chart type, etc.). Typically generated by "Share" links from within the app rather than hand-written. |
+| `from`, `to` | epoch milliseconds | Time range. If omitted, defaults to the last 15 minutes. |
+
+### Example: Open a p99 Latency chart configuration for a time range {#example-chart-config}
+
+```text
+<YOUR_CLICKSTACK_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
+```
+
+## Alerts — `/alerts` {#alerts}
+
+See [Alerts](/clickstack/features/alerts) for details on creating and managing alerts.
+
+| Param | Format | Description |
+| --- | --- | --- |
+| `search` | string | Free-text filter over alert name/description. |
+| `tag` | string | Filter by tag. |
+| `creator` | string | Filter by the name of the alert's creator. |
+
+### Example: List alerts tagged `on-call` {#example-alerts-filter}
+
+```text
+<YOUR_CLICKSTACK_URL>/alerts?tag=on-call
+```
+
+## Session Replay — `/sessions` {#session-replay}
+
+Session replay browsing and playback. See [Session replay](/clickstack/features/session-replay) for feature details.
+
+| Param | Format | Description |
+| --- | --- | --- |
+| `sessionSource` | string | Session source ID or name. |
+| `where` | string | Filter query text over the session list. |
+| `whereLanguage` | `lucene` \| `sql` | Which query language `where` is written in. |
+| `from`, `to` | epoch milliseconds | Time range for the session list. If omitted, defaults to the last 15 minutes. |
+| `sid` | string | Opens a specific session by ID. |
+| `sfrom`, `sto` | epoch milliseconds | Time window of the opened session (used with `sid`). |
+
+### Example: Browse session replays within a time range {#example-sessions-time-range}
+
+```text
+<YOUR_CLICKSTACK_URL>/sessions?from=1735689600000&to=1735693200000
+```
+
+### Example: Open a specific session replay at its recorded time window {#example-sessions-open}
+
+```text
+<YOUR_CLICKSTACK_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
+```
+
+## Service Map — `/service-map` {#service-map}
+
+See [Service map](/clickstack/service-maps) for feature details.
+
+| Param | Format | Description |
+| --- | --- | --- |
+| `source` | string | Trace source ID or name. |
+| `samplingFactor` | integer | Trace sampling divisor (`1` = 100% of traces, `2` = 50%, `4` = 25%, etc.). |
+| `from`, `to` | epoch milliseconds | Time range. If omitted, defaults to the last 15 minutes. |
+
+### Example: View the service map over a time range {#example-service-map}
+
+```text
+<YOUR_CLICKSTACK_URL>/service-map?from=1735689600000&to=1735693200000
+```
+
+## Services — `/services` {#services}
+
+Per-service HTTP, database, and error dashboards.
+
+| Param | Format | Description |
+| --- | --- | --- |
+| `tab` | `http` \| `database` \| `errors` | Which service dashboard sub-tab is shown. Default: `http` |
+| `source` | string | Trace source ID. |
+| `service` | string | Selected service name. |
+| `where` | string | Filter query text. |
+| `whereLanguage` | `lucene` \| `sql` | Which query language `where` is written in (defaults to `sql` on this page). |
+| `filters` | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | Dashboard filter-bar values. |
+| `from`, `to` | epoch milliseconds | Time range. If omitted, defaults to the last 15 minutes. |
+
+### Example: View the database dashboard for a service over a time range {#example-services-database}
+
+```text
+<YOUR_CLICKSTACK_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
+```
+
+### Example: View the error dashboard for a service {#example-services-errors}
+
+```text
+<YOUR_CLICKSTACK_URL>/services?tab=errors&service=payments
+```
+
+## Kubernetes — `/kubernetes` {#kubernetes}
+
+| Param | Format | Description |
+| --- | --- | --- |
+| `logSource`, `metricSource` | string | Log and metric source IDs. When only one is provided, the other defaults to a correlated source. |
+| `tab` | e.g. `pods`, `nodes`, `namespaces` | Active sub-view. |
+| `q` | string | Lucene query for the resource list. |
+| `podName`, `nodeName`, `namespaceName` | string | Opens the detail panel for a specific pod, node, or namespace. |
+| `from`, `to` | epoch milliseconds | Time range. If omitted, defaults to the last 15 minutes. |
+
+### Example: Open the detail panel for a specific pod {#example-kubernetes-pod}
+
+```text
+<YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
+```
+
+## Notebooks — `/notebook/<notebookId>` {#notebooks}
+
+<Info>
+**Managed ClickStack only**
+
+Notebooks are only available in Managed ClickStack deployments. See [AI Notebooks](/clickstack/notebooks) for feature details.
+</Info>
+
+### Example: Open a specific notebook in a given Cloud service {#example-notebook-open}
+
+```text
+<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
+```

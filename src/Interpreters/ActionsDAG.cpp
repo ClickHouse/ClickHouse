@@ -3,6 +3,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -208,6 +209,36 @@ bool isConstantFromScalarSubquery(const ActionsDAG::Node * node)
     return true;
 }
 
+/// Returns the constant a `__scalarSubqueryResult` chain stands for, or nullptr if unavailable.
+/// Unwraps only value-preserving nodes and takes that node's own already-folded constant: never
+/// searches the subtree (an enclosing expression's value is not its descendant's), never executes
+/// (a non-foldable child has no folded column) and never casts (a type mismatch rejects).
+ColumnPtr tryGetScalarSubqueryPayload(const ActionsDAG::Node * node, const DataTypePtr & expected_type)
+{
+    bool unwrapped_scalar_subquery = false;
+    while (true)
+    {
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.at(0);
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || node->function_base->getName() != "__scalarSubqueryResult")
+            break;
+
+        unwrapped_scalar_subquery = true;
+        node = node->children.at(0);
+    }
+
+    /// Requiring the wrapper keeps this a no-op for every chain the check above does not already
+    /// accept, in particular a plain `identity`, which is not whitelisted there.
+    if (!unwrapped_scalar_subquery || !node->column || !isColumnConst(*node->column))
+        return nullptr;
+
+    if (!node->result_type->equals(*expected_type))
+        return nullptr;
+
+    return node->column;
+}
+
 }
 
 ActionsDAG::ActionsDAG() = default;
@@ -276,9 +307,17 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
 
         /// We must also hash the actual constant value, not just the column type name.
         /// Otherwise, two different constants with the same type and the same expression-based
-        /// result_name (e.g. from CTE constant folding) would produce identical hashes,
-        /// leading to query condition cache collisions and incorrect results.
-        column->updateHashWithValue(0, hash_state);
+        /// result_name (e.g. from CTE constant folding, or a folded `now()` / `randConstant`) would
+        /// produce identical hashes, leading to query-condition-cache collisions and stale Auto-PR
+        /// statistics reuse.
+        ///
+        /// The one exception is the join runtime-filter id carrier: its value is a per-plan-build
+        /// rendezvous key (never a stable hash component), while its identity is its `result_name`,
+        /// hashed above. Skipping only its value keeps the single-replica and parallel-replicas plan
+        /// builds matching without dropping any other constant's value (it still serializes normally
+        /// for distributed propagation).
+        if (!is_runtime_filter_id)
+            column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
@@ -394,7 +433,13 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant)
+const ActionsDAG::Node & ActionsDAG::addColumn(
+    ColumnConstPtr column,
+    DataTypePtr type,
+    std::string name,
+    bool is_deterministic_constant,
+    bool is_masked_secret,
+    bool is_runtime_filter_id)
 {
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
@@ -410,6 +455,8 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePt
     node.result_name = std::move(name);
     node.column = std::move(column);
     node.is_deterministic_constant = is_deterministic_constant;
+    node.is_masked_secret = is_masked_secret;
+    node.is_runtime_filter_id = is_runtime_filter_id;
 
     return addNode(std::move(node));
 }
@@ -453,7 +500,12 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         if (arguments[pos].column && isColumnConst(*arguments[pos].column))
             continue;
 
-        if (isConstantFromScalarSubquery(children[pos]))
+        /// Prefer the value the scalar subquery stands for: `build` below derives the result type
+        /// from this column, so a default here declares a type that disagrees with the value
+        /// execution will use (wrong scale/timezone, or a LOGICAL_ERROR on the type mismatch).
+        if (auto column = tryGetScalarSubqueryPayload(children[pos], arguments[pos].type))
+            arguments[pos].column = std::move(column);
+        else if (isConstantFromScalarSubquery(children[pos]))
             arguments[pos].column = arguments[pos].type->createColumnConstWithDefaultValue(0);
     }
 
@@ -1299,11 +1351,46 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         {
             try
             {
+                /// Do not fold when an argument's type differs from the type this node was resolved
+                /// for. The comparison is exact, not wrapper-stripped: `isNullable` derives its value
+                /// from the argument type alone, so a wrapper-only difference would give a wrong value
+                /// with an unchanged result type.
+                bool argument_types_drifted = false;
+                const auto & expected_argument_types = node->function_base->getArgumentTypes();
+                if (expected_argument_types.size() == arguments.size())
+                {
+                    for (size_t i = 0; i < arguments.size(); ++i)
+                    {
+                        if (!arguments[i].type || !expected_argument_types[i])
+                            continue;
+                        if (!arguments[i].type->equals(*expected_argument_types[i]))
+                        {
+                            argument_types_drifted = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (argument_types_drifted)
+                {
+                    /// An empty column of the declared type keeps header computation going; with one row
+                    /// the column stays null, because callers read any non-null output as definitive.
+                    /// `DataTypeFunction` (a captured lambda) is the one type here that cannot be
+                    /// instantiated - it inherits `IDataTypeDummy::createColumn`, which throws
+                    /// `NOT_IMPLEMENTED` - so it is left null too. (`DataTypeNothing` and `DataTypeSet`
+                    /// share that base but do override `createColumn`.)
+                    if (input_rows_count == 0 && !typeid_cast<const DataTypeFunction *>(res_column.type.get()))
+                        res_column.column = res_column.type->createColumn();
+                    break;
+                }
+
                 if (only_constant_arguments)
                     res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
                 else
                     res_column.column = node->function_base->getConstantResultForNonConstArguments(arguments, res_column.type);
 
+                /// Arguments did not drift (checked above), so a result-type mismatch here is a genuine
+                /// function contract violation rather than an EXCHANGE TABLES race.
                 if (res_column.column && !columnMatchesType(*res_column.column, *res_column.type))
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -1330,6 +1417,14 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             auto key = arguments.at(0);
+
+            /// Carry the ACTUAL nested type, as the `ALIAS` case below does and as
+            /// `ExpressionActions::executeAction` does here: the declared `result_type` is stale, and
+            /// keeping it would hide the difference from the `FUNCTION` check above. Runs before the
+            /// early exits, which leave the column null but still hand the TYPE to the parent.
+            if (const auto & key_array_type = getArrayJoinDataType(key.type))
+                res_column.type = key_array_type->getNestedType();
+
             if (!key.column)
                 break;
 
@@ -1367,7 +1462,13 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 
         case ActionsDAG::ActionType::ALIAS:
         {
+            /// Carry the argument's ACTUAL type, not just its column, as
+            /// `ExpressionActions::executeAction` does: an alias never changes a value, so copying a
+            /// drifted column under the stale declared type would hide the difference from the
+            /// `FUNCTION` check above and a function behind the alias would still be executed on it.
             res_column.column = arguments.at(0).column;
+            if (arguments.at(0).type)
+                res_column.type = arguments.at(0).type;
             break;
         }
 
@@ -1906,6 +2007,18 @@ void ActionsDAG::removeFromOutputs(const std::string & node_name)
     outputs.erase(it);
 
     removeUnusedActions(/*allow_remove_inputs=*/false);
+}
+
+void ActionsDAG::removeFromOutputs(const NameSet & node_names)
+{
+    NodeRawConstPtrs new_outputs;
+    new_outputs.reserve(outputs.size());
+
+    for (const auto * output : outputs)
+        if (!node_names.contains(output->result_name))
+            new_outputs.push_back(output);
+
+    outputs = std::move(new_outputs);
 }
 
 ActionsDAG ActionsDAG::clone() const
@@ -2935,7 +3048,10 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
                         dumpDAG());
 
     std::unordered_set<const Node *> split_nodes = {node};
-    auto res = split(split_nodes);
+    /// The filter name may also be an input name. Two same-named outputs of different structure in the
+    /// first half would break the Block invariant, so let split() rename the promoted node and repair
+    /// the second half. The mapping carries the final name of the filter node.
+    auto res = split(split_nodes, /*create_split_nodes_mapping=*/ true, /*avoid_duplicate_inputs=*/ true);
     return res;
 }
 
@@ -3738,7 +3854,13 @@ std::optional<ActionsDAG> buildFilterActionsDAGImpl(
             }
             case ActionsDAG::ActionType::COLUMN:
             {
-                result_node = &result_dag.addColumn(node->column, node->result_type, node->result_name, node->is_deterministic_constant);
+                /// Propagate `is_runtime_filter_id` too: this rebuilds COLUMN nodes from scratch (unlike
+                /// the whole-node copies in clone/split/merge), and filter pushdown/merge is re-run after
+                /// `tryAddJoinRuntimeFilter`, so without this a rebuilt runtime-filter carrier would lose
+                /// its mark and hash its volatile value again.
+                result_node = &result_dag.addColumn(
+                    node->column, node->result_type, node->result_name,
+                    node->is_deterministic_constant, node->is_masked_secret, node->is_runtime_filter_id);
                 break;
             }
             case ActionsDAG::ActionType::ALIAS:
@@ -3846,6 +3968,16 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
             return nullptr;
         auto it = node_name_to_input_node_column.find(node->result_name);
         if (it == node_name_to_input_node_column.end())
+            return nullptr;
+        /// The replacement must not change the type: the parent FUNCTION nodes are rebuilt with
+        /// their existing function_base, so a differently-typed input makes the DAG inconsistent
+        /// (the declared result type no longer matches what the function returns for the new
+        /// argument types). This happens when a predicate typed against a view header is pushed
+        /// down to the underlying storage where a column of the same name has another type, e.g.
+        /// `engine` is `Nullable(String)` in the `information_schema.tables` view but `String` in
+        /// `system.tables`. Keeping the original input is safe: the subtree is then just not
+        /// evaluated over the storage columns, and the filter is still applied upstream.
+        if (!it->second.type->equals(*node->result_type))
             return nullptr;
         return &it->second;
     };
@@ -4321,7 +4453,14 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
         writeIntBinary(column_flags, out);
 
-        if (has_column)
+        /// When computing a cache key (`registry.for_cache_key`), skip the VALUE of the runtime-filter
+        /// id carrier only: it is a volatile per-plan-build rendezvous key, not a stable key component,
+        /// while its `result_name`/`column_flags` (already written) carry the stable structural id.
+        /// Every other constant's value — including a folded `now()`/`randConstant` — must stay in the
+        /// key, otherwise semantically different queries would share statistics. This output is
+        /// hash-only and never deserialized, so omitting the carrier value is safe; the transmission
+        /// path (`for_cache_key == false`) always writes it.
+        if (has_column && !(registry.for_cache_key && node.is_runtime_filter_id))
             serializeConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)

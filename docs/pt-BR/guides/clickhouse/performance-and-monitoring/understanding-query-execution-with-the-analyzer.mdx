@@ -72,10 +72,10 @@ Cada nó tem filhos correspondentes, e a árvore como um todo representa a estru
   ## Analisador
 </div>
 
-Atualmente, o ClickHouse tem duas arquiteturas para o Analisador. Você pode usar a arquitetura antiga definindo: `enable_analyzer=0`. A nova arquitetura vem habilitada por padrão. Vamos descrever aqui apenas a nova arquitetura, já que a antiga será descontinuada quando o novo analisador estiver disponível para uso geral.
+Atualmente, o ClickHouse tem duas arquiteturas para o Analisador. Você pode usar a arquitetura antiga definindo: `enable_analyzer=0`. A arquitetura atual vem habilitada por padrão desde o ClickHouse `24.3`. Vamos descrever aqui apenas a arquitetura atual, já que a antiga foi descontinuada e é mantida apenas para compatibilidade retroativa.
 
 <Note>
-  A nova arquitetura deve nos oferecer uma base melhor para aprimorar o desempenho do ClickHouse. No entanto, como é um componente fundamental das etapas de processamento de consultas, ela também pode ter um impacto negativo em algumas consultas, e há [incompatibilidades conhecidas](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). Você pode voltar ao analisador antigo alterando a configuração `enable_analyzer` no nível da consulta ou do usuário.
+  A arquitetura atual deve nos oferecer uma base melhor para aprimorar o desempenho do ClickHouse. No entanto, como é um componente fundamental das etapas de processamento de consultas, ela também pode ter um impacto negativo em algumas consultas, e há [incompatibilidades conhecidas](/pt-BR/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). Você pode voltar para a arquitetura antiga alterando a configuração `enable_analyzer` no nível da consulta ou do usuário.
 </Note>
 
 O analisador é uma etapa importante da execução da consulta. Ele recebe uma AST e a transforma em uma árvore de consulta. O principal benefício de uma árvore de consulta em relação a uma AST é que muitos componentes passam a ser resolvidos, como o armazenamento, por exemplo. Também sabemos de qual tabela ler, os aliases são resolvidos, e a árvore conhece os diferentes tipos de dados usados. Com todos esses benefícios, o analisador pode aplicar otimizações. Essas otimizações funcionam por meio de &quot;passes&quot;. Cada pass procura otimizações diferentes. Você pode ver todos os passes [aqui](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249); vamos ver isso na prática com nossa consulta anterior:

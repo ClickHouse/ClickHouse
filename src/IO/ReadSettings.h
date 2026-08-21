@@ -118,9 +118,13 @@ struct FilesystemCacheSettings
     /// the sister `DistributedCacheSettings::prefer_bigger_buffer_size`.
     bool prefer_bigger_buffer_size = true;
     size_t reserve_space_wait_lock_timeout_milliseconds = 1000;
+    /// How long a read may wait for a file segment which is being downloaded by a concurrent query
+    /// before bypassing the cache and reading directly from remote storage.
+    size_t wait_for_concurrent_download_timeout_milliseconds = 1000;
     size_t max_download_size_per_query = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_per_query_cache_write_limit = true;
     bool enable_log = false;
+    bool verbose_logging = false;
 };
 
 struct ReadSettings
@@ -148,18 +152,19 @@ struct ReadSettings
     bool use_page_cache_for_object_storage = false;
     PageCacheSettings page_cache_settings;
 
-    /// Experimental pipeline read executor. When `enabled`, `ReadPipeline::build` routes supported
-    /// reads through `ReaderExecutor` instead of the legacy matryoshka of read buffers (reading in
-    /// blocks of `buffer_size`). The long-connection knobs apply only on the executor path: reuse a
-    /// held source connection across sequential windows (`use_long_connections`), the forward gap
-    /// bridged on it rather than reopening (`min_bytes_for_seek`), and the tail drained to complete a
-    /// dropped connection (`max_tail_for_drain`).
+    /// Experimental pipeline read executor. When `enabled`, `ReadPipeline::build` sends supported reads
+    /// through `ReaderExecutor` instead of the legacy stack of read buffers. The long-connection knobs
+    /// apply only on the executor path. `use_long_connections` reuses one held source connection across
+    /// sequential windows. `min_bytes_for_seek` bridges a small forward gap on that connection instead
+    /// of reopening. `max_tail_for_drain` drains the tail to finish a dropped connection.
     struct ReaderExecutorSettings
     {
         bool enabled = false;
         bool use_long_connections = true;
-        size_t min_bytes_for_seek = 2 * 1_MiB;
-        size_t max_tail_for_drain = 1_MiB;
+        size_t window_size = DEFAULT_READER_EXECUTOR_WINDOW_SIZE;
+        size_t block_size = DEFAULT_READER_EXECUTOR_BLOCK_SIZE;
+        size_t min_bytes_for_seek = DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK;
+        size_t max_tail_for_drain = DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN;
     };
     ReaderExecutorSettings reader_executor;
 
