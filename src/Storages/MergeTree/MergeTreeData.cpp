@@ -428,6 +428,10 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+
+    /// Pauses a streaming enrichment round after its parts snapshot and before it enriches any
+    /// subscription, so a test can place a commit and a new subscription inside that window.
+    extern const char streaming_enrichment_pause_before_enrichment[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -12876,6 +12880,9 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
         local_parts[part->info.getPartitionId()].push_back(part->info);
 
     auto promoters = buildPromoters();
+
+    /// Outside the subscription manager's lock, so a registration can still proceed while parked.
+    FailPointInjection::pauseFailPoint(FailPoints::streaming_enrichment_pause_before_enrichment);
 
     bool any_enriched = false;
     for (auto & subscription : subscriptions)
