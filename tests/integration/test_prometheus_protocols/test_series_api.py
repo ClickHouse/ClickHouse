@@ -239,9 +239,7 @@ def test_series_empty_time_range_parameters_are_ignored():
 
 
 def test_series_time_range_is_ignored_without_stored_time_bounds():
-    # `prometheus_no_bounds` does not store min_time/max_time, so the endpoint returns the
-    # matching series without applying the time range (an approximate superset, as allowed
-    # by the Prometheus /api/v1/series contract).
+    # Without stored min_time/max_time the time range is ignored (a superset is allowed by Prometheus).
     data = get_json_from_api("/no_bounds/api/v1/series?match[]=cpu_usage&start=2000&end=3000")["data"]
     assert data == [{"__name__": "cpu_usage", "host": "server1"}]
 

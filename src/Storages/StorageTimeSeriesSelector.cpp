@@ -783,8 +783,7 @@ ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
     auto select_query = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings), min_time, max_time, timestamp_data_type);
 
-    /// Alias the single returned expression (`timeSeriesStoreTags(...)`, which returns `id`),
-    /// so callers can reference the column by a fixed name.
+    /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
     const auto & select_with_union = typeid_cast<const ASTSelectWithUnionQuery &>(*select_query);
     auto & select = typeid_cast<ASTSelectQuery &>(*select_with_union.list_of_selects->children.at(0));
     select.select()->children.at(0)->setAlias("series_id");

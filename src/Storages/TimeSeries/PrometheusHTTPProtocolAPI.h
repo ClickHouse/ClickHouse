@@ -49,11 +49,7 @@ public:
         const Params & params,
         QueryFinishCallback query_finish_callback = {});
 
-    /// Get series metadata (/api/v1/series).
-    /// `match_params` are the values of the repeated `match[]` parameter; the result is the union
-    /// of the series matched by each selector. `limit` is the maximum number of returned series
-    /// (0 means no limit); a truncated response carries the Prometheus
-    /// "results truncated due to limit" warning.
+    /// Get series metadata (/api/v1/series): the union of the series matched by the `match[]` selectors, capped by `limit` (0 means no limit).
     void getSeries(
         WriteBuffer & response,
         const Strings & match_params,

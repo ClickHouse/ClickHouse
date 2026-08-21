@@ -444,8 +444,7 @@ public:
             return false;
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
-        /// Settings class. Prometheus defines `limit` on these endpoints, so it must not fall
-        /// through to ClickHouse's generic `limit` setting.
+        /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
         static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "lookback_delta", "database", "table"};
         return !reserved_param_names.contains(name);
     }
@@ -535,8 +534,7 @@ public:
                 String start = params->get("start", "");
                 String end = params->get("end", "");
 
-                /// The optional `limit` parameter is the maximum number of returned series
-                /// (0 means no limit, which is also the default).
+                /// The optional `limit` parameter caps the number of returned series (0 means no limit, which is also the default).
                 UInt64 limit = 0;
                 String limit_param = params->get("limit", "");
                 if (!limit_param.empty())

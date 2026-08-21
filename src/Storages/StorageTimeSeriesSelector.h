@@ -39,13 +39,7 @@ public:
 
     static VirtualColumnsDescription createVirtuals();
 
-    /// Makes a SELECT query over the tags table of a TimeSeries table returning the ids (aliased as
-    /// `series_id`) of the series matching a list of PromQL label matchers. As a side effect of
-    /// executing that query the tags of each matched series are registered in the query context
-    /// under its id (see functions timeSeriesStoreTags and timeSeriesIdToTags). If `min_time` or
-    /// `max_time` is set, only series whose time range overlaps [min_time, max_time] are returned;
-    /// the caller must ensure that the tags table stores the `min_time` and `max_time` columns
-    /// (see the TimeSeries setting `store_min_time_and_max_time`).
+    /// Makes a SELECT query for the ids (`series_id`) of the series matching the matchers and optional time bounds (need stored min_time/max_time), registering their tags for timeSeriesIdToTags().
     static ASTPtr makeSelectIDsQuery(
         const StorageID & tags_table_id,
         const PrometheusQueryTree::MatcherList & matchers,

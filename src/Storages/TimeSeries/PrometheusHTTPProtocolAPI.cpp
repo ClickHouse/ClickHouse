@@ -406,8 +406,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    /// Prometheus requires at least one `match[]` series selector on `/api/v1/series`. Without it
-    /// the endpoint would run an unbounded scan over the whole tags table, so reject such requests.
+    /// Prometheus requires at least one `match[]` selector here; without it the endpoint would scan the whole tags table.
     if (match_params.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -427,10 +426,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
     if (min_time && max_time && (*max_time < *min_time))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'start' must not be greater than 'end'");
 
-    /// The time range filters series by their [min_time, max_time] stored in the tags table, in the
-    /// same way as the query path does (see StorageTimeSeriesSelector::readImpl). When the table
-    /// does not maintain those bounds the range is ignored: Prometheus allows /api/v1/series to
-    /// return a superset of the series which have samples in the requested range.
+    /// Like the query path, filter by the [min_time, max_time] stored in the tags table; without stored bounds the range is ignored (a superset is allowed).
     auto time_series_settings = time_series_storage->getStorageSettings();
     if (!(*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
         || !(*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
@@ -441,10 +437,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, getContext());
 
-    /// Each `match[]` value is parsed with the same PromQL parser as the query endpoints and must
-    /// be an instant selector, e.g. `up` or `{job=~"prom.*"}`. The series matching each selector
-    /// are found by the same query over the tags table which the query path uses; a repeated
-    /// `match[]` parameter is the union of the series matched by each selector.
+    /// Each `match[]` value must be an instant selector; the result is the union of the series matched by each selector.
     String inner_query;
     for (const auto & match_param : match_params)
     {
@@ -470,11 +463,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
             tags_table_id, matchers, *time_series_settings, min_time, max_time, timestamp_data_type)->formatWithSecretsOneLine();
     }
 
-    /// The tags of each matched series are registered under its id while executing the inner query
-    /// (see timeSeriesStoreTags), and timeSeriesIdToTags() returns them as Array(Tuple(String, String)),
-    /// including the metric name as the `__name__` tag. `DISTINCT` collapses both the multiple rows
-    /// which the tags table can temporarily store for one series and the series matched by more than
-    /// one selector. For a finite limit one extra row is fetched to report truncation.
+    /// timeSeriesIdToTags() returns the tags registered by the inner query (including `__name__`); `DISTINCT` dedups, and one extra row detects truncation.
     String sql_query = fmt::format(
         "SELECT DISTINCT timeSeriesIdToTags(series_id) AS {} FROM ({})", TimeSeriesColumnNames::Tags, inner_query);
     if (limit)
@@ -482,8 +471,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query);
 
-    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only,
-    /// same as the SQL generated for the query endpoints.
+    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
     getContext()->setSetting("allow_experimental_analyzer", true);
 
     auto [ast, io] = executeQuery(sql_query, getContext(), {}, QueryProcessingStage::Complete);
@@ -492,9 +480,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
     {
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
-        /// Pull until the first non-empty block is ready before writing the header
-        /// because executor.pull() can throw an exception and it's better to catch it early and write
-        /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryImpl.
+        /// Pull the first non-empty block before writing the header so an early exception still produces the correct error response.
         bool has_output = false;
         Block block;
         while (executor.pull(block))
@@ -542,9 +528,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
         else
             writeString("]}", response);
 
-        /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
-        /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
-        /// A truncated result is incomplete (the pipeline was not fully drained), so it must not be cached.
+        /// Finalize the query result cache write before the executor's destructor cancels the pipeline; a truncated (incomplete) result must not be cached.
         if (!truncated)
             io.pipeline.finalizeWriteInQueryResultCache();
     }
@@ -554,8 +538,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
         throw;
     }
 
-    /// Release the query slot early so a slow client draining the response does not keep occupying it,
-    /// then flush the response (query_finish_callback) and record QueryFinish.
+    /// Release the query slot early, flush the response and record QueryFinish.
     finishExecutedQuery(io, query_finish_callback);
 }
 

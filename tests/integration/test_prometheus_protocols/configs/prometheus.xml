@@ -90,8 +90,7 @@
                 </handler>
             </my_rule_11>
 
-            <!-- Table without min_time/max_time columns, used to verify that /api/v1/series ignores
-                 the time range when the tags table does not maintain the time bounds. -->
+            <!-- Table without min_time/max_time columns: /api/v1/series must ignore the time range for it. -->
             <my_rule_12>
                 <url_prefix>/no_bounds</url_prefix>
                 <handler>
