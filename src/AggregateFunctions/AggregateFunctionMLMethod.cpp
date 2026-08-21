@@ -16,6 +16,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -470,7 +471,7 @@ void LinearModelData::returnWeights(IColumn & to) const
     val_to.push_back(bias);
 }
 
-void LinearModelData::read(ReadBuffer & buf)
+void LinearModelData::read(ReadBuffer & buf, UInt64 expected_param_num)
 {
     readBinary(bias, buf);
     readBinary(weights, buf);
@@ -478,6 +479,21 @@ void LinearModelData::read(ReadBuffer & buf)
     readBinary(gradient_batch, buf);
     readBinary(batch_size, buf);
     weights_updater->read(buf);
+
+    if (weights.size() != expected_param_num)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Malformed state of a machine learning aggregate function: it has {} weights, "
+            "while the type declares {} features",
+            weights.size(), expected_param_num);
+
+    /// The gradient holds one value per weight plus one for the bias. The weights updaters rely on
+    /// that, so a state where the two disagree would make them read past the end of the gradient.
+    if (gradient_batch.size() != weights.size() + 1)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Malformed state of a machine learning aggregate function: it has {} weights and a gradient of {} values",
+            weights.size(), gradient_batch.size());
 }
 
 void LinearModelData::write(WriteBuffer & buf) const
@@ -739,6 +755,9 @@ void LogisticRegression::predict(
     Float64 bias,
     ContextPtr /*context*/) const
 {
+    if (weights.size() + 1 != arguments.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "In predict function number of arguments differs from the size of weights vector");
+
     size_t rows_num = arguments.front().column->size();
 
     if (offset > rows_num || offset + limit > rows_num)
@@ -809,7 +828,7 @@ void LinearRegression::predict(
 {
     if (weights.size() + 1 != arguments.size())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "In predict function number of arguments differs from the size of weights vector");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "In predict function number of arguments differs from the size of weights vector");
     }
 
     size_t rows_num = arguments.front().column->size();

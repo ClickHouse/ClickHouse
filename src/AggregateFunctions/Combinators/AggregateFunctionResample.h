@@ -140,7 +140,13 @@ public:
 
     size_t sizeOfData() const override
     {
-        return total * size_of_data;
+        /// Nested Resample combinators multiply the sizes, and every layer is only checked against
+        /// `max_elements` on its own, so the product can wrap around.
+        size_t result = 0;
+        if (common::mulOverflow(total, size_of_data, result))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Overflow in internal computations in function {}. The state is too large", getName());
+        return result;
     }
 
     size_t alignOfData() const override

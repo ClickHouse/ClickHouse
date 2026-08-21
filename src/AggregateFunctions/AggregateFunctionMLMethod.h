@@ -17,6 +17,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -287,7 +288,10 @@ public:
 
     void write(WriteBuffer & buf) const;
 
-    void read(ReadBuffer & buf);
+    /// `expected_param_num` is the number of features declared by the type: the state comes from
+    /// the data and must agree with it, because everything downstream indexes the weights by the
+    /// feature number.
+    void read(ReadBuffer & buf, UInt64 expected_param_num);
 
     void predict(
         ColumnVector<Float64>::Container & container,
@@ -386,7 +390,10 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override { this->data(place).write(buf); }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).read(buf); }
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        this->data(place).read(buf, param_num);
+    }
 
     void predictValues(
         ConstAggregateDataPtr __restrict place,
