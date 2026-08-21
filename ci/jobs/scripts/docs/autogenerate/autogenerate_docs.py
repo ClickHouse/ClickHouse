@@ -902,6 +902,15 @@ def walk_setting_pages(pages):
         yield from walk_setting_pages(page.children)
 
 
+def _settings_route_sort_key(route):
+    mode_priority = {"token": 0, "raw": 1}
+    return (
+        -len(route["prefix"]),
+        mode_priority.get(route["mode"], 2),
+        route["target"],
+    )
+
+
 def session_settings_routes(pages):
     routes = [
         {
@@ -912,11 +921,7 @@ def session_settings_routes(pages):
         for page in walk_setting_pages(pages)
         if page.sections
     ]
-    mode_priority = {"token": 0, "raw": 1}
-    return sorted(
-        routes,
-        key=lambda route: (-len(route["prefix"]), mode_priority.get(route["mode"], 2), route["target"]),
-    )
+    return sorted(routes, key=_settings_route_sort_key)
 
 
 def setting_route(name, routes):
@@ -1217,6 +1222,21 @@ def _validate_settings_routing(
             )
         prefixes[prefix] = index
         targets[target] = index
+
+    expected_routes = sorted(routes, key=_settings_route_sort_key)
+    if routes != expected_routes:
+        mismatch = next(
+            index
+            for index, (route, expected_route) in enumerate(
+                zip(routes, expected_routes)
+            )
+            if route != expected_route
+        )
+        raise ValueError(
+            f"invalid {family_name} settings route order at index {mismatch} "
+            f"in {source}: routes must be ordered by descending prefix "
+            "specificity, then mode and target"
+        )
 
     for anchor, target in anchor_routes.items():
         if not isinstance(anchor, str) or not anchor:

@@ -409,6 +409,25 @@ def main():
             "route mode",
         )
 
+        wrong_precedence_routes = [
+            {
+                "prefix": "use",
+                "mode": "token",
+                "target": base_route + "/use",
+            },
+            {
+                "prefix": "use_page",
+                "mode": "token",
+                "target": base_route + "/use-page",
+            },
+            valid_routes[1],
+        ]
+        expect_invalid_routing(
+            wrong_precedence_routes,
+            {"use_page_cache_for_local_disks": base_route + "/use-page"},
+            "route order",
+        )
+
         invalid_route = dict(valid_routes[0])
         invalid_route["target"] = "/reference/settings/formats/stable"
         expect_invalid_routing(
