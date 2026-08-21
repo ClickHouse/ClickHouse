@@ -36,9 +36,14 @@ void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, FormatP
     range_sets.resize(1);
 }
 
-Prefetcher::~Prefetcher()
+void Prefetcher::shutdownTasks()
 {
     shutdown->shutdown();
+}
+
+Prefetcher::~Prefetcher()
+{
+    shutdownTasks();
 
     /// Assert that all PrefetchHandle-s were destroyed.
     chassert(std::all_of(requests.begin(), requests.end(), [](const RequestState & req)
@@ -212,7 +217,9 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
             size_t subrange_end = 0;
             for (const auto & [start, length] : subranges)
             {
-                if (start < range.start || length > range.end - start)
+                /// `start > range.end` has to be checked separately: `range.end - start` would
+                /// underflow and let a subrange past the end of the range through.
+                if (start < range.start || start > range.end || length > range.end - start)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Subrange out of bounds: [{}, {}) not in [{}, {})", start, start + length, range.start, range.end);
                 subrange_start = std::min(subrange_start, start);
                 subrange_end = std::max(subrange_end, start + length);
@@ -259,6 +266,15 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
 
     chassert(parent_req->state.load(std::memory_order_relaxed) == RequestState::State::HasTask);
     Task * task = parent_req->task;
+
+    /// The parent range was already coalesced into a task, so the check above was skipped. Validate
+    /// against the task instead, before touching refcount or RequestState-s: `task_offset` below is
+    /// otherwise unchecked and getRangeData would hand out a span outside the task's buffer.
+    size_t task_end = task->offset + task->length;
+    for (const auto & [start, length] : subranges)
+        if (start < task->offset || start > task_end || length > task_end - start)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Subrange out of bounds: [{}, {}) not in read task [{}, {})", start, start + length, task->offset, task_end);
+
     task->refcount.fetch_add(subranges.size());
 
     for (size_t i = 0; i < subranges.size(); ++i)
@@ -452,6 +468,12 @@ std::span<const char> Prefetcher::getRangeData(const PrefetchHandle & request)
     if (s == Task::State::Exception)
         rethrowException(task);
     chassert(s == Task::State::Done);
+
+    /// Both `buf` and `cached_region` below cover at least [task->offset, task->offset + task->length).
+    /// Checked instead of asserted: handing out a span past the end would be a segfault in release builds.
+    if (req->task_offset > task->length || req->length > task->length - req->task_offset)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetched range [{}, {}) is outside its read task [{}, {})",
+            task->offset + req->task_offset, task->offset + req->task_offset + req->length, task->offset, task->offset + task->length);
 
     if (task->cached_region.has_value())
     {

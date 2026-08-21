@@ -65,6 +65,12 @@ public:
 
     String getName() const override { return "DelayedCreatingSets"; }
 
+    /// The step only holds shared pointers to future sets, so a shallow copy is a valid clone.
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<DelayedCreatingSetsStep>(getInputHeaders().front(), subqueries, network_transfer_limits, prepared_sets_cache);
+    }
+
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
 
     static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(

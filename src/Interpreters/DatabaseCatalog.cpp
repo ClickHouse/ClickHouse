@@ -1946,7 +1946,8 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
     }
 
     /// For DROP DATABASE we should ignore dependent tables from the same database.
-    /// TODO unload tables in reverse topological order and remove this code
+    /// `InterpreterDropQuery::executeToDatabaseImpl` unloads tables in reverse topological order of loading
+    /// and referential dependencies, so a dependent is always dropped before the tables it depends on.
     std::vector<StorageID> from_other_databases;
     for (const auto & dependent : dependents)
         if (dependent.database_name != removing_table.database_name)

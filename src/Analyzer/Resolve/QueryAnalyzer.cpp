@@ -1647,6 +1647,12 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         additional_column_qualification_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
         if (!table_node->getTemporaryTableName().empty())
             additional_column_qualification_parts = {table_node->getTemporaryTableName()};
+        /** A materialized CTE is stored under a randomly generated internal temporary table name.
+          * The user refers to it by its visible name, so qualify the columns with that name -
+          * otherwise the result header would leak an unstable implementation detail.
+          */
+        if (table_node->isMaterializedCTE())
+            additional_column_qualification_parts = {table_node->getMaterializedCTE()->cte_name};
     }
     else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
         additional_column_qualification_parts = {query_node->getCTEName()};
@@ -1674,7 +1680,11 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             forced_qualifier = table_expression_node->getAlias();
         else if (auto * table_node = table_expression_node->as<TableNode>())
         {
-            if (!table_node->getTemporaryTableName().empty())
+            /// Same as above: a materialized CTE must be qualified with its visible name,
+            /// not the internal temporary table name it is stored under.
+            if (table_node->isMaterializedCTE())
+                forced_qualifier = table_node->getMaterializedCTE()->cte_name;
+            else if (!table_node->getTemporaryTableName().empty())
                 forced_qualifier = table_node->getTemporaryTableName();
             else
                 forced_qualifier = table_node->getStorageID().getTableName();
@@ -1963,6 +1973,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
+    expression_identifier_lookup.is_matcher_qualifier = true;
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
@@ -2962,7 +2973,10 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         false /*allow_table_expression*/);
 
     for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
+    {
         validateGroupByKeyType(partition_by_node->getResultType(), scope);
+        validateWindowKeyType(partition_by_node->getResultType(), "PARTITION BY");
+    }
 
     ProjectionNames order_by_projection_names = resolveSortNodeList(window_node.getOrderByNode(), scope);
 
@@ -4693,6 +4707,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         /// is re-analyzed in a synthetic subquery created by `analyzer_compatibility_join_using_top_level_identifier`).
         if (table_function_argument->as<TableFunctionNode>())
         {
+            /// An argument already marked unresolved must stay marked: `resolve` below overwrites the whole
+            /// index set, and traversal helpers rely on it to not descend into a not-fully-resolved subtree.
+            const auto & previous_unresolved_indexes = table_function_node_typed.getUnresolvedArgumentIndexes();
+            if (std::find(previous_unresolved_indexes.begin(), previous_unresolved_indexes.end(), table_function_argument_index)
+                != previous_unresolved_indexes.end())
+                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+
             result_table_function_arguments.push_back(table_function_argument);
             continue;
         }
@@ -4840,7 +4861,28 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     column.name = identifier_node->getIdentifier().getFullName();
                     /// Change ephemeral columns to default columns.
                     column.default_desc.kind = ColumnDefaultKind::Default;
-                    structure_hint.add(std::move(column));
+
+                    /** The same column of the table function can be selected more than once,
+                      * as in `INSERT INTO t (x, y) SELECT c, c FROM file(...)`.
+                      * A source column has a single type, so the hint is usable only if all the
+                      * insert table columns that it is mapped to agree on the type.
+                      */
+                    if (const auto * already_hinted = structure_hint.tryGet(column.name))
+                    {
+                        if (!already_hinted->type->equals(*column.type))
+                        {
+                            if (use_structure_from_insertion_table_in_table_functions == 1)
+                                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                    "Column {} is selected more than once in INSERT SELECT query, "
+                                    "but the corresponding columns of the insert table have different types: {} and {}.",
+                                    backQuote(column.name), already_hinted->type->getName(), column.type->getName());
+
+                            use_columns_from_insert_query = false;
+                            break;
+                        }
+                    }
+                    else
+                        structure_hint.add(std::move(column));
                 }
 
                 /// Once we hit asterisk we want to find end of the range covered by asterisk
@@ -5411,7 +5453,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     {
         expressions_visitor.visit(join_node_typed.getJoinExpression());
         auto join_expression = join_node_typed.getJoinExpression();
+        const bool previous_resolving_join_on_expression = scope.resolving_join_on_expression;
+        scope.resolving_join_on_expression = true;
         resolveExpressionNode(join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        scope.resolving_join_on_expression = previous_resolving_join_on_expression;
         join_node_typed.getJoinExpression() = std::move(join_expression);
     }
     else if (join_node_typed.isUsingJoinExpression())
@@ -6476,7 +6521,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         bool allow_resolve_from_using = scope.allow_resolve_from_using;
         scope.allow_resolve_from_using = false;
+        bool in_prewhere = scope.in_prewhere;
+        scope.in_prewhere = true;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        scope.in_prewhere = in_prewhere;
         scope.allow_resolve_from_using = allow_resolve_from_using;
 
         /** Expressions in PREWHERE with JOIN should not change their type.
