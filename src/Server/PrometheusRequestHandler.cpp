@@ -481,6 +481,15 @@ public:
 
             if (uri_path.ends_with("/format_query"))
             {
+                if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_GET
+                    && request.getMethod() != Poco::Net::HTTPRequest::HTTP_POST)
+                {
+                    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED);
+                    response.set("Allow", "GET, POST");
+                    writeString(R"({"status":"error","errorType":"method_not_allowed","error":"method not allowed"})", getOutputStream(response));
+                    return;
+                }
+
                 PrometheusQueryTree query_tree{params->get("query", ""), 9};
                 query_tree.validate();
                 String formatted_query = query_tree.toPrometheusString();

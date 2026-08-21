@@ -175,6 +175,7 @@ def test_format_query_get():
         ("0_755", "493"),
         ("-0755", "-493"),
         ("08", "8"),
+        ("-NaN", "NaN"),
         ("foo @ 0755", "foo @ 493"),
         ("+1", "1"),
         ("+1e3", "1000"),
@@ -189,6 +190,33 @@ def test_format_query_formats_numeric_literals_like_prometheus(query, expected):
     )
     assert response.status_code == requests.codes.ok, response.text
     assert response.json() == {"status": "success", "data": expected}
+
+
+def test_format_query_accepts_overflowing_octal_literal():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": "077777777777777777777777777777"},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    assert response.json()["status"] == "success"
+
+
+@pytest.mark.parametrize("method", ["put", "delete"])
+def test_format_query_rejects_unsupported_methods(method):
+    request = getattr(requests, method)
+    response = request(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        data={"query": "foo"},
+        params={"query": "foo"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == requests.codes.method_not_allowed, response.text
+    assert response.headers["Allow"] == "GET, POST"
+    assert response.json() == {
+        "status": "error",
+        "errorType": "method_not_allowed",
+        "error": "method not allowed",
+    }
 
 
 def test_format_query_allows_trailing_comment_without_newline():

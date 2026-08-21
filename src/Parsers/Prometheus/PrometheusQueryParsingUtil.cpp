@@ -730,6 +730,11 @@ namespace
         else if (isOctalFormat(unsigned_input))
         {
             ok = tryParseOctalFormat(unsigned_input, scale, result, error_message, error_pos);
+            if constexpr (std::is_same_v<T, ScalarType>)
+            {
+                if (!ok)
+                    ok = tryParseNumberFormat(unsigned_input, scale, result, error_message, error_pos);
+            }
         }
         else if (isDurationFormat(unsigned_input))
         {

@@ -287,11 +287,18 @@ TEST(PromQLParser, PrometheusFormatting)
     expectPrometheusFormatting(R"(0_755)", R"(493)");
     expectPrometheusFormatting(R"(-0755)", R"(-493)");
     expectPrometheusFormatting(R"(08)", R"(8)");
+    {
+        PrometheusQueryTree query_tree{R"(077777777777777777777777777777)", 9};
+        const auto * scalar = typeid_cast<const PrometheusQueryTree::Scalar *>(query_tree.getRoot());
+        ASSERT_NE(scalar, nullptr);
+        EXPECT_TRUE(std::isfinite(scalar->scalar));
+    }
     expectPrometheusFormatting(R"(+1)", R"(1)");
     expectPrometheusFormatting(R"(+1e3)", R"(1000)");
     expectPrometheusFormatting(R"(+5m)", R"(5m)");
     expectPrometheusFormatting(R"(+Inf)", R"(+Inf)");
     expectPrometheusFormatting(R"(+NaN)", R"(NaN)");
+    expectPrometheusFormatting(R"(-NaN)", R"(NaN)");
     expectPrometheusFormatting(R"(+foo)", R"(+foo)");
     expectPrometheusFormatting(R"(1e-7)", R"(0.0000001)");
     expectPrometheusFormatting(R"(1e21)", R"(1000000000000000000000)");

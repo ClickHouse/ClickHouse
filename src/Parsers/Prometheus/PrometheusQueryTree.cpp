@@ -960,6 +960,8 @@ namespace
                 const auto & unary = static_cast<const PrometheusQueryTree::UnaryOperator &>(node);
                 if (const auto * scalar = typeid_cast<const PrometheusQueryTree::Scalar *>(unary.getArgument()); scalar)
                 {
+                    if (std::isnan(scalar->scalar))
+                        return "NaN";
                     if (unary.operator_name == "+")
                         return formatPrometheusScalar(*scalar);
                     if (std::isinf(scalar->scalar))
