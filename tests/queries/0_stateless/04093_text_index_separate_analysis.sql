@@ -13,6 +13,7 @@ SET query_plan_direct_read_from_text_index = 1;
 SET use_query_condition_cache = 0;
 SET query_plan_remove_unused_columns = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab;
 

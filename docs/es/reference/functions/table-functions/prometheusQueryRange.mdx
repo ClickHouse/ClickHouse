@@ -31,7 +31,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 * `end_time` - La hora de finalización del intervalo de evaluación.
 * `step` - El paso utilizado para iterar el tiempo de evaluación desde `start_time` hasta `end_time` (ambos inclusive).
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor devuelto
 </div>
 
@@ -58,23 +58,26 @@ Selectores instantáneos, selectores de rango, comparadores de etiquetas (`=`, `
   ### Funciones
 </div>
 
-| Categoría     | Funciones                                                                                        |
-| ------------- | ------------------------------------------------------------------------------------------------ |
-| Rango         | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
-| Matemáticas   | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
-| Trigonometría | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
-| DateTime      | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
-| Tipo          | `scalar`, `vector`                                                                               |
-| Histograma    | `histogram_quantile`                                                                             |
-| Otros         | `time`, `pi`                                                                                     |
+| Categoría     | Funciones                                                                                                                     |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Rango         | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`                                |
+| Matemáticas   | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
+| Trigonometría | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                |
+| DateTime      | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                              |
+| Etiqueta      | `label_replace`, `label_join`                                                                                                 |
+| Tipo          | `scalar`, `vector`                                                                                                            |
+| Histograma    | `histogram_quantile`                                                                                                          |
+| Otros         | `time`, `pi`                                                                                                                  |
 
-**Nota**: `histogram_quantile` usa interpolación lineal en los buckets de histogramas clásicos (identificados por la etiqueta `le`). Los histogramas nativos aún no son compatibles, y el argumento `phi` (nivel de cuantil) debe ser actualmente un escalar constante; las expresiones que varían en cada paso, como `histogram_quantile(time() / 1000, ...)`, se rechazan con un error `NOT_IMPLEMENTED`.
+**Nota**: `histogram_quantile` usa interpolación lineal en los buckets de histogramas clásicos (identificados por la etiqueta `le`). Los histogramas nativos no son compatibles. El argumento `phi` (nivel de cuantil) debe ser un escalar constante. Las expresiones que varían en cada paso, como `histogram_quantile(time() / 1000, ...)`, se rechazan con una excepción `NOT_IMPLEMENTED`.
 
 <div id="operators">
   ### Operadores
 </div>
 
-Todos los operadores binarios aritméticos (`+`, `-`, `*`, `/`, `%`, `^`), de comparación (`==`, `!=`, `<`, `>`, `<=`, `>=` con `bool` opcional) y lógicos (`and`, `or`, `unless`), junto con los modificadores `on()`/`ignoring()` y `group_left()`/`group_right()`.
+Operadores binarios aritméticos (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) y de comparación (`==`, `!=`, `<`, `>`, `<=`, `>=` con `bool` opcional), junto con los modificadores `on()`/`ignoring()` y `group_left()`/`group_right()`.
+
+Operadores lógicos de conjuntos `and`, `or` y `unless`, con modificadores `on()`/`ignoring()`.
 
 Operadores unarios `+` y `-`.
 
@@ -84,7 +87,13 @@ Operadores unarios `+` y `-`.
 
 `sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — con los modificadores opcionales `by()` o `without()`.
 
-Todavía no se admite: `count_values`.
+<div id="not-yet-supported">
+  ### Aún no admitido
+</div>
+
+* Operador de agregación `count_values`
+* Funciones de rango `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+* Función `absent`
 
 <div id="example">
   ## Ejemplo
