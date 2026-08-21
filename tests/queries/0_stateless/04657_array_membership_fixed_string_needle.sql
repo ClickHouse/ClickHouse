@@ -158,11 +158,14 @@ SELECT 'FixedString needle', (SELECT groupArray(id) FROM t_str WHERE arrayExists
                           = (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = toFixedString('V0', 3), v) SETTINGS optimize_rewrite_array_exists_to_has = 0);
 SELECT 'String needle',      (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = 'V0', v) SETTINGS optimize_rewrite_array_exists_to_has = 1)
                           = (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = 'V0', v) SETTINGS optimize_rewrite_array_exists_to_has = 0);
--- The two rows above only compare two DIFFERENT plans if the rewrite really fires at 1; it has six
--- silent decline gates, and a declined rewrite would leave both sides byte-identical and read 1 for
--- the wrong reason. These rows pin that it fires.
-SELECT 'rewrite fires for a FixedString needle', countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%function_name: arrayExists%') FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), v) FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 1) SETTINGS enable_analyzer = 1;
-SELECT 'rewrite declines at 0',                  countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%function_name: arrayExists%') FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), v) FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 0) SETTINGS enable_analyzer = 1;
+-- The two rows above only compare two DIFFERENT plans where the rewrite fires at 1, and it declines
+-- for a mismatched string-family pair, so the FixedString row compares one plan against itself and
+-- the String row is the one that compares two. The rows below pin which is which; without them a
+-- declined rewrite would read 1 for the wrong reason.
+SELECT 'rewrite declines for a FixedString needle', countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%function_name: arrayExists%') FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), v) FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 1) SETTINGS enable_analyzer = 1;
+SELECT 'rewrite declines at 0',                     countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%function_name: arrayExists%') FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), v) FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 0) SETTINGS enable_analyzer = 1;
+SELECT 'rewrite fires for a String needle',         countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%function_name: arrayExists%') FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = 'V0', v)                   FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 1) SETTINGS enable_analyzer = 1;
+SELECT 'String needle declines at 0',                countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%function_name: arrayExists%') FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = 'V0', v)                   FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 0) SETTINGS enable_analyzer = 1;
 
 SELECT '-- must not regress: a String needle stays exact, FixedString elements keep working';
 CREATE TABLE t_fs4    (id UInt64, v Array(FixedString(4))) ENGINE = Memory;

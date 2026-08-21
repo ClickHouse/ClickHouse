@@ -55,8 +55,10 @@ rewrite declines at 0 LowCardinality	0	0	1
 -- the rewrite of arrayExists to has must preserve results
 FixedString needle	1
 String needle	1
-rewrite fires for a FixedString needle	1	0
+rewrite declines for a FixedString needle	0	1
 rewrite declines at 0	0	1
+rewrite fires for a String needle	1	0
+String needle declines at 0	0	1
 -- must not regress: a String needle stays exact, FixedString elements keep working
 String needle on String	[0]	[0]
 String needle on LowCardinality	[0]	[0]
