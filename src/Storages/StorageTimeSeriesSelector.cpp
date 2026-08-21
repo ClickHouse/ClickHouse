@@ -1,6 +1,7 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
 #include <Common/Exception.h>
+#include <Common/LoggingHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/IColumn.h>
@@ -834,8 +835,11 @@ void StorageTimeSeriesSelector::readImpl(
     /// cannot represent that flag; such tables keep their pre-column behavior - every row reads as an
     /// ordinary non-stale sample - so an upgrade does not break existing tables.
     const bool has_stale_marker_column = samples_table_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
+    /// Informational, not a warning: a samples table without the column is a supported configuration
+    /// that keeps its previous behavior. It would otherwise be reported on *every* query against such a
+    /// table, which also puts it on the client's stderr at the default send_logs_level.
     if (!has_stale_marker_column)
-        LOG_WARNING(log,
+        LOG_INFO(LogFrequencyLimiter(log, 300),
             "{}: the \"samples\" table {} has no column {}, so Prometheus stale markers stored in it (as raw NaN "
             "samples) are treated as ordinary samples. Run ALTER TABLE {} ADD COLUMN {} UInt8 to enable "
             "stale-marker handling",
