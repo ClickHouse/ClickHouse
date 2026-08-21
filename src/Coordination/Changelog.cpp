@@ -6,6 +6,7 @@
 #include <optional>
 #include <ranges>
 #include <variant>
+#include <vector>
 #include <Coordination/Changelog.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperContext.h>
@@ -163,6 +164,25 @@ struct ChangelogFileOperation
     ChangelogFileDescriptionPtr changelog;
     ChangelogFileOperationVariant operation;
     std::atomic<bool> done = false;
+
+    void setError(std::exception_ptr e)
+    {
+        if (!e)
+            return;
+        std::lock_guard lock(error_mutex);
+        if (!error)
+            error = e;
+    }
+
+    std::exception_ptr getError() const
+    {
+        std::lock_guard lock(error_mutex);
+        return error;
+    }
+
+private:
+    mutable std::mutex error_mutex;
+    std::exception_ptr error;
 };
 
 void ChangelogFileDescription::waitAllAsyncOperations()
@@ -4263,6 +4283,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
         last_durable_idx = std::min(last_durable_idx, index - 1);
     }
 
+    /// Superseded-segment removals; wait outside writer_mutex so writeThread is not pinned on unlinks.
+    std::vector<ChangelogFileOperationPtr> pending_superseded_removes;
+
     {
         std::lock_guard lock(writer_mutex);
         /// This write_at require to overwrite everything in this file and also in previous file(s)
@@ -4302,9 +4325,26 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             auto to_remove_itr = existing_changelogs.upper_bound(index);
             for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
             {
-                removeChangelogAsync(itr->second);
+                pending_superseded_removes.push_back(removeChangelogAsync(itr->second));
                 itr = existing_changelogs.erase(itr);
             }
+        }
+    }
+
+    /// Append the rewrite only after superseded changelog files are gone.
+    for (const auto & op : pending_superseded_removes)
+    {
+        op->done.wait(false);
+        if (auto error = op->getError())
+        {
+            tryLogException(
+                std::move(error),
+                log,
+                fmt::format(
+                    "Failed to remove a superseded changelog while rewriting at index {}. Terminating to avoid an inconsistent changelog state",
+                    index),
+                LogsLevel::fatal);
+            std::terminate();
         }
     }
 
@@ -4626,10 +4666,12 @@ void Changelog::backgroundChangelogOperationsThread()
                     catch (Exception & e)
                     {
                         LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", changelog.path, e.message());
+                        changelog_operation->setError(std::current_exception());
                     }
                     catch (...)
                     {
                         tryLogCurrentException(log);
+                        changelog_operation->setError(std::current_exception());
                     }
                 });
         }
@@ -4683,9 +4725,11 @@ void Changelog::modifyChangelogAsync(ChangelogFileOperationPtr changelog_operati
     changelog_operation->changelog->file_operations.push_back(changelog_operation);
 }
 
-void Changelog::removeChangelogAsync(ChangelogFileDescriptionPtr changelog)
+ChangelogFileOperationPtr Changelog::removeChangelogAsync(ChangelogFileDescriptionPtr changelog)
 {
-    modifyChangelogAsync(std::make_shared<ChangelogFileOperation>(std::move(changelog), RemoveChangelog{}));
+    auto operation = std::make_shared<ChangelogFileOperation>(std::move(changelog), RemoveChangelog{});
+    modifyChangelogAsync(operation);
+    return operation;
 }
 
 void Changelog::moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)

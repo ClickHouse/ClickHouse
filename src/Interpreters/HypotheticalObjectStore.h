@@ -10,7 +10,7 @@ namespace DB
 {
 
 /// Session-scoped store for hypothetical indexes, used by EXPLAIN WHATIF
-class HypotheticalIndexStore
+class HypotheticalObjectStore
 {
 public:
     bool add(const StorageID & table_id, const IndexDescription & index, bool if_not_exists);

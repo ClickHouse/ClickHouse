@@ -735,6 +735,22 @@ def test_basic_auth_malformed_base64():
         client.do_get(flight.Ticket(b"SELECT 1"), options)
 
 
+def test_basic_auth_without_credentials_separator():
+    """Basic credentials without a username/password separator must not authenticate."""
+    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+
+    credentials = base64.b64encode(b"default").decode().rstrip("=")
+    options = flight.FlightCallOptions(
+        headers=[(b"authorization", f"Basic {credentials}".encode())]
+    )
+
+    with pytest.raises(
+        flight.FlightUnauthenticatedError,
+        match="Malformed credentials in the 'authorization' header",
+    ):
+        client.do_get(flight.Ticket(b"SELECT 1"), options)
+
+
 def test_unsupported_authorization_header():
     """An unsupported 'authorization' header must not fall through to default authentication."""
     client = flight.FlightClient(f"grpc://{node.ip_address}:8888")

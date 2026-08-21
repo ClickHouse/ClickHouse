@@ -26,6 +26,12 @@ class IArchiveWriter;
 /// whether the base backup should be used for each entry.
 class BackupImpl : public IBackup
 {
+#if CLICKHOUSE_CLOUD
+    /// Reopens a destination this backup already owns, which needs the writer, the lock file and the
+    /// helpers below that claim and release it.
+    friend class BackupResumer;
+#endif
+
 public:
     struct ArchiveParams
     {
@@ -103,6 +109,10 @@ private:
 
     /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata() TSA_REQUIRES(mutex);
+#if CLICKHOUSE_CLOUD
+    /// Reached only while continuing an interrupted backup, whose manifest is already published.
+    void recalculateMetadataCounters() TSA_REQUIRES(mutex);
+#endif
     void readBackupMetadata() TSA_REQUIRES(mutex);
 
 #if CLICKHOUSE_CLOUD
@@ -127,7 +137,9 @@ private:
     /// Thus it will not be allowed to put any other backup to the same place (even if the BACKUP command is executed on a different node).
     void createLockFile();
     bool checkLockFile(bool throw_if_failed) const;
-    void removeLockFile();
+    /// Both return true only when the destination no longer holds this backup's lock file.
+    bool removeLockFile();
+    bool tryRemoveOwnLockFile() noexcept;
 
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
@@ -184,6 +196,7 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
+    String lock_file_contents;
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
