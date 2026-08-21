@@ -70,7 +70,8 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// the preliminary deduplication drops them too instead of hashing and counting them.
         const auto & input_header = *getInputHeaders().front();
         const bool skip_null_keys = !set_and_key->set->transformNullIn()
-            && std::any_of(input_header.begin(), input_header.end(), [](const auto & col) { return col.type->isNullable(); });
+            && std::any_of(
+                input_header.begin(), input_header.end(), [](const auto & col) { return isNullableOrLowCardinalityNullable(col.type); });
 
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr

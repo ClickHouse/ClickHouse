@@ -14,6 +14,42 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// Mark rows whose `LowCardinality` index is the dictionary's NULL entry with 0 in `keep`, allocating
+/// the filter lazily on the first such row.
+void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows)
+{
+    const size_t null_index = column.getDictionary().getNullValueIndex();
+    const IColumn & indexes_column = *column.getIndexesPtr();
+
+    auto process = [&](const auto & indexes)
+    {
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            if (static_cast<size_t>(indexes[row]) == null_index)
+            {
+                if (keep.empty())
+                    keep.assign(num_rows, static_cast<UInt8>(1));
+                keep[row] = 0;
+            }
+        }
+    };
+
+    switch (column.getSizeOfIndexType())
+    {
+        case sizeof(UInt8): process(assert_cast<const ColumnUInt8 &>(indexes_column).getData()); break;
+        case sizeof(UInt16): process(assert_cast<const ColumnUInt16 &>(indexes_column).getData()); break;
+        case sizeof(UInt32): process(assert_cast<const ColumnUInt32 &>(indexes_column).getData()); break;
+        case sizeof(UInt64): process(assert_cast<const ColumnUInt64 &>(indexes_column).getData()); break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctTransform");
+    }
+}
+
+}
+
 void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chunk)
 {
     if (state != State::Observing)
@@ -235,21 +271,31 @@ void DistinctTransform::transform(Chunk & chunk)
         column_ptrs.emplace_back(columns[pos].get());
 
     /// The consumer skips rows with a NULL in any key component (a set fill with
-    /// `transform_null_in = 0`), so such rows carry no value downstream: drop them before
-    /// deduplication and before the abandon accounting. Keys are hashed by their nested columns,
-    /// the same way the set fill hashes them.
+    /// `transform_null_in = 0` strips `LowCardinality` and then drops such rows), so they carry no
+    /// value downstream: drop them before deduplication and before the abandon accounting. Plain
+    /// `Nullable` keys are then hashed by their nested columns, the same way the set fill hashes them.
     ColumnPtr null_map_holder;
     if (skip_null_keys)
     {
         ConstNullMapPtr null_map = nullptr;
         null_map_holder = extractNestedColumnsAndNullMap(column_ptrs, null_map);
+
+        IColumn::Filter keep;
         if (null_map && !memoryIsZero(null_map->data(), 0, num_rows))
         {
-            IColumn::Filter keep(num_rows);
+            keep.resize(num_rows);
             for (size_t i = 0; i < num_rows; ++i)
                 keep[i] = !(*null_map)[i];
-            const auto num_kept = countBytesInFilter(keep);
+        }
 
+        for (const auto * column : column_ptrs)
+            if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column);
+                low_cardinality && low_cardinality->nestedIsNullable())
+                markLowCardinalityNullRows(*low_cardinality, keep, num_rows);
+
+        if (!keep.empty())
+        {
+            const auto num_kept = countBytesInFilter(keep);
             for (auto & column : columns)
                 column = column->filter(keep, num_kept);
             num_rows = num_kept;
