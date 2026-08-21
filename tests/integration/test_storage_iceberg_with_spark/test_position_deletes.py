@@ -334,6 +334,43 @@ def test_v3_deletion_vectors_named_local_table(started_cluster_iceberg_with_spar
 
 
 @pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
+def test_v3_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_v3_deletion_vectors_mutations_" + get_uuid_str()
+    create_spark_v3_deletion_vector_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        format_version=3)
+
+    settings = {
+        "allow_experimental_iceberg_deletion_vectors": 1,
+        "allow_insert_into_iceberg": 1,
+        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
+    }
+    for mutation in [
+        f"ALTER TABLE {TABLE_NAME} DELETE WHERE id = 10",
+        f"ALTER TABLE {TABLE_NAME} UPDATE data = 'updated' WHERE id = 10",
+    ]:
+        error = instance.query_and_get_error(mutation, settings=settings)
+        assert "Iceberg DELETE and UPDATE are not supported for snapshots containing deletion vectors" in error
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings=settings)) == 80
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
 def test_v3_deletion_vectors_apply_only_to_referenced_data_file(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
     storage_type = "local"
     instance = started_cluster_iceberg_with_spark.instances["node1"]
