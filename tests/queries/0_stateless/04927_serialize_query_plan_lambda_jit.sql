@@ -37,5 +37,24 @@ SELECT count() FROM
 )
 WHERE r = 1;
 
+-- Nullable map values: the sub-expression's stored result_type can differ from the
+-- rebuilt function_base's (CompileDAG::compile() inserts a nativeCast for that case) --
+-- decompilation must preserve the stored type, or the receiving side's result-type
+-- check in ActionsDAG::deserialize() rejects the reconstructed plan.
+DROP TABLE IF EXISTS t_04927_mapn_dist;
+DROP TABLE IF EXISTS t_04927_mapn;
+
+CREATE TABLE t_04927_mapn (id UInt64, col Map(String, Nullable(UInt64))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_04927_mapn SELECT number, map('key' || toString(number % 3), if(number % 4 = 0, NULL, number * 100)) FROM numbers(10);
+CREATE TABLE t_04927_mapn_dist AS t_04927_mapn ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_04927_mapn);
+
+SELECT mapExists((k, v) -> k LIKE '%2' AND v < 1000, col)
+FROM t_04927_mapn_dist
+ORDER BY id
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 1, compile_expressions = 1, min_count_to_compile_expression = 0;
+
+DROP TABLE t_04927_mapn_dist;
+DROP TABLE t_04927_mapn;
+
 DROP TABLE t_04927_map_dist;
 DROP TABLE t_04927_map;

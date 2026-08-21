@@ -710,7 +710,32 @@ void ActionsDAG::decompileFunctions()
                 }
                 result_name += ")";
 
-                compiled_to_actions[i] = &addFunction(compiled_node.function, args, result_name);
+                /// Preserve the CompileDAG node's stored result_type: the type recorded for this
+                /// sub-expression at analysis time can legitimately differ from
+                /// function_base->getResultType() -- CompileDAG::compile() inserts a nativeCast for
+                /// exactly that case -- and the addFunction(FunctionBasePtr, ...) overload would
+                /// recompute the type and lose the difference, making the serialized plan fail the
+                /// receiving side's result-type check in ActionsDAG::deserialize().
+                ColumnsWithTypeAndName arguments;
+                arguments.reserve(args.size());
+                bool all_const = true;
+                for (const auto * arg : args)
+                {
+                    ColumnWithTypeAndName argument;
+                    argument.column = arg->column;
+                    argument.type = arg->result_type;
+                    argument.name = arg->result_name;
+                    all_const = all_const && argument.column && isColumnConst(*argument.column);
+                    arguments.emplace_back(std::move(argument));
+                }
+
+                compiled_to_actions[i] = &addFunctionImpl(
+                    compiled_node.function,
+                    std::move(args),
+                    std::move(arguments),
+                    std::move(result_name),
+                    compiled_node.result_type,
+                    all_const);
             }
         }
 
