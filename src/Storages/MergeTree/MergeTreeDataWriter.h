@@ -22,6 +22,8 @@ namespace DB
 class DeduplicationInfo;
 using DeduplicationInfoPtr = std::shared_ptr<DeduplicationInfo>;
 
+struct Settings;
+
 void buildScatterSelector(
     const ColumnRawPtrs & columns,
     PODArray<size_t> & partition_num_to_first_row,
@@ -131,7 +133,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         SortDescription sort_description,
         IColumn::Permutation *& permutation,
-        const MergeTreeData::MergingParams & merging_params);
+        const MergeTreeData::MergingParams & merging_params,
+        const Settings * settings = nullptr);
 
 private:
     MergeTreeTemporaryPartPtr writeTempPartImpl(
