@@ -49,13 +49,40 @@ REJECT_COND = 'if [ "$attempt1_conclusion" != "action_required" ]; then'
 # The listing command is matched as a PATTERN: its semantics are pinned by the stage-equality
 # assert and by the `--json ... attempt` assert above, so re-pinning its flag spelling here
 # only refuses harmless edits (`--limit`, field order, flag order).
-LISTING_RE = re.compile(r"^run_entries=\$\(gh run list .*\)$")
+LISTING_RE = re.compile(r"^if page=\$\(gh run list .*\); then$")
 # One simple `echo`: no separator (`;` `&` `|`), no grouping or substitution. Such a line
 # cannot assign to the shell, so dropping it admits a log line without admitting an
 # assignment. Narrowing this pattern can only cause a false refusal, never a false accept.
 ECHO_RE = re.compile(r"^echo (?:[^;&|(){}`]*)$")
 EXPECTED_DATA_PATH = [
+    'run_entries=""',
+    "hour=0",
+    'while [ "$hour" -lt $((LOOKBACK_DAYS * 24)) ]; do',
+    'from=$(date -u -d "$((hour + PARTITION_HOURS)) hours ago" +%Y-%m-%dT%H:%M:%SZ)',
+    'to=$(date -u -d "$hour hours ago" +%Y-%m-%dT%H:%M:%SZ)',
+    'page=""',
+    "for attempt_no in 1 2 3; do",
     "<LISTING>",
+    "break",
+    "fi",
+    'page=""',
+    "sleep $((attempt_no * 5))",
+    "done",
+    'if [ -z "$page" ]; then',
+    "exit 1",
+    "fi",
+    "page_rows=$(echo \"$page\" | jq 'length')",
+    'if [ "$page_rows" -ge "$PAGE_LIMIT" ]; then',
+    "exit 1",
+    "fi",
+    'matches=$(echo "$page" | jq -r ".[] | select(.attempt <= 2 and .startedAt >= '
+    '\\"$cutoff\\") | \\"\\(.databaseId):\\(.attempt)\\"")',
+    'if [ -n "$matches" ]; then',
+    "run_entries=$(printf '%s\\n%s' \"$run_entries\" \"$matches\")",
+    "fi",
+    "hour=$((hour + PARTITION_HOURS))",
+    "done",
+    "run_entries=$(echo \"$run_entries\" | grep -v '^$' | sort -u || true)",
     'if [ -z "$run_entries" ]; then',
     "exit 0",
     "fi",
@@ -80,8 +107,32 @@ _jq_expr() {
         shift
     done
 }
+# Likewise the --json field list, so the stub answers only the fields that were requested:
+# dropping one from the invocation must be observable rather than masked by the fixture.
+_json_fields() {
+    while [ $# -gt 0 ]; do
+        if [ "$1" = "--json" ]; then echo "$2"; return; fi
+        shift
+    done
+}
 if [ "$1" = "run" ] && [ "$2" = "list" ]; then
-    jq -r "$(_jq_expr "$@")" "$FIXTURE"
+    # The step walks createdAt partitions, so this is called once per partition. The fixture
+    # answers the FIRST partition only and every later one is empty: a duplicate answer would
+    # hide a missing dedup, and answering only the last would hide a missing accumulation.
+    _expr=$(_jq_expr "$@")
+    if [ -f "$LISTED_MARKER" ]; then
+        _out='[]'
+    else
+        : > "$LISTED_MARKER"
+        # Project the fixture onto the requested fields, like the real command: an omitted
+        # field must come back absent, not be supplied anyway by the fixture.
+        _out=$(_json_fields "$@" | tr ',' '\n' | jq -R . | jq -s \
+            --slurpfile rows "$FIXTURE" '. as $f | $rows[0] | map(with_entries(
+                select(.key as $k | $f | index($k))))')
+    fi
+    # Answer whatever was asked for: with --jq the caller wants the projection, without it
+    # the raw page (which the walk then counts and filters itself).
+    if [ -n "$_expr" ]; then echo "$_out" | jq -r "$_expr"; else echo "$_out"; fi
     exit 0
 fi
 if [ "$1" = "run" ] && [ "$2" = "rerun" ]; then
@@ -127,14 +178,36 @@ def _retry_step():
 
 
 def _listing_jq(step):
-    """The listing ``--jq`` argument, read from the NORMALIZED invocation so a re-wrap
-    across continuation lines is not a false refusal. Returns (expr, invocation)."""
+    """The candidate filter's jq expression and the listing invocation it feeds.
+
+    Both are read from a NORMALIZED form (continuations joined, whitespace runs collapsed) so
+    a re-wrap is not a false refusal. The listing fetches a createdAt partition as JSON and a
+    separate ``jq`` selects the candidates from it, so the two are found independently.
+    Returns (expr, invocation).
+    """
     assert "gh run list" in step, step
     invocation = " ".join(
         step.split("gh run list", 1)[1].split("\n\n", 1)[0].replace("\\\n", " ").split()
     )
-    m = re.search(r'--jq\s+"(.*)"\)\s*$', invocation)
-    assert m, invocation
+    # The one jq that turns a fetched page into `id:attempt` candidates. Anchored on the
+    # assignment so an unrelated jq elsewhere in the step is never mistaken for it, and
+    # matched line-wise (continuations joined first) so `.*` cannot run past the expression
+    # into the rest of the step: it contains `\"` sequences, so neither a greedy nor a
+    # non-greedy match against the whole step ends at the right place.
+    joined = step.replace("\\\n", " ")
+    m = next(
+        (
+            m
+            for line in joined.splitlines()
+            if (
+                m := re.search(
+                    r'matches=\$\(echo "\$page" \| jq -r "(.*)"\)\s*$', " ".join(line.split())
+                )
+            )
+        ),
+        None,
+    )
+    assert m, joined
     return m.group(1), invocation
 
 
@@ -186,13 +259,13 @@ def _reject_branch_body(step):
 def _data_path_commands(step):
     """The significant commands of the candidate's data path, comments dropped.
 
-    The region runs from the ``run_entries`` assignment to the reject condition inclusive:
-    starting at the loop header instead would leave the listing and the empty-listing guard
-    outside it, where an assignment can neutralize the selector unseen. Continuations are
+    The region runs from the ``run_entries`` initializer to the reject condition inclusive:
+    starting at the loop header instead would leave the createdAt walk and the empty-listing
+    guard outside it, where an assignment can neutralize the selector unseen. Continuations are
     joined and whitespace runs collapsed BEFORE splitting, so a re-wrap is not a refusal.
     """
     lines = step.splitlines()
-    start = next(i for i, l in enumerate(lines) if "run_entries=$(gh run list" in l)
+    start = next(i for i, l in enumerate(lines) if l.strip() == 'run_entries=""')
     end = next(i for i, l in enumerate(lines) if '!= "action_required" ]; then' in l)
     assert start < end, (start, end)
     joined = "\n".join(lines[start : end + 1]).replace("\\\n", " ")
@@ -235,14 +308,57 @@ def test_selector_admits_gated_fork_runs():
     # The window field must be requested too: without it jq compares null against the
     # cutoff, `null >= "..."` is false, and the listing silently yields nothing.
     assert "startedAt" in fields, listing_invocation
+    # And the run identifier, which the projection reads: without it every candidate is
+    # `null:<attempt>`, so the probe queries run `null` and no run is ever retried.
+    assert "databaseId" in fields, listing_invocation
     # The list is ordered by createdAt descending while the window keys on startedAt, so a
-    # gated run's page position is set by its OLD createdAt: at --limit 50 the field swap
-    # rescues no additional gate-delayed run, because they sit below the page. The depth is
-    # therefore load-bearing, not a tuning knob, and is pinned to a lower bound (a larger
-    # value only widens the scan). ~13 PR-workflow failures/hour means covering a 6 hour
-    # startedAt window needs well over 6 hours of createdAt lookback.
-    limit = re.search(r"--limit\s+([0-9]+)", listing_invocation)
-    assert limit and int(limit.group(1)) >= 200, listing_invocation
+    # gated run's page position is set by its OLD createdAt, not by the window it belongs to.
+    # Neither a row cap nor a fixed createdAt bound can therefore exhaust the window: how deep
+    # the oldest in-window candidate sits is set by failure VOLUME, and how far back it was
+    # created is set by a gate delay reaching 26.6 days. So the scan must WALK createdAt in
+    # partitions, over a lookback covering the 30 day approval expiry.
+    assert re.search(r'--created\s+"\$from\.\.\$to"', listing_invocation), (
+        f"the scan must walk createdAt partitions, not read one fixed page: {listing_invocation}"
+    )
+    # Both partition endpoints must be TIMESTAMPS. Both endpoints of a bare-date range are
+    # inclusive whole days, so `--created "$from..$to"` with `+%Y-%m-%d` ignores the partition
+    # width entirely: a 24h partition then returns two whole days (measured 927 rows against
+    # 480 and 447 individually), which can saturate the ceiling with no width left to reduce.
+    for var in ("from", "to"):
+        assert re.search(
+            r"^\s*" + var + r"=\$\(date -u -d \"[^\"]*\" \+%Y-%m-%dT%H:%M:%SZ\)\s*$", step, re.M
+        ), f"{var} must be a timestamp, not a bare date"
+    # The walk is only as good as its constants: a 2-day LOOKBACK_DAYS leaves the blind spot
+    # open while every flag-shaped assertion above still passes.
+    decl = re.search(r"^\s*LOOKBACK_DAYS=([0-9]+)\s*$", step, re.M)
+    assert decl and int(decl.group(1)) >= 31, decl.group(0) if decl else None
+    # PAGE_LIMIT is pinned EXACTLY to the API's ceiling, not as a lower bound: the cap is the
+    # API's, so raising this cannot fetch more rows, it only stops `page_rows >= PAGE_LIMIT`
+    # from ever being true and silently disables the truncation check.
+    decl = re.search(r"^\s*PAGE_LIMIT=([0-9]+)\s*$", step, re.M)
+    assert decl and int(decl.group(1)) == 1000, decl.group(0) if decl else None
+    # The fetch must ASK for PAGE_LIMIT rows. A literal `--limit 1` leaves the saturation
+    # check comparing 1 against 1000, so it never fires while each partition returns one row.
+    assert re.search(r'--limit\s+"\$PAGE_LIMIT"', listing_invocation), listing_invocation
+    # A partition wide enough to saturate the ceiling is truncated, which is the very blind
+    # spot this walk closes. The busiest single day observed holds ~480 failed runs.
+    decl = re.search(r"^\s*PARTITION_HOURS=([0-9]+)\s*$", step, re.M)
+    assert decl and 0 < int(decl.group(1)) <= 24, decl.group(0) if decl else None
+    # Truncation must be loud. Without this the walk still scans 31 partitions and still
+    # reports success while dropping every candidate past row 1000 of a saturated day.
+    assert re.search(r'"\$page_rows"\s+-ge\s+"\$PAGE_LIMIT"', step) and re.search(
+        r"page_rows.*PAGE_LIMIT.*\n(?:.*\n)*?\s*exit 1$", step, re.M
+    ), "a saturated partition must fail the step, not be scanned past silently"
+    # The walk must accumulate: a body that overwrites `run_entries` each partition keeps the
+    # loop, the bound and the flags intact while only the last day survives.
+    assert re.search(r"run_entries=\$\(printf\s+'%s\\n%s'\s+\"\$run_entries\"", step), (
+        "each partition's matches must be appended to run_entries, not replace them"
+    )
+    # Adjacent partitions share a date boundary, so one run can be listed twice and consume
+    # two of MAX_RERUNS.
+    assert re.search(r"run_entries=\$\(echo \"\$run_entries\".*sort -u", step), (
+        "the accumulated candidates must be deduplicated"
+    )
     # The `<LISTING>` sentinel intentionally does not pin the invocation's flag SPELLING, but
     # the three flags below are semantics, not spelling: `--status success`, another
     # `--workflow`, or another `--repo` all leave the whole static test green while the job
@@ -467,6 +583,8 @@ def _run_step(
             "GH_REPO": "ClickHouse/ClickHouse",
             "GH_TOKEN": "stub",
             "FIXTURE": str(fixture),
+            # Lets the stub answer the first createdAt partition only; see GH_STUB.
+            "LISTED_MARKER": str(tmp_path / "listed.marker"),
             "ATTEMPT1_JSON": json.dumps(
                 {
                     "status": "completed",

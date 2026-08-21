@@ -23,6 +23,14 @@ jobs:
           MAX_RERUNS=10
           rerun_count=0
           cutoff=$(date -u -d '6 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          # A run awaiting approval expires after 30 days, so no attempt starts later than
+          # that after its run was created; the spare day covers clock skew.
+          LOOKBACK_DAYS=31
+          # The busiest single day observed holds ~480 failed runs, half the ceiling below.
+          PARTITION_HOURS=24
+          # The API caps a filtered search at 1000 results, so a partition returning that many
+          # was truncated. Raising this cannot lift the cap, only hide the truncation.
+          PAGE_LIMIT=1000
 
           echo "Looking for failed PR workflow runs since $cutoff..."
           echo ""
@@ -30,14 +38,60 @@ jobs:
           # Get recent failed runs for the PR workflow that have not been retried yet.
           # A fork PR's first attempt to run jobs is 2, so the loop below filters further.
           # startedAt, not createdAt: a gated run's createdAt stays pinned to attempt 1.
-          # The list is ordered by createdAt, so such runs sit deep in it, hence the limit.
-          run_entries=$(gh run list \
-            --repo "$GH_REPO" \
-            --workflow pull_request.yml \
-            --status failure \
-            --limit 200 \
-            --json databaseId,attempt,startedAt \
-            --jq ".[] | select(.attempt <= 2 and .startedAt >= \"$cutoff\") | \"\(.databaseId):\(.attempt)\"")
+
+          # The listing is ordered by createdAt, so a gated run sits arbitrarily deeper in it
+          # than its startedAt window implies: no row cap and no fixed bound exhausts it.
+          run_entries=""
+          hour=0
+          while [ "$hour" -lt $((LOOKBACK_DAYS * 24)) ]; do
+            # Timestamps, not bare dates: both endpoints of a bare-date range are inclusive
+            # whole days, so `D..D+1` spans two of them and no partition width is honoured.
+            from=$(date -u -d "$((hour + PARTITION_HOURS)) hours ago" +%Y-%m-%dT%H:%M:%SZ)
+            to=$(date -u -d "$hour hours ago" +%Y-%m-%dT%H:%M:%SZ)
+
+            # The walk makes ~140 API calls, so a single transient 502 would otherwise abort
+            # the whole tick under `set -e` and skip every remaining partition.
+            page=""
+            for attempt_no in 1 2 3; do
+              if page=$(gh run list \
+                  --repo "$GH_REPO" \
+                  --workflow pull_request.yml \
+                  --status failure \
+                  --created "$from..$to" \
+                  --limit "$PAGE_LIMIT" \
+                  --json databaseId,attempt,startedAt); then
+                break
+              fi
+              page=""
+              sleep $((attempt_no * 5))
+            done
+            # Failing closed: a partition that never answered leaves candidates unexamined,
+            # which is the blind spot this walk exists to close.
+            if [ -z "$page" ]; then
+              echo "::error::createdAt partition $from..$to could not be listed after 3 tries."
+              exit 1
+            fi
+
+            # A saturated partition is truncated silently, reopening the blind spot.
+            page_rows=$(echo "$page" | jq 'length')
+            if [ "$page_rows" -ge "$PAGE_LIMIT" ]; then
+              echo "::error::createdAt partition $from..$to returned $page_rows rows," \
+                   "at the $PAGE_LIMIT per-query ceiling: candidates may be truncated." \
+                   "Reduce PARTITION_HOURS."
+              exit 1
+            fi
+
+            matches=$(echo "$page" | jq -r \
+              ".[] | select(.attempt <= 2 and .startedAt >= \"$cutoff\") | \"\(.databaseId):\(.attempt)\"")
+            if [ -n "$matches" ]; then
+              run_entries=$(printf '%s\n%s' "$run_entries" "$matches")
+            fi
+
+            hour=$((hour + PARTITION_HOURS))
+          done
+          # Both range endpoints are inclusive, so a run on a boundary is listed twice and
+          # would consume two of MAX_RERUNS.
+          run_entries=$(echo "$run_entries" | grep -v '^$' | sort -u || true)
 
           if [ -z "$run_entries" ]; then
             echo "No recent failed runs found."
