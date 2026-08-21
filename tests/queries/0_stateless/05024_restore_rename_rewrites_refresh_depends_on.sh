@@ -50,10 +50,11 @@ show_refs() {
     | sed -e "s/$SRC/SRC/g" -e "s/$DST2/DST2/g" -e "s/$DST/DST/g" -e "s/$OUT/OUT/g"
 }
 
-# No view here may ever refresh. A non-append refresh replaces its target through CREATE OR REPLACE,
-# which a concurrent `BACKUP DATABASE` scan reports as an inconsistency warning on stderr. `EMPTY`
-# skips the initial refresh and `EVERY 1 YEAR` puts the next one a year out. Neither keyword is
-# printed back into `create_table_query`, so the oracle is unaffected.
+# The views below are created `EMPTY` with their next refresh a year out, so none of them refreshes
+# while a `BACKUP DATABASE` of them is scanning. A non-append refresh replaces its target through
+# CREATE OR REPLACE, which the scan reports as an inconsistency warning on stderr, and the harness
+# fails any test that writes to stderr. The oracle reads only `DEPENDS ON` / `TO` / `FROM`, never
+# the schedule.
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE \`$OUT\`"
 ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW \`$OUT\`.p REFRESH EVERY 1 YEAR
     (a UInt64) ENGINE = MergeTree ORDER BY a EMPTY AS SELECT 1 AS a"
