@@ -8,6 +8,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/scatterByPartition.h>
+#include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Core/ColumnNumbers.h>
@@ -26,27 +27,37 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
 {
     auto & pipeline = *pipelines.front();
     auto stream_header = pipeline.getSharedHeader();
-
     /// Exchanges carry only the main data stream; throw instead of silently dropping totals/extremes.
     if (pipeline.hasTotals() || pipeline.hasExtremes())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ShuffleSendStep does not support pipelines with totals or extremes");
 
-    ColumnNumbers key_columns;
-    key_columns.reserve(key_names.size());
-    for (const auto & key_name : key_names)
-        key_columns.push_back(stream_header->getPositionByName(key_name));
-
-    /// Repartitioning creates num_streams * num_buckets connections in the pipeline.
-    /// Cap the number of streams to keep that number small.
-    const size_t max_scatter_streams = 16;
-    if (pipeline.getNumStreams() > max_scatter_streams)
-        pipeline.resize(max_scatter_streams);
-
-    /// Repartition the data so that stream i carries exactly the rows of bucket i.
-    scatterByPartition(pipeline, num_buckets, key_columns, hash_cast_types);
-
     const String shard_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
+    if (key_names.empty())
+    {
+        /// No keys means no placement requirement: spread chunks round-robin. Start at this
+        /// source's own bucket so parallel sources do not all begin with destination 0.
+        UInt64 source_bucket = 0;
+        tryParse<UInt64>(source_bucket, shard_id);
+        pipeline.resize(1);
+        pipeline.addTransform(ScatterByPartitionTransform::createRoundRobin(stream_header, num_buckets, source_bucket));
+    }
+    else
+    {
+        ColumnNumbers key_columns;
+        key_columns.reserve(key_names.size());
+        for (const auto & key_name : key_names)
+            key_columns.push_back(stream_header->getPositionByName(key_name));
+
+        /// Repartitioning creates num_streams * num_buckets connections in the pipeline.
+        /// Cap the number of streams to keep that number small.
+        const size_t max_scatter_streams = 16;
+        if (pipeline.getNumStreams() > max_scatter_streams)
+            pipeline.resize(max_scatter_streams);
+
+        /// Repartition the data so that stream i carries exactly the rows of bucket i.
+        scatterByPartition(pipeline, num_buckets, key_columns, hash_cast_types);
+    }
     size_t bucket = 0;
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type)
     {

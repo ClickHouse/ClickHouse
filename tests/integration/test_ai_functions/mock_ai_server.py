@@ -9,14 +9,11 @@ Endpoints:
       `Authorization` header is omitted when the named collection has no `api_key`).
       Header names are lower-cased for case-insensitive lookup.
   GET  /set-delay?ms=N&count=K       — make the next K requests (default 1) sleep N ms before
-      responding. Self-disarming on purpose: a test that dies between arming and disarming
-      would otherwise leave every later request in the module sleeping.
-      Used to drive `ai_function_request_timeout_sec`. `ms=0` disarms. The server is
-      single-threaded, so a delay blocks it for the duration; tests using it must not run
-      concurrently with others, which `--dist=loadfile` already guarantees.
-  GET  /request-count?reset=1        — number of requests received since the last reset, as
-      `{"count": N}`. A query that throws records no AI ProfileEvents, so this is the only
-      way to count the attempts such a query made.
+      responding, to drive `ai_function_request_timeout_sec`. Self-disarming: a test that dies
+      between arming and disarming cannot leave every later request sleeping.
+  GET  /request-count?reset=1        — requests received since the last reset, as `{"count": N}`.
+      A query that throws records no AI ProfileEvents, so this is the only way to count the
+      attempts it made.
   GET  /set-flaky?count=N            — arm the flaky endpoints below to fail their next N requests
       with a simulated transient network error (used to exercise retries). `count=0` disarms.
   POST /v1/chat/flaky                — like `/v1/chat/completions`, but drops the connection without
@@ -25,6 +22,8 @@ Endpoints:
   POST /v1/chat/completions          — returns response based on request content:
       - If response_format with json_schema is present, returns JSON matching the schema
         with values derived from the user message.
+      - If the system prompt looks like an `aiFilter` boolean filter, returns plain
+        `true` or `false` based on the user message.
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
   POST /v1/embeddings                — returns one deterministic embedding per input.
@@ -43,13 +42,16 @@ Endpoints:
 
 import http.server
 import json
+import threading
 import time
 from urllib.parse import urlparse, parse_qs
 
 MOCK_PORT = 18123
 DEFAULT_EMBED_DIM = 4
 
-# Single-threaded `HTTPServer` handles one request at a time, so a plain dict is safe.
+# The server is threaded (see `ThreadingHTTPServer` below) so it can serve the concurrent AI calls a
+# multi-threaded query issues. `_LOCK` guards the shared mutable state against those concurrent handlers.
+_LOCK = threading.Lock()
 LAST_REQUEST = {"path": None, "body": None, "headers": {}}
 
 # Number of upcoming requests to the flaky endpoints (`/v1/chat/flaky`, `/v1/embeddings_flaky`)
@@ -72,6 +74,28 @@ def extract_user_message(body):
         if msg.get("role") == "user":
             return msg.get("content", "")
     return ""
+
+
+def extract_system_prompt(body):
+    data = json.loads(body)
+    messages = data.get("messages", [])
+    for msg in messages:
+        if msg.get("role") == "system":
+            return msg.get("content", "")
+    return ""
+
+
+def is_filter_request(body):
+    """Detect `aiFilter` requests from the fixed boolean-filter system prompt."""
+    return "boolean text filter" in extract_system_prompt(body).lower()
+
+
+def filter_match_response(user_message):
+    """Return plain true/false for `aiFilter`. False when the user message signals an obvious negative."""
+    lowered = user_message.lower()
+    if any(token in lowered for token in ("false", "no match", "does not match")):
+        return "false"
+    return "true"
 
 
 def extract_response_format(body):
@@ -170,27 +194,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/last-request":
-            self._send_json(200, LAST_REQUEST)
+            with _LOCK:
+                snapshot = dict(LAST_REQUEST)
+            self._send_json(200, snapshot)
             return
 
         if parsed.path == "/set-delay":
             params = parse_qs(parsed.query)
-            DELAY["ms"] = int(params.get("ms", ["0"])[0])
-            DELAY["remaining"] = int(params.get("count", ["1"])[0]) if DELAY["ms"] else 0
-            self._send_json(200, {"delay_ms": DELAY["ms"], "count": DELAY["remaining"]})
+            with _LOCK:
+                DELAY["ms"] = int(params.get("ms", ["0"])[0])
+                DELAY["remaining"] = int(params.get("count", ["1"])[0]) if DELAY["ms"] else 0
+                snapshot = dict(DELAY)
+            self._send_json(200, snapshot)
             return
 
         if parsed.path == "/request-count":
             params = parse_qs(parsed.query)
-            count = COUNTER["requests"]
-            if params.get("reset", ["0"])[0] not in ("0", ""):
-                COUNTER["requests"] = 0
+            with _LOCK:
+                count = COUNTER["requests"]
+                if params.get("reset", ["0"])[0] not in ("0", ""):
+                    COUNTER["requests"] = 0
             self._send_json(200, {"count": count})
             return
 
         if parsed.path == "/set-flaky":
             qs = parse_qs(parsed.query)
-            FLAKY["fails_remaining"] = int(qs.get("count", ["0"])[0])
+            with _LOCK:
+                FLAKY["fails_remaining"] = int(qs.get("count", ["0"])[0])
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
@@ -202,20 +232,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        COUNTER["requests"] += 1
-        if DELAY["ms"] and DELAY["remaining"] > 0:
-            DELAY["remaining"] -= 1
-            time.sleep(DELAY["ms"] / 1000.0)
         content_length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_length).decode("utf-8") if content_length else ""
 
-        LAST_REQUEST["path"] = parsed.path
-        LAST_REQUEST["body"] = body
-        LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
+        with _LOCK:
+            LAST_REQUEST["path"] = parsed.path
+            LAST_REQUEST["body"] = body
+            LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
+            COUNTER["requests"] += 1
+            delay_ms = DELAY["ms"] if DELAY["remaining"] > 0 else 0
+            if delay_ms:
+                DELAY["remaining"] -= 1
+
+        # Outside the lock: the server is threaded, and holding it while sleeping would
+        # serialize the concurrent calls other tests rely on.
+        if delay_ms:
+            time.sleep(delay_ms / 1000.0)
 
         if parsed.path in ("/v1/chat/flaky", "/v1/embeddings_flaky"):
-            if FLAKY["fails_remaining"] > 0:
-                FLAKY["fails_remaining"] -= 1
+            with _LOCK:
+                should_fail = FLAKY["fails_remaining"] > 0
+                if should_fail:
+                    FLAKY["fails_remaining"] -= 1
+            if should_fail:
                 # Simulate a transient network failure: close the connection without sending any
                 # response, so the client sees EOF — a Poco network exception — rather than an HTTP
                 # error status. This exercises the network-error retry path, distinct from the HTTP
@@ -234,6 +273,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
             if json_schema:
                 content = build_structured_response(json_schema, user_msg)
+            elif is_filter_request(body):
+                content = filter_match_response(user_msg)
             else:
                 content = user_msg
 
@@ -287,15 +328,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send_json(self, status, obj):
-        try:
-            self._send_json_impl(status, obj)
-        except (BrokenPipeError, ConnectionResetError):
-            # Expected when a client abandons a slow request: it gave up on the socket
-            # before the delayed response arrived. Without this the traceback lands in
-            # the server log, which the job packages on failure.
-            self.close_connection = True
-
-    def _send_json_impl(self, status, obj):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -304,12 +336,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_raw(self, status, body_bytes, content_type="text/plain"):
-        try:
-            self._send_raw_impl(status, body_bytes, content_type)
-        except (BrokenPipeError, ConnectionResetError):
-            self.close_connection = True
-
-    def _send_raw_impl(self, status, body_bytes, content_type="text/plain"):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body_bytes)))
@@ -320,8 +346,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass  # suppress request logs
 
 
+class MockServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    # Absorb a burst of simultaneous connections from a multi-threaded query. The default backlog of
+    # 5 overflows when several pipeline threads each open a connection at once, dropping SYNs and
+    # making the client's connect time out.
+    request_queue_size = 128
+
+
 if __name__ == "__main__":
-    server = http.server.HTTPServer(("0.0.0.0", MOCK_PORT), Handler)
+    server = MockServer(("0.0.0.0", MOCK_PORT), Handler)
     try:
         server.serve_forever()
     finally:

@@ -335,6 +335,7 @@ struct FormatSettings
         bool write_map_as_array_of_tuples = false;
         bool read_map_as_array_of_tuples = false;
         bool json_type_escape_dots_in_keys = false;
+        size_t max_row_size_for_json_each_row = 0;
     } json{};
 
     struct
@@ -389,6 +390,7 @@ struct FormatSettings
         UInt64 row_group_bytes = 512 * 1024 * 1024;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        bool output_wide_integer_as_decimal = false;
         bool output_datetime_as_uint32 = false;
         bool output_date_as_uint16 = false;
         bool output_enum_as_byte_array = false;
@@ -601,6 +603,9 @@ struct FormatSettings
         UInt64 width = 1024;
         UInt64 height = 1024;
         String terminal_mode;
+        UInt64 time_multiplier_seconds = 1;
+        UInt64 time_divisor_seconds = 60;
+        bool streaming_animation = false;
     } image{};
 
     struct

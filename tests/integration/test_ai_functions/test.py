@@ -2,7 +2,7 @@
 Integration tests for AI function execution paths.
 
 Tests the row-processing loop against a mock OpenAI-compatible HTTP server
-for aiGenerate, aiClassify, aiExtract, and aiTranslate.
+for aiGenerate, aiClassify, aiFilter, aiExtract, and aiTranslate.
 """
 
 import json
@@ -70,7 +70,8 @@ def get_profile_events(query_id):
             ProfileEvents['AIInputTokens'] AS input_tokens,
             ProfileEvents['AIOutputTokens'] AS output_tokens,
             ProfileEvents['AIRowsProcessed'] AS rows_processed,
-            ProfileEvents['AIRowsSkipped'] AS rows_skipped
+            ProfileEvents['AIRowsSkipped'] AS rows_skipped,
+            peak_threads_usage AS peak_threads
         FROM system.query_log
         WHERE query_id = '{query_id}' AND type = 'QueryFinish'
         LIMIT 1
@@ -178,6 +179,16 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
         instance.query("CREATE TABLE test_input (x String) ENGINE = Memory")
         instance.query(
             "CREATE TABLE test_input_nullable (x Nullable(String)) ENGINE = Memory"
+        )
+        # MergeTree is required for a real PREWHERE (other engines rewrite it to WHERE).
+        instance.query(
+            "CREATE TABLE test_filter_mt (x String) ENGINE = MergeTree ORDER BY x"
+        )
+        instance.query(
+            "CREATE TABLE test_filter_join_left (id UInt32, x String) ENGINE = Memory"
+        )
+        instance.query(
+            "CREATE TABLE test_filter_join_right (id UInt32, tag String) ENGINE = Memory"
         )
         instance.query(
             "CREATE TABLE test_input_pairs (id UInt8, a Nullable(String), b Nullable(String)) ENGINE = Memory"
@@ -456,6 +467,187 @@ def test_classify_null_input(started_cluster):
 
 
 # ---------------------------------------------------------------------------
+# aiFilter
+# ---------------------------------------------------------------------------
+
+
+def test_filter_basic(started_cluster):
+    """aiFilter asks the model for a bare true/false response.
+    The mock returns true for ordinary messages."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('The package never arrived')")
+    result = instance.query(
+        "SELECT aiFilter(x, 'the customer is complaining about shipping', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "1"
+
+
+def test_filter_negative(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('does not match anything')")
+    result = instance.query(
+        "SELECT aiFilter(x, 'angry about shipping', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "0"
+
+
+def test_filter_where(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input VALUES ('great product'), ('does not match'), ('also good')"
+    )
+    result = instance.query(
+        "SELECT x FROM test_input WHERE aiFilter(x, 'positive feedback', map('credentials', 'ai_mock')) ORDER BY x",
+        settings=AI_SETTINGS,
+    )
+    lines = result.strip().split("\n")
+    assert lines == ["also good", "great product"]
+
+
+def test_filter_no_response_format(started_cluster):
+    """aiFilter does not send a JSON-schema response_format; it asks for bare true/false."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('hello')")
+    instance.query(
+        "SELECT aiFilter(x, 'is a greeting', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    last = json.loads(
+        instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/last-request"]
+        )
+    )
+    body = json.loads(last["body"])
+    assert "response_format" not in body
+    system = next(m["content"] for m in body["messages"] if m["role"] == "system")
+    assert "lowercase text true or false" in system.lower()
+
+
+def test_filter_null_input(started_cluster):
+    instance.query("TRUNCATE TABLE test_input_nullable")
+    instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
+    result = instance.query(
+        "SELECT aiFilter(x, 'mentions a bug', map('credentials', 'ai_mock')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
+    )
+    lines = result.strip().split("\n")
+    assert len(lines) == 2
+    assert "\\N" in lines
+    assert "1" in lines
+
+
+def test_filter_profile_events(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
+    qid = unique_query_id("filter_events")
+    instance.query(
+        "SELECT aiFilter(x, 'is alphabetic', map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 2
+    assert int(events["rows_processed"]) == 2
+
+
+def test_filter_prewhere(started_cluster):
+    """aiFilter is usable in PREWHERE on MergeTree (same filtering as WHERE)."""
+    instance.query("TRUNCATE TABLE test_filter_mt")
+    instance.query(
+        "INSERT INTO test_filter_mt VALUES ('great product'), ('does not match'), ('also good')"
+    )
+    qid = unique_query_id("filter_prewhere")
+    result = instance.query(
+        "SELECT x FROM test_filter_mt "
+        "PREWHERE aiFilter(x, 'positive feedback', map('credentials', 'ai_mock')) "
+        "ORDER BY x",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert result.strip().split("\n") == ["also good", "great product"]
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 3
+
+
+def test_filter_join_on(started_cluster):
+    """aiFilter in JOIN ... ON with a left-only predicate: one LLM call per left row.
+
+    When the filter does not depend on the right table, ClickHouse can evaluate it once
+    per left row (not once per candidate pair), which is the cheap/correct pattern.
+    """
+    instance.query("TRUNCATE TABLE test_filter_join_left")
+    instance.query("TRUNCATE TABLE test_filter_join_right")
+    instance.query(
+        "INSERT INTO test_filter_join_left VALUES "
+        "(1, 'great product'), (2, 'does not match'), (3, 'also good')"
+    )
+    instance.query(
+        "INSERT INTO test_filter_join_right VALUES "
+        "(1, 'a'), (1, 'b'), (2, 'c'), (3, 'd')"
+    )
+    qid = unique_query_id("filter_join_on")
+    result = instance.query(
+        """
+        SELECT l.x, r.tag
+        FROM test_filter_join_left AS l
+        INNER JOIN test_filter_join_right AS r
+            ON aiFilter(l.x, 'positive feedback', map('credentials', 'ai_mock'))
+            AND l.id = r.id
+        ORDER BY l.x, r.tag
+        """,
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert result.strip().split("\n") == [
+        "also good\td",
+        "great product\ta",
+        "great product\tb",
+    ]
+    events = get_profile_events(qid)
+    # Three left rows, one API call each — not one call per (left,right) candidate pair.
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 3
+
+
+def test_filter_join_on_per_pair(started_cluster):
+    """aiFilter in JOIN ... ON that depends on both sides is evaluated per candidate pair."""
+    instance.query("TRUNCATE TABLE test_filter_join_left")
+    instance.query("TRUNCATE TABLE test_filter_join_right")
+    instance.query(
+        "INSERT INTO test_filter_join_left VALUES (1, 'great product'), (2, 'also good')"
+    )
+    instance.query(
+        "INSERT INTO test_filter_join_right VALUES (1, 'ok'), (1, 'does not match')"
+    )
+    qid = unique_query_id("filter_join_on_pair")
+    result = instance.query(
+        """
+        SELECT l.x, r.tag
+        FROM test_filter_join_left AS l
+        INNER JOIN test_filter_join_right AS r
+            ON l.id = r.id
+            AND aiFilter(
+                concat(l.x, ' ', r.tag),
+                'positive feedback',
+                map('credentials', 'ai_mock')
+            )
+        ORDER BY l.x, r.tag
+        """,
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    # Mock returns false when the user message contains "does not match".
+    assert result.strip().split("\n") == ["great product\tok"]
+    events = get_profile_events(qid)
+    # Two right matches for id=1 → two candidate pairs (and one LLM call each).
+    assert int(events["api_calls"]) == 2
+    assert int(events["rows_processed"]) == 2
+
+
+# ---------------------------------------------------------------------------
 # aiExtract — simple instruction mode
 # ---------------------------------------------------------------------------
 
@@ -588,6 +780,101 @@ def test_translate_null_input(started_cluster):
 
 
 # ---------------------------------------------------------------------------
+# aiRedact
+# ---------------------------------------------------------------------------
+
+
+def test_redact_basic(started_cluster):
+    """aiRedact returns the model's text directly. The mock echoes the user message back."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input VALUES ('customer John Doe, john@doe.org')"
+    )
+    result = instance.query(
+        "SELECT aiRedact(x, ['email', 'name'], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "customer John Doe, john@doe.org"
+    # The category list is forwarded to the provider in the system prompt.
+    sent = last_request()["body"]
+    assert "email" in sent and "name" in sent
+
+
+def test_redact_default_categories_empty_array(started_cluster):
+    """An empty categories array is accepted and falls back to the default set of PII categories."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('some text with pii')")
+    result = instance.query(
+        "SELECT aiRedact(x, [], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "some text with pii"
+    # The mock just echoes the input, so check the documented default category set is what
+    # actually reaches the provider.
+    system_prompt = json.loads(last_request()["body"])["messages"][0]["content"]
+    for category in ("NAME", "EMAIL", "PHONE_NUMBER", "ADDRESS", "CREDIT_CARD", "IP_ADDRESS"):
+        assert category in system_prompt, f"default category {category} missing from prompt"
+
+
+def test_redact_replacement_forwarded(started_cluster):
+    """The `replacement` token is embedded in the system prompt sent to the provider."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('redact me')")
+    instance.query(
+        "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock', 'replacement', '<<HIDDEN>>')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    body = json.loads(last_request()["body"])
+    assert body["messages"][0]["role"] == "system"
+    assert "<<HIDDEN>>" in body["messages"][0]["content"]
+
+
+def test_redact_multiple_rows(started_cluster):
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
+    qid = unique_query_id("redact_events")
+    instance.query(
+        "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock')) FROM test_input",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 3
+
+
+def test_redact_null_input(started_cluster):
+    instance.query("TRUNCATE TABLE test_input_nullable")
+    instance.query("INSERT INTO test_input_nullable VALUES (NULL), ('text')")
+    result = instance.query(
+        "SELECT aiRedact(x, ['email'], map('credentials', 'ai_mock')) FROM test_input_nullable",
+        settings=AI_SETTINGS,
+    )
+    lines = result.strip().split("\n")
+    assert len(lines) == 2
+    assert "\\N" in lines
+    assert "text" in lines
+
+
+def test_redact_error_graceful(started_cluster):
+    """With ai_function_throw_on_error = 0, a provider error yields an empty string."""
+    result = instance.query(
+        "SELECT aiRedact('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_error'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
+
+
+def test_redact_error_throw(started_cluster):
+    """By default (`ai_function_throw_on_error = 1`) a provider error propagates."""
+    error = instance.query_and_get_error(
+        "SELECT aiRedact('secret', ['email'], map('credentials', 'ai_error'))",
+        settings=AI_SETTINGS,
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+# ---------------------------------------------------------------------------
 # aiEmbed
 # ---------------------------------------------------------------------------
 
@@ -715,8 +1002,8 @@ def test_embed_profile_events_token_accounting(started_cluster):
 def test_embed_batching(started_cluster, batch, expected_calls):
     """`ai_function_embedding_max_batch_size` splits inputs across HTTP calls.
 
-    One block of eight rows, so the count is exactly `ceil(rows / batch)`: batching is
-    per block, and a second block would restart it.
+    One block of eight rows, so the count is exactly `ceil(rows / batch)`: batching is per
+    block, and a second block would restart it.
     """
     rows = 8
     instance.query("TRUNCATE TABLE test_input")
@@ -1457,69 +1744,209 @@ def test_api_call_count_per_query_shape(call_count_tables, sql, expected, ideal,
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="the `..._per_query` quotas are tracked per executeImpl call, so a query with "
-    "several blocks or streams gets several allowances",
-)
+def _create_quota_parts(name, parts=8, rows_per_part=8, index_granularity=None):
+    """Create a MergeTree table of `parts` unmerged parts (merges stopped) so a scan over it
+    produces several blocks - the shape needed to tell a per-query quota from a per-block one.
+    A single-part table cannot: one block is one allowance. `SYSTEM STOP MERGES` keeps a
+    background merge from collapsing the parts before the scan and masking the difference.
+
+    `index_granularity` pins a small, fixed granule size (adaptive granularity disabled) so the
+    number of marks is deterministic - needed when a test relies on the read pool splitting the
+    scan across threads, which is driven by mark count."""
+    instance.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    create = f"CREATE TABLE {name} (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
+    if index_granularity is not None:
+        create += f" SETTINGS index_granularity = {index_granularity}, index_granularity_bytes = 0"
+    instance.query(create)
+    instance.query(f"SYSTEM STOP MERGES {name}")
+    for part in range(parts):
+        base = part * rows_per_part
+        instance.query(
+            f"INSERT INTO {name} SELECT number + {base}, "
+            f"concat('row ', toString(number + {base})) FROM numbers({rows_per_part})"
+        )
+
+
+# `max_block_size` = 8 with 8-row parts gives one block per part, so a per-block tracker
+# reaches at most 8 (< the caps below) and never fires, while a per-query tracker accumulates
+# across all 64 rows.
+_QUOTA_SCOPE_SETTINGS = {
+    "max_block_size": 8,
+    "max_threads": 1,
+    "preferred_block_size_bytes": 0,
+}
+
+
 def test_api_call_quota_is_per_query(started_cluster):
     """`ai_function_max_api_calls_per_query` must bound the query, not each block of it.
 
-    `AIQuotaTracker` is a stack local in `executeImpl` with no shared state, so every block
-    and every pipeline stream starts with a fresh allowance and the effective ceiling grows
-    with the data. A single-part table cannot show this - one block is one allowance - so
-    the table here has eight parts.
+    The tracker is shared per query (owned by the query `Context`), so every block and every
+    pipeline stream draws on one allowance. It used to be a stack local in `executeImpl` with
+    no shared state, so each block started with a fresh allowance and the effective ceiling
+    grew with the data.
     """
     limit = 10
-    parts_wanted = 8
-    instance.query("DROP TABLE IF EXISTS quota_parts SYNC")
-    instance.query(
-        "CREATE TABLE quota_parts (id UInt32, x String) ENGINE = MergeTree ORDER BY id"
-    )
-    # The parts are load-bearing: with one part the query gets one allowance and the
-    # assertion would hold for the wrong reason. Background merges would collapse eight
-    # tiny parts within seconds, so stop them first and check the layout held.
-    instance.query("SYSTEM STOP MERGES quota_parts")
-    for part in range(parts_wanted):
-        instance.query(
-            f"INSERT INTO quota_parts SELECT number + {part * 8}, "
-            f"concat('row ', toString(number + {part * 8})) FROM numbers(8)"
-        )
+    _create_quota_parts("quota_parts")
     try:
-        active_parts = int(
-            instance.query(
-                "SELECT count() FROM system.parts WHERE database = currentDatabase() "
-                "AND table = 'quota_parts' AND active"
-            ).strip()
-        )
-        assert active_parts == parts_wanted, (
-            f"{active_parts} active parts, expected {parts_wanted}: the test cannot "
-            "distinguish per-query from per-block accounting without them"
-        )
         qid = unique_query_id("quota_scope")
-        settings = dict(AI_SETTINGS)
-        settings.update(
-            {
-                "max_block_size": 8,
-                "max_threads": 1,
-                "preferred_block_size_bytes": 0,
-                "ai_function_max_api_calls_per_query": limit,
-                "ai_function_throw_on_quota_exceeded": 0,
-            }
-        )
         instance.query(
             f"SELECT {CHAT_CALL} FROM quota_parts FORMAT Null",
-            settings=settings,
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_api_calls_per_query": limit,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
             query_id=qid,
         )
         calls = int(get_profile_events(qid)["api_calls"])
     finally:
-        instance.query("SYSTEM START MERGES quota_parts")
         instance.query("DROP TABLE IF EXISTS quota_parts SYNC")
 
     assert calls <= limit, (
         f"{calls} API calls with ai_function_max_api_calls_per_query = {limit}: the quota "
         "is tracked per executeImpl call, so the query spent a multiple of its own cap"
+    )
+
+
+def test_api_call_quota_throws_per_query(started_cluster):
+    """With `ai_function_throw_on_quota_exceeded = 1` (the default) the query must raise once
+    the per-query call quota is reached. No single 8-row block reaches the cap of 10, so a
+    per-block tracker never throws and the query completes; the per-query tracker throws."""
+    _create_quota_parts("quota_throw")
+    try:
+        error = instance.query_and_get_error(
+            f"SELECT {CHAT_CALL} FROM quota_throw FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_api_calls_per_query": 10,
+                "ai_function_throw_on_quota_exceeded": 1,
+            },
+        )
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_throw SYNC")
+
+    assert "AI API call limit reached" in error, error
+
+
+def test_input_token_quota_is_per_query(started_cluster):
+    """`ai_function_max_input_tokens_per_query` must bound the query too. The mock reports
+    `prompt_tokens = 10` per chat call, so a per-block tracker tops out at 80 tokens per 8-row
+    block (< the 100-token cap) and never fires, while the per-query tracker stops the scan."""
+    limit = 100
+    _create_quota_parts("quota_tokens")
+    try:
+        qid = unique_query_id("quota_tokens")
+        instance.query(
+            f"SELECT {CHAT_CALL} FROM quota_tokens FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_input_tokens_per_query": limit,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        input_tokens = int(get_profile_events(qid)["input_tokens"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_tokens SYNC")
+
+    assert input_tokens <= limit, (
+        f"{input_tokens} input tokens with ai_function_max_input_tokens_per_query = {limit}: "
+        "the quota is tracked per executeImpl call, so the query spent a multiple of its cap"
+    )
+
+
+def test_api_call_quota_holds_under_concurrency(started_cluster):
+    """The API-call cap must hold when several pipeline threads reserve slots against the shared
+    tracker at once. The slot is claimed with an atomic bounded increment (`tryReserveApiCall`), so
+    two threads cannot both pass a stale check and overshoot.
+
+    The table has enough marks (small pinned granularity over 16 parts) that the read pool hands the
+    scan - and thus the AI function - to several threads under `max_threads = 8`. `peak_threads_usage`
+    from `system.query_log` is the count of threads that ran simultaneously; asserting it is > 1
+    means a green result proves the concurrent reservation path was exercised, not that the scan
+    happened to collapse to one stream. The query wants 2048 calls but must make at most `limit`."""
+    limit = 10
+    _create_quota_parts("quota_concurrent", parts=16, rows_per_part=128, index_granularity=8)
+    try:
+        qid = unique_query_id("quota_concurrent")
+        instance.query(
+            f"SELECT {CHAT_CALL} FROM quota_concurrent FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                "max_block_size": 8,
+                "max_threads": 8,
+                "ai_function_max_api_calls_per_query": limit,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        events = get_profile_events(qid)
+        calls = int(events["api_calls"])
+        peak_threads = int(events["peak_threads"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_concurrent SYNC")
+
+    assert peak_threads > 1, (
+        f"query peaked at {peak_threads} simultaneous thread(s); the concurrent reservation path was "
+        "not exercised, so this test would not catch a check-then-act overshoot"
+    )
+    assert calls <= limit, (
+        f"{calls} API calls with ai_function_max_api_calls_per_query = {limit} and {peak_threads} peak "
+        "threads: concurrent streams overshot the per-query cap"
+    )
+
+
+def test_api_call_quota_ignores_subquery_settings(started_cluster):
+    """`ai_function_max_*_per_query` is read from the top-level query context, so a nested
+    subquery's own `SETTINGS` override of it does not apply: the whole query shares one budget
+    seeded from the outer settings. A subquery runs in a copied child context carrying its own
+    settings, but the quota tracker lives on the query context, so those overrides are ignored."""
+    _create_quota_parts("quota_levels")  # 8 parts x 8 rows = 64 rows, one API call per row
+    try:
+        # The subquery caps at 5, the outer query at 20. A result of 20 shows the outer
+        # (query-context) value governs; the subquery override (which would give 5, as would a
+        # min-of-both rule) is ignored.
+        qid = unique_query_id("quota_levels_outer_wins")
+        instance.query(
+            f"SELECT c FROM (SELECT {CHAT_CALL} AS c FROM quota_levels "
+            "SETTINGS ai_function_max_api_calls_per_query = 5) FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_api_calls_per_query": 20,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        outer_wins = int(get_profile_events(qid)["api_calls"])
+
+        # The quota is set only in the subquery; the outer query leaves it at the default (far
+        # above 64). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
+        # a quota set only in a subquery has no effect.
+        qid = unique_query_id("quota_levels_subquery_only")
+        instance.query(
+            f"SELECT c FROM (SELECT {CHAT_CALL} AS c FROM quota_levels "
+            "SETTINGS ai_function_max_api_calls_per_query = 5) FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        subquery_only = int(get_profile_events(qid)["api_calls"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_levels SYNC")
+
+    assert outer_wins == 20, (
+        f"expected the top-level cap (20) to govern, got {outer_wins}: a subquery-scoped SETTINGS "
+        "override of ai_function_max_api_calls_per_query must not change the query budget"
+    )
+    assert subquery_only == 64, (
+        f"expected all 64 rows to run (a quota set only in the subquery is ignored), got {subquery_only}"
     )
 
 
@@ -1533,8 +1960,8 @@ def mock_request_count(reset=False):
 
 
 def set_mock_delay(ms, count=1):
-    """Delay the next `count` requests by `ms`. Self-disarming, so a test that dies
-    between arming and disarming cannot leave later requests sleeping."""
+    """Delay the next `count` requests by `ms`. Self-disarming, so a test that dies between
+    arming and disarming cannot leave later requests sleeping."""
     instance.exec_in_container(
         ["curl", "-sS", f"http://localhost:{MOCK_PORT}/set-delay?ms={ms}&count={count}"]
     )
@@ -1544,12 +1971,11 @@ def test_request_timeout_issues_one_attempt(started_cluster):
     """A request slower than `ai_function_request_timeout_sec` fails, and is not retried
     when `ai_function_max_retries` is 0.
 
-    The attempt count comes from the mock: the five AI ProfileEvents are incremented after
-    the row loop, so a query that throws records none of them.
+    The attempt count comes from the mock: the AI ProfileEvents are incremented after the
+    row loop, so a query that throws records none of them.
     """
-    # `ai_function_request_timeout_sec` is whole seconds, so 1 s is the floor; 1.2 s is
-    # the smallest delay that reliably exceeds it, and the mock sleeps the full amount
-    # even after the client gives up, so every extra 100 ms is CI time on every PR.
+    # The timeout is whole seconds, so 1 s is the floor; 1.2 s is the smallest delay that
+    # reliably exceeds it, and every extra 100 ms is CI time on every pull request.
     set_mock_delay(1200)
     try:
         mock_request_count(reset=True)
