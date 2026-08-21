@@ -627,6 +627,19 @@ struct Reader
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
 private:
+    struct PointProbe
+    {
+        size_t key_idx;
+        size_t primitive_idx;
+        Field point;
+    };
+
+    struct OrderedRowGroupLookup
+    {
+        bool proven = false;
+        std::optional<size_t> candidate_row_group;
+    };
+
     struct BloomFilterLookup : public KeyCondition::BloomFilter
     {
         Prefetcher & prefetcher;
@@ -644,6 +657,10 @@ private:
     /// headers (and their transitive includes) into every translation unit that includes Reader.h.
     struct DictionaryLookup;
 
+    std::vector<PointProbe> findPointProbes() const;
+    bool getFiniteRowGroupRange(
+        const parq::RowGroup & meta, const PrimitiveColumnInfo & column_info, Range & range) const;
+    OrderedRowGroupLookup findOrderedRowGroupForPoint(const PointProbe & probe) const;
     void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox = false) const;
     /// Whether all four `covering.bbox` columns of `spatial_key_conditions[spatial_key_condition_idx]`
     /// report a known `null_count` of zero in this row group. Spatial pruning (both row-group and

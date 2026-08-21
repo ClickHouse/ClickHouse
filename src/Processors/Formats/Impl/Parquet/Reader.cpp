@@ -52,6 +52,7 @@ namespace ProfileEvents
     extern const Event ParquetColumnsFilterExpression;
     extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
+    extern const Event ParquetRowGroupMinMaxPredicateChecks;
 }
 
 namespace DB::Parquet
@@ -358,6 +359,181 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             throw;
         }
     }
+}
+
+std::vector<Reader::PointProbe> Reader::findPointProbes() const
+{
+    std::vector<PointProbe> probes;
+    if (!format_filter_info->key_condition)
+        return probes;
+
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> point_conditions;
+    format_filter_info->key_condition->extractSingleColumnConditions(point_conditions, nullptr);
+    for (const auto & [key_idx, condition] : point_conditions)
+    {
+        Ranges ranges;
+        if (!condition->extractPlainRanges(ranges))
+            ranges = condition->extractBounds();
+        if (ranges.size() != 1)
+            continue;
+
+        const Range & range = ranges.front();
+        if (!range.left_included || !range.right_included
+            || !range.fullBounded() || range.left.isNull() || range.right.isNull()
+            || !Range::equals(range.left, range.right)
+            || key_idx >= sample_block_to_output_columns_idx.size())
+            continue;
+
+        const auto & output_idx = sample_block_to_output_columns_idx[key_idx];
+        if (!output_idx.has_value())
+            continue;
+        const OutputColumnInfo & output_info = output_columns[*output_idx];
+        if (output_info.is_missing_column || !output_info.is_primitive
+            || output_info.primitive_end != output_info.primitive_start + 1)
+            continue;
+
+        const size_t primitive_idx = output_info.primitive_start;
+        const PrimitiveColumnInfo & primitive = primitive_columns[primitive_idx];
+        if (primitive.idx_in_output_block != key_idx || !primitive.decoder.allow_stats)
+            continue;
+
+        probes.push_back(PointProbe{
+            .key_idx = key_idx,
+            .primitive_idx = primitive_idx,
+            .point = static_cast<const Field &>(range.left)});
+    }
+    return probes;
+}
+
+bool Reader::getFiniteRowGroupRange(
+    const parq::RowGroup & meta, const PrimitiveColumnInfo & column_info, Range & range) const
+{
+    const auto & column_meta = meta.columns.at(column_info.column_idx).meta_data;
+    if (!column_meta.__isset.statistics)
+        return false;
+
+    const IDataType & output_block_type = *extended_sample_block_data_types.at(column_info.idx_in_output_block);
+    bool nullable = column_info.levels.back().def > 0;
+    bool always_null = column_meta.statistics.__isset.null_count
+        && column_meta.statistics.null_count == column_meta.num_values;
+    bool can_be_null = !column_meta.statistics.__isset.null_count
+        || column_meta.statistics.null_count != 0;
+    bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
+
+    if (nullable && always_null)
+    {
+        if (null_as_default)
+            range.right = range.left = output_block_type.getDefault();
+        else
+            range.right = range.left;
+    }
+    else
+    {
+        if (!column_meta.statistics.__isset.min_value || !column_meta.statistics.__isset.max_value)
+            return false;
+        column_info.decoder.decodeField(
+            column_meta.statistics.min_value, /*is_max=*/ false,
+            *column_info.decoded_type, output_block_type, range.left);
+        column_info.decoder.decodeField(
+            column_meta.statistics.max_value, /*is_max=*/ true,
+            *column_info.decoded_type, output_block_type, range.right);
+        adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
+    }
+
+    return range.fullBounded() && !range.left.isNull() && !range.right.isNull();
+}
+
+Reader::OrderedRowGroupLookup Reader::findOrderedRowGroupForPoint(const PointProbe & probe) const
+{
+    struct Bound
+    {
+        size_t row_group_idx;
+        Range range;
+    };
+
+    enum class Direction : UInt8
+    {
+        Unknown,
+        Ascending,
+        Descending,
+    };
+
+    std::vector<Bound> bounds;
+    bounds.reserve(file_metadata.row_groups.size());
+    Direction direction = Direction::Unknown;
+    const PrimitiveColumnInfo & column_info = primitive_columns[probe.primitive_idx];
+
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    {
+        const auto & meta = file_metadata.row_groups[row_group_idx];
+        if (meta.num_rows < 0 || meta.columns.size() != total_primitive_columns_in_file)
+            return {};
+        if (meta.num_rows == 0)
+            continue;
+
+        Range range = Range::createWholeUniverse();
+        try
+        {
+            if (!getFiniteRowGroupRange(meta, column_info, range))
+                return {};
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore",
+                column_info.name);
+            throw;
+        }
+
+        if (!bounds.empty())
+        {
+            const Range & previous = bounds.back().range;
+            const bool ascending = Range::less(previous.right, range.left);
+            const bool descending = Range::less(range.right, previous.left);
+            if (ascending == descending)
+                return {};
+            const Direction pair_direction = ascending ? Direction::Ascending : Direction::Descending;
+            if (direction == Direction::Unknown)
+                direction = pair_direction;
+            else if (direction != pair_direction)
+                return {};
+        }
+        bounds.push_back(Bound{row_group_idx, std::move(range)});
+    }
+
+    OrderedRowGroupLookup result{.proven = true, .candidate_row_group = std::nullopt};
+    size_t left = 0;
+    size_t right = bounds.size();
+    while (left < right)
+    {
+        const size_t middle = left + (right - left) / 2;
+        const Range & range = bounds[middle].range;
+        if (direction != Direction::Descending)
+        {
+            if (Range::less(range.right, probe.point))
+                left = middle + 1;
+            else if (Range::less(probe.point, range.left))
+                right = middle;
+            else
+            {
+                result.candidate_row_group = bounds[middle].row_group_idx;
+                break;
+            }
+        }
+        else
+        {
+            if (Range::less(range.right, probe.point))
+                right = middle;
+            else if (Range::less(probe.point, range.left))
+                left = middle + 1;
+            else
+            {
+                result.candidate_row_group = bounds[middle].row_group_idx;
+                break;
+            }
+        }
+    }
+    return result;
 }
 
 bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
@@ -697,6 +873,17 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
+    OrderedRowGroupLookup ordered_lookup;
+    if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
+    {
+        for (const auto & probe : findPointProbes())
+        {
+            ordered_lookup = findOrderedRowGroupForPoint(probe);
+            if (ordered_lookup.proven)
+                break;
+        }
+    }
+
     size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
@@ -709,6 +896,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
         total_rows += size_t(meta->num_rows); // before potentially skipping the row group
+
+        if (ordered_lookup.proven && ordered_lookup.candidate_row_group != row_group_idx)
+            continue;
 
         /// Lazy materialization: skip row groups that contain none of the requested rows.
         std::pair<size_t, size_t> requested_rows_slice {0, 0};
@@ -735,6 +925,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
         {
+            ProfileEvents::increment(ProfileEvents::ParquetRowGroupMinMaxPredicateChecks);
             if (!format_filter_info->key_condition->checkInHyperrectangle(
                     hyperrectangle, extended_sample_block_data_types).can_be_true)
                 continue;
