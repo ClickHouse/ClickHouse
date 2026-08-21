@@ -310,13 +310,8 @@ run_capturing_output /tmp/stress_script.log \
     python3 /repo/ci/jobs/scripts/stress/stress.py --test-cmd="/usr/bin/clickhouse-test${test_cmd_opts}" --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE"
 stress_script_exit_code=$?
 set -e
-if [ "$stress_script_exit_code" -eq 0 ]
-then
-    echo -e "Test script exit code$OK" >> /test_output/test_results.tsv
-else
-    # printf, not echo -e: the encoded payload must reach the file verbatim.
-    printf "Test script failed$FAIL%s\n" "$(script_failure_info "$stress_script_exit_code" /tmp/stress_script.log)" >> /test_output/test_results.tsv
-fi
+append_script_result_row /test_output/test_results.tsv "$stress_script_exit_code" \
+    /tmp/stress_script.log
 
 stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log

@@ -136,13 +136,29 @@ function run_capturing_output()
         drain_capture "$captured" "$FAILURE_DRAIN_GRACE_OK"
     fi
     finalize_capture "$captured" "$captured_exit_code"
-    # Writers can outlive the settle wait, so look once more whenever the job ends. The
-    # artifact is kept on the wrapped command's status, not the job's: a later failure of
-    # the caller's own does not make this capture worth uploading. `$captured` is local, so
-    # it must expand now.
+    # Writers can outlive the settle wait, so look once more whenever the job ends, on the
+    # wrapped command's status: a later failure of the caller's own does not make this
+    # capture worth uploading. `$captured` is local, so it must expand now.
     # shellcheck disable=SC2064
     trap "finalize_capture '$captured' \"\$captured_exit_code\"" EXIT
     return "$captured_exit_code"
+}
+
+function append_script_result_row()
+{
+    # Append the `Test script exit code` / `Test script failed` row for a wrapped script,
+    # given its status ($2) and capture ($3). `printf`, not `echo -e`: the encoded payload
+    # of a failure row must reach the file verbatim.
+    local results="$1"
+    local exit_code="$2"
+    local captured="$3"
+    if [ "$exit_code" -eq 0 ]
+    then
+        echo -e "Test script exit code$OK" >> "$results"
+    else
+        printf "Test script failed$FAIL%s\n" \
+            "$(script_failure_info "$exit_code" "$captured")" >> "$results"
+    fi
 }
 
 function script_failure_info()

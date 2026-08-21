@@ -135,13 +135,8 @@ run_capturing_output /tmp/stress_script.log \
     stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200
 stress_script_exit_code=$?
 set -e
-if [ "$stress_script_exit_code" -eq 0 ]
-then
-    echo -e "Test script exit code$OK" >> /test_output/test_results.tsv
-else
-    # printf, not echo -e: the encoded payload must reach the file verbatim.
-    printf "Test script failed$FAIL%s\n" "$(script_failure_info "$stress_script_exit_code" /tmp/stress_script.log)" >> /test_output/test_results.tsv
-fi
+append_script_result_row /test_output/test_results.tsv "$stress_script_exit_code" \
+    /tmp/stress_script.log
 
 # The full server stacktrace dumps must survive the removal of the phase
 # output folder below.

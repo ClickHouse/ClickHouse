@@ -38,15 +38,36 @@ source '{lib}'
 """
 
 
-def _run(body: str, tmp_path: Path):
-    """Source the shipped library and run `body`, with `/test_output` redirected."""
+# The production waits are 5/15/30 seconds. Running them for real would spend most
+# of the 600-second budget shared by all of `ci/tests` on sleeping, so the copy of
+# the library under test is rewritten to a scaled-down set with the same ordering
+# (ok grace < failure grace < timeout). `test_the_production_timing_constants` pins
+# the real values separately, so shrinking these cannot hide a change to them.
+_TEST_TIMING = {
+    "FAILURE_DRAIN_GRACE": 8,
+    "FAILURE_DRAIN_GRACE_OK": 1,
+    "FAILURE_DRAIN_TIMEOUT": 12,
+}
+
+# Only `test_wrapper_puts_late_output_on_the_console_and_in_the_row` has to tell the
+# two graces apart, which needs a wide gap above the stable-sample floor. Everything
+# else can use a narrow set and not pay for it, keeping the same ordering.
+_FAST_TIMING = {"FAILURE_DRAIN_GRACE": 4, "FAILURE_DRAIN_TIMEOUT": 7}
+
+
+def _run(body: str, tmp_path: Path, timing: dict | None = None):
+    """Source the shipped library and run `body`, with `/test_output` redirected and
+    the drain waits scaled down. `timing` overrides individual scaled constants."""
     test_output = tmp_path / "test_output"
     test_output.mkdir(exist_ok=True)
-    lib = (tmp_path / "stress_tests.lib")
-    lib.write_text(
-        _LIB.read_text(encoding="utf-8").replace("/test_output", str(test_output)),
-        encoding="utf-8",
-    )
+    text = _LIB.read_text(encoding="utf-8").replace("/test_output", str(test_output))
+    for name, value in {**_TEST_TIMING, **(timing or {})}.items():
+        text, count = re.subn(
+            rf"^{name}=\d+$", f"{name}={value}", text, count=1, flags=re.M
+        )
+        assert count == 1, f"{name} is no longer a top-level constant"
+    lib = tmp_path / "stress_tests.lib"
+    lib.write_text(text, encoding="utf-8")
     script = _PREAMBLE.format(lib=lib) + body
     return subprocess.run(
         ["bash", "-c", script],
@@ -180,6 +201,7 @@ drain_capture '{capture}' 4
 echo "elapsed=$(( SECONDS - started ))" > report
 """,
         tmp_path,
+        _FAST_TIMING,
     )
     assert proc.returncode == 0, proc.stderr
     elapsed = int(
@@ -201,13 +223,14 @@ def test_drain_capture_waits_for_a_late_writer(tmp_path):
     capture.write_text("early\n", encoding="utf-8")
     proc = _run(
         f"""
-( sleep 3; printf 'late-diagnostic\\n' >> '{capture}' ) &
+( sleep 2; printf 'late-diagnostic\\n' >> '{capture}' ) &
 writer=$!
-drain_capture '{capture}' 8
+drain_capture '{capture}' 6
 cp '{capture}' snapshot.log
 wait "$writer"
 """,
         tmp_path,
+        _FAST_TIMING,
     )
     assert proc.returncode == 0, proc.stderr
     assert "late-diagnostic" in (tmp_path / "snapshot.log").read_text(encoding="utf-8")
@@ -215,12 +238,15 @@ wait "$writer"
 
 def test_drain_capture_is_bounded_when_a_writer_never_stops(tmp_path):
     """An unbounded wait here would spend the job's whole time limit: the earlier
-    pipe form of this wrapper cost a 2h09m `Stress test (amd_tsan)` timeout."""
+    pipe form of this wrapper cost a 2h09m `Stress test (amd_tsan)` timeout.
+
+    The writer keeps going past the ceiling asserted below, so a drain that never
+    gave up would exceed it rather than merely finishing late."""
     capture = tmp_path / "cap.log"
     capture.write_text("", encoding="utf-8")
     proc = _run(
         f"""
-( for _ in $(seq 100); do printf 'x\\n' >> '{capture}'; sleep 0.5; done ) &
+( for _ in $(seq 30); do printf 'x\\n' >> '{capture}'; sleep 0.5; done ) &
 writer=$!
 started=$SECONDS
 drain_capture '{capture}'
@@ -228,6 +254,7 @@ echo "elapsed=$(( SECONDS - started ))" > report
 kill "$writer" 2>/dev/null ||:
 """,
         tmp_path,
+        _FAST_TIMING,
     )
     assert proc.returncode == 0, proc.stderr
     elapsed = int(
@@ -249,25 +276,39 @@ def test_drain_capture_does_not_leak_xtrace_into_the_console(tmp_path):
     assert "e" in opts and "x" in opts, opts
 
 
-# `FAILURE_DRAIN_TIMEOUT` plus one poll interval and a little scheduling slack.
-FAILURE_DRAIN_TIMEOUT_CEILING = 45
+# The narrow `FAILURE_DRAIN_TIMEOUT` plus a poll interval and scheduling slack. Kept
+# tight: a generous ceiling is one an unbounded wait would also satisfy.
+FAILURE_DRAIN_TIMEOUT_CEILING = _FAST_TIMING["FAILURE_DRAIN_TIMEOUT"] + 4
 
 
-def test_the_timeout_ceiling_matches_the_library(tmp_path):
-    """Pins the constants the bounds above are written against, so raising one in
-    the library without revisiting them fails here rather than silently widening
-    the job's exposure."""
-    proc = _run(
-        "echo \"$FAILURE_DRAIN_TIMEOUT $FAILURE_DRAIN_INTERVAL"
-        " $FAILURE_TAIL_LINES $FAILURE_TAIL_MAX_BYTES\" > report",
-        tmp_path,
+def test_the_production_timing_constants():
+    """Read from the shipped library, not the scaled copy the tests run against:
+    these are the values a stress job actually waits, and the bound they place on a
+    failing job's exposure is what a change to them would widen."""
+    shipped = dict(
+        re.findall(r"^(FAILURE_[A-Z_]+)=(\d+)$", _LIB.read_text(encoding="utf-8"), re.M)
     )
-    assert proc.returncode == 0, proc.stderr
-    timeout, interval, tail_lines, tail_bytes = (
-        int(x) for x in (tmp_path / "report").read_text().split()
+    assert shipped["FAILURE_DRAIN_GRACE_OK"] == "5"
+    assert shipped["FAILURE_DRAIN_GRACE"] == "15"
+    assert shipped["FAILURE_DRAIN_TIMEOUT"] == "30"
+    assert shipped["FAILURE_TAIL_LINES"] == "30"
+    assert shipped["FAILURE_TAIL_MAX_BYTES"] == "3000"
+    assert shipped["FAILURE_DRAIN_STABLE_SAMPLES"] == "3"
+    assert shipped["FAILURE_DRAIN_INTERVAL"] == "1"
+    # The ordering the two graces rely on: a passing run waits least, a failing run
+    # more, and neither past the ceiling.
+    assert (
+        int(shipped["FAILURE_DRAIN_GRACE_OK"])
+        < int(shipped["FAILURE_DRAIN_GRACE"])
+        < int(shipped["FAILURE_DRAIN_TIMEOUT"])
     )
-    assert timeout + interval <= FAILURE_DRAIN_TIMEOUT_CEILING
-    assert (tail_lines, tail_bytes) == (30, 3000)
+    # The scaled set keeps the ordering the two graces rely on, and keeps the ok grace
+    # below the stable-sample floor so only the failure grace is observable above it.
+    assert (
+        _TEST_TIMING["FAILURE_DRAIN_GRACE_OK"]
+        < _TEST_TIMING["FAILURE_DRAIN_GRACE"]
+        < _TEST_TIMING["FAILURE_DRAIN_TIMEOUT"]
+    )
 
 
 # --- `run_capturing_output`: the wrapper the two runners now share ----------------
@@ -285,7 +326,7 @@ exit {code}
 """
 
 
-def _wrap(tmp_path, exit_code: int, late: int, stdout_is_file: bool):
+def _wrap(tmp_path, exit_code: int, late: int, stdout_is_file: bool, timing=None):
     """Run the shipped wrapper over a stub, with this shell's stdout either a pipe
     (as in CI, where the container's stdout is a pipe) or a regular file (as in a
     local `./stress_runner.sh > log 2>&1`)."""
@@ -301,13 +342,13 @@ printf 'ROW=%s\\n' "$(script_failure_info "$wrapped_status" '{tmp_path}/cap.log'
 """
     if not stdout_is_file:
         # `_run` already captures through a pipe, which is the CI shape.
-        proc = _run(body, tmp_path)
+        proc = _run(body, tmp_path, timing)
         return proc, proc.stdout
     # `exec >`, not a `{ ... } > file` group: a group's redirection is undone before the
     # shell's EXIT trap runs, so the trap's flush would miss the file and this would read
     # as a product defect. The runners are redirected the same way, by the job.
     console = tmp_path / "console.log"
-    proc = _run(f"exec > '{console}' 2>/dev/null\n{body}", tmp_path)
+    proc = _run(f"exec > '{console}' 2>/dev/null\n{body}", tmp_path, timing)
     return proc, console.read_text(encoding="utf-8", errors="replace")
 
 
@@ -324,7 +365,10 @@ def test_wrapper_mirrors_the_output_whatever_stdout_is(tmp_path, stdout_is_file)
 
     Each token is expected twice -- once from the mirror, once from the row cell --
     which is what distinguishes a lost mirror from a lost capture."""
-    proc, out = _wrap(tmp_path, exit_code=1, late=3, stdout_is_file=stdout_is_file)
+    proc, out = _wrap(
+        tmp_path, exit_code=1, late=1, stdout_is_file=stdout_is_file,
+        timing=_FAST_TIMING,
+    )
     assert proc.returncode == 0, proc.stderr
     for token in ("line one", "traceback: RuntimeError boom"):
         assert _count(out, token) == 2, (token, out)
@@ -335,11 +379,11 @@ def test_wrapper_puts_late_output_on_the_console_and_in_the_row(tmp_path):
     """A descendant inherits the command's stdout and can append after it exits.
     Those bytes must reach the console and the failure row, not just the file.
 
-    The delay sits between `FAILURE_DRAIN_GRACE_OK` and `FAILURE_DRAIN_GRACE`, so
-    only a failing run's full settle wait covers it: this is what pins the
-    exit-code comparison that selects between the two graces. A shorter delay
-    would be inside both and could not tell them apart."""
-    proc, out = _wrap(tmp_path, exit_code=1, late=9, stdout_is_file=False)
+    The delay sits above the wait a passing run makes and below the one a failing
+    run makes, so only the failure path covers it. That is what pins the exit-code
+    comparison selecting between the two graces: a delay inside both, or above
+    both, could not tell them apart."""
+    proc, out = _wrap(tmp_path, exit_code=1, late=5, stdout_is_file=False)
     assert proc.returncode == 0, proc.stderr
     assert _count(out, "late-child-diagnostic") == 2, out
     row = [l for l in out.splitlines() if l.startswith("ROW=")][0]
@@ -353,7 +397,10 @@ def test_wrapper_propagates_the_status_and_gates_the_artifact_on_it(
     """The status reaches `$?` -- a wrapper that swallowed it would report every run
     as a pass. The artifact is kept only for a failure: a passing run would
     otherwise upload the whole capture on every stress job."""
-    proc, out = _wrap(tmp_path, exit_code=exit_code, late=1, stdout_is_file=False)
+    proc, out = _wrap(
+        tmp_path, exit_code=exit_code, late=1, stdout_is_file=False,
+        timing=_FAST_TIMING,
+    )
     assert proc.returncode == 0, proc.stderr
     assert f"STATUS={exit_code}" in out, out
     artifact = tmp_path / "test_output" / "stress_script.log"
@@ -375,6 +422,7 @@ set -e
 echo "opts=$-"
 """,
         tmp_path,
+        _FAST_TIMING,
     )
     assert proc.returncode == 0, proc.stderr
     assert "REACHED status=3" in proc.stdout, proc.stdout
@@ -387,13 +435,13 @@ def test_wrapper_recovers_output_that_arrives_after_an_early_exit(tmp_path):
     arrived after the settle wait on exactly those runs, and it must not replace
     the status the job reports.
 
-    The write is scheduled past `FAILURE_DRAIN_TIMEOUT`, so the drain provably
+    The write is scheduled past the drain's timeout, so the drain provably
     cannot have caught it: a writer inside the drain window would be recovered
     whether the trap existed or not, and this would assert nothing."""
     stub = tmp_path / "s.sh"
     stub.write_text(
         "#!/bin/bash\necho early\n"
-        "( sleep 35; echo APPEARS-AFTER-SETTLE ) &\nexit 1\n",
+        "( sleep 9; echo APPEARS-AFTER-SETTLE ) &\nexit 1\n",
         encoding="utf-8",
     )
     stub.chmod(0o755)
@@ -406,10 +454,11 @@ set -e
 echo 'Failed to start server'
 # The runners reach their early exit some time after the wrapper returns; give the late
 # writer that long, so the trap has something left to recover.
-sleep 40
+sleep 11
 exit 1
 """,
         tmp_path,
+        _FAST_TIMING,
     )
     # The simulated early exit is the harness's own status.
     assert proc.returncode == 1, (proc.returncode, proc.stderr)
@@ -417,3 +466,63 @@ exit 1
     assert "APPEARS-AFTER-SETTLE" in out, out
     artifact = tmp_path / "test_output" / "stress_script.log"
     assert "APPEARS-AFTER-SETTLE" in artifact.read_text(encoding="utf-8")
+
+
+# --- `append_script_result_row`: the row branch both runners now share ------------
+
+
+def _row(tmp_path, exit_code: int, capture_text: str) -> str:
+    capture = tmp_path / "cap.log"
+    capture.write_text(capture_text, encoding="utf-8")
+    results = tmp_path / "test_results.tsv"
+    proc = _run(
+        f"append_script_result_row '{results}' {exit_code} '{capture}'", tmp_path
+    )
+    assert proc.returncode == 0, proc.stderr
+    return results.read_text(encoding="utf-8")
+
+
+def test_result_row_reports_success_without_the_capture(tmp_path):
+    """`read_test_results` keys off the status column, so a passing run must not be
+    written as a failure -- and must not carry the capture, which on a green stress
+    job is the whole log."""
+    row = _row(tmp_path, 0, "irrelevant output\n")
+    assert row.split("\t")[0] == "Test script exit code"
+    assert row.split("\t")[1] == "OK"
+    assert "irrelevant output" not in row
+
+
+def test_result_row_reports_failure_with_the_reason(tmp_path):
+    row = _row(tmp_path, 1, "DB::Exception: the actual reason\n")
+    fields = row.rstrip("\n").split("\t")
+    assert fields[0] == "Test script failed"
+    assert fields[1] == "FAIL"
+    assert "DB::Exception: the actual reason" in fields[3]
+    assert "script exit code: 1" in fields[3]
+
+
+def test_result_row_is_four_fields_on_one_line(tmp_path):
+    """`read_test_results` drops any line whose field count is not four, so a payload
+    that leaked a raw tab or newline would discard the row it was meant to explain."""
+    row = _row(tmp_path, 7, "first\nwith\ta\ttab\nDB::Exception: boom\n")
+    assert row.count("\n") == 1, row
+    assert len(row.rstrip("\n").split("\t")) == 4, row
+
+
+@pytest.mark.parametrize("exit_code", [0, 1], ids=["success", "failure"])
+def test_result_row_appends_rather_than_truncates(tmp_path, exit_code):
+    """The runners write this row into a results file earlier stages have already
+    added to, so truncating it would discard every result before this one. Both
+    branches write, so both are checked."""
+    capture = tmp_path / "cap.log"
+    capture.write_text("boom\n", encoding="utf-8")
+    results = tmp_path / "test_results.tsv"
+    results.write_text("Existing row\tOK\t\\N\t\n", encoding="utf-8")
+    proc = _run(
+        f"append_script_result_row '{results}' {exit_code} '{capture}'", tmp_path
+    )
+    assert proc.returncode == 0, proc.stderr
+    lines = results.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2, lines
+    assert lines[0].startswith("Existing row")
+    assert lines[1].startswith("Test script")
