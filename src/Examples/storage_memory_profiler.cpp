@@ -16,6 +16,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <vector>
 #include <unistd.h>
 
 #include <Poco/AutoPtr.h>
@@ -24,6 +25,8 @@
 #include <Poco/Logger.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/Util/MapConfiguration.h>
+
+#include <fmt/format.h>
 
 #include <base/getMemoryAmount.h>
 
@@ -100,63 +103,69 @@ DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & d
 }
 }
 
+StorageMemoryProfiler::~StorageMemoryProfiler() = default;
+
 
 void StorageMemoryProfiler::printUsage()
 {
-    std::cerr << "Storage Memory Profiler - Measure memory consumption of ClickHouse operations\n";
-    std::cerr << "\n";
-    std::cerr << "Usage: clickhouse-examples storage_memory_profiler [OPTIONS] -f FILE1.sql [-f FILE2.sql ...]\n";
-    std::cerr << "\n";
-    std::cerr << "Options:\n";
-    std::cerr << "  -f, --file FILE         SQL file to execute (can be specified multiple times)\n";
-    std::cerr << "  -o, --output-dir DIR    Directory for heap dump files (default: current dir)\n";
-    std::cerr << "  -p, --path DIR          Storage path for persistent data\n";
-    std::cerr << "  --prefix PREFIX         Prefix for heap dump files (default: memory_profile_)\n";
-    std::cerr << "  --no-system-tables      Skip system tables for faster startup\n";
-    std::cerr << "  --symbolize             Symbolize each heap dump immediately\n";
-    std::cerr << "  -h, --help              Show this help message\n";
-    std::cerr << "\n";
-    std::cerr << "Environment variables for jemalloc profiling:\n";
-    std::cerr << "  Linux:  MALLOC_CONF=prof:true,prof_active:true\n";
-    std::cerr << "  macOS:  JE_MALLOC_CONF=prof:true,prof_active:true\n";
-    std::cerr << "\n";
-    std::cerr << "Example:\n";
-    std::cerr << "  MALLOC_CONF=prof:true ./clickhouse-examples storage_memory_profiler \\\n";
-    std::cerr << "    -f scenarios/01_create_table.sql \\\n";
-    std::cerr << "    -f scenarios/02_insert_data.sql \\\n";
-    std::cerr << "    --output-dir profiles\n";
+    fmt::print(
+        stderr,
+        "Storage Memory Profiler - Measure memory consumption of ClickHouse operations\n"
+        "\n"
+        "Usage: clickhouse-examples storage_memory_profiler [OPTIONS] -f FILE1.sql [-f FILE2.sql ...]\n"
+        "\n"
+        "Options:\n"
+        "  -f, --file FILE         SQL file to execute (can be specified multiple times)\n"
+        "  -o, --output-dir DIR    Directory for heap dump files (default: current dir)\n"
+        "  -p, --path DIR          Storage path for persistent data\n"
+        "  --prefix PREFIX         Prefix for heap dump files (default: memory_profile_)\n"
+        "  --no-system-tables      Skip system tables for faster startup\n"
+        "  --symbolize             Symbolize each heap dump immediately\n"
+        "  -h, --help              Show this help message\n"
+        "\n"
+        "Environment variables for jemalloc profiling:\n"
+        "  Linux:  MALLOC_CONF=prof:true,prof_active:true\n"
+        "  macOS:  JE_MALLOC_CONF=prof:true,prof_active:true\n"
+        "\n"
+        "Example:\n"
+        "  MALLOC_CONF=prof:true ./clickhouse-examples storage_memory_profiler \\\n"
+        "    -f scenarios/01_create_table.sql \\\n"
+        "    -f scenarios/02_insert_data.sql \\\n"
+        "    --output-dir profiles\n");
 }
 
 
 void StorageMemoryProfiler::printProfilingStatus()
 {
 #if USE_JEMALLOC
-    std::cerr << "Jemalloc profiling status:\n";
+    fmt::print(stderr, "Jemalloc profiling status:\n");
 
     bool prof_compiled = false;
     size_t sz = sizeof(prof_compiled);
     int ret = je_mallctl("config.prof", &prof_compiled, &sz, nullptr, 0);
-    std::cerr << "  config.prof (compiled with profiling): " << (ret == 0 ? (prof_compiled ? "yes" : "no") : "error") << "\n";
+    fmt::print(stderr, "  config.prof (compiled with profiling): {}\n", ret == 0 ? (prof_compiled ? "yes" : "no") : "error");
 
     bool prof_enabled = false;
     sz = sizeof(prof_enabled);
     ret = je_mallctl("opt.prof", &prof_enabled, &sz, nullptr, 0);
-    std::cerr << "  opt.prof (profiling enabled at runtime): " << (ret == 0 ? (prof_enabled ? "yes" : "no") : "error") << "\n";
+    fmt::print(stderr, "  opt.prof (profiling enabled at runtime): {}\n", ret == 0 ? (prof_enabled ? "yes" : "no") : "error");
 
     if (!prof_compiled)
     {
-        std::cerr << "\nProfiling is not available. jemalloc was compiled without JEMALLOC_PROF.\n";
+        fmt::print(stderr, "\nProfiling is not available. jemalloc was compiled without JEMALLOC_PROF.\n");
     }
     else if (!prof_enabled)
     {
-        std::cerr << "\nProfiler is compiled but not enabled. This must be set at startup.\n";
-        std::cerr << "\nOn Linux, use MALLOC_CONF:\n";
-        std::cerr << "  MALLOC_CONF=prof:true <program>\n";
-        std::cerr << "\nOn macOS, use JE_MALLOC_CONF:\n";
-        std::cerr << "  JE_MALLOC_CONF=prof:true,prof_active:true <program>\n";
+        fmt::print(
+            stderr,
+            "\nProfiler is compiled but not enabled. This must be set at startup.\n"
+            "\nOn Linux, use MALLOC_CONF:\n"
+            "  MALLOC_CONF=prof:true <program>\n"
+            "\nOn macOS, use JE_MALLOC_CONF:\n"
+            "  JE_MALLOC_CONF=prof:true,prof_active:true <program>\n");
     }
 #else
-    std::cerr << "jemalloc is not enabled in this build.\n";
+    fmt::print(stderr, "jemalloc is not enabled in this build.\n");
 #endif
 }
 
@@ -166,7 +175,7 @@ void StorageMemoryProfiler::flushJemallocThreadCache()
 #if USE_JEMALLOC
     int ret = je_mallctl("thread.tcache.flush", nullptr, nullptr, nullptr, 0);
     if (ret != 0)
-        std::cerr << "Warning: thread.tcache.flush failed: " << ret << "\n";
+        fmt::print(stderr, "Warning: thread.tcache.flush failed: {}\n", ret);
 #endif
 }
 
@@ -178,7 +187,7 @@ void StorageMemoryProfiler::refreshJemallocEpoch()
     size_t epoch_size = sizeof(epoch);
     int ret = je_mallctl("epoch", &epoch, &epoch_size, &epoch, epoch_size);
     if (ret != 0)
-        std::cerr << "Warning: epoch refresh failed: " << ret << "\n";
+        fmt::print(stderr, "Warning: epoch refresh failed: {}\n", ret);
 #endif
 }
 
@@ -190,7 +199,7 @@ size_t StorageMemoryProfiler::getJemallocAllocated()
     size_t allocated_size = sizeof(allocated);
     int ret = je_mallctl("stats.allocated", &allocated, &allocated_size, nullptr, 0);
     if (ret != 0)
-        std::cerr << "Warning: stats.allocated failed: " << ret << "\n";
+        fmt::print(stderr, "Warning: stats.allocated failed: {}\n", ret);
     return allocated;
 #else
     return 0;
@@ -240,11 +249,11 @@ std::string StorageMemoryProfiler::dumpProfile(const std::string & label)
     {
         std::string symbolized_path = path + ".symbolized";
         symbolizeJemallocHeapProfile(path, symbolized_path);
-        std::cerr << "  Heap dump: " << symbolized_path << "\n";
+        fmt::print(stderr, "  Heap dump: {}\n", symbolized_path);
         return symbolized_path;
     }
 
-    std::cerr << "  Heap dump: " << path << "\n";
+    fmt::print(stderr, "  Heap dump: {}\n", path);
     return path;
 #else
     (void)label;
@@ -256,7 +265,7 @@ std::string StorageMemoryProfiler::dumpProfile(const std::string & label)
 void StorageMemoryProfiler::setupLogging()
 {
     /// Set up minimal logging (only errors)
-    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel);
     Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter("%L%H:%M:%S.%i [ %p ] <%l> %s: %t"));
     Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter, channel));
     Poco::Logger::root().setChannel(formatting_channel);
@@ -266,8 +275,8 @@ void StorageMemoryProfiler::setupLogging()
 
 void StorageMemoryProfiler::initializeContext()
 {
-    shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
+    shared_context = std::make_unique<SharedContextHolder>(Context::createShared());
+    global_context = Context::createGlobal(shared_context->get());
     global_context->makeGlobalContext();
     Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration);
     config->setString("profiles.default", "");
@@ -387,7 +396,7 @@ void StorageMemoryProfiler::cleanup()
         }
         catch (...)
         {
-            std::cerr << "Warning: Failed to remove temporary directory: " << *temporary_directory_to_delete << "\n";
+            fmt::print(stderr, "Warning: Failed to remove temporary directory: {}\n", temporary_directory_to_delete->string());
         }
     }
 }
@@ -402,7 +411,7 @@ void StorageMemoryProfiler::executeQueriesFromFile(const std::string & filepath)
     if (content.empty())
         return;
 
-    std::vector<std::string> queries;
+    std::vector<std::string> queries; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     const bool parsed_all = splitMultipartQuery(
                                 content,
                                 queries,
@@ -430,7 +439,7 @@ void StorageMemoryProfiler::executeQueriesFromFile(const std::string & filepath)
 }
 
 
-int StorageMemoryProfiler::run(const std::vector<std::string> & args)
+int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
 {
     /// Parse command line arguments
     for (size_t i = 0; i < args.size(); ++i)
@@ -446,7 +455,7 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
         {
             if (i + 1 >= args.size())
             {
-                std::cerr << "Error: -f requires an argument\n";
+                fmt::print(stderr, "Error: -f requires an argument\n");
                 return 1;
             }
             sql_files.push_back(args[++i]);
@@ -455,7 +464,7 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
         {
             if (i + 1 >= args.size())
             {
-                std::cerr << "Error: -o requires an argument\n";
+                fmt::print(stderr, "Error: -o requires an argument\n");
                 return 1;
             }
             output_dir = args[++i];
@@ -464,7 +473,7 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
         {
             if (i + 1 >= args.size())
             {
-                std::cerr << "Error: -p requires an argument\n";
+                fmt::print(stderr, "Error: -p requires an argument\n");
                 return 1;
             }
             data_path = args[++i];
@@ -473,7 +482,7 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
         {
             if (i + 1 >= args.size())
             {
-                std::cerr << "Error: --prefix requires an argument\n";
+                fmt::print(stderr, "Error: --prefix requires an argument\n");
                 return 1;
             }
             profile_prefix = args[++i];
@@ -488,7 +497,7 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
         }
         else
         {
-            std::cerr << "Unknown option: " << arg << "\n";
+            fmt::print(stderr, "Unknown option: {}\n", arg);
             printUsage();
             return 1;
         }
@@ -496,7 +505,7 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
 
     if (sql_files.empty())
     {
-        std::cerr << "Error: No SQL files specified. Use -f to specify files.\n\n";
+        fmt::print(stderr, "Error: No SQL files specified. Use -f to specify files.\n\n");
         printUsage();
         return 1;
     }
@@ -507,12 +516,12 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
     /// Check jemalloc profiling
     if (!isProfilingCompiled())
     {
-        std::cerr << "Error: jemalloc profiling is not compiled in.\n";
+        fmt::print(stderr, "Error: jemalloc profiling is not compiled in.\n");
         return 1;
     }
     else if (!isProfilingEnabled())
     {
-        std::cerr << "Error: jemalloc profiling is not enabled.\n";
+        fmt::print(stderr, "Error: jemalloc profiling is not enabled.\n");
         printProfilingStatus();
         return 1;
     }
@@ -527,18 +536,16 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
         SCOPE_EXIT({ cleanup(); });
 
         /// Print header
-        std::cout << "# Memory Profiler Summary\n";
-        std::cout << "# Timestamp: " << std::chrono::system_clock::now().time_since_epoch().count() << "\n";
-        std::cout << "# Files: ";
+        fmt::print(stdout, "# Memory Profiler Summary\n");
+        fmt::print(stdout, "# Timestamp: {}\n", std::chrono::system_clock::now().time_since_epoch().count());
+        fmt::print(stdout, "# Files: ");
         for (size_t i = 0; i < sql_files.size(); ++i)
         {
             if (i > 0)
-                std::cout << ", ";
-            std::cout << fs::path(sql_files[i]).filename().string();
+                fmt::print(stdout, ", ");
+            fmt::print(stdout, "{}", fs::path(sql_files[i]).filename().string());
         }
-        std::cout << "\n";
-        std::cout << "#\n";
-        std::cout << "checkpoint\tallocated_bytes\tdiff_from_start\tdiff_from_prev\n";
+        fmt::print(stdout, "\n#\ncheckpoint\tallocated_bytes\tdiff_from_start\tdiff_from_prev\n");
 
         /// Initial measurement
         flushJemallocThreadCache();
@@ -546,7 +553,7 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
         size_t initial_allocated = getJemallocAllocated();
         size_t prev_allocated = initial_allocated;
 
-        std::cout << "start\t" << initial_allocated << "\t0\t0\n";
+        fmt::print(stdout, "start\t{}\t0\t0\n", initial_allocated);
 
         dumpProfile("start");
 
@@ -556,7 +563,7 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
             const std::string & filepath = sql_files[i];
             std::string filename = fs::path(filepath).stem().string();
 
-            std::cerr << "Executing: " << filepath << "...\n";
+            fmt::print(stderr, "Executing: {}...\n", filepath);
 
             executeQueriesFromFile(filepath);
 
@@ -569,26 +576,25 @@ int StorageMemoryProfiler::run(const std::vector<std::string> & args)
             int64_t diff_from_start = static_cast<int64_t>(current_allocated) - static_cast<int64_t>(initial_allocated);
             int64_t diff_from_prev = static_cast<int64_t>(current_allocated) - static_cast<int64_t>(prev_allocated);
 
-            std::cout << label << "\t" << current_allocated << "\t" << diff_from_start << "\t" << diff_from_prev << "\n";
+            fmt::print(stdout, "{}\t{}\t{}\t{}\n", label, current_allocated, diff_from_start, diff_from_prev);
 
             dumpProfile(label);
 
             prev_allocated = current_allocated;
         }
 
-        std::cerr << "\nMemory profiling complete!\n";
-        std::cerr << "Output directory: " << output_dir << "\n";
+        fmt::print(stderr, "\nMemory profiling complete!\nOutput directory: {}\n", output_dir);
 
         return 0;
     }
     catch (const Exception & e)
     {
-        std::cerr << "Error: " << e.message() << "\n";
+        fmt::print(stderr, "Error: {}\n", e.message());
         return 1;
     }
     catch (const std::exception & e)
     {
-        std::cerr << "Error: " << e.what() << "\n";
+        fmt::print(stderr, "Error: {}\n", e.what());
         return 1;
     }
 }
@@ -608,12 +614,12 @@ int mainEntryExampleStorageMemoryProfiler(int argc, char ** argv)
     try
     {
         DB::StorageMemoryProfiler app;
-        std::vector<std::string> args(argv + 1, argv + argc);
+        DB::VectorWithMemoryTracking<String> args(argv + 1, argv + argc);
         return app.run(args);
     }
     catch (...)
     {
-        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        fmt::print(stderr, "{}\n", DB::getCurrentExceptionMessage(true));
         return 1;
     }
 }

@@ -1,13 +1,16 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
-#include <vector>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
+
+struct SharedContextHolder;
 
 /**
  * Storage Memory Profiler Tool
@@ -28,7 +31,9 @@ namespace DB
 class StorageMemoryProfiler
 {
 public:
-    int run(const std::vector<std::string> & args);
+    ~StorageMemoryProfiler();
+
+    int run(const VectorWithMemoryTracking<String> & args);
 
 private:
     void setupLogging();
@@ -53,7 +58,7 @@ private:
     void printProfilingStatus();
 
     /// Configuration
-    std::vector<std::string> sql_files;
+    VectorWithMemoryTracking<String> sql_files;
     std::string output_dir = ".";
     std::string profile_prefix = "memory_profile_";
     std::string data_path;
@@ -61,7 +66,7 @@ private:
     bool symbolize = false;
 
     /// Server context
-    SharedContextHolder shared_context;
+    std::unique_ptr<SharedContextHolder> shared_context;
     ContextMutablePtr global_context;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 };
