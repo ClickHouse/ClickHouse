@@ -1,0 +1,19 @@
+--- table function: subquery with single-quote literal
+2	it\'s
+--- table function: subquery with tab literal
+3
+--- table function: subquery with newline literal
+4
+--- table function: subquery with backslash literal
+5
+--- table function: subquery with IN list of special-character strings
+2	it\'s
+3	a\tb
+5	back\\slash
+--- table function: subquery with multi-column single-row IN
+2	it\'s
+--- table function: subquery with multi-column multi-row IN
+1	plain
+2	it\'s
+--- engine: subquery with single-quote literal
+2	it\'s

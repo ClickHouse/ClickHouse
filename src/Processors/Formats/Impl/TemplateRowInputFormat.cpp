@@ -864,7 +864,7 @@ This format is suitable only for input.
 
 ## Example usage {#example-usage}
 
-The following request can be used for inserting data from its output example of format [JSON](/interfaces/formats/JSON):
+The following request can be used for inserting data from its output example of format [JSON](/reference/formats/JSON/JSON):
 
 ```sql
 INSERT INTO table_name 

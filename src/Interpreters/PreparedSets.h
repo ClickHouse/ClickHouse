@@ -3,6 +3,7 @@
 #include <city.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <exception>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -59,6 +60,13 @@ public:
     virtual DataTypes getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
+
+    /// The same, but never runs the subquery that fills the set: returns null if it is not built yet.
+    /// Its only caller is `ConditionSelectivityEstimator`, which wants a single selectivity number;
+    /// every other caller consumes the elements to prune or read data and so is entitled to build.
+    /// A cost model that executes a subquery gives planning a side effect of unbounded cost, for a
+    /// result the plan may end up not needing at all, so any further consult-only caller belongs here.
+    SetPtr getOrderedSetIfAlreadyBuilt(const ContextPtr & context);
 
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
@@ -213,6 +221,11 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
+
+    /// Why the destructive in-place build in `buildOrderedSetInplace` failed after it consumed `source`.
+    /// The set can never be built once that happened, so `build` rethrows this instead of returning a null
+    /// plan, which its callers would silently take for "nothing left to build".
+    std::exception_ptr in_place_build_failure;
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
