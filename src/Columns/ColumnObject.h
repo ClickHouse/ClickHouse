@@ -142,10 +142,10 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    /// Used for deduplication: hashes the raw in-memory representation of typed paths,
-    /// dynamic paths and shared data. The hash is the same for the same INSERT data,
-    /// but NOT necessarily the same for logically equivalent data with different path
-    /// distribution between dynamic paths and shared data.
+    /// Used for deduplication: walks paths in sorted order and hashes each path name next to its
+    /// values, so distinct objects hash distinctly. The hash is still NOT the same for logically
+    /// equivalent data whose paths are split differently between dynamic paths and shared data,
+    /// or which carries an extra all-null dynamic path; that only costs a missed deduplication.
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;

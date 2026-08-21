@@ -1278,8 +1278,16 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     for (const auto & path : sorted_typed_paths)
         typed_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
 
+    /// The path name must be hashed next to its values. Hashing the values alone made the hash
+    /// blind to which path they belong to, so `{"a":1}` and `{"b":1}` collided and insert
+    /// deduplication silently dropped one of them. The length keeps the name from running into
+    /// the values that follow it.
     for (const auto & path : sorted_dynamic_paths)
+    {
+        hash.update(path.size());
+        hash.update(path);
         dynamic_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
+    }
 
     shared_data->updateHashWithValueRange(begin, end, hash);
 }
