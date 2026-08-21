@@ -9,6 +9,10 @@ ORDER BY (id, user_id)
 UNIQUE KEY (id)
 SETTINGS index_granularity = 8192
 (id)
+1
+1
+(`n.x`)
+1
 1	10
 2	10
 3	20

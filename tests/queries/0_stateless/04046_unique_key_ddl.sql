@@ -117,6 +117,129 @@ ENGINE = MergeTree
 UNIQUE KEY (_part)
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
+-- 7h. A backticked subcolumn name is rejected. Written without backticks it is an
+-- expression and 7a already rejects it; backticked it is a single identifier that
+-- names no stored column, so it used to pass DDL and fail every INSERT.
+-- One arm per subcolumn family a parent type can expose.
+CREATE TABLE uk_t (id UInt64, c Tuple(String))
+ENGINE = MergeTree
+UNIQUE KEY (`c.1`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_t (id UInt64, c Tuple(x String))
+ENGINE = MergeTree
+UNIQUE KEY (`c.x`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_t (id UInt64, c Tuple(Tuple(String)))
+ENGINE = MergeTree
+UNIQUE KEY (`c.1.1`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_t (id UInt64, c Nullable(String))
+ENGINE = MergeTree
+UNIQUE KEY (`c.null`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_t (id UInt64, c Array(Int32))
+ENGINE = MergeTree
+UNIQUE KEY (`c.size0`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_t (id UInt64, c Map(String, String))
+ENGINE = MergeTree
+UNIQUE KEY (`c.keys`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_t (id UInt64, c Map(String, String))
+ENGINE = MergeTree
+UNIQUE KEY (`c.values`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_t (id UInt64, c String)
+ENGINE = MergeTree
+UNIQUE KEY (`c.size`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+SET allow_experimental_variant_type = 1;
+CREATE TABLE uk_t (id UInt64, c Variant(String, UInt64))
+ENGINE = MergeTree
+UNIQUE KEY (`c.String`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_t (id UInt64, c Variant(String, UInt64))
+ENGINE = MergeTree
+UNIQUE KEY (`c.String.null`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+SET enable_dynamic_type = 1;
+CREATE TABLE uk_t (id UInt64, c Dynamic)
+ENGINE = MergeTree
+UNIQUE KEY (`c.String`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- A JSON path subcolumn was already rejected, as a key column of a type that cannot
+-- be used in a key; it is now rejected earlier, for naming a subcolumn.
+SET enable_json_type = 1;
+CREATE TABLE uk_t (id UInt64, c JSON)
+ENGINE = MergeTree
+UNIQUE KEY (`c.a`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- The tuple-list spelling of UNIQUE KEY is checked element by element too.
+CREATE TABLE uk_t (id UInt64, c Nullable(String))
+ENGINE = MergeTree
+UNIQUE KEY (id, `c.null`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- 7h-1. A stored column may be named after another column's subcolumn: `c.null`
+-- below is a column of its own, not the Nullable column's null map, so it stays
+-- accepted and writable.
+DROP TABLE IF EXISTS uk_t_coincide;
+CREATE TABLE uk_t_coincide (id UInt64, c Nullable(String), `c.null` UInt8)
+ENGINE = MergeTree
+UNIQUE KEY (`c.null`)
+ORDER BY (id);
+INSERT INTO uk_t_coincide VALUES (1, 'a', 7);
+SELECT count() FROM uk_t_coincide;
+
+-- Same for a name that collides with an array size subcolumn.
+DROP TABLE IF EXISTS uk_t_coincide2;
+CREATE TABLE uk_t_coincide2 (id UInt64, c Array(Int32), `c.size0` UInt64)
+ENGINE = MergeTree
+UNIQUE KEY (`c.size0`)
+ORDER BY (id);
+INSERT INTO uk_t_coincide2 VALUES (1, [1], 7);
+SELECT count() FROM uk_t_coincide2;
+
+-- 7h-2. A flattened Nested member is a stored column named `n.x`, so it is accepted
+-- at DDL. Its Array type is what an INSERT then rejects, unchanged by this guard.
+DROP TABLE IF EXISTS uk_t_nested;
+CREATE TABLE uk_t_nested (id UInt64, n Nested(x String))
+ENGINE = MergeTree
+UNIQUE KEY (`n.x`)
+ORDER BY (id);
+SELECT unique_key FROM system.tables WHERE database = currentDatabase() AND name = 'uk_t_nested';
+INSERT INTO uk_t_nested VALUES (1, ['a']); -- { serverError NOT_IMPLEMENTED }
+
+-- 7h-3. A dotted name that is nobody's subcolumn is an ordinary column.
+DROP TABLE IF EXISTS uk_t_dotted;
+CREATE TABLE uk_t_dotted (id UInt64, `a.b` String)
+ENGINE = MergeTree
+UNIQUE KEY (`a.b`)
+ORDER BY (id);
+INSERT INTO uk_t_dotted VALUES (1, 'x');
+SELECT count() FROM uk_t_dotted;
+
+-- 7h-4. A full-definition ATTACH carries user-written DDL, so it is rejected too.
+-- The UUID is derived from the test number to avoid collisions.
+DROP TABLE IF EXISTS uk_t_attach_sub SYNC;
+ATTACH TABLE uk_t_attach_sub UUID '00000000-0000-0000-0000-000000114470'
+(id UInt64, c Nullable(String))
+ENGINE = MergeTree
+UNIQUE KEY (`c.null`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
 -- 8. ALTER DROP COLUMN on a unique-key column -> error (via ORDER BY key guard).
 CREATE TABLE uk_t (id UInt64, user_id UInt32, v String)
 ENGINE = MergeTree

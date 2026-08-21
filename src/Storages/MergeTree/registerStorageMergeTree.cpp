@@ -743,6 +743,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, metadata.virtuals, context);
 
+        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
+        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
+        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
+        /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
+        /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
         if (args.storage_def->unique_key)
         {
             /// Gate on CREATE only; ATTACH must load existing metadata regardless of session setting.
@@ -791,6 +799,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "UNIQUE KEY column `{}` must be a physical (stored) column; "
                             "ALIAS and EPHEMERAL columns are not allowed",
+                            name);
+                    /// A subcolumn (`c.null`, `c.size0`, `c.1`, ...) is absent from the stored block
+                    /// yet resolvable by `getKeyFromAST`, and lives in an index `has` does not search.
+                    /// `has(name)` comes first: a stored column may be named after another column's
+                    /// subcolumn, and a flattened `Nested` member is itself a stored column. Gated on
+                    /// fresh definitions so an already-created table stays attachable, hence droppable.
+                    if (is_fresh_definition && !metadata.columns.has(name)
+                        && metadata.columns.hasSubcolumn(GetColumnsOptions::All, name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "UNIQUE KEY column `{}` is a subcolumn; UNIQUE KEY must name whole "
+                            "stored columns",
                             name);
                 };
 
@@ -846,14 +865,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                         uk_column);
             }
         }
-
-        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
-        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
-        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
-        /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
-        /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
 
         /// Previously validated definitions must stay loadable even if the current strictness settings
         /// would reject them (`TTLValidationMode::Attach`), but a fresh definition gets full validation:
