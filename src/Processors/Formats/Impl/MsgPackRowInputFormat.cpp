@@ -524,8 +524,16 @@ bool MsgPackRowInputFormat::readObject(Parser & msgpack_parser)
 
     PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t offset = 0;
-    while (!msgpack_parser.execute(buf->position(), buf->available(), offset))
+    /// execute() returns parse_return, not bool: PARSE_CONTINUE (0) alone asks for more data, and it
+    /// advances offset only on PARSE_SUCCESS (2) or PARSE_EXTRA_BYTES (1). The two error values are
+    /// negative, so they are indistinguishable from success under a boolean test.
+    while (true)
     {
+        const msgpack::parse_return status = msgpack_parser.execute(buf->position(), buf->available(), offset);
+        if (status == msgpack::PARSE_SUCCESS || status == msgpack::PARSE_EXTRA_BYTES)
+            break;
+        if (status != msgpack::PARSE_CONTINUE)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Error occurred while parsing msgpack data.");
         buf->position() = buf->buffer().end();
         if (buf->eof())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing msgpack object.");
