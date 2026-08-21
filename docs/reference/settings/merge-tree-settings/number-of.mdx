@@ -26,8 +26,8 @@ Possible values:
 **Usage**
 
 The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting
-should be less than the value of the [background_pool_size](/reference/settings/server-settings/settings/background#background_pool_size)
-* [background_merges_mutations_concurrency_ratio](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
+must not exceed the product of [`background_pool_size`](/reference/settings/server-settings/settings/background#background_pool_size)
+and [`background_merges_mutations_concurrency_ratio`](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 Otherwise, ClickHouse will throw an exception.
 
 ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}

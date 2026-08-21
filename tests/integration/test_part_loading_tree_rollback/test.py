@@ -135,6 +135,35 @@ def stop_merges(table):
     node.query(f"SYSTEM STOP MERGES {table}")
 
 
+def recover_detached_table(table):
+    """
+    Recover `table` if a previous failed run left it in `system.detached_tables`.
+
+    Every test here fails between `DETACH TABLE` and the final `DROP TABLE` when its `ATTACH`
+    throws, and the table then stays detached: `DROP TABLE IF EXISTS` only sees attached tables,
+    while the detached metadata still blocks `CREATE TABLE`
+    (`DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked` throws
+    `TABLE_ALREADY_EXISTS ... (detached)`). Repeated runs (`pytest --count`, flaky-check) reuse the
+    module-scoped cluster, so without this recovery the first real failure would cascade into
+    setup failures in every later iteration instead of independent reproductions.
+
+    The fabricated part directories are removed before `ATTACH`: they are what made the previous
+    `ATTACH` throw, so re-attaching them would fail the same way. Every part of these tables lives
+    in the single `all` partition, hence the `all_*` pattern. The `store/xxx/<uuid>/` layout is the
+    one `DatabaseAtomic` uses on the local `default` disk the tables are pinned to.
+    """
+    uuid = node.query(
+        "SELECT uuid FROM system.detached_tables"
+        f" WHERE database = 'default' AND table = '{table}'"
+    ).strip()
+    if not uuid:
+        return
+    data_path = f"/var/lib/clickhouse/store/{uuid[:3]}/{uuid}/"
+    node.exec_in_container(["bash", "-c", f"rm -rf {data_path}all_*"], privileged=True)
+    node.query(f"ATTACH TABLE {table}")
+    node.query(f"DROP TABLE {table} SYNC")
+
+
 def create_table_with_one_part(table):
     """
     Create `table`, commit one part `all_1_1_0`, then detach it so its directory can be edited.
@@ -157,6 +186,7 @@ def create_table_with_one_part(table):
     (`ServerAsynchronousMetrics` iterates a snapshot of them), and the later `ATTACH` then throws
     `TABLE_ALREADY_EXISTS` rather than waiting.
     """
+    recover_detached_table(table)
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
         f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x"

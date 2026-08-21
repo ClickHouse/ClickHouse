@@ -75,6 +75,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
+extern const int UNSUPPORTED_METHOD;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -346,6 +347,16 @@ bool writeMetadataFileAndVersionHint(
             /* write-if-none-match */ "*",
             "",
             metadata_file_info.compression_method);
+    }
+    catch (const Exception & e)
+    {
+        /// A backend that cannot express the commit's compare-and-swap will never be able to, so
+        /// reporting a lost race would make the caller retry an operation that can never succeed.
+        /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
+        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
+            throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
     }
     catch (...)
     {
