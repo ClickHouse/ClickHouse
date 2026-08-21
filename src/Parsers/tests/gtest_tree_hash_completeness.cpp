@@ -105,6 +105,20 @@ TEST(TreeHashCompleteness, JSONRejectsImplicitNullsDirectionDifferentFromDirecti
     EXPECT_THROW(IAST::createFromJSON(json, /*max_depth=*/ 1000, /*max_elements=*/ 100000), Exception);
 }
 
+TEST(TreeHashCompleteness, JSONRejectsOrphanWatermarkFields)
+{
+    /// `writeJSON` always emits the three watermark keys together. A payload that drops
+    /// `watermark_column` must be rejected instead of silently deserializing into a query without
+    /// a watermark, which is a different AST than the payload describes.
+    String json = serializeASTToJSON(*parse("SELECT * FROM t STREAM WATERMARK FOR a AS a - 1"));
+    const String key = R"("watermark_column":"a",)";
+    const auto pos = json.find(key);
+    ASSERT_NE(pos, String::npos);
+    json.erase(pos, key.size());
+
+    EXPECT_THROW(IAST::createFromJSON(json, /*max_depth=*/ 1000, /*max_elements=*/ 100000), Exception);
+}
+
 TEST(TreeHashCompleteness, StreamSettingsAreSignificant)
 {
     /// The cursor tree and the watermark column/idle timeout are not children.
