@@ -2,18 +2,15 @@
 # Tags: no-fasttest
 # no-fasttest: needs the Parquet format which is not built in fasttest.
 
-# The value-set reservation in `hashDictionaryValues` must be a genuine upper bound on what the
-# pruning path really allocates. Its trickiest term is the `HashSet` of dictionary-value hashes:
-# `HashSet::reserve` picks a power-of-two buffer with a maximum fill factor of 0.5, so the table
-# holds up to ~4 cells per inserted hash (not 2), never fewer than its initial 256 cells, and under
-# `input_format_null_as_default` one extra default-value hash can be inserted after the reservation.
-# This test pins `input_format_parquet_memory_high_watermark` inside the gap between an
-# underestimated footprint (~2 cells per hash, as the reservation once computed) and the real
-# `HashSet` buffer size, for a dictionary cardinality just above a power-of-two boundary where the
-# discrepancy is maximal (16384 entries + the reserved extra default hash -> a 65536-cell table).
-# With a correct upper bound the reservation does not fit and the filter falls back to a full scan;
-# if the reservation ever regresses to an underestimate, it would consider the value set affordable
-# and prune again, flipping `rows_read` and failing this test.
+# The value-set reservation in `hashDictionaryValues` must track what the pruning path really
+# allocates: the vector of dictionary-value hashes (sorted in place; exactly 8 bytes per entry),
+# plus the extra default-value hash kept outside the vector under `input_format_null_as_default`.
+# This test pins `input_format_parquet_memory_high_watermark` on both sides of the boundary where
+# the value set stops fitting the pruning budget, for two row groups of 16384 distinct values each.
+# If the reservation regresses to an underestimate (say, stops charging the vector), the tighter
+# watermark would keep pruning; if it regresses to an overestimate (say, back to the hash-table
+# model this replaced, ~4 cells per value plus the vector), the looser watermark would stop
+# pruning. Either flip changes `rows_read` and fails this test.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,9 +20,7 @@ DATA_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 NULLS_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}_nulls.parquet"
 
 # 2 row groups of 16384 rows. Every row has a distinct Int32 `category`, so each row group's
-# dictionary holds 16384 entries - together with the extra default-value slot reserved up front,
-# one past the 0.5-max-fill capacity of a 32768-cell table, so the value set reserves a 65536-cell
-# (512 KiB) `HashSet` buffer while a 2-cells-per-hash underestimate would charge only 256 KiB.
+# dictionary holds 16384 entries and its value set reserves a 128 KiB hash vector.
 # `output_format_parquet_max_dictionary_size` is raised so the writer keeps the column
 # dictionary-encoded; `max_block_size` / `output_format_parquet_row_group_size` pin the row group
 # boundaries deterministically.
@@ -51,8 +46,11 @@ run() {
 echo "generous memory budget: the dictionary filter prunes row group 1, only 16384 rows are read"
 run 4000000000 "select count() from file('${DATA_FILE}', Parquet) where category = 5"
 
-echo "watermark between the underestimated and the real HashSet footprint: pruning must be skipped, all 32768 rows are read"
+echo "watermark that affords the hash vectors: the dictionary filter still prunes, only 16384 rows are read"
 run 6000000 "select count() from file('${DATA_FILE}', Parquet) where category = 5"
+
+echo "watermark just below what the value set needs: pruning must be skipped, all 32768 rows are read"
+run 4000000 "select count() from file('${DATA_FILE}', Parquet) where category = 5"
 
 echo "extreme memory budget (1 byte): pruning is skipped, result is still correct"
 run 1 "select count() from file('${DATA_FILE}', Parquet) where category = 5"

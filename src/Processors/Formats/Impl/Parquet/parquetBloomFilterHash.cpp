@@ -3,6 +3,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 
 #if USE_PARQUET
 
@@ -151,6 +152,36 @@ std::optional<uint64_t> tryHashInt(const Field & field, const std::shared_ptr<co
     return std::nullopt;
 }
 
+template <typename ParquetPhysicalType, typename T>
+static bool tryHashIntegerColumnTyped(const IColumn & column, std::vector<uint64_t> & hashes)
+{
+    const auto * typed = checkAndGetColumn<ColumnVector<T>>(&column);
+    if (!typed)
+        return false;
+    parquet::XxHasher hasher;
+    for (T value : typed->getData())
+        hashes.emplace_back(hasher.Hash(static_cast<ParquetPhysicalType>(value)));
+    return true;
+}
+
+/// Hash a whole integer column the way `tryHashInt` hashes one query constant. Going through the
+/// native data array must produce the same digests as going through `Field`: the `Field` path
+/// widens the value to `Int64`/`UInt64` (sign- or zero-extending by the value's own signedness)
+/// and then narrows to the physical type, which keeps exactly the low bits - the same result as
+/// `static_cast`ing the native value to the physical type directly.
+template <typename ParquetPhysicalType>
+static bool tryHashIntegerColumn(const IColumn & column, std::vector<uint64_t> & hashes)
+{
+    return tryHashIntegerColumnTyped<ParquetPhysicalType, Int8>(column, hashes)
+        || tryHashIntegerColumnTyped<ParquetPhysicalType, Int16>(column, hashes)
+        || tryHashIntegerColumnTyped<ParquetPhysicalType, Int32>(column, hashes)
+        || tryHashIntegerColumnTyped<ParquetPhysicalType, Int64>(column, hashes)
+        || tryHashIntegerColumnTyped<ParquetPhysicalType, UInt8>(column, hashes)
+        || tryHashIntegerColumnTyped<ParquetPhysicalType, UInt16>(column, hashes)
+        || tryHashIntegerColumnTyped<ParquetPhysicalType, UInt32>(column, hashes)
+        || tryHashIntegerColumnTyped<ParquetPhysicalType, UInt64>(column, hashes);
+}
+
 std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
     const auto physical_type = parquet_column_descriptor->physical_type();
@@ -212,6 +243,25 @@ std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_c
         }
 
         return hashes;
+    }
+
+    /// Hash integer columns directly from their data arrays. The generic `Field` path below spends
+    /// most of its time constructing a `Field` and re-dispatching on the type for every value; for
+    /// dictionaries of hundreds of thousands of entries per row group that dominates the whole
+    /// pruning stage. The type check is the same one `tryHashInt` applies per value, hoisted out of
+    /// the loop; a column the dispatch below does not recognize (e.g. `IPv4`) falls through to the
+    /// generic path unchanged.
+    if (physical_type == parquet::Type::type::INT32 || physical_type == parquet::Type::type::INT64)
+    {
+        if (isParquetIntegerTypeSupportedForBloomFilters(
+                parquet_column_descriptor->logical_type(), parquet_column_descriptor->converted_type()))
+        {
+            bool done = physical_type == parquet::Type::type::INT32
+                ? tryHashIntegerColumn<int32_t>(*column, hashes)
+                : tryHashIntegerColumn<int64_t>(*column, hashes);
+            if (done)
+                return hashes;
+        }
     }
 
     for (size_t i = 0u; i < column->size(); i++)

@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
-#include <Common/HashTable/HashSet.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
@@ -1640,10 +1639,27 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
     return has_dictionary_data_page;
 }
 
+/// The value set of one column chunk's dictionary, prepared for lookups: the hashes of all
+/// dictionary values, sorted for binary search. `default_value_hash` stands for the values the
+/// dictionary does not hold: nulls decoded as the type's default under `input_format_null_as_default`
+/// (see `hashDictionaryValues`). It is kept out of `hashes` so the vector stays exactly the
+/// allocation `parquetTryHashColumn` made, which the pruning-memory reservation accounts for;
+/// appending would regrow the vector geometrically past the reserved amount.
+struct DictionaryValueHashes
+{
+    std::vector<UInt64> hashes;
+    std::optional<UInt64> default_value_hash;
+
+    bool contains(UInt64 hash) const
+    {
+        return hash == default_value_hash || std::binary_search(hashes.begin(), hashes.end(), hash);
+    }
+};
+
 /// Hash all values of an already-decoded dictionary the same way query constants are hashed for
 /// bloom filters, so the two can be compared. Returns nullopt if the values can't be hashed (in
 /// which case the dictionary can't be used for filtering).
-static std::optional<HashSet<UInt64>> hashDictionaryValues(
+static std::optional<DictionaryValueHashes> hashDictionaryValues(
     const parq::FileMetaData & file_metadata, const ReadOptions & options,
     Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info,
     const PruningMemoryReservation & reservation, size_t & held_pruning_bytes)
@@ -1656,8 +1672,8 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// on-disk dictionary page (`dictionary_filter_limit_bytes`, 1 MiB by default), not the decoded
     /// value set we are about to build here. A highly compressible dictionary can stay under that
     /// limit yet decode to many times more, and constructing the value set below (a materialized
-    /// column of all values, a vector of hashes, and a `HashSet` of them) then allocates that much
-    /// transient memory - potentially for several row groups in parallel during pruning. Charge it to
+    /// column of all values and a vector of their hashes) then allocates that much transient
+    /// memory - potentially for several row groups in parallel during pruning. Charge it to
     /// the shared pruning-stage budget (`reservation`): the reader's memory high watermark minus what
     /// the pruning stage already holds - the decoded dictionaries charged in `ReadManager::runTask`,
     /// plus the value sets already reserved by other dictionary lookups, whether earlier in this same
@@ -1674,7 +1690,7 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// `estimated_value_set_bytes` must be an upper bound on the peak transient memory allocated below,
     /// so that once the reservation succeeds the value set is guaranteed to stay within budget while it
     /// is built. The `hashes` vector (allocated at exactly `count` capacity by `parquetTryHashColumn`, so
-    /// exactly `count * sizeof(UInt64)`) and the resulting `value_hashes` HashSet are always built; the
+    /// exactly `count * sizeof(UInt64)`) is always built and sorted in place; the
     /// hashing itself allocates nothing on top - `parquetTryHashColumn` hashes string values in place
     /// from the column's buffers rather than copying each into a `Field` scratch string, and every other
     /// hashable type is stored inline in `Field`. When
@@ -1687,21 +1703,6 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// back by `count` understates a mixed-length string dictionary by up to `count` bytes. The
     /// `Mode::Column` path hashes the already-decoded (and already-charged) column in place, so it
     /// needs none of the materialization terms.
-    ///
-    /// The `HashSet` term cannot be approximated per value: `HashSet::reserve` picks a power-of-two
-    /// buffer with a maximum fill factor of 0.5 (`HashTableGrowerWithPrecalculation::set`), so the
-    /// table holds up to ~4 cells per inserted hash and never fewer than its initial 256 cells.
-    /// Compute the buffer size with the set's own growth rule so the reservation matches what
-    /// `reserve` really allocates, for the full insert cardinality: all `count` dictionary hashes
-    /// plus the one extra default-value hash possibly added under `input_format_null_as_default`
-    /// below (reserving for it up front also guarantees that insert never triggers a rehash past the
-    /// reservation). Add the set's initial constructor-allocated buffer, which can transiently
-    /// coexist with the resized one inside `realloc`.
-    using ValueHashSet = HashSet<UInt64>;
-    ValueHashSet::grower_type value_set_grower;
-    value_set_grower.set(count + 1);
-    size_t value_set_buffer_bytes =
-        (value_set_grower.bufSize() + ValueHashSet::grower_type::initial_count) * sizeof(ValueHashSet::cell_type);
     size_t per_value_bytes = sizeof(UInt64);    /// `hashes` vector
     size_t materialized_payload_bytes = 0;
     if (column.dictionary.mode != Dictionary::Mode::Column)
@@ -1716,12 +1717,12 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
             sizeof(UInt64)      /// materialized `ColumnString` offsets (0 for fixed types; counted conservatively)
             + sizeof(UInt32);   /// identity `indexes`
     }
-    size_t estimated_value_set_bytes = count * per_value_bytes + materialized_payload_bytes + value_set_buffer_bytes;
+    size_t estimated_value_set_bytes = count * per_value_bytes + materialized_payload_bytes;
     /// Reserve the peak footprint before allocating anything. If it does not fit, skip pruning.
     if (!reservation.tryReserve(estimated_value_set_bytes))
         return std::nullopt;
     /// Release the whole reservation on every early-out below; only the successful path keeps the
-    /// persistent part reserved (reduced to the actual `HashSet` footprint) and hands it to the caller
+    /// persistent part reserved (reduced to the actual `hashes` buffer) and hands it to the caller
     /// via `held_pruning_bytes` (see `DictionaryLookup`, which releases it when the value set is freed).
     bool committed = false;
     SCOPE_EXIT({ if (!committed) reservation.release(estimated_value_set_bytes); });
@@ -1752,12 +1753,15 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     }
     if (!hashes.has_value())
         return std::nullopt;
-    ValueHashSet value_hashes;
-    /// +1 for the possible extra default-value hash below: when `hashes->size()` lands exactly on the
-    /// table's maximum fill, that late insert would otherwise rehash past the reserved buffer.
-    value_hashes.reserve(hashes->size() + 1);
-    for (UInt64 h : *hashes)
-        value_hashes.insert(h);
+
+    DictionaryValueHashes value_hashes;
+    value_hashes.hashes = std::move(*hashes);
+    hashes.reset();
+    /// Sort once so every lookup is a binary search. Sorting in place needs no extra memory, unlike
+    /// a hash table of the values, whose buffer (a power-of-two sized to a maximum fill factor of
+    /// 0.5) would hold up to ~4 cells per value on top of this vector - several times the footprint
+    /// for a value set that is built once per column chunk and probed a handful of times.
+    std::sort(value_hashes.hashes.begin(), value_hashes.hashes.end());
 
     /// The dictionary holds only the non-null values of the column chunk, so we must account for how
     /// nulls are read into the output, mirroring the conservative null handling of the min/max path in
@@ -1777,7 +1781,7 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
             /// If the default value can't be hashed, we can't rule out a match.
             if (!default_hash.has_value())
                 return std::nullopt;
-            value_hashes.insert(*default_hash);
+            value_hashes.default_value_hash = *default_hash;
         }
         else
         {
@@ -1788,23 +1792,18 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
         }
     }
 
-    /// Free the transient `hashes` vector (the `indexes`/`values` allocations were already freed by
-    /// leaving their scope above) before releasing the reservation that covers it: otherwise a
-    /// concurrent pruning task could observe the released budget as free while `hashes` is still
-    /// allocated here, transiently exceeding the watermark.
-    hashes.reset();
-
     /// The value set is kept alive (in its `DictionaryLookup`) until this whole row-group filter
-    /// evaluation finishes, so keep its persistent footprint - the real `HashSet` buffer - reserved
+    /// evaluation finishes, so keep its persistent footprint - the sorted `hashes` buffer - reserved
     /// against the shared budget and hand the amount to the caller to release when the value set is
-    /// freed. The transient `indexes`/`values`/`hashes` allocations were already freed above, so
-    /// release that part of the reservation now: a second dictionary-filtered column, or another row
-    /// group pruning in parallel, then sees only the persistent part still held, keeping the combined
-    /// footprint within the watermark without over-reserving for the transients. The estimate above
-    /// follows the set's own growth rule, so it never under-predicts the buffer; the grow branch is a
-    /// defensive backstop (mirroring `decodeDictionaryPage`) in case the two ever drift apart, falling
-    /// back to a full scan if the correction no longer fits the budget.
-    size_t persistent_bytes = value_hashes.getBufferSizeInBytes();
+    /// freed. The transient `indexes`/`values` allocations were already freed by leaving their scope
+    /// above, so release that part of the reservation now: a second dictionary-filtered column, or
+    /// another row group pruning in parallel, then sees only the persistent part still held, keeping
+    /// the combined footprint within the watermark without over-reserving for the transients. The
+    /// estimate above covers the buffer exactly (`parquetTryHashColumn` reserves exactly `count`
+    /// elements); the grow branch is a defensive backstop (mirroring `decodeDictionaryPage`) in case
+    /// the two ever drift apart, falling back to a full scan if the correction no longer fits the
+    /// budget.
+    size_t persistent_bytes = value_hashes.hashes.capacity() * sizeof(UInt64);
     if (persistent_bytes > estimated_value_set_bytes)
     {
         if (!reservation.tryReserve(persistent_bytes - estimated_value_set_bytes))
@@ -1833,7 +1832,7 @@ struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
     size_t reserved_bytes = 0;
 
     bool computed = false;
-    std::optional<HashSet<UInt64>> value_hashes;
+    std::optional<DictionaryValueHashes> value_hashes;
 
     /// Bloom filter of the same column chunk, kept as a fallback for when the exact dictionary value set
     /// can't be built within the pruning memory budget (see `hashDictionaryValues`). Without it such a
