@@ -18,6 +18,7 @@ newly added parametrization is covered without editing this file.
 
 import os
 import pathlib
+import shlex
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -354,17 +355,17 @@ def test_ci_script_change_keeps_sequential_selected_tests_job(monkeypatch):
 
 
 def test_config_job_outlives_the_submodule_cache_bound():
-    """The job cap must exceed the clone's own bound, or the job watchdog fires first.
+    """The job cap must exceed the population budget, or the job watchdog fires first.
 
     The outer watchdog covers the whole job command and starts before any configuration
-    work, while the clone's bound starts only when the clone does; if the two are equal the
+    work, while the budget starts only when the population does; if the two are equal the
     job is killed with no result instead of reporting which step ran out of time.
     """
     from ci.praktika.native_jobs import _workflow_config_job
     from ci.praktika.settings import Settings
 
-    # The rest of the job needs its own room inside the cap: the archive upload plus
-    # the configuration work that already ran before the clone started.
+    # The rest of the job needs its own room inside the cap: the configuration work that
+    # already ran before the population started.
     assert (
         _workflow_config_job.timeout - Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
         >= 600
@@ -375,8 +376,8 @@ def test_a_clone_bound_that_crowds_the_job_cap_is_refused():
     """The two durations are set independently, so their relation is enforced on import.
 
     `SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC` is overridable per repository while the job cap
-    is a literal, so nothing but this check stops an override from leaving the clone unable
-    to report its own overrun. Asserting the defaults agree cannot show the check is
+    is a literal, so nothing but this check stops an override from leaving the population
+    unable to report its own overrun. Asserting the defaults agree cannot show the check is
     reachable, so drive a value that must be rejected.
     """
     import importlib
@@ -409,6 +410,7 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
 
     calls = []
     uploads = []
+    heads = []
 
     class _FakeShell:
         @staticmethod
@@ -418,7 +420,8 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
 
     class _FakeS3:
         @staticmethod
-        def head_object(_p):
+        def head_object(_p, timeout=None):
+            heads.append(timeout)
             return False
 
         @staticmethod
@@ -450,9 +453,12 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
     clones = [(c, k) for c, k in calls if "submodule update" in c]
     assert len(clones) == 1, calls
     command, kwargs = clones[0]
-    assert command.startswith(
-        f"timeout -s KILL {Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC} "
-    ), command
+    budget = Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+    assert command.startswith("timeout -s KILL "), command
+    # Whatever the clone got must come out of the budget rather than exceed it; the steps
+    # before it have already spent some.
+    clone_deadline = int(command.split()[3])
+    assert 0 < clone_deadline <= budget, command
     # Catches a trailing `|| true`, which would mask the exit code before `strict` sees it.
     assert command.endswith("--jobs 64"), command
     assert kwargs.get("strict") is True, kwargs
@@ -464,6 +470,342 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
     # `no_strict` would turn every upload error into a false success (see
     # run_command_with_retries); a lost conditional race is already exempted there.
     assert uploads[0].get("no_strict") in (None, False), uploads[0]
+    # The upload's deadline covers its retries as a whole, so it has to fit the budget on
+    # its own rather than being multiplied by the retry count.
+    upload_deadline = uploads[0].get("timeout")
+    assert upload_deadline, uploads[0]
+    assert 0 < upload_deadline <= budget, uploads[0]
+    # The archive is a pipeline, so the deadline has to come first and cover both sides:
+    # applied to `tar` alone it leaves a stalled compressor running past the budget.
+    # `pipefail` is what then makes a killed `tar` visible, since a pipeline's status is
+    # otherwise the compressor's and that exits cleanly on a truncated stream.
+    archives = [c for c, _ in calls if "tar -cf -" in c]
+    assert len(archives) == 1, calls
+    assert archives[0].startswith("timeout -s KILL "), archives[0]
+    assert "set -o pipefail;" in archives[0], archives[0]
+    # Shape checks cannot tell a wrapped pipeline from `timeout bash -c '...' | zstd`,
+    # which supervises only the left side, so the pipe must be proven to be inside the
+    # single quoted script that `timeout` runs.
+    supervised = shlex.split(archives[0])
+    assert supervised[:3] == ["timeout", "-s", "KILL"], archives[0]
+    assert supervised[4:5] == ["bash"], archives[0]
+    assert supervised[5:6] == ["-c"], archives[0]
+    script = supervised[6]
+    assert "|" in script, script
+    assert script.startswith("set -o pipefail;"), script
+    # Nothing may follow the supervised script: a pipe out here is outside the deadline.
+    assert supervised[7:] == [], archives[0]
+    # Every existence probe is bounded too: an unbounded one can outlast the whole budget
+    # on its own, since the AWS client's own socket deadline is minutes long.
+    assert heads, "the cache-miss probe must run"
+    assert all(h and 0 < h <= budget for h in heads), heads
+
+
+def test_every_population_step_is_bounded_by_the_shared_budget():
+    """No step of the population may run without a deadline drawn from the budget.
+
+    The clone is not the only step that can hang: the S3 probes and the upload are AWS
+    client subprocesses whose own socket deadline is minutes long and is retried, so an
+    unbounded one can outlast the budget by itself and let the job watchdog fire, which is
+    the outcome the budget exists to prevent. Asserting only the clone leaves that open.
+    """
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.settings import Settings
+
+    budget = Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+    shell_deadlines = []
+    s3_deadlines = []
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **_kwargs):
+            # `rm -f` is bookkeeping on a local file and cannot hang on the network.
+            if command.startswith("rm -f"):
+                return True
+            assert "timeout -s KILL " in command, command
+            prefix = command[command.index("timeout -s KILL ") :].split()
+            shell_deadlines.append(int(prefix[3]))
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p, timeout=None):
+            s3_deadlines.append(timeout)
+            return False
+
+        @staticmethod
+        def put(timeout=None, **_kwargs):
+            s3_deadlines.append(timeout)
+            return True
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        result = nj._prepare_submodule_cache(None, _Cfg())
+    finally:
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
+
+    assert result.status == "OK", result.status
+    # `git submodule sync`, `git submodule init`, the clone and the archive.
+    assert len(shell_deadlines) == 4, shell_deadlines
+    # Both existence probes cannot run on a hit-free path that also uploads, so the count
+    # is the miss probe, the upload and nothing else here.
+    assert len(s3_deadlines) == 2, s3_deadlines
+    for deadline in shell_deadlines + s3_deadlines:
+        assert deadline and 0 < deadline <= budget, (shell_deadlines, s3_deadlines)
+
+
+def test_the_budget_shrinks_as_the_population_spends_it():
+    """Each step's deadline must be the remainder, not the whole budget again.
+
+    Handing every step the full budget bounds no total: four steps of nearly the budget
+    each still overrun the job cap, which is what the budget exists to prevent.
+    Collaborators returning instantly cannot show the difference, so time is advanced
+    between steps and the deadlines are required to decrease.
+    """
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.settings import Settings
+
+    budget = Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+    step = 100
+    clock = [0.0]
+    deadlines = []
+
+    class _FakeStopwatch:
+        start_time = 0.0
+
+        @property
+        def duration(self):
+            return clock[0]
+
+    def _spend(deadline):
+        deadlines.append(deadline)
+        clock[0] += step
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **_kwargs):
+            if command.startswith("rm -f"):
+                return True
+            marker = "timeout -s KILL "
+            _spend(int(command[command.index(marker) + len(marker) :].split()[0]))
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p, timeout=None):
+            _spend(timeout)
+            return False
+
+        @staticmethod
+        def put(timeout=None, **_kwargs):
+            _spend(timeout)
+            return True
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth
+    original_stopwatch = nj.Utils.Stopwatch
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        nj.Utils.Stopwatch = _FakeStopwatch
+        result = nj._prepare_submodule_cache(None, _Cfg())
+    finally:
+        nj.Utils.Stopwatch = original_stopwatch
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
+
+    assert result.status == "OK", result.status
+    assert len(deadlines) >= 4, deadlines
+    assert deadlines == sorted(deadlines, reverse=True), deadlines
+    assert deadlines[-1] < deadlines[0], deadlines
+    # A step starting `spent` seconds in may only have what is left, so a deadline plus
+    # what was already spent before it never exceeds the budget.
+    for index, deadline in enumerate(deadlines):
+        assert deadline + index * step <= budget, (index, deadline, deadlines)
+
+
+def test_the_auth_setup_bounds_its_own_token_call():
+    """The helper's own external call must carry the deadline it was given.
+
+    Accepting the deadline and then dropping it leaves the token request unbounded while
+    every caller-side assertion still passes, and this call runs before any supervised step
+    so nothing else would catch it.
+    """
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.settings import Settings
+
+    commands = []
+
+    class _FakeShell:
+        @staticmethod
+        def get_output(command, **_kwargs):
+            commands.append(command)
+            return "token"
+
+    orig = nj.Shell, nj.GHAuth, Settings.ENABLE_SUBMODULE_CLONE_AUTH
+    try:
+        nj.Shell = _FakeShell
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: True)})
+        # The default is False, which returns before the token call is reached.
+        Settings.ENABLE_SUBMODULE_CLONE_AUTH = True
+        env = nj._submodule_auth_env(None, timeout=45)
+        nj._submodule_auth_env(None)
+    finally:
+        nj.Shell, nj.GHAuth, Settings.ENABLE_SUBMODULE_CLONE_AUTH = orig
+
+    assert "GIT_CONFIG_KEY_0" in env, env
+    bounded, plain = commands
+    assert bounded == "timeout -s KILL 45 gh auth token", bounded
+    # Omitting it must leave the command alone, so other callers are unaffected.
+    assert plain == "gh auth token", plain
+
+
+def test_the_clone_deadline_accounts_for_authenticated_setup():
+    """Preparing the clone's environment must be paid for before its deadline is set.
+
+    Under `ENABLE_SUBMODULE_CLONE_AUTH` that preparation mints a token, which is network
+    work with no deadline of its own. Python evaluates a call's arguments left to right, so
+    a deadline computed in the command string while the environment is built in a later
+    argument is already stale when the clone starts, and the reserve it was supposed to
+    leave has been spent.
+    """
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.settings import Settings
+
+    clock = [0.0]
+    deadlines = {}
+
+    class _FakeStopwatch:
+        start_time = 0.0
+
+        @property
+        def duration(self):
+            return clock[0]
+
+    def _fake_auth_env(_workflow, timeout=None):
+        # The token round trip, as elapsed time rather than a real request.
+        deadlines["setup"] = timeout
+        clock[0] += 300
+        return {}
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **_kwargs):
+            if "submodule update" in command:
+                deadlines["clone"] = int(command.split()[3])
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p, timeout=None):
+            return False
+
+        @staticmethod
+        def put(timeout=None, **_kwargs):
+            return True
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    orig = nj.Shell, nj.S3, nj.Digest, nj._submodule_auth_env
+    original_stopwatch = nj.Utils.Stopwatch
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj._submodule_auth_env = _fake_auth_env
+        nj.Utils.Stopwatch = _FakeStopwatch
+        nj._prepare_submodule_cache(None, _Cfg())
+    finally:
+        nj.Utils.Stopwatch = original_stopwatch
+        nj.Shell, nj.S3, nj.Digest, nj._submodule_auth_env = orig
+
+    # The setup's own external call has to be bounded too: it runs before the clone, so
+    # nothing else is supervising it.
+    assert deadlines.get("setup"), deadlines
+    assert 0 < deadlines["setup"] <= Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC, (
+        deadlines
+    )
+    assert "clone" in deadlines, deadlines
+    # The 300s the setup spent must already be gone from the clone's allowance.
+    assert deadlines["clone"] <= Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC - 300, (
+        deadlines,
+        Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC,
+    )
+
+
+def test_an_exhausted_budget_still_yields_a_deadline_that_fires():
+    """A spent budget must not be handed to `timeout` as zero, which disables it.
+
+    `timeout 0 CMD` runs CMD with no deadline at all, so clamping the remainder upwards is
+    what keeps an overrun reported rather than unbounded.
+    """
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.settings import Settings
+
+    deadlines = []
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **_kwargs):
+            if command.startswith("rm -f"):
+                return True
+            prefix = command[command.index("timeout -s KILL ") :].split()
+            deadlines.append(int(prefix[3]))
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p, timeout=None):
+            deadlines.append(timeout)
+            return False
+
+        @staticmethod
+        def put(timeout=None, **_kwargs):
+            deadlines.append(timeout)
+            return True
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth
+    original_budget = Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        # Already overspent before the first step, the state a slow earlier step leaves.
+        Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC = -60
+        nj._prepare_submodule_cache(None, _Cfg())
+    finally:
+        Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC = original_budget
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
+
+    assert deadlines, "the population must still run its steps"
+    assert all(d >= 1 for d in deadlines), deadlines
 
 
 def test_submodule_cache_overrun_fails_closed():
@@ -488,7 +830,7 @@ def test_submodule_cache_overrun_fails_closed():
 
     class _FakeS3:
         @staticmethod
-        def head_object(_p):
+        def head_object(_p, timeout=None):
             return False
 
         @staticmethod
@@ -518,6 +860,108 @@ def test_submodule_cache_overrun_fails_closed():
     assert uploads == [], uploads
 
 
+def test_the_upload_deadline_covers_its_retries(monkeypatch):
+    """The deadline must bound the retry loop as a whole, not one attempt of it.
+
+    `run_command_with_retries` makes every configured attempt, and `retries` is a
+    repository-overridable setting with no upper bound, so a per-attempt deadline bounds no
+    total: with one second left it would still permit `retries` seconds of work and let the
+    job watchdog fire. Time is advanced by the fake shell so a per-attempt reading of the
+    deadline shows up as attempts continuing past it.
+    """
+    import ci.praktika.s3 as s3mod
+    from ci.praktika.settings import Settings
+
+    attempts = []
+    clock = [0.0]
+
+    class _FakeShell:
+        @staticmethod
+        def get_res_stdout_stderr(command, **_kwargs):
+            attempts.append(command)
+            clock[0] += 30
+            # Not one of the loop's break conditions, so it retries.
+            return 1, "", "An error occurred (InternalError) calling PutObject"
+
+    body = pathlib.Path(f"{Settings.TEMP_DIR}/retry_budget_probe.bin")
+    body.parent.mkdir(parents=True, exist_ok=True)
+    body.write_bytes(b"x")
+
+    # `s3mod.time` is the stdlib module itself, so a fake clock has to be installed as a
+    # module attribute rather than assigned onto `time.monotonic`.
+    monkeypatch.setattr(s3mod, "time", type("_C", (), {"monotonic": lambda: clock[0]}))
+    orig_shell = s3mod.Shell
+    try:
+        s3mod.Shell = _FakeShell
+        with pytest.raises(RuntimeError):
+            s3mod.S3.put(
+                s3_path="bucket/key",
+                local_path=str(body),
+                # Room for two attempts of the 30s the fake shell burns, not for three.
+                timeout=50,
+            )
+    finally:
+        s3mod.Shell = orig_shell
+        body.unlink(missing_ok=True)
+
+    # A per-attempt reading of the deadline would run all MAX_RETRIES_S3 attempts; the
+    # absolute one stops once the budget is gone.
+    assert len(attempts) == 2, attempts
+    assert len(attempts) < Settings.MAX_RETRIES_S3, (attempts, Settings.MAX_RETRIES_S3)
+    # Each attempt may only have what is left of the budget, so the deadlines decrease and
+    # none of them is the full amount again.
+    granted = [int(a.split()[3]) for a in attempts]
+    assert granted == [50, 20], granted
+
+
+def test_s3_helpers_apply_the_deadline_to_the_aws_command():
+    """The deadline has to reach the AWS subprocess, which is where the hang happens.
+
+    Passing it to the helpers is only half the contract: an argument the helper accepts and
+    then drops leaves the call unbounded while every caller-side assertion still passes.
+    """
+    import ci.praktika.s3 as s3mod
+    from ci.praktika.settings import Settings
+
+    commands = []
+
+    class _FakeShell:
+        @staticmethod
+        def get_output(command, **_kwargs):
+            commands.append(command)
+            return ""
+
+        @staticmethod
+        def get_res_stdout_stderr(command, **_kwargs):
+            commands.append(command)
+            return 0, "", ""
+
+    body = pathlib.Path(f"{Settings.TEMP_DIR}/deadline_probe.bin")
+    body.parent.mkdir(parents=True, exist_ok=True)
+    body.write_bytes(b"x")
+
+    orig = s3mod.Shell
+    try:
+        s3mod.Shell = _FakeShell
+        s3mod.S3.head_object("bucket/key", timeout=37)
+        s3mod.S3.put(s3_path="bucket/key", local_path=str(body), timeout=41)
+        # Omitting it must leave the command alone, so existing callers are unaffected.
+        s3mod.S3.head_object("bucket/key")
+    finally:
+        s3mod.Shell = orig
+        body.unlink(missing_ok=True)
+
+    head_bounded, put_bounded, head_plain = commands
+    assert head_bounded.startswith("timeout -s KILL 37 aws "), head_bounded
+    # The upload's deadline is absolute, so its attempt gets what is left of it: at most
+    # what was asked for, and never more.
+    put_prefix = put_bounded.split()
+    assert put_prefix[:3] == ["timeout", "-s", "KILL"], put_bounded
+    assert 0 < int(put_prefix[3]) <= 41, put_bounded
+    assert put_prefix[4] == "aws", put_bounded
+    assert head_plain.startswith("aws "), head_plain
+
+
 def _run_cache_population_with_upload_error(aws_stderr, object_exists_after):
     """Drive `_prepare_submodule_cache` over a failing upload.
 
@@ -545,10 +989,10 @@ def _run_cache_population_with_upload_error(aws_stderr, object_exists_after):
 
     class _FakeS3(nj.S3):
         @staticmethod
-        def head_object(path):
+        def head_object(path, timeout=None):
             # False on the first call, the cache-miss probe; the later call is the
             # publishability check on a refused conditional write.
-            heads.append(path)
+            heads.append((path, timeout))
             return object_exists_after if len(heads) > 1 else False
 
     class _Cfg:
@@ -565,7 +1009,7 @@ def _run_cache_population_with_upload_error(aws_stderr, object_exists_after):
         nj.S3 = _FakeS3
         nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
         nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
-        return nj._prepare_submodule_cache(None, cfg), cfg
+        return nj._prepare_submodule_cache(None, cfg), cfg, heads
     finally:
         nj.Shell, nj.S3, nj.Digest, nj.GHAuth, s3mod.Shell = orig
         archive.unlink(missing_ok=True)
@@ -587,7 +1031,7 @@ def test_an_upload_that_stored_nothing_publishes_no_hash(aws_stderr):
     Every one of these makes `S3.put` return False or raise, and reading a bare False as
     somebody else's success schedules dependants that restore nothing.
     """
-    result, cfg = _run_cache_population_with_upload_error(
+    result, cfg, _heads = _run_cache_population_with_upload_error(
         aws_stderr, object_exists_after=False
     )
 
@@ -602,7 +1046,9 @@ def test_a_lost_race_is_a_success_once_the_object_is_there():
     Two jobs that both saw a cache miss is ordinary, and the loser's key is already
     populated by the winner, so it has nothing left to do.
     """
-    result, cfg = _run_cache_population_with_upload_error(
+    from ci.praktika.settings import Settings
+
+    result, cfg, heads = _run_cache_population_with_upload_error(
         "An error occurred (ConditionalRequestConflict) calling PutObject",
         object_exists_after=True,
     )
@@ -610,6 +1056,12 @@ def test_a_lost_race_is_a_success_once_the_object_is_there():
     assert result.status == "OK", result.status
     assert cfg.submodule_cache_hash == "ba7816bf8f01cfea", cfg.submodule_cache_hash
     assert "concurrently" in (result.info or ""), result.info
+    # This is the only path that reaches the second probe, so it is the only place the
+    # confirmation's own deadline can be observed.
+    assert len(heads) == 2, heads
+    confirm_deadline = heads[1][1]
+    assert confirm_deadline, heads
+    assert 0 < confirm_deadline <= Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC, heads
 
 
 if __name__ == "__main__":

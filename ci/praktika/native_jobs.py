@@ -51,8 +51,8 @@ _workflow_config_job = Job.Config(
 )
 
 # This watchdog covers the whole command and starts before any configuration work, while
-# the clone's deadline starts only when the clone does, so the clone needs room to report
-# its own overrun; the outer watchdog produces no result at all.
+# the population budget starts only when the population does, so the population needs
+# room to report its own overrun; the outer watchdog produces no result at all.
 assert (
     _workflow_config_job.timeout - Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC >= 600
 ), (_workflow_config_job.timeout, Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC)
@@ -228,7 +228,7 @@ def _clean_buildx_volumes():
     )
 
 
-def _submodule_auth_env(workflow) -> dict:
+def _submodule_auth_env(workflow, timeout=None) -> dict:
     """Prepare the environment and access permissions for submodule clones."""
     env = os.environ.copy()
     if not Settings.ENABLE_SUBMODULE_CLONE_AUTH:
@@ -236,7 +236,12 @@ def _submodule_auth_env(workflow) -> dict:
     if not GHAuth.auth(workflow, no_strict=True):
         print("WARNING: no GH token available, submodule clones run anonymously")
         return env
-    token = Shell.get_output("gh auth token", strict=True)
+    # Bounded when a caller is working to a deadline: this reaches the network, and the
+    # clone it prepares has no allowance of its own left to give.
+    command = "gh auth token"
+    if timeout:
+        command = f"timeout -s KILL {timeout} {command}"
+    token = Shell.get_output(command, strict=True)
     env["GIT_CONFIG_COUNT"] = "1"
     env["GIT_CONFIG_KEY_0"] = f"url.https://x-access-token:{token}@github.com/.insteadOf"
     env["GIT_CONFIG_VALUE_0"] = "https://github.com/"
@@ -249,6 +254,16 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     jobs with needs_submodules=True can restore it."""
     stop_watch = Utils.Stopwatch()
     info = ""
+
+    def budget_left():
+        """Seconds still available to this path, never zero.
+
+        `timeout 0` enforces no deadline at all, so an exhausted budget has to be
+        expressed as a deadline that fires immediately.
+        """
+        spent = int(stop_watch.duration)
+        return max(Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC - spent, 1)
+
     try:
         submodule_shas = Digest.get_submodule_shas()
         if not submodule_shas:
@@ -265,23 +280,43 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
         print(f"Submodule cache hash: {cache_hash}")
 
         # Check if cache already exists in S3
-        if S3.head_object(s3_path):
+        if S3.head_object(s3_path, timeout=budget_left()):
             print(f"Submodule cache hit: {s3_path}")
             info = f"cache hit: {cache_hash}"
         else:
             print(f"Submodule cache miss, creating: {s3_path}")
-            Shell.check("git submodule sync", verbose=True, strict=True)
-            Shell.check("git submodule init", verbose=True, strict=True)
             Shell.check(
-                f"timeout -s KILL {Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC} "
+                f"timeout -s KILL {budget_left()} git submodule sync",
+                verbose=True,
+                strict=True,
+            )
+            Shell.check(
+                f"timeout -s KILL {budget_left()} git submodule init",
+                verbose=True,
+                strict=True,
+            )
+            # Resolved first: it can mint a token over the network, and an argument
+            # evaluated after the deadline would leave the clone starting with a deadline
+            # computed before that work was paid for.
+            clone_env = _submodule_auth_env(workflow, timeout=budget_left())
+            Shell.check(
+                f"timeout -s KILL {budget_left()} "
                 "git submodule update --depth=1 --single-branch --jobs 64",
                 verbose=True,
                 strict=True,
-                env=_submodule_auth_env(workflow),
+                env=clone_env,
             )
             archive_path = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
+            # The deadline wraps the whole pipeline: applied to `tar` alone it leaves a
+            # stalled compressor running past it. `pipefail` is what makes a killed `tar`
+            # visible, since a pipeline's status is otherwise its last command's and the
+            # compressor exits cleanly on a truncated stream.
             Shell.check(
-                f"tar -cf - .git/modules | zstd -c -T0 > {archive_path}",
+                f"timeout -s KILL {budget_left()} bash -c "
+                + shlex.quote(
+                    "set -o pipefail; "
+                    f"tar -cf - .git/modules | zstd -c -T0 > {archive_path}"
+                ),
                 verbose=True,
                 strict=True,
             )
@@ -297,12 +332,13 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
                 s3_path=s3_path,
                 local_path=archive_path,
                 if_none_matched=True,
+                timeout=budget_left(),
             )
             Shell.check(f"rm -f {archive_path}")
             # A refused conditional write means somebody else holds the key, but not that
             # the object is readable: a 409 is also raised for a concurrent delete. The
             # hash is only publishable once the object is actually there.
-            if not created and not S3.head_object(s3_path):
+            if not created and not S3.head_object(s3_path, timeout=budget_left()):
                 raise RuntimeError(
                     f"conditional upload was refused and {s3_path} does not exist"
                 )

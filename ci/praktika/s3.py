@@ -194,6 +194,7 @@ class S3:
         if_none_matched=False,
         if_match=None,
         no_strict=False,
+        timeout=None,
     ):
         """
         puts object via API PUT request
@@ -204,6 +205,7 @@ class S3:
         :param if_none_matched:
         :param if_match: ETag value for conditional PUT (use with version checking)
         :param no_strict:
+        :param timeout: wall-clock deadline for the whole call, retries included
         :return:
         """
         assert Path(local_path).exists(), f"Path [{local_path}] does not exist"
@@ -231,7 +233,9 @@ class S3:
 
         if text:
             command += ' --content-type "text/plain; charset=utf-8"'
-        res = cls.run_command_with_retries(command, no_strict=no_strict)
+        res = cls.run_command_with_retries(
+            command, no_strict=no_strict, timeout=timeout
+        )
         if res:
             StorageUsage.add_uploaded(local_path)
         return res
@@ -243,14 +247,27 @@ class S3:
         retries=Settings.MAX_RETRIES_S3,
         no_strict=False,
         with_stderr=False,
+        timeout=None,
     ):
         i = 0
         res = False
         stderr = ""
+        # The deadline covers the retries as a whole, so it is an absolute point in time
+        # rather than a per-attempt allowance: dividing it between attempts cannot bound
+        # the total, because each attempt still needs a positive deadline and `retries` has
+        # no upper bound.
+        expires_at = time.monotonic() + timeout if timeout else None
         while not res and i < retries:
             i += 1
+            attempt_command = command
+            if expires_at is not None:
+                left = expires_at - time.monotonic()
+                if left <= 0:
+                    print(f"ERROR: s3 command ran out of time: [{command}]")
+                    break
+                attempt_command = f"timeout -s KILL {int(left) or 1} {command}"
             ret_code, stdout, stderr = Shell.get_res_stdout_stderr(
-                command, verbose=True
+                attempt_command, verbose=True
             )
             if "aws sso login" in stderr:
                 print("ERROR: aws login expired")
@@ -381,12 +398,13 @@ class S3:
         return res
 
     @classmethod
-    def head_object(cls, s3_path):
+    def head_object(cls, s3_path, timeout=None):
         s3_path = str(s3_path).removeprefix("s3://")
         bucket, key = s3_path.split("/", maxsplit=1)
-        output = Shell.get_output(
-            f"aws s3api head-object --bucket {bucket} --key {key}", verbose=True
-        )
+        command = f"aws s3api head-object --bucket {bucket} --key {key}"
+        if timeout:
+            command = f"timeout -s KILL {timeout} {command}"
+        output = Shell.get_output(command, verbose=True)
         if not output:
             return None
         else:

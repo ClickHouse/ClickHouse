@@ -112,7 +112,9 @@ class _Settings:
     # (required for private submodules); otherwise they run anonymously.
     ENABLE_SUBMODULE_CLONE_AUTH: bool = False
 
-    # Exceeding it fails the job, so it must leave room inside the job's own cap.
+    # Budget for the whole population path, not just the clone: every step runs under
+    # what is left of it. Exceeding it fails the job, so it must leave room inside the
+    # job's own cap.
     SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC: int = 1200
 
     # v2: records carry the producing workflow event, used as the reuse trust
