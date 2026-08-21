@@ -29,7 +29,6 @@ run_cancelled_query()
     local output_file="${CLICKHOUSE_TMP}/${query_id}.out"
 
     ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT ${before_failpoint}"
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT ${after_failpoint}"
 
     timeout 30 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "$query" >"$output_file" 2>&1 &
     local client_pid=$!
@@ -37,6 +36,7 @@ run_cancelled_query()
     if ! timeout 30 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT ${before_failpoint} PAUSE"
     then
         echo "FAIL: timed out waiting for ${before_failpoint}"
+        ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${before_failpoint}"
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=0" -d "KILL QUERY WHERE query_id = '${query_id}'" >/dev/null
         return 1
     fi
@@ -57,8 +57,14 @@ run_cancelled_query()
         [[ "$cancelled" -ge 1 ]] && break
         sleep 0.1
     done
-    [[ "$cancelled" -ge 1 ]] || { echo "FAIL: query was not cancelled"; return 1; }
+    [[ "$cancelled" -ge 1 ]] || { echo "FAIL: query was not cancelled"; ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${before_failpoint}"; return 1; }
 
+    # Arm the post-expression failpoint only after the kill is confirmed. These failpoints are
+    # global: while one is armed but not yet consumed, the first unrelated query passing the same
+    # transform gets caught by it. In particular, `KILL QUERY` runs an internal `SELECT` over
+    # `system.processes`, and every `SELECT` pipeline contains an `ExpressionTransform` — arming
+    # `expression_transform_pause` before the kill deadlocks the kill itself.
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT ${after_failpoint}"
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT ${before_failpoint}"
 
     wait "$client_pid"
