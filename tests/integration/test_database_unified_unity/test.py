@@ -18,7 +18,6 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import TSV
 
 # Shared with the Delta-only catalog test rather than duplicated: these carry
@@ -32,7 +31,8 @@ from test_database_delta.test import (
 CATALOG = "unity"
 
 UC_PORT = 8080
-PROXY_PORT = 8081
+# 8081, the obvious choice, is taken: Unity Catalog binds both 8080 and 8081.
+PROXY_PORT = 8090
 
 UC_URL = f"http://localhost:{UC_PORT}/api/2.1/unity-catalog"
 PROXY_URL = f"http://localhost:{PROXY_PORT}/api/2.1/unity-catalog"
@@ -61,10 +61,11 @@ def start_unity_catalog(node):
     a slow copy and leaves no log to read. Here the copy is synchronous and the
     server is checked for liveness, so a failure says what actually broke."""
     # The server's classpath (`server/target/classpath`) names 253 dependency
-    # jars under `/root/.cache/coursier`, but the container runs as uid 1000 and
-    # `/root` is mode 0700, so the JVM cannot load any of them. Opening the
-    # directory for traversal is enough; nothing writes there.
-    node.exec_in_container(["bash", "-c", "chmod o+rx /root"], user="root")
+    # jars under `/root/.cache/coursier`, but outside CI the container runs as
+    # uid 1000 / gid 0 and `/root` is mode 0700, so the JVM loads none of them.
+    # `a+rx`, not `o+rx`: gid 0 matches the directory's group, whose bits win
+    # over the other bits. Traversal is all that is needed; nothing writes there.
+    node.exec_in_container(["bash", "-c", "chmod a+rx /root"], user="root")
 
     # `cp -r` fails here: eight sbt incremental-compile caches under */zinc are
     # mode 0600 and owned by root, while this runs as the container's own user.
@@ -132,12 +133,44 @@ def link_uniform_table(node):
     )
 
 
-def start_proxy(cluster):
-    start_mock_servers(
-        cluster,
-        os.path.join(os.path.dirname(__file__), "mock_servers"),
-        [("uc_proxy.py", "node1", PROXY_PORT)],
+PROXY_PATH = "/var/lib/clickhouse/user_files/uc_proxy.py"
+PROXY_LOG = "/var/lib/clickhouse/user_files/uc_proxy.log"
+
+
+def start_proxy(node):
+    """`helpers.mock_servers.start_mock_servers` copies to a relative path, so the
+    script lands in the container's working directory, which the container's uid
+    cannot write to outside CI. Place it in `user_files` and start it directly."""
+    node.copy_file_to_container(
+        os.path.join(os.path.dirname(__file__), "mock_servers", "uc_proxy.py"),
+        PROXY_PATH,
     )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"setsid nohup python3 {PROXY_PATH} {PROXY_PORT} > {PROXY_LOG} 2>&1 < /dev/null &",
+        ]
+    )
+
+    try:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "for i in $(seq 1 30); do "
+                f"[ \"$(curl -s http://localhost:{PROXY_PORT}/)\" = OK ] && exit 0; sleep 1; done; "
+                f"echo 'Proxy did not answer on port {PROXY_PORT}' >&2; exit 1",
+            ]
+        )
+    except Exception:
+        print(
+            "Proxy log:\n"
+            + node.exec_in_container(
+                ["bash", "-c", f"tail -n 50 {PROXY_LOG} 2>&1"], nothrow=True
+            )
+        )
+        raise
 
 
 @pytest.fixture(scope="module")
@@ -169,7 +202,7 @@ def started_cluster():
 
         start_unity_catalog(node)
         link_uniform_table(node)
-        start_proxy(cluster)
+        start_proxy(node)
 
         yield cluster
 

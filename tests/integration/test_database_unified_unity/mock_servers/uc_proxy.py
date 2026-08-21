@@ -40,16 +40,23 @@ ICEBERG_SECURABLE_KIND = "TABLE_DELTA_ICEBERG_EXTERNAL"
 UC_ROOT = "/var/lib/clickhouse/user_files/unitycatalog"
 UNIFORM_DIR = UC_ROOT + "/etc/data/external/unity/default/tables/marksheet_uniform"
 
-# Matches both the `file:///tmp/...` of the tables API and the `file:/tmp/...`
-# of the Iceberg metadata. Anchored on the table name, so nothing else can match.
-STALE_LOCATION = re.compile(r"file:/{1,3}tmp/marksheet_uniform")
+# The server reports this table's location in three shapes: `file:///tmp/...`
+# (tables API), `file:/tmp/...` (Iceberg `metadata.location`) and a bare
+# `/tmp/...` (Iceberg `metadata-location`). Both patterns are anchored on the
+# table name, so nothing else can match. Order matters: the scheme-ful forms are
+# replaced first, so the bare pattern only sees what is left.
+SCHEME_LOCATION = re.compile(r"file:/{1,3}tmp/marksheet_uniform")
+BARE_LOCATION = re.compile(r"/tmp/marksheet_uniform")
 
 # Headers that describe this hop rather than the request, so they must not be forwarded.
 HOP_BY_HOP_HEADERS = {"host", "content-length", "accept-encoding", "connection"}
 
 
 def repair_locations(data):
-    return STALE_LOCATION.sub("file://" + UNIFORM_DIR, data.decode()).encode()
+    """Relocates the table without changing the shape of each reference: a value
+    that arrived with a scheme keeps one, a bare path stays bare."""
+    body = SCHEME_LOCATION.sub("file://" + UNIFORM_DIR, data.decode())
+    return BARE_LOCATION.sub(UNIFORM_DIR, body).encode()
 
 
 def patch_table(table):

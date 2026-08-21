@@ -16,7 +16,8 @@ UC_LOG = "/var/lib/clickhouse/user_files/unitycatalog/uc.log"
 def start_unity_catalog(node):
     # The server's classpath names its dependency jars under /root/.cache/coursier,
     # unreadable when the container runs as a non-root uid, as it does outside CI.
-    node.exec_in_container(["bash", "-c", "chmod o+rx /root"], user="root")
+    # `a+rx`, not `o+rx`: that uid has gid 0, so the group bits apply, not other.
+    node.exec_in_container(["bash", "-c", "chmod a+rx /root"], user="root")
     # tar, not `cp -r`: the sbt caches under */zinc are mode 0600 and owned by root,
     # so a non-root copy fails on them. They have no role at runtime.
     node.exec_in_container(
