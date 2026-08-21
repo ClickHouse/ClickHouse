@@ -180,14 +180,18 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
             continue;
 
         const auto & column_in_block = block.getByName(required_column.name);
-        const bool equal_types = column_in_block.type->equals(*required_column.type);
-        const bool requires_experimental_time_decay_validation
-            = equal_types
-            && isExponentialTimeDecayingFloat64(removeLowCardinalityAndNullable(required_column.type))
-            && column_in_block.type->getName() != required_column.type->getName();
+        if (column_in_block.type->equals(*required_column.type))
+        {
+            if (column_in_block.type->getName() != required_column.type->getName())
+            {
+                if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+                        removeLowCardinalityAndNullable(required_column.type)))
+                    validateExponentialTimeDecayingFloat64Column(
+                        *column_in_block.column, *decay_length, "insertion into ExponentialTimeDecayingFloat64");
+            }
 
-        if (equal_types && !requires_experimental_time_decay_validation)
             continue;
+        }
 
         /// Converting a column from nullable to non-nullable may cause 'Cannot convert column' error when NULL values exist.
         /// Users should specify DEFAULT expression in ALTER MODIFY COLUMN statement to replace NULL values.

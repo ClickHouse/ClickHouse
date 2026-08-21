@@ -16,14 +16,18 @@ namespace DB
 
 static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr)
 {
-    const bool equal_types = arg.type->equals(*type);
-    const bool requires_experimental_time_decay_validation
-        = equal_types
-        && isExponentialTimeDecayingFloat64(removeLowCardinalityAndNullable(type))
-        && arg.type->getName() != type->getName();
+    if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
+    {
+        if (arg.type->getName() != type->getName())
+        {
+            if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+                    removeLowCardinalityAndNullable(type)))
+                validateExponentialTimeDecayingFloat64Column(
+                    *arg.column, *decay_length, "conversion to ExponentialTimeDecayingFloat64");
+        }
 
-    if (equal_types && cast_type != CastType::accurateOrNull && !requires_experimental_time_decay_validation)
         return arg.column;
+    }
 
     const auto from_name = arg.type->getName();
     const auto to_name = type->getName();
