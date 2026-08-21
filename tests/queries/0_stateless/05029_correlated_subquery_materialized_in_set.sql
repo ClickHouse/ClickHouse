@@ -58,9 +58,12 @@ SETTINGS correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_d
 SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT 2) AS m GROUP BY x, m)) ORDER BY s
 SETTINGS correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'right';
 
--- Readiness is structural: exactly one builder for the set, and no placeholder left behind. Without
--- this the values above can still be correct by scheduling luck on some plans.
-SELECT countIf(explain LIKE '%CreatingSet (Create set for subquery)%') AS builders, countIf(explain LIKE '%DelayedCreatingSets%') AS placeholders
+-- Readiness is structural rather than a matter of scheduling: one set gate dominates the whole plan,
+-- so a duplicated body cannot leave behind a second gate with no builder under it.
+SELECT countIf(explain LIKE '%CreatingSet (Create set for subquery)%') AS builders, countIf(explain LIKE '%DelayedCreatingSets%') AS placeholders, countIf(explain LIKE '%CreatingSets (Create sets before main query execution)%') AS set_gates
 FROM (EXPLAIN PLAN SELECT (SELECT x) FROM (SELECT arrayJoin([1, 2, 3]) AS x GROUP BY x, x IN (SELECT 2)) SETTINGS correlated_subqueries_use_in_memory_buffer = 0);
+
+SELECT countIf(explain LIKE '%CreatingSet (Create set for subquery)%') AS builders, countIf(explain LIKE '%DelayedCreatingSets%') AS placeholders, countIf(explain LIKE '%CreatingSets (Create sets before main query execution)%') AS set_gates
+FROM (EXPLAIN PLAN SELECT (SELECT x) FROM (SELECT arrayJoin([1, 2, 3]) AS x GROUP BY x, x IN (SELECT 2)) SETTINGS correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'left');
 
 -- { echoOff }
