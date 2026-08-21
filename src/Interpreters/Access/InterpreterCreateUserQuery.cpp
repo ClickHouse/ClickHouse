@@ -262,11 +262,13 @@ BlockIO InterpreterCreateUserQuery::execute()
     /// slightly different deadlines.
     const time_t valid_for_base_time = getCurrentTime();
 
-    /// `ATTACH USER` accepts the stable storage representation emitted by
-    /// `AuthenticationData::toAST(true)`. In particular, that representation uses a numeric Unix
-    /// timestamp for dates past 2286, which must use the same no-context parsing path as access-entity
-    /// deserialization. Ordinary `CREATE`/`ALTER USER` statements still evaluate their expressions
-    /// against the query context.
+    /// An attach query holds the stable storage representation emitted by
+    /// `AuthenticationData::toAST(true)`, e.g. a numeric Unix timestamp for dates past 2286, which must
+    /// use the same no-context parsing path as access-entity deserialization. `ATTACH USER` is not part
+    /// of the client SQL grammar (only `ParserAttachAccessEntity` parses it, and its result goes through
+    /// `updateUserFromQuery`, not here), so this only matters for an internally constructed attach AST;
+    /// still, both paths must agree. Ordinary `CREATE`/`ALTER USER` statements evaluate their
+    /// expressions against the query context.
     const ContextPtr valid_until_context = query.attach ? nullptr : getContext();
 
     std::vector<AuthenticationData> authentication_methods;
