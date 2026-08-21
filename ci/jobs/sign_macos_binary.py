@@ -226,14 +226,11 @@ def write_notary_api_key():
 
 
 def notarize():
-    try:
-        return Shell.check(
-            f"{RCODESIGN} notary-submit --api-key-file {NOTARY_API_KEY_JSON}"
-            f" --wait --max-wait-seconds 1800 {SIGNED_ZIP}",
-            verbose=True,
-        )
-    finally:
-        NOTARY_API_KEY_JSON.unlink(missing_ok=True)
+    return Shell.check(
+        f"{RCODESIGN} notary-submit --api-key-file {NOTARY_API_KEY_JSON}"
+        f" --wait --max-wait-seconds 1800 {SIGNED_ZIP}",
+        verbose=True,
+    )
 
 
 def verify():
@@ -289,11 +286,17 @@ def main():
     ]
 
     results = []
-    for name, command in steps:
-        results.append(Result.from_commands_run(name=name, command=command))
-        if not results[-1].is_ok():
-            print(f"Step [{name}] failed, stopping")
-            break
+    try:
+        for name, command in steps:
+            results.append(Result.from_commands_run(name=name, command=command))
+            if not results[-1].is_ok():
+                print(f"Step [{name}] failed, stopping")
+                break
+    finally:
+        # never leave the App Store Connect credential in the reused self-hosted
+        # workspace, even if a step before notarize failed.
+        NOTARY_P8.unlink(missing_ok=True)
+        NOTARY_API_KEY_JSON.unlink(missing_ok=True)
 
     Result.create_from(results=results, stopwatch=stopwatch).complete_job()
 
