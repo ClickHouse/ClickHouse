@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS t_preprocessed_plain;
 DROP TABLE IF EXISTS t_preprocessed_map;
 DROP TABLE IF EXISTS t_preprocessed_folded;
 DROP TABLE IF EXISTS t_map_fixed;
+DROP TABLE IF EXISTS t_map_nullable;
 
 CREATE TABLE t_text (x Nullable(String), INDEX i x TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 INSERT INTO t_text SELECT if(number % 100 = 7, NULL, 'word' || toString(number)) FROM numbers(1000);
@@ -209,6 +210,12 @@ INSERT INTO t_map_fixed SELECT map('k', toFixedString('v' || toString(number % 7
 SELECT 'map fixed default rows', (SELECT count() FROM t_map_fixed WHERE m['absent'] IN (toFixedString('', 4)) SETTINGS transform_null_in = 1) = (SELECT count() FROM t_map_fixed WHERE m['absent'] IN (toFixedString('', 4)) SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 SELECT 'map fixed default rows, transform_null_in = 0', (SELECT count() FROM t_map_fixed WHERE m['absent'] IN (toFixedString('', 4)) SETTINGS transform_null_in = 0) = (SELECT count() FROM t_map_fixed WHERE m['absent'] IN (toFixedString('', 4)) SETTINGS transform_null_in = 0, use_skip_indexes = 0);
 SELECT 'map fixed stored value still prunes', count() FROM t_map_fixed WHERE m['k'] IN (toFixedString('v3', 4)) SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
+-- A `Nullable` map value defaults to NULL, which holds no bytes to compare against a set element.
+CREATE TABLE t_map_nullable (m Map(String, Nullable(String)), INDEX i mapValues(m) TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_map_nullable SELECT map('k', 'v' || toString(number % 7)) FROM numbers(1000);
+
+SELECT 'map nullable value used', count() FROM t_map_nullable WHERE m['k'] IN ('v3') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
+SELECT 'map nullable value rows', (SELECT count() FROM t_map_nullable WHERE m['k'] IN ('v3') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_map_nullable WHERE m['k'] IN ('v3') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 
 -- A JSON subcolumn carrier is indexed through `JSONAllValues(json)`, so its stored type comes from
 -- that header column.
@@ -263,3 +270,4 @@ DROP TABLE t_preprocessed_plain;
 DROP TABLE t_preprocessed_map;
 DROP TABLE t_preprocessed_folded;
 DROP TABLE t_map_fixed;
+DROP TABLE t_map_nullable;

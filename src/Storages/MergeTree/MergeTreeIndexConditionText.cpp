@@ -373,12 +373,16 @@ namespace
 {
 
 /// Whether `bytes` is what a map element of a carrier storing `type` reads when the key is absent.
-/// `mapValues` gives the values as an array, so the default belongs to its element type.
+/// `mapValues` gives the values as an array, so the default belongs to its element type. A
+/// `Nullable` value type defaults to NULL, which no element reaching here spells, and holds no bytes
+/// to compare.
 bool isDefaultMapValue(const DataTypePtr & type, std::string_view bytes)
 {
     const auto * array = typeid_cast<const DataTypeArray *>(type.get());
     const auto & value_type = array ? array->getNestedType() : type;
     auto default_column = value_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+    if (default_column->isNullAt(0))
+        return false;
     return default_column->getDataAt(0) == bytes;
 }
 
