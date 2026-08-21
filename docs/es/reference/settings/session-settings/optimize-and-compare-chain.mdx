@@ -21,7 +21,7 @@ Estos SETTINGS están disponibles en [system.settings](/es/reference/system-tabl
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Una nueva configuración"}]}]} />
 
-Propaga las comparaciones con constantes en cadenas AND para mejorar la capacidad de filtrado. Admite los operadores `<`, `<=`, `>`, `>=`, `=` y combinaciones de ellos. Por ejemplo, `(a < b) AND (b < c) AND (c < 5)` sería `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
+Propaga las comparaciones con constantes en cadenas AND para mejorar la capacidad de filtrado. Admite los operadores `<`, `<=`, `>`, `>=`, `=` y combinaciones de ellos. Por ejemplo, `(a < b) AND (b < c) AND (c < 5)` sería `(a < b) AND (b < c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)`. Las comparaciones derivadas se incluyen en `indexHint`: participan en el análisis de índices (clave primaria, clave de partición, índices de omisión) y podan el conjunto de lectura, pero no tienen coste por fila ni afectan a PREWHERE. Una comparación derivada mediante expresiones de tablas distintas sigue siendo ejecutable (`(t1.a < t2.b) AND (t2.b < 5)` deriva la condición simple `t1.a < 5`): es la única condición que puede insertarse por debajo del join, donde filtra una entrada del join a la que la cadena original no puede llegar. Las comparaciones derivadas que contradicen una condición existente también se añaden como condiciones simples, de modo que el `AND` se reduce a `false`.
 
 <div id="optimize_and_compare_chain_max_hash_work">
   ## optimize_and_compare_chain_max_hash_work

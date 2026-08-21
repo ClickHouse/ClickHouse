@@ -171,13 +171,17 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUnique");
     }
 
-    const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
+    std::span<const UInt64> tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
     /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(std::string_view value) const override
     {
+        /// The reserved prefix slots are not in the reverse index, so match the default value here.
+        if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == value)
+            return index;
+
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
