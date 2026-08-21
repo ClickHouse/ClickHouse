@@ -15,6 +15,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int INCORRECT_DATA;
 }
 
 namespace DB::Parquet
@@ -1027,37 +1028,52 @@ void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, Field
         chassert(false);
 }
 
+template <typename T>
 struct AlpDecoder : public PageDecoder
 {
     std::shared_ptr<FixedSizeConverter> converter;
-    PaddedPODArray<char> decoded;      // whole page, raw T bytes
-    PaddedPODArray<char> temp_buffer;  // filtered compaction
-    size_t value_size = 0;
-    size_t pos = 0;                    // values already served
+    typename Parquet::ALP::Codec<T>::PageInfo page;
+    size_t pos = 0;
+    size_t cached_vector = std::numeric_limits<size_t>::max();
+    std::vector<T> cached;   // decoded values of cached_vector
+    std::vector<T> scratch;  // values gathered for the current decode() call
+    PaddedPODArray<char> compact;
 
-    AlpDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_, parq::Type::type physical_type)
+    AlpDecoder(std::span<const char> data_, std::shared_ptr<FixedSizeConverter> converter_)
         : PageDecoder(data_), converter(std::move(converter_))
     {
-        if (physical_type == parq::Type::DOUBLE) decodeAll<Float64>(data_);
-        else                                     decodeAll<Float32>(data_);
+        page = Parquet::ALP::Codec<T>::parsePage(reinterpret_cast<const UInt8 *>(data_.data()), data_.size());
     }
 
-    template <typename T> void decodeAll(std::span<const char> d)
+    void ensure(size_t v)
     {
-        std::vector<T> out;
-        DB::Parquet::ALP::Codec<T>::decodePage(reinterpret_cast<const UInt8*>(d.data()), out);
-        value_size = sizeof(T);
-        decoded.resize(out.size() * sizeof(T));
-        if (!out.empty())
-            memcpy(decoded.data(), out.data(), out.size() * sizeof(T));
+        if (v != cached_vector)
+        {
+            cached.clear();
+            Parquet::ALP::Codec<T>::decodeVectorAt(page, v, cached);
+            cached_vector = v;
+        }
     }
 
     void skip(size_t num_values) override { pos += num_values; }
 
     void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
     {
-        const char * src = decoded.data() + pos * value_size;
+        if (pos + num_values > page.num_elements)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet ALP page has fewer values than the reader expects");
+
+        scratch.resize(num_values);
+        for (size_t k = 0; k < num_values; ++k)
+        {
+            const size_t i = pos + k;
+            const size_t v = i / page.vector_size;
+            ensure(v);
+            scratch[k] = cached[i - v * page.vector_size];
+        }
         pos += num_values;
+
+        const char * src = reinterpret_cast<const char *>(scratch.data());
+        constexpr size_t value_size = sizeof(T);
 
         if (!filter)
         {
@@ -1072,16 +1088,16 @@ struct AlpDecoder : public PageDecoder
         for (size_t i = 0; i < num_values; ++i) pass_count += filter[filter_offset + i];
         if (pass_count == 0) return;
 
-        temp_buffer.resize(pass_count * value_size);
+        compact.resize(pass_count * value_size);
         size_t out_idx = 0;
         for (size_t i = 0; i < num_values; ++i)
             if (filter[filter_offset + i])
-                memcpy(temp_buffer.data() + out_idx++ * value_size, src + i * value_size, value_size);
+                memcpy(compact.data() + out_idx++ * value_size, src + i * value_size, value_size);
 
         if (converter->isTrivial())
-            memcpy(col.insertRawUninitialized(pass_count).data(), temp_buffer.data(), pass_count * value_size);
+            memcpy(col.insertRawUninitialized(pass_count).data(), compact.data(), pass_count * value_size);
         else
-            converter->convertColumn(std::span(temp_buffer.data(), pass_count * value_size), pass_count, col);
+            converter->convertColumn(std::span(compact.data(), pass_count * value_size), pass_count, col);
     }
 };
 
@@ -1149,8 +1165,10 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
                 return std::make_unique<ByteStreamSplitDecoder>(data, fixed_size_converter);
             break;
         case ALP_ENCODING:
-            if (physical_type == parq::Type::FLOAT || physical_type == parq::Type::DOUBLE)
-                return std::make_unique<AlpDecoder>(data, fixed_size_converter, physical_type);
+            if (physical_type == parq::Type::DOUBLE)
+                return std::make_unique<AlpDecoder<Float64>>(data, fixed_size_converter);
+            if (physical_type == parq::Type::FLOAT)
+                return std::make_unique<AlpDecoder<Float32>>(data, fixed_size_converter);
             break;
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }

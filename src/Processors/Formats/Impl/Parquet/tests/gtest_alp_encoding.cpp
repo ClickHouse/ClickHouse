@@ -18,7 +18,7 @@ static bool roundTrips(const std::vector<T> & in)
     std::vector<UInt8> page;
     Codec<T>::encodePage(in.data(), in.size(), page);
     std::vector<T> out;
-    Codec<T>::decodePage(page.data(), out);
+    Codec<T>::decodePage(page.data(), page.size(), out);
     if (out.size() != in.size())
         return false;
     for (size_t i = 0; i < in.size(); ++i)
@@ -122,4 +122,25 @@ TEST(AlpEncoding, EdgeCases)
     for (auto & x : w)
         x = static_cast<double>(static_cast<int64_t>(r()) >> 10);
     EXPECT_TRUE(roundTrips(w)); // wide range -> bit_width ~64
+}
+
+TEST(AlpEncoding, RejectsMalformedPages)
+{
+    std::vector<double> src(2500);
+    for (auto & x : src) x = static_cast<double>(rand() % 1000) / 10.0;
+    std::vector<UInt8> good;
+    Codec<double>::encodePage(src.data(), src.size(), good);
+
+    auto rejects = [](std::vector<UInt8> page)
+    {
+        try { std::vector<double> out; Codec<double>::decodePage(page.data(), page.size(), out); return false; }
+        catch (...) { return true; }
+    };
+
+    EXPECT_TRUE(rejects({good.begin(), good.begin() + 3}));                                   // truncated header
+    { auto b = good; b[3]=0xFF; b[4]=0xFF; b[5]=0xFF; b[6]=0x7F; EXPECT_TRUE(rejects(b)); }    // huge num_elements
+    { auto b = good; b[7]=0xFF; b[8]=0xFF; b[9]=0xFF; b[10]=0x7F; EXPECT_TRUE(rejects(b)); }   // offset out of range
+    { auto b = good; UInt32 off = Codec<double>::readLE32(&b[7]); size_t vp = 7 + off; b[vp]=100;    EXPECT_TRUE(rejects(b)); } // bad exponent
+    { auto b = good; UInt32 off = Codec<double>::readLE32(&b[7]); size_t vp = 7 + off; b[vp+12]=200; EXPECT_TRUE(rejects(b)); } // bad bit_width
+    { auto b = good; UInt32 off = Codec<double>::readLE32(&b[7]); size_t vp = 7 + off; b[vp+2]=0xFF; b[vp+3]=0xFF; EXPECT_TRUE(rejects(b)); } // too many exceptions
 }

@@ -1,11 +1,20 @@
 #pragma once
 
 #include <Compression/ALPCommon.h>
+#include <Common/Exception.h>
 
 #include <cstring>
 #include <limits>
 #include <utility>
 #include <vector>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+}
 
 namespace DB::Parquet::ALP
 {
@@ -17,7 +26,8 @@ template <>
 struct WireTraits<Float64>
 {
     using StorageInt = Int64;
-    static constexpr UInt8 max_exponent_excl = 19 static constexpr UInt8 exception_bytes = 8;
+    static constexpr UInt8 max_exponent_excl = 19;
+    static constexpr UInt8 exception_bytes = 8;
     static constexpr bool is_float = false;
 };
 
@@ -272,91 +282,146 @@ struct Codec
         page.insert(page.end(), body.begin(), body.end());
     }
 
-    static void decodePage(const UInt8 * data, std::vector<T> & out)
+    struct PageInfo
     {
-        auto readLE32 = [](const UInt8 * p) -> UInt32
+        const UInt8 * base = nullptr;
+        size_t size = 0;
+        UInt8 log_vector_size = 0;
+        size_t vector_size = 0;
+        size_t num_elements = 0;
+        size_t num_vectors = 0;
+        const UInt8 * offset_array = nullptr;
+    };
+
+    static UInt32 readLE32(const UInt8 * p)
+    {
+        UInt32 v = 0;
+        for (int i = 0; i < 4; ++i)
+            v |= static_cast<UInt32>(p[i]) << (8 * i);
+        return v;
+    }
+
+    static PageInfo parsePage(const UInt8 * data, size_t size)
+    {
+        PageInfo p;
+        p.base = data;
+        p.size = size;
+        if (size < 7)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: page smaller than header");
+        p.log_vector_size = data[2];
+        if (p.log_vector_size < 1 || p.log_vector_size > 20)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: invalid log_vector_size");
+        const Int32 n = static_cast<Int32>(readLE32(data + 3));
+        if (n < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: negative num_elements");
+        p.num_elements = static_cast<size_t>(n);
+        p.vector_size = static_cast<size_t>(1) << p.log_vector_size;
+        p.num_vectors = (p.num_elements + p.vector_size - 1) / p.vector_size;
+        p.offset_array = data + 7;
+        if (p.num_vectors > (size - 7) / 4)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: offset array exceeds page");
+        const UInt32 min_off = static_cast<UInt32>(p.num_vectors * 4);
+        for (size_t v = 0; v < p.num_vectors; ++v)
         {
-            UInt32 value = 0;
-            for (int i = 0; i < 4; ++i)
-                value |= static_cast<UInt32>(p[i]) << (8 * i);
-            return value;
-        };
+            const UInt32 off = readLE32(p.offset_array + v * 4);
+            if (off < min_off || off >= size - 7)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: vector offset out of range");
+        }
+        return p;
+    }
 
-        const UInt8 log_vector_size = data[2];
-        const Int32 num_elements = static_cast<Int32>(readLE32(data + 3));
-        const size_t vector_size = static_cast<size_t>(1) << log_vector_size;
-        const size_t num_vectors = (static_cast<size_t>(num_elements) + vector_size - 1) / vector_size;
-        const UInt8 * offset_array = data + 7;
+    static void decodeVectorAt(const PageInfo & p, size_t v, std::vector<T> & out)
+    {
+        const UInt8 * vp = p.offset_array + readLE32(p.offset_array + v * 4);
+        const UInt8 * page_end = p.base + p.size;
+        const size_t vector_count = std::min(p.vector_size, p.num_elements - v * p.vector_size);
 
-        out.clear();
-        for (size_t v = 0; v < num_vectors; ++v)
+        const size_t header_size = std::is_same_v<T, Float64> ? (4 + 9) : (4 + 5);
+        if (vp + header_size > page_end)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: vector header exceeds page");
+
+        const UInt8 exponent = vp[0];
+        const UInt8 factor = vp[1];
+        const UInt16 num_exceptions = static_cast<UInt16>(vp[2] | (vp[3] << 8));
+        if (exponent >= ALPFloatUtils::EXPONENT_COUNT)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: exponent out of range");
+        if (factor > exponent)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: factor out of range");
+        if (num_exceptions > vector_count)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: more exceptions than values");
+
+        const UInt8 * cursor = vp + 4;
+        StorageInt frame_of_reference;
+        UInt8 bit_width;
+        if constexpr (std::is_same_v<T, Float64>)
         {
-            const UInt8 * vp = offset_array + readLE32(offset_array + v * 4);
-            const size_t vector_count = std::min(vector_size, static_cast<size_t>(num_elements) - v * vector_size);
+            UInt64 bits = 0;
+            for (int i = 0; i < 8; ++i)
+                bits |= static_cast<UInt64>(cursor[i]) << (8 * i);
+            frame_of_reference = static_cast<StorageInt>(bits);
+            bit_width = cursor[8];
+            cursor += 9;
+        }
+        else
+        {
+            frame_of_reference = static_cast<StorageInt>(static_cast<Int32>(readLE32(cursor)));
+            bit_width = cursor[4];
+            cursor += 5;
+        }
+        if (bit_width > sizeof(StorageInt) * 8)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: bit_width too large");
 
-            const UInt8 exponent = vp[0];
-            const UInt8 factor = vp[1];
-            const UInt16 num_exceptions = static_cast<UInt16>(vp[2] | (vp[3] << 8));
+        const size_t packed_bytes = (vector_count * static_cast<size_t>(bit_width) + 7) / 8;
+        const UInt8 * exc_positions = cursor + packed_bytes;
+        const UInt8 * exc_values = exc_positions + static_cast<size_t>(num_exceptions) * 2;
+        const UInt8 * vector_end = exc_values + static_cast<size_t>(num_exceptions) * sizeof(T);
+        if (vector_end > page_end)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: vector body exceeds page");
 
-            const UInt8 * cursor = vp + 4;
-            StorageInt frame_of_reference;
-            UInt8 bit_width;
-            if constexpr (std::is_same_v<T, Float64>)
+        std::vector<StorageInt> encoded(vector_count);
+        const UInt64 mask = bit_width == 64 ? ~0ULL : (bit_width == 0 ? 0ULL : ((1ULL << bit_width) - 1));
+        unsigned __int128 buffer = 0;
+        int bits_in_buffer = 0;
+        size_t byte_pos = 0;
+        for (size_t i = 0; i < vector_count; ++i)
+        {
+            while (bits_in_buffer < bit_width)
             {
-                UInt64 bits = 0;
-                for (int i = 0; i < 8; ++i)
-                    bits |= static_cast<UInt64>(cursor[i]) << (8 * i);
-                frame_of_reference = static_cast<StorageInt>(bits);
-                bit_width = cursor[8];
-                cursor += 9;
+                buffer |= static_cast<unsigned __int128>(cursor[byte_pos++]) << bits_in_buffer;
+                bits_in_buffer += 8;
             }
-            else
+            const UInt64 delta = static_cast<UInt64>(buffer & mask);
+            if (bit_width)
             {
-                frame_of_reference = static_cast<StorageInt>(static_cast<Int32>(readLE32(cursor)));
-                bit_width = cursor[4];
-                cursor += 5;
+                buffer >>= bit_width;
+                bits_in_buffer -= bit_width;
             }
+            encoded[i] = static_cast<StorageInt>(static_cast<UInt64>(frame_of_reference) + delta);
+        }
 
-            std::vector<StorageInt> encoded(vector_count);
-            const UInt64 mask = bit_width == 64 ? ~0ULL : (bit_width == 0 ? 0ULL : ((1ULL << bit_width) - 1));
-            unsigned __int128 buffer = 0;
-            int bits_in_buffer = 0;
-            size_t byte_pos = 0;
-            for (size_t i = 0; i < vector_count; ++i)
-            {
-                while (bits_in_buffer < bit_width)
-                {
-                    buffer |= static_cast<unsigned __int128>(cursor[byte_pos++]) << bits_in_buffer;
-                    bits_in_buffer += 8;
-                }
-                const UInt64 delta = static_cast<UInt64>(buffer & mask);
-                if (bit_width)
-                {
-                    buffer >>= bit_width;
-                    bits_in_buffer -= bit_width;
-                }
-                encoded[i] = static_cast<StorageInt>(static_cast<UInt64>(frame_of_reference) + delta);
-            }
-
-            const size_t packed_bytes = (vector_count * static_cast<size_t>(bit_width) + 7) / 8;
-            const UInt8 * exception_positions = cursor + packed_bytes;
-            const UInt8 * exception_values = exception_positions + static_cast<size_t>(num_exceptions) * 2;
-
-            std::vector<T> decoded(vector_count);
-            for (size_t i = 0; i < vector_count; ++i)
-                decoded[i] = decodeValue(encoded[i], exponent, factor);
-            for (UInt16 j = 0; j < num_exceptions; ++j)
-            {
-                const UInt16 position = static_cast<UInt16>(exception_positions[2 * j] | (exception_positions[2 * j + 1] << 8));
-                T value;
-                std::memcpy(&value, exception_values + static_cast<size_t>(j) * sizeof(T), sizeof(T));
-                decoded[position] = value;
-            }
-
-            for (T value : decoded)
-                out.push_back(value);
+        const size_t base_out = out.size();
+        out.resize(base_out + vector_count);
+        for (size_t i = 0; i < vector_count; ++i)
+            out[base_out + i] = decodeValue(encoded[i], exponent, factor);
+        for (UInt16 j = 0; j < num_exceptions; ++j)
+        {
+            const UInt16 position = static_cast<UInt16>(exc_positions[2 * j] | (exc_positions[2 * j + 1] << 8));
+            if (position >= vector_count)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: exception position out of range");
+            T value;
+            std::memcpy(&value, exc_values + static_cast<size_t>(j) * sizeof(T), sizeof(T));
+            out[base_out + position] = value;
         }
     }
-};
+
+    static void decodePage(const UInt8 * data, size_t size, std::vector<T> & out)
+    {
+        const PageInfo p = parsePage(data, size);
+        out.clear();
+        out.reserve(p.num_elements);
+        for (size_t v = 0; v < p.num_vectors; ++v)
+            decodeVectorAt(p, v, out);
+    }
+    };
 
 }
