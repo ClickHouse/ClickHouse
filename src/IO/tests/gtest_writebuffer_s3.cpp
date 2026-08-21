@@ -1189,6 +1189,106 @@ TEST_F(WBS3Test, CopyDataToS3FileRetriesInvalidPart) {
     EXPECT_EQ(bStore.objects["copy_data_invalid_part_retry"].size(), payload.size());
 }
 
+/// The `NoSuchUpload` recovery lives in the shared `Client::CompleteMultipartUpload`, but `copyS3File`
+/// supplies its own identity inputs for it: the expected content type and the fail-closed gate for a
+/// write whose create-time attributes the completion cannot prove. Drive `copyDataToS3File` through
+/// `NoSuchUpload` so those lines cannot regress while the write-buffer suite stays green.
+class CopyS3FileCompletionRecoveryTest : public WBS3Test
+{
+protected:
+    static constexpr std::string_view payload = "copy_completion_recovery_payload";
+
+    void runCopy(const String & key, std::optional<ObjectAttributes> object_metadata = std::nullopt)
+    {
+        getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
+        getSettings()[Setting::s3_check_objects_after_upload] = false;
+
+        S3::S3RequestSettings request_settings;
+        request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
+
+        client->resetCounters();
+
+        auto create_read_buffer = []() -> std::unique_ptr<SeekableReadBuffer>
+        {
+            return std::make_unique<ReadBufferFromOwnString>(String(payload));
+        };
+
+        /// Empty schedule => the multipart upload (and completion) runs synchronously on this thread.
+        copyDataToS3File(
+            create_read_buffer,
+            /* offset= */ 0,
+            /* size= */ payload.size(),
+            client,
+            bucket,
+            key,
+            request_settings,
+            /* blob_storage_log= */ nullptr,
+            /* schedule= */ {},
+            std::move(object_metadata));
+    }
+};
+
+/// A completion whose response was lost leaves the copy's own object at the key, so the retry's
+/// `NoSuchUpload` must still be absorbed on this path too.
+TEST_F(CopyS3FileCompletionRecoveryTest, AbsorbsNoSuchUploadForOwnObject)
+{
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    runCopy("copy_completion_recovery_own_object");
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["copy_completion_recovery_own_object"], payload);
+    EXPECT_EQ(client->counters.headObject, 1u);
+}
+
+/// A genuinely aborted copy also answers `NoSuchUpload`, but the unrelated object at the key is not
+/// its result. Absorbing it would acknowledge a copy that stored nothing.
+TEST_F(CopyS3FileCompletionRecoveryTest, ReportsNoSuchUploadForForeignObject)
+{
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("copy_completion_recovery_foreign_object", "OLD");
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadIngection>());
+
+    EXPECT_THROW(runCopy("copy_completion_recovery_foreign_object"), DB::S3Exception);
+
+    EXPECT_EQ(bStore.objects["copy_completion_recovery_foreign_object"], "OLD");
+}
+
+/// The payload alone does not identify the object: a foreign object may carry the very same multipart
+/// ETag and a different content type, which is what `setExpectedContentType` on this path rejects.
+TEST_F(CopyS3FileCompletionRecoveryTest, ReportsNoSuchUploadForForeignObjectWithDifferentContentType)
+{
+    const String key = "copy_completion_recovery_foreign_content_type";
+
+    /// A first, undisturbed copy leaves exactly the ETag the second copy's part list implies.
+    runCopy(key);
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    ASSERT_EQ(bStore.objects[key], payload);
+    bStore.object_content_types[key] = "text/plain";
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadIngection>());
+
+    EXPECT_THROW(runCopy(key), DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 1u);
+    EXPECT_EQ(bStore.object_content_types[key], "text/plain");
+}
+
+/// Object metadata is committed by `CreateMultipartUpload` and is invisible to the completion, so a
+/// copy that requests it must fail closed instead of trusting a matching payload.
+TEST_F(CopyS3FileCompletionRecoveryTest, ReportsNoSuchUploadWhenCopyHasMetadata)
+{
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    EXPECT_THROW(
+        runCopy("copy_completion_recovery_with_metadata", ObjectAttributes{{"write-id", "new"}}),
+        DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 0u);
+}
+
 /// copyS3File routing between whole-object CopyObject and ranged UploadPartCopy. A small copy would take
 /// CopyObject, which carries no byte range and copies the ENTIRE source; a partial-range copy must therefore
 /// force UploadPartCopy, which sets a CopySourceRange per part -- but only when S3 would accept the source as
