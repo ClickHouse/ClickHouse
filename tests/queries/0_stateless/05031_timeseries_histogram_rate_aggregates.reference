@@ -1,0 +1,29 @@
+-- counter with a mid-window reset, exponential schema: `timeSeriesHistogramIncreaseToGrid` over
+-- samples e1@110 (count 4), e2@120 (count 8), e3@130 (RESET, count 2), e4@140 (count 5), window 45
+[NULL,NULL,(6,0,0,6,16.5,0,[(0,2)],[1.5,4.5],[],[],[]),(6,0,0,9,24,0,[(0,2)],[4.5,4.5],[],[],[]),(6,0,0,13.5,33,0,[(0,2)],[4.5,9],[],[],[]),(6,0,0,6.5,13,0,[(1,1)],[6.5],[],[],[]),NULL,NULL,NULL]
+-- the same series: `timeSeriesHistogramRateToGrid` divides the increase by the window (45)
+[NULL,NULL,(6,0,0,0.13333333333333333,0.36666666666666664,0,[(0,2)],[0.03333333333333333,0.1],[],[],[]),(6,0,0,0.2,0.5333333333333333,0,[(0,2)],[0.1,0.1],[],[],[]),(6,0,0,0.3,0.7333333333333333,0,[(0,2)],[0.1,0.2],[],[],[]),(6,0,0,0.14444444444444443,0.28888888888888886,0,[(1,1)],[0.14444444444444443],[],[],[]),NULL,NULL,NULL]
+-- the same series with `DateTime64(3)` timestamps (millisecond grid): the increase is identical
+[NULL,NULL,(6,0,0,6,16.5,0,[(0,2)],[1.5,4.5],[],[],[]),(6,0,0,9,24,0,[(0,2)],[4.5,4.5],[],[],[]),(6,0,0,13.5,33,0,[(0,2)],[4.5,9],[],[],[]),(6,0,0,6.5,13,0,[(1,1)],[6.5],[],[],[]),NULL,NULL,NULL]
+-- gauge series g1@120 (count 5), g2@140 (count 3): `timeSeriesHistogramDeltaToGrid` (no reset handling)
+[NULL,NULL,NULL,NULL,(6,0,0,-4.5,-11.25,0,[(0,2)],[-2.25,-2.25],[],[],[]),NULL,NULL,NULL,NULL]
+-- the same series: `timeSeriesHistogramInstantDeltaToGrid` over the two most recent samples, no extrapolation
+[NULL,NULL,NULL,NULL,(6,0,0,-2,-5,0,[(0,2)],[-1,-1],[],[],[]),NULL,NULL,NULL,NULL]
+-- custom buckets [1,2,4], counter with a mid-window reset: `timeSeriesHistogramIncreaseToGrid` over
+-- c1@110 (count 4), c2@120 (count 8), c4@130 (RESET, count 2), c2@140 (count 8), window 45
+[NULL,NULL,(6,-53,0,12,31.5,0,[(1,2)],[3,9],[],[],[1,2,4]),(6,-53,0,15,39,0,[(0,3)],[3,3,9],[],[],[1,2,4]),(6,-53,0,27,70.5,0,[(0,3)],[3,6,18],[],[],[1,2,4]),(6,-53,0,14,36.75,0,[(1,2)],[3.5,10.5],[],[],[1,2,4]),NULL,NULL,NULL]
+-- extrapolation boundary: samples e1@140, e2@150 with window 60 sit further than the
+-- extrapolation threshold from the range edges at grid point 180 -> extrapolate by half
+-- the average sample spacing on both sides; at 195 the window (135,195] holds both samples,
+-- at 165 the window (105,165] holds both too, but durationToEnd == 30 >= threshold there
+[NULL,NULL,(6,0,0,0.1,0.275,0,[(0,2)],[0.025,0.07500000000000001],[],[],[]),(6,0,0,0.13333333333333333,0.36666666666666664,0,[(0,2)],[0.03333333333333333,0.1],[],[],[]),(6,0,0,0.13333333333333333,0.36666666666666664,0,[(0,2)],[0.03333333333333333,0.1],[],[],[]),(6,0,0,0.13333333333333333,0.36666666666666664,0,[(0,2)],[0.03333333333333333,0.1],[],[],[]),NULL]
+-- a single sample in the window can not produce a rate: `timeSeriesHistogramDeltaToGrid` over e4@140
+[NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL]
+-- `timeSeriesHistogramInstantRateToGrid` over e1@120, e2@140 (no reset) and e2@120, e3@140 (reset:
+-- the result is the newest sample scaled to per-second, mirroring upstream `instantValue`)
+[(6,0,0,0.2,0.55,0,[(0,2)],[0.05,0.15],[],[],[])]
+[(6,0,0,0.1,0.25,0,[(0,1)],[0.1],[],[],[])]
+-- schema reduction: `timeSeriesHistogramRateToGrid` over e5@120 (schema 1) and e2@140 (schema 0)
+[NULL,NULL,NULL,NULL,(6,0,0,0.4,1.05,0,[(0,2)],[0.1,0.30000000000000004],[],[],[]),NULL,NULL,NULL,NULL]
+-- zero-threshold reconciliation: `timeSeriesHistogramRateToGrid` over ez@120 (zt 0.1) and e2@140 (zt 0)
+[NULL,NULL,NULL,NULL,(6,0,0,0.4,1.05,0,[(0,2)],[0.1,0.30000000000000004],[],[],[]),NULL,NULL,NULL,NULL]
