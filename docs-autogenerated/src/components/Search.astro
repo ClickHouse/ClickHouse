@@ -33,6 +33,12 @@
     headings: string[];
   }
 
+  let searchController: AbortController | undefined;
+
+  function initializeSearch() {
+  searchController?.abort();
+  searchController = new AbortController();
+  const signal = searchController.signal;
   const trigger = document.querySelector<HTMLButtonElement>('.search-trigger');
   const dialog = document.querySelector<HTMLDialogElement>('.search-dialog');
   const input = document.querySelector<HTMLInputElement>('#reference-search');
@@ -151,9 +157,9 @@
     void loadIndex();
   }
 
-  trigger?.addEventListener('click', openSearch);
-  closeButton?.addEventListener('click', () => dialog?.close());
-  input?.addEventListener('input', runSearch);
+  trigger?.addEventListener('click', openSearch, { signal });
+  closeButton?.addEventListener('click', () => dialog?.close(), { signal });
+  input?.addEventListener('input', runSearch, { signal });
   input?.addEventListener('keydown', (event) => {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -163,16 +169,19 @@
       setActive(activeIndex - 1);
     } else if (event.key === 'Enter' && activeIndex >= 0) {
       const active = results?.querySelectorAll<HTMLAnchorElement>('a')[activeIndex];
-      if (active) window.location.href = active.href;
+      active?.click();
     }
-  });
+  }, { signal });
   dialog?.addEventListener('click', (event) => {
     if (event.target === dialog) dialog.close();
-  });
+  }, { signal });
   document.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === 'k') {
       event.preventDefault();
       openSearch();
     }
-  });
+  }, { signal });
+  }
+
+  document.addEventListener('astro:page-load', initializeSearch);
 </script>

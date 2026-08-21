@@ -2,6 +2,13 @@
   "schemaVersion": 1,
   "id": "reference",
   "label": "Reference",
+  "excludedSourcePaths": [
+    "engines/database-engines/index.mdx",
+    "engines/table-engines/integrations/index.mdx",
+    "engines/table-engines/mergetree-family/index.mdx",
+    "engines/table-engines/special/index.mdx",
+    "functions/aggregate-functions/reference-index.mdx"
+  ],
   "groups": [
     {
       "id": "reference.data-types",
@@ -108,8 +115,7 @@
             {
               "id": "reference.engines.table.integrations",
               "label": "Integrations",
-              "match": { "sourcePrefix": "engines/table-engines/integrations/" },
-              "documentIds": ["reference:engines/table-engines/integrations/index"]
+              "match": { "sourcePrefix": "engines/table-engines/integrations/" }
             },
             {
               "id": "reference.engines.table.log-family",
@@ -131,8 +137,7 @@
         {
           "id": "reference.engines.database",
           "label": "Database Engines",
-          "match": { "sourcePrefix": "engines/database-engines/" },
-          "documentIds": ["reference:engines/database-engines/index"]
+          "match": { "sourcePrefix": "engines/database-engines/" }
         }
       ]
     },
@@ -151,8 +156,7 @@
         {
           "id": "reference.functions.aggregate",
           "label": "Aggregate functions",
-          "match": { "sourcePrefix": "functions/aggregate-functions/" },
-          "documentIds": ["reference:functions/aggregate-functions/reference-index"]
+          "match": { "sourcePrefix": "functions/aggregate-functions/" }
         },
         {
           "id": "reference.functions.table",

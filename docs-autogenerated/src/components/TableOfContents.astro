@@ -33,41 +33,52 @@ const headings = Astro.props.headings.filter(({ depth }) => depth >= 2 && depth 
 )}
 
 <script>
-  const tocHeading = document.querySelector<HTMLButtonElement>('.toc-heading');
-  const tocList = document.querySelector<HTMLOListElement>('.toc-list');
-  const tocLinks = [...document.querySelectorAll<HTMLAnchorElement>('.toc-link')];
-  const tocTargets = tocLinks
-    .map((link) => {
-      const id = link.hash.slice(1);
-      return { link, target: document.getElementById(id) };
-    })
-    .filter((entry): entry is { link: HTMLAnchorElement; target: HTMLElement } => entry.target !== null);
+  let tableOfContentsController: AbortController | undefined;
 
-  const setActiveLink = (activeLink: HTMLAnchorElement | undefined) => {
-    tocLinks.forEach((link) => {
-      const active = link === activeLink;
-      link.closest('.toc-item')?.classList.toggle('active', active);
-      if (active) link.setAttribute('aria-current', 'location');
-      else link.removeAttribute('aria-current');
+  function initializeTableOfContents() {
+    tableOfContentsController?.abort();
+    tableOfContentsController = new AbortController();
+    const tocHeading = document.querySelector<HTMLButtonElement>('.toc-heading');
+    const tocList = document.querySelector<HTMLOListElement>('.toc-list');
+    const tocLinks = [...document.querySelectorAll<HTMLAnchorElement>('.toc-link')];
+    const tocTargets = tocLinks
+      .map((link) => {
+        const id = link.hash.slice(1);
+        return { link, target: document.getElementById(id) };
+      })
+      .filter((entry): entry is { link: HTMLAnchorElement; target: HTMLElement } => entry.target !== null);
+
+    const setActiveLink = (activeLink: HTMLAnchorElement | undefined) => {
+      tocLinks.forEach((link) => {
+        const active = link === activeLink;
+        link.closest('.toc-item')?.classList.toggle('active', active);
+        if (active) link.setAttribute('aria-current', 'location');
+        else link.removeAttribute('aria-current');
+      });
+    };
+
+    const updateActiveLink = () => {
+      let activeLink = tocTargets[0]?.link;
+      for (const entry of tocTargets) {
+        if (entry.target.getBoundingClientRect().top > 128) break;
+        activeLink = entry.link;
+      }
+      setActiveLink(activeLink);
+    };
+
+    tocHeading?.addEventListener('click', () => {
+      if (!tocList) return;
+      const expanded = tocHeading.getAttribute('aria-expanded') === 'true';
+      tocHeading.setAttribute('aria-expanded', String(!expanded));
+      tocList.hidden = expanded;
+    }, { signal: tableOfContentsController.signal });
+
+    document.addEventListener('scroll', updateActiveLink, {
+      passive: true,
+      signal: tableOfContentsController.signal,
     });
-  };
+    updateActiveLink();
+  }
 
-  const updateActiveLink = () => {
-    let activeLink = tocTargets[0]?.link;
-    for (const entry of tocTargets) {
-      if (entry.target.getBoundingClientRect().top > 128) break;
-      activeLink = entry.link;
-    }
-    setActiveLink(activeLink);
-  };
-
-  tocHeading?.addEventListener('click', () => {
-    if (!tocList) return;
-    const expanded = tocHeading.getAttribute('aria-expanded') === 'true';
-    tocHeading.setAttribute('aria-expanded', String(!expanded));
-    tocList.hidden = expanded;
-  });
-
-  document.addEventListener('scroll', updateActiveLink, { passive: true });
-  updateActiveLink();
+  document.addEventListener('astro:page-load', initializeTableOfContents);
 </script>

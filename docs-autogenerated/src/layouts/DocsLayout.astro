@@ -2,6 +2,7 @@
 import manifest from '@generated/data/manifest.json';
 import docsConfig from '@generated/mintlify/docs.json';
 import { containsPath, isNavGroup, type NavEntry, type NavPage } from '@mintlify/astro/helpers';
+import { ClientRouter } from 'astro:transitions';
 
 import Header from '../components/Header.astro';
 import PageContext from '../components/PageContext.astro';
@@ -29,13 +30,22 @@ interface DocumentData {
 interface Props {
   document: DocumentData;
   sidebarEntries: NavEntry[];
+  featureStateByRoute?: Record<string, 'beta' | 'experimental'>;
   headings?: Heading[];
   previous?: NavPage | null;
   next?: NavPage | null;
   showGeneratedBanner?: boolean;
 }
 
-const { document, sidebarEntries, headings = [], previous, next, showGeneratedBanner = true } = Astro.props;
+const {
+  document,
+  sidebarEntries,
+  featureStateByRoute = {},
+  headings = [],
+  previous,
+  next,
+  showGeneratedBanner = true,
+} = Astro.props;
 const canonical = new URL(document.route, Astro.site);
 const sourceUrl = `https://github.com/ClickHouse/ClickHouse/blob/${manifest.sourceRevision}/docs/reference/${document.sourcePath}`;
 const routeSegments = document.route
@@ -71,6 +81,19 @@ const defaultTheme = docsConfig.appearance?.default ?? 'system';
     <link rel="icon" href="/_site/favicon.svg" />
     <link rel="canonical" href={canonical} />
     <title>{document.title} | ClickHouse Docs</title>
+    <style is:inline>
+      html,
+      body {
+        background: #ffffff;
+        color: #3f3f3f;
+      }
+
+      html[data-theme='dark'],
+      html[data-theme='dark'] body {
+        background: #151515;
+        color: #d8d8d8;
+      }
+    </style>
     <script is:inline define:vars={{ defaultTheme }}>
       const preference = localStorage.getItem('reference-theme') || defaultTheme;
       const theme = preference === 'system'
@@ -80,11 +103,17 @@ const defaultTheme = docsConfig.appearance?.default ?? 'system';
       document.documentElement.dataset.theme = theme;
       document.documentElement.classList.toggle('dark', theme === 'dark');
     </script>
+    <ClientRouter fallback="swap" />
   </head>
   <body>
     <Header section={mobileSection} title={document.title} />
     <div class="docs-shell">
-      <Sidebar entries={sidebarEntries} currentRoute={document.route} stableId={document.stableId} />
+      <Sidebar
+        entries={sidebarEntries}
+        currentRoute={document.route}
+        stableId={document.stableId}
+        featureStateByRoute={featureStateByRoute}
+      />
       <main class="document-main">
         <div class="document-grid">
           <article class="document">
@@ -100,7 +129,6 @@ const defaultTheme = docsConfig.appearance?.default ?? 'system';
             </nav>
 
             <h1>{document.title}</h1>
-            <p class="document-description">{document.description}</p>
 
             <div class="prose">
               <slot />
@@ -134,9 +162,9 @@ const defaultTheme = docsConfig.appearance?.default ?? 'system';
       </main>
     </div>
     <div class="sidebar-scrim" aria-hidden="true"></div>
-    <script is:inline>
+    <script>
       document.addEventListener('click', async (event) => {
-        const button = event.target.closest('[data-code-copy]');
+        const button = (event.target as HTMLElement).closest('[data-code-copy]');
         if (!(button instanceof HTMLButtonElement)) return;
         const block = button.closest('[data-code-block]');
         const code = block?.querySelector('pre code')?.textContent?.trim();

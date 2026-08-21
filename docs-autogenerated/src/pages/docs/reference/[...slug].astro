@@ -5,7 +5,7 @@ import { resolvePageData, type NavEntry, type NavPage } from '@mintlify/astro/he
 import type { DocsConfig } from '@mintlify/astro';
 
 import docsConfig from '@generated/mintlify/docs.json';
-import * as clickhouseComponents from '@components/mdx';
+import * as clickhouseComponents from '@generated/mdx-components';
 
 import DocsLayout from '../../../layouts/DocsLayout.astro';
 
@@ -14,6 +14,7 @@ type ReferenceEntry = CollectionEntry<'reference'>;
 interface Props {
   entry: ReferenceEntry;
   sidebarEntries: NavEntry[];
+  featureStateByRoute: Record<string, 'beta' | 'experimental'>;
   previous: NavPage | null;
   next: NavPage | null;
 }
@@ -23,6 +24,11 @@ export async function getStaticPaths() {
   const titleMap = Object.fromEntries(
     entries.map((entry) => [entry.id, entry.data.title]),
   );
+  const featureStateByRoute = Object.fromEntries(
+    entries
+      .filter((entry) => entry.data.featureState)
+      .map((entry) => [entry.data.route, entry.data.featureState]),
+  ) as Record<string, 'beta' | 'experimental'>;
 
   return entries.map((entry) => {
     const page = resolvePageData(docsConfig as DocsConfig, {
@@ -35,6 +41,7 @@ export async function getStaticPaths() {
       props: {
         entry,
         sidebarEntries: page.sidebarEntries,
+        featureStateByRoute,
         previous: page.footerPages.prev,
         next: page.footerPages.next,
       },
@@ -42,13 +49,14 @@ export async function getStaticPaths() {
   });
 }
 
-const { entry, sidebarEntries, previous, next } = Astro.props;
+const { entry, sidebarEntries, featureStateByRoute, previous, next } = Astro.props;
 const { Content, headings } = await render(entry);
 ---
 
 <DocsLayout
   document={entry.data}
   sidebarEntries={sidebarEntries}
+  featureStateByRoute={featureStateByRoute}
   headings={headings}
   previous={previous}
   next={next}

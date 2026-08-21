@@ -75,15 +75,23 @@ const hasTableOfContents = headings.some(({ depth }) => depth >= 2 && depth <= 4
 </aside>
 
 <script>
-  const copyPageButton = document.querySelector<HTMLButtonElement>('.copy-page');
-  const copyPageLabel = document.querySelector<HTMLElement>('.copy-page-label');
+  let pageContextController: AbortController | undefined;
 
-  copyPageButton?.addEventListener('click', async () => {
-    const content = document.querySelector<HTMLElement>('.document .prose')?.innerText ?? '';
-    await navigator.clipboard.writeText(content);
-    if (copyPageLabel) copyPageLabel.textContent = 'Copied';
-    window.setTimeout(() => {
-      if (copyPageLabel) copyPageLabel.textContent = 'Copy page';
-    }, 1600);
-  });
+  function initializePageContext() {
+    pageContextController?.abort();
+    pageContextController = new AbortController();
+    const copyPageButton = document.querySelector<HTMLButtonElement>('.copy-page');
+    const copyPageLabel = document.querySelector<HTMLElement>('.copy-page-label');
+
+    copyPageButton?.addEventListener('click', async () => {
+      const content = document.querySelector<HTMLElement>('.document .prose')?.innerText ?? '';
+      await navigator.clipboard.writeText(content);
+      if (copyPageLabel) copyPageLabel.textContent = 'Copied';
+      window.setTimeout(() => {
+        if (copyPageLabel) copyPageLabel.textContent = 'Copy page';
+      }, 1600);
+    }, { signal: pageContextController.signal });
+  }
+
+  document.addEventListener('astro:page-load', initializePageContext);
 </script>

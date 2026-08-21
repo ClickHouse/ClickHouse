@@ -25,6 +25,11 @@ function firstPage(entries: NavEntry[]): string {
 
 const entries = await getCollection('reference');
 const titleMap = Object.fromEntries(entries.map((entry) => [entry.id, entry.data.title]));
+const featureStateByRoute = Object.fromEntries(
+  entries
+    .filter((entry) => entry.data.featureState)
+    .map((entry) => [entry.data.route, entry.data.featureState]),
+) as Record<string, 'beta' | 'experimental'>;
 const page = resolvePageData(docsConfig as DocsConfig, {
   currentPath: '/docs/reference',
   titleMap,
@@ -40,7 +45,12 @@ const document = {
 };
 ---
 
-<DocsLayout document={document} sidebarEntries={page.sidebarEntries} showGeneratedBanner={false}>
+<DocsLayout
+  document={document}
+  sidebarEntries={page.sidebarEntries}
+  featureStateByRoute={featureStateByRoute}
+  showGeneratedBanner={false}
+>
   <section class="reference-intro">
     <div class="reference-stats">
       <div><strong>{manifest.documentCount.toLocaleString('en')}</strong><span>generated pages</span></div>

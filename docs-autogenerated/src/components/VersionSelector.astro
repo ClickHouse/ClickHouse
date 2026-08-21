@@ -103,18 +103,26 @@ function destination(version: VersionEntry) {
 </details>
 
 <script>
-  const versionSelector = document.querySelector<HTMLDetailsElement>('.version-selector');
+  let versionSelectorController: AbortController | undefined;
 
-  document.addEventListener('click', (event) => {
-    if (versionSelector?.open && !versionSelector.contains(event.target as Node)) {
-      versionSelector.open = false;
-    }
-  });
+  function initializeVersionSelector() {
+    versionSelectorController?.abort();
+    versionSelectorController = new AbortController();
+    const versionSelector = document.querySelector<HTMLDetailsElement>('.version-selector');
 
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && versionSelector?.open) {
-      versionSelector.open = false;
-      versionSelector.querySelector<HTMLElement>('summary')?.focus();
-    }
-  });
+    document.addEventListener('click', (event) => {
+      if (versionSelector?.open && !versionSelector.contains(event.target as Node)) {
+        versionSelector.open = false;
+      }
+    }, { signal: versionSelectorController.signal });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && versionSelector?.open) {
+        versionSelector.open = false;
+        versionSelector.querySelector<HTMLElement>('summary')?.focus();
+      }
+    }, { signal: versionSelectorController.signal });
+  }
+
+  document.addEventListener('astro:page-load', initializeVersionSelector);
 </script>

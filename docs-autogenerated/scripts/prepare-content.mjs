@@ -369,6 +369,7 @@ function rewriteInlineCodeBraces(content) {
         return line;
       }
       if (mathBlock || line.includes('<VersionHistory rows={')) return line;
+      if (/^\s*import\s+/.test(line)) return line;
       if (/^\s*<[^>]+>\s*$/.test(line) || /^\s*\{\/\*/.test(line)) return line;
 
       let result = '';
@@ -386,11 +387,84 @@ function rewriteInlineCodeBraces(content) {
     .join('\n');
 }
 
-function prepareMdx(content, sourcePath, routeRewrites = new Map()) {
+function importedComponentBindings(bindingClause, sourcePath) {
+  const bindings = [];
+  let remaining = bindingClause.trim();
+  const defaultBinding = remaining.match(/^([A-Za-z_$][\w$]*)(?:\s*,\s*([\s\S]+))?$/);
+  if (defaultBinding) {
+    bindings.push({ importedName: 'default', localName: defaultBinding[1] });
+    remaining = defaultBinding[2]?.trim() ?? '';
+  }
+
+  if (remaining.startsWith('*')) {
+    throw new Error(`Namespace component imports are not supported in ${sourcePath}: ${bindingClause}`);
+  }
+
+  if (remaining) {
+    const namedBindings = remaining.match(/^\{([\s\S]*)\}$/)?.[1];
+    if (namedBindings === undefined) {
+      throw new Error(`Unsupported component import in ${sourcePath}: ${bindingClause}`);
+    }
+    for (const binding of namedBindings.split(',')) {
+      const match = binding.trim().match(
+        /^([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/,
+      );
+      if (!match) throw new Error(`Unsupported component import in ${sourcePath}: ${bindingClause}`);
+      bindings.push({ importedName: match[1], localName: match[2] ?? match[1] });
+    }
+  }
+
+  if (bindings.length === 0) {
+    throw new Error(`Component import has no usable bindings in ${sourcePath}: ${bindingClause}`);
+  }
+  return bindings;
+}
+
+function registerComponentImport(componentImports, binding, componentPath, sourcePath) {
+  const existing = componentImports.get(binding.localName);
+  const imported = { componentPath, importedName: binding.importedName };
+  if (
+    existing
+    && (existing.componentPath !== imported.componentPath || existing.importedName !== imported.importedName)
+  ) {
+    throw new Error(
+      `Component ${binding.localName} is imported from both ${existing.componentPath} and ${componentPath}`,
+    );
+  }
+  componentImports.set(binding.localName, imported);
+}
+
+function componentRegistrySource(componentImports) {
+  const exports = [...componentImports.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([localName, { componentPath, importedName }]) => {
+      const source = JSON.stringify(`@clickhouse-docs-components/${componentPath}`);
+      return importedName === 'default'
+        ? `export { default as ${localName} } from ${source};`
+        : `export { ${importedName}${importedName === localName ? '' : ` as ${localName}`} } from ${source};`;
+    });
+  return [
+    '// Generated from component imports in the versioned reference artifact.',
+    '// The implementations remain owned by docs/snippets/components.',
+    ...exports,
+    '',
+  ].join('\n');
+}
+
+function prepareMdx(content, sourcePath, routeRewrites = new Map(), componentImports = new Map()) {
   const importedComponents = new Set();
   let prepared = content.replace(
-    /^import\s+.+?\s+from\s+['"]\/snippets\/components\/[^'"]+['"];?\s*$/gm,
-    '',
+    /^import\s+(.+?)\s+from\s+['"]\/snippets\/components\/([^'"]+)['"];?\s*$/gm,
+    (_statement, bindingClause, componentPath) => {
+      if (componentPath.split('/').includes('..') || !/\.jsx?$/.test(componentPath)) {
+        throw new Error(`Invalid component import in ${sourcePath}: ${componentPath}`);
+      }
+      for (const binding of importedComponentBindings(bindingClause, sourcePath)) {
+        importedComponents.add(binding.localName);
+        registerComponentImport(componentImports, binding, componentPath, sourcePath);
+      }
+      return '';
+    },
   );
 
   prepared = prepared.replace(
@@ -438,6 +512,7 @@ function frontmatter(document) {
     `route: ${JSON.stringify(document.route)}`,
     `stableId: ${JSON.stringify(document.id)}`,
     `entityKind: ${JSON.stringify(document.entityKind)}`,
+    `featureState: ${JSON.stringify(document.featureState ?? null)}`,
     `sourcePath: ${JSON.stringify(document.sourcePath)}`,
     `contentHash: ${JSON.stringify(document.contentHash)}`,
     `aliases: ${JSON.stringify(document.aliases)}`,
@@ -467,9 +542,10 @@ async function main() {
     );
 
   if (
-    manifest.schemaVersion !== 1
+    manifest.schemaVersion !== 2
     || documentPayload.schemaVersion !== 1
     || navigation.schemaVersion !== 2
+    || snippetPayload.schemaVersion !== 2
   ) {
     throw new Error(`Unsupported artifact schema version: ${manifest.schemaVersion}`);
   }
@@ -482,10 +558,13 @@ async function main() {
   }
 
   const expectedBundleHash = hash(
-    `${JSON.stringify(documentPayload)}\n${JSON.stringify(snippetPayload.snippets)}\n${JSON.stringify(navigation)}\n${JSON.stringify(routes)}\n${JSON.stringify(search)}`,
+    `${JSON.stringify(documentPayload)}\n${JSON.stringify(snippetPayload.snippets)}\n${JSON.stringify(snippetPayload.componentResources)}\n${JSON.stringify(navigation)}\n${JSON.stringify(routes)}\n${JSON.stringify(search)}`,
   );
   if (manifest.bundleHash !== expectedBundleHash) {
     throw new Error('Artifact bundle hash does not match its contents');
+  }
+  if (manifest.componentResourceCount !== snippetPayload.componentResources.length) {
+    throw new Error('Artifact component resource count does not match its manifest');
   }
 
   const routeRewrites = new Map();
@@ -507,6 +586,7 @@ async function main() {
 
   await rm(stagingDirectory, { recursive: true, force: true });
   await mkdir(path.join(stagingDirectory, 'mintlify/snippets'), { recursive: true });
+  const componentImports = new Map();
 
   const docsConfig = mintlifyDocsConfig(
     documentPayload.documents,
@@ -539,7 +619,7 @@ async function main() {
       'mintlify',
       `${pagePathFromRoute(document.route)}.mdx`,
     );
-    const content = `${frontmatter(document)}\n\n${prepareMdx(document.content, document.sourcePath, routeRewrites)}\n`;
+    const content = `${frontmatter(document)}\n\n${prepareMdx(document.content, document.sourcePath, routeRewrites, componentImports)}\n`;
     await mkdir(path.dirname(destination), { recursive: true });
     await writeFile(destination, content, 'utf8');
   }
@@ -551,11 +631,47 @@ async function main() {
 
     const destination = path.join(stagingDirectory, 'mintlify/snippets', snippet.path);
     await mkdir(path.dirname(destination), { recursive: true });
-    const preparedSnippet = prepareMdx(snippet.content, `snippets/${snippet.path}`, routeRewrites);
+    const preparedSnippet = prepareMdx(
+      snippet.content,
+      `snippets/${snippet.path}`,
+      routeRewrites,
+      componentImports,
+    );
     await writeFile(destination, `${preparedSnippet}\n`, 'utf8');
   }
 
+  const componentResourcePaths = new Set();
+  for (const resource of snippetPayload.componentResources) {
+    if (
+      !/^(?:components|lib)\/.+\.(?:css|jsx?)$/.test(resource.path)
+      || resource.path.split('/').includes('..')
+    ) {
+      throw new Error(`Invalid component resource path: ${resource.path}`);
+    }
+    if (componentResourcePaths.has(resource.path)) {
+      throw new Error(`Duplicate component resource path: ${resource.path}`);
+    }
+    if (hash(resource.content) !== resource.contentHash) {
+      throw new Error(`Content hash mismatch for component resource ${resource.path}`);
+    }
+    componentResourcePaths.add(resource.path);
+    const destination = path.join(stagingDirectory, 'shared', resource.path);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, resource.content, 'utf8');
+  }
+
+  for (const { componentPath } of componentImports.values()) {
+    if (!componentResourcePaths.has(`components/${componentPath}`)) {
+      throw new Error(`Artifact does not contain imported component ${componentPath}`);
+    }
+  }
+
   await Promise.all([
+    writeFile(
+      path.join(stagingDirectory, 'mdx-components.ts'),
+      componentRegistrySource(componentImports),
+      'utf8',
+    ),
     writeJson(path.join(stagingDirectory, 'data/manifest.json'), manifest),
     writeJson(path.join(stagingDirectory, 'data/header-navigation.json'), headerNavigation),
     writeJson(path.join(stagingDirectory, 'data/versions.json'), versionConfig),

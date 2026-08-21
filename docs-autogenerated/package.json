@@ -11,7 +11,7 @@
     "dev": "astro dev",
     "prebuild": "npm run prepare:site",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "node scripts/serve-dist.mjs"
   },
   "dependencies": {
     "@astrojs/mdx": "^7.0.5",

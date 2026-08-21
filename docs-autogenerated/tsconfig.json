@@ -4,7 +4,10 @@
     "baseUrl": ".",
     "paths": {
       "@components/*": ["src/components/*"],
-      "@generated/*": ["src/generated/*"]
+      "@clickhouse-docs-components/*": ["src/generated/shared/components/*"],
+      "@generated/*": ["src/generated/*"],
+      "/snippets/components/*": ["src/generated/shared/components/*"],
+      "/snippets/lib/*": ["src/generated/shared/lib/*"]
     }
   }
 }

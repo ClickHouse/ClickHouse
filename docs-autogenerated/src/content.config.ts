@@ -14,6 +14,7 @@ const reference = defineCollection({
     route: z.string(),
     stableId: z.string(),
     entityKind: z.string(),
+    featureState: z.enum(['beta', 'experimental']).nullable(),
     sourcePath: z.string(),
     contentHash: z.string(),
     aliases: z.array(z.string()),

@@ -8,9 +8,10 @@ interface Props {
   entries: NavEntry[];
   currentRoute: string;
   stableId?: string;
+  featureStateByRoute?: Record<string, 'beta' | 'experimental'>;
 }
 
-const { entries, currentRoute, stableId } = Astro.props;
+const { entries, currentRoute, stableId, featureStateByRoute = {} } = Astro.props;
 ---
 
 <aside id="sidebar" class="sidebar" aria-label="Pages">
@@ -72,12 +73,13 @@ const { entries, currentRoute, stableId } = Astro.props;
   </div>
 
   <div class="sidebar-scroll">
-    <a class:list={['sidebar-home', { active: currentRoute === '/docs/reference' }]} href="/docs/reference">
-      Home
-    </a>
     <ul class="sidebar-tree">
       {entries.map((entry) => (
-        <SidebarNode entry={entry} currentRoute={currentRoute} />
+        <SidebarNode
+          entry={entry}
+          currentRoute={currentRoute}
+          featureStateByRoute={featureStateByRoute}
+        />
       ))}
     </ul>
   </div>
@@ -92,8 +94,37 @@ const { entries, currentRoute, stableId } = Astro.props;
 </aside>
 
 <script>
-  const themeButtons = document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]');
   const colorPreference = window.matchMedia('(prefers-color-scheme: dark)');
+  const sidebarScrollStorageKey = 'reference-sidebar-scroll-top';
+  let sidebarController: AbortController | undefined;
+  let sidebarLabelResizeObserver: ResizeObserver | undefined;
+  let sidebarScrollPosition = Number(sessionStorage.getItem(sidebarScrollStorageKey));
+  if (!Number.isFinite(sidebarScrollPosition) || sidebarScrollPosition < 0) {
+    sidebarScrollPosition = 0;
+  }
+
+  function saveSidebarScroll() {
+    const sidebarScroll = document.querySelector<HTMLElement>('.sidebar-scroll');
+    if (!sidebarScroll) return;
+    sidebarScrollPosition = sidebarScroll.scrollTop;
+    sessionStorage.setItem(sidebarScrollStorageKey, String(sidebarScrollPosition));
+  }
+
+  function restoreSidebarScroll() {
+    const sidebarScroll = document.querySelector<HTMLElement>('.sidebar-scroll');
+    if (sidebarScroll) sidebarScroll.scrollTop = sidebarScrollPosition;
+  }
+
+  function updateSidebarLabelOverflow() {
+    document.querySelectorAll<HTMLElement>('.sidebar-page-label').forEach((label) => {
+      const text = label.querySelector<HTMLElement>('.sidebar-page-label-text');
+      if (!text) return;
+      const overflow = Math.max(0, Math.ceil(text.scrollWidth - label.clientWidth));
+      label.classList.toggle('is-overflowing', overflow > 0);
+      label.style.setProperty('--sidebar-label-shift', `${-overflow}px`);
+      label.style.setProperty('--sidebar-label-duration', `${Math.max(800, overflow * 18)}ms`);
+    });
+  }
 
   function resolvedTheme(preference: string) {
     return preference === 'system'
@@ -106,22 +137,58 @@ const { entries, currentRoute, stableId } = Astro.props;
     document.documentElement.dataset.themePreference = preference;
     document.documentElement.dataset.theme = theme;
     document.documentElement.classList.toggle('dark', theme === 'dark');
+    const themeButtons = document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]');
     themeButtons.forEach((button) => {
       button.setAttribute('aria-pressed', String(button.dataset.themeChoice === preference));
     });
   }
 
-  themeButtons.forEach((button) => {
-    button.addEventListener('click', () => {
-      const preference = button.dataset.themeChoice ?? 'dark';
-      localStorage.setItem('reference-theme', preference);
-      applyTheme(preference);
+  function initializeSidebar() {
+    sidebarController?.abort();
+    sidebarController = new AbortController();
+    sidebarLabelResizeObserver?.disconnect();
+    sidebarLabelResizeObserver = new ResizeObserver(updateSidebarLabelOverflow);
+    const themeButtons = document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]');
+
+    themeButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const preference = button.dataset.themeChoice ?? 'dark';
+        localStorage.setItem('reference-theme', preference);
+        applyTheme(preference);
+      }, { signal: sidebarController?.signal });
     });
-  });
+
+    document.querySelector<HTMLElement>('.sidebar-scroll')?.addEventListener(
+      'scroll',
+      saveSidebarScroll,
+      { passive: true, signal: sidebarController.signal },
+    );
+    document.querySelectorAll<HTMLElement>('.sidebar-page-label').forEach((label) => {
+      sidebarLabelResizeObserver?.observe(label);
+    });
+
+    applyTheme(localStorage.getItem('reference-theme') ?? 'dark');
+    restoreSidebarScroll();
+    updateSidebarLabelOverflow();
+    void document.fonts.ready.then(updateSidebarLabelOverflow);
+  }
 
   colorPreference.addEventListener('change', () => {
     if (localStorage.getItem('reference-theme') === 'system') applyTheme('system');
   });
 
-  applyTheme(localStorage.getItem('reference-theme') ?? 'dark');
+  document.addEventListener('astro:before-swap', (event) => {
+    saveSidebarScroll();
+    const currentRoot = document.documentElement;
+    const nextRoot = event.newDocument.documentElement;
+    if (currentRoot.dataset.theme) nextRoot.dataset.theme = currentRoot.dataset.theme;
+    if (currentRoot.dataset.themePreference) {
+      nextRoot.dataset.themePreference = currentRoot.dataset.themePreference;
+    }
+    nextRoot.classList.toggle('dark', currentRoot.classList.contains('dark'));
+  });
+
+  document.addEventListener('astro:after-swap', restoreSidebarScroll);
+  document.addEventListener('astro:page-load', initializeSidebar);
+  window.addEventListener('pagehide', saveSidebarScroll);
 </script>
