@@ -270,8 +270,16 @@ echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable)' 
 # per-packet increments, so a backgrounded cell's batches keep accumulating on the cell
 # (`accumulateResourceEvents`) instead of being dropped, and `syncActiveTabChrome` re-adopts the
 # state so a reopened cell's meter continues from its live values instead of restarting near zero.
+# The state it re-adopts is the one of the cell the shared chrome belongs to (`chromeCell`): the
+# RUNNING cell while the tab has a run in flight, so moving the editor to another cell mid-run does
+# not blank the meters of the query that is still going.
 echo "$page" | grep -q -F 'accumulateResourceEvents(cell.resources, events);' && echo 'background meter batches accumulate: OK'
-echo "$page" | grep -q -F 'progressEl.adoptResourceState(tab.resources);' && echo 'meter state re-adopted on tab open: OK'
+echo "$page" | grep -q -F 'progressEl.adoptResourceState(run_cell.resources);' && echo 'meter state re-adopted on tab open: OK'
+echo "$page" | grep -q -F 'return (tab.inFlight && tab.runCell) ? tab.runCell : activeCell(tab);' && echo 'shared chrome follows the running cell: OK'
+# One query runs at a time per tab, so the cell header's run action ends the tab's current run
+# through the same path as the Run/Stop button instead of starting a second request beside it.
+[ "$(echo "$page" | grep -c -F 'cancelTabRun(tab);')" -eq 2 ] && echo 'a cell run ends the tab run first: OK'
+echo "$page" | grep -q -F 'cancelTabRun(getActiveTab());' && echo 'Stop goes through the same path: OK'
 # An NDJSON stream cut off in the middle of its terminal exception line is a truncation, not a real
 # exception: the reader reports `saw_exception` only once the exception line reached its newline
 # (`exception_done`), so the partial JSON line is never persisted or replayed as the failure carrier.

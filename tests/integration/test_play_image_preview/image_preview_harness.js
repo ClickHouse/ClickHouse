@@ -617,7 +617,7 @@ async function boot(js, url) {
 /// hovered, revealed image preview OWNED by that tab's result. Uses a genuine `QueryResultElement`
 /// (so its real `clear`/`disconnectedCallback` run), `_renderCell` for the URL, the panel appended to
 /// `resultPanelsEl`, and the tab pushed into `tabs` as active. A following production teardown
-/// (`clearPanel`, `setActivePanel`, `panel.remove()`) can then be asserted to dismiss (or, for a
+/// (`clearCell`, `setActivePanel`, `panel.remove()`) can then be asserted to dismiss (or, for a
 /// different tab, NOT dismiss) the preview. Returns `{ run }`; `installBackgroundTab` adds a second,
 /// non-hovered real tab and returns its id via `globalThis.__bgId`.
 async function bootRealTab(js, url) {
@@ -915,22 +915,22 @@ async function main() {
     }
 
     /// Contract 5: teardown is anchored to the ACTIVE result lifecycle, not the auxiliary global
-    /// `clear` wrapper. With the tabs rework, a rerun tears the result down through `clearPanel`
+    /// `clear` wrapper. With the tabs rework, a rerun tears the result down through `clearCell`
     /// (called from `postSingle`/`postMulti`/`materializeResult`/`beginFlight`), a tab switch hides
     /// the panel through `setActivePanel`, and closing a tab removes the panel from the DOM. Each of
     /// these production paths must dismiss a preview owned by the affected result, WITHOUT a
     /// background/unrelated teardown dismissing a preview owned by another result. These scenarios run
-    /// the real `clearPanel`/`setActivePanel`/`panel.remove()` against genuine `QueryResultElement`s.
+    /// the real `clearCell`/`setActivePanel`/`panel.remove()` against genuine `QueryResultElement`s.
 
-    /// 5a: a rerun through the production `clearPanel` dismisses the owning tab's preview.
+    /// 5a: a rerun through the production `clearCell` dismisses the owning tab's preview.
     {
         const { run } = await bootRealTab(js, url);
         let s = ownedState(run);
-        check('clearPanel-rerun', 'preview is shown and owned before the rerun',
+        check('clearCell-rerun', 'preview is shown and owned before the rerun',
             s && s.display === 'block' && s.src === url && s.owner === 'set', s);
-        run(`clearPanel(getActiveTab());`);
+        run(`clearCell(activeCell(getActiveTab()));`);
         s = ownedState(run);
-        check('clearPanel-rerun', 'rerun through clearPanel dismisses the preview',
+        check('clearCell-rerun', 'rerun through clearCell dismisses the preview',
             s && s.display === 'none' && s.src === '' && s.owner === null, s);
     }
 
@@ -941,11 +941,11 @@ async function main() {
         installBackgroundTab(run);
         let s = ownedState(run);
         check('background-clear', 'preview is shown before the background clear', s && s.display === 'block', s);
-        run(`clearPanel(tabs.find(t => t.id === __bgId));`);
+        run(`clearCell(activeCell(tabs.find(t => t.id === __bgId)));`);
         s = ownedState(run);
         check('background-clear', 'clearing a background tab does not dismiss the active preview',
             s && s.display === 'block' && s.src === url && s.owner === 'set', s);
-        run(`clearPanel(getActiveTab());`);
+        run(`clearCell(activeCell(getActiveTab()));`);
         s = ownedState(run);
         check('background-clear', 'clearing the owning (active) tab dismisses it',
             s && s.display === 'none' && s.owner === null, s);
@@ -1031,9 +1031,15 @@ async function main() {
             const tab = makeTab('Run all', 'SELECT fail; INSERT later');
             tab.reqNum = 1;
             tab.panel = document.createElement('div');
-            tab.resultEl = document.createElement('div');
-            tab.resultEl.clear = () => {};
-            tab.panel.appendChild(tab.resultEl);
+            /// A run renders into a notebook CELL, so give the tab's single cell the minimal
+            /// shape postMulti needs: a result element and the slot its multi-query container
+            /// is inserted into.
+            const cell = activeCell(tab);
+            cell.resultEl = document.createElement('div');
+            cell.resultEl.clear = () => {};
+            cell.resultSlot = document.createElement('div');
+            cell.resultSlot.appendChild(cell.resultEl);
+            tab.panel.appendChild(cell.resultSlot);
             tabs.push(tab);
             activeTabId = tab.id;
             const calls = [];
@@ -1044,16 +1050,16 @@ async function main() {
                     is_table: false, is_raw: false, is_chart: false, is_image: false,
                     is_base64: false, is_truncated: false, framing_kind: '' };
             };
-            await postMulti(tab, 1, [
+            await postMulti(cell, 1, [
                 { query: 'SELECT fail', is_select: true, queryStart: 0 },
                 { query: 'INSERT later', is_select: false, queryStart: 13 },
             ], {}, tab.query, { url: 'http://example.test', user: '', password: '' }, true, '');
             postImpl = savedPostImpl;
-            return JSON.stringify({ calls, failed: tab.failed, phase: tab.progressPhase });
+            return JSON.stringify({ calls, failed: cell.failed, phase: cell.progressPhase });
         })()`));
         check('run-all-framed-failure', 'a failed first statement prevents a later write from being sent',
             res.calls.length === 1 && res.calls[0] === 'SELECT fail', res);
-        check('run-all-framed-failure', 'the tab retains the failed state',
+        check('run-all-framed-failure', 'the cell retains the failed state',
             res.failed && res.phase === 'error', res);
     }
 

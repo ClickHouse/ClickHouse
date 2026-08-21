@@ -57,6 +57,9 @@ view is cell-owned: OK
 toggles replayed per tab: OK
 background meter batches accumulate: OK
 meter state re-adopted on tab open: OK
+shared chrome follows the running cell: OK
+a cell run ends the tab run first: OK
+Stop goes through the same path: OK
 partial exception line is a truncation: OK
 meter aggregate is per run: OK
 peak gauge keeps the maximum: OK

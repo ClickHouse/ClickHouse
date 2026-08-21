@@ -5256,7 +5256,7 @@ class QueryResultElement extends HTMLElement
         if (cell)
         {
             cell.logsAvailable = true;
-            if (!cellIsOnScreen(cell)) return;
+            if (!cellOwnsChrome(cell)) return;
         }
         progressEl.showLogsToggle();
     }
@@ -5267,7 +5267,7 @@ class QueryResultElement extends HTMLElement
         if (cell)
         {
             cell.metricsAvailable = true;
-            if (!cellIsOnScreen(cell)) return;
+            if (!cellOwnsChrome(cell)) return;
         }
         progressEl.showMetricsToggle();
     }
@@ -6548,7 +6548,7 @@ function handleResultProgress(cell, detail) {
         incomplete: cell.resultEl ? cell.resultEl.incompleteResult : false,
     };
     updateTabIndicator(cell.tab);
-    if (cellIsOnScreen(cell)) {
+    if (cellOwnsChrome(cell)) {
         elapsed_ns = +detail.elapsed_ns || 0;
         progressEl.updateProgress(detail);
         progressEl.updateText(cell.resultEl.rowCount, elapsed_ns, cell.resultEl.incompleteResult);
@@ -8868,14 +8868,14 @@ async function readEventStream(response, targetResultEl, abortController, cell, 
     /// previous run's state when a new run starts; the run's first stream creates the aggregate
     /// and every stream accumulates into it, so the meter shows the run's combined resources.
     if (!cell.resources) cell.resources = freshResourceState();
-    if (cellIsOnScreen(cell))
+    if (cellOwnsChrome(cell))
         progressEl.adoptResourceState(cell.resources);
 
     const handleEvent = makeEventStreamHandler(targetResultEl, {
         onStop: () => { stop = true; },
         resourceMeter: (events) => {
             accumulateResourceEvents(cell.resources, events);
-            if (cellIsOnScreen(cell)) progressEl.renderResourcesFrom(cell.resources);
+            if (cellOwnsChrome(cell)) progressEl.renderResourcesFrom(cell.resources);
         },
         rawText,
         format,
@@ -10243,7 +10243,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
     const query_start = performance.now();
     const tab = cell.tab;
     const el = cell.resultEl;
-    const active = () => cellIsOnScreen(cell);
+    const active = () => cellOwnsChrome(cell);
     /// `history_query_text` is provided exactly when the run covered only PART of the launched
     /// editor (one statement of a multi-statement text, under the cursor or selected); with it
     /// absent, `query` IS the whole launched text. `saveHistory` needs this to decide whether the
@@ -10264,7 +10264,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
     cell.copyVisible = false;
     clearCell(cell);
     cell.progressPhase = 'running';
-    if (active()) { paintDownloadCopy(tab); progressEl.start(); }
+    if (active()) { paintDownloadCopy(cell); progressEl.start(); }
 
     tab.controller = new AbortController();
     const result = await postImpl(cell, posted_request_num, query, el, tab.controller, paramValuesSnapshot, query_database, connection, queryStart);
@@ -10280,7 +10280,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
         if (active()) {
             logoEl.style.display = 'none';
             progressEl.clear();
-            paintDownloadCopy(tab);
+            paintDownloadCopy(cell);
         }
         /// Persist the error as this cell's result snapshot. The restore path renders an
         /// `ok: false` snapshot as the exception, so switching away/back or reloading shows
@@ -10369,7 +10369,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
     if (active()) {
         elapsed_ns = el.elapsedNs;
         progressEl.finish();
-        paintDownloadCopy(tab);
+        paintDownloadCopy(cell);
         progressEl.updateText(el.rowCount, el.elapsedNs, el.incompleteResult);
         progressEl.clearBar();
         document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
@@ -10440,7 +10440,7 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
     /// Per-run start time, as in `postSingle`: concurrent tabs must not share it.
     const query_start = performance.now();
     const tab = cell.tab;
-    const active = () => cellIsOnScreen(cell);
+    const active = () => cellOwnsChrome(cell);
     /// See `postSingle`: the database, server address and user are snapshotted by the caller before
     /// the lexer preflight await and threaded in; every statement group of this run uses the same
     /// values (groups run sequentially, so without a single snapshot editing the connection between
@@ -10454,7 +10454,7 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
     cell.copyVisible = false;
     clearCell(cell);
     cell.progressPhase = 'running';
-    if (active()) { paintDownloadCopy(tab); progressEl.start(); }
+    if (active()) { paintDownloadCopy(cell); progressEl.start(); }
 
     /// Hide this cell's single result element and the logo; the multi container takes over.
     cell.resultEl.style.display = 'none';
@@ -12006,6 +12006,28 @@ function cellInFlight(cell) {
     return !!cell && cell.tab && cell.tab.inFlight && cell.tab.runCell === cell;
 }
 
+/// The cell the shared run chrome — the `Run`/`Stop` button, the progress bar and its resource
+/// meters, the download/copy buttons — describes and is docked under. That is the RUNNING cell
+/// while the tab has a run in flight, and the active (editor-holding) cell otherwise.
+///
+/// The response of a run keeps streaming into the cell captured at `beginFlight` even if the user
+/// moves the editor to another cell meanwhile, so the chrome has to stay with it until
+/// `endFlight`: following the active cell instead would move the `Stop` handle away from the only
+/// running query and make `syncActiveTabChrome` repaint the bar and meters from the idle cell,
+/// erasing the live progress of a run that is still going.
+function chromeCell(tab) {
+    if (!tab) return null;
+    return (tab.inFlight && tab.runCell) ? tab.runCell : activeCell(tab);
+}
+
+/// Whether the shared run chrome currently belongs to THIS cell, i.e. whether a live update of
+/// this cell's run (progress, resource meters, Logs/Metrics availability, download/copy) has to
+/// be mirrored into the shared widgets rather than just recorded on the cell for
+/// `syncActiveTabChrome` to replay later.
+function cellOwnsChrome(cell) {
+    return !!cell && !!cell.tab && cell.tab.id === activeTabId && chromeCell(cell.tab) === cell;
+}
+
 /// ----- Notebook rendering ---------------------------------------------------------------
 
 /// There is exactly ONE query editor on the page — the fully featured `#query_div` with its
@@ -12030,7 +12052,10 @@ function dockEditor() {
     /// nothing needs re-parenting (switching between two notebook tabs, or to a plain one).
     main_container.classList.toggle('notebook-mode', notebook);
     const host = notebook ? cell.editorSlot : editorHomeEl;
-    const run_host = notebook ? cell.runSlot : controls_elem;
+    /// The run row reports one run, so it goes under the cell that run belongs to — the running
+    /// one while the tab is in flight, the active one otherwise (see `chromeCell`).
+    const run_cell = chromeCell(tab);
+    const run_host = (notebook && run_cell && run_cell.runSlot) ? run_cell.runSlot : controls_elem;
     if (editorDivEl.parentNode === host && editorParamsEl.parentNode === host
         && runDivEl.parentNode === run_host) return;
     /// Re-parenting a focused textarea drops focus and (in some browsers) the selection.
@@ -12486,13 +12511,23 @@ async function activateCellState(tab, cell) {
 
 /// The header's ▶: run this cell. A cell that is not the active one takes the editor first,
 /// because the run always executes what the shared editor holds.
+///
+/// One query runs at a time per tab (`tab.controller` / `tab.multiControllers` hold the single
+/// run's abort handles), so starting a cell's run ends whatever the tab was running — exactly as
+/// the Run→Stop button does. Without that the older request would keep streaming with its `Stop`
+/// handle overwritten, and the user would have no way to end it.
 function runCell(tab, cell) {
     /// `setActiveCell` restores the editor asynchronously; run only once it holds this query,
     /// and only if nothing else took the editor in the meantime.
     if (activeCell(tab) !== cell) {
-        setActiveCell(tab, cell.id).then(() => { if (activeCell(tab) === cell) postAll(); });
+        setActiveCell(tab, cell.id).then(() => {
+            if (activeCell(tab) !== cell) return;
+            cancelTabRun(tab);
+            postAll();
+        });
         return;
     }
+    cancelTabRun(tab);
     postAll();
 }
 
@@ -12728,18 +12763,20 @@ function highlightMarkdownInline(escaped) {
     return unstashFragments(saved, text);
 }
 
-/// Point the shared download/copy buttons at a tab's stored state.
-function paintDownloadCopy(tab) {
-    document.getElementById('download-div').style.display = tab.downloadVisible ? 'block' : 'none';
-    document.getElementById('copy-div').style.display = tab.copyVisible ? 'block' : 'none';
-    last_query_for_download = tab.downloadQuery || '';
-    last_params_for_download = tab.downloadParams || {};
-    /// Target the download at the database and connection that produced this tab's result (see the
-    /// download handler / `last_url_for_download`), so switching tabs and downloading reproduces the
-    /// active tab's own result rather than whatever the previous tab or the live inputs point at.
-    last_database_for_download = tab.downloadDatabase || '';
-    last_url_for_download = tab.downloadUrl || '';
-    last_user_for_download = tab.downloadUser || '';
+/// Point the shared download/copy buttons at one cell's stored state. The buttons sit in the run
+/// row, which is docked under the cell whose run it reports (see `chromeCell`), so they always
+/// describe the result shown right above them.
+function paintDownloadCopy(cell) {
+    document.getElementById('download-div').style.display = cell.downloadVisible ? 'block' : 'none';
+    document.getElementById('copy-div').style.display = cell.copyVisible ? 'block' : 'none';
+    last_query_for_download = cell.downloadQuery || '';
+    last_params_for_download = cell.downloadParams || {};
+    /// Target the download at the database and connection that produced this cell's result (see the
+    /// download handler / `last_url_for_download`), so switching cells or tabs and downloading
+    /// reproduces that result rather than whatever the previous one or the live inputs point at.
+    last_database_for_download = cell.downloadDatabase || '';
+    last_url_for_download = cell.downloadUrl || '';
+    last_user_for_download = cell.downloadUser || '';
 }
 
 /// Repaint the shared chrome (Run/Stop button, favicon, progress bar, logo, download/copy) from
@@ -12764,17 +12801,23 @@ function syncActiveTabChrome() {
     /// (`updateText`). Resetting first is what keeps a half we do not repaint from leaking the
     /// previously active tab's content (a stale "still running" bar under a done tab, or a stale
     /// "Read ..." line under a running one).
+    ///
+    /// The bar, its stats and its meters describe a RUN, so they are read from the cell that run
+    /// belongs to (`chromeCell`), which is the cell the row is docked under. While a run is in
+    /// flight that is the running cell even if the user has moved the editor on to another one,
+    /// so a mid-run cell switch does not blank the live progress of a query that is still going.
+    const run_cell = chromeCell(tab) || {};
     progressEl.clear();
-    if (tab.progressPhase === 'running') {
+    if (run_cell.progressPhase === 'running') {
         progressEl.start();
-        if (tab.progress) {
-            progressEl.updateProgress(tab.progress);
-            progressEl.updateText(tab.progress.rowCount, tab.progress.elapsed_ns, tab.progress.incomplete);
+        if (run_cell.progress) {
+            progressEl.updateProgress(run_cell.progress);
+            progressEl.updateText(run_cell.progress.rowCount, run_cell.progress.elapsed_ns, run_cell.progress.incomplete);
         }
-    } else if (tab.progressPhase === 'done' && tab.finalStats) {
+    } else if (run_cell.progressPhase === 'done' && run_cell.finalStats) {
         progressEl.finish();
-        if (tab.progress) progressEl.updateProgress(tab.progress);
-        progressEl.updateText(tab.finalStats.rowCount, tab.finalStats.elapsedNs, tab.finalStats.incomplete);
+        if (run_cell.progress) progressEl.updateProgress(run_cell.progress);
+        progressEl.updateText(run_cell.finalStats.rowCount, run_cell.finalStats.elapsedNs, run_cell.finalStats.incomplete);
         progressEl.clearBar();
     }
 
@@ -12783,23 +12826,22 @@ function syncActiveTabChrome() {
     /// them so a still-running tab's meters continue from their live values (the next
     /// profile-events batch resumes CPU-rate sampling from the state's cumulative counters) and a
     /// finished tab's peak RAM reappears.
-    if (tab.resources)
-        progressEl.adoptResourceState(tab.resources);
+    if (run_cell.resources)
+        progressEl.adoptResourceState(run_cell.resources);
 
     logoEl.style.display = tab.logoVisible ? 'block' : 'none';
 
-    /// Replay the active CELL's Logs/Metrics availability and selected view: reveal the shared
+    /// Replay the chrome CELL's Logs/Metrics availability and selected view: reveal the shared
     /// toggles only for what that cell produced, and switch its own result element(s) to its view.
     /// Both are cell-owned (see the `set-view` handler and `_markLogsAvailable`), so showing a cell
     /// never inherits the previous one's selection or leaves a result hidden with no toggle. Other
     /// cells of the notebook keep whatever view they were left in.
-    const chrome_cell = activeCell(tab);
-    progressEl.setViewState(tab.view || 'result', !!tab.logsAvailable, !!tab.metricsAvailable);
-    if (chrome_cell && chrome_cell.el)
-        for (const el of chrome_cell.el.querySelectorAll('query-result'))
-            el.showView(tab.view || 'result');
+    progressEl.setViewState(run_cell.view || 'result', !!run_cell.logsAvailable, !!run_cell.metricsAvailable);
+    if (run_cell.el)
+        for (const el of run_cell.el.querySelectorAll('query-result'))
+            el.showView(run_cell.view || 'result');
 
-    paintDownloadCopy(tab);
+    paintDownloadCopy(run_cell);
 }
 
 /// Serialize the live editor (query text + parameter values) into the active tab.
@@ -14368,7 +14410,12 @@ function endFlight(tab) {
     }
     if (tab.id === activeTabId) {
         document.getElementById('run').blur();
-        updateRunButtons(isMultiQuery);
+        /// The shared chrome followed the RUNNING cell (see `chromeCell`). Now that the run is
+        /// over it belongs to the cell the user is on, so repaint it from that cell instead of
+        /// leaving the finished run's bar, meters and download button under it. `renderNotebook`
+        /// above has already docked the row back.
+        if (cell && cell !== activeCell(tab)) syncActiveTabChrome();
+        else updateRunButtons(isMultiQuery);
     }
 }
 
@@ -14564,11 +14611,16 @@ async function postAll()
     if (my_run === tab.reqNum) endFlight(tab);
 }
 
-/// Stop the ACTIVE tab's query (the Run→Stop button / Ctrl+Enter while running).
-async function cancel()
+/// Stop one tab's query. Every path that ends a run on the user's behalf goes through here — the
+/// Run→Stop button, `Ctrl+Enter` while running, and starting another cell's run in the same tab
+/// (`runCell`) — so a tab never has two requests in flight and never loses the `Stop` handle of
+/// the older one.
+function cancelTabRun(tab)
 {
-    const tab = getActiveTab();
-    if (!tab) return;
+    /// Nothing to stop: leave the idle cell's finished progress line and its stats alone (the
+    /// callers that start a run right after this one must not wipe the previous result's
+    /// "N rows in result" line during their lexer preflight).
+    if (!tab || !tab.inFlight) return;
     /// The cell being stopped, before `abortTabQuery` forgets it.
     const cell = tab.runCell || activeCell(tab);
     /// Bump the tab's run generation and abort its requests so postImpl/postSingle/postMulti
@@ -14577,14 +14629,21 @@ async function cancel()
     endFlight(tab);
     /// The query was stopped, not completed: drop the 'running' progress state and its live
     /// snapshot, so reopening this cell does not replay a spinning hourglass / stale "still
-    /// running" bar via `syncActiveTabChrome`. Cancel always targets the active tab, so also
-    /// clear the shared progress widget right away (it still shows the running spinner).
+    /// running" bar via `syncActiveTabChrome`.
     if (cell) {
         cell.progressPhase = 'idle';
         cell.progress = null;
         updateCellStatus(cell);
     }
-    progressEl.clear();
+    /// The shared progress widget still shows the running spinner, and it describes this tab only
+    /// while the tab is on screen; a background tab's own state was just reset above.
+    if (tab.id === activeTabId) progressEl.clear();
+}
+
+/// Stop the ACTIVE tab's query (the Run→Stop button / Ctrl+Enter while running).
+async function cancel()
+{
+    cancelTabRun(getActiveTab());
 }
 
 function storeCredentials() {
