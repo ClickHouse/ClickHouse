@@ -193,12 +193,6 @@ void ColumnNullable::insertData(const char * pos, size_t length)
     }
 }
 
-void ColumnNullable::insertDataNullable(const char * pos, size_t length)
-{
-    getNestedColumn().insertData(pos + 1, length - 1);
-    getNullMapData().push_back(*reinterpret_cast<const UInt8 *>(pos));
-}
-
 std::string_view ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     const auto & arr = getNullMapData();
@@ -1072,19 +1066,14 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores)
+void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> *)
 {
-    getNestedColumn().fillFromRowRefsWithRowStoreAndNullMap(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, getNullMapData());
+    getNestedColumn().fillFromRowRefsWithRowStore(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, &getNullMapData());
 }
 
-void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
+void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
 {
-    getNestedColumn().fillFromRowStorePtrsWithNullMap(removeNullable(type), row_store_ptrs, field_offset, field_size, getNullMapData(), begin, count);
-}
-
-void ColumnNullable::fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
-{
-    getNestedColumn().fillFromRowStorePtrsWithNullMap(row_store_ptrs, field_offset, field_size, getNullMapData(), begin, count);
+    getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
 }
 
 /// A NULL row emits only the flag byte and never touches the nested column, so an

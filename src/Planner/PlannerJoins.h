@@ -260,6 +260,7 @@ struct JoinAlgorithmParams
 
     UInt64 max_bytes_before_external_join = 0;
 
+    bool enable_hash_join_row_store = true;
     Float64 min_rows_ratio_for_hash_join_row_store = 0;
 
     String initial_query_id;

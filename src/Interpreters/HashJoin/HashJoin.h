@@ -531,7 +531,11 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
-    void initRowStore(const Block & block);
+    /// Derives the row store layout from the first right block.
+    std::optional<ColumnAccessIndexes> initRowStore(const Block & block);
+    /// Takes a pre-computed row store layout.
+    void initRowStore(const std::optional<ColumnAccessIndexes> & access_indexes);
+    /// Creates a row store based on the already initialized layout and fills from block columns.
     RowDataStorePtr createRowStoreForBlock(const Block & block) const;
 
     size_t getAndSetRightTableKeys() const;

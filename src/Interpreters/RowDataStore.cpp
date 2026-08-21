@@ -116,25 +116,28 @@ void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, con
 
 #undef APPLY_FOR_FIELD_SIZES
 
-MutableColumns doScatterRows(const RowDataStore::RowLayout & layout, std::optional<size_t> batch_size_opt, const PaddedPODArray<const char *> & row_store_ptrs)
+MutableColumns doScatterRows(const RowDataStore::RowLayout & layout, std::optional<size_t> batch_size_opt, const RowStorePointers & row_store_ptrs)
 {
     MutableColumns columns(layout.size());
     for (size_t i = 0; i < layout.size(); ++i)
         columns[i] = layout[i].sample_column->cloneEmpty();
 
-    const size_t count = row_store_ptrs.size();
+    const size_t count = row_store_ptrs.ptrs.size();
     if (count == 0)
         return columns;
 
     for (size_t i = 0; i < layout.size(); ++i)
         columns[i]->reserve(count);
 
+    /// `row_store_ptrs` never holds defaults here, so no default value is ever inserted.
+    const DataTypePtr no_type;
+
     const size_t batch_size = batch_size_opt.value_or(count);
     for (size_t batch_start = 0; batch_start < count; batch_start += batch_size)
     {
         const size_t remaining_batch_size = std::min(batch_size, count - batch_start);
         for (size_t i = 0; i < layout.size(); ++i)
-            columns[i]->fillFromRowStorePtrs(row_store_ptrs, layout[i].offset, layout[i].size, batch_start, remaining_batch_size);
+            columns[i]->fillFromRowStorePtrs(no_type, row_store_ptrs, layout[i].offset, layout[i].size, batch_start, remaining_batch_size);
     }
     return columns;
 }
@@ -219,19 +222,19 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
 
 MutableColumns RowDataStore::scatterRows(size_t start, size_t length) const
 {
-    PaddedPODArray<const char *> row_store_ptrs;
-    row_store_ptrs.reserve(length);
+    RowStorePointers row_store_ptrs;
+    row_store_ptrs.ptrs.reserve(length);
     for (size_t row = 0; row < length; ++row)
-        row_store_ptrs.push_back(getRowAt(start + row));
+        row_store_ptrs.ptrs.push_back(getRowAt(start + row));
     return doScatterRows(layout, getBatchSize(), row_store_ptrs);
 }
 
 MutableColumns RowDataStore::scatterRows(const PaddedPODArray<UInt64> & row_nums) const
 {
-    PaddedPODArray<const char *> row_store_ptrs;
-    row_store_ptrs.reserve(row_nums.size());
+    RowStorePointers row_store_ptrs;
+    row_store_ptrs.ptrs.reserve(row_nums.size());
     for (auto row : row_nums)
-        row_store_ptrs.push_back(getRowAt(row));
+        row_store_ptrs.ptrs.push_back(getRowAt(row));
     return doScatterRows(layout, getBatchSize(), row_store_ptrs);
 }
 
@@ -258,6 +261,6 @@ bool isRowStorageUseful(const ColumnPtr & column)
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
         check_col = column_nullable->getNestedColumnPtr().get();
 
-    return check_col->isFixedAndContiguous() && column->sizeOfValueIfFixed() <= 64;
+    return check_col->isFixedAndContiguous() && column->sizeOfValueIfFixed() <= 32;
 }
 }

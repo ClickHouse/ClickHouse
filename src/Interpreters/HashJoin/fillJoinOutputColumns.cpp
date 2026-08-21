@@ -8,15 +8,14 @@ namespace DB
 namespace
 {
 
-template <bool with_defaults>
 void fillFromRowStorePtrs(
     MutableColumns & columns,
     const ColumnAccessIndexes & output_access_indexes,
-    const PaddedPODArray<const char *> & row_store_ptrs,
+    const RowStorePointers & row_store_ptrs,
     std::optional<size_t> row_store_batch_size,
     const NamesAndTypes & type_name)
 {
-    const size_t row_store_rows = row_store_ptrs.size();
+    const size_t row_store_rows = row_store_ptrs.ptrs.size();
 
     /// Reserve once up front for all batches.
     for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
@@ -33,15 +32,11 @@ void fillFromRowStorePtrs(
             if (access_index.type != ColumnAccessIndex::Type::RowStore)
                 continue;
 
-            if constexpr (with_defaults)
-                columns[dst_idx]->fillFromRowStorePtrs(type_name[dst_idx].type, row_store_ptrs, access_index.field_offset, access_index.field_size, batch_start, remaining_batch_size);
-            else
-                columns[dst_idx]->fillFromRowStorePtrs(row_store_ptrs, access_index.field_offset, access_index.field_size, batch_start, remaining_batch_size);
+            columns[dst_idx]->fillFromRowStorePtrs(type_name[dst_idx].type, row_store_ptrs, access_index.field_offset, access_index.field_size, batch_start, remaining_batch_size);
         }
     }
 }
 
-template <bool with_defaults>
 void fillFromBlocksAndRowNumbers(
     MutableColumns & columns,
     const ColumnAccessIndexes & output_access_indexes,
@@ -54,29 +49,22 @@ void fillFromBlocksAndRowNumbers(
         if (access_index.type != ColumnAccessIndex::Type::Columns)
             continue;
 
-        if constexpr (with_defaults)
-            columns[dst_idx]->fillFromBlocksAndRowNumbers(type_name[dst_idx].type, access_index.index, columns_with_row_numbers);
-        else
-            columns[dst_idx]->fillFromBlocksAndRowNumbers(access_index.index, columns_with_row_numbers);
+        columns[dst_idx]->fillFromBlocksAndRowNumbers(type_name[dst_idx].type, access_index.index, columns_with_row_numbers);
     }
 }
 
 }
 
-template <bool with_defaults>
 void fillJoinOutputColumns(
     MutableColumns & columns,
     const ColumnAccessIndexes & output_access_indexes,
-    const PaddedPODArray<const char *> & row_store_ptrs,
+    const RowStorePointers & row_store_ptrs,
     std::optional<size_t> batch_size,
     const ColumnsWithRowNumbers & columns_with_row_numbers,
     const NamesAndTypes & type_name)
 {
-    fillFromRowStorePtrs<with_defaults>(columns, output_access_indexes, row_store_ptrs, batch_size, type_name);
-    fillFromBlocksAndRowNumbers<with_defaults>(columns, output_access_indexes, columns_with_row_numbers, type_name);
+    fillFromRowStorePtrs(columns, output_access_indexes, row_store_ptrs, batch_size, type_name);
+    fillFromBlocksAndRowNumbers(columns, output_access_indexes, columns_with_row_numbers, type_name);
 }
-
-template void fillJoinOutputColumns<true>(MutableColumns &, const ColumnAccessIndexes &, const PaddedPODArray<const char *> &, std::optional<size_t>, const ColumnsWithRowNumbers &, const NamesAndTypes &);
-template void fillJoinOutputColumns<false>(MutableColumns &, const ColumnAccessIndexes &, const PaddedPODArray<const char *> &, std::optional<size_t>, const ColumnsWithRowNumbers &, const NamesAndTypes &);
 
 }

@@ -201,10 +201,10 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
         row_nums.reserve(rows_limit);
     }
 
-    [[maybe_unused]] PaddedPODArray<const char *> row_store_ptrs;
+    [[maybe_unused]] RowStorePointers row_store_ptrs;
     [[maybe_unused]] std::optional<size_t> row_store_batch_size;
     if constexpr (from_row_store)
-        row_store_ptrs.reserve(rows_limit);
+        row_store_ptrs.ptrs.reserve(rows_limit);
 
     size_t added_rows = 0;
     size_t row_idx = 0;
@@ -261,7 +261,7 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
                 }
                 if constexpr (from_row_store)
                 {
-                    row_store_ptrs.emplace_back(row_store->getRowAt(row_num));
+                    row_store_ptrs.ptrs.emplace_back(row_store->getRowAt(row_num));
                     if (!row_store_batch_size)
                         row_store_batch_size = row_store->getBatchSize();
                 }
@@ -281,9 +281,13 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
             {
                 many_columns.emplace_back(nullptr);
                 row_nums.emplace_back(0);
+                columns_with_row_numbers.has_defaults = true;
             }
             if constexpr (from_row_store)
-                row_store_ptrs.emplace_back(nullptr);
+            {
+                row_store_ptrs.ptrs.emplace_back(nullptr);
+                row_store_ptrs.has_defaults = true;
+            }
             ++row_idx;
             --rows_limit;
             ++added_rows;
@@ -292,7 +296,7 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
         }
     }
 
-    fillJoinOutputColumns</*with_defaults=*/ true>(columns, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);
+    fillJoinOutputColumns(columns, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);
     return added_rows;
 }
 
@@ -311,10 +315,10 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
         row_nums.reserve(size_to_reserve);
     }
 
-    [[maybe_unused]] PaddedPODArray<const char *> row_store_ptrs;
+    [[maybe_unused]] RowStorePointers row_store_ptrs;
     [[maybe_unused]] std::optional<size_t> row_store_batch_size;
     if constexpr (from_row_store)
-        row_store_ptrs.reserve(size_to_reserve);
+        row_store_ptrs.ptrs.reserve(size_to_reserve);
 
     auto collect = [&](const UInt64 row_ref_i)
     {
@@ -326,7 +330,7 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
         if constexpr (from_row_store)
         {
             const auto & row_store = block_row_stores[refWordBlockNo(row_ref_i)];
-            row_store_ptrs.emplace_back(row_store->getRowAt(refWordRowNo(row_ref_i)));
+            row_store_ptrs.ptrs.emplace_back(row_store->getRowAt(refWordRowNo(row_ref_i)));
             if (!row_store_batch_size)
                 row_store_batch_size = row_store->getBatchSize();
         }
@@ -338,9 +342,13 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
         {
             many_columns.emplace_back(nullptr);
             row_nums.emplace_back(0);
+            columns_with_row_numbers.has_defaults = true;
         }
         if constexpr (from_row_store)
-            row_store_ptrs.emplace_back(nullptr);
+        {
+            row_store_ptrs.ptrs.emplace_back(nullptr);
+            row_store_ptrs.has_defaults = true;
+        }
     };
 
     for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
@@ -364,7 +372,7 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
         }
     }
 
-    fillJoinOutputColumns</*with_defaults=*/ true>(columns, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);
+    fillJoinOutputColumns(columns, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);
 }
 
 template<>

@@ -70,6 +70,7 @@ namespace Setting
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsUInt64 parallel_hash_join_threshold;
+    extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
@@ -1201,9 +1202,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     const auto hash_join_match_hint = getHashJoinMatchHint(stats_collecting_params.match);
     const std::optional<UInt64> row_store_output
         = hash_join_match_hint ? std::optional<UInt64>(hash_join_match_hint->matches) : params.result_rows_estimation;
-    const bool enable_row_store = row_store_ratio == 0.0
-        || (params.rhs_size_estimation && row_store_output
-            && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio);
+    const bool enable_row_store = params.enable_hash_join_row_store
+        && (row_store_ratio == 0.0
+            || (params.rhs_size_estimation && row_store_output
+                && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio));
     table_join->setRowStoreEnabled(enable_row_store);
 
     if (table_join->kind() == JoinKind::Paste)
@@ -1362,6 +1364,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     hash_table_key_hash = 0;
     join_output_key_hash = 0;
     parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
+    enable_hash_join_row_store = settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[Setting::min_rows_ratio_for_hash_join_row_store];
 
     grace_hash_join_initial_buckets = settings[Setting::grace_hash_join_initial_buckets];
@@ -1394,6 +1397,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     hash_table_key_hash = hash_table_key_hash_;
     join_output_key_hash = join_output_key_hash_;
     parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
+    enable_hash_join_row_store = join_settings.enable_hash_join_row_store;
     min_rows_ratio_for_hash_join_row_store = join_settings.min_rows_ratio_for_hash_join_row_store;
 
     grace_hash_join_initial_buckets = join_settings.grace_hash_join_initial_buckets;

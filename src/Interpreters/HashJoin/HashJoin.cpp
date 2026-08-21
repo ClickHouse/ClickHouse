@@ -697,11 +697,11 @@ Block HashJoin::materializeColumnsFromRightBlock(Block block) const
     return JoinCommon::materializeColumnsFromRightBlock(std::move(block), savedBlockSample());
 }
 
-void HashJoin::initRowStore(const Block & block)
+std::optional<ColumnAccessIndexes> HashJoin::initRowStore(const Block & block)
 {
     /// Skip initializing if it's already initialized or disabled.
     if (data->row_store_state != RowStoreState::Enabled)
-        return;
+        return {};
 
     /// Skip using row store when the right table rerange optimization could get triggered.
     /// TODO: allow row store when right table could get reranged and build the reranged table
@@ -709,7 +709,7 @@ void HashJoin::initRowStore(const Block & block)
     if (isRightTableRerangeEnabled())
     {
         data->row_store_state = RowStoreState::Disabled;
-        return;
+        return {};
     }
 
     /// Extract columns suitable for row store.
@@ -730,10 +730,11 @@ void HashJoin::initRowStore(const Block & block)
             access_indexes.push_back({ColumnAccessIndex::Type::Columns, remaining_columns++});
     }
 
-    if (row_store_columns.size() < table_join->minColumnsForHashJoinRowStore())
+    /// Disable row store if it would be built from a single column.
+    if (row_store_columns.size() <= 1)
     {
         data->row_store_state = RowStoreState::Disabled;
-        return;
+        return {};
     }
 
     /// Add each field's offset, size and nullability to the row store access indexes.
@@ -752,6 +753,23 @@ void HashJoin::initRowStore(const Block & block)
     data->column_access_indexes = std::move(access_indexes);
 
     LOG_DEBUG(log, "{}Initialized Row store with {} columns", instance_log_id, row_store_columns.size());
+    return data->column_access_indexes;
+}
+
+void HashJoin::initRowStore(const std::optional<ColumnAccessIndexes> & access_indexes)
+{
+    /// Skip initializing if it's already initialized or disabled.
+    if (data->row_store_state != RowStoreState::Enabled)
+        return;
+
+    if (!access_indexes)
+    {
+        data->row_store_state = RowStoreState::Disabled;
+        return;
+    }
+
+    data->row_store_state = RowStoreState::Initialized;
+    data->column_access_indexes = *access_indexes;
 }
 
 RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const
@@ -1374,7 +1392,7 @@ struct CollectorNonJoined
         [[maybe_unused]] const RowDataStore * const * block_row_stores,
         VectorWithMemoryTracking<const StoredBlock *> & blocks,
         VectorWithMemoryTracking<UInt32> & row_numbers,
-        PaddedPODArray<const char *> & row_store_ptrs,
+        RowStorePointers & row_store_ptrs,
         std::optional<size_t> & row_store_batch_size)
     {
         constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
@@ -1390,7 +1408,7 @@ struct CollectorNonJoined
             if constexpr (with_row_store)
             {
                 const auto * row_store = block_row_stores[block_no];
-                row_store_ptrs.emplace_back(row_store->getRowAt(row_no));
+                row_store_ptrs.ptrs.emplace_back(row_store->getRowAt(row_no));
                 if (!row_store_batch_size)
                     row_store_batch_size = row_store->getBatchSize();
             }
@@ -1443,6 +1461,10 @@ public:
 
         const auto & access_indexes = parent.data->column_access_indexes;
         const Block & saved_block_sample = parent.savedBlockSample();
+
+        type_name.reserve(saved_block_sample.columns());
+        for (const auto & column : saved_block_sample)
+            type_name.emplace_back(column.name, column.type);
 
         output_access_indexes.reserve(saved_block_sample.columns());
         if (parent.data->row_store_state == HashJoin::RowStoreState::Initialized)
@@ -1507,6 +1529,7 @@ private:
     std::optional<HashJoin::StoredBlocksList::const_iterator> used_position;
 
     ColumnAccessIndexes output_access_indexes;
+    NamesAndTypes type_name;
     bool has_row_store = false;
     bool has_columns = false;
 
@@ -1557,17 +1580,17 @@ private:
             row_nums.reserve(max_block_size);
         }
 
-        [[maybe_unused]] PaddedPODArray<const char *> row_store_ptrs;
+        [[maybe_unused]] RowStorePointers row_store_ptrs;
         [[maybe_unused]] std::optional<size_t> row_store_batch_size;
         if constexpr (with_row_store)
-            row_store_ptrs.reserve(max_block_size);
+            row_store_ptrs.ptrs.reserve(max_block_size);
 
         auto collected = [&]() -> size_t
         {
             if constexpr (with_columns)
                 return row_nums.size();
             else
-                return row_store_ptrs.size();
+                return row_store_ptrs.ptrs.size();
         };
 
         if (flag_per_row)
@@ -1599,7 +1622,7 @@ private:
                         if constexpr (with_row_store)
                         {
                             const auto & row_store = mapped_block.row_store;
-                            row_store_ptrs.emplace_back(row_store->getRowAt(row));
+                            row_store_ptrs.ptrs.emplace_back(row_store->getRowAt(row));
                             if (!row_store_batch_size)
                                 row_store_batch_size = row_store->getBatchSize();
                         }
@@ -1679,7 +1702,7 @@ private:
             }
         }
 
-        fillJoinOutputColumns</*with_defaults=*/ false>(columns_right, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers);
+        fillJoinOutputColumns(columns_right, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);
         return collected();
     }
 
@@ -1704,17 +1727,17 @@ private:
             row_nums.reserve(max_block_size);
         }
 
-        [[maybe_unused]] PaddedPODArray<const char *> row_store_ptrs;
+        [[maybe_unused]] RowStorePointers row_store_ptrs;
         [[maybe_unused]] std::optional<size_t> row_store_batch_size;
         if constexpr (with_row_store)
-            row_store_ptrs.reserve(max_block_size);
+            row_store_ptrs.ptrs.reserve(max_block_size);
 
         auto collected = [&]() -> size_t
         {
             if constexpr (with_columns)
                 return row_nums.size();
             else
-                return row_store_ptrs.size();
+                return row_store_ptrs.ptrs.size();
         };
 
         for (auto & it = *nulls_position; it != end && rows_added + collected() < max_block_size; ++it)
@@ -1737,7 +1760,7 @@ private:
                     if constexpr (with_row_store)
                     {
                         const auto & row_store = columns->row_store;
-                        row_store_ptrs.emplace_back(row_store->getRowAt(row));
+                        row_store_ptrs.ptrs.emplace_back(row_store->getRowAt(row));
                         if (!row_store_batch_size)
                             row_store_batch_size = row_store->getBatchSize();
                     }
@@ -1745,7 +1768,7 @@ private:
             }
         }
 
-        fillJoinOutputColumns</*with_defaults=*/ false>(columns_right, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers);
+        fillJoinOutputColumns(columns_right, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);
         rows_added += collected();
     }
 };
@@ -2690,8 +2713,7 @@ void HashJoin::tryConvertToFixedHashMap()
 bool HashJoin::isRowStoreSupported() const
 {
     /// ANY joins materialize eagerly and doesn't run the batched fill the row store accelerates.
-    return table_join->minColumnsForHashJoinRowStore() > 0
-        && kind != JoinKind::Cross
+    return kind != JoinKind::Cross
         && strictness != JoinStrictness::Any
         && !table_join->getClauses().empty()
         && !table_join->getMixedJoinExpression();

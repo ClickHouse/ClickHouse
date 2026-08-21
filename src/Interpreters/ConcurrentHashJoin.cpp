@@ -313,11 +313,13 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
-    /// Initialize the row store layout based on the first block.
+    /// Initialize the row store layout based on the first block. The layout is derived once from the first slot
+    /// and given to the other slots.
     std::call_once(row_store_init_flag, [&]
     {
-        for (auto & hash_join : hash_joins)
-            hash_join->data->initRowStore(right_block);
+        const auto access_indexes = hash_joins[0]->data->initRowStore(right_block);
+        for (size_t i = 1; i < slots; ++i)
+            hash_joins[i]->data->initRowStore(access_indexes);
     });
 
     /// We also build the row store here to avoid building it multiple times on different threads.

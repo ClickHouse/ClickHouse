@@ -731,33 +731,27 @@ static void fillColumnFromRowRefsWithRowStore(ColumnType * col, const DataTypePt
     }
 }
 
-void IColumn::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores)
+void IColumn::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map)
 {
-    fillColumnFromRowRefsWithRowStore<IColumn, false>(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores);
+    if (null_map)
+        fillColumnFromRowRefsWithRowStore<IColumn, true>(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, null_map);
+    else
+        fillColumnFromRowRefsWithRowStore<IColumn, false>(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores);
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores)
+void IColumnHelper<Derived, Parent>::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromRowRefsWithRowStore<Derived, false>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores);
-}
-
-void IColumn::fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> & null_map)
-{
-    fillColumnFromRowRefsWithRowStore<IColumn, true>(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, &null_map);
-}
-
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> & null_map)
-{
-    auto & self = static_cast<Derived &>(*this);
-    fillColumnFromRowRefsWithRowStore<Derived, true>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, &null_map);
+    if (null_map)
+        fillColumnFromRowRefsWithRowStore<Derived, true>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, null_map);
+    else
+        fillColumnFromRowRefsWithRowStore<Derived, false>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores);
 }
 
 /// Fills column values from list of blocks and row numbers
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
-template <bool may_have_nulls, typename ColumnType>
+template <bool has_defaults, typename ColumnType>
 static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
     const auto * columns = columns_with_row_numbers.columns.data();
@@ -768,17 +762,14 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
     col->reserve(col->size() + n);
     for (size_t j = 0; j < n; ++j)
     {
-        if constexpr (may_have_nulls)
+        chassert(has_defaults || columns[j] != nullptr);
+        if constexpr (has_defaults)
         {
             if (!columns[j])
             {
                 type->insertDefaultInto(*col);
                 continue;
             }
-        }
-        else
-        {
-            chassert(columns[j] != nullptr);
         }
 
         if (const auto * source_replicated = columns[j]->replicated_columns[source_column_index_in_block])
@@ -791,12 +782,10 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
 /// Fills column values from list of blocks and row numbers
 void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
-    fillColumnFromBlocksAndRowNumbers<true>(this, type, source_column_index_in_block, columns_with_row_numbers);
-}
-
-void IColumn::fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
-{
-    fillColumnFromBlocksAndRowNumbers<false>(this, /*type=*/ nullptr, source_column_index_in_block, columns_with_row_numbers);
+    if (columns_with_row_numbers.has_defaults)
+        fillColumnFromBlocksAndRowNumbers<true>(this, type, source_column_index_in_block, columns_with_row_numbers);
+    else
+        fillColumnFromBlocksAndRowNumbers<false>(this, /*type=*/ nullptr, source_column_index_in_block, columns_with_row_numbers);
 }
 
 /// Fills column values from list of blocks and row numbers
@@ -804,19 +793,15 @@ template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromBlocksAndRowNumbers<true>(&self, type, source_column_index_in_block, columns_with_row_numbers);
-}
-
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
-{
-    auto & self = static_cast<Derived &>(*this);
-    fillColumnFromBlocksAndRowNumbers<false>(&self, /*type=*/ nullptr, source_column_index_in_block, columns_with_row_numbers);
+    if (columns_with_row_numbers.has_defaults)
+        fillColumnFromBlocksAndRowNumbers<true>(&self, type, source_column_index_in_block, columns_with_row_numbers);
+    else
+        fillColumnFromBlocksAndRowNumbers<false>(&self, /*type=*/ nullptr, source_column_index_in_block, columns_with_row_numbers);
 }
 
 /// Fills column from pre-resolved row data pointers. Devirtualized insertData.
-template <bool may_have_nulls, bool with_null_map, typename ColumnType>
-static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
+template <bool has_defaults, bool with_null_map, typename ColumnType>
+static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & type, const VectorWithMemoryTracking<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
 {
     size_t value_offset = with_null_map ? field_offset + 1 : field_offset;
     size_t value_size = with_null_map ? field_size - 1 : field_size;
@@ -833,7 +818,8 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & typ
     for (size_t i = 0; i < count; ++i)
     {
         const char * row_store_ptr = row_store_ptrs[begin + i];
-        if constexpr (may_have_nulls)
+        chassert(has_defaults || row_store_ptr != nullptr);
+        if constexpr (has_defaults)
         {
             if (!row_store_ptr)
             {
@@ -843,10 +829,6 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & typ
                 continue;
             }
         }
-        else
-        {
-            chassert(row_store_ptr != nullptr);
-        }
 
         if constexpr (with_null_map)
             null_dst[i] = *reinterpret_cast<const UInt8 *>(row_store_ptr + field_offset);
@@ -854,52 +836,35 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & typ
     }
 }
 
-void IColumn::fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
+template <typename ColumnType>
+static void dispatchFillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
 {
-    fillColumnFromRowStorePtrs</*may_have_nulls=*/ true, /*with_null_map=*/ false>(this, type, row_store_ptrs, field_offset, field_size, /*null_map=*/ nullptr, begin, count);
+    if (row_store_ptrs.has_defaults)
+    {
+        if (null_map)
+            fillColumnFromRowStorePtrs</*has_defaults=*/ true, /*with_null_map=*/ true>(col, type, row_store_ptrs.ptrs, field_offset, field_size, null_map, begin, count);
+        else
+            fillColumnFromRowStorePtrs</*has_defaults=*/ true, /*with_null_map=*/ false>(col, type, row_store_ptrs.ptrs, field_offset, field_size, nullptr, begin, count);
+    }
+    else
+    {
+        if (null_map)
+            fillColumnFromRowStorePtrs</*has_defaults=*/ false, /*with_null_map=*/ true>(col, /*type=*/ nullptr, row_store_ptrs.ptrs, field_offset, field_size, null_map, begin, count);
+        else
+            fillColumnFromRowStorePtrs</*has_defaults=*/ false, /*with_null_map=*/ false>(col, /*type=*/ nullptr, row_store_ptrs.ptrs, field_offset, field_size, nullptr, begin, count);
+    }
 }
 
-void IColumn::fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
+void IColumn::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
 {
-    fillColumnFromRowStorePtrs</*may_have_nulls=*/ false, /*with_null_map=*/ false>(this, /*type=*/ nullptr, row_store_ptrs, field_offset, field_size, /*null_map=*/ nullptr, begin, count);
-}
-
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
-{
-    auto & self = static_cast<Derived &>(*this);
-    fillColumnFromRowStorePtrs</*may_have_nulls=*/ true, /*with_null_map=*/ false>(&self, type, row_store_ptrs, field_offset, field_size, /*null_map=*/ nullptr, begin, count);
-}
-
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)
-{
-    auto & self = static_cast<Derived &>(*this);
-    fillColumnFromRowStorePtrs</*may_have_nulls=*/ false, /*with_null_map=*/ false>(&self, /*type=*/ nullptr, row_store_ptrs, field_offset, field_size, /*null_map=*/ nullptr, begin, count);
-}
-
-void IColumn::fillFromRowStorePtrsWithNullMap(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map, size_t begin, size_t count)
-{
-    fillColumnFromRowStorePtrs</*may_have_nulls=*/ true, /*with_null_map=*/ true>(this, type, row_store_ptrs, field_offset, field_size, &null_map, begin, count);
-}
-
-void IColumn::fillFromRowStorePtrsWithNullMap(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map, size_t begin, size_t count)
-{
-    fillColumnFromRowStorePtrs</*may_have_nulls=*/ false, /*with_null_map=*/ true>(this, /*type=*/ nullptr, row_store_ptrs, field_offset, field_size, &null_map, begin, count);
+    dispatchFillColumnFromRowStorePtrs<IColumn>(this, type, row_store_ptrs, field_offset, field_size, null_map, begin, count);
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowStorePtrsWithNullMap(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map, size_t begin, size_t count)
+void IColumnHelper<Derived, Parent>::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromRowStorePtrs</*may_have_nulls=*/ true, /*with_null_map=*/ true>(&self, type, row_store_ptrs, field_offset, field_size, &null_map, begin, count);
-}
-
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowStorePtrsWithNullMap(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map, size_t begin, size_t count)
-{
-    auto & self = static_cast<Derived &>(*this);
-    fillColumnFromRowStorePtrs</*may_have_nulls=*/ false, /*with_null_map=*/ true>(&self, /*type=*/ nullptr, row_store_ptrs, field_offset, field_size, &null_map, begin, count);
+    dispatchFillColumnFromRowStorePtrs<Derived>(&self, type, row_store_ptrs, field_offset, field_size, null_map, begin, count);
 }
 
 template <typename Derived, typename Parent>
