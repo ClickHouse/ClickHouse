@@ -273,6 +273,12 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
 
+    /// The destination has to know all of its table names before we may treat `to_table_name` as free: a
+    /// deferred `system` database still owns the reserved names it has not attached yet.
+    ensurePopulated();
+    if (!inside_database)
+        other_db.ensurePopulated();
+
     if (!inside_database)
         other_db.createDirectories();
 

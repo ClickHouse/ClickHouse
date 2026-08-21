@@ -40,6 +40,13 @@ local_query "SHOW TABLES FROM system LIKE 'persisted'"
 # A name that a deferred system table occupies is not free, even though it is not attached yet.
 local_query "CREATE TABLE system.numbers (x UInt8) ENGINE = Memory" 2>&1 | grep -c "already exists"
 
+# `RENAME` cannot take over a deferred system table name either, and the rejected source table survives.
+local_query "CREATE TABLE system.renamed (x UInt8) ENGINE = MergeTree ORDER BY x; RENAME TABLE system.renamed TO system.numbers" 2>&1 | grep -c "already exists"
+local_query "SELECT count() FROM system.tables WHERE database = 'system' AND name = 'renamed'"
+
+# The same for the ephemeral `system` database of a `--path`-less invocation.
+${CLICKHOUSE_LOCAL} --query "CREATE TABLE system.renamed (x UInt8) ENGINE = Memory; RENAME TABLE system.renamed TO system.numbers" 2>&1 | grep -c "already exists"
+
 # `information_schema` is deferred in the same way.
 local_query "SELECT count() > 0 FROM information_schema.tables WHERE table_schema = 'system'"
 

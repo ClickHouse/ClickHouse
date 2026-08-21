@@ -79,19 +79,22 @@ public:
     /// itself does not trigger population, so a populator can freely add to the database it is filling.
     void setDeferredPopulation(std::function<void(IDatabase &)> populate);
 
+    /// Run the deferred populator if one is still pending. Must be called (without holding `mutex`) by every
+    /// method that observes or modifies the table list. Cheap - a single atomic load - when nothing was deferred,
+    /// which is the case for every database except the ones set up by `setDeferredPopulation`.
+    /// Thread safety analysis is disabled because the populator has to run with `populate_mutex` released (it
+    /// calls back into this database), which the analysis cannot follow across the manual unlock.
+    /// Public because a rename has to populate the *destination* database before it may decide that the target
+    /// name is free: the reserved `system.*` names must stay unavailable even while the rest of the database is
+    /// still deferred.
+    void ensurePopulated() const TSA_NO_THREAD_SAFETY_ANALYSIS;
+
 protected:
     Tables tables TSA_GUARDED_BY(mutex);
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
-
-    /// Run the deferred populator if one is still pending. Must be called (without holding `mutex`) by every
-    /// method that observes or modifies the table list. Cheap - a single atomic load - when nothing was deferred,
-    /// which is the case for every database except the ones set up by `setDeferredPopulation`.
-    /// Thread safety analysis is disabled because the populator has to run with `populate_mutex` released (it
-    /// calls back into this database), which the analysis cannot follow across the manual unlock.
-    void ensurePopulated() const TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
     virtual StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex);
