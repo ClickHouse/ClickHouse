@@ -262,14 +262,13 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
     {
         for (size_t i = 0; i < objects.size(); ++i)
         {
-            const auto & object_from = objects[i];
             if (duplicate_destination[i])
             {
                 LOG_ERROR(
                     log,
                     "Not moving object {}: its destination collides with another object's destination "
                     "(consider setting after_processing_move_preserve_path); leaving the object in place",
-                    object_from.remote_path);
+                    objects[i].remote_path);
                 ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
                 continue;
             }
