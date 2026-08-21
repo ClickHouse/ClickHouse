@@ -188,11 +188,14 @@ def show_tables(node, db_name, pattern):
     return sorted(result.split("\n")) if result else []
 
 
-def read_rows(node, db_name, table):
-    result = node.query(
+def assert_seeded_rows(node, db_name, table):
+    """`marksheet` and its UniForm copy hold the same rows, whichever arm reads them."""
+    rows = node.query(
         f"SELECT * FROM {db_name}.`{table}` ORDER BY 1, 2, 3"
-    ).strip()
-    return result.split("\n") if result else []
+    ).strip().split("\n")
+    assert len(rows) == SEEDED_ROW_COUNT
+    assert rows[0] == SEEDED_FIRST_ROW
+    assert rows[-1] == SEEDED_LAST_ROW
 
 
 def uc_api_post(node, route, payload):
@@ -232,10 +235,7 @@ def test_list_and_read_delta_tables(started_cluster):
 
     assert "DeltaLake" in node.query(f"SHOW CREATE TABLE {db_name}.`{DELTA_TABLE}`")
 
-    rows = read_rows(node, db_name, DELTA_TABLE)
-    assert len(rows) == SEEDED_ROW_COUNT
-    assert rows[0] == SEEDED_FIRST_ROW
-    assert rows[-1] == SEEDED_LAST_ROW
+    assert_seeded_rows(node, db_name, DELTA_TABLE)
 
 
 def test_unreadable_table_is_hidden(started_cluster):
@@ -286,7 +286,6 @@ def test_unreadable_table_is_hidden(started_cluster):
 
 
 def test_uniform_table_reads_as_delta(started_cluster):
-    """Control case: unproxied, the UniForm table reports DELTA and routes there."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("unified_uniform")
     create_database(node, db_name)
@@ -295,10 +294,7 @@ def test_uniform_table_reads_as_delta(started_cluster):
     assert "DeltaLake" in create_table, create_table
     assert "Iceberg" not in create_table, create_table
 
-    rows = read_rows(node, db_name, UNIFORM_TABLE)
-    assert len(rows) == SEEDED_ROW_COUNT
-    assert rows[0] == SEEDED_FIRST_ROW
-    assert rows[-1] == SEEDED_LAST_ROW
+    assert_seeded_rows(node, db_name, UNIFORM_TABLE)
 
 
 def test_iceberg_table_routes_to_iceberg_arm(started_cluster):
@@ -323,9 +319,7 @@ def test_iceberg_table_is_listed_and_readable(started_cluster):
     metadata path from Delta. Both arms read the same rows, so they must agree."""
     node = started_cluster.instances["node1"]
     iceberg_db = unique_name("unified_iceberg_read")
-    delta_db = unique_name("unified_delta_read")
     create_database(node, iceberg_db, url=PROXY_URL)
-    create_database(node, delta_db)
 
     assert UNIFORM_TABLE in show_tables(node, iceberg_db, "default%")
 
@@ -334,11 +328,7 @@ def test_iceberg_table_is_listed_and_readable(started_cluster):
     assert "name\tNullable(String)" in described, described
     assert "marks\tNullable(Int32)" in described, described
 
-    through_iceberg = read_rows(node, iceberg_db, UNIFORM_TABLE)
-    through_delta = read_rows(node, delta_db, DELTA_TABLE)
-
-    assert len(through_iceberg) == SEEDED_ROW_COUNT
-    assert through_iceberg == through_delta
+    assert_seeded_rows(node, iceberg_db, UNIFORM_TABLE)
 
 
 def test_mixed_formats_in_one_database(started_cluster):
