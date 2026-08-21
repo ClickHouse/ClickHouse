@@ -2915,6 +2915,15 @@ static BlockIO executeQueryImpl(
                 // Increment InsertQuery for async insert with inline data
                 ProfileEvents::increment(ProfileEvents::InsertQuery);
 
+                /// Report the buffered data size so that X-ClickHouse-Summary is not all-zero
+                /// when the client does not wait for the flush (issue #57768).
+                Progress accepted_progress;
+                accepted_progress.accepted_bytes = result.accepted_bytes;
+                if (auto process_list_elem = context->getProcessListElement())
+                    process_list_elem->updateProgressIn(accepted_progress);
+                if (auto progress_callback = context->getProgressCallback())
+                    progress_callback(accepted_progress);
+
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
