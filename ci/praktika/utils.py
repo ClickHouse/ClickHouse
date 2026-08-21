@@ -12,6 +12,7 @@ import sys
 import shutil
 import tempfile
 import time
+import uuid
 from abc import ABC, abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -908,7 +909,7 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
         bound exists to prevent. Missing inputs are dropped with a warning, and a
         failed publish returns None.
 
-        The archive is built under a per-process temporary name and renamed into
+        The archive is built under a per-invocation temporary name and renamed into
         place on success only. `tar` killed by the timeout leaves a large truncated
         archive that the upload's existence check accepts, so writing the
         destination directly would publish that truncation as the logs; and the two
@@ -936,22 +937,28 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
             print(f"WARNING: nothing to archive into [{archive_name}]")
             return None
 
-        # Unique per writer: the temporary name is in the destination directory, so
-        # os.replace stays atomic, but two overlapping writers no longer share one
-        # file - which would let the loser keep writing into the published archive.
-        tmp_archive = f"{archive_name}.{os.getpid()}.tmp"
-        with tempfile.NamedTemporaryFile() as f:
-            f.write("\n".join(present).encode())
-            f.flush()
-            # Direct `tar -czf`, not `tar -cf - | gzip`: the pipe reports only
-            # gzip's status (Shell.run does not set pipefail), so a tar that fails
-            # part-way - a test instance directory vanishing mid-job - exits 0 and
-            # would be renamed into place as complete.
-            rc = Shell.run(
-                f"tar --warning=no-file-changed -czf {tmp_archive} -T {f.name}",
-                verbose=True,
-                timeout=timeout,
-            )
+        # Beside the destination, so os.replace stays atomic, and unique per invocation,
+        # so an overlapping writer cannot keep writing into the archive this one
+        # publishes. A pid does not make it unique: the two writers of the job's
+        # logs.tar.gz share this directory across a Docker pid namespace boundary.
+        tmp_archive = f"{archive_name}.{uuid.uuid4().hex}.tmp"
+        try:
+            with tempfile.NamedTemporaryFile() as f:
+                f.write("\n".join(present).encode())
+                f.flush()
+                # Direct `tar -czf`, not `tar -cf - | gzip`: the pipe reports only
+                # gzip's status (Shell.run does not set pipefail), so a tar that fails
+                # part-way - a test instance directory vanishing mid-job - exits 0 and
+                # would be renamed into place as complete.
+                rc = Shell.run(
+                    f"tar --warning=no-file-changed -czf {tmp_archive} -T {f.name}",
+                    verbose=True,
+                    timeout=timeout,
+                )
+        except OSError as e:
+            print(f"WARNING: failed to stage the archive for [{archive_name}]: {e}")
+            cls._discard(tmp_archive)
+            return None
 
         if rc not in cls.TAR_UNCONDITIONALLY_OK_RETURN_CODES:
             if not cls._archive_reads_back(tmp_archive, rc, timeout):

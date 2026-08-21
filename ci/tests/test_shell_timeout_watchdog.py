@@ -35,8 +35,10 @@ since one hoisted out of the retry loop is already set when attempt 2 begins wai
 """
 
 import contextlib
+import errno
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -314,6 +316,32 @@ def test_archive_skips_missing_inputs_without_raising(tmp_path):
     assert "present.txt" in listing, f"the existing input was not archived: {listing!r}"
 
 
+def test_archive_staging_failure_is_reported_not_raised(tmp_path, monkeypatch):
+    """A failure while writing the tar manifest must return None, not raise.
+
+    The manifest is written before tar runs, so a full or read-only temporary filesystem
+    throws here - and an exception loses the caller's result upload just as an unbounded
+    hang did, which is the outcome the whole bound exists to prevent.
+    """
+    src = tmp_path / "a.log"
+    src.write_text("payload\n")
+    archive = tmp_path / "logs.tar.gz"
+
+    def no_space(*args, **kwargs):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", no_space)
+
+    result = Utils.compress_files_gz([str(src)], str(archive), timeout=600)
+
+    assert (
+        result is None
+    ), f"expected None when the manifest cannot be written: {result!r}"
+    assert not archive.exists(), "a failed staging step still published an archive"
+    leftovers = sorted(p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp"))
+    assert leftovers == [], f"staging files were left behind: {leftovers}"
+
+
 def test_archive_of_nothing_returns_none(tmp_path):
     """When no input exists at all there is nothing to publish, and still no raise."""
     archive = tmp_path / "logs.tar.gz"
@@ -358,13 +386,26 @@ def test_archive_cleanup_failure_is_reported_not_raised(tmp_path):
     src.mkdir()
     (src / "a.txt").write_text("payload\n")
     archive = tmp_path / "logs.tar.gz"
-    # The staged path already occupied by a directory: tar cannot write it, and the
-    # cleanup that follows cannot unlink it either.
-    staged = tmp_path / f"logs.tar.gz.{os.getpid()}.tmp"
-    staged.mkdir()
-    (staged / "occupant").write_text("in the way\n")
 
-    result = Utils.compress_files_gz([str(src)], str(archive), timeout=600)
+    # The staged path occupied by a directory, so tar cannot write it and the cleanup
+    # that follows cannot unlink it either. Created from the name the call itself
+    # chooses: a pre-seeded name would not be the one a per-invocation name picks, and
+    # the arm would pass over a run that never reached the cleanup at all.
+    original_run = Shell.run
+
+    def occupy_then_run(command, **kwargs):
+        staged = re.search(r"-czf (\S+)", command)
+        if staged:
+            occupied = Path(staged.group(1))
+            occupied.mkdir()
+            (occupied / "occupant").write_text("in the way\n")
+        return original_run(command, **kwargs)
+
+    Shell.run = staticmethod(occupy_then_run)
+    try:
+        result = Utils.compress_files_gz([str(src)], str(archive), timeout=600)
+    finally:
+        Shell.run = original_run
 
     assert result is None, f"a failed archive reported success ({result!r})"
     assert not archive.exists(), "a failed archive was published at the destination"
@@ -374,8 +415,10 @@ def test_the_temporary_archive_name_is_unique_per_writer(tmp_path):
     """Two writers must not stage into the same temporary file.
 
     A shared name lets one writer's rename publish the file while the other's descriptor
-    follows the inode into the PUBLISHED archive. Asserted by observing the staged name,
-    because reproducing the overlap needs two processes racing on one path.
+    follows the inode into the PUBLISHED archive. Asserted by observing that two calls
+    for the same destination choose different names, which a pid-derived name does not
+    satisfy: the job script archives this path from inside Docker's own pid namespace
+    while sharing the directory with the host, so both writers can be pid 1.
     """
     staged = []
 
@@ -383,21 +426,30 @@ def test_the_temporary_archive_name_is_unique_per_writer(tmp_path):
         staged.append(command)
         return 0
 
+    destination = str(tmp_path / "logs.tar.gz")
     original_run = Shell.run
     Shell.run = staticmethod(record)
     try:
-        Utils.compress_files_gz([str(Path(__file__))], str(tmp_path / "logs.tar.gz"))
-    except Exception:
-        pass
+        for _ in range(2):
+            Utils.compress_files_gz([str(Path(__file__))], destination)
     finally:
         Shell.run = original_run
 
-    assert staged, "compress_files_gz did not invoke Shell.run"
-    for command in staged:
-        assert f"logs.tar.gz.{os.getpid()}.tmp" in command, (
-            f"the archive is staged under a name shared by every writer: {command!r}. A "
-            "second writer would keep writing into the archive the first one published"
+    assert len(staged) == 2, f"compress_files_gz did not stage twice: {staged!r}"
+    names = [re.search(r"-czf (\S+)", command).group(1) for command in staged]
+    for name in names:
+        assert name != destination, (
+            f"the archive is written straight to its destination ({name!r}); a tar cut "
+            "short by the timeout would be published as the logs"
         )
+        assert name.startswith(destination), (
+            f"the staging file {name!r} is not beside its destination, so the publishing "
+            "rename is no longer atomic"
+        )
+    assert names[0] != names[1], (
+        f"both writers stage into the same file ({names[0]!r}). The loser would keep "
+        "writing into the archive the winner published"
+    )
 
 
 def test_archive_success_publishes_a_complete_archive(tmp_path):

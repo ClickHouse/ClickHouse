@@ -30,6 +30,7 @@ upload (`test_shell_timeout_watchdog.py`).
 
 import ast
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -202,18 +203,29 @@ def test_main_hands_the_checkpoint_its_collected_results():
     ]
     assert calls, f"main() never calls {_CHECKPOINT_HELPER}"
 
+    # Bound to the helper's own parameter order, so each argument is checked where the
+    # helper reads it. Membership alone is satisfied by a call that swaps two arguments,
+    # which silently hands the results list to the truthy local-run guard.
+    params = [arg.arg for arg in _find_checkpoint(tree).args.args]
     for node in calls:
-        passed = node.args + [kw.value for kw in node.keywords]
-        names = [arg.id for arg in passed if isinstance(arg, ast.Name)] + [
-            arg.attr for arg in passed if isinstance(arg, ast.Attribute)
-        ]
-        assert "test_results" in names, (
-            f"the checkpoint call at line {node.lineno} does not pass `test_results` "
-            f"(passes {names}); anything else can persist an empty report"
+        bound = dict(zip(params, node.args))
+        bound.update({kw.arg: kw.value for kw in node.keywords if kw.arg})
+
+        def name_of(value):
+            if isinstance(value, ast.Name):
+                return value.id
+            if isinstance(value, ast.Attribute):
+                return value.attr
+            return ast.dump(value)
+
+        got = {param: name_of(value) for param, value in bound.items()}
+        assert got.get("test_results") == "test_results", (
+            f"the checkpoint call at line {node.lineno} does not pass `test_results` as "
+            f"`test_results` (binds {got}); anything else can persist an empty report"
         )
-        assert "is_local_run" in names, (
-            f"the checkpoint call at line {node.lineno} hard-codes its local-run flag "
-            f"(passes {names}); the helper's guard would then decide on a constant"
+        assert got.get("is_local_run") == "is_local_run", (
+            f"the checkpoint call at line {node.lineno} does not pass `is_local_run` as "
+            f"`is_local_run` (binds {got}); the guard would then read another value"
         )
 
 
@@ -341,9 +353,11 @@ def test_the_on_error_hook_publishes_its_archive_by_rename():
             "the on_error_hook archives straight to its destination; a tar cut short by "
             f"the hook timeout would be published as the logs. Hook:\n{hook}"
         )
+        # `mktemp`, not `$$`: the job script archives the same path from inside Docker's
+        # own pid namespace, so a pid can name the file both writers stage into.
         assert (
-            "tmp_archive=./ci/tmp/logs.tar.gz.$$.tmp" in hook
-        ), f"the hook's temporary archive name is not unique per shell. Hook:\n{hook}"
+            "tmp_archive=$(mktemp ./ci/tmp/logs.tar.gz.XXXXXXXX.tmp)" in hook
+        ), f"the hook's temporary archive name is not unique per writer. Hook:\n{hook}"
         assert (
             'mv "$tmp_archive" ./ci/tmp/logs.tar.gz' in hook
         ), f"the on_error_hook never renames its temporary archive in. Hook:\n{hook}"
@@ -371,6 +385,133 @@ def test_the_on_error_hook_publishes_its_archive_by_rename():
             "the on_error_hook reads the archive back only after publishing it, so the "
             f"check cannot gate the rename. Hook:\n{hook}"
         )
+
+
+def _run_hook(workdir, hook):
+    """Run the hook literal verbatim in `workdir`, stubbing what needs privileges.
+
+    The stubs are prepended on PATH rather than edited into the body, so the shell the
+    job actually installs is the shell under test. Everything the assertions read - the
+    tar, its rc branch, the rename and the cleanup - runs unstubbed and unprivileged.
+    """
+    stubs = workdir / "stubs"
+    stubs.mkdir(exist_ok=True)
+    for name in ("dmesg", "sudo"):
+        stub = stubs / name
+        stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        stub.chmod(0o755)
+
+    env = dict(os.environ, PATH=f"{stubs}:{os.environ['PATH']}")
+    return subprocess.run(
+        ["bash", "-c", hook],
+        cwd=workdir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+
+
+def _hook_literals():
+    with open(_JOB_SCRIPT, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
+    hooks = [
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "set_on_error_hook"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+    ]
+    assert hooks, "no on_error_hook literal found in the job script"
+    return hooks
+
+
+def test_the_on_error_hook_publishes_a_usable_archive_it_could_not_exit_cleanly_on(
+    tmp_path,
+):
+    """The hook must RUN and publish, on the rc its own globs produce.
+
+    The arm above reads tokens only, so it passes over a body that can never reach the
+    rename (an `exit 0` before the rc branch keeps every token in place). Here the shell
+    runs: with no `_instances` directory the glob stays unexpanded and tar exits 2 having
+    archived every input that did exist, which is the path the hook exists to serve.
+    """
+    for hook in _hook_literals():
+        work = tmp_path / "run"
+        (work / "ci/tmp").mkdir(parents=True, exist_ok=True)
+        (work / "tests/integration").mkdir(parents=True, exist_ok=True)
+        (work / "ci/tmp/job.log").write_text("job\n" * 1000, encoding="utf-8")
+        (work / "ci/tmp/host_metrics.jsonl").write_text("{}\n", encoding="utf-8")
+
+        proc = _run_hook(work, hook)
+
+        published = work / "ci/tmp/logs.tar.gz"
+        assert published.is_file(), (
+            "the on_error_hook published no archive on the unexpanded-glob path, which "
+            f"is the one it exists to serve. rc={proc.returncode}\n{proc.stdout}\n"
+            f"{proc.stderr}"
+        )
+        listing = subprocess.run(
+            ["tar", "-tzf", str(published)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert (
+            listing.returncode == 0
+        ), f"the published archive does not read back: {listing.stderr}"
+        assert (
+            "job.log" in listing.stdout
+        ), f"the published archive is missing an input that existed: {listing.stdout}"
+        assert not list(
+            work.glob("ci/tmp/*.tmp")
+        ), "the on_error_hook left its temporary archive behind after publishing"
+
+
+def test_the_on_error_hook_rejects_a_truncated_archive_and_keeps_the_published_one(
+    tmp_path,
+):
+    """A truncated archive must never replace one already on disk.
+
+    The hook's own timeout kills tar mid-write, and the upload only checks that the file
+    exists, so publishing that truncation would hand the report an unreadable tarball.
+    Driven by making the readback fail rather than by racing a timeout.
+    """
+    for hook in _hook_literals():
+        work = tmp_path / "reject"
+        (work / "ci/tmp").mkdir(parents=True, exist_ok=True)
+        (work / "tests/integration").mkdir(parents=True, exist_ok=True)
+        (work / "ci/tmp/job.log").write_text("job\n" * 1000, encoding="utf-8")
+
+        # A `tar` that reports failure and leaves an unreadable staging file, so both
+        # the rc branch and the readback gate see the truncation case.
+        stubs = work / "stubs"
+        stubs.mkdir(exist_ok=True)
+        (stubs / "tar").write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "-tzf" ]; then exit 2; fi\n'
+            'for a in "$@"; do case "$prev" in -czf) printf garbage >"$a";; esac; '
+            'prev="$a"; done\n'
+            "exit 2\n",
+            encoding="utf-8",
+        )
+        (stubs / "tar").chmod(0o755)
+
+        keeper = work / "ci/tmp/logs.tar.gz"
+        keeper.write_bytes(b"the archive the normal path already published")
+        before = keeper.read_bytes()
+
+        _run_hook(work, hook)
+
+        assert (
+            keeper.read_bytes() == before
+        ), "the on_error_hook replaced a published archive with a truncated one"
+        assert not list(
+            work.glob("ci/tmp/*.tmp")
+        ), "the on_error_hook left its rejected temporary archive behind"
 
 
 def test_checkpoint_uses_the_existing_result_not_a_fresh_one():

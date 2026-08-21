@@ -765,7 +765,7 @@ def main():
         """
 dmesg -T >./ci/tmp/dmesg.log
 sudo chown -R $(id -u):$(id -g) ./tests/integration
-tmp_archive=./ci/tmp/logs.tar.gz.$$.tmp
+tmp_archive=$(mktemp ./ci/tmp/logs.tar.gz.XXXXXXXX.tmp)
 tar --warning=no-file-changed -czf "$tmp_archive" \
   ./tests/integration/test_*/_instances*/ \
   ./ci/tmp/*.log \
