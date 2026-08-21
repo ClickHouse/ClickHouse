@@ -460,7 +460,7 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 <Note>
   يجب أن يكون للعمود `input` [فهرس نصي](/ar/reference/engines/table-engines/mergetree-family/textindexes) معرّف لضمان أفضل أداء.
-  إذا لم يكن هناك فهرس نصي معرّف، فستُجري الدالة مسحًا كاملًا للعمود دون استخدام فهرس، وهو أبطأ بكثير من البحث باستخدام فهرس.
+  إذا لم يكن هناك فهرس نصي معرّف، فستُجري الدالة مسحًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بكثير من البحث باستخدام فهرس.
 </Note>
 
 قبل البحث، تُجزِّئ الدالة إلى رموز:
@@ -488,13 +488,13 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 hasAllTokens(input, needles)
 ```
 
-**الأسماء البديلة**: `hasAllToken`
+**اسم مستعار**: `hasAllToken`
 
 **الوسيطات**
 
 * `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array)
 * `needles` — الرموز المراد البحث عنها. [`String`](/ar/reference/data-types/string) أو [`Array(String)`](/ar/reference/data-types/array)
-* `tokenizer` — مُجزِّئ الرموز المميزّة المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`ngrams` و`sparseGrams` و`array`. وهو اختياري، وإذا لم يُحدَّد صراحةً، فستكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — مُجزِّئ الرموز المميزّة المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. وهو اختياري، وإذا لم يُحدَّد صراحةً، فستكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
@@ -690,7 +690,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   يجب تعريف [فهرس نصي](/ar/reference/engines/table-engines/mergetree-family/textindexes) على العمود `input` لتحقيق أفضل أداء.
-  وإذا لم يكن هناك فهرس نصي معرّف، فستُجري الدالة فحصًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بعدة مراتب من البحث باستخدام فهرس.
+  وإذا لم يكن هناك فهرس نصي معرّف، فستُجري الدالة مسحًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بعدة مراتب من البحث باستخدام فهرس.
 </Note>
 
 قبل البحث، تُجزِّئ الدالة إلى رموز:
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable) أو [`Nullable(FixedString)`](/ar/reference/data-types/nullable) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array) أو [`Array(Nullable(String))`](/ar/reference/data-types/array) أو [`Array(Nullable(FixedString))`](/ar/reference/data-types/array)
 * `needles` — الرموز المراد البحث عنها. [`String`](/ar/reference/data-types/string) أو [`Array(String)`](/ar/reference/data-types/array)
-* `tokenizer` — مُجزِّئ الرموز المستخدم. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، تكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
+* `tokenizer` — مُجزِّئ الرموز المستخدم. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. هذا الوسيط اختياري، وإذا لم يُحدَّد صراحةً، تكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**حدِّد سلاسل البحث المطلوب البحث عنها كما هي (من دون تجزئة إلى رموز) داخل مصفوفة**
+**حدِّد سلاسل البحث للبحث عنها كما هي (من دون تجزئة إلى رموز) ضمن مصفوفة**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -908,12 +908,12 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   يجب أن يكون للعمود `input` [فهرس نصي](/ar/reference/engines/table-engines/mergetree-family/textindexes) مُعرّف للحصول على أفضل أداء.
-  إذا لم يكن هناك فهرس نصي مُعرّف، فستُجري الدالة فحصًا كاملًا للعمود، وهو أبطأ بعدة مراتب من البحث عبر الفهرس.
+  إذا لم يكن هناك فهرس نصي مُعرّف، فستُجري الدالة مسحًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بعدة مراتب من البحث عبر الفهرس.
 </Note>
 
 قبل البحث، تُجزِّئ الدالة كلًّا من الوسيطين `input` و`phrase` إلى رموز باستخدام مُجزِّئ الرموز المحدد للفهرس النصي.
 إذا لم يكن للعمود فهرس نصي مُعرّف، فسيُستخدم بدلًا من ذلك مُجزِّئ الرموز `splitByNonAlpha` — ما لم يتم تمرير مُجزِّئ رموز باعتباره الوسيط الثالث الاختياري.
-يجب أن يكون وسيط مُجزِّئ الرموز واحدًا من `splitByNonAlpha` أو `splitByString` أو `ngrams` أو `asciiCJK`.
+يجب أن يكون وسيط مُجزِّئ الرموز واحدًا من `splitByNonAlpha` أو `splitByString` أو `ngrams` أو `asciiCJK` أو `icu`.
 
 <Note>
   عندما يعرّف الفهرس النصي [معالجًا مسبقًا](/ar/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (على سبيل المثال `lowerUTF8`)، تطبّقه `hasPhrase` على كلٍّ من `input` و`phrase` قبل تجزئتهما إلى رموز.

@@ -47,7 +47,7 @@ Une telle table est en lecture seule : les opérations `INSERT` n&#39;y sont pa
 <Note>
   La forme de sous-requête `(SELECT ...)` est analysée par ClickHouse puis re-sérialisée avant d&#39;être envoyée à SQLite. Elle doit donc être valide en SQL ClickHouse. Pour transmettre une syntaxe spécifique à SQLite que ClickHouse n&#39;analyse pas, utilisez la forme `query('...')`, dont le texte est envoyé tel quel à SQLite.
 
-  Tout `WHERE`, `LIMIT`, toute agrégation, etc. externe de la requête ClickHouse englobante n&#39;est **pas** répercuté dans la requête transmise : ils sont appliqués dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis SQLite, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings#external_table_strict_query), un filtre externe qui ne peut pas être répercuté est rejeté avec une exception au lieu d&#39;être appliqué localement.
+  Tout `WHERE`, `LIMIT`, toute agrégation, etc. externe de la requête ClickHouse englobante n&#39;est **pas** répercuté dans la requête transmise : ils sont appliqués dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis SQLite, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe qui ne peut pas être répercuté est rejeté avec une exception au lieu d&#39;être appliqué localement.
 </Note>
 
 <div id="data-types-support">

@@ -522,7 +522,8 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
-    analyzePostings(postings_serialization, *postings_stream, state);
+    if (!state.skip_postings_deserialization)
+        analyzePostings(postings_serialization, *postings_stream, state);
 
     const auto & settings = condition_text.getContext()->getSettingsRef();
     analyzer->analyzeCardinalitiesAndBypassHints(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part.rows_count);
@@ -1905,12 +1906,8 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     return substreams;
 }
 
-MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
-    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
-        if (part.isSystemColumnInvalidated(column))
-            return {0, {}};
-
     if (!indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
         return {0, {}};
 

@@ -1,12 +1,12 @@
 ---
 description: '연산자 문서'
-sidebarTitle: '연산자'
+sidebarTitle: '개요'
 slug: /sql-reference/operators/
 title: '연산자'
 doc_type: 'reference'
 ---
 
-ClickHouse는 쿼리 파싱 단계에서 연산자의 priority, precedence, 결합 방향에 따라 해당하는 함수로 변환합니다.
+ClickHouse는 쿼리 파싱 단계에서 연산자의 우선순위, precedence, 결합 방향에 따라 해당하는 함수로 변환합니다.
 
 <div id="access-operators">
   ## 접근 연산자
@@ -493,7 +493,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 | `Date32` | `Time64(s)` | `DateTime64(s)` |
 
 <Note>
-  결과에는 세션 시간대([session timezone](/ko/reference/settings/session-settings#session_timezone))가 사용됩니다(세션 시간대가 설정되지 않은 경우 서버 기본 시간대 사용). [`date_time_overflow_behavior`](/ko/reference/settings/formats#date_time_overflow_behavior) 설정은 결과가 표현 가능한 범위를 벗어날 때의 동작을 제어합니다.
+  결과에는 세션 시간대([session timezone](/ko/reference/settings/session-settings/other#session_timezone))가 사용됩니다(세션 시간대가 설정되지 않은 경우 서버 기본 시간대 사용). [`date_time_overflow_behavior`](/ko/reference/settings/formats/date-time#date_time_overflow_behavior) 설정은 결과가 표현 가능한 범위를 벗어날 때의 동작을 제어합니다.
 </Note>
 
 예시:
@@ -540,12 +540,12 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 | `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
 | `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
 
-`zone`은 유효한 시간대 이름으로 평가되는 임의의 상수 문자열 표현식일 수 있습니다(예: `'America/Denver'`, `'UTC'`, 또는 `concat('America', '/', 'Denver')`). `AT TIME ZONE`은 `toTimeZone`으로 변환되므로 동일한 시간대 인수 규칙이 적용됩니다. 따라서 컬럼 참조와 같은 비상수 표현식을 사용하려면 [`allow_nonconst_timezone_arguments = 1`](/ko/reference/settings/session-settings#allow_nonconst_timezone_arguments)이 필요합니다.
+`zone`은 유효한 시간대 이름으로 평가되는 임의의 상수 문자열 표현식일 수 있습니다(예: `'America/Denver'`, `'UTC'`, 또는 `concat('America', '/', 'Denver')`). `AT TIME ZONE`은 `toTimeZone`으로 변환되므로 동일한 시간대 인수 규칙이 적용됩니다. 따라서 컬럼 참조와 같은 비상수 표현식을 사용하려면 [`allow_nonconst_timezone_arguments = 1`](/ko/reference/settings/session-settings/allow#allow_nonconst_timezone_arguments)이 필요합니다.
 
-`AT LOCAL`은 현재 [세션 시간대](/ko/reference/settings/session-settings#session_timezone)을 사용합니다(세션 시간대이 설정되지 않은 경우 서버 기본값 사용). `Distributed` 테이블에서는 `session_timezone`을 명시적으로 설정해야 합니다. 비어 있으면 `timeZone()`은 세그먼트 로컬이므로 상수 `toTimeZone` 인수로 사용할 수 없어 `ILLEGAL_COLUMN` 예외가 발생합니다.
+`AT LOCAL`은 현재 [세션 시간대](/ko/reference/settings/session-settings/other#session_timezone)을 사용합니다(세션 시간대가 설정되지 않은 경우 서버 기본값 사용). `Distributed` 테이블에서는 `session_timezone`을 명시적으로 설정해야 합니다. 비어 있으면 `timeZone()`은 세그먼트 로컬이므로 상수 `toTimeZone` 인수로 사용할 수 없어 `ILLEGAL_COLUMN` 예외가 발생합니다.
 
 <Note>
-  PostgreSQL에서는 `timestamp without time zone AT TIME ZONE zone`이 변환 전에 시계상 값을 지정된 시간대의 값으로 다시 해석하지만, ClickHouse는 항상 동일한 절대 시점을 유지하고 표시할 때 사용하는 시간대 레이블만 변경합니다. 두 형식 모두 `toTimeZone`과 동일하며 기본 timestamp 값은 변경하지 않습니다.
+  PostgreSQL에서는 `timestamp without time zone AT TIME ZONE zone`이 변환 전에 시계상 값을 지정된 시간대의 값으로 다시 해석하지만, ClickHouse는 항상 동일한 절대 시점을 유지하고 표시할 때 사용하는 시간대 레이블만 변경합니다. 두 형식 모두 `toTimeZone`과 동일하며 내부 timestamp는 변경하지 않습니다.
 </Note>
 
 `AT TIME ZONE`의 연산자 precedence는 13입니다(`*`/`/`/`%`의 12보다 높고 `+`/`-`의 11보다 높음). 이는 PostgreSQL과 일치합니다. 즉, `a * ts AT TIME ZONE 'tz'`는 `a * (ts AT TIME ZONE 'tz')`로 묶이고, `ts + interval AT TIME ZONE 'tz'`는 `ts + (interval AT TIME ZONE 'tz')`로 묶입니다. 산술 연산 후에 시간대 변환을 적용하려면 명시적으로 괄호를 사용하십시오:
@@ -682,7 +682,7 @@ ClickHouse는 `IS NULL` 및 `IS NOT NULL` 연산자를 지원합니다.
   * 그렇지 않으면 `0`
 * 그 밖의 값에서는 `IS NULL` 연산자가 항상 `0`을 반환합니다.
 
-[optimize&#95;functions&#95;to&#95;subcolumns](/ko/reference/settings/session-settings#optimize_functions_to_subcolumns) 설정을 활성화하면 이 동작을 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 함수는 전체 컬럼 데이터를 읽고 처리하는 대신 [null](/ko/reference/data-types/nullable#finding-null) 서브컬럼만 읽습니다. `SELECT n IS NULL FROM table` 쿼리는 `SELECT n.null FROM TABLE`로 변환됩니다.
+[optimize&#95;functions&#95;to&#95;subcolumns](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정을 활성화하면 이 동작을 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 함수는 전체 컬럼 데이터를 읽고 처리하는 대신 [null](/ko/reference/data-types/nullable#finding-null) 서브컬럼만 읽습니다. `SELECT n IS NULL FROM table` 쿼리는 `SELECT n.null FROM TABLE`로 변환됩니다.
 
 {/* */}
 
@@ -717,7 +717,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-[optimize&#95;functions&#95;to&#95;subcolumns](/ko/reference/settings/session-settings#optimize_functions_to_subcolumns) 설정을 활성화하면 이를 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 함수는 전체 컬럼 데이터를 읽고 처리하는 대신 [null](/ko/reference/data-types/nullable#finding-null) 서브컬럼만 읽습니다. 쿼리 `SELECT n IS NOT NULL FROM table`는 `SELECT NOT n.null FROM TABLE`로 변환됩니다.
+[optimize&#95;functions&#95;to&#95;subcolumns](/ko/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 설정을 활성화하면 이를 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 함수는 전체 컬럼 데이터를 읽고 처리하는 대신 [null](/ko/reference/data-types/nullable#finding-null) 서브컬럼만 읽습니다. 쿼리 `SELECT n IS NOT NULL FROM table`는 `SELECT NOT n.null FROM TABLE`로 변환됩니다.
 
 <div id="checking-boolean-values">
   ## 불리언 값 확인

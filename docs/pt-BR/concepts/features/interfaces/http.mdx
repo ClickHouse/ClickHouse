@@ -36,9 +36,9 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-&quot;Ok.&quot; é o valor padrão definido em [`http_server_default_response`](/pt-BR/reference/settings/server-settings/settings#http_server_default_response) e pode ser alterado, se desejar.
+&quot;Ok.&quot; é o valor padrão definido em [`http_server_default_response`](/pt-BR/reference/settings/server-settings/settings/http#http_server_default_response) e pode ser alterado, se desejar.
 
-Veja também: [Observações sobre códigos de resposta HTTP](#http_response_codes_caveats).
+Veja também: [Ressalvas sobre códigos de resposta HTTP](#http_response_codes_caveats).
 
 <div id="web-ui">
   ## Interface web
@@ -298,7 +298,7 @@ A compressão pode ser usada para reduzir o tráfego de rede ao transmitir grand
 
 Ao transmitir dados, você pode usar o formato de compressão interno do ClickHouse. Os dados comprimidos têm um formato não padrão, e você precisa do programa `clickhouse-compressor` para trabalhar com eles. Ele é instalado por padrão com o pacote `clickhouse-client`.
 
-Para aumentar a eficiência da inserção de dados, desative a verificação de checksum no lado do servidor com a configuração [`http_native_compression_disable_checksumming_on_decompress`](/pt-BR/reference/settings/session-settings#http_native_compression_disable_checksumming_on_decompress).
+Para aumentar a eficiência da inserção de dados, desative a verificação de checksum no lado do servidor com a configuração [`http_native_compression_disable_checksumming_on_decompress`](/pt-BR/reference/settings/session-settings/http#http_native_compression_disable_checksumming_on_decompress).
 
 Se você especificar `compress=1` na URL, o servidor comprimirá os dados enviados para você. Se você especificar `decompress=1` na URL, o servidor descomprimirá os dados enviados no método `POST`.
 
@@ -313,11 +313,11 @@ Você também pode optar por usar a [compressão HTTP](https://en.wikipedia.org/
 * `bz2`
 * `snappy`
 
-Para enviar uma solicitação `POST` comprimida, adicione o cabeçalho de solicitação `Content-Encoding: compression_method`.
+Para enviar uma solicitação `POST` comprimida, adicione o cabeçalho da solicitação `Content-Encoding: compression_method`.
 
 Para que o ClickHouse comprima a resposta, adicione o cabeçalho `Accept-Encoding: compression_method` à solicitação.
 
-Você pode configurar o nível de compressão dos dados usando a configuração [`http_zlib_compression_level`](/pt-BR/reference/settings/session-settings#http_zlib_compression_level) para todos os métodos de compressão.
+Você pode configurar o nível de compressão dos dados usando a configuração [`http_zlib_compression_level`](/pt-BR/reference/settings/session-settings/http#http_zlib_compression_level) para todos os métodos de compressão.
 
 <Info>
   Alguns clientes HTTP podem descomprimir por padrão os dados recebidos do servidor (com `gzip` e `deflate`), e você pode receber dados descomprimidos mesmo que use corretamente as configurações de compressão.
@@ -450,7 +450,7 @@ Por padrão, a sessão é encerrada após 60 segundos de inatividade. Para alter
 
 Para verificar o status da sessão, use o parâmetro `session_check=1`. Apenas uma consulta por vez pode ser executada em uma única sessão.
 
-Você pode receber informações sobre o progresso de uma consulta nos cabeçalhos de resposta `X-ClickHouse-Progress`. Para isso, habilite [`send_progress_in_http_headers`](/pt-BR/reference/settings/session-settings#send_progress_in_http_headers).
+Você pode receber informações sobre o progresso de uma consulta nos cabeçalhos de resposta `X-ClickHouse-Progress`. Para isso, habilite [`send_progress_in_http_headers`](/pt-BR/reference/settings/session-settings/send#send_progress_in_http_headers).
 
 Abaixo está um exemplo da sequência de cabeçalhos:
 
@@ -476,10 +476,10 @@ As requisições em execução não param automaticamente se a conexão HTTP for
 
 Existem os seguintes parâmetros opcionais:
 
-| Parâmetros             | Descrição                                                                                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `query_id` (opcional)  | Pode ser informado como o ID da consulta (qualquer string). [`replace_running_query`](/pt-BR/reference/settings/session-settings#replace_running_query) |
-| `quota_key` (opcional) | Pode ser informado como a chave de quota (qualquer string). [&quot;Quotas&quot;](/pt-BR/concepts/features/configuration/server-config/quotas)           |
+| Parâmetros             | Descrição                                                                                                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query_id` (opcional)  | Pode ser informado como o ID da consulta (qualquer string). [`replace_running_query`](/pt-BR/reference/settings/session-settings/replace-running-query#replace_running_query) |
+| `quota_key` (opcional) | Pode ser informado como a chave de quota (qualquer string). [&quot;Quotas&quot;](/pt-BR/concepts/features/configuration/server-config/quotas)                                 |
 
 A interface HTTP permite passar dados externos (tabelas temporárias externas) para consulta. Para mais informações, consulte [&quot;Dados externos para processamento de consultas&quot;](/pt-BR/reference/engines/table-engines/special/external-data).
 
@@ -494,8 +494,8 @@ A bufferização de resposta pode ser habilitada no lado do servidor. Os seguint
 
 As seguintes configurações podem ser usadas:
 
-* [`http_response_buffer_size`](/pt-BR/reference/settings/session-settings#http_response_buffer_size)
-* [`http_wait_end_of_query`](/pt-BR/reference/settings/session-settings#http_wait_end_of_query)
+* [`http_response_buffer_size`](/pt-BR/reference/settings/session-settings/http-response#http_response_buffer_size)
+* [`http_wait_end_of_query`](/pt-BR/reference/settings/session-settings/http#http_wait_end_of_query)
 
 `buffer_size` determina o número de bytes do resultado a serem armazenados em buffer na memória do servidor. Se o corpo do resultado for maior que esse limite, o buffer será gravado no canal HTTP, e os dados restantes serão enviados diretamente para o canal HTTP.
 
@@ -567,7 +567,7 @@ O motivo desse comportamento é a própria natureza do protocolo HTTP. O cabeça
 
 Esse comportamento é independente do formato usado, seja `Native`, `TSV` ou `JSON`; a mensagem de erro sempre aparecerá no meio do fluxo de resposta.
 
-Você pode mitigar esse problema habilitando `wait_end_of_query=1` ([Buffering de resposta](#response-buffering)). Nesse caso, o envio do cabeçalho HTTP é adiado até que toda a consulta seja concluída. No entanto, isso não resolve completamente o problema, porque o resultado ainda precisa caber em [`http_response_buffer_size`](/pt-BR/reference/settings/session-settings#http_response_buffer_size), e outras configurações, como [`send_progress_in_http_headers`](/pt-BR/reference/settings/session-settings#send_progress_in_http_headers), podem interferir no atraso do cabeçalho.
+Você pode mitigar esse problema habilitando `wait_end_of_query=1` ([bufferização de resposta](#response-buffering)). Nesse caso, o envio do cabeçalho HTTP é adiado até que toda a consulta seja concluída. No entanto, isso não resolve completamente o problema, porque o resultado ainda precisa caber em [`http_response_buffer_size`](/pt-BR/reference/settings/session-settings/http-response#http_response_buffer_size), e outras configurações, como [`send_progress_in_http_headers`](/pt-BR/reference/settings/session-settings/send#send_progress_in_http_headers), podem interferir no atraso do cabeçalho.
 
 <Tip>
   A única forma de capturar todos os erros é analisar o corpo HTTP antes de fazer o parsing usando o formato necessário.
@@ -821,7 +821,7 @@ Os métodos de configuração para diferentes `type`s são discutidos a seguir.
 
 O valor de `query` é uma consulta predefinida de `predefined_query_handler`, executada pelo ClickHouse quando uma requisição HTTP corresponde a ela, e o resultado da consulta é retornado. Essa configuração é obrigatória.
 
-O exemplo a seguir define os valores das configurações [`max_threads`](/pt-BR/reference/settings/session-settings#max_threads) e [`max_final_threads`](/pt-BR/reference/settings/session-settings#max_final_threads) e, em seguida, consulta a tabela de sistema para verificar se essas configurações foram definidas com sucesso.
+O exemplo a seguir define os valores das configurações [`max_threads`](/pt-BR/reference/settings/session-settings/max-threads#max_threads) e [`max_final_threads`](/pt-BR/reference/settings/session-settings/max#max_final_threads) e, em seguida, consulta a tabela de sistema para verificar se essas configurações foram definidas com sucesso.
 
 <Note>
   Para manter os `handlers` padrão, como `query`, `play` e `ping`, adicione a regra `<defaults/>`.
@@ -903,7 +903,7 @@ Em `dynamic_query_handler`, a consulta é escrita como um parâmetro da requisi�
 
 O ClickHouse extrai e executa o valor correspondente a `query_param_name` na URL da requisição HTTP. O valor padrão de `query_param_name` é `/query`. Essa é uma configuração opcional. Se não houver definição no arquivo de configuração, o parâmetro não será passado.
 
-Para testar essa funcionalidade, o exemplo a seguir define os valores de [`max_threads`](/pt-BR/reference/settings/session-settings#max_threads) e `max_final_threads` e consulta se as configurações foram definidas com sucesso.
+Para testar essa funcionalidade, o exemplo a seguir define os valores de [`max_threads`](/pt-BR/reference/settings/session-settings/max-threads#max_threads) e `max_final_threads` e consulta se as configurações foram definidas com sucesso.
 
 Exemplo:
 
@@ -1187,7 +1187,7 @@ No exemplo abaixo, toda resposta do servidor conterá dois cabeçalhos personali
 
 Durante a execução da consulta por HTTP, pode ocorrer uma exceção quando parte dos dados já tiver sido enviada. Normalmente, a exceção é enviada ao cliente em texto simples.
 Mesmo que tenha sido usado um formato de dados específico para a saída, ela pode acabar se tornando inválida em relação ao formato especificado.
-Para evitar isso, você pode usar a configuração [`http_write_exception_in_output_format`](/pt-BR/reference/settings/session-settings#http_write_exception_in_output_format) (desabilitada por padrão), que faz com que o ClickHouse grave a exceção no formato especificado (atualmente compatível com os formatos XML e JSON*).
+Para evitar isso, você pode usar a configuração [`http_write_exception_in_output_format`](/pt-BR/reference/settings/session-settings/http#http_write_exception_in_output_format) (desabilitada por padrão), que faz com que o ClickHouse grave a exceção no formato especificado (atualmente compatível com os formatos XML e JSON*).
 
 Exemplos:
 

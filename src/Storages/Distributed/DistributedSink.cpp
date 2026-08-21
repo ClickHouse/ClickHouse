@@ -987,6 +987,12 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             /// Trailing field: whether the initiating query is internal.
             writeBinary(context->getClientInfo().is_internal, header_buf);
 
+            /// Trailing fields: the SQL-defined HTTP handler name and the request URL of the initiating
+            /// query. Kept out of the embedded `ClientInfo` above for the same layout-compatibility reason
+            /// as `client_agent`.
+            writeStringBinary(context->getClientInfo().http_handler_name, header_buf);
+            writeStringBinary(context->getClientInfo().http_request_url, header_buf);
+
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
             /// And note that it is safe, because we have checksum and size for header.

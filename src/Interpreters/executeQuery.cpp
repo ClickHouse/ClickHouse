@@ -1,6 +1,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
 #include <Common/StringUtils.h>
@@ -86,9 +87,11 @@
 #endif
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/CompressionMethod.h>
 
+#include <Processors/Formats/Framing/FramingFormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
@@ -99,7 +102,12 @@
 
 #include <Common/QueryFuzzer.h>
 #include <Common/randomSeed.h>
+#include <base/getFQDNOrHostName.h>
 
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProfileEventsExt.h>
+
+#include <Poco/Logger.h>
 #include <Poco/Net/SocketAddress.h>
 
 #include <exception>
@@ -157,6 +165,7 @@ namespace Setting
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsString framing_output_format;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool implicit_transaction;
     extern const SettingsUInt64 interactive_delay;
@@ -194,6 +203,9 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsString send_logs_source_regexp;
+    extern const SettingsBool send_profile_events;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -245,6 +257,8 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char execute_query_calling_empty_set_result_func_on_exception[];
+    extern const char framing_finalize_throw[];
+    extern const char framing_throw_after_final_progress[];
     extern const char terminate_with_exception[];
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
@@ -468,6 +482,16 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
     return interval_milliseconds;
 }
 
+/// The HTTP request URL is persisted to the query_log without its query string and fragment,
+/// so that potentially sensitive request parameters (e.g. a `password` parameter or raw query
+/// text) are never stored in the logs. The full URL remains available at runtime via
+/// `currentRequestURL()`.
+static String httpRequestURLForLogging(const ContextPtr & context)
+{
+    const String & url = context->getHTTPRequestURL();
+    return url.substr(0, url.find_first_of("?#"));
+}
+
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
     const ContextMutablePtr & context,
@@ -500,6 +524,8 @@ QueryLogElement logQueryStart(
     elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
     elem.client_info = context->getClientInfo();
+    elem.http_handler_name = context->getHTTPHandlerName();
+    elem.http_request_url = httpRequestURLForLogging(context);
 
     elem.is_internal = log_as_internal;
 
@@ -956,6 +982,8 @@ void logExceptionBeforeStart(
     elem.exception_format_string_args = exception_message.format_string_args;
 
     elem.client_info = context->getClientInfo();
+    elem.http_handler_name = context->getHTTPHandlerName();
+    elem.http_request_url = httpRequestURLForLogging(context);
 
     elem.log_comment = settings[Setting::log_comment];
     if (elem.log_comment.size() > settings[Setting::max_query_size])
@@ -2516,6 +2544,186 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     return std::make_pair(std::move(ast), std::move(res));
 }
 
+namespace
+{
+
+/// Framing formats (see IFramingFormat.h) multiplex data, totals, extremes, progress, logs,
+/// and profile events packets in a single output stream. They are currently implemented
+/// for the HTTP protocol only and are ignored for other interfaces.
+/// Whether the output format produces valid UTF-8 text. Text framings (see `requiresTextPayload`)
+/// embed the payload as text and can only be used with such formats.
+///
+/// Binary formats (such as `Native` or `RowBinary`) are detected by their content type: text formats
+/// declare a charset (e.g. `text/tab-separated-values; charset=UTF-8`, `application/json; charset=UTF-8`),
+/// while binary formats use types such as `application/octet-stream` without a charset.
+///
+/// The content type alone is not sufficient: raw passthrough formats (`RawBLOB`, `TSVRaw`, `LineAsString`)
+/// advertise a textual content type but write the column bytes verbatim, which are not guaranteed to be
+/// valid UTF-8. They are marked with `markOutputFormatMayProduceRawBytes` and rejected explicitly.
+/// Some formats produce raw bytes only under certain settings or headers (for example `CustomSeparated`
+/// with a `Raw` escaping rule, `SQLInsert` with a non-UTF-8 table or column name written verbatim, or
+/// settings-driven literals that the serializations write verbatim - the `CSV` field delimiter, the
+/// `TSV` / `CSV` `NULL` representations, and the `Bool` representations - see
+/// `settingsLiteralsMayProduceRawBytes`), which is detected with the settings-and-header-aware
+/// `checkIfOutputFormatMayProduceRawBytes`.
+bool outputFormatProducesText(
+    const String & format_name,
+    const std::optional<FormatSettings> & output_format_settings,
+    const FormatSettings & format_settings,
+    const Block & header)
+{
+    if (FormatFactory::instance().checkIfOutputFormatMayProduceRawBytes(format_name, format_settings, header))
+        return false;
+    const String content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+    return content_type.starts_with("text/") || content_type.contains("charset=");
+}
+
+FramingFormatPtr createFramingFormatIfApplicable(
+    const ContextMutablePtr & context,
+    WriteBuffer & ostr,
+    const String & format_name,
+    const std::optional<FormatSettings> & output_format_settings,
+    bool carries_no_payload = false,
+    const Block & header = {})
+{
+    if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
+        return nullptr;
+
+    const String & framing_name = context->getSettingsRef()[Setting::framing_output_format].value;
+    if (boost::iequals(framing_name, "None"))
+        return nullptr;
+
+    FormatSettings format_settings = output_format_settings ? *output_format_settings : getFormatSettings(context);
+
+    /// Whether the output format may produce bytes that are not valid UTF-8 text: binary formats
+    /// (such as `Native` or `RowBinary`) and raw passthrough formats (`RawBLOB`, `TSVRaw`,
+    /// `LineAsString`) that write the column bytes verbatim.
+    bool binary_payload = false;
+
+    /// When the stream carries no output payload (`carries_no_payload`), the output format contributes
+    /// no bytes, so its properties are irrelevant: the payloads are plain text (the framing's own JSON),
+    /// and the format probes are skipped - the format name may not even refer to an existing format
+    /// (for example a mistyped `default_format` on an `INSERT`, which formats no output).
+    if (!carries_no_payload)
+    {
+        binary_payload = !outputFormatProducesText(format_name, output_format_settings, format_settings, header);
+    }
+
+    auto framing = createFramingFormat(
+        framing_name, ostr, format_settings, {.is_http = true, .binary_payload = binary_payload});
+
+    /// A text framing embeds the output bytes as UTF-8 text, so an output format that can produce
+    /// non-textual output would corrupt the stream. `EventStream` handles this by base64-encoding
+    /// the payloads, but `JSONEachPacketString` puts the bytes into a JSON
+    /// string and cannot; it is rejected here, pointing to `JSONEachPacketBase64` instead.
+    ///
+    /// When the stream carries no output payload (`carries_no_payload`), the output format
+    /// contributes no bytes, so this compatibility check is skipped and the framing is used
+    /// regardless of the output format. This is the case for a framed exception (a single `exception`
+    /// packet, always JSON) and for a successful query without a result stream (`INSERT`, DDL: only
+    /// the `progress` / `log` / `profile_events` packets are written).
+    if (!carries_no_payload && framing->requiresTextPayload() && binary_payload)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The framing format {} embeds the output as text and is not compatible with the output format {}, "
+            "which is not guaranteed to produce valid UTF-8 text. "
+            "Use the JSONEachPacketBase64 framing format, which encodes arbitrary bytes safely.",
+            framing->getName(),
+            format_name);
+
+    return framing;
+}
+
+/// The queues for server logs and profile events that a framing format sends as packets.
+struct FramingQueues
+{
+    std::shared_ptr<InternalTextLogsQueue> logs_queue;
+    InternalProfileEventsQueuePtr profile_events_queue;
+};
+
+/// Attach or detach the logs and profile-events queues on the current thread (the thread group of
+/// the query inherits them) so they match the effective settings: a framing format requested over
+/// HTTP, plus `send_logs_level` / `send_profile_events`. The queues are owned by `queues` here (the
+/// thread group keeps only a weak reference), so dropping one detaches it and stops the capture.
+///
+/// This is idempotent and is called twice, because the settings that govern framing are only final
+/// after the query's own `SETTINGS` clause has been applied inside `executeQueryImpl`:
+///  - before the query is interpreted, so the logs and profile events emitted during parsing,
+///    planning and analysis are captured (matching the native protocol) when framing is requested
+///    from the session or the URL;
+///  - after `executeQueryImpl`, to reconcile the queues with the effective settings - so a framing
+///    format (or `send_logs_level` / `send_profile_events`) enabled only by the query's `SETTINGS`
+///    clause gets its queues, and the inverse override (framing or the queues disabled by the query)
+///    drops them instead of capturing packets that nobody drains.
+///
+/// The queues are wired into the framing format later, once it is created (the framing format only
+/// becomes known after the output format's header is available). Anything a query enables only through
+/// its own `SETTINGS` clause - a framing format, `send_logs_level`, or `send_profile_events` - is not
+/// known before parsing, so the corresponding queues start capturing only from query execution onwards.
+/// The parse / plan / analysis phase logs and profile events are captured only when the setting comes
+/// from the session or the URL. In particular, a query that fails during analysis (before pipeline
+/// execution) - for example a reference to an unknown table - and enables `send_logs_level` only in its
+/// `SETTINGS` clause delivers just the framed `exception` packet, not the analysis-phase logs.
+///
+/// `send_logs_source_regexp` has the same late-discovery caveat: the queue filters by source when a log
+/// entry is enqueued (`InternalTextLogsQueue::isNeeded`), so a regexp set only in the query's own
+/// `SETTINGS` clause takes effect from query execution onwards. The parse / plan / analysis phase
+/// entries are filtered by the session / URL value (unfiltered when it is not set there), so entries
+/// already buffered may not match the query-level regexp, and entries dropped by a narrower session /
+/// URL regexp cannot be recovered by a broader query-level one.
+///
+/// Does nothing unless the query runs over HTTP.
+void syncFramingQueuesWithSettings(const ContextMutablePtr & context, FramingQueues & queues)
+{
+    if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
+        return;
+
+    const Settings & settings = context->getSettingsRef();
+    const bool framing_enabled = !boost::iequals(settings[Setting::framing_output_format].value, "None");
+
+    const auto client_logs_level = settings[Setting::send_logs_level];
+    if (framing_enabled && client_logs_level != LogsLevel::none)
+    {
+        if (!queues.logs_queue)
+            queues.logs_queue = std::make_shared<InternalTextLogsQueue>();
+        queues.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+        queues.logs_queue->setSourceRegexp(settings[Setting::send_logs_source_regexp]);
+        CurrentThread::attachInternalTextLogsQueue(queues.logs_queue, client_logs_level);
+    }
+    else if (queues.logs_queue)
+    {
+        queues.logs_queue.reset();
+        CurrentThread::attachInternalTextLogsQueue(nullptr, LogsLevel::none);
+    }
+
+    if (framing_enabled && settings[Setting::send_profile_events])
+    {
+        if (!queues.profile_events_queue)
+        {
+            queues.profile_events_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+            CurrentThread::attachInternalProfileEventsQueue(queues.profile_events_queue);
+        }
+    }
+    else if (queues.profile_events_queue)
+    {
+        queues.profile_events_queue.reset();
+        CurrentThread::attachInternalProfileEventsQueue(nullptr);
+    }
+}
+
+/// Wire the queues attached by `syncFramingQueuesWithSettings` into the framing format.
+void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & context, const FramingQueues & queues)
+{
+    if (queues.logs_queue)
+        framing.setLogsQueue(queues.logs_queue);
+
+    if (queues.profile_events_queue)
+        framing.setProfileEventsQueue(
+            queues.profile_events_queue, getFQDNOrHostName(), context->getSettingsRef()[Setting::interactive_delay]);
+}
+
+}
+
 void executeQuery(
     ReadBuffer & istr,
     WriteBuffer & ostr,
@@ -2624,10 +2832,34 @@ void executeQuery(
     String format_name;
     OutputFormatPtr output_format;
 
+    /// If a framing format is requested, attach its logs and profile-events queues to the current
+    /// thread before the query is interpreted, so the logs emitted during parsing, planning and
+    /// analysis are captured too (they are wired into the framing format once it is created below).
+    /// The queues are reconciled with the effective settings again after `executeQueryImpl` has
+    /// applied the query's own `SETTINGS` clause (see `syncFramingQueuesWithSettings`).
+    FramingQueues framing_queues;
+    syncFramingQueuesWithSettings(context, framing_queues);
+
     auto update_format_on_exception_if_needed = [&]()
     {
-        if (!output_format)
+        /// The data path may have thrown from `setFraming` after the output format was already
+        /// created: a format that defers totals and extremes to finalization (`Template`) or writes
+        /// progress in-band (`JSONEachRowWithProgress`) is rejected there. Such a leftover format is
+        /// not framed, and it writes to the payload buffer of a framing format that was destroyed
+        /// during stack unwinding, so it must not carry the exception. Recreate the format in that
+        /// case too, so the error is delivered as a framed `exception` packet rather than falling
+        /// back to a plain HTTP error body.
+        const bool unusable_for_framed_exception = output_format && !output_format->getFraming()
+            && context->getClientInfo().interface == ClientInfo::Interface::HTTP
+            && !boost::iequals(context->getSettingsRef()[Setting::framing_output_format].value, "None");
+
+        if (!output_format || unusable_for_framed_exception)
         {
+            /// `executeQueryImpl` may have applied the query's `SETTINGS` clause before throwing, so
+            /// reconcile the queues with the effective settings before framing the exception, so the
+            /// accumulated `log` / `profile_events` packets match the effective framing settings.
+            syncFramingQueuesWithSettings(context, framing_queues);
+
             try
             {
                 const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
@@ -2635,11 +2867,39 @@ void executeQuery(
                     ? getIdentifierName(ast_query_with_output->format_ast)
                     : context->getDefaultFormat();
 
-                output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
-                if (output_format && output_format->supportsWritingException())
+                /// The exception stream carries only the `exception` packet (always JSON), so the framing
+                /// is created for the exception even when the output format cannot be embedded as text or
+                /// defers totals/extremes (`for_exception`), which the normal data path rejects. The queues
+                /// attached before the query are wired in as well, so any `log` / `profile_events` packets
+                /// accumulated during parsing and planning are still drained on `finalize`.
+                auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings, /*carries_no_payload=*/ true);
+                if (framing)
+                {
+                    /// With a framing format, the exception packet is written by the framing itself and
+                    /// the output format writes nothing in exception-only mode (see
+                    /// `framing_exception_only`), so the format here is only a carrier for the framing.
+                    /// It is created as `Null` rather than as the query's own format, because the real
+                    /// format may not even be constructible on the exception path - for example
+                    /// `Template` with a row template referencing columns of the header, which is empty
+                    /// here.
+                    output_format = FormatFactory::instance().getOutputFormat("Null", framing->getPayloadBuffer(), {}, context, output_format_settings);
+                    output_format->setFraming(framing, /*for_exception=*/ true);
+                    setFramingQueues(*framing, context, framing_queues);
+                }
+                else
+                {
+                    output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
+                }
+
+                /// With a framing format, the exception is written as a packet regardless of
+                /// whether the output format supports writing exceptions.
+                if (output_format && (framing || output_format->supportsWritingException()))
                 {
                     /// Force an update of the headers before we start writing
-                    result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+                    result_details.content_type = framing
+                        ? framing->getContentType()
+                        : FormatFactory::instance().getContentType(format_name, output_format_settings);
+                    result_details.framed = framing != nullptr;
                     result_details.format = format_name;
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
@@ -2662,9 +2922,17 @@ void executeQuery(
                 /// Ignore this exception and report the original one
                 LOG_WARNING(getLogger("executeQuery"), getExceptionMessageAndPattern(e, true));
             }
+            catch (...)
+            {
+                /// Not only `DB::Exception` can be thrown here: for example, the `set_result_details`
+                /// callback may throw standard or Poco exceptions. Ignore them the same way, so the
+                /// original query exception is reported instead of the secondary failure.
+                tryLogCurrentException(getLogger("executeQuery"), "while updating the output format to write the exception");
+            }
         }
     };
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
+
     try
     {
         streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback, result_details);
@@ -2686,6 +2954,13 @@ void executeQuery(
     /// The timezone was already set before query was processed,
     /// But `session_timezone` setting could be modified in the query itself, so we update the value.
     result_details.timezone = DateLUT::instance().getTimeZone();
+
+    /// The query's own `SETTINGS` clause (applied inside `executeQueryImpl`) may enable or disable
+    /// framing / logs / profile events differently from the session or URL defaults that
+    /// `syncFramingQueuesWithSettings` saw before parsing. Reconcile the queues with the effective
+    /// settings, now that they are final, before the framing format is created and the pipeline is
+    /// executed - so the queues match the framing decision and no queue captures packets nobody drains.
+    syncFramingQueuesWithSettings(context, framing_queues);
 
     const Map & additional_http_headers = context->getSettingsRef()[Setting::http_response_headers].value;
     if (!additional_http_headers.empty())
@@ -2717,12 +2992,58 @@ void executeQuery(
     auto & pipeline = streams.pipeline;
     bool pulling_pipeline = pipeline.pulling();
 
+    /// A framing format also multiplexes the auxiliary packets (progress, logs, profile events) for
+    /// HTTP queries that produce no result stream - a successful `INSERT`, a DDL query, or any other
+    /// query without output. This matches the native protocol, which streams progress, logs and
+    /// profile events for such queries too, and keeps `framing_output_format` consistent: without it
+    /// the setting would be a silent no-op for these queries - the response would not switch to the
+    /// framing content type, no packets would be written, and the logs / profile-events queues
+    /// attached by `syncFramingQueuesWithSettings` would accumulate unread until query teardown.
+    ///
+    /// The payload carrier is a `Null` output format, because there is no data to format; only the
+    /// framing's own packets are written. Returns whether a framing format was set up. Applies to the
+    /// HTTP protocol only, and is a no-op unless `framing_output_format` is enabled.
+    auto setup_framing_for_no_result_query = [&]() -> bool
+    {
+        /// The output format is irrelevant here (no payload is produced), so the payload-compatibility
+        /// check is skipped (`carries_no_payload`).
+        auto framing = createFramingFormatIfApplicable(
+            context, ostr, context->getDefaultFormat(), output_format_settings, /*carries_no_payload=*/ true);
+        if (!framing)
+            return false;
+
+        output_format = FormatFactory::instance().getOutputFormat("Null", framing->getPayloadBuffer(), {}, context, output_format_settings);
+        output_format->setFraming(framing);
+        setFramingQueues(*framing, context, framing_queues);
+
+        /// The carrier is not part of the pipeline, so it is finalized explicitly (below, after the
+        /// query-finish logging) to flush the pending throttled progress update; the framing format
+        /// itself is finalized separately after that, so it must not be finalized by the carrier.
+        output_format->deferFramingFinalize();
+
+        /// Route progress to the framing format so `progress` packets are emitted during execution
+        /// (relevant for a long-running `INSERT`); the logs and profile events accumulated in the
+        /// queues are drained when the framing format is finalized after the query-finish logging.
+        auto previous_progress_callback = context->getProgressCallback();
+        pipeline.setProgressCallback([captured_output_format = output_format, previous_progress_callback] (const Progress & progress)
+        {
+            if (previous_progress_callback)
+                previous_progress_callback(progress);
+            captured_output_format->onProgress(progress);
+        });
+
+        result_details.content_type = framing->getContentType();
+        result_details.framed = true;
+        return true;
+    };
+
     try
     {
         if (pipeline.pushing())
         {
             auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
             pipeline.complete(std::move(pipe));
+            setup_framing_for_no_result_query();
         }
         else if (pipeline.pulling())
         {
@@ -2739,12 +3060,40 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->out_file)
                 throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
-            output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
-                format_name,
-                *out_buf,
-                materializeBlock(pipeline.getHeader()),
-                context,
-                output_format_settings);
+            const Block header = pipeline.getHeader();
+
+            /// The header is passed so the framing can detect output formats that write parts of the
+            /// header verbatim (for example `SQLInsert` column names), which may not be valid UTF-8.
+            if (auto framing = createFramingFormatIfApplicable(
+                    context, *out_buf, format_name, output_format_settings, /*carries_no_payload=*/ false, header))
+            {
+                /// The framing format needs to know the boundaries between the formatted packets,
+                /// so parallel formatting is not applicable.
+                output_format = FormatFactory::instance().getOutputFormat(
+                    format_name,
+                    framing->getPayloadBuffer(),
+                    materializeBlock(header),
+                    context,
+                    output_format_settings);
+
+                output_format->setFraming(framing);
+                setFramingQueues(*framing, context, framing_queues);
+
+                /// Finalize the framing format ourselves after the query-finish logging (below),
+                /// rather than letting the output format do it during pipeline execution, so the
+                /// trailing server logs (for example "Read N rows" and the peak memory usage) are
+                /// included in the stream, just like the native protocol does.
+                output_format->deferFramingFinalize();
+            }
+            else
+            {
+                output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+                    format_name,
+                    *out_buf,
+                    materializeBlock(pipeline.getHeader()),
+                    context,
+                    output_format_settings);
+            }
 
             output_format->setAutoFlush();
 
@@ -2759,14 +3108,18 @@ void executeQuery(
                 output_format->onProgress(progress);
             });
 
-            result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+            result_details.content_type = output_format->getFraming()
+                ? output_format->getFraming()->getContentType()
+                : FormatFactory::instance().getContentType(format_name, output_format_settings);
+            result_details.framed = output_format->getFraming() != nullptr;
             result_details.format = format_name;
 
             pipeline.complete(output_format);
         }
         else
         {
-            pipeline.setProgressCallback(context->getProgressCallback());
+            if (!setup_framing_for_no_result_query())
+                pipeline.setProgressCallback(context->getProgressCallback());
         }
 
         /// input stream might be consumed into some source proceccors/format readers
@@ -2838,19 +3191,131 @@ void executeQuery(
         throw;
     }
 
-    QueryFinishCallback finish_callback;
-    if (query_finish_callback)
-    {
-        finish_callback = [&]()
-        {
-            /// Flush the progress (result_rows/result_bytes) before query_finish_callback sends the final HTTP header,
-            /// so the X-ClickHouse-Summary header is correct.
-            flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
-            query_finish_callback();
-        };
-    }
+    const auto & framing = output_format ? output_format->getFraming() : nullptr;
 
-    finishExecutedQuery(streams, finish_callback);
+    if (framing)
+    {
+        try
+        {
+            /// Test-only: emulate `finishExecutedQuery` / `finalize` throwing below, to test that the
+            /// failure is still delivered as a framed `exception` packet (see the `catch` block).
+            fiu_do_on(FailPoints::framing_finalize_throw,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the framing format");
+            });
+
+            /// The framing format's finalization was deferred (see `deferFramingFinalize`), so that the
+            /// trailing server logs and profile events - emitted by the query-finish logging in
+            /// `onFinish` - are included in the stream, like the native protocol does. The order is:
+            ///   1. flush the progress (so the `X-ClickHouse-Summary` HTTP header is correct) and
+            ///      stash the final counters in the framing format (see below),
+            ///   2. `onFinish` (inside `finishExecutedQuery`) emits the trailing logs into the queue,
+            ///   3. finalize the framing format: it drains those logs and profile events, and then
+            ///      writes the final `progress` packet, so it is really the last packet of a
+            ///      successful stream,
+            ///   4. run the HTTP `query_finish_callback`, which closes the response stream.
+            finishExecutedQuery(streams, [&]()
+            {
+                auto progress_callback = context->getProgressCallback();
+
+                /// Forward the final progress flush (`result_rows` / `result_bytes` / `memory_usage`)
+                /// to the framing format too, so the framed stream ends with a `progress` packet
+                /// carrying the final counters, like the native protocol does and as
+                /// `docs/en/interfaces/framing-formats.md` documents. These counters are known only
+                /// after the query finished, so no earlier `progress` packet carries them.
+                ///
+                /// `writeFinalProgress` hands them to the framing format, which writes the packet at
+                /// the very end of its (deferred, see above) finalization - after the trailing logs
+                /// and profile events emitted by `onFinish` and `logPeakMemoryUsage` below. Writing
+                /// the packet here directly would order it before that trailing drain, and the stream
+                /// would not actually end with `progress`. It works uniformly for both paths: for a
+                /// pulling query the output format was finalized by the pipeline (its data is already
+                /// written) before these counters were known, and on the no-result path the `Null`
+                /// payload carrier is not part of the pipeline, so its pending (throttled) progress
+                /// update is folded into the final one.
+                progress_callback = [captured_output_format = output_format, previous_progress_callback = progress_callback](const Progress & progress)
+                {
+                    if (previous_progress_callback)
+                        previous_progress_callback(progress);
+                    captured_output_format->writeFinalProgress(progress);
+                };
+
+                flushQueryProgress(pipeline, pulling_pipeline, progress_callback, context->getProcessListElement());
+
+                /// Test-only: emulate a failure after the final counters were stashed in the framing
+                /// format (see `writeFinalProgress` above) but before the query fully finished - the
+                /// same window where `BlockIO::onFinish` (a query-log write, for example) can throw.
+                /// The recovery must deliver a framed `exception` packet and must not emit the
+                /// success-style final `progress` packet (see `IFramingFormat::finalize`).
+                fiu_do_on(FailPoints::framing_throw_after_final_progress,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after stashing the final progress");
+                });
+            });
+
+            /// Emit the "peak memory usage" log now, before the framing format drains the logs, so it is
+            /// included in the stream. Otherwise it would be logged only when the query's thread group is
+            /// destroyed (from `QueryScope`, after this function returns) - too late for the framing format.
+            /// This mirrors what `TCPHandler` does before it drains the logs for the native protocol.
+            if (auto thread_group = CurrentThread::getGroup())
+                thread_group->memory_tracker.logPeakMemoryUsage();
+
+            /// On the no-result path nothing else finalizes the `Null` carrier (it is not part of the
+            /// pipeline): finalize it now, so its wrapping buffers are released and the trailing logs
+            /// are pumped. Its pending (throttled) progress update was folded into the final progress
+            /// stashed in the framing format above (see `writeFinalProgress`). The framing finalization
+            /// itself is deferred (see `deferFramingFinalize` above), and for a pulling query the
+            /// output format was already finalized by the pipeline, so this is a no-op.
+            output_format->finalize();
+
+            framing->finalize();
+        }
+        catch (...)
+        {
+            /// `finishExecutedQuery` (specifically `BlockIO::onFinish`), `output_format->finalize`, or
+            /// `framing->finalize` can throw after the query has otherwise succeeded, with packets
+            /// possibly already streamed to the client. Deliver the failure as a framed `exception`
+            /// packet - the same mechanism used for a failure during `executeQueryImpl` above - instead
+            /// of letting it escape to the generic HTTP error path, which would append a plain-text
+            /// error after an already-started packet stream, breaking the "always a stream of packets"
+            /// contract. `handle_exception_in_output_format` finalizes the HTTP output itself (as it
+            /// does for the early-failure path), so `query_finish_callback` must not be called again.
+            if (handle_exception_in_output_format)
+                handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
+            throw;
+        }
+
+        /// The response stream is closed outside of the recovery block above: on HTTP this callback is
+        /// `HTTPHandler::Output::finalize`, which starts pushing the delayed results, finalizing the
+        /// compression, and closing the socket. Once that started, the framed stream is no longer safely
+        /// re-framable - a failure in the middle of it has already put some (or all) of the success
+        /// stream on the wire, and routing it back through `handle_exception_in_output_format` would
+        /// append a second framed response (a fresh `exception` packet stream) after a partial success
+        /// response, which is worse than a truncated one. This is the same fail-close rule as for a
+        /// half-written packet (see `IFramingFormat`): the client observes a truncated response and an
+        /// aborted connection instead of a well-formed terminal packet. The generic HTTP error path
+        /// enforces this too: `HTTPHandler::trySendExceptionToClient` appends nothing to a framed
+        /// response once its transmission or finalization has started (see
+        /// `QueryResultDetails::framed`).
+        if (query_finish_callback)
+            query_finish_callback();
+    }
+    else
+    {
+        QueryFinishCallback finish_callback;
+        if (query_finish_callback)
+        {
+            finish_callback = [&]()
+            {
+                /// Flush the progress (result_rows/result_bytes) before query_finish_callback sends the final HTTP header,
+                /// so the X-ClickHouse-Summary header is correct.
+                flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+                query_finish_callback();
+            };
+        }
+
+        finishExecutedQuery(streams, finish_callback);
+    }
 }
 
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)

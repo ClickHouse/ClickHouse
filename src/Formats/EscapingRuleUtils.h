@@ -32,6 +32,22 @@ void serializeFieldByEscapingRule(
     FormatSettings::EscapingRule escaping_rule,
     const FormatSettings & format_settings);
 
+/// Returns true if the settings-driven literals that the value serializations of the given escaping
+/// rule write verbatim are not guaranteed to be valid UTF-8. `SerializationBool` writes
+/// `bool_true_representation` / `bool_false_representation` verbatim in the plain text, `Escaped`,
+/// `CSV`, and `Raw` kinds, and `SerializationNullable` writes the `TSV` / `CSV` `NULL`
+/// representations verbatim in the `Escaped` / `Raw` / `CSV` kinds. These literals are knowable from
+/// the settings before any row is written, unlike the row values themselves, so text output formats
+/// use this in their `may_produce_raw_bytes` checkers and the text framings reject the output
+/// accordingly (see `FormatFactory::checkIfOutputFormatMayProduceRawBytes`). The check is
+/// deliberately conservative on the settings alone: whether a particular header actually emits a
+/// literal depends on the whole serialization tree (top-level vs nested columns, and `Dynamic` /
+/// `Variant` columns can dispatch to any serialization at run time), while a configuration whose
+/// literals are not valid UTF-8 is intrinsically non-textual. Pass `EscapingRule::None` for formats
+/// that serialize the values through the plain `serializeText` kind (`Pretty`, `Vertical`, and the
+/// `*Strings*` JSON variants), where only the `Bool` representations apply.
+bool settingsLiteralsMayProduceRawBytes(const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule);
+
 void writeStringByEscapingRule(const String & value, WriteBuffer & out, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings);
 
 /// Read String serialized in specified escaping rule.

@@ -1672,8 +1672,9 @@ static bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
         auto func_result_type = func->getResultType();
 
-        /// DateTime64/Date32 are signed, but Date, DateTime, and UInt32 are unsigned, so converting
-        /// values outside the unsigned range wraps around or throws DECIMAL_OVERFLOW.
+        /// DateTime64/Date32 are signed and wider than Date, DateTime, and the narrow integer types,
+        /// so converting values outside the target range wraps around (`Date`/`DateTime`) or throws
+        /// a `DECIMAL_OVERFLOW` exception (integer targets, see `DecimalUtils::convertTo`).
         ///
         /// we check the constant BEFORE execution to catch obvious out-of-range inputs,
         /// and AFTER execution to catch boundary values where the next value would wrap
@@ -1688,22 +1689,55 @@ static bool applyFunctionChainToColumn(
             else
                 value = (*result_column)[0].safeGet<Time64>().getValue();
 
-            /// negative timestamps after cast -> large unsigned values
-            if (value < 0)
-                return false;
-
             UInt32 scale = isDateTime64(arg_type_inner)
                 ? assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale()
                 : assert_cast<const DataTypeTime64 &>(*arg_type_inner).getScale();
+
+            /// The whole number of seconds, truncated toward zero - the same value the conversion
+            /// to an integer produces (see `DecimalUtils::getWholePart`).
             Int64 seconds = value / intExp10OfSize<Int64>(scale);
 
-            /// timestamps beyond the target range -> small values
-            if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
-                return false;
-            if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
-                return false;
-            if (isUInt32(result_type_inner) && seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
-                return false;
+            WhichDataType which_result(*result_type_inner);
+            if (which_result.isInt())
+            {
+                /// A signed target accommodates negative timestamps, but a narrow one throws
+                /// a `DECIMAL_OVERFLOW` exception outside of its range.
+                if (which_result.isInt8() && (seconds < std::numeric_limits<Int8>::min() || seconds > std::numeric_limits<Int8>::max()))
+                    return false;
+                if (which_result.isInt16() && (seconds < std::numeric_limits<Int16>::min() || seconds > std::numeric_limits<Int16>::max()))
+                    return false;
+                if (which_result.isInt32() && (seconds < std::numeric_limits<Int32>::min() || seconds > std::numeric_limits<Int32>::max()))
+                    return false;
+                /// Int64 and wider signed targets fit the whole number of seconds of any DateTime64/Time64.
+            }
+            else if (which_result.isUInt())
+            {
+                /// negative timestamps -> DECIMAL_OVERFLOW for an unsigned target.
+                /// The conversion rejects a value by its whole part, not by the raw tick value
+                /// (see `DecimalUtils::convertToImpl`), so a pre-epoch sub-second value such as
+                /// `1969-12-31 23:59:59.500` is defined and converts to `0`.
+                if (seconds < 0)
+                    return false;
+                if (which_result.isUInt8() && seconds > std::numeric_limits<UInt8>::max())
+                    return false;
+                if (which_result.isUInt16() && seconds > std::numeric_limits<UInt16>::max())
+                    return false;
+                if (which_result.isUInt32() && seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                    return false;
+                /// UInt64 and wider unsigned targets fit any non-negative number of seconds.
+            }
+            else
+            {
+                /// negative timestamps after cast -> large unsigned values
+                if (value < 0)
+                    return false;
+
+                /// timestamps beyond the target range -> small values
+                if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
+                    return false;
+                if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
+                    return false;
+            }
         }
         else if (isDate32(arg_type_inner) && (isDate(result_type_inner) || isDateTime(result_type_inner) || isUInt32(result_type_inner)))
         {
@@ -1887,8 +1921,12 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
                 return true;
 
             /// Range is irrelevant in this case.
+            /// Monotonicity on defined values only is enough here: stored key values always
+            /// belong to the subset on which the key expression evaluates (computing the sorting
+            /// key at insert time would have thrown otherwise), and a constant outside of that
+            /// subset is rejected by the guards in `applyFunctionChainToColumn`.
             auto monotonicity = func.getMonotonicityForRange(type, Field(), Field());
-            if (!monotonicity.is_always_monotonic)
+            if (!monotonicity.is_always_monotonic && !monotonicity.is_always_monotonic_where_defined)
                 return false;
 
             return true;
@@ -3331,6 +3369,43 @@ KeyCondition::RPNElement::RPNElement(Function function_, std::vector<size_t> key
 }
 
 
+/// Whether `shell` plus the hole rings in arguments 2..num_args-1 of `pointInPolygon` assemble into
+/// a valid polygon. A hole argument that is not a constant ring of two-element numeric tuples
+/// yields false, so an unrecognized shape is never taken for a hole-free polygon.
+static bool holesAreValidForShell(
+    const RPNBuilderFunctionTreeNode & func, size_t num_args, const KeyCondition::RPNElement::Polygon::RingT & shell)
+{
+    boost::geometry::model::polygon<KeyCondition::RPNElement::Polygon::PointT> polygon;
+    polygon.outer().assign(shell.begin(), shell.end());
+
+    for (size_t i = 2; i < num_args; ++i)
+    {
+        Field hole_value;
+        DataTypePtr hole_type;
+        if (!func.getArgumentAt(i).tryGetConstant(hole_value, hole_type) || !WhichDataType(hole_type).isArray())
+            return false;
+
+        auto & hole = polygon.inners().emplace_back();
+        for (const auto & elem : hole_value.safeGet<Array>())
+        {
+            if (elem.getType() != Field::Types::Tuple)
+                return false;
+
+            const auto & elem_tuple = elem.safeGet<Tuple>();
+            if (elem_tuple.size() != 2)
+                return false;
+
+            auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
+            auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
+            hole.emplace_back(x, y);
+        }
+    }
+
+    boost::geometry::correct(polygon);
+    return boost::geometry::is_valid(polygon);
+}
+
+
 /** This helper rewrites comparisons of the form "integer_key <op> Float64_literal" into semantically equivalent
   * integer-key predicates so that pruning can stay exact.
   *
@@ -3654,6 +3729,17 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 out.polygon->ring.emplace_back(x, y);
             }
             boost::geometry::correct(out.polygon->ring);
+
+            /// `correct` does not make a ring valid, and `intersects` below only agrees with the
+            /// algorithm the function evaluates for a ring that is. Prune only from a valid one.
+            if (!boost::geometry::is_valid(out.polygon->ring))
+                return false;
+
+            /// Holes are not stored, so `intersects` below tests the shell alone. That over-
+            /// approximates the function only while the assembled shape is valid: for an invalid
+            /// one the function can report a point the shell excludes.
+            if (num_args > 2 && !holesAreValidForShell(func, num_args, out.polygon->ring))
+                return false;
 
             /// Store bounding box of the polygon so that we can quickly reject blocks/parts and avoid
             /// costly `intersects` checks

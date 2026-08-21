@@ -68,6 +68,22 @@ Features:
 
 </Accordion>
 
+<Accordion title="LibreDB Studio">
+
+[LibreDB Studio](https://github.com/libredb/libredb-studio) is a self-hosted, MIT-licensed database IDE that runs in the browser and deploys next to the database: a container, a Helm chart, an OLM operator, or an npm package embedded in another product. The ClickHouse provider talks to the documented HTTP interface on `8123`/`8443` and carries no driver dependency.
+
+Features:
+
+- SQL editor built on Monaco with schema-aware autocomplete, multi-tab execution, and `EXPLAIN` rendered as a plan tree.
+- Schema explorer with virtualized result grids, filtering, and CSV/JSON export.
+- Monitoring drawn from the `system` tables: server overview and part sizes from `system.metrics`, `system.parts` and `system.disks`, finished statements from `system.query_log`, in-flight statements from `system.processes`, with a kill control.
+- ClickHouse in the same interface as PostgreSQL, MySQL, Oracle, SQL Server, SQLite, MongoDB, Redis, Couchbase and Apache Druid, so an analytical store and the OLTP database feeding it are one browser tab.
+- OIDC single sign-on, role-based access, and a query audit trail, all in the MIT build.
+
+[LibreDB Studio ClickHouse provider reference](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md).
+
+</Accordion>
+
 <Accordion title="DataStoria">
 
 [DataStoria](https://github.com/FrankChen021/datastoria) is an AI-powered web console application that manages multiple ClickHouse clusters in one place.

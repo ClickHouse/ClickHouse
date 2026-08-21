@@ -121,6 +121,39 @@ def test_dynamic_query_handler():
         )
 
 
+def test_dynamic_handler_put_delete_still_readonly():
+    # SQL-defined handlers (CREATE HANDLER) may run modifying queries over PUT and DELETE, but that
+    # relaxation must not leak to config-defined dynamic_query_handler rules: a PUT or DELETE request
+    # matching such a rule must still force readonly, so a user-supplied modifying query is rejected.
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__), "dynamic_handler", "test_dynamic_handler"
+        )
+    ) as cluster:
+        select_query = urllib.parse.quote_plus("SELECT 1")
+        modifying_query = urllib.parse.quote_plus(
+            "CREATE DATABASE IF NOT EXISTS test_put_delete_db"
+        )
+
+        for method in ("PUT", "DELETE"):
+            # A read-only query is allowed over PUT/DELETE for a config handler (nothing to force).
+            res_select = cluster.instance.http_request(
+                "test_dynamic_handler_put_delete?get_dynamic_handler_query=" + select_query,
+                method=method,
+            )
+            assert 200 == res_select.status_code, method
+            assert "1" == res_select.content.strip().decode(), method
+
+            # A modifying query over PUT/DELETE must be rejected: config handlers keep readonly forced.
+            res_modify = cluster.instance.http_request(
+                "test_dynamic_handler_put_delete?get_dynamic_handler_query="
+                + modifying_query,
+                method=method,
+            )
+            assert 200 != res_modify.status_code, method
+            assert "Cannot execute query in readonly mode" in res_modify.content.decode(), method
+
+
 def test_predefined_query_handler():
     with contextlib.closing(
         SimpleCluster(

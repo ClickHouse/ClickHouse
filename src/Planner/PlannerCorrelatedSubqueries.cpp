@@ -290,7 +290,7 @@ QueryPlan decorrelateQueryPlan(
             output_columns,
             std::unordered_map<String, const ActionsDAG::Node *>{},
             settings[Setting::join_use_nulls],
-            JoinSettings(settings),
+            JoinSettings(settings, context.planner_context->getQueryContext()->getJoinAnalyzeMode()),
             SortingStep::Settings(settings));
         decorrelated_join->setStepDescription("JOIN to evaluate correlated expression");
         makeInternalDecorrelationJoinUnbounded(*decorrelated_join);
@@ -602,7 +602,7 @@ QueryPlan buildLogicalJoin(
         output_columns,
         std::unordered_map<String, const ActionsDAG::Node *>{},
         /*join_use_nulls=*/false,
-        JoinSettings(settings),
+        JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
     makeInternalDecorrelationJoinUnbounded(*result_join);

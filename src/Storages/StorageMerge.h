@@ -54,6 +54,7 @@ public:
     /// Fails closed: a Merge over a child that opts out (e.g. Distributed) must not let the
     /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
     bool supportsOptimizationToSubcolumns() const override;
+    bool supportsOptimizationToTupleElementSubcolumns() const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;

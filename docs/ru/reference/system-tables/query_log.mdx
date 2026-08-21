@@ -17,11 +17,11 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Хранит метаданные и статистику о выполненных запросах, такие как время начала, длительность, сообщения об ошибках, использование ресурсов и другие сведения о выполнении. Результаты запросов не сохраняются.
 
-Вы можете изменить настройки логирования запросов в разделе [query&#95;log](/ru/reference/settings/server-settings/settings#query_log) конфигурации сервера.
+Вы можете изменить настройки логирования запросов в разделе [query&#95;log](/ru/reference/settings/server-settings/settings/query#query_log) конфигурации сервера.
 
-Вы можете отключить логирование запросов, установив [log&#95;queries = 0](/ru/reference/settings/session-settings#log_queries). Мы не рекомендуем отключать логирование, поскольку информация в этой таблице важна для устранения проблем.
+Вы можете отключить логирование запросов, установив [log&#95;queries = 0](/ru/reference/settings/session-settings/log-queries#log_queries). Мы не рекомендуем отключать логирование, поскольку информация в этой таблице важна для устранения проблем.
 
-Период сброса данных задаётся параметром `flush_interval_milliseconds` в разделе настроек сервера [query&#95;log](/ru/reference/settings/server-settings/settings#query_log). Чтобы принудительно выполнить сброс, используйте запрос [SYSTEM FLUSH LOGS](/ru/reference/statements/system#flush-logs).
+Период сброса данных задаётся параметром `flush_interval_milliseconds` в разделе настроек сервера [query&#95;log](/ru/reference/settings/server-settings/settings/query#query_log). Чтобы принудительно выполнить сброс, используйте запрос [SYSTEM FLUSH LOGS](/ru/reference/statements/system#flush-logs).
 
 ClickHouse не удаляет данные из таблицы автоматически. Подробнее см. в разделе [Introduction](/ru/reference/system-tables/overview#system-tables-introduction).
 
@@ -36,9 +36,9 @@ ClickHouse не удаляет данные из таблицы автомати
 2. Если во время обработки запроса произошла ошибка, создаются два события с типами `QueryStart` и `ExceptionWhileProcessing`.
 3. Если ошибка произошла до запуска запроса, создаётся одно событие с типом `ExceptionBeforeStart`.
 
-Вы можете использовать настройку [log&#95;queries&#95;probability](/ru/reference/settings/session-settings#log_queries_probability), чтобы уменьшить количество запросов, регистрируемых в таблице `query_log`.
+Вы можете использовать настройку [log&#95;queries&#95;probability](/ru/reference/settings/session-settings/log-queries#log_queries_probability), чтобы уменьшить количество запросов, регистрируемых в таблице `query_log`.
 
-Вы можете использовать настройку [log&#95;formatted&#95;queries](/ru/reference/settings/session-settings#log_formatted_queries), чтобы записывать отформатированные запросы в столбец `formatted_query`.
+Вы можете использовать настройку [log&#95;formatted&#95;queries](/ru/reference/settings/session-settings/log#log_formatted_queries), чтобы записывать отформатированные запросы в столбец `formatted_query`.
 
 <div id="columns">
   ## Столбцы
@@ -101,13 +101,15 @@ ClickHouse не удаляет данные из таблицы автомати
 * `client_version_patch` ([UInt32](/ru/reference/data-types/int-uint)) — номер патча в версии `clickhouse-client` или другого TCP-клиента.
 * `script_query_number` ([UInt32](/ru/reference/data-types/int-uint)) — Номер запроса в скрипте, содержащем несколько запросов, для clickhouse-client.
 * `script_line_number` ([UInt32](/ru/reference/data-types/int-uint)) — Номер строки, с которой начинается запрос в скрипте с несколькими запросами в clickhouse-client.
-* `http_method` ([UInt8](/ru/reference/data-types/int-uint)) — HTTP-метод, которым был инициирован запрос. Возможные значения: 0 — запрос был выполнен через интерфейс TCP, 1 — использовался метод GET, 2 — использовался метод POST.
+* `http_method` ([UInt8](/ru/reference/data-types/int-uint)) — HTTP-метод, которым был инициирован запрос. Возможные значения: 0 - запрос был выполнен через интерфейс TCP, 1 - использовался метод GET, 2 - использовался метод POST, 4 - использовался метод PUT, 5 - использовался метод DELETE, 6 - использовался метод HEAD.
 * `http_user_agent` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — HTTP-заголовок UserAgent, передаваемый в HTTP-запросе.
 * `http_referer` ([String](/ru/reference/data-types/string)) — HTTP-заголовок Referer, передаваемый в HTTP-запросе (содержит полный или частичный адрес страницы, с которой выполняется запрос).
 * `forwarded_for` ([String](/ru/reference/data-types/string)) — HTTP-заголовок X-Forwarded-For, передаваемый с HTTP-запросом.
 * `quota_key` ([String](/ru/reference/data-types/string)) — Ключ квоты, указанный в параметре quotas (см. keyed).
 * `distributed_depth` ([UInt64](/ru/reference/data-types/int-uint)) — Сколько раз запрос пересылался между серверами.
 * `revision` ([UInt32](/ru/reference/data-types/int-uint)) — номер ревизии ClickHouse.
+* `http_handler_name` ([String](/ru/reference/data-types/string)) — Имя определённого в SQL HTTP-обработчика (CREATE HANDLER), который вызвал запрос. Пустое значение, если запрос был вызван не через такой обработчик.
+* `http_request_url` ([String](/ru/reference/data-types/string)) — Путь HTTP-запроса (без строки запроса), который вызвал запрос. Строка запроса не сохраняется, чтобы конфиденциальные параметры запроса не были сохранены. Пустое значение для запросов не по HTTP.
 * `log_comment` ([String](/ru/reference/data-types/string)) — Комментарий к журналу. Может быть задан в виде произвольной строки длиной не более max&#95;query&#95;size. Если не определён, содержит пустую строку.
 * `thread_ids` ([Array(UInt64)](/ru/reference/data-types/array)) — Идентификаторы потоков, участвующих в выполнении запроса. Эти потоки могли выполняться не одновременно.
 * `peak_threads_usage` ([UInt64](/ru/reference/data-types/int-uint)) — Максимальное число потоков, одновременно выполняющих запрос.

@@ -111,10 +111,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, timestamp_scale);
     }
 
-    auto query_tree = std::make_shared<PrometheusQueryTree>();
-    query_tree->parse(params.promql_query, timestamp_scale);
-    LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
-
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
     auto sql_query = converter.getSQL();
 
@@ -126,6 +122,9 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
         getContext()->setSetting("enable_materialized_cte", true);
+
+    /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
+    getContext()->setSetting("allow_experimental_analyzer", true);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 

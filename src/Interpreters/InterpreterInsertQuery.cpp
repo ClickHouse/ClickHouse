@@ -35,6 +35,7 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
+#include <Processors/Transforms/ShrinkColumnsTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -85,6 +86,8 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsFloat shrink_over_allocated_columns_min_waste_ratio;
+    extern const SettingsUInt64 shrink_over_allocated_columns_min_waste_bytes;
     extern const SettingsString insert_deduplication_token;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -941,6 +944,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         head_output = &processor->getOutputs().front();
         processors->emplace_back(std::move(processor));
     };
+
+    /// Shrink over-allocated columns produced by parsing (e.g. String columns grown power-of-two) to
+    /// fit, right after the source where the chunk is uniquely owned, to reduce peak memory usage.
+    if (static_cast<double>(settings[Setting::shrink_over_allocated_columns_min_waste_ratio]) > 1.0)
+        add_head_transform(std::make_shared<ShrinkColumnsTransform>(
+            insert_header,
+            static_cast<double>(settings[Setting::shrink_over_allocated_columns_min_waste_ratio]),
+            settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     {
         auto counting = std::make_shared<CountingTransform>(insert_header, context->getQuota(), context->getNormalizedQueryHash());

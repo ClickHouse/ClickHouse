@@ -1,3 +1,4 @@
+#include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
 #include <numeric>
@@ -13,6 +14,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -61,6 +63,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
     extern const QueryPlanSerializationSettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge;
+    extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
+    extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
@@ -376,6 +380,66 @@ bool AggregatingStep::canUseShardedAggregation(const QueryPipelineBuilder & pipe
     return true;
 }
 
+const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipelineBuilder & pipeline) const
+{
+    if (!params.enable_adaptive_aggregator)
+        return "disabled by the setting";
+
+    if (pipeline.getNumStreams() <= 1 || params.max_threads <= 1)
+        return "the aggregation is single-stream";
+
+    if (params.only_merge)
+        return "the step only merges";
+
+    /// TODO (nihalzp): Support the group-by limits and the overflow row.
+    if (params.max_rows_to_group_by != 0 || params.overflow_row)
+        return "group-by limits or the overflow row are set";
+
+    if (params.keys_size < 1)
+        return "the aggregation has no keys";
+
+    if (!sort_description_for_merging.empty())
+        return "the aggregation is in order";
+
+    if (!grouping_sets_params.empty())
+        return "grouping sets are used";
+
+    if (should_produce_results_in_order_of_bucket_number)
+        return "the output must be bucket-ordered";
+
+    if (skip_merging)
+        return "the merge phase is skipped";
+
+    if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
+        return "two-level aggregation is disabled";
+
+    /// A prior run measured the query's staged stream as repeat-dominated and thawed: freezing
+    /// cannot pay for this query, so do not engage it again. The verdict lives in the hash-table
+    /// statistics; a run without it takes the ordinary path with the statistics-driven
+    /// initialization, exactly as if the feature were off.
+    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+    {
+        const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
+        if (hint && hint->adaptive_staging_repeat_dominated)
+            return "a prior run measured the staged stream as repeat-dominated";
+    }
+
+    /// TODO (nihalzp): Support LowCardinality and Nullable keys.
+    for (const auto & key : params.keys)
+    {
+        const auto & type = pipeline.getHeader().getByName(key).type;
+        if (type->lowCardinality() || type->isNullable())
+            return "a key is LowCardinality or Nullable";
+    }
+
+    Sizes key_sizes;
+    const auto method = AggregatedDataVariants::chooseMethod(pipeline.getHeader(), params.keys, key_sizes);
+    if (!AggregatedDataVariants::isConvertibleToTwoLevel(method))
+        return "the aggregation method has no two-level form";
+
+    return nullptr;
+}
+
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     size_t new_merge_threads = merge_threads;
@@ -422,6 +486,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
 
     const bool use_sharded_aggregation = canUseShardedAggregation(pipeline);
+
+    const char * adaptive_rejection
+        = use_sharded_aggregation ? "the sharded aggregation is used instead" : adaptiveAggregatorRejectionReason(pipeline);
+    const bool use_adaptive_aggregator = adaptive_rejection == nullptr;
+    if (!use_adaptive_aggregator && params.enable_adaptive_aggregator)
+        LOG_TRACE(getLogger("AggregatingStep"), "Adaptive aggregation is not engaged: {}", adaptive_rejection);
+    params.enable_adaptive_aggregator = use_adaptive_aggregator;
 
     if (use_sharded_aggregation)
     {
@@ -743,6 +814,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.resize(pipeline.getNumStreams(), true, settings.min_outstreams_per_resize_after_split);
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
+        if (use_adaptive_aggregator)
+            many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
 
         size_t counter = 0;
         pipeline.addSimpleTransform(
@@ -858,9 +931,15 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
+    /// The projection pipeline never runs the adaptive admission and never creates the
+    /// adaptive shared state, so the flag it receives must not claim otherwise: it would only
+    /// mis-drive the size-hint branch of `initDataVariantsWithSizeHint`.
+    auto params_without_adaptive = params;
+    params_without_adaptive.enable_adaptive_aggregator = false;
+
     auto aggregating_projection = std::make_unique<AggregatingProjectionStep>(
         SharedHeaders{input_headers.front(), input_header},
-        params,
+        params_without_adaptive,
         final,
         merge_threads,
         temporary_data_merge_threads
@@ -1024,6 +1103,21 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
 
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
     settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
+
+    /// `QueryPlanSerializationSettings` is a strict named schema, so these two names may go on the wire only
+    /// towards a peer whose version knows them; see the comment below on the packed-string-keys setting.
+    /// A peer that predates them has no adaptive aggregator at all, so leaving them out is also the correct
+    /// behaviour and not merely the safe one: the receiver then runs the ordinary aggregation, which is what
+    /// it would do with the setting off. The result is identical either way - the adaptive path is exact.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR)
+    {
+        settings[QueryPlanSerializationSetting::enable_adaptive_aggregator] = params.enable_adaptive_aggregator;
+        settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold] = params.adaptive_aggregator_freeze_threshold;
+    }
+
+    /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
+    /// omitting either one would silently leave it on the other layout.
+    settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
 
     /// A peer whose query-plan serialization version knows the name (this `version` is already the minimum of ours
     /// and the peer's) receives the value whenever the legacy method is requested, so the setting always takes
@@ -1203,7 +1297,9 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
-        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]};
+        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
+        ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold]};
 
     SortDescription sort_description_for_merging;
 

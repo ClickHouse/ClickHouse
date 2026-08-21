@@ -71,7 +71,9 @@ Aggregator::Params makeParams(const Names & keys, const AggregateDescriptions & 
         /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
         /*serialize_string_with_zero_byte_=*/false,
         /*enable_parallel_single_level_merge_=*/true,
-        /*enable_packed_string_keys_=*/true);
+        /*enable_packed_string_keys_=*/true,
+        /*enable_adaptive_aggregator_=*/false,
+        /*adaptive_aggregator_freeze_threshold_=*/0);
 }
 
 /// Renders one finalized chunk as "key[,key]" -> "value[,value]" rows.
@@ -117,7 +119,7 @@ struct Scenario
         for (const auto & block : blocks)
         {
             const size_t rows = block.front()->size();
-            aggregator.executeOnBlock(block, 0, rows, *variants, key_columns, aggregate_columns, no_more_keys);
+            aggregator.executeOnBlock(block, 0, rows, *variants, key_columns, aggregate_columns, no_more_keys, /*adaptive=*/nullptr);
         }
         return variants;
     }
@@ -126,7 +128,7 @@ struct Scenario
     std::map<String, String> mergePartitions(std::vector<AggregatedDataVariantsPtr> sources, size_t num_partitions) const
     {
         ManyAggregatedDataVariants many(sources.begin(), sources.end());
-        auto prepared = aggregator.prepareVariantsToMerge(std::move(many));
+        auto prepared = aggregator.prepareVariantsToMerge(std::move(many), /*adaptive_session=*/nullptr);
         EXPECT_FALSE(prepared.empty());
         EXPECT_FALSE(prepared.at(0)->isTwoLevel());
         EXPECT_TRUE(aggregator.canMergeSingleLevelInPartitions(*prepared.at(0)));
@@ -154,7 +156,7 @@ struct Scenario
     std::map<String, String> mergePartitionsNonFinal(std::vector<AggregatedDataVariantsPtr> sources, size_t num_partitions) const
     {
         ManyAggregatedDataVariants many(sources.begin(), sources.end());
-        auto prepared = aggregator.prepareVariantsToMerge(std::move(many));
+        auto prepared = aggregator.prepareVariantsToMerge(std::move(many), /*adaptive_session=*/nullptr);
 
         std::atomic<bool> cancelled{false};
         size_t max_table_size = 0;

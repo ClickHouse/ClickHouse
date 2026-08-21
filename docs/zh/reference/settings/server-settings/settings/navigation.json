@@ -1,7 +1,8 @@
 {
   "directory": "none",
-  "group": "服务器设置",
+  "group": "Server Settings",
   "pages": [
+    "zh/reference/settings/server-settings/settings",
     "zh/reference/settings/server-settings/settings/access-control",
     "zh/reference/settings/server-settings/settings/aggregate-function",
     "zh/reference/settings/server-settings/settings/allow",
@@ -132,6 +133,5 @@
     "zh/reference/settings/server-settings/settings/workload",
     "zh/reference/settings/server-settings/settings/zookeeper",
     "zh/reference/settings/server-settings/settings/other"
-  ],
-  "root": "zh/reference/settings/server-settings/settings"
+  ]
 }

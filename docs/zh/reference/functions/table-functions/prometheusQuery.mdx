@@ -29,7 +29,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 * `promql_query` - 使用 [PromQL 语法](https://prometheus.io/docs/prometheus/latest/querying/basics/) 编写的查询。
 * `evaluation_time - 求值时间戳。要在当前时间对查询进行求值，请使用 `now()`作为`evaluation&#95;time&#96;。
 
-<div id="returned_value">
+<div id="returned-value">
   ## 返回值
 </div>
 
@@ -58,7 +58,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 | 类别   | 函数                                                                                               |
 | ---- | ------------------------------------------------------------------------------------------------ |
-| 范围   | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| 范围   | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | 数学   | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | 三角   | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | 日期时间 | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |

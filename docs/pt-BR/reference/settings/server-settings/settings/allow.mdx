@@ -42,6 +42,8 @@ Isso equivale a definir uma restrição readonly em todos os recursos `EXPERIMEN
 
 Proíbe a criação de um usuário sem senha, a menos que &#39;IDENTIFIED WITH no&#95;password&#39; seja especificado explicitamente.
 
+* **Padrão:** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -52,6 +54,8 @@ Proíbe a criação de um usuário sem senha, a menos que &#39;IDENTIFIED WITH n
 
 Define se é permitido usar o tipo de senha inseguro no&#95;password.
 
+* **Padrão:** `true`
+
 ```xml
 <allow_no_password>1</allow_no_password>
 ```
@@ -61,6 +65,8 @@ Define se é permitido usar o tipo de senha inseguro no&#95;password.
 </div>
 
 Define se tipos de senha em texto puro (inseguros) são permitidos.
+
+* **Padrão:** `true`
 
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>
