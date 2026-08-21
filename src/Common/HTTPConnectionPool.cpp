@@ -640,7 +640,17 @@ private:
 
         void doConnect(UInt64 * connect_time)
         {
-            Session::reconnect(connect_time);
+            try
+            {
+                Session::reconnect(connect_time);
+            }
+            catch (Poco::Net::NetException & e)
+            {
+                /// A refusal discovered after EINPROGRESS reaches us as a bare "Connection refused":
+                /// Poco names the peer only on the immediate-failure path. Name it here too.
+                e.extendedMessage(fmt::format("{}:{}", Session::getHost(), Session::getPort()));
+                throw;
+            }
             notifySocketInode();
         }
 
