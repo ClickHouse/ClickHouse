@@ -209,10 +209,12 @@ public:
     /// like it does when a target cannot be resolved or the chain is too deep. An `Alias` target is known
     /// locally, so the probe follows it and its hidden dependent-view graph precisely.
     bool storageMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth = 0) const;
+    static bool storageMayWriteToReplicatedTable(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
     /// Whether a dependent-view graph hidden behind an `Alias` may write to a `ReplicatedMergeTree`.
     /// It fails closed when a view or its target cannot be resolved.
     bool dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth = 0) const;
+    static bool dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
     /// Whether a quorum writer reached through `storage` cannot be tied to a concrete target in
     /// `computeQuorumStreamRequirements`. Unlike other forwarding storages, an `Alias` can be

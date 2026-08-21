@@ -1075,13 +1075,26 @@ bool InsertDependenciesBuilder::dependentViewForwardsInsertToSeparateContext(
     for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
     {
         auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
-        /// Fail closed on a dependent view that cannot be resolved or is not a materialized view
-        /// (its write path is not modelled here).
-        if (!view)
-            return true;
+        auto view_lock = view
+            ? view->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
+            : nullptr;
+        /// A view that cannot be resolved or locked is being dropped concurrently:
+        /// `collectAllDependencies` prunes such a view from the executable graph, so it runs nothing.
+        if (!view_lock)
+            continue;
+
+        /// Fail closed on a dependent view that is not a materialized view (its write path is not
+        /// modelled here).
         const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
         if (!materialized_view)
             return true;
+
+        /// A stale catalog dependency whose view no longer reads from `storage` is pruned from the
+        /// executable graph by `collectAllDependencies` (the `select_table_id` check), so it runs
+        /// nothing - skip it here as well, like the other hidden-view probes do.
+        const auto metadata = view->getInMemoryMetadataPtr(context, false);
+        if (metadata->getSelectQuery().select_table_id != storage->getStorageID())
+            continue;
 
         /// Resolve the target through the current INSERT context. The view's creation context can
         /// retain its dropped target, while the executable graph skips the view when requested.
@@ -1171,6 +1184,12 @@ bool InsertDependenciesBuilder::isSequentialQuorumInsert(const Settings & settin
 
 bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth) const
 {
+    return storageMayWriteToReplicatedTable(storage, init_context, depth);
+}
+
+
+bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePtr & storage, ContextPtr context, size_t depth)
+{
     if (depth > max_insert_forwarding_depth)
         return true;
 
@@ -1182,10 +1201,10 @@ bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePt
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || storageMayWriteToReplicatedTable(target, depth + 1);
+        return !target || storageMayWriteToReplicatedTable(target, context, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-        return storageMayWriteToReplicatedTable(proxy->getNested(), depth + 1);
+        return storageMayWriteToReplicatedTable(proxy->getNested(), context, depth + 1);
 
     /// Unlike the other forwarding storages, an `Alias` has a locally resolvable target. Its nested
     /// `INSERT` expands the target's dependent-view graph only at execution time, so inspect that
@@ -1194,8 +1213,8 @@ bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePt
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
-        return !target || storageMayWriteToReplicatedTable(target, depth + 1)
-            || dependentViewMayWriteToReplicatedTable(target, depth + 1);
+        return !target || storageMayWriteToReplicatedTable(target, context, depth + 1)
+            || dependentViewMayWriteToReplicatedTable(target, context, depth + 1);
     }
 
     /// A forwarding storage runs a nested `INSERT` whose destination graph is not visible here: an
@@ -1214,16 +1233,24 @@ bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePt
 
 bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth) const
 {
+    return dependentViewMayWriteToReplicatedTable(storage, init_context, depth);
+}
+
+
+bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, ContextPtr context, size_t depth)
+{
     if (depth > max_insert_forwarding_depth)
         return true;
+
+    const auto & settings = context->getSettingsRef();
 
     for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
     {
         try
         {
-            auto view = DatabaseCatalog::instance().tryGetTable(view_id, init_context);
+            auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
             auto view_lock = view
-                ? view->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout])
+                ? view->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
                 : nullptr;
             if (!view_lock)
                 continue;
@@ -1232,32 +1259,33 @@ bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const Sto
             if (!materialized_view)
                 return true;
 
-            const auto metadata = view->getInMemoryMetadataPtr(init_context, false);
+            const auto metadata = view->getInMemoryMetadataPtr(context, false);
             if (metadata->getSelectQuery().select_table_id != storage->getStorageID())
                 continue;
 
             /// Resolve through the current INSERT context for consistency with `observePath`.
             /// `StorageMaterializedView::tryGetTargetTable` uses the view's context, which can retain
             /// a stale target-table entry after `DROP TABLE`.
-            auto target = DatabaseCatalog::instance().tryGetTable(materialized_view->getTargetTableId(), init_context);
+            auto target = DatabaseCatalog::instance().tryGetTable(materialized_view->getTargetTableId(), context);
             auto target_lock = target
-                ? target->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout])
+                ? target->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
                 : nullptr;
             if (!target_lock)
             {
-                if (ignore_materialized_views_with_dropped_target_table || materialized_views_ignore_errors)
+                if (settings[Setting::ignore_materialized_views_with_dropped_target_table]
+                    || settings[Setting::materialized_views_ignore_errors])
                     continue;
 
                 return true;
             }
 
-            if (storageMayWriteToReplicatedTable(target, depth + 1)
-                || dependentViewMayWriteToReplicatedTable(target, depth + 1))
+            if (storageMayWriteToReplicatedTable(target, context, depth + 1)
+                || dependentViewMayWriteToReplicatedTable(target, context, depth + 1))
                 return true;
         }
         catch (...) // Ok: an error may be ignored by `materialized_views_ignore_errors`.
         {
-            if (!materialized_views_ignore_errors)
+            if (!settings[Setting::materialized_views_ignore_errors])
                 return true;
         }
     }
