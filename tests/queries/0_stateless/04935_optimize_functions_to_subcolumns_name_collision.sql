@@ -90,12 +90,42 @@ SELECT 'json size path';
 SELECT length(arr), empty(arr), length(nested), length(m) FROM t_json_size_path SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT length(arr), empty(arr), length(nested), length(m) FROM t_json_size_path SETTINGS optimize_functions_to_subcolumns = 1;
 
+-- A sibling element can flatten to the same name as a nested one, and declaration order decides
+-- which one a read returns. Only the case where the sibling is declared first is wrong.
+
+DROP TABLE IF EXISTS t_shadowed_tuple_element;
+CREATE TABLE t_shadowed_tuple_element (c Tuple(`t.a` UInt64, t Tuple(a UInt64))) ENGINE = Memory;
+INSERT INTO t_shadowed_tuple_element VALUES ((99, (1)));
+
+SELECT 'tuple element';
+SELECT tupleElement(c.t, 'a') FROM t_shadowed_tuple_element SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT tupleElement(c.t, 'a') FROM t_shadowed_tuple_element SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE IF EXISTS t_nested_tuple_element;
+CREATE TABLE t_nested_tuple_element (c Tuple(t Tuple(a UInt64), `t.a` UInt64)) ENGINE = Memory;
+INSERT INTO t_nested_tuple_element VALUES (((1), 99));
+
+SELECT 'tuple element, nested declared first';
+SELECT tupleElement(c.t, 'a') FROM t_nested_tuple_element SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT tupleElement(c.t, 'a') FROM t_nested_tuple_element SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE IF EXISTS t_shadowed_variant_element;
+CREATE TABLE t_shadowed_variant_element (c Tuple(`t.Int64` UInt64, t Variant(Int64, String))) ENGINE = Memory;
+INSERT INTO t_shadowed_variant_element VALUES ((99, 7::Int64));
+
+SELECT 'variant element';
+SELECT variantElement(c.t, 'Int64') FROM t_shadowed_variant_element SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT variantElement(c.t, 'Int64') FROM t_shadowed_variant_element SETTINGS optimize_functions_to_subcolumns = 1;
+
 -- The guard must not reject the ordinary case: every rewrite still fires when nothing claims the name.
+-- The setting is randomized in CI, and these queries read it from the session.
 
 DROP TABLE IF EXISTS t_plain;
-CREATE TABLE t_plain (s String, arr Array(UInt64), m Map(String, UInt64), n Nullable(UInt64))
+CREATE TABLE t_plain (s String, arr Array(UInt64), m Map(String, UInt64), n Nullable(UInt64), t Tuple(x UInt64), v Variant(Int64, String))
 ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_plain VALUES ('abc', [1, 2], {'k': 1}, 5);
+INSERT INTO t_plain VALUES ('abc', [1, 2], {'k': 1}, 5, (1), 7::Int64);
+
+SET optimize_functions_to_subcolumns = 1;
 
 SELECT 'still optimized';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT length(s) FROM t_plain) WHERE explain LIKE '%s.size%';
@@ -112,6 +142,8 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT m['k'] FROM t_plain) WHERE explai
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT isNull(n) FROM t_plain) WHERE explain LIKE '%n.null%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT isNotNull(n) FROM t_plain) WHERE explain LIKE '%n.null%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count(n) FROM t_plain) WHERE explain LIKE '%n.null%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(t, 'x') FROM t_plain) WHERE explain LIKE '%t.x%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT variantElement(v, 'Int64') FROM t_plain) WHERE explain LIKE '%v.Int64%';
 
 DROP TABLE t_shadowed_string_size;
 DROP TABLE t_shadowed_array_size;
@@ -122,4 +154,7 @@ DROP TABLE t_shadowed_map_key;
 DROP TABLE t_nullable_json;
 DROP TABLE t_nullable_tuple;
 DROP TABLE t_json_size_path;
+DROP TABLE t_shadowed_tuple_element;
+DROP TABLE t_nested_tuple_element;
+DROP TABLE t_shadowed_variant_element;
 DROP TABLE t_plain;
