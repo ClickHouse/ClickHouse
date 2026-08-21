@@ -212,8 +212,9 @@
             "es/concepts/features/interfaces/native-clients-interfaces-index",
             "es/concepts/features/interfaces/cli",
             "es/concepts/features/interfaces/client",
+            "es/concepts/features/interfaces/mcp",
             {
-              "group": "Drivers e interfaces",
+              "group": "Controladores e interfaces",
               "pages": [
                 "es/concepts/features/interfaces/overview",
                 "es/concepts/features/interfaces/http",

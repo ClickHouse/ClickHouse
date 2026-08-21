@@ -243,21 +243,21 @@
                   "group": "Bibliotecas para agentes de IA",
                   "pages": [
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
                     "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
-                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "pt-BR/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic"
                   ]
                 }
               ]

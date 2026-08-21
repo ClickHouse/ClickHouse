@@ -243,21 +243,21 @@
                   "group": "Bibliotecas para agentes de IA",
                   "pages": [
                     "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
-                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
-                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
-                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
-                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
-                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
                     "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
                     "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
                     "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
                     "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
                     "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
                     "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
                     "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
                     "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
-                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
-                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
+                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents",
+                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "es/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic"
                   ]
                 }
               ]

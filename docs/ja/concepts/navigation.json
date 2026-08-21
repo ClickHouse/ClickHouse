@@ -212,6 +212,7 @@
             "ja/concepts/features/interfaces/native-clients-interfaces-index",
             "ja/concepts/features/interfaces/cli",
             "ja/concepts/features/interfaces/client",
+            "ja/concepts/features/interfaces/mcp",
             {
               "group": "ドライバーとインターフェイス",
               "pages": [

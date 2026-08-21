@@ -212,6 +212,7 @@
             "ru/concepts/features/interfaces/native-clients-interfaces-index",
             "ru/concepts/features/interfaces/cli",
             "ru/concepts/features/interfaces/client",
+            "ru/concepts/features/interfaces/mcp",
             {
               "group": "Драйверы и интерфейсы",
               "pages": [

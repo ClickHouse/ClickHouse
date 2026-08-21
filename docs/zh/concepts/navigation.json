@@ -212,8 +212,9 @@
             "zh/concepts/features/interfaces/native-clients-interfaces-index",
             "zh/concepts/features/interfaces/cli",
             "zh/concepts/features/interfaces/client",
+            "zh/concepts/features/interfaces/mcp",
             {
-              "group": "驱动与接口",
+              "group": "驱动程序和接口",
               "pages": [
                 "zh/concepts/features/interfaces/overview",
                 "zh/concepts/features/interfaces/http",

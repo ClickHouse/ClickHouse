@@ -212,6 +212,7 @@
             "ko/concepts/features/interfaces/native-clients-interfaces-index",
             "ko/concepts/features/interfaces/cli",
             "ko/concepts/features/interfaces/client",
+            "ko/concepts/features/interfaces/mcp",
             {
               "group": "드라이버 및 인터페이스",
               "pages": [
