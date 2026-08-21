@@ -2673,7 +2673,8 @@ try
             /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
             ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
 
-            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
+            /// Fail closed on a legacy insert_deduplication_version, or on a memory-pressure threshold
+            /// ladder that is out of range or out of order, arriving via a runtime reload.
             /// Validate the incoming config BEFORE config().replace below: validating after would mutate
             /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
             /// system.server_settings reporting an unsupported value. Reject first, then replace.
@@ -2681,6 +2682,10 @@ try
                 ServerSettings incoming_server_settings;
                 incoming_server_settings.loadSettingsFromConfig(*loaded_config);
                 validate_insert_deduplication_version(incoming_server_settings);
+                validateMemoryPressureThresholds(
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
             }
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
@@ -2688,7 +2693,9 @@ try
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
 
-            /// Validate before applying any live setting below, so an invalid triple rejects the whole reload.
+            /// The check above sees the incoming file alone. A ladder split across the file and the
+            /// command-line layer can have each source valid and the merge out of order, so check the
+            /// merged view too - here, before the first live setting below is touched.
             validateMemoryPressureThresholds(
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
@@ -2966,8 +2973,9 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            /// Already validated above, so this won't throw. Sets and stamps the shared thresholds, so
-            /// every monitor adopts the new ladder on its next sample, bypassing the sticky cooldown.
+            /// The ladder was validated above, so a rejected reload never reaches here. Sets and stamps
+            /// the shared thresholds, so every monitor adopts the new ladder on its next sample,
+            /// bypassing the sticky cooldown.
             setMemoryPressureThresholds(
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
