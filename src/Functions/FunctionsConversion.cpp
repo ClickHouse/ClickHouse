@@ -974,20 +974,16 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     ElementWrappers element_wrappers;
     VectorWithMemoryTracking<std::optional<size_t>> to_reverse_index;
 
-    /// For named tuples allow conversions for tuples with different sets of elements,
-    /// but only when the correspondence between elements is unambiguous:
-    /// - if every element name of @to_type exists in @from_type, elements are matched by name,
-    ///   and source elements without a counterpart are dropped;
-    /// - if every element name of @from_type exists in @to_type, elements are matched by name,
-    ///   and target elements without a counterpart are filled by default values
-    ///   (e.g. adding a new element to a Nested column);
-    /// - if the name sets are disjoint, elements are converted positionally, as for unnamed tuples
-    ///   (e.g. the result of function tuple with enable_named_columns_in_function_tuple inserted
-    ///   into a column whose tuple elements are named differently);
-    /// - otherwise (the name sets partially overlap and each side has extra names) an exception
-    ///   is thrown, because it is unclear whether elements correspond by name or by position.
-    /// Unmatched target elements must never be silently filled by default values when the source
-    /// has data for them positionally: that loses data (see issue #70830).
+    /// For named tuples with at least one element name in common allow conversions for tuples
+    /// with different sets of elements: elements are matched by name, source elements without
+    /// a counterpart are dropped, and target elements without a counterpart are filled by default
+    /// values (schema evolution: adding, dropping and renaming elements of a Tuple or a Nested
+    /// column with ALTER).
+    /// For named tuples with disjoint sets of element names, matching by name cannot be meant,
+    /// and elements are converted positionally, as for unnamed tuples (e.g. the result of function
+    /// tuple with enable_named_columns_in_function_tuple inserted into a column whose tuple
+    /// elements are named differently). Previously such conversions silently filled the whole
+    /// result by default values, losing all the data (see issue #70830).
     bool convert_positionally = !(from_type->hasExplicitNames() && to_type->hasExplicitNames());
 
     if (!convert_positionally)
@@ -1007,15 +1003,6 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
         if (common_names_count == 0)
         {
             convert_positionally = true;
-        }
-        else if (common_names_count < to_names.size() && common_names_count < from_names.size())
-        {
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                            "CAST AS Tuple between named tuples is ambiguous: their sets of element names partially overlap, "
-                            "and each of the tuples has elements missing in the other one, so it is unclear whether elements "
-                            "correspond by name or by position. Rename the elements, or CAST through a tuple without element "
-                            "names to convert positionally.\nLeft type: {}, right type: {}",
-                            from_type->getName(), to_type->getName());
         }
         else
         {

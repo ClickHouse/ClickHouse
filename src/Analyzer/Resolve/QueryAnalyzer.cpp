@@ -6757,6 +6757,55 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     for (auto & [_, node] : scope.aliases.alias_name_to_lambda_node)
         node->removeAlias();
 
+    /// Nested aliases can repeat between different projection expressions
+    /// (SELECT tuple(1 AS x), tuple(2 AS x) -- see the check for duplicated aliases above),
+    /// and the column name of an expression is built using the aliases of its subexpressions,
+    /// so different constant projection expressions can end up with the same column name.
+    /// Columns with identical names must have identical structure in a Block, so such columns
+    /// are renamed by appending a numeric suffix. Only collisions between unequal constants are
+    /// renamed: they are only reachable through repeated aliases of nested expressions (otherwise
+    /// the names, which are built from the expression text, would differ), so no previously
+    /// working query changes its column names. Other collisions (e.g. same-named columns of
+    /// joined tables) keep the historical behavior.
+    {
+        const auto & projection_nodes = query_node_typed.getProjection().getNodes();
+        if (projection_nodes.size() == projection_columns.size())
+        {
+            std::unordered_map<std::string, size_t> name_to_first_position;
+            std::unordered_set<std::string> projection_column_names;
+            for (const auto & projection_column : projection_columns)
+                projection_column_names.insert(projection_column.name);
+
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+            {
+                auto [it, inserted] = name_to_first_position.emplace(projection_columns[i].name, i);
+                if (inserted)
+                    continue;
+
+                const auto & first_column = projection_columns[it->second];
+                const auto * first_constant = projection_nodes[it->second]->as<ConstantNode>();
+                const auto * current_constant = projection_nodes[i]->as<ConstantNode>();
+
+                bool need_rename = first_constant && current_constant
+                    && (!projection_columns[i].type->equals(*first_column.type)
+                        || first_constant->getValue() != current_constant->getValue());
+
+                if (!need_rename)
+                    continue;
+
+                size_t suffix = 1;
+                std::string new_name;
+                do
+                {
+                    new_name = fmt::format("{}_{}", projection_columns[i].name, suffix);
+                    ++suffix;
+                } while (!projection_column_names.emplace(new_name).second);
+
+                projection_columns[i].name = std::move(new_name);
+            }
+        }
+    }
+
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
 }
 

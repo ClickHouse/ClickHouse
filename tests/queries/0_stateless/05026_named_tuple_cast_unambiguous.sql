@@ -15,9 +15,8 @@ SELECT CAST(CAST((1, 2), 'Tuple(a Int32, b Int32)'), 'Tuple(b Int64)');
 SELECT 'New elements of the target tuple are filled by default values';
 SELECT CAST(CAST((1, 2), 'Tuple(a Int32, b Int32)'), 'Tuple(b Int64, a Int64, c Int64)');
 
-SELECT 'Partially overlapping sets of element names are ambiguous';
-SELECT CAST(CAST((1, 2), 'Tuple(a Int32, b Int32)'), 'Tuple(b Int64, c Int64)'); -- { serverError TYPE_MISMATCH }
-SELECT CAST(CAST((1, 2, 3), 'Tuple(a Int32, b Int32, c Int32)'), 'Tuple(c Int64, x Int64)'); -- { serverError TYPE_MISMATCH }
+SELECT 'Tuples with common element names are matched by name (schema evolution by ALTER)';
+SELECT CAST(CAST((1, 2), 'Tuple(a Int32, b Int32)'), 'Tuple(b Int64, c Int64)');
 
 SELECT 'Disjoint sets of element names with different tuple sizes cannot be converted';
 SELECT CAST(CAST((1, 2), 'Tuple(a Int32, b Int32)'), 'Tuple(x Int64, y Int64, z Int64)'); -- { serverError TYPE_MISMATCH }

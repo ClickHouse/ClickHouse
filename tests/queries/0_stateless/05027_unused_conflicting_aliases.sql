@@ -8,6 +8,9 @@ SELECT tuple(1 AS x, 2 AS y, 3 AS z) AS t1, tuple(4 AS x, 5 AS y, 6 AS z) AS t2,
 SELECT tuple(1 AS x, 2 AS y), tuple(3 AS x, 4 AS y);
 SELECT tuple(number + 1 AS x) AS t1, tuple(number + 2 AS x) AS t2 FROM numbers(2) SETTINGS enable_named_columns_in_function_tuple = 1;
 
+SELECT 'Colliding column names of conflicting constant expressions are disambiguated';
+DESCRIBE (SELECT tuple(1 AS x), tuple(2 AS x));
+
 SELECT 'The same argument named differently in different tuples produces different tuples';
 SELECT tuple(a AS x) AS t1, tuple(a AS y) AS t2, toTypeName(t1), toTypeName(t2) FROM (SELECT 1 AS a) SETTINGS enable_named_columns_in_function_tuple = 1;
 
