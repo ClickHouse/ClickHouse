@@ -57,10 +57,10 @@ struct ExponentialTimeDecayedState
     Float64 max_time = 0;
     /// Runtime-only cache. It is deliberately not serialized: persisted aggregate
     /// states and storage-engine merges always retain the exact representation.
-    Float64 calculation_index_time = std::numeric_limits<Float64>::quiet_NaN();
+    mutable Float64 calculation_index_time = std::numeric_limits<Float64>::quiet_NaN();
     bool empty() const { return weight == 0; }
 
-    Float64 getCalculationIndexTime(Float64 decay_length)
+    Float64 getCalculationIndexTime(Float64 decay_length) const
     {
         if (std::isnan(calculation_index_time))
             calculation_index_time = weighted_sum == 0
@@ -83,20 +83,32 @@ struct ExponentialTimeDecayedState
         if (input_calculation_index_time)
             rhs.calculation_index_time = *input_calculation_index_time;
 
+        merge(rhs, decay_length, max_decay_distance, input_calculation_index_time.has_value());
+    }
+
+    void merge(
+        const ExponentialTimeDecayedState & rhs,
+        Float64 decay_length,
+        Float64 max_decay_distance,
+        bool input_has_calculation_index)
+    {
         /// Approximation is only allowed when the input already carries its
-        /// calculation index. Raw rows and merged aggregate states take the exact
-        /// path, so storage engines never apply a query's calculation budget.
-        if (input_calculation_index_time && std::isfinite(max_decay_distance) && !empty())
+        /// calculation index. Query-local partial states preserve that index, so
+        /// parallel aggregation has the same budget semantics as adding rows to a
+        /// single state. Aggregate functions reconstructed for storage-engine
+        /// merges have an infinite budget and therefore always take the exact path.
+        if (input_has_calculation_index && std::isfinite(max_decay_distance) && !empty() && !rhs.empty())
         {
             const Float64 current_index_time = getCalculationIndexTime(decay_length);
-            if (*input_calculation_index_time > current_index_time
-                && *input_calculation_index_time - current_index_time > max_decay_distance)
+            const Float64 rhs_index_time = rhs.getCalculationIndexTime(decay_length);
+            if (rhs_index_time > current_index_time
+                && rhs_index_time - current_index_time > max_decay_distance)
             {
                 *this = rhs;
                 return;
             }
-            if (current_index_time > *input_calculation_index_time
-                && current_index_time - *input_calculation_index_time > max_decay_distance)
+            if (current_index_time > rhs_index_time
+                && current_index_time - rhs_index_time > max_decay_distance)
                 return;
         }
 
@@ -240,7 +252,11 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).mergeExact(this->data(rhs), decay_length);
+        this->data(place).merge(
+            this->data(rhs),
+            decay_length,
+            max_decay_distance,
+            input_is_decaying_value);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
