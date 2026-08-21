@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Session Settings",
+  "group": "Настройки сеанса",
   "pages": [
     "ru/reference/settings/session-settings/additional",
     "ru/reference/settings/session-settings/aggregate",
@@ -223,6 +223,7 @@
     "ru/reference/settings/session-settings/shared-merge",
     "ru/reference/settings/session-settings/short-circuit-function-evaluation",
     "ru/reference/settings/session-settings/show",
+    "ru/reference/settings/session-settings/shrink-over",
     "ru/reference/settings/session-settings/skip-unavailable-shards",
     "ru/reference/settings/session-settings/sleep-in",
     "ru/reference/settings/session-settings/split",
