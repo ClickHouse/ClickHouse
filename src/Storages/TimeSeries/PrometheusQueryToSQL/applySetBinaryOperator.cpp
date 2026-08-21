@@ -54,7 +54,7 @@ const ImplInfo * getImplInfo(std::string_view operator_name)
 /// Instant-selector grids intentionally keep stale markers (`fromSelector` passes
 /// `filter_stale_markers = false`); they are only filtered away at finalization. For set matching
 /// a stale marker means the series is absent at that step, so it must not be seen as present by
-/// `countForEach` below, nor by the non-empty row predicates. Normalize it to NULL up front.
+/// the presence mask below, nor by the non-empty row predicates. Normalize it to NULL up front.
 ///
 /// `0x7ff0000000000002` is Prometheus's staleness NaN bit pattern (see `fromSelector` and
 /// `finalizeSQL`). For grids without stale markers this is a no-op.
@@ -79,6 +79,18 @@ ASTPtr dropStaleMarkers(ASTPtr values)
         std::move(values));
 }
 
+/// Build a compact per-step presence mask for a vector grid: 1 where at least one series of the group has
+/// a value at that step, 0 otherwise.
+ASTPtr makePresenceMask(ASTPtr values)
+{
+    auto lambda = makeASTFunction(
+        "lambda",
+        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+        makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x")));
+
+    return makeASTFunction("groupBitOrForEach", makeASTFunction("arrayMap", std::move(lambda), std::move(values)));
+}
+
 ASTPtr makeNonEmptyValuesPredicate(ASTPtr values)
 {
     return makeASTFunction(
@@ -90,7 +102,7 @@ ASTPtr makeNonEmptyValuesPredicate(ASTPtr values)
         std::move(values));
 }
 
-ASTPtr makePresenceMaskedValues(ASTPtr values, ASTPtr presence_counts, bool keep_when_present)
+ASTPtr makePresenceMaskedValues(ASTPtr values, ASTPtr presence_mask, bool keep_when_present)
 {
     ASTPtr condition = keep_when_present
         ? makeASTFunction("greater", make_intrusive<ASTIdentifier>("presence"), make_intrusive<ASTLiteral>(0u))
@@ -103,7 +115,7 @@ ASTPtr makePresenceMaskedValues(ASTPtr values, ASTPtr presence_counts, bool keep
             makeASTFunction("tuple", make_intrusive<ASTIdentifier>("value"), make_intrusive<ASTIdentifier>("presence")),
             makeASTFunction("if", std::move(condition), make_intrusive<ASTIdentifier>("value"), make_intrusive<ASTLiteral>(Field{}))),
         std::move(values),
-        std::move(presence_counts));
+        std::move(presence_mask));
 }
 
 /// Registers a named subquery. Subqueries read by more than one downstream step must be added with
@@ -197,7 +209,7 @@ ASTPtr selectPresenceByJoinGroup(const String & table_name)
     builder.from_table = table_name;
     builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
     builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
-    builder.select_list.push_back(makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+    builder.select_list.push_back(makePresenceMask(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
     builder.select_list.back()->setAlias(ColumnNames::Values);
     builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
     return builder.getSelectQuery();
