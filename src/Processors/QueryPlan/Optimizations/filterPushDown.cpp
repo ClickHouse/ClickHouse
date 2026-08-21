@@ -562,6 +562,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_expressions.append_range(std::move(extra_equivalent_expressions));
     }
 
+    NameSet filter_input_names;
+    for (const auto * input_node : filter->getExpression().getInputs())
+        filter_input_names.emplace(input_node->result_name);
+
     auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available, bool require_stable_types = false)
     {
         Names available_input_columns_for_filter;
@@ -570,11 +574,24 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             return available_input_columns_for_filter;
 
         const auto & input_header = push_to_left_stream ? left_stream_input_header : right_stream_input_header;
-        const auto & input_columns_names = input_header->getNames();
+        NameSet already_added;
 
-        for (const auto & name : input_columns_names)
+        auto try_add = [&](const String & name)
         {
-            if (!join_header->has(name))
+            if (!already_added.insert(name).second)
+                return;
+
+            available_input_columns_for_filter.push_back(name);
+        };
+
+        for (const auto & name : input_header->getNames())
+        {
+            const bool in_join_output = join_header->has(name);
+
+            /// JOIN output may drop a left-only column (unused-column removal after
+            /// `count()` of `SELECT * … JOIN … WHERE left.col …`) while the Filter DAG
+            /// still references it. That name is still valid on this stream.
+            if (!in_join_output && (require_stable_types || !filter_input_names.contains(name)))
                 continue;
 
             /// For the legacy JoinStep (not JoinStepLogical), there is no mechanism to adjust
@@ -585,11 +602,44 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             ///
             /// The disjunction (partial predicate) push-down path has no such type-fixup, so it
             /// passes require_stable_types to also exclude type-changing columns for JoinStepLogical.
-            if ((!logical_join || require_stable_types)
+            if (in_join_output
+                && (!logical_join || require_stable_types)
                 && !input_header->getByName(name).type->equals(*join_header->getByName(name).type))
                 continue;
 
-            available_input_columns_for_filter.push_back(name);
+            try_add(name);
+        }
+
+        /// JoinStepLogical may alias a side's input (`bid`) to a JOIN-output / filter name
+        /// (`__table1.bid`). `splitActionsForJOINFilterPushDown` matches filter inputs, so
+        /// the output name must be listed; `fix_predicate_for_join_logical_step` remaps it.
+        if (logical_join)
+        {
+            for (const auto & output_action : logical_join->getOutputActions())
+            {
+                if (push_to_left_stream ? !output_action.fromLeft() : !output_action.fromRight())
+                    continue;
+
+                const auto & output_name = output_action.getColumnName();
+                if (!join_header->has(output_name) && !filter_input_names.contains(output_name))
+                    continue;
+
+                if (require_stable_types)
+                {
+                    auto resolved = output_action.resolveAliases();
+                    if (resolved.getNode()->type != ActionsDAG::ActionType::INPUT
+                        || !input_header->has(resolved.getColumnName()))
+                        continue;
+
+                    const auto & output_type = join_header->has(output_name)
+                        ? join_header->getByName(output_name).type
+                        : output_action.getType();
+                    if (!input_header->getByName(resolved.getColumnName()).type->equals(*output_type))
+                        continue;
+                }
+
+                try_add(output_name);
+            }
         }
 
         return available_input_columns_for_filter;
