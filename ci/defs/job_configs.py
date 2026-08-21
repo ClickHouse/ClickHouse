@@ -166,8 +166,10 @@ common_integration_test_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
             "./ci/jobs/scripts/integration_tests_configs.py",
-            "./ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
+            "./ci/jobs/promql_compliance_job.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
@@ -176,7 +178,7 @@ common_integration_test_job_config = Job.Config(
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host+--ulimit nofile=262144:262144",
     post_hooks=[
         "python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py",
-        "python3 ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
+        "python3 ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
     ],
 )
 
@@ -212,6 +214,10 @@ class JobConfigs:
                 # two files, so a change to either must run this job.
                 "./tests/clickhouse-test",
                 "./tests/queries/shell_config.sh",
+                # The CFI build-classification guards read these two, so a change to either
+                # must run this job instead of reusing a cached result.
+                "./tests/config/install.sh",
+                "./tests/integration/helpers/cluster.py",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
@@ -1138,6 +1144,10 @@ class JobConfigs:
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
+                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
+                # not cover ./tests/ci.
+                "./tests/ci/get_previous_release_tag.py",
+                "./tests/ci/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
@@ -1847,6 +1857,28 @@ class JobConfigs:
         ),
         timeout=3600,
         enable_gh_auth=True,
+    )
+    promql_compliance_job = Job.Config(
+        name=JobNames.PROMQL_COMPLIANCE,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        run_in_docker="clickhouse/test-base",
+        # Wait for integration upload post-hooks, including failed integration jobs.
+        run_after=[
+            j.name
+            for j in (
+                integration_test_jobs_required + integration_test_jobs_non_required
+            )
+        ],
+        run_unless_cancelled=True,
+        command="python3 ./ci/jobs/promql_compliance_job.py",
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
+        ],
+        # No digest_config: output depends on PR SHA and S3 JSON; script-only cache keys
+        # would skip later labeled PRs after one successful run.
+        timeout=600,
+        enable_gh_auth=True,
+        allow_failure=True,
     )
 
     sign_macos_binary_jobs = Job.Config(

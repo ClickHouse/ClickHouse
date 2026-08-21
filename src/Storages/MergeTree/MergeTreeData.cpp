@@ -405,6 +405,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNIQUE_KEY_DENSE_INDEX_UNREADABLE;
     extern const int ILLEGAL_INDEX;
+    extern const int ILLEGAL_STATISTICS;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
@@ -1023,13 +1024,16 @@ void MergeTreeData::checkProperties(
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
             checkSuspiciousIndices(index_function);
 
-    /// Check that the table sorting column is not compressed by a lossy codec (e.g. SZ3). Lossy codecs
-    /// lose precision and may destroy the sorting. Not on attach, so a table stored by an earlier version
-    /// stays loadable.
+    /// The sorting key, the partition id and the part minmax index are computed from the block before
+    /// compression, so a lossy codec (e.g. SZ3) on a column backing either key leaves them describing values
+    /// the data on disk no longer holds. Not on attach, so a table stored by an earlier version stays loadable.
     if (!attach)
     {
-        /// Collecting the sort key columns.
-        for (const auto & name : new_metadata.getColumnsRequiredForSortingKey())
+        Names key_columns = new_metadata.getColumnsRequiredForSortingKey();
+        const Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
+        key_columns.insert(key_columns.end(), partition_key_columns.begin(), partition_key_columns.end());
+
+        for (const auto & name : key_columns)
         {
             const auto column = new_metadata.columns.tryGetColumnDescription(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
@@ -1050,7 +1054,8 @@ void MergeTreeData::checkProperties(
 
             if (is_lossy)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Column {} is used in the sorting key, so it cannot be compressed with a lossy codec",
+                    "Column {} is used in the sorting key or the partition key, so it cannot be compressed "
+                    "with a lossy codec",
                     backQuoteIfNeed(name));
         }
     }
@@ -1221,7 +1226,8 @@ void MergeTreeData::checkProperties(
             if (projections_names.size() >= (*settings)[MergeTreeSetting::max_projections])
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections].value);
 
-            /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
+            /// A projection body cannot be altered (`MODIFY PROJECTION` replaces settings only and is
+            /// re-validated here as part of the new metadata), so we do not look it up in the old metadata.
             bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
             checkProperties(
                 *projection.metadata,
@@ -1231,14 +1237,6 @@ void MergeTreeData::checkProperties(
                 true /* allow_nullable_key */,
                 local_context);
 
-            if (!canUseAdaptiveGranularity() && projection.has_index_granularity_overrides)
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
-                    "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
-                    projection.name);
-            }
             projections_names.insert(projection.name);
         }
     }
@@ -1346,6 +1344,18 @@ void MergeTreeData::checkProperties(
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
+                projection.name);
+
+        /// A single `ALTER` may both add a projection granularity override and switch the table to fixed granularity
+        /// (`MODIFY`/`RESET SETTING index_granularity_bytes`), or switch to fixed granularity under a pre-existing override.
+        const bool effective_can_use_adaptive_granularity = effective_settings[MergeTreeSetting::index_granularity_bytes] != 0
+            && (effective_settings[MergeTreeSetting::enable_mixed_granularity_parts] || !has_non_adaptive_index_granularity_parts);
+
+        if (projection.has_index_granularity_overrides && !effective_can_use_adaptive_granularity)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
+                "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
                 projection.name);
     }
 
@@ -4994,6 +5004,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             AlterCommand::RENAME_COLUMN,
             AlterCommand::ADD_PROJECTION,
             AlterCommand::DROP_PROJECTION,
+            AlterCommand::MODIFY_PROJECTION,
             AlterCommand::MODIFY_ORDER_BY,
             AlterCommand::MODIFY_SAMPLE_BY,
         };
@@ -5537,6 +5548,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             if (!is_custom_partitioned)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ADD PROJECTION is not supported for tables with the old syntax");
+        }
+        if (command.type == AlterCommand::MODIFY_PROJECTION)
+        {
+            if (!is_custom_partitioned)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER MODIFY PROJECTION is not supported for tables with the old syntax");
         }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
@@ -6177,6 +6193,29 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                 throw Exception(ErrorCodes::ILLEGAL_INDEX,
                     "Index of type '{}' is no longer supported. Please drop the index",
                     indices.getByName(command.index_name).type);
+        }
+    }
+
+    /// Statistics of a non-physical column cannot be built. Reject an explicitly named one here,
+    /// synchronously, so it never reaches the background mutation, which can only retry.
+    /// `MATERIALIZE STATISTICS ALL` skips such a column instead.
+    {
+        const auto statistics_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto & columns = statistics_metadata_snapshot->getColumns();
+        for (const auto & command : commands)
+        {
+            if (command.type != MutationCommand::MATERIALIZE_STATISTICS)
+                continue;
+            for (const auto & column_name : command.statistics_columns)
+            {
+                if (!columns.has(column_name))
+                    continue;
+                if (!columns.get(column_name).statistics.empty() && !columns.hasPhysical(column_name))
+                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
+                        "Cannot materialize statistics of column '{}': it is not physically stored. "
+                        "Please drop the statistics",
+                        column_name);
+            }
         }
     }
 }

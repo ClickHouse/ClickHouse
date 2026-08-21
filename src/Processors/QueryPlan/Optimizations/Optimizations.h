@@ -1,8 +1,10 @@
 #pragma once
 #include <Core/Joins.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
+#include <unordered_map>
 
 class SipHash;
 
@@ -71,6 +73,11 @@ struct Optimization
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
 
+        /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
+        /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
+        /// functions back above a `SortingStep` that `tryPushDownVolumeReducingFunction`
+        /// pushed below it.
+        bool push_down_volume_reducing_functions = false;
         /// Top-K optimizations rely on a runtime `TopKThresholdTracker` shared between
         /// `SortingStep` and `ReadFromMergeTree`, and the dynamic-filtering path adds
         /// an internal `__topKFilter` function that is not registered in `FunctionFactory`.
@@ -109,6 +116,33 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
 /// Move FilterStep down if possible.
 /// May split FilterStep and push down only part of it.
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
+/// Move volume-reducing functions down if possible.
+size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
+/// Volume-reducing function nodes (`length`, `lengthUTF8`, `empty`, `notEmpty`) of `actions`,
+/// grouped by their argument node and restricted to arguments that nothing else in the DAG needs.
+/// For such an argument, computing the functions *replaces* the wide column instead of adding to
+/// it, which is what `tryPushDownVolumeReducingFunction` requires to be worth doing.
+/// `tryExecuteFunctionsAfterSorting` uses the same set to avoid lifting those functions back above
+/// a `SortingStep` they have been pushed below.
+std::unordered_map<const ActionsDAG::Node *, ActionsDAG::NodeRawConstPtrs>
+collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions);
+
+/// Volume-reducing function nodes of `actions` (and their aliases among the outputs) that must stay
+/// in the lower part when the DAG is split in two by `trySplitFilter` or
+/// `tryExecuteFunctionsAfterSorting`. Lifting such a function would make its wide argument cross
+/// the step again, undoing `tryPushDownVolumeReducingFunction` and re-triggering it, so the three
+/// optimizations would move the same nodes in opposite directions forever. This is a wider set than
+/// `collectVolumeReducingFunctionsReplacingTheirArgument`: after `tryMergeExpressions` merges the
+/// pushed step into its neighbor, the argument may be a computed column or have other readers
+/// (a `Filter` condition), yet the function still has to stay below. Functions whose argument is
+/// surfaced by the DAG anyway are not collected — the wide column crosses the step regardless, so
+/// lifting them loses nothing. `low_part_root` identifies nodes that a caller already keeps below
+/// its barrier (for example, a `FilterStep` predicate) and which therefore do not make the
+/// argument flow through that barrier.
+std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
+    const ActionsDAG & actions, const ActionsDAG::Node * low_part_root = nullptr);
 
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
@@ -183,7 +217,7 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 20> optimizations = {{
+    static const std::array<Optimization, 21> optimizations = {{
         /// Run first, before splitFilter/pushDownFilter/mergeFilterIntoJoinCondition, so the
         /// constant-false ON condition is still intact on the JoinStepLogical (those passes would
         /// otherwise lower it into a CROSS + Filter on one input and hide it from this optimization).
@@ -196,6 +230,7 @@ inline const auto & getOptimizations()
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
+        {tryPushDownVolumeReducingFunction, "pushDownVolumeReducingFunction", &QueryPlanOptimizationSettings::push_down_volume_reducing_functions},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
