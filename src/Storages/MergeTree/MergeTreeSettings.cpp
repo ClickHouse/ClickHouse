@@ -776,8 +776,11 @@ partition is considered, including the ones outside the `window_size` window
 used to keep up with incoming parts. Works for Simple and StochasticSimple
 merge selectors.
 
-To also merge the small parts left at the right of a selected range, turn
-`enable_heuristic_to_remove_small_parts_at_right` off explicitly.
+This setting does not change `enable_heuristic_to_remove_small_parts_at_right`,
+which still trims a trailing small part from a selected range of three parts or
+more. Note that forcing merges by partition age also lifts the
+`min_parts_to_merge_at_once` floor, so a two-part range ending at a small part is
+a candidate as well, and that trim does not apply to it.
 
 Cannot be combined with `min_age_to_force_merge_seconds` together with
 `min_age_to_force_merge_on_partition_only`. That pair merges a whole partition
