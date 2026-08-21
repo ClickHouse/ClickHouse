@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -50,21 +51,16 @@ String ExpressionStatistics::dump() const
     return out.str();
 }
 
-/// Without a floor a zero-width row (e.g. a bare `count()`) would make exchanges look free.
-static constexpr Float64 MIN_ROW_WIDTH = 1.0;
 
 Float64 estimateColumnWidthFromType(const IDataType & type)
 {
-    static constexpr Float64 DEFAULT_STRING_SIZE = 64.0;
-    static constexpr Float64 DEFAULT_COMPLEX_TYPE_SIZE = 128.0;
-
     if (type.haveMaximumSizeOfValue())
         return Float64(type.getMaximumSizeOfValueInMemory());
     if (const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
         return Float64(agg_type->getFunction()->sizeOfData());
     if (type.getTypeId() == TypeIndex::String)
-        return DEFAULT_STRING_SIZE;
-    return DEFAULT_COMPLEX_TYPE_SIZE;
+        return CascadesDefaults::DEFAULT_STRING_SIZE;
+    return CascadesDefaults::DEFAULT_COMPLEX_TYPE_SIZE;
 }
 
 Float64 estimateRowWidthFromHeader(const Block & header)
@@ -73,7 +69,7 @@ Float64 estimateRowWidthFromHeader(const Block & header)
     for (const auto & column : header)
         total += estimateColumnWidthFromType(*column.type);
 
-    return std::max(total, MIN_ROW_WIDTH);
+    return std::max(total, CascadesDefaults::MIN_ROW_WIDTH);
 }
 
 Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, ColumnStats> & column_statistics)
@@ -88,7 +84,7 @@ Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, 
             total += estimateColumnWidthFromType(*column.type);
     }
 
-    return std::max(total, MIN_ROW_WIDTH);
+    return std::max(total, CascadesDefaults::MIN_ROW_WIDTH);
 }
 
 RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);
@@ -192,7 +188,7 @@ OptimizerStatisticsPtr createEmptyStatistics()
 std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step)
 {
     const auto & storage = read_step.getStorageSnapshot()->storage;
-    const auto total_rows_opt = storage.totalRows(nullptr);
+    const auto total_rows_opt = storage.totalRows(read_step.getContext());
     /// `getColumnSizes(names)` also includes the requested subcolumns' sizes (`Map`/`JSON` reads).
     const auto column_sizes = storage.getColumnSizes(read_step.getAllColumnNames(), /*calculate_subcolumn_sizes=*/ true);
     const Float64 total_rows = (total_rows_opt && *total_rows_opt > 0) ? Float64(*total_rows_opt) : 0;
@@ -314,7 +310,7 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             /// hints can deliberately claim more rows than the table physically has (tiny tables
             /// standing in for big ones in tests), so never put the bound below the estimate.
             stats->max_row_count = std::max(stats->estimated_row_count,
-                Float64(read_step->getStorageSnapshot()->storage.totalRows(nullptr)
+                Float64(read_step->getStorageSnapshot()->storage.totalRows(read_step->getContext())
                     .value_or(std::numeric_limits<UInt64>::max())));
 
             auto analyzed_result = read_step->getAnalyzedResult();
