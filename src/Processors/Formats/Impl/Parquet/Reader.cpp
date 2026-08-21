@@ -316,6 +316,10 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             if (!column_meta.__isset.statistics)
                 continue;
 
+            /// The Range must be in terms of the type that checkInHyperrectangle compares it
+            /// against, which may differ from decoded_type - see cast_stats_to_output_type.
+            const IDataType & output_block_type = *extended_sample_block_data_types.at(column_info.idx_in_output_block);
+
             Range & range = hyperrectangle[column_info.idx_in_output_block];
 
             bool nullable = column_info.levels.back().def > 0;
@@ -329,16 +333,16 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             {
                 /// Single-point range containing either the default value or one of the infinities.
                 if (null_as_default)
-                    range.right = range.left = column_info.output_type->getDefault();
+                    range.right = range.left = output_block_type.getDefault();
                 else
                     range.right = range.left;
                 continue;
             }
 
             if (column_meta.statistics.__isset.min_value)
-                column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, range.left);
+                column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
             if (column_meta.statistics.__isset.max_value)
-                column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, range.right);
+                column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
 
             adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
         }
@@ -1927,6 +1931,10 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             (column_index.__isset.null_counts && column_index.null_counts.size() != num_pages))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of pages: {} null_pages, {} null_counts, {} min_values, {} max_values, {} pages in offset index", column_index.null_pages.size(), column_index.null_counts.size(), column_index.min_values.size(), column_index.max_values.size(), num_pages);
 
+        /// The Range must be in terms of the type that checkInHyperrectangle compares it
+        /// against, which may differ from decoded_type - see cast_stats_to_output_type.
+        const IDataType & output_block_type = *extended_sample_block_data_types.at(column_info.idx_in_output_block);
+
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
         size_t pruned_pages = 0;
@@ -1942,14 +1950,14 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             {
                 /// Single-point range containing either the default value or one of the infinities.
                 if (null_as_default)
-                    range.right = range.left = column_info.output_type->getDefault();
+                    range.right = range.left = output_block_type.getDefault();
                 else
                     range.right = range.left;
             }
             else
             {
-                column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, range.left);
-                column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, range.right);
+                column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
+                column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
 
                 adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
             }
@@ -2029,7 +2037,9 @@ void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnIn
     {
         if (null_as_default)
         {
-            Field default_value = column_info.output_type->getDefault();
+            /// Note: the default of the output block type, not of output_type, because the range
+            /// is in terms of the former - see cast_stats_to_output_type.
+            Field default_value = extended_sample_block_data_types.at(column_info.idx_in_output_block)->getDefault();
             /// Make sure the range contains the default value.
             if (!range.left.isNull() && accurateLess(default_value, range.left))
                 range.left = default_value;
