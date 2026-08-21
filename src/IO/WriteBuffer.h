@@ -46,7 +46,12 @@ public:
 
         /// This hook can reject a flush before accessing the current buffer. In particular,
         /// CompressedWriteBuffer may temporarily alias a nested buffer that another writer
-        /// could have invalidated.
+        /// could have invalidated. After finalization nothing more may be written, so a leftover
+        /// `next` (for example `HashingWriteBuffer::getHash`) has no buffer to guard and the
+        /// nested buffer is allowed to have moved on.
+        if (finalized)
+            return;
+
         try
         {
             preNext();
