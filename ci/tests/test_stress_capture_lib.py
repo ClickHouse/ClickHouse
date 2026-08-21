@@ -154,6 +154,49 @@ def test_info_counts_an_unterminated_last_line(tmp_path):
     assert " (last 30 of 41 lines)" in info
 
 
+def test_info_names_the_encoder_when_it_fails(tmp_path):
+    """A partial encode carries raw newlines, which would split the row and make
+    `read_test_results` drop both halves. The guard must reject the output on a
+    nonzero encoder status and say so: the capture is not empty here, so falling
+    back silently would read as no captured output at all."""
+    capture = tmp_path / "cap.log"
+    capture.write_text("DB::Exception: the actual reason\n", encoding="utf-8")
+    results = tmp_path / "test_results.tsv"
+    proc = _run(
+        f"""
+# A broken encoder: some output, then a nonzero status.
+escaped_tail() {{ printf 'partial\\nwith a raw newline\\n'; return 3; }}
+append_script_result_row '{results}' 1 '{capture}'
+""",
+        tmp_path,
+    )
+    assert proc.returncode == 0, proc.stderr
+    row = results.read_text(encoding="utf-8")
+    assert "(could not encode the captured output)" in row, row
+    # Still one line of four fields, so the row survives parsing.
+    assert row.count("\n") == 1, row
+    assert len(row.rstrip("\n").split("\t")) == 4, row
+    # None of the partial output leaked in.
+    assert "with a raw newline" not in row
+
+
+def test_info_names_the_encoder_when_it_returns_nothing(tmp_path):
+    """An encoder that succeeds but emits nothing would otherwise produce a row
+    ending in the `\\n` separator with no payload after it."""
+    capture = tmp_path / "cap.log"
+    capture.write_text("DB::Exception: boom\n", encoding="utf-8")
+    proc = _run(
+        f"""
+escaped_tail() {{ return 0; }}
+script_failure_info 1 '{capture}' > info.out
+""",
+        tmp_path,
+    )
+    assert proc.returncode == 0, proc.stderr
+    info = (tmp_path / "info.out").read_text(encoding="utf-8")
+    assert info == " script exit code: 1 (could not encode the captured output)", info
+
+
 def test_flush_capture_prints_only_the_bytes_past_the_offset(tmp_path):
     """A byte belongs to one flush, never to both: the second flush starts where
     the first ended."""
@@ -526,3 +569,81 @@ def test_result_row_appends_rather_than_truncates(tmp_path, exit_code):
     assert len(lines) == 2, lines
     assert lines[0].startswith("Existing row")
     assert lines[1].startswith("Test script")
+
+
+# --- the runners' call sites -------------------------------------------------------
+#
+# Checked statically, not by sourcing and stubbing a runner: that harness shape was
+# explicitly rejected in review, and the runners reach these lines only after
+# installing packages and starting a server. What is left in each runner is two
+# library calls, a `$?` read and a `set -e`, so the risk here is drift between the
+# two copies and a path mismatch, both of which the text shows.
+
+_RUNNERS = (
+    Path(__file__).resolve().parent.parent.parent / "tests" / "docker_scripts",
+)
+
+
+def _runner_text(name: str) -> str:
+    return (_RUNNERS[0] / name).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("runner", ["stress_runner.sh", "upgrade_runner.sh"])
+def test_runner_captures_and_reports_through_the_library(runner):
+    """Both runners must wrap their script and append their row through the shared
+    helpers. A runner that grew its own copy again would drift from the other, which
+    is what the duplicated block did before."""
+    text = _runner_text(runner)
+    assert text.count("run_capturing_output ") == 1, runner
+    assert text.count("append_script_result_row ") == 1, runner
+    # No leftover copy of the block the helpers replaced.
+    for gone in ("tail -n +1 -f --pid=", "drain_capture ", "finalize_capture ", "exec 3>&1"):
+        assert gone not in text, (runner, gone)
+
+
+@pytest.mark.parametrize("runner", ["stress_runner.sh", "upgrade_runner.sh"])
+def test_runner_reads_the_status_and_restores_errexit(runner):
+    """`run_capturing_output` returns with errexit off, so the runner must read `$?`
+    on the next line and turn `set -e` back on itself. Reading anything else would
+    report every stress run as a pass, and leaving errexit off would let the rest of
+    the runner ignore failures."""
+    lines = [l.strip() for l in _runner_text(runner).splitlines()]
+    i = next(i for i, l in enumerate(lines) if l.startswith("run_capturing_output "))
+    # The wrapped command continues onto the next line, hence the offsets.
+    assert lines[i].endswith("\\"), lines[i]
+    assert lines[i + 2] == "stress_script_exit_code=$?", lines[i + 2]
+    assert lines[i + 3] == "set -e", lines[i + 3]
+
+
+@pytest.mark.parametrize("runner", ["stress_runner.sh", "upgrade_runner.sh"])
+def test_runner_passes_the_same_capture_path_to_both_helpers(runner):
+    """The wrapper writes the capture and the row reads it: a mismatch would silently
+    report every failure as having produced no output."""
+    text = _runner_text(runner)
+    wrapper_path = re.search(r"run_capturing_output (\S+)", text).group(1)
+    row = re.search(
+        r"append_script_result_row (\S+) (\S+) \\\n\s*(\S+)", text
+    )
+    assert row, runner
+    results, status, row_path = row.groups()
+    assert row_path == wrapper_path, (runner, wrapper_path, row_path)
+    assert status == '"$stress_script_exit_code"', status
+    # The row goes to the file the report is parsed from, and the capture stays out
+    # of the wholesale-uploaded directory.
+    assert results == "/test_output/test_results.tsv", results
+    assert not wrapper_path.startswith("/test_output/"), wrapper_path
+
+
+def test_the_two_runners_report_identically():
+    """The reporting sequence is the same in both runners and must stay that way:
+    the only thing that legitimately differs is the command being wrapped."""
+
+    def sequence(name: str):
+        lines = [l.strip() for l in _runner_text(name).splitlines()]
+        i = next(
+            i for i, l in enumerate(lines) if l.startswith("run_capturing_output ")
+        )
+        # Drop line i+1, the wrapped command, which is what differs by design.
+        return [lines[i], *lines[i + 2 : i + 6]]
+
+    assert sequence("stress_runner.sh") == sequence("upgrade_runner.sh")
