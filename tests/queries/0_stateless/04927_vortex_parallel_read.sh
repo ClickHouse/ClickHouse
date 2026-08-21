@@ -26,12 +26,26 @@ for threads in 1 4 16; do
     done
 done
 
+# `max_threads` is left at 8 on purpose: keeping the rows in file order also takes
+# `FormatFactory::checkParallelizeOutputAfterReading` refusing to fan the source out, which a
+# single-threaded pipeline would hide.
 echo "Rows come in file order with input_format_vortex_preserve_order:"
 $CLICKHOUSE_LOCAL -q "
     SELECT count()
     FROM (SELECT n, rowNumberInAllBlocks() AS r FROM file('$DATA_FILE', 'Vortex'))
     WHERE n != r
-    SETTINGS max_parsing_threads = 8, input_format_vortex_preserve_order = 1, max_threads = 1"
+    SETTINGS max_parsing_threads = 8, input_format_vortex_preserve_order = 1, max_threads = 8"
+
+# The same contract on the plan: with the setting the source stays a single stream, without it
+# `parallelize_output_from_storages` is free to resize it.
+echo "The pipeline is not fanned out while the order is preserved:"
+$CLICKHOUSE_LOCAL -q "
+    EXPLAIN PIPELINE SELECT n FROM file('$DATA_FILE', 'Vortex')
+    SETTINGS input_format_vortex_preserve_order = 1, parallelize_output_from_storages = 1, max_threads = 2"
+echo "and is fanned out without it:"
+$CLICKHOUSE_LOCAL -q "
+    EXPLAIN PIPELINE SELECT n FROM file('$DATA_FILE', 'Vortex')
+    SETTINGS input_format_vortex_preserve_order = 0, parallelize_output_from_storages = 1, max_threads = 2"
 
 echo "Filter pushdown with several threads:"
 $CLICKHOUSE_LOCAL -q "

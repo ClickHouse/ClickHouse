@@ -30,8 +30,17 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_FILE', 'Vortex') FORMAT TSV"
 echo "Schema inference:"
 $CLICKHOUSE_LOCAL -q "DESC file('$DATA_FILE', 'Vortex')"
 
+# The count has to come from the footer through `VortexSchemaReader::readNumberOrRows`, which
+# seeds `number_of_rows` in the schema cache and is what `optimize_count_from_files` reads. The
+# plain count below would also pass through the reader's own `need_only_count` path, so the cache
+# entry is checked as well.
 echo "Count from metadata:"
-$CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_FILE', 'Vortex')"
+$CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_FILE', 'Vortex') SETTINGS optimize_count_from_files = 0"
+$CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_FILE', 'Vortex') SETTINGS optimize_count_from_files = 1"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('$DATA_FILE', 'Vortex') FORMAT Null;
+    SELECT number_of_rows FROM system.schema_inference_cache WHERE format = 'Vortex';
+"
 
 echo "Projection:"
 $CLICKHOUSE_LOCAL -q "SELECT s, n FROM file('$DATA_FILE', 'Vortex') WHERE n IN (1, 8) FORMAT TSV"
