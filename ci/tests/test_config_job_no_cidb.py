@@ -17,6 +17,7 @@ newly added parametrization is covered without editing this file.
 """
 
 import os
+import pathlib
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -370,6 +371,33 @@ def test_config_job_outlives_the_submodule_cache_bound():
     ), (_workflow_config_job.timeout, Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC)
 
 
+def test_a_clone_bound_that_crowds_the_job_cap_is_refused():
+    """The two durations are set independently, so their relation is enforced on import.
+
+    `SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC` is overridable per repository while the job cap
+    is a literal, so nothing but this check stops an override from leaving the clone unable
+    to report its own overrun. Asserting the defaults agree cannot show the check is
+    reachable, so drive a value that must be rejected.
+    """
+    import importlib
+
+    import ci.praktika.settings as settings_module
+
+    original = settings_module.Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+    try:
+        # Equal to the job cap: the outer watchdog would fire first.
+        settings_module.Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC = 1800
+        for name in [m for m in sys.modules if m.endswith("praktika.native_jobs")]:
+            del sys.modules[name]
+        with pytest.raises(AssertionError):
+            importlib.import_module("ci.praktika.native_jobs")
+    finally:
+        settings_module.Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC = original
+        for name in [m for m in sys.modules if m.endswith("praktika.native_jobs")]:
+            del sys.modules[name]
+        importlib.import_module("ci.praktika.native_jobs")
+
+
 def test_submodule_cache_clone_is_bounded_and_not_retried():
     """The cache-population clone must run under `timeout` exactly once.
 
@@ -380,6 +408,7 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
     from ci.praktika.settings import Settings
 
     calls = []
+    uploads = []
 
     class _FakeShell:
         @staticmethod
@@ -393,7 +422,8 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
             return False
 
         @staticmethod
-        def put(**_k):
+        def put(**kwargs):
+            uploads.append(kwargs)
             return True
 
     class _Cfg:
@@ -427,6 +457,13 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
     assert command.endswith("--jobs 64"), command
     assert kwargs.get("strict") is True, kwargs
     assert kwargs.get("retries", 1) == 1, kwargs
+    # A hash is only meaningful once the object it names exists, so the archive must be
+    # uploaded, exactly once, and as a conditional create.
+    assert len(uploads) == 1, uploads
+    assert uploads[0].get("if_none_matched") is True, uploads[0]
+    # `no_strict` would turn every upload error into a false success (see
+    # run_command_with_retries); a lost conditional race is already exempted there.
+    assert uploads[0].get("no_strict") in (None, False), uploads[0]
 
 
 def test_submodule_cache_overrun_fails_closed():
@@ -479,6 +516,62 @@ def test_submodule_cache_overrun_fails_closed():
     assert result.status == "FAIL", result.status
     assert cfg.submodule_cache_hash == "", cfg.submodule_cache_hash
     assert uploads == [], uploads
+
+
+def test_submodule_cache_upload_error_is_not_read_as_a_lost_race():
+    """Only a lost conditional race may be accepted as somebody else's success.
+
+    The upload is a conditional create, so a `False` return is ambiguous: it is the
+    other writer winning the race, or it is an ordinary error. Reading every `False` as
+    the race publishes a hash naming an object that was never stored, and dependants
+    then restore nothing.
+    """
+    import ci.praktika.native_jobs as nj
+    import ci.praktika.s3 as s3mod
+    from ci.praktika.settings import Settings
+
+    archive = pathlib.Path(f"{Settings.TEMP_DIR}/submodules_ba7816bf8f01cfea.tar.zst")
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    archive.write_bytes(b"x")
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **_kwargs):
+            return True
+
+        @staticmethod
+        def get_res_stdout_stderr(_command, **_kwargs):
+            # Not PreconditionFailed / ConditionalRequestConflict: an ordinary error.
+            return 1, "", "An error occurred (AccessDenied) calling PutObject"
+
+    class _FakeS3(nj.S3):
+        @staticmethod
+        def head_object(_p):
+            return False
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    cfg = _Cfg()
+    # The real S3.put runs, so its no_strict handling is what is under test here.
+    orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth, s3mod.Shell
+    try:
+        nj.Shell = _FakeShell
+        s3mod.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        result = nj._prepare_submodule_cache(None, cfg)
+    finally:
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth, s3mod.Shell = orig
+        archive.unlink(missing_ok=True)
+
+    assert result.status == "FAIL", result.status
+    assert cfg.submodule_cache_hash == "", cfg.submodule_cache_hash
+    assert "concurrently" not in (result.info or ""), result.info
 
 
 if __name__ == "__main__":

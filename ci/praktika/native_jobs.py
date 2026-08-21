@@ -50,6 +50,13 @@ _workflow_config_job = Job.Config(
     timeout=1800,
 )
 
+# This watchdog covers the whole command and starts before any configuration work, while
+# the clone's deadline starts only when the clone does, so the clone needs room to report
+# its own overrun; the outer watchdog produces no result at all.
+assert (
+    _workflow_config_job.timeout - Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC >= 600
+), (_workflow_config_job.timeout, Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC)
+
 _docker_build_manifest_job = Job.Config(
     name=Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
     runs_on=Settings.DOCKER_MERGE_RUNS_ON,
@@ -284,14 +291,13 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
             # immutable closes a race where two concurrent writers (both saw a
             # cache miss above) overwrite the same key while a third job is
             # downloading it, causing the reader's multipart download to abort
-            # with an ETag mismatch. On a lost race S3.put returns False
-            # (PreconditionFailed) — the other writer already populated the
-            # object, so this is a success, not an error.
+            # with an ETag mismatch. A lost race returns False rather than raising,
+            # because the other writer already populated the object; every other upload
+            # failure must raise, or the hash below would name a nonexistent object.
             created = S3.put(
                 s3_path=s3_path,
                 local_path=archive_path,
                 if_none_matched=True,
-                no_strict=True,
             )
             Shell.check(f"rm -f {archive_path}")
             info = (
