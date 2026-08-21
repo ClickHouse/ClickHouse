@@ -54408,8 +54408,12 @@
     "source": "/cloud/reference/byoc/reference/security-shared-responsibility"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
     "source": "/cloud/guides/security/migrating-rbac-custom-roles"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+    "source": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles"
   },
   {
     "destination": "/ar/concepts/features/interfaces/prometheus",
