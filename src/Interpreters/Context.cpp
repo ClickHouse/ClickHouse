@@ -1040,6 +1040,18 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down object storage queue streaming");
         StreamingStorageRegistry::instance().shutdown();
 
+        /// Cancel all in-flight merges and mutations before waiting for the background executors.
+        /// The executors' `wait` does not interrupt already running tasks, and per-storage
+        /// cancellation (`merges_blocker`) happens only later, in `DatabaseCatalog::shutdown`.
+        /// Without this, `wait` blocks until the current task step completes, and a single slow
+        /// step (e.g. a merge applying huge patch parts, which can spend minutes inside one
+        /// block under sanitizers) delays shutdown beyond any timeout. The results of these
+        /// merges are discarded on restart anyway, so finishing them is pure waste.
+        /// Merge and mutate tasks check `MergeListElement::is_cancelled` on every block
+        /// through `MergeProgressCallback` and abort with the `ABORTED` exception.
+        LOG_TRACE(log, "Cancelling merges and mutations");
+        merge_list.cancelAll();
+
         /// Stop all MergeTree background executors before shutting down databases.
         /// This ensures no background tasks (merges, mutations, moves, part cleanup)
         /// are running when storage objects are shut down or destroyed.
