@@ -1,5 +1,6 @@
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 
+#include <Columns/ColumnConst.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -45,13 +46,14 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 
-/// On-disk entry layout, version 1:
+/// On-disk entry layout, version 2:
 ///
 ///     Fixed header (FIXED_HEADER_SIZE bytes):
 ///         char[8]  magic "QRCache1"
@@ -69,11 +71,18 @@ namespace
 ///     Result payload (compressed with the codec from setting `query_cache_on_disk_codec`; the compression frames are
 ///     self-describing, so reading does not depend on the setting):
 ///         varUInt  number of result chunks
-///         Native   header block (zero rows), then one block per result chunk
-///         UInt8    has_totals, [Native block]
-///         UInt8    has_extremes, [Native block]
+///         Native   header block (zero rows)
+///         Chunk    one per result chunk
+///         UInt8    has_totals, [Chunk]
+///         UInt8    has_extremes, [Chunk]
+///
+///     Each chunk is serialized per column, so that special column representations survive the round trip: Sparse columns through
+///     the custom serialization of the Native format, Const columns through an explicit flag plus their single-row data column:
+///         varUInt  number of rows
+///         Per column of the header: UInt8 is_const, then a single-column Native block (the data column of a Const column with
+///         one row, the column itself with `number of rows` rows otherwise)
 constexpr char ENTRY_MAGIC[8] = {'Q', 'R', 'C', 'a', 'c', 'h', 'e', '1'};
-constexpr UInt32 ENTRY_FORMAT_VERSION = 1;
+constexpr UInt32 ENTRY_FORMAT_VERSION = 2;
 constexpr size_t FIXED_HEADER_SIZE = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64);
 constexpr size_t TOTAL_SIZE_OFFSET_IN_FIXED_HEADER = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32);
 
@@ -123,6 +132,54 @@ UUID readUUID(ReadBuffer & in)
     UInt128 raw;
     readBinaryLittleEndian(raw, in);
     return UUID(raw);
+}
+
+/// Serializes a chunk column by column, keeping the representation of each column: Sparse columns are kept by the custom
+/// serialization of the Native format, Const columns are written as an explicit flag plus their single-row data column.
+void writeChunk(const Chunk & chunk, const Block & header, NativeWriter & writer, WriteBuffer & out)
+{
+    const size_t num_rows = chunk.getNumRows();
+    writeVarUInt(num_rows, out);
+
+    const Columns & columns = chunk.getColumns();
+    chassert(columns.size() == header.columns());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const auto * column_const = typeid_cast<const ColumnConst *>(columns[i].get());
+        writeBinaryLittleEndian(static_cast<UInt8>(column_const != nullptr), out);
+
+        ColumnWithTypeAndName column = header.getByPosition(i);
+        column.column = column_const ? column_const->getDataColumnPtr() : columns[i];
+
+        Block block;
+        block.insert(std::move(column));
+        writer.write(block);
+    }
+}
+
+Chunk readChunk(size_t num_columns, NativeReader & reader, ReadBuffer & in)
+{
+    size_t num_rows = 0;
+    readVarUInt(num_rows, in);
+
+    Columns columns;
+    columns.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        UInt8 is_const = 0;
+        readBinaryLittleEndian(is_const, in);
+
+        Block block = reader.read();
+        if (block.columns() != 1 || block.rows() != (is_const ? 1 : num_rows))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed chunk in an entry of the on-disk query result cache");
+
+        ColumnPtr column = block.getByPosition(0).column;
+        if (is_const)
+            column = ColumnConst::create(std::move(column), num_rows);
+        columns.push_back(std::move(column));
+    }
+
+    return Chunk(std::move(columns), num_rows);
 }
 
 }
@@ -278,14 +335,14 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
             writeVarUInt(entry.chunks.size(), compressed_out);
             writer.write(*key.header);
             for (const auto & chunk : entry.chunks)
-                writer.write(key.header->cloneWithColumns(chunk.getColumns()));
+                writeChunk(chunk, *key.header, writer, compressed_out);
 
             writeBinaryLittleEndian(static_cast<UInt8>(entry.totals.has_value()), compressed_out);
             if (entry.totals)
-                writer.write(key.header->cloneWithColumns(entry.totals->getColumns()));
+                writeChunk(*entry.totals, *key.header, writer, compressed_out);
             writeBinaryLittleEndian(static_cast<UInt8>(entry.extremes.has_value()), compressed_out);
             if (entry.extremes)
-                writer.write(key.header->cloneWithColumns(entry.extremes->getColumns()));
+                writeChunk(*entry.extremes, *key.header, writer, compressed_out);
 
             compressed_out.finalize();
         }
@@ -421,6 +478,11 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
             user_id_of_entry = readUUID(*in);
         size_t num_roles = 0;
         readVarUInt(num_roles, *in);
+        /// The access metadata is stored uncompressed, so the roles must fit into the entry. Checking that protects against
+        /// a huge allocation when the counter in a corrupt entry is nonsense.
+        if (num_roles > (fixed_header->total_size - FIXED_HEADER_SIZE) / sizeof(UUID))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Malformed access metadata in an entry of the on-disk query result cache (number of roles: {})", num_roles);
         std::vector<UUID> roles_of_entry;
         roles_of_entry.reserve(num_roles);
         for (size_t i = 0; i < num_roles; ++i)
@@ -443,27 +505,21 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
         SharedHeader header = std::make_shared<const Block>(reader.read());
 
         QueryResultCache::Entry entry;
-        entry.chunks.reserve(num_chunks);
+        /// The number of chunks is read from the compressed stream, so it cannot be validated against the entry size upfront.
+        /// Cap the pre-allocation instead: a corrupt counter then fails cheaply while deserializing the chunks, rather than
+        /// forcing a huge allocation here. A legitimate entry with more chunks simply grows the vector.
+        entry.chunks.reserve(std::min<size_t>(num_chunks, 65536));
         for (size_t i = 0; i < num_chunks; ++i)
-        {
-            Block block = reader.read();
-            entry.chunks.emplace_back(block.getColumns(), block.rows());
-        }
+            entry.chunks.push_back(readChunk(header->columns(), reader, compressed_in));
 
         UInt8 has_totals = 0;
         readBinaryLittleEndian(has_totals, compressed_in);
         if (has_totals)
-        {
-            Block block = reader.read();
-            entry.totals = Chunk(block.getColumns(), block.rows());
-        }
+            entry.totals = readChunk(header->columns(), reader, compressed_in);
         UInt8 has_extremes = 0;
         readBinaryLittleEndian(has_extremes, compressed_in);
         if (has_extremes)
-        {
-            Block block = reader.read();
-            entry.extremes = Chunk(block.getColumns(), block.rows());
-        }
+            entry.extremes = readChunk(header->columns(), reader, compressed_in);
 
         /// Treat the read as an access in the eviction policy of the filesystem cache, so that hot entries stay cached.
         for (const auto & file_segment : *holder)
@@ -482,6 +538,16 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
     catch (...)
     {
         tryLogCurrentException(logger, "Failed to read a query result from the on-disk query result cache");
+        try
+        {
+            /// The write path probes only the fixed header, so an entry with a healthy header but an unreadable body would
+            /// never be replaced until it expires. Drop it here so that the next write stores a fresh entry.
+            file_cache->removeKeyIfExists(cache_key, FileCache::getCommonOrigin().user_id);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(logger, "Failed to remove an unreadable entry from the on-disk query result cache");
+        }
         return std::nullopt;
     }
 }

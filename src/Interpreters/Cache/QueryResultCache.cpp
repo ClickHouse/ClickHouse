@@ -795,15 +795,6 @@ void QueryResultCacheWriter::finalizeWrite()
 
     if (!skip_disk_insert)
     {
-        /// The on-disk cache serializes chunks in Native format, which requires the generic (full, non-const) column
-        /// representation. Materialize it before checking the limit, otherwise a small ColumnConst can expand to an
-        /// oversized serialized entry after the check.
-        for (auto & chunk : query_result->chunks)
-        {
-            removeSpecialColumnRepresentations(chunk);
-            convertToFullIfConst(chunk);
-        }
-
         /// The maximum entry size applies to both backends, so it must be checked before writing on disk. The in-memory backend
         /// checks it again further below, after the columnar compression which may bring an entry back under the limit.
         /// A limit of 0 means no limit here: `clickhouse-local` disables the in-memory query result cache that way (it calls
