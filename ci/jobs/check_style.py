@@ -413,8 +413,11 @@ def executable_shell_content(lines):
             # An output command can still execute a query in command substitution, e.g.
             # `echo > `clickhouse-client -q "SELECT path ..."``. Keep that executable
             # fragment while discarding the ordinary payload text.
+            # An empty substitution (``` in a `grep -qF` pattern, `$()`) matches with the
+            # captured group empty or `None`; contribute an empty string, never `None`,
+            # otherwise the final `join` raises.
             result.extend(
-                match.group(1) or match.group(2)
+                match.group(1) or match.group(2) or ""
                 for match in command_substitution_re.finditer(code)
             )
             continue

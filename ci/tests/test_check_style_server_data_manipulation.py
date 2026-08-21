@@ -439,3 +439,22 @@ def test_filesystem_cache_settings_path_is_flagged(tmp_path):
         'cache_dir=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM '
         'system.filesystem_cache_settings LIMIT 1")\nrm -f "$cache_dir/file"\n',
     )
+
+
+def test_empty_command_substitution_in_output_command_does_not_raise(tmp_path):
+    # An `echo` / `printf` payload can contain an empty command substitution - a pair of
+    # backticks in a `grep -qF '```'` pattern, or `$()`. The scanner keeps only the
+    # executable fragments of such a line, and an empty one must contribute an empty
+    # string rather than `None`, which used to abort the whole check.
+    assert not _run(
+        tmp_path,
+        "printf '%s' \"$out\" | grep -qF '```' && echo FAIL || echo OK\n",
+    )
+    assert not _run(tmp_path, 'echo "empty $() substitution"\n')
+
+
+def test_empty_command_substitution_does_not_hide_a_violation(tmp_path):
+    assert _run(
+        tmp_path,
+        FETCH_PART_PATH + "echo '```' \nrm -f \"$path/data.bin\"\n",
+    )
