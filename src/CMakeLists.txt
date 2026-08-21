@@ -134,6 +134,7 @@ add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Cache)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Local)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Memory)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Plain)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata)
@@ -963,7 +964,10 @@ if (ENABLE_TESTS)
         clickhouse_common_zookeeper
         # `ConnectionParameters` (exercised by a gtest) pulls in `readpassphrase` for the
         # interactive password prompt, so the unit test executable must link it too.
-        readpassphrase)
+        readpassphrase
+        # `gtest_lz4_decompress_branchless` includes `<lz4.h>` directly; the include path only
+        # propagates transitively in full-library builds, so declare the dependency explicitly.
+        ch_contrib::lz4)
 
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
