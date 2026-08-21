@@ -8,9 +8,12 @@
 ///
 /// Ownership:
 ///   - an Arrow struct passed into a function is consumed by it;
-///   - an Arrow struct written to an out-parameter, and the one passed to the scan's `on_chunk`,
-///     belongs to the caller, who has to call its `release` - importing it with
-///     `arrow::ImportRecordBatch` or `arrow::ImportSchema` does that;
+///   - an Arrow struct written to an out-parameter belongs to the caller, who has to call its
+///     `release` - importing it with `arrow::ImportRecordBatch` or `arrow::ImportSchema` does that;
+///   - the Arrow struct passed to the scan's `on_chunk` is only borrowed for the duration of the
+///     call: the callback has to consume it before returning, by moving out of it (importing it
+///     with `arrow::ImportRecordBatch` does that) or by calling its `release`. The pointer must
+///     not be kept, and the struct must not be released after the callback has returned;
 ///   - an error message has to be freed with `vortex_ffi_free_string`.
 ///
 /// Nothing here owns a thread. An `FFI_VortexRuntime` is two queues of pending work plus a way to
@@ -192,10 +195,12 @@ struct FFI_VortexScanOptions
 struct FFI_VortexScanCallbacks
 {
     void * context;
-    /// Delivers one chunk: an Arrow struct array in the scan's schema, which the caller now owns
-    /// and has to release, together with the position of its split in the file. A null array means
-    /// the split matched no rows; it is still reported so that the caller can restore the file
-    /// order. Returning non-zero stops the scan and surfaces from `on_finish` as an error.
+    /// Delivers one chunk: an Arrow struct array in the scan's schema, together with the position
+    /// of its split in the file. The array is borrowed for the duration of the call - the callback
+    /// takes the data out of it (or releases it) before returning, and must not keep the pointer.
+    /// A null array means the split matched no rows; it is still reported so that the caller can
+    /// restore the file order. Returning non-zero stops the scan and surfaces from `on_finish` as
+    /// an error.
     int32_t (*on_chunk)(void * context, struct ArrowArray * array, uint64_t split_index);
     /// Reports the end of the scan, exactly once: nullptr if every split was delivered, otherwise
     /// a message that is only valid for the duration of the call. Never called for a scan that was
@@ -210,7 +215,9 @@ struct FFI_VortexScanCallbacks
 /// computing the splits happens here, on the calling thread.
 ///
 /// The reader and the callbacks' context have to outlive the scan. `filter` is borrowed, not
-/// consumed. Returns nullptr on failure.
+/// consumed. Only one scan of a reader may be alive at a time - everything that bounds the reads,
+/// `io_concurrency` above all, is set up per scan - so this fails while another scan of the same
+/// reader has not been freed. Returns nullptr on failure.
 FFI_VortexScan * vortex_ffi_scan_create(
     const FFI_VortexReader * reader, const FFI_VortexScanOptions * options, const FFI_VortexScanCallbacks * consumer, char ** error);
 

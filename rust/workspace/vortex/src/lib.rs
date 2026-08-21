@@ -21,7 +21,7 @@ use std::ffi::{c_char, c_void, CStr, CString};
 use std::future::Future;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::pin;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll, Waker};
 
@@ -309,6 +309,43 @@ pub struct FFI_VortexReader {
     runtime: Arc<HostRuntime>,
     file: VortexFile,
     schema: SchemaRef,
+    /// Taken while a scan of this reader is alive. Sibling scans would share the read callback's
+    /// context and would each get the reader's whole `io_concurrency`, so a reader that was
+    /// downgraded to one read at a time would see several, which is exactly what it cannot take.
+    scan_slot: Arc<AtomicBool>,
+}
+
+/// Holds the reader's scan slot until the scan that took it owns it.
+struct ScanSlotGuard {
+    slot: Arc<AtomicBool>,
+    held: bool,
+}
+
+impl ScanSlotGuard {
+    /// Takes the slot, or reports that a scan already has it.
+    fn take(slot: &Arc<AtomicBool>) -> Result<Self, String> {
+        if slot.swap(true, Ordering::AcqRel) {
+            return Err("a scan of this Vortex reader is already alive".to_string());
+        }
+        Ok(Self {
+            slot: slot.clone(),
+            held: true,
+        })
+    }
+
+    /// Passes the slot on to the scan, which gives it back when it is freed.
+    fn into_slot(mut self) -> Arc<AtomicBool> {
+        self.held = false;
+        self.slot.clone()
+    }
+}
+
+impl Drop for ScanSlotGuard {
+    fn drop(&mut self) {
+        if self.held {
+            self.slot.store(false, Ordering::Release);
+        }
+    }
 }
 
 pub struct FFI_VortexScan {
@@ -320,6 +357,14 @@ pub struct FFI_VortexScan {
     permits: kanal::AsyncReceiver<()>,
     /// Starts the split tasks and announces the end. Dropping it takes them down with it.
     driver: Mutex<Option<Task<()>>>,
+    /// The reader's scan slot, given back when this scan is freed.
+    scan_slot: Arc<AtomicBool>,
+}
+
+impl Drop for FFI_VortexScan {
+    fn drop(&mut self) {
+        self.scan_slot.store(false, Ordering::Release);
+    }
 }
 
 pub struct FFI_VortexExpression(Expression);
@@ -505,6 +550,7 @@ pub unsafe extern "C" fn vortex_ffi_reader_open(
                 runtime,
                 file,
                 schema,
+                scan_slot: Arc::new(AtomicBool::new(false)),
             })))
         })
     }
@@ -606,10 +652,12 @@ pub struct FFI_VortexScanOptions {
 #[derive(Clone, Copy)]
 pub struct FFI_VortexScanCallbacks {
     pub context: *mut c_void,
-    /// Delivers one chunk: an Arrow struct array in the scan's schema, which the caller now owns
-    /// and has to release, together with the position of its split in the file. A null array means
-    /// the split matched no rows; it is still reported so that the caller can restore the file
-    /// order. Returning non-zero stops the scan and surfaces from `on_finish` as an error.
+    /// Delivers one chunk: an Arrow struct array in the scan's schema, together with the position
+    /// of its split in the file. The array is borrowed for the duration of the call - the callback
+    /// takes the data out of it (or releases it) before returning, and must not keep the pointer.
+    /// A null array means the split matched no rows; it is still reported so that the caller can
+    /// restore the file order. Returning non-zero stops the scan and surfaces from `on_finish` as
+    /// an error.
     pub on_chunk: unsafe extern "C" fn(
         context: *mut c_void,
         array: *mut FFI_ArrowArray,
@@ -643,8 +691,10 @@ impl ScanCallbacks {
                 )
             },
             Some(array) => {
-                // Ownership of the array passes to the caller, which either imports or releases
-                // it, so it must not be released here as well.
+                // The array lives on this stack frame for the duration of the call: the callback
+                // consumes it - imports it, which moves the data out and marks the struct released,
+                // or releases it - and does not keep the pointer. It must not be released here as
+                // well, so the local is a `ManuallyDrop`.
                 let mut array = std::mem::ManuallyDrop::new(array);
                 unsafe { (self.on_chunk)(self.context as *mut c_void, &mut *array, split_index) }
             }
@@ -732,6 +782,9 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
     unsafe {
         ffi_wrap(error, std::ptr::null_mut(), || {
             let reader = &*reader;
+            // One scan per reader: everything that bounds the reads - the concurrency the read
+            // callback was promised above all - is set up per scan, so a second one would double it.
+            let scan_slot = ScanSlotGuard::take(&reader.scan_slot)?;
             let mut builder = reader.file.scan().map_err(|e| e.to_string())?;
 
             let mut schema = reader.schema.clone();
@@ -903,6 +956,7 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                 schema,
                 permits,
                 driver: Mutex::new(Some(driver)),
+                scan_slot: scan_slot.into_slot(),
             })))
         })
     }
@@ -2228,6 +2282,52 @@ mod tests {
             vortex_ffi_scan_free(scan);
             vortex_ffi_reader_free(reader);
             vortex_ffi_runtime_free(runtime);
+        }
+    }
+
+    /// Sibling scans of one reader would share the read callback and each take the reader's whole
+    /// `io_concurrency`, so the second one is refused, and freeing the first one gives the slot back.
+    #[test]
+    fn ffi_one_scan_per_reader() {
+        let batches = vec![test_batch(vec![1, 2, 3], vec![Some("a"), None, Some("c")])];
+        let mut file = TestFile::new(unsafe { write_file(batches) });
+        let host = TestHost::new(1);
+        unsafe {
+            let reader = open_reader(host.runtime(), &mut file, &reader_options(1, None));
+            let consumer = TestConsumer::new(None);
+            let options = scan_options();
+            let scan = start_scan(reader, &options, &consumer);
+
+            let mut error: *mut c_char = std::ptr::null_mut();
+            let scan_callbacks = consumer.scan_callbacks();
+            let second = vortex_ffi_scan_create(reader, &options, &scan_callbacks, &mut error);
+            assert!(second.is_null());
+            let message = CStr::from_ptr(error).to_str().expect("utf-8").to_string();
+            assert!(message.contains("already alive"), "{message}");
+            vortex_ffi_free_string(error);
+
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            loop {
+                let released = consumer.outstanding.swap(0, Ordering::Relaxed);
+                if released > 0 {
+                    vortex_ffi_scan_release(scan, released as u64);
+                }
+                if consumer.finished.lock().expect("lock").is_some() {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the scan did not finish"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            consumer.wait();
+            vortex_ffi_scan_free(scan);
+
+            // The slot came back, so the reader takes another scan.
+            let consumer = run_scan(reader, &options, None, true);
+            assert_eq!(consumer.rows(), 3);
+            vortex_ffi_reader_free(reader);
         }
     }
 }
