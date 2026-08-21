@@ -69,8 +69,13 @@ def _fetch_history() -> None:
     )
 
 
+def _branch_version_key(branch: str) -> Tuple[int, ...]:
+    """Numeric key: lexical order puts `25.10` before `25.9`."""
+    return tuple(int(part) for part in branch.split("."))
+
+
 def _release_branches() -> List[str]:
-    """Head branches of the open `release`-labeled PRs, oldest first.
+    """Head branches of the open `release`-labeled PRs, version-ascending (oldest first).
 
     A persistent read failure raises rather than returning an empty list: a
     silent empty result would make an autorelease run quietly release nothing
@@ -80,7 +85,9 @@ def _release_branches() -> List[str]:
     )
     if not raw:
         raise RuntimeError("gh pr list failed for release PRs after retries")
-    branches = sorted(pr["headRefName"] for pr in json.loads(raw))
+    branches = sorted(
+        (pr["headRefName"] for pr in json.loads(raw)), key=_branch_version_key
+    )
     print(f"Found release branches {branches}")
     return branches
 
