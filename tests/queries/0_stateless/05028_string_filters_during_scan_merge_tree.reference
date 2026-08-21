@@ -74,6 +74,10 @@ values in the result
 10002 ends with needle	1
 10008 ends with needle	1
 10011 ends with needle	1
+long values and needle crossing value boundaries
+10	30001060	40733685173693208
+10	30001060	40733685173693208
+12
 the optimization is applied
 0
 0

@@ -255,6 +255,130 @@ static ALWAYS_INLINE bool readFilteredStringValue(
     return matched;
 }
 
+/// Filtered deserialization of the data stream when the value sizes are already known:
+/// `offsets[first_row .. offsets.size())` contain the original cumulative offsets of the values,
+/// and this function rewrites them to the filtered ones. Values that do not match the filter
+/// are replaced with empty strings without copying their data (see `StringValueFilter`).
+///
+/// When the filter has a substring condition, the values are checked in bulk: each contiguous
+/// buffer of concatenated values is scanned for the needle only once, and the found occurrences
+/// are mapped to values. This is much faster than a search per value, and together with the
+/// skipped copying it is faster than reading all the values.
+static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
+    ColumnString::Chars & data,
+    ColumnString::Offsets & offsets,
+    ReadBuffer & istr,
+    size_t first_row,
+    const StringValueFilter & filter)
+{
+    const size_t num_rows = offsets.size();
+    size_t offset = data.size();
+
+    size_t values_checked = 0;
+    size_t values_replaced = 0;
+    size_t bytes_skipped = 0;
+
+    const bool use_bulk_scan = filter.hasBulkScanCondition();
+
+    /// The original (unfiltered) cumulative offset of the current stream position.
+    /// The invariant `chars.size() == offsets.back()` held before the new offsets were appended.
+    size_t original_pos = offset;
+    /// Values in the current buffer that contain the bulk-scanned needle.
+    std::vector<size_t> matched_values;
+
+    size_t i = first_row;
+    try
+    {
+        while (i < num_rows)
+        {
+            /// Find the values that fit into the current buffer entirely.
+            /// (Note that `eof` refills the buffer when it is exhausted.)
+            size_t j = i;
+            const char * buffer_begin = nullptr;
+            if (use_bulk_scan && !istr.eof())
+            {
+                buffer_begin = istr.position();
+                size_t buffer_original_end = original_pos + (istr.buffer().end() - istr.position());
+                j = std::upper_bound(offsets.begin() + i, offsets.begin() + num_rows, buffer_original_end) - offsets.begin();
+            }
+
+            if (j == i)
+            {
+                /// Either there is no substring condition to scan for in bulk, or the current value
+                /// crosses the buffer boundary: check this one value directly.
+                size_t value_size = offsets[i] - original_pos;
+
+                ++values_checked;
+
+                /// An empty string never matches the filter.
+                if (value_size == 0 || !readFilteredStringValue(data, offset, istr, value_size, filter))
+                {
+                    ++values_replaced;
+                    bytes_skipped += value_size;
+                }
+
+                original_pos += value_size;
+                offsets[i] = offset;
+                ++i;
+                continue;
+            }
+
+            /// Scan the buffer once and map the found occurrences of the needle to values.
+            const size_t scan_original_start = original_pos;
+            const char * scan_end = buffer_begin + (offsets[j - 1] - scan_original_start);
+
+            matched_values.clear();
+            filter.findBulkScanMatches(buffer_begin, scan_original_start, offsets.data(), i, j, matched_values);
+
+            /// Materialize the values: copy the matched ones (checking the remaining conditions
+            /// of the filter), replace the rest with empty strings.
+            size_t next_matched = 0;
+            for (; i < j; ++i)
+            {
+                size_t value_size = offsets[i] - original_pos;
+                const char * value_data = buffer_begin + (original_pos - scan_original_start);
+                original_pos = offsets[i];
+
+                ++values_checked;
+
+                bool matches = false;
+                if (next_matched < matched_values.size() && matched_values[next_matched] == i)
+                {
+                    ++next_matched;
+                    matches = filter.matchOtherConditions(value_data, value_size);
+                }
+
+                if (matches)
+                {
+                    if (unlikely(offset + value_size > data.size()))
+                        data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset + value_size, data.size() * 2)));
+                    memcpy(&data[offset], value_data, value_size);
+                    offset += value_size;
+                }
+                else
+                {
+                    ++values_replaced;
+                    bytes_skipped += value_size;
+                }
+
+                offsets[i] = offset;
+            }
+
+            istr.position() += scan_end - buffer_begin;
+        }
+    }
+    catch (...)
+    {
+        /// Drop the rows whose values were not fully read to keep the column consistent.
+        offsets.resize(i);
+        data.resize_exact(offset);
+        throw;
+    }
+
+    data.resize_exact(offset);
+    filter.updateStats(values_checked, values_replaced, bytes_skipped);
+}
+
 /// Deserialization which checks every value against the filter and reads non-matching values as empty strings.
 /// See the comment for `StringValueFilter`: it is only correct because the rows with non-matching values
 /// are guaranteed to be filtered out later by PREWHERE.
@@ -1018,48 +1142,8 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     {
         /// Check every value against the filter and read non-matching values as empty strings,
         /// rewriting the just-appended offsets accordingly. See the comment for `StringValueFilter`.
-        const StringValueFilter & filter = *settings.string_value_filter;
-        auto & offsets = string_column.getOffsets();
-        const size_t num_rows = offsets.size();
-
         stream->ignore(bytes_to_skip);
-
-        size_t offset = initial_size;
-        size_t prev_original_offset = initial_size;
-        size_t values_checked = 0;
-        size_t values_replaced = 0;
-        size_t bytes_skipped = 0;
-
-        size_t i = prev_num_rows;
-        try
-        {
-            for (; i < num_rows; ++i)
-            {
-                size_t value_size = offsets[i] - prev_original_offset;
-                prev_original_offset = offsets[i];
-
-                ++values_checked;
-
-                /// An empty string never matches the filter.
-                if (value_size == 0 || !readFilteredStringValue(data, offset, *stream, value_size, filter))
-                {
-                    ++values_replaced;
-                    bytes_skipped += value_size;
-                }
-
-                offsets[i] = offset;
-            }
-        }
-        catch (...)
-        {
-            /// Drop the rows whose values were not fully read to keep the column consistent.
-            offsets.resize(i);
-            data.resize_exact(offset);
-            throw;
-        }
-
-        data.resize_exact(offset);
-        filter.updateStats(values_checked, values_replaced, bytes_skipped);
+        deserializeBinaryFilteredWithKnownSizes(data, string_column.getOffsets(), *stream, prev_num_rows, *settings.string_value_filter);
     }
     else
     {

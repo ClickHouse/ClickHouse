@@ -111,6 +111,24 @@ SELECT id, s, n FROM t_string_filter_wide PREWHERE s LIKE '%needle%' ORDER BY id
 SELECT s, count() FROM t_string_filter_wide PREWHERE endsWith(s, 'needle') GROUP BY s ORDER BY s LIMIT 3 SETTINGS apply_string_filters_during_scan = 0;
 SELECT s, count() FROM t_string_filter_wide PREWHERE endsWith(s, 'needle') GROUP BY s ORDER BY s LIMIT 3 SETTINGS apply_string_filters_during_scan = 1;
 
+SELECT 'long values and needle crossing value boundaries';
+DROP TABLE IF EXISTS t_string_filter_long;
+CREATE TABLE t_string_filter_long (id UInt32, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+-- Some values are larger than the read buffer, and the values of two adjacent rows contain
+-- the needle only across the boundary between them (`need` + `le...`), which must not match.
+INSERT INTO t_string_filter_long SELECT number,
+    multiIf(
+        number % 10 = 0, repeat('0123456789', 300000) || 'needle' || repeat('y', 100),
+        number % 10 = 2, 'need',
+        number % 10 = 3, 'le' || toString(number),
+        number % 10 = 4, '',
+        repeat('z', 100) || toString(number))
+FROM numbers(100);
+SELECT count(), sum(length(s)), sum(cityHash64(s)) FROM t_string_filter_long PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 0;
+SELECT count(), sum(length(s)), sum(cityHash64(s)) FROM t_string_filter_long PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1;
+SELECT count() FROM t_string_filter_long PREWHERE s LIKE '%needle%' OR s LIKE '%le3%' SETTINGS apply_string_filters_during_scan = 1;
+DROP TABLE t_string_filter_long;
+
 SELECT 'the optimization is applied';
 SELECT count() > 0 FROM t_string_filter_wide PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05028_string_filter_applied';
 SELECT count() > 0 FROM t_string_filter_single PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05028_string_filter_applied';

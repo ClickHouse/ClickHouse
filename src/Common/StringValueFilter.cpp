@@ -34,16 +34,66 @@ StringValueFilter::StringValueFilter(std::vector<Condition> conditions_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "StringValueFilter needle must be non-empty");
 
         if (conditions[i].type == Condition::Type::Substring)
+        {
             searchers[i] = std::make_unique<CaseSensitiveStringSearcher>(conditions[i].needle.data(), conditions[i].needle.size());
+
+            if (bulk_scan_condition == SIZE_MAX || conditions[i].needle.size() > conditions[bulk_scan_condition].needle.size())
+                bulk_scan_condition = i;
+        }
     }
 }
 
 StringValueFilter::~StringValueFilter() = default;
 
-bool StringValueFilter::match(const char * data, size_t size) const
+void StringValueFilter::findBulkScanMatches(
+    const char * buffer,
+    size_t buffer_original_start,
+    const UInt64 * offsets,
+    size_t first_value,
+    size_t last_value,
+    std::vector<size_t> & matches) const
+{
+    const auto & searcher = *searchers[bulk_scan_condition];
+    const size_t needle_size = conditions[bulk_scan_condition].needle.size();
+
+    const char * end = buffer + (offsets[last_value - 1] - buffer_original_start);
+    const char * pos = buffer;
+    size_t candidate = first_value;
+
+    while (pos < end)
+    {
+        const auto * found = searcher.search(reinterpret_cast<const UInt8 *>(pos), reinterpret_cast<const UInt8 *>(end));
+        if (found == reinterpret_cast<const UInt8 *>(end))
+            break;
+
+        size_t found_original = buffer_original_start + (reinterpret_cast<const char *>(found) - buffer);
+
+        /// The value containing the beginning of the occurrence.
+        while (offsets[candidate] <= found_original)
+            ++candidate;
+
+        if (found_original + needle_size <= offsets[candidate])
+        {
+            matches.push_back(candidate);
+            /// Continue from the end of this value: more occurrences in it are redundant.
+            pos = buffer + (offsets[candidate] - buffer_original_start);
+        }
+        else
+        {
+            /// The occurrence crosses a boundary between values: not a match.
+            pos = reinterpret_cast<const char *>(found) + 1;
+        }
+    }
+}
+
+
+bool StringValueFilter::matchImpl(const char * data, size_t size, size_t skip_condition) const
 {
     for (size_t i = 0; i < conditions.size(); ++i)
     {
+        if (i == skip_condition)
+            continue;
+
         const auto & condition = conditions[i];
         const auto & needle = condition.needle;
 
@@ -82,6 +132,16 @@ bool StringValueFilter::match(const char * data, size_t size) const
     }
 
     return true;
+}
+
+bool StringValueFilter::match(const char * data, size_t size) const
+{
+    return matchImpl(data, size, SIZE_MAX);
+}
+
+bool StringValueFilter::matchOtherConditions(const char * data, size_t size) const
+{
+    return matchImpl(data, size, bulk_scan_condition);
 }
 
 void StringValueFilter::updateStats(size_t checked, size_t replaced, size_t replaced_bytes) const

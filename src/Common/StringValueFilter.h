@@ -54,6 +54,28 @@ public:
     bool match(const char * data, size_t size) const;
     bool match(const UInt8 * data, size_t size) const { return match(reinterpret_cast<const char *>(data), size); }
 
+    /// If the filter has a Substring condition, a buffer of concatenated values can be checked
+    /// more efficiently in bulk: the whole buffer is scanned with the searcher of the longest
+    /// such condition only once, and the found occurrences are mapped to values. This is much
+    /// faster than a search per value when the values are short.
+    bool hasBulkScanCondition() const { return bulk_scan_condition != SIZE_MAX; }
+
+    /// Finds the values in a buffer of concatenated values that contain the needle of the
+    /// bulk-scanned condition. The values are `[first_value, last_value)` and `offsets` are their
+    /// original cumulative end offsets; `buffer` starts at the original offset `buffer_original_start`
+    /// and contains all these values entirely. Appends the indexes of the values that contain
+    /// the needle to `matches` in increasing order.
+    void findBulkScanMatches(
+        const char * buffer,
+        size_t buffer_original_start,
+        const UInt64 * offsets,
+        size_t first_value,
+        size_t last_value,
+        std::vector<size_t> & matches) const;
+
+    /// Checks all conditions except the bulk-scan one (for values that already matched it).
+    bool matchOtherConditions(const char * data, size_t size) const;
+
     /// Account a batch of checked values, update profile events and decide whether the filter
     /// is selective enough to keep using it. `replaced` is the number of values that did not
     /// match, `replaced_bytes` is the total size of their data.
@@ -65,10 +87,15 @@ private:
     /// After this many values are checked, the filter is disabled if less than half of them were replaced.
     static constexpr size_t MIN_VALUES_TO_EVALUATE_SELECTIVITY = 65536;
 
+    bool matchImpl(const char * data, size_t size, size_t skip_condition) const;
+
     const std::vector<Condition> conditions;
     /// Searchers for Substring conditions (empty entries for other types).
     /// They reference the needles stored in `conditions`, which are never modified.
     std::vector<std::unique_ptr<CaseSensitiveStringSearcher>> searchers;
+    /// Index of the Substring condition with the longest needle (used for bulk scanning),
+    /// or SIZE_MAX if there are no Substring conditions.
+    size_t bulk_scan_condition = SIZE_MAX;
 
     mutable std::atomic<size_t> values_checked{0};
     mutable std::atomic<size_t> values_replaced{0};
