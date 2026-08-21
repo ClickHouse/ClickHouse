@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS t_tokenbf;
 DROP TABLE IF EXISTS t_ngrambf;
 DROP TABLE IF EXISTS t_null_set;
 DROP TABLE IF EXISTS t_free_set;
+DROP TABLE IF EXISTS t_json;
+DROP TABLE IF EXISTS t_normalized;
 
 CREATE TABLE t_text (x Nullable(String), INDEX i x TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 INSERT INTO t_text SELECT if(number % 100 = 7, NULL, 'word' || toString(number)) FROM numbers(1000);
@@ -168,6 +170,25 @@ SELECT 'map fixed set count', count() FROM t_map WHERE m['k'] IN (SELECT v FROM 
 SELECT 'map fixed set rows, transform_null_in = 0', (SELECT count() FROM t_map WHERE m['k'] IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 0) = (SELECT count() FROM t_map WHERE m['k'] IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 0, use_skip_indexes = 0);
 SELECT 'map string set', extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map WHERE m['k'] IN (SELECT v FROM t_string_set) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
 
+-- A JSON subcolumn carrier is indexed through `JSONAllValues(json)`, so its stored type comes from
+-- that header column.
+SET enable_json_type = 1;
+CREATE TABLE t_json (j JSON, INDEX i JSONAllValues(j) TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_json SELECT toJSONString(map('k', 'word5'))::JSON FROM numbers(1);
+INSERT INTO t_json SELECT toJSONString(map('k', 'zz' || toString(number)))::JSON FROM numbers(999);
+
+SELECT 'json string set', extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json WHERE j.k::String IN (SELECT v FROM t_string_set) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
+SELECT 'json fixed set rows', (SELECT count() FROM t_json WHERE j.k::String IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1) = (SELECT count() FROM t_json WHERE j.k::String IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+SELECT 'json fixed set count', count() FROM t_json WHERE j.k::String IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1;
+
+-- An index expression is matched under its `optimize_empty_string_comparisons` rewrite, so the
+-- stored type of a carrier matched that way comes from the index header rather than the node.
+CREATE TABLE t_normalized (s String, a String ALIAS if(s = '', 'zzz', s), INDEX i a TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_normalized SELECT if(number = 5, 'word5', 'zz' || toString(number)) FROM numbers(1000);
+
+SELECT 'normalized string set', extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_normalized WHERE a IN (SELECT v FROM t_string_set) SETTINGS transform_null_in = 1, optimize_empty_string_comparisons = 1) WHERE explain LIKE '%Granules: %/%';
+SELECT 'normalized fixed set rows', (SELECT count() FROM t_normalized WHERE a IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1, optimize_empty_string_comparisons = 1) = (SELECT count() FROM t_normalized WHERE a IN (SELECT v FROM t_fixed_set) SETTINGS transform_null_in = 1, optimize_empty_string_comparisons = 1, use_skip_indexes = 0);
+
 -- `sparse_grams` shares the modified condition class with its own tokenizer.
 CREATE TABLE t_sparse (b String, INDEX i b TYPE sparse_grams(3, 100, 512, 2, 0)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 INSERT INTO t_sparse SELECT 'word' || toString(number) FROM numbers(1000);
@@ -196,3 +217,5 @@ DROP TABLE t_tuple_key;
 DROP TABLE t_preprocessed;
 DROP TABLE t_map;
 DROP TABLE t_text_ngrams;
+DROP TABLE t_json;
+DROP TABLE t_normalized;

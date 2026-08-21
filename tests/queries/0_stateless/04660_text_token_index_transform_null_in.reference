@@ -56,6 +56,11 @@ map fixed set rows	1
 map fixed set count	1
 map fixed set rows, transform_null_in = 0	1
 map string set	Granules: 1/251
+json string set	Granules: 1/251
+json fixed set rows	1
+json fixed set count	1
+normalized string set	Granules: 1/250
+normalized fixed set rows	1
 sparse_grams	Granules: 29/250
 sparse_grams rows	1
 sparse_grams fixed set rows	1
