@@ -1062,7 +1062,8 @@ void DatabaseDataLake::createTable(
     const ASTPtr & query)
 {
     /// Engine-clause path: the storage's own initialization (IcebergMetadata::createInitial)
-    /// already wrote metadata and registered the table in the catalog.
+    /// already wrote metadata and registered the table in the catalog; a path there that
+    /// registers nothing throws `TABLE_ALREADY_EXISTS` instead of returning.
     if (table)
         return;
 

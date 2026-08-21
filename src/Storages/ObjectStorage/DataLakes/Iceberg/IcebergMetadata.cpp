@@ -802,11 +802,13 @@ void IcebergMetadata::createInitial(
     }
     if (!metadata_files.empty())
     {
-        if (if_not_exists)
+        /// Without a catalog `IF NOT EXISTS` attaches to the metadata that is already there. With a
+        /// catalog nothing gets registered here, so success would report an invisible table;
+        /// `InterpreterCreateQuery` turns `TABLE_ALREADY_EXISTS` into an `IF NOT EXISTS` no-op.
+        if (if_not_exists && !catalog)
             return;
-        else
-            throw Exception(
-                ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+        throw Exception(
+            ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
     }
 
     String location_path = configuration_ptr->getRawPath().path;
@@ -870,7 +872,13 @@ void IcebergMetadata::createInitial(
             = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
             || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
         if (if_not_exists && precondition_failed)
-            return;
+        {
+            /// As in the `metadata_files` probe above: with a catalog nothing was registered.
+            if (!catalog)
+                return;
+            throw Exception(
+                ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+        }
         throw;
     }
 

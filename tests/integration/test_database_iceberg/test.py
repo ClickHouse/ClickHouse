@@ -2118,6 +2118,39 @@ def test_drop_table_purge(started_cluster):
 
 
 
+def test_create_if_not_exists_with_engine_over_leftover_metadata(started_cluster):
+    """
+    A drop without `data_lake_delete_data_on_drop` keeps the metadata, so a later
+    `CREATE TABLE IF NOT EXISTS ... ENGINE = IcebergS3(...)` over the same path registers nothing and
+    must report that nothing was created - otherwise the insert of `... AS SELECT` gets no table.
+    """
+    node = started_cluster.instances["node1"]
+    namespace = f"test_ns_leftover_{uuid.uuid4().hex[:8]}"
+    engine = (
+        f"IcebergS3('http://minio1:9001/warehouse-rest/{namespace}/t/', "
+        f"'{minio_access_key}', '{minio_secret_key}')"
+    )
+    settings = {
+        "allow_database_iceberg": 1,
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+    }
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{namespace}.t` (id Int64) ENGINE = {engine}",
+        settings=settings,
+    )
+    node.query(f"DROP TABLE {CATALOG_NAME}.`{namespace}.t`", settings=settings)
+
+    node.query(
+        f"CREATE TABLE IF NOT EXISTS {CATALOG_NAME}.`{namespace}.t` (id Int64) "
+        f"ENGINE = {engine} AS SELECT 1 AS id",
+        settings=settings,
+    )
+    assert node.query(f"EXISTS TABLE {CATALOG_NAME}.`{namespace}.t`", settings=settings) == "0\n"
+
+
 def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster):
     """
     Regression test for https://github.com/ClickHouse/ClickHouse/issues/110032.
