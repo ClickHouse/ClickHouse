@@ -272,8 +272,6 @@ def test_unreadable_table_is_hidden(started_cluster):
                         }
                     ),
                     "type_name": "INT",
-                    "type_precision": 0,
-                    "type_scale": 0,
                     "position": 0,
                     "nullable": True,
                 }
