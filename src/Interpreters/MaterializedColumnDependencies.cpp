@@ -4,7 +4,7 @@
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ReplaceAliasByExpressionVisitor.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <ranges>
 
@@ -61,11 +61,12 @@ const MaterializedColumnDependencies::Column * MaterializedColumnDependencies::a
     /// A MATERIALIZED default may read an ALIAS column, and an ALIAS is computed on read and never
     /// stored. Merely adding aliases to the analysis set would let TreeRewriter resolve the name, but
     /// the expression would then demand a column that is not in any part and the recompute stage would
-    /// fail on it, so the reference has to be replaced by what it stands for. Same visitor
-    /// `IndexDescription::initExpressionInfo` uses for a skip index over an ALIAS column. Done before
-    /// the subcolumn rewrite, so a subcolumn reached through an alias is normalized too.
-    ReplaceAliasByExpressionMatcher::Visitor::Data alias_data{columns, {}};
-    ReplaceAliasByExpressionMatcher::Visitor{alias_data}.visit(materialized.expression);
+    /// fail on it, so the reference has to be replaced by what it stands for. `replaceAliasColumnsInQuery`
+    /// is the expansion reading an ALIAS goes through, and it carries the declared type with it: for
+    /// `a UInt8 ALIAS x` over a `UInt16 x` the substituted expression has to narrow exactly as a read of
+    /// `a` does, or the recomputed value differs from the inserted one. Done before the subcolumn
+    /// rewrite, so a subcolumn reached through an alias is normalized too.
+    replaceAliasColumnsInQuery(materialized.expression, columns, {}, context);
 
     /// Both the read set and the recompute stage are keyed on top-level columns, so a default over a
     /// subcolumn must be reported as depending on `t`, not on `t.a`.

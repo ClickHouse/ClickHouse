@@ -909,10 +909,15 @@ void MutationsInterpreter::prepare(bool dry_run)
             stages.emplace_back(context);
             for (const auto & column : columns_desc)
             {
-                const auto * materialized = materialized_dependencies.tryGet(column.name);
-                if (!materialized
-                    || !affected_materialized.contains(column.name)
+                /// Membership and level first: both read sets already built, while `tryGet` analyses
+                /// the default. Asking it for every column of the table would undo the on-demand
+                /// analysis for any read that recomputes even one MATERIALIZED column.
+                if (!affected_materialized.contains(column.name)
                     || level_of_column(column.name, level_of_column) != current_level)
+                    continue;
+
+                const auto * materialized = materialized_dependencies.tryGet(column.name);
+                if (!materialized)
                     continue;
 
                 auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
@@ -1523,8 +1528,11 @@ void MutationsInterpreter::prepare(bool dry_run)
             bool has_dependent_materialized = false;
             for (const auto & column : columns_desc)
             {
+                if (!available_columns_set.contains(column.name))
+                    continue;
+
                 const auto * materialized = materialized_dependencies.tryGet(column.name);
-                if (!available_columns_set.contains(column.name) || !materialized)
+                if (!materialized)
                     continue;
 
                 for (const auto & dep : materialized->dependencies)
