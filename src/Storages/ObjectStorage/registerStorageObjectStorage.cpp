@@ -1293,9 +1293,9 @@ ClickHouse supports reading Iceberg tables that use the following deletion metho
 
 - [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
 - [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3; experimental read support enabled with `allow_experimental_iceberg_deletion_vectors = 1`)
 
-The following deletion method is **not supported**:
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+Writing, updating, and compaction of deletion vectors are not supported.
 
 ### Basic usage {#basic-usage}
 ```sql
