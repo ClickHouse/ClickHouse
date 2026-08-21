@@ -6,7 +6,7 @@ tags: ['セキュリティと認証', 'エラーと例外']
 keywords: ['エラー', 'SSL 証明書', '210']
 ---
 
-<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+<div id="resolving-ssl-certificate-verify-error-in-clickhouse">
   ## ClickHouse におけるコード 210 の SSL 証明書検証エラーの解決
 </div>
 
@@ -46,8 +46,39 @@ keywords: ['エラー', 'SSL 証明書', '210']
 </openSSL>
 ```
 
+<div id="python-clients-on-macos">
+  ## macOS 上の Python クライアント
+</div>
+
+Python クライアントでは、このエラーは通常次のように表示されます。
+
+`ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate`
+
+macOS では、python.org の Python ビルドは、システムのキーチェーンではなく OpenSSL のデフォルトパスを通じて証明書を検証します。新規インストール直後は、これらのパスがルート証明書バンドルを指していません。インストーラーには [certifi](https://pypi.org/project/certifi/) が含まれていますが、同梱の `Install Certificates.command` スクリプトを実行するまで、OpenSSL のデフォルトの場所にはリンクされません。そのため、それまでは証明書自体は有効でも、クライアントは ClickHouse Cloud のサーバー証明書を検証できません。これは Python 3.11 に限らず、python.org の macOS ビルド全般 (Python 3.6 以降) に影響します。
+
+`Install Certificates.command` を実行して、certifi を OpenSSL のデフォルト証明書パスにリンクしてください。パス内のバージョンは、インストール環境に合わせて調整してください。
+
+```bash
+open "/Applications/Python 3.11/Install Certificates.command"
+```
+
+または、クライアントが certifi バンドルを直接使用するように設定します。[ClickHouse Connect](/ja/integrations/language-clients/python/index) は自動的に certifi にフォールバックしないため、`ca_cert` パラメータでバンドルを渡してください。
+
+```python
+import certifi
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host='HOSTNAME.clickhouse.cloud',
+    port=8443,
+    username='default',
+    password='YOUR_SECRET_PASSWORD',
+    ca_cert=certifi.where(),
+)
+```
+
 <div id="additional-resources">
   ## 参考資料
 </div>
 
-[https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/ja/concepts/features/interfaces/cli#custom-config-files) を参照してください
+[`clickhouse-client` の設定に関するドキュメント](/ja/concepts/features/interfaces/client#configuration_files)を参照してください。

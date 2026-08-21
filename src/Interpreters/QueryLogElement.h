@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <type_traits>
 #include <unordered_set>
 
 namespace ProfileEvents
@@ -96,6 +97,11 @@ struct QueryLogElement
 
     ClientInfo client_info;
 
+    /// Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query, if any.
+    String http_handler_name;
+    /// The HTTP request URL (path and query string) that invoked the query, if any.
+    String http_request_url;
+
     String log_comment;
 
     std::vector<UInt64> thread_ids;
@@ -121,4 +127,7 @@ struct QueryLogElement
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };
+
+/// Keep the moves implicit: the trait must reflect the members, not a declaration.
+static_assert(std::is_nothrow_move_constructible_v<QueryLogElement>);
 }

@@ -98,7 +98,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     ### ClickPipes
 
-    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes)는 다양한 소스에서 데이터를 수집하는 작업을 몇 번의 클릭만으로 간편하게 처리할 수 있는 관리형 통합 플랫폼입니다. 가장 까다로운 워크로드를 위해 설계된 ClickPipes의 견고하고 확장 가능한 아키텍처는 일관된 성능과 안정성을 보장합니다. ClickPipes는 장기적인 스트리밍 용도뿐만 아니라 일회성 데이터 로딩 작업에도 활용할 수 있습니다.
+    [ClickPipes](/ko/integrations/clickpipes/home)는 다양한 소스에서 데이터를 수집하는 작업을 몇 번의 클릭만으로 간편하게 처리할 수 있는 관리형 통합 플랫폼입니다. 가장 까다로운 워크로드를 위해 설계된 ClickPipes의 견고하고 확장 가능한 아키텍처는 일관된 성능과 안정성을 보장합니다. ClickPipes는 장기적인 스트리밍 요구사항이나 일회성 데이터 로딩 작업에 모두 사용할 수 있습니다.
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="데이터 소스 선택" border />
 
@@ -149,21 +149,22 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     #### Primary Key 간략 소개
 
-    계속 진행하기 전에, ClickHouse에서 기본 키(primary key)가 어떻게 동작하는지 이해하는 것이 중요합니다(기본 키의 구현 방식이 예상과 다를 수 있습니다!):
+    계속 진행하기 전에, ClickHouse에서 기본 키(primary key)가 어떻게 동작하는지 이해하는 것이 중요합니다(기본 키의 구현 방식이 예상과 다르게 보일 수 있습니다!):
 
     * ClickHouse의 기본 키(primary keys)는 테이블의 각 행별로 ***고유하지 않습니다***
 
     ClickHouse 테이블의 프라이머리 키는 데이터가 디스크에 기록될 때 정렬되는 방식을 결정합니다. 8,192개의 행 또는 10MB의 데이터마다(**인덱스 세분화 수준**이라고 함) 프라이머리 키 인덱스 파일에 항목이 생성됩니다. 이 세분화 수준 개념은 메모리에 쉽게 올릴 수 있는 **희소 인덱스**를 생성하며, 그래뉼은 `SELECT` 쿼리 실행 시 처리되는 최소 단위 컬럼 데이터의 스트라이프를 나타냅니다.
 
-    프라이머리 키는 `PRIMARY KEY` 매개변수를 사용하여 정의할 수 있습니다. `PRIMARY KEY`를 지정하지 않고 테이블을 정의하면, 키는 `ORDER BY` 절에 지정된 Tuple이 됩니다. `PRIMARY KEY`와 `ORDER BY`를 모두 지정하는 경우, 프라이머리 키는 정렬 순서의 부분 집합이어야 합니다.
+    프라이머리 키는 `PRIMARY KEY` 매개변수를 사용하여 정의할 수 있습니다. `PRIMARY KEY`를 지정하지 않고 테이블을 정의하면,
+    키는 `ORDER BY` 절에 지정된 Tuple이 됩니다. `PRIMARY KEY`와 `ORDER BY`를 모두 지정하는 경우, 프라이머리 키는 정렬 순서의 부분 집합이어야 합니다.
 
-    프라이머리 키는 정렬 키이기도 하며, `(user_id, timestamp)`의 튜플로 구성됩니다. 따라서 각 컬럼 파일에 저장된 데이터는 `user_id` 기준으로 먼저 정렬되고, 이후 `timestamp` 기준으로 정렬됩니다.
+    프라이머리 키는 정렬 키이기도 하며 `(user_id, timestamp)` 튜플입니다. 따라서 각 컬럼 파일에 저장된 데이터는 `user_id` 기준으로 먼저 정렬되고 이어서 `timestamp` 기준으로 정렬됩니다.
 
     ClickHouse의 핵심 개념에 대한 심층 분석은 [&quot;핵심 개념&quot;](/ko/concepts/core-concepts/index)을 참조하십시오.
 
     #### 테이블에 데이터 삽입
 
-    ClickHouse에서 익숙한 [`INSERT INTO TABLE`](/ko/reference/statements/insert-into) 명령을 사용할 수 있지만, [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에 데이터를 삽입할 때마다 스토리지에 **파트(part)**가 생성된다는 점을 반드시 이해해야 합니다.
+    ClickHouse에서 익숙한 [`INSERT INTO TABLE`](/ko/reference/statements/insert-into) 명령을 사용할 수 있지만, [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에 데이터를 삽입할 때마다 스토리지에 **파트(part)**가 생성된다는 점을 이해하는 것이 중요합니다.
 
     <Tip>
       **ClickHouse 모범 사례**
@@ -197,7 +198,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     ### ClickHouse Client를 사용하여 데이터 추가
 
-    [**clickhouse client**](/ko/concepts/features/interfaces/cli)라는 명령줄 도구를 사용하여 ClickHouse Cloud 서비스에 연결할 수도 있습니다. 왼쪽 메뉴에서 `Connect`를 클릭하면 세부 정보를 확인할 수 있습니다. 대화 상자의 드롭다운에서 `Native`를 선택하십시오.
+    [**clickhouse client**](/ko/concepts/features/interfaces/cli)라는 명령줄 도구를 사용하여 ClickHouse Cloud 서비스에 연결할 수도 있습니다. 왼쪽 메뉴에서 `Connect`를 클릭하여 해당 정보를 확인하십시오. 대화 상자의 드롭다운에서 `Native`를 선택하세요.
 
     <Image img="/images/_snippets/client_details.webp" size="md" alt="clickhouse client 연결 정보" border />
 
@@ -277,7 +278,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     ### 파일 업로드
 
-    데이터베이스를 처음 시작할 때 흔히 수행하는 작업 중 하나는 파일에 있는 기존 데이터를 삽입하는 것입니다. 온라인에서 제공되는 샘플 데이터를 삽입해 볼 수 있으며, 이 데이터는 클릭스트림 데이터로 사용자 ID, 방문한 URL, 이벤트 타임스탬프를 포함합니다.
+    데이터베이스를 처음 시작할 때 흔히 수행하는 작업 중 하나는 파일에 이미 가지고 있는 데이터를 삽입하는 것입니다. 온라인에서 제공되는
+    샘플 데이터를 삽입해 볼 수 있으며, 이 데이터는 클릭스트림 데이터로 사용자 ID, 방문한 URL, 그리고
+    이벤트의 타임스탬프를 포함합니다.
 
     `data.csv`라는 이름의 CSV 파일에 다음과 같은 텍스트가 있다고 가정합니다:
 
@@ -299,11 +302,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
     ```
 
-    2. SQL 콘솔에서 쿨리하면 이제 테이블에 새 행이 표시되는 것을 확인할 수 있습니다:
+    2. SQL 콘솔에서 쿼리하면 테이블에 새 행이 표시되는 것을 확인할 수 있습니다:
 
     <br />
 
-    <Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt="CSV 파일의 새로운 행" />
+    <Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt="CSV 파일에서 추가된 행" />
 
     <br />
   </Step>
@@ -320,7 +323,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 다음 단계
 </div>
 
-* [튜토리얼](/get-started/quickstarts/tutorial)에서는 테이블에 200만 개의 행을 삽입하고 몇 가지 분석 쿼리를 작성해 봅니다
+* [튜토리얼](/ko/get-started/quickstarts/tutorial)에서는 테이블에 200만 개의 행을 삽입하고 몇 가지 분석 쿼리를 작성해 봅니다
 * [예시 데이터셋](/ko/get-started/sample-datasets/index) 목록과 이를 삽입하는 방법을 안내합니다
 * [ClickHouse 시작하기](https://clickhouse.com/company/events/getting-started-with-clickhouse/)에 대한 12분 분량의 동영상을 확인해 보십시오
 * 데이터가 외부 소스에서 들어오는 경우, 메시지 큐, 데이터베이스, 파이프라인 등에 연결하는 방법을 안내하는 [통합 가이드 모음](/ko/integrations/home)을 참조하십시오

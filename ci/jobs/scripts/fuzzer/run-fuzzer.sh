@@ -71,6 +71,8 @@ function configure
     # https url() mutations reach the table-function logic instead of failing to connect.
     cp -av --dereference "$repo_dir"/tests/config/config.d/secure_ports.xml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/config.d/ssl_certs.xml $CONFIG_DIR/config.d
+    # Without this the server applies its 1GiB core_dump.size_limit default, which truncates cores.
+    cp -av --dereference "$repo_dir"/tests/config/config.d/core_dump.yaml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/server.crt "$repo_dir"/tests/config/server.key $CONFIG_DIR
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
