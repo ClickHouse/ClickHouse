@@ -23,10 +23,14 @@ SELECT 'the explicitly set value returns when the workers num goes back to zero'
 SELECT getSetting('compile_expressions');
 
 SELECT 'and no other setting keeps a trace of the derived window';
+-- Both snapshots go through the same statement shape: the analyzer mutates some per-query
+-- settings (e.g. `parallel_replicas_for_cluster_engines`) on a plain SELECT context but not
+-- on the inner context of CREATE ... AS SELECT, and a shape mismatch would show that noise.
+CREATE TEMPORARY TABLE settings_after AS SELECT name, value, changed FROM system.settings;
 SELECT count()
-FROM system.settings s
+FROM settings_after a
 JOIN settings_before b USING (name)
-WHERE (s.value != b.value OR s.changed != b.changed) AND name != 'distributed_plan_workers_num';
+WHERE (a.value != b.value OR a.changed != b.changed) AND name != 'distributed_plan_workers_num';
 
 SELECT 'a value set explicitly during the window survives the restore';
 -- Pinned explicitly: the harness randomizes this setting, and a window only remembers a setting
