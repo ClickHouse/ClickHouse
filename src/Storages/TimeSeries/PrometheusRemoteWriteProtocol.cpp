@@ -10,6 +10,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <fmt/format.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -85,6 +86,18 @@ size_t getTotalSpanLength(const google::protobuf::RepeatedPtrField<prometheus::B
     return total;
 }
 
+/// Counts of the integer flavor are stored in a Float64 column, which represents every integer up to
+/// 2^53 exactly. Reject anything above rather than let the round trip quietly return a rounded count.
+constexpr UInt64 MAX_EXACT_INTEGER_COUNT = 1ULL << 53;
+
+void checkIntegerCountIsExact(UInt64 count, std::string_view what)
+{
+    if (count > MAX_EXACT_INTEGER_COUNT)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Native histogram has an integer {} of {}, which is above the largest value ({}) that can be "
+            "stored without losing precision", what, count, MAX_EXACT_INTEGER_COUNT);
+}
+
 /// Appends decoded bucket values (absolute counts) of one direction of a native histogram.
 /// Int histograms carry deltas which are decoded to absolutes here; float histograms carry absolutes.
 void appendHistogramBuckets(
@@ -137,6 +150,7 @@ void appendHistogramBuckets(
             if (running < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has a negative {} bucket count after delta decoding: {}", what, running);
+            checkIntegerCountIsExact(static_cast<UInt64>(running), fmt::format("{} bucket count", what));
             out_values.insertValue(static_cast<Float64>(running));
         }
     }
@@ -208,6 +222,12 @@ ColumnPtr makeHistogramsColumn(
                     "Native histogram is an integer histogram but carries float bucket counts");
 
             insertTimestamp(histogram.timestamp(), timestamp_scale, *timestamps);
+
+            if (!is_float)
+            {
+                checkIntegerCountIsExact(histogram.count_int(), "count");
+                checkIntegerCountIsExact(histogram.zero_count_int(), "zero count");
+            }
 
             Float64 count = is_float ? histogram.count_float() : static_cast<Float64>(histogram.count_int());
             Float64 zero_count = is_float ? histogram.zero_count_float() : static_cast<Float64>(histogram.zero_count_int());
