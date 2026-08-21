@@ -629,3 +629,66 @@ SELECT 'case49_data';
 SELECT key, b, m1, m2, from_e FROM t_skip_empty_case49 ORDER BY key;
 
 DROP TABLE t_skip_empty_case49;
+
+-- ============================================================================
+-- CASE 50: Renamed marker-only type change rebuilds its projection.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case50;
+
+CREATE TABLE t_skip_empty_case50
+(
+    key UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         index_granularity = 1,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         alter_column_secondary_index_mode = 'rebuild',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case50 VALUES (1, 0);
+ALTER TABLE t_skip_empty_case50 RENAME COLUMN b TO c;
+ALTER TABLE t_skip_empty_case50 ADD PROJECTION p (SELECT c ORDER BY c);
+ALTER TABLE t_skip_empty_case50 MATERIALIZE PROJECTION p;
+ALTER TABLE t_skip_empty_case50 MODIFY COLUMN c Nullable(UInt64);
+
+SELECT 'case50_projection';
+SELECT c FROM t_skip_empty_case50 ORDER BY c SETTINGS force_optimize_projection = 1;
+
+DROP TABLE t_skip_empty_case50;
+
+-- ============================================================================
+-- CASE 51: Marker-only CLEAR rebuilds its skip index from the current DEFAULT.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case51;
+
+CREATE TABLE t_skip_empty_case51
+(
+    key UInt64,
+    b UInt64,
+    INDEX ix b TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         index_granularity = 1,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         alter_column_secondary_index_mode = 'rebuild',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case51 VALUES (1, 0);
+ALTER TABLE t_skip_empty_case51 MODIFY COLUMN b UInt64 DEFAULT 999;
+ALTER TABLE t_skip_empty_case51 CLEAR COLUMN b;
+
+SELECT 'case51_index_new';
+SELECT count() FROM t_skip_empty_case51 WHERE b = 999 SETTINGS force_data_skipping_indices = 'ix';
+SELECT 'case51_index_old';
+SELECT count() FROM t_skip_empty_case51 WHERE b = 0 SETTINGS force_data_skipping_indices = 'ix';
+
+DROP TABLE t_skip_empty_case51;

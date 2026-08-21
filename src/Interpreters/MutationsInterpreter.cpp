@@ -1457,7 +1457,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                 else
                 {
                     const auto & infos = merge_tree_data_part->getSerializationInfos();
-                    if (const auto * missing = infos.getMissingColumnInfo(command.column_name); missing && !missing->type_name.empty())
+                    auto marker_name = command.column_name;
+                    if (const auto & alter_conversions = source.getAlterConversions();
+                        alter_conversions && alter_conversions->isColumnRenamed(marker_name))
+                        marker_name = alter_conversions->getColumnOldName(marker_name);
+                    if (const auto * missing = infos.getMissingColumnInfo(marker_name); missing && !missing->type_name.empty())
                         old_type = DataTypeFactory::instance().get(missing->type_name);
                 }
 
@@ -1509,12 +1513,27 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_COLUMN && command.clear)
         {
-            /// When clearing a column, we need to also clear any indices that depend on it
+            /// Rebuild indices that depend on the cleared column from its
+            /// post-CLEAR DEFAULT value. Dropping them would make index
+            /// availability depend on whether the value had physical files.
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
                 const auto & index_cols = index.expression->getRequiredColumns();
-                if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
-                    dropped_indices.insert(index.name);
+                if (std::find(index_cols.begin(), index_cols.end(), command.column_name) == index_cols.end())
+                    continue;
+
+                switch (index_mode)
+                {
+                    case AlterColumnSecondaryIndexMode::THROW:
+                    case AlterColumnSecondaryIndexMode::COMPATIBILITY:
+                    case AlterColumnSecondaryIndexMode::REBUILD:
+                        for (const auto & col : index_cols)
+                            dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
+                        materialized_indices.insert(index.name);
+                        break;
+                    case AlterColumnSecondaryIndexMode::DROP:
+                        dropped_indices.insert(index.name);
+                }
             }
             /// When clearing a column, we also need to rebuild any projections that depend on it,
             /// otherwise stale projection data with outdated sort order will be hardlinked unchanged.

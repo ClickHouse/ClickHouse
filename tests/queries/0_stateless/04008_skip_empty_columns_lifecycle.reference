@@ -63,3 +63,9 @@ case48_data
 1	999	1000
 case49_data
 1	999	1000	1001	42
+case50_projection
+0
+case51_index_new
+1
+case51_index_old
+0
