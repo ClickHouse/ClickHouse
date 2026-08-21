@@ -44,6 +44,27 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
     return true;
 }
 
+/// `tryExecuteFunctionsAfterSorting` only refuses to lift `arrayJoin` above the sort, so an
+/// expression lifted between `Limit` and `Sort` may still contain a stateful function such as
+/// `rowNumberInAllBlocks`, or a function that is not deterministic in the scope of a query such
+/// as `nowInBlock` or `blockNumber`. Such an expression cannot be replayed after the join: the
+/// real `LimitStep` has already dropped the `offset` rows and kept only `limit` of them, and the
+/// lazy join changes block boundaries, so the function would see a different set of rows and
+/// different blocks than it does without the optimization.
+static bool canReplayAfterLimit(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        if (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery())
+            return false;
+    }
+
+    return true;
+}
+
 /// Returns two vectors of total size equal to the number of columns in the header.
 /// The first vector (size of `inputs.size()`) contains positions of the inputs in the header.
 /// The second vector contains other positions (sorted).
@@ -500,6 +521,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         /// semantics: `LIMIT` must be applied to the rows produced by `arrayJoin`,
         /// not to the source rows. Bail out, consistent with the checks below the sort.
         if (above_expr->getExpression().hasArrayJoin())
+            return false;
+        /// Stateful and query-scope non-deterministic expressions must keep seeing the rows
+        /// before `LIMIT`/`OFFSET` is applied, so they cannot be moved past the real `LimitStep`.
+        if (!canReplayAfterLimit(above_expr->getExpression()))
             return false;
         above_sort_dags.push_front(above_expr->getExpression().clone());
         sorting_node = sorting_node->children.front();
