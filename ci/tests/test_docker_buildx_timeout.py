@@ -431,7 +431,8 @@ def test_main_passes_the_stopwatch_and_the_job_cap_to_every_build():
     cannot see main(), the only production caller. Measured: dropping them from
     main() leaves the whole suite green while the scheduled shape goes from
     16334s to 50058s against an 18000s cap. AST rather than a substring count,
-    because a count cannot tell a keyword from a comment mentioning one.
+    because a count cannot tell a keyword from a comment mentioning one, and the
+    keyword names alone cannot tell the live bindings from a falsy constant.
     """
     src = open(docker_server.__file__, encoding="utf-8").read()
     mains = [
@@ -448,11 +449,20 @@ def test_main_passes_the_stopwatch_and_the_job_cap_to_every_build():
         and node.func.id == "build_and_push_image"
     ]
     assert len(calls) == 1, "main() no longer has exactly one build call"
-    passed = {kw.arg for kw in calls[0].keywords}
-    assert "sw" in passed, "main() does not pass the stopwatch, so the bound never shrinks"
-    assert "job_timeout" in passed, (
-        "main() does not pass the job cap, so the bound never shrinks"
-    )
+    # The value, not just the keyword: a literal `job_timeout=0` is falsy, so
+    # buildx_timeout returns the fixed bound while the keyword is still spelled.
+    passed = {
+        kw.arg: kw.value for kw in calls[0].keywords if kw.arg in ("sw", "job_timeout")
+    }
+    for name in ("sw", "job_timeout"):
+        value = passed.get(name)
+        assert value is not None, (
+            f"main() does not pass {name}, so the bound never shrinks"
+        )
+        assert isinstance(value, ast.Name) and value.id == name, (
+            f"main() passes {name}={ast.dump(value)}, not the live {name} binding; "
+            "a constant or a fresh object silently restores the fixed bound"
+        )
 
 
 def test_the_build_helper_cannot_be_called_without_its_budget_context():
