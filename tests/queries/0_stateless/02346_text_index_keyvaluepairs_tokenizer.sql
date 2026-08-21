@@ -4,10 +4,6 @@
 -- Tests the `keyValuePairs` tokenizer: a text index built directly on a Map(String, String) column,
 -- which stores every (key, value) pair of a row as a single token and answers `m['key'] = 'value'`
 -- with an exact token lookup and direct read.
---
--- Token layout: key || value || reversed-varint((length(key) << 1) | is_rest)
--- `is_rest` is 0 for the first occurrence of a key in a row and 1 for later duplicates, because
--- `m['key']` is the value of the *first* occurrence.
 
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
