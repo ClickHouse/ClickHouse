@@ -38,9 +38,6 @@ SEEDED_LAST_ROW = "15\tkxUUZEUoKv\t398"
 EXPERIMENTAL_SETTING = "allow_experimental_database_unified_unity_catalog"
 
 
-# Copied out of the image because the server writes to its own directory, and
-# the image ships it root-owned. /tmp is writable and, with `user_files` rooted
-# at `/`, readable by ClickHouse.
 UC_HOME = "/tmp/unitycatalog"
 UC_LOG = UC_HOME + "/uc.log"
 UC_START_TIMEOUT = 120
@@ -50,7 +47,7 @@ def start_unity_catalog(node):
     # Make root traversable so that non-root users can access classpath files.
     node.exec_in_container(["bash", "-c", "chmod a+rx /root"], user="root")
 
-    # tar, not `cp -r`: the sbt caches under */zinc are root-owned mode 0600.
+    # Copy from /unitycatalog to /tmp/unitycatalog.
     node.exec_in_container(
         [
             "bash",
@@ -62,7 +59,7 @@ def start_unity_catalog(node):
         [
             "bash",
             "-c",
-            f"cd {UC_HOME} && setsid nohup bin/start-uc-server > {UC_LOG} 2>&1 < /dev/null &",
+            f"cd {UC_HOME} && nohup bin/start-uc-server > {UC_LOG} 2>&1 &",
         ]
     )
 
