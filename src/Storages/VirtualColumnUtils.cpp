@@ -624,7 +624,8 @@ bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_c
     return std::any_of(
         requested_virtual_columns.begin(),
         requested_virtual_columns.end(),
-        [](const auto & col) { return col.name == "_row_number" || col.name == "_row_id"; });
+        [](const auto & col)
+        { return col.name == "_row_number" || col.name == "_row_id" || col.name == "_last_updated_sequence_number"; });
 }
 
 static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allowed_inputs)
