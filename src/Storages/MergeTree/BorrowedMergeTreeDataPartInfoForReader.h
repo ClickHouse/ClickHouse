@@ -29,14 +29,16 @@ public:
         DataPartStoragePtr data_part_storage_,
         NamesAndTypesList columns_,
         ColumnsSubstreams columns_substreams_,
+        NameSet invalidated_system_columns_,
         MergeTreeIndexGranularityInfo index_granularity_info_,
         MergeTreeIndexGranularityPtr index_granularity_,
         MergeTreeDataPartChecksums checksums_,
         SerializationInfoByName serialization_infos_,
-        MergeTreeSettingsPtr storage_settings_,
         String table_name_,
         size_t marks_count_,
-        ContextPtr context_)
+        MergeTreeSettingsPtr storage_settings_,
+        ContextPtr context_,
+        bool share_nested_offsets_ = true)
         : IMergeTreeDataPartInfoForReader(context_)
         , type(type_)
         , data_part_storage(std::move(data_part_storage_))
@@ -44,15 +46,18 @@ public:
         , part_info(MergeTreePartInfo::fromPartName(part_name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING))
         , columns(columns_)
         , columns_substreams(std::move(columns_substreams_))
+        , invalidated_system_columns(std::move(invalidated_system_columns_))
         , columns_description(columns_)
-        , columns_description_with_collected_nested(Nested::collect(columns_))
+        /// Mirror `MergeTreeData::getColumnsDescriptionForColumns`: collect dotted `Array` columns into a
+        /// shared-offsets Nested structure only when `share_nested_offsets` is on; otherwise keep them independent.
+        , columns_description_with_collected_nested(share_nested_offsets_ ? ColumnsDescription(Nested::collect(columns_)) : ColumnsDescription(columns_))
         , index_granularity_info(std::move(index_granularity_info_))
         , index_granularity(std::move(index_granularity_))
         , checksums(std::move(checksums_))
         , serialization_infos(std::move(serialization_infos_))
-        , storage_settings(std::move(storage_settings_))
         , table_name(std::move(table_name_))
         , marks_count(marks_count_)
+        , storage_settings(std::move(storage_settings_))
     {
         column_name_to_position.reserve(columns.size());
         size_t pos = 0;
@@ -104,8 +109,7 @@ public:
         return columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
     }
 
-    /// A borrowed part carries no `invalidated_system_columns` file, so no column is invalidated.
-    bool isSystemColumnInvalidated(const String &) const override { return false; }
+    bool isSystemColumnInvalidated(const String & column_name) const override { return invalidated_system_columns.contains(column_name); }
 
     String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
     {
@@ -113,7 +117,7 @@ public:
         return available_columns.front().name;
     }
 
-    /// A borrowed part is never a projection part.
+    /// Projection parts are never read through a borrowed part, so there is no parent part.
     String getParentPartName() const override { return {}; }
 
     /// A borrowed part has no size information, see the comment in `IMergeTreeDataPartInfoForReader`.
@@ -123,7 +127,7 @@ public:
 
     MergeTreeSettingsPtr getStorageSettings() const override { return storage_settings; }
 
-    /// A borrowed part is not backed by a concrete `IMergeTreeDataPart`.
+    /// A borrowed part is not backed by an `IMergeTreeDataPart`.
     std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return nullptr; }
 
     size_t getMarksCount() const override { return marks_count; }
@@ -166,15 +170,16 @@ private:
     MergeTreePartInfo part_info;
     NamesAndTypesList columns;
     ColumnsSubstreams columns_substreams;
+    NameSet invalidated_system_columns;
     ColumnsDescription columns_description;
     ColumnsDescription columns_description_with_collected_nested;
     MergeTreeIndexGranularityInfo index_granularity_info;
     MergeTreeIndexGranularityPtr index_granularity;
     MergeTreeDataPartChecksums checksums;
     SerializationInfoByName serialization_infos;
-    MergeTreeSettingsPtr storage_settings;
     String table_name;
     size_t marks_count;
+    MergeTreeSettingsPtr storage_settings;
     std::unordered_map<std::string, size_t> column_name_to_position;
 };
 

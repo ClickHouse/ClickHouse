@@ -67,6 +67,12 @@ do
         read_parts "count(), sum(id), uniqExact(dt)" ""
         ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id), uniqExact(dt) FROM mtp_source"
 
+        # The same with each part's mark ranges split across several threads.
+        read_parts "count(), sum(id), uniqExact(dt)" "SETTINGS max_threads = 4,
+            merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1,
+            merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 1,
+            merge_tree_min_read_task_size = 1"
+
         # PREWHERE is pushed down to the part readers.
         read_parts "count(), sum(id)" "PREWHERE id % 2 = 0"
         read_parts "data" "PREWHERE id = 42"
@@ -80,5 +86,13 @@ do
         ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM mtp_source"
     done
 done
+
+echo "--- no parts"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count(), sum(id) FROM mergeTreeParts(
+        structure('dt Date, id Int64, data String'),
+        parts(),
+        disk(type = local, path = '${DISK_ROOT}/'),
+        table_settings(index_granularity_bytes = ${INDEX_GRANULARITY_BYTES}))"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE mtp_source SYNC"
