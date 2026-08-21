@@ -974,10 +974,23 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     ElementWrappers element_wrappers;
     VectorWithMemoryTracking<std::optional<size_t>> to_reverse_index;
 
-    /// For named tuples allow conversions for tuples with
-    /// different sets of elements. If element exists in @to_type
-    /// and doesn't exist in @to_type it will be filled by default values.
-    if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
+    /// For named tuples allow conversions for tuples with different sets of elements,
+    /// but only when the correspondence between elements is unambiguous:
+    /// - if every element name of @to_type exists in @from_type, elements are matched by name,
+    ///   and source elements without a counterpart are dropped;
+    /// - if every element name of @from_type exists in @to_type, elements are matched by name,
+    ///   and target elements without a counterpart are filled by default values
+    ///   (e.g. adding a new element to a Nested column);
+    /// - if the name sets are disjoint, elements are converted positionally, as for unnamed tuples
+    ///   (e.g. the result of function tuple with enable_named_columns_in_function_tuple inserted
+    ///   into a column whose tuple elements are named differently);
+    /// - otherwise (the name sets partially overlap and each side has extra names) an exception
+    ///   is thrown, because it is unclear whether elements correspond by name or by position.
+    /// Unmatched target elements must never be silently filled by default values when the source
+    /// has data for them positionally: that loses data (see issue #70830).
+    bool convert_positionally = !(from_type->hasExplicitNames() && to_type->hasExplicitNames());
+
+    if (!convert_positionally)
     {
         const auto & from_names = from_type->getElementNames();
         UnorderedMapWithMemoryTracking<String, size_t> from_positions;
@@ -986,25 +999,47 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             from_positions[from_names[i]] = i;
 
         const auto & to_names = to_type->getElementNames();
-        element_wrappers.reserve(to_names.size());
-        to_reverse_index.reserve(from_names.size());
 
-        for (size_t i = 0; i < to_names.size(); ++i)
+        size_t common_names_count = 0;
+        for (const auto & to_name : to_names)
+            common_names_count += from_positions.contains(to_name);
+
+        if (common_names_count == 0)
         {
-            auto it = from_positions.find(to_names[i]);
-            if (it != from_positions.end())
+            convert_positionally = true;
+        }
+        else if (common_names_count < to_names.size() && common_names_count < from_names.size())
+        {
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                            "CAST AS Tuple between named tuples is ambiguous: their sets of element names partially overlap, "
+                            "and each of the tuples has elements missing in the other one, so it is unclear whether elements "
+                            "correspond by name or by position. Rename the elements, or CAST through a tuple without element "
+                            "names to convert positionally.\nLeft type: {}, right type: {}",
+                            from_type->getName(), to_type->getName());
+        }
+        else
+        {
+            element_wrappers.reserve(to_names.size());
+            to_reverse_index.reserve(from_names.size());
+
+            for (size_t i = 0; i < to_names.size(); ++i)
             {
-                element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
-                to_reverse_index.emplace_back(it->second);
-            }
-            else
-            {
-                element_wrappers.emplace_back();
-                to_reverse_index.emplace_back();
+                auto it = from_positions.find(to_names[i]);
+                if (it != from_positions.end())
+                {
+                    element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
+                    to_reverse_index.emplace_back(it->second);
+                }
+                else
+                {
+                    element_wrappers.emplace_back();
+                    to_reverse_index.emplace_back();
+                }
             }
         }
     }
-    else
+
+    if (convert_positionally)
     {
         if (from_element_types.size() != to_element_types.size())
             throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "

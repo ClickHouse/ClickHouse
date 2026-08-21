@@ -6622,6 +6622,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (node_alias.empty())
             continue;
 
+        /** Conflicting expressions for an alias are an error only if the alias was actually used
+          * to resolve some identifier. An alias can also just give a name to an expression without
+          * being referenced anywhere, e.g. a name of a tuple element in
+          * SELECT tuple(1 AS x), tuple(2 AS x)
+          * (see the setting enable_named_columns_in_function_tuple), and such queries are valid.
+          * If the alias is used, the check below is preserved: whichever expression a reference
+          * resolved to, conflicting definitions make the reference ambiguous.
+          */
+        if (!scope.aliases.used_alias_names.contains(node_alias))
+            continue;
+
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
         bool has_node_in_alias_table = false;
