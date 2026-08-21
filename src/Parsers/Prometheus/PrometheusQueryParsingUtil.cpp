@@ -701,8 +701,24 @@ namespace
 }
 
 
-bool PrometheusQueryParsingUtil::tryParseScalar(std::string_view input, ScalarType & res_scalar, String * error_message, size_t * error_pos)
+bool PrometheusQueryParsingUtil::tryParseScalar(
+    std::string_view input, ScalarType & res_scalar, String * error_message, size_t * error_pos, bool * is_duration)
 {
+    if (is_duration)
+    {
+        size_t start_pos = 0;
+        if (input.starts_with('+') || input.starts_with('-'))
+            ++start_pos;
+        while (start_pos != input.length() && std::isspace(input[start_pos]))
+            ++start_pos;
+
+        size_t end_pos = input.length();
+        while (end_pos != start_pos && std::isspace(input[end_pos - 1]))
+            --end_pos;
+
+        *is_duration = isDurationFormat(input.substr(start_pos, end_pos - start_pos));
+    }
+
     /// Here `scale` is set to `0` because it's unused when parsing a floating-point number.
     return tryParseNumber(input, /* scale */ 0, res_scalar, error_message, error_pos);
 }

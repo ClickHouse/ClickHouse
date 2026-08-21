@@ -216,6 +216,7 @@ labelName
     | METRIC_NAME
     | LABEL_NAME
     | STRING
+    | NUMBER
     ;
 
 labelNameList

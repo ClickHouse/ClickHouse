@@ -37,7 +37,8 @@ struct PrometheusQueryParsingUtil
     static bool tryParseScalar(std::string_view input,
                                ScalarType & res_scalar,
                                String * error_message = nullptr,
-                               size_t * error_pos = nullptr);
+                               size_t * error_pos = nullptr,
+                               bool * is_duration = nullptr);
 
     /// Parses a timestamp which can be either an integer or floating-point number of seconds since epoch (1 January 1970),
     /// or a hexadecimal number of seconds since epoch, or a duration with time units since epoch.

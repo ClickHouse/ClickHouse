@@ -76,6 +76,8 @@ public:
     {
     public:
         ScalarType scalar{};
+        /// Set for a scalar written with PromQL duration syntax. The value is stored at millisecond scale.
+        std::optional<DurationType> duration_value;
         Scalar() { node_type = NodeType::Scalar; result_type = ResultType::SCALAR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;

@@ -339,6 +339,9 @@ namespace
 
     String formatPrometheusScalar(const PrometheusQueryTree::Scalar & scalar)
     {
+        if (scalar.duration_value)
+            return formatPrometheusDuration(*scalar.duration_value, /* scale */ 3);
+
         if (std::isinf(scalar.scalar))
             return scalar.scalar < 0 ? "-Inf" : "+Inf";
         if (std::isnan(scalar.scalar))
@@ -391,9 +394,49 @@ namespace
         return binary.on || !binary.labels.empty() || binary.group_left || binary.group_right;
     }
 
+    constexpr size_t max_characters_per_line = 100;
+
     String formatPrometheusNodeFlat(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree);
 
     String formatPrometheusNode(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree, size_t level);
+
+    String formatPrometheusNodeWithParentheses(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree, size_t level);
+
+    bool needsPrometheusLeftParentheses(const PrometheusQueryTree::BinaryOperator & binary)
+    {
+        const auto precedence = binary.getPrecedence();
+        const auto left_precedence = binary.getLeftArgument()->getPrecedence();
+        return (precedence < left_precedence) || (precedence == left_precedence && binary.isRightAssociative());
+    }
+
+    bool needsPrometheusRightParentheses(const PrometheusQueryTree::BinaryOperator & binary)
+    {
+        return binary.getPrecedence() <= binary.getRightArgument()->getPrecedence();
+    }
+
+    String formatPrometheusSubquerySuffix(const PrometheusQueryTree::Subquery & subquery, const PrometheusQueryTree & tree)
+    {
+        String result = fmt::format("[{}:", formatPrometheusDuration(subquery.range, tree.getTimestampScale()));
+        if (subquery.step)
+            result += formatPrometheusDuration(*subquery.step, tree.getTimestampScale());
+        result += ']';
+        return result;
+    }
+
+    String formatPrometheusNodeWithParentheses(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree, size_t level)
+    {
+        const String flat = formatPrometheusNodeFlat(node, tree);
+        const String indent(level * 2, ' ');
+        if (flat.size() <= max_characters_per_line)
+        {
+            String result = indent + '(';
+            result += flat;
+            result += ')';
+            return result;
+        }
+
+        return indent + "(\n" + formatPrometheusNode(node, tree, level + 1) + "\n" + indent + ')';
+    }
 
     String formatPrometheusNodeFlat(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree)
     {
@@ -475,10 +518,7 @@ namespace
                 result += formatPrometheusNodeFlat(*expression, tree);
                 if (need_parentheses)
                     result += ')';
-                result += fmt::format("[{}:", formatPrometheusDuration(subquery.range, tree.getTimestampScale()));
-                if (subquery.step)
-                    result += formatPrometheusDuration(*subquery.step, tree.getTimestampScale());
-                result += ']';
+                result += formatPrometheusSubquerySuffix(subquery, tree);
                 return result;
             }
 
@@ -540,12 +580,8 @@ namespace
             case NodeType::BinaryOperator:
             {
                 const auto & binary = static_cast<const PrometheusQueryTree::BinaryOperator &>(node);
-                const auto precedence = binary.getPrecedence();
-                const auto left_precedence = binary.getLeftArgument()->getPrecedence();
-                const auto right_precedence = binary.getRightArgument()->getPrecedence();
-                const bool need_left_parentheses
-                    = (precedence < left_precedence) || (precedence == left_precedence && binary.isRightAssociative());
-                const bool need_right_parentheses = precedence <= right_precedence;
+                const bool need_left_parentheses = needsPrometheusLeftParentheses(binary);
+                const bool need_right_parentheses = needsPrometheusRightParentheses(binary);
 
                 String result;
                 if (need_left_parentheses)
@@ -608,7 +644,6 @@ namespace
 
     String formatPrometheusNode(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree, size_t level)
     {
-        constexpr size_t max_characters_per_line = 100;
         const String flat = formatPrometheusNodeFlat(node, tree);
         const String indent(level * 2, ' ');
 
@@ -651,10 +686,14 @@ namespace
             case PrometheusQueryTree::NodeType::BinaryOperator:
             {
                 const auto & binary = static_cast<const PrometheusQueryTree::BinaryOperator &>(node);
+                const bool need_left_parentheses = needsPrometheusLeftParentheses(binary);
+                const bool need_right_parentheses = needsPrometheusRightParentheses(binary);
                 if (flat.size() <= max_characters_per_line)
                     return indent + flat;
 
-                String result = formatPrometheusNode(*binary.getLeftArgument(), tree, level + 1);
+                String result = need_left_parentheses
+                    ? formatPrometheusNodeWithParentheses(*binary.getLeftArgument(), tree, level + 1)
+                    : formatPrometheusNode(*binary.getLeftArgument(), tree, level + 1);
                 result += "\n" + indent + binary.operator_name;
                 if (binary.bool_modifier)
                     result += " bool";
@@ -681,7 +720,9 @@ namespace
                     result += ')';
                 }
                 result += "\n";
-                result += formatPrometheusNode(*binary.getRightArgument(), tree, level + 1);
+                result += need_right_parentheses
+                    ? formatPrometheusNodeWithParentheses(*binary.getRightArgument(), tree, level + 1)
+                    : formatPrometheusNode(*binary.getRightArgument(), tree, level + 1);
                 return result;
             }
 
@@ -691,7 +732,10 @@ namespace
                 if (flat.size() <= max_characters_per_line)
                     return indent + flat;
 
-                String child = formatPrometheusNode(*unary.getArgument(), tree, level);
+                const bool need_parentheses = unary.getPrecedence() < unary.getArgument()->getPrecedence();
+                String child = need_parentheses
+                    ? formatPrometheusNodeWithParentheses(*unary.getArgument(), tree, level)
+                    : formatPrometheusNode(*unary.getArgument(), tree, level);
                 const auto first_non_space = child.find_first_not_of(' ');
                 if (first_non_space != String::npos)
                     child.erase(0, first_non_space);
@@ -705,8 +749,11 @@ namespace
                     return flat;
 
                 const auto * expression = subquery.getExpression();
-                String result = formatPrometheusNode(*expression, tree, level);
-                result += flat.substr(formatPrometheusNodeFlat(*expression, tree).size());
+                const bool need_parentheses = subquery.getPrecedence() <= expression->getPrecedence();
+                String result = need_parentheses
+                    ? formatPrometheusNodeWithParentheses(*expression, tree, level)
+                    : formatPrometheusNode(*expression, tree, level);
+                result += formatPrometheusSubquerySuffix(subquery, tree);
                 return result;
             }
 
