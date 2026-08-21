@@ -114,6 +114,11 @@
 
     <query>SELECT count() FROM numbers_mt(100000) WHERE concat('k', toString(number)) IN (SELECT a FROM t_lc_nullable) FORMAT Null</query>
 
+    <!-- A constant NULL key component makes every key contain a NULL, so the set fill (default
+         transform_null_in = 0) drops every row and the set is empty. The preliminary deduplication
+         detects this from the header, emits nothing and stops reading the table entirely. -->
+    <query>SELECT count() FROM numbers_mt(100000) WHERE (number, NULL) IN (SELECT a, CAST(NULL AS Nullable(UInt8)) FROM t_all_unique) FORMAT Null</query>
+
     <drop_query>DROP TABLE test_{partitions}</drop_query>
     <drop_query>DROP TABLE test_unsorted_{partitions}</drop_query>
     <drop_query>DROP TABLE t_skew90_uniq</drop_query>
