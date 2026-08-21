@@ -41,6 +41,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 extern const int LIMIT_EXCEEDED;
 }
 
@@ -819,6 +820,12 @@ ExpireSnapshotsResult expireSnapshots(
         }
 
         updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
+
+        const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
+        if (catalog_writes_metadata_file)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "EXPIRE SNAPSHOTS is not yet supported for transactional (REST) catalogs");
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         Poco::JSON::Stringifier::stringify(metadata, oss, 4);

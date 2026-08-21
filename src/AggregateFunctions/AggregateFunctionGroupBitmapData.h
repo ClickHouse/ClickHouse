@@ -34,6 +34,72 @@ enum BitmapKind
     Bitmap = 1
 };
 
+/// Approximate heap footprint of a 32-bit CRoaring bitmap (index capacity + container capacities).
+/// Unlike `Roaring::getSizeInBytes()`, array/run containers use allocated capacity, not cardinality.
+inline UInt64 estimateRoaring32AllocatedBytes(const roaring::Roaring & bitmap)
+{
+    using namespace roaring::internal;
+    const roaring::roaring_array_t * ra = &bitmap.roaring.high_low_container;
+    UInt64 bytes = sizeof(roaring::Roaring);
+    if (ra->allocation_size > 0)
+    {
+        bytes += static_cast<UInt64>(ra->allocation_size)
+            * (sizeof(uint16_t) + sizeof(uint8_t) + sizeof(container_t *));
+    }
+    for (int32_t i = 0; i < ra->size; ++i)
+    {
+        uint8_t typecode = ra->typecodes[i];
+        const container_t * c = container_unwrap_shared(ra->containers[i], &typecode);
+        switch (typecode)
+        {
+            case ARRAY_CONTAINER_TYPE:
+            {
+                const array_container_t * ac = const_CAST_array(c);
+                bytes += sizeof(array_container_t) + static_cast<UInt64>(ac->capacity) * sizeof(uint16_t);
+                break;
+            }
+            case BITSET_CONTAINER_TYPE:
+            {
+                bytes += sizeof(bitset_container_t) + BITSET_CONTAINER_SIZE_IN_WORDS * sizeof(uint64_t);
+                break;
+            }
+            case RUN_CONTAINER_TYPE:
+            {
+                const run_container_t * rc = const_CAST_run(c);
+                bytes += sizeof(run_container_t) + static_cast<UInt64>(rc->capacity) * sizeof(rle16_t);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+    return bytes;
+}
+
+/// Count distinct high-32 keys in a Roaring64Map. Fast-path when min/max share one key.
+inline UInt64 countRoaring64MapHighKeys(const roaring::Roaring64Map & bitmap)
+{
+    if (bitmap.isEmpty())
+        return 0;
+
+    const UInt64 min_value = bitmap.minimum();
+    const UInt64 max_value = bitmap.maximum();
+    if ((min_value >> 32) == (max_value >> 32))
+        return 1;
+
+    UInt64 keys = 0;
+    UInt64 prev_high = ~UInt64{0};
+    for (auto it = bitmap.begin(); it != bitmap.end(); ++it)
+    {
+        const UInt64 high = static_cast<UInt64>(*it) >> 32;
+        if (high != prev_high)
+        {
+            ++keys;
+            prev_high = high;
+        }
+    }
+    return keys;
+}
 
 /**
   * For a small number of values - an array of fixed size "on the stack".
@@ -91,6 +157,34 @@ public:
         if (isSmall())
             return small.size();
         return roaring_bitmap->cardinality();
+    }
+
+    UInt64 getAllocatedBytes() const
+    {
+        if (isSmall())
+            return sizeof(small);
+
+        /// Prefer a heap estimate over `getSizeInBytes()` (serialization size). Include a small
+        /// allowance for the shared_ptr control block that owns `roaring_bitmap`.
+        constexpr UInt64 SHARED_PTR_CONTROL_BLOCK = 32;
+
+        if constexpr (sizeof(T) < 8)
+        {
+            return estimateRoaring32AllocatedBytes(*roaring_bitmap) + SHARED_PTR_CONTROL_BLOCK;
+        }
+        else
+        {
+            /// Roaring64Map keeps roarings private; approximate as native serialization size plus
+            /// per-high-key map/Roaring/container overhead (serialization undercounts capacity and
+            /// std::map nodes — important for sparse high keys).
+            constexpr UInt64 PER_HIGH_KEY_OVERHEAD =
+                4 * sizeof(void *) + sizeof(UInt32) + sizeof(roaring::Roaring) + 64;
+
+            const UInt64 serialized = roaring_bitmap->getSizeInBytes(/*portable=*/false);
+            const UInt64 high_keys = countRoaring64MapHighKeys(*roaring_bitmap);
+            return serialized + high_keys * PER_HIGH_KEY_OVERHEAD + sizeof(roaring::Roaring64Map)
+                + SHARED_PTR_CONTROL_BLOCK;
+        }
     }
 
     void merge(const RoaringBitmapWithSmallSet & r1)
@@ -533,6 +627,51 @@ public:
             }
         }
         return count;
+    }
+
+    /**
+     * Count set bits in `[range_start, range_end)` without allocating a result bitmap.
+     * Used by need-only-count DV filtering to avoid an O(N) dense Filter over file rows.
+     * Implemented via roaring `rank` so repeated per-row-group queries stay O(containers),
+     * not O(row_groups × cardinality).
+     */
+    UInt64 rb_range_cardinality(UInt64 range_start, UInt64 range_end) const /// NOLINT
+    {
+        if (range_start >= range_end)
+            return 0;
+
+        if (isSmall())
+        {
+            UInt64 count = 0;
+            for (const auto & x : small)
+            {
+                const UInt64 val = static_cast<UInt64>(x.getValue());
+                if (val >= range_start && val < range_end)
+                    ++count;
+            }
+            return count;
+        }
+
+        /// |bitmap ∩ [start, end)| = rank(end - 1) - rank(start - 1). Same formula as DeleteBitmap.
+        if constexpr (sizeof(T) < 8)
+        {
+            constexpr UInt64 max_row = std::numeric_limits<UInt32>::max();
+            if (range_start > max_row)
+                return 0;
+            const UInt64 hi_inclusive = std::min(range_end - 1, max_row);
+            if (hi_inclusive < range_start)
+                return 0;
+            const UInt64 upper = roaring_bitmap->rank(static_cast<UInt32>(hi_inclusive));
+            const UInt64 lower = (range_start == 0) ? 0 : roaring_bitmap->rank(static_cast<UInt32>(range_start - 1));
+            return upper - lower;
+        }
+        else
+        {
+            const UInt64 hi_inclusive = range_end - 1;
+            const UInt64 upper = roaring_bitmap->rank(hi_inclusive);
+            const UInt64 lower = (range_start == 0) ? 0 : roaring_bitmap->rank(range_start - 1);
+            return upper - lower;
+        }
     }
 
     /**

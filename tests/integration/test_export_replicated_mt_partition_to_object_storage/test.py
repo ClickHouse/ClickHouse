@@ -7,6 +7,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.export_partition_helpers import (
+    make_rmt,
     wait_for_exception_count,
     wait_for_export_status,
     wait_for_export_to_start,
@@ -1941,3 +1942,40 @@ def test_export_partition_multi_column_partition_key_success_all(cluster):
 
     result = node.query(f"SELECT a, b, c, val FROM {s3_table} ORDER BY val").strip()
     assert result == "1\t2\t3\tx\n4\t5\t6\ty", f"Unexpected exported data:\n{result}"
+
+
+def test_export_partition_schema_mismatch_mode_honored_by_non_initiating_replica(cluster):
+    replica1 = cluster.instances["replica1"]
+    replica2 = cluster.instances["replica2"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"schema_mode_cross_replica_mt_{postfix}"
+    s3_table = f"schema_mode_cross_replica_s3_{postfix}"
+
+    make_rmt(node=replica1, name=mt_table, columns="id UInt64, year UInt16, extra String",
+             partition_by="year", replica_name="replica1")
+    make_rmt(node=replica2, name=mt_table, columns="id UInt64, year UInt16, extra String",
+             partition_by="year", replica_name="replica2")
+    replica1.query(f"INSERT INTO {mt_table} VALUES (1, 2020, 'foo'), (2, 2020, 'bar'), (3, 2020, 'baz')")
+    replica2.query(f"SYSTEM SYNC REPLICA {mt_table}")
+
+    create_s3_table(node=replica1, s3_table=s3_table)
+    create_s3_table(node=replica2, s3_table=s3_table)
+
+    replica1.query(f"SYSTEM STOP MOVES {mt_table}")
+
+    replica1.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}"
+        f" SETTINGS export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'"
+    )
+
+    wait_for_export_status(node=replica1, source_table=mt_table, dest_table=s3_table,
+                            partition_id="2020", expected_status="COMPLETED", timeout=60)
+
+    count = int(replica1.query(f"SELECT count() FROM {s3_table}").strip())
+    assert count == 3, f"Expected 3 rows in destination table after export, got {count}"
+
+    result = replica1.query(f"SELECT id, year FROM {s3_table} ORDER BY id").strip()
+    assert result == "1\t2020\n2\t2020\n3\t2020", f"Unexpected data:\n{result}"
+
+    replica1.query(f"SYSTEM START MOVES {mt_table}")

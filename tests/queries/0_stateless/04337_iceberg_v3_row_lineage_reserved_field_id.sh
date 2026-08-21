@@ -56,13 +56,17 @@ ${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH}'
 # Conversely, 2147483447 (Integer.MAX_VALUE - 200) is the highest field id a table may use, i.e.
 # NOT reserved. An unmapped column with that id is a genuine schema mismatch and must still be
 # rejected, so the reserved-range check must be strictly greater-than.
+#
+# Insert at least two distinct values so allow_experimental_iceberg_read_optimization cannot treat
+# `x` as a constant from Iceberg column stats and take the need-only-count path (which never runs
+# SchemaConverter / field-id mapping checks).
 ICEBERG_TABLE_PATH_UNMAPPED="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_v3_unmapped"
 rm -rf "${ICEBERG_TABLE_PATH_UNMAPPED}"
 
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_insert_into_iceberg = 1;
     CREATE TABLE t_v3_unmapped (x Int32) ENGINE = IcebergLocal('${ICEBERG_TABLE_PATH_UNMAPPED}');
-    INSERT INTO t_v3_unmapped (x) VALUES (1);
+    INSERT INTO t_v3_unmapped (x) VALUES (1), (2);
 "
 
 DATAFILE_UNMAPPED=$(ls "${ICEBERG_TABLE_PATH_UNMAPPED}"/data/*.parquet 2>/dev/null | head -1)
@@ -77,7 +81,7 @@ x = pa.field("x", pa.int32(), nullable=False, metadata={b"PARQUET:field_id": b"1
 # 2147483447 = Integer.MAX_VALUE - 200: the highest id a table may use, so NOT reserved.
 extra = pa.field("extra", pa.int64(), nullable=True, metadata={b"PARQUET:field_id": b"2147483447"})
 table = pa.table(
-    {"x": pa.array([1], pa.int32()), "extra": pa.array([0], pa.int64())},
+    {"x": pa.array([1, 2], pa.int32()), "extra": pa.array([0, 1], pa.int64())},
     schema=pa.schema([x, extra]),
 )
 pq.write_table(table, path)

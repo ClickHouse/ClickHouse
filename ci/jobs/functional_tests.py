@@ -162,6 +162,9 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "amd_tsan": " --timeout 1200",  # NOTE (strtgbb): tsan is slow, increase the timeout to avoid timeout errors
+    "amd_debug": " --timeout 1200", # NOTE (carlosfelipeor): debug jobs hit network-latency tails on Altinity infra
+    "arm_binary": " --timeout 1200", # NOTE (carlosfelipeor): binary jobs hit network-latency tails on Altinity infra
+    "amd_binary": " --timeout 1200", # NOTE (carlosfelipeor): binary jobs hit network-latency tails on Altinity infra
     "flaky check": "--flaky-check",
     "targeted": "--flaky-check --no-self-parallel",
 }

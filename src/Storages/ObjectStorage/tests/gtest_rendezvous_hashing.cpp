@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
-#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
+
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
 using namespace DB;
 

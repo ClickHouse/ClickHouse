@@ -66,6 +66,7 @@ namespace Setting
     extern const SettingsUInt64 export_merge_tree_part_max_rows_per_file;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsString export_merge_tree_part_filename_pattern;
+    extern const SettingsMergeTreePartExportSchemaMismatchMode export_merge_tree_part_schema_mismatch_mode;
 }
 
 namespace
@@ -117,6 +118,11 @@ namespace
     /// destination header = `getSampleBlockNonMaterialized()`, all type bridging is done
     /// by the CAST inside `makeConvertingActions`. No pre-validation, no per-column
     /// lossy/non-lossy classification — restrictions are exactly what INSERT SELECT enforces.
+    ///
+    /// Exception: when `export_merge_tree_part_schema_mismatch_mode = 'ignore_extra_source_columns_by_position'`
+    /// and the source has more columns than the destination, the extra trailing source
+    /// columns (by position) are dropped by a preliminary projection step before the
+    /// positional convert, so `makeConvertingActions` always sees equal-sized inputs.
     void addExportConvertingActions(
         QueryPlan & plan_for_part,
         const IStorage & destination_storage,
@@ -124,10 +130,46 @@ namespace
     {
         const auto destination_metadata = destination_storage.getInMemoryMetadataPtr(local_context, false);
         const auto destination_header = destination_metadata->getSampleBlockNonMaterialized();
+        const auto & destination_columns = destination_header.getColumnsWithTypeAndName();
+
+        const bool ignore_extra_source_columns_by_position =
+            local_context->getSettingsRef()[Setting::export_merge_tree_part_schema_mismatch_mode]
+                == MergeTreePartExportSchemaMismatchMode::ignore_extra_source_columns_by_position;
+
+        auto source_columns = plan_for_part.getCurrentHeader()->getColumnsWithTypeAndName();
+
+        if (ignore_extra_source_columns_by_position && source_columns.size() > destination_columns.size())
+        {
+            LOG_DEBUG(getLogger("ExportPartTask"),
+                "Source has {} columns while destination has {} columns, "
+                "the {} extra trailing source column(s) will be ignored",
+                source_columns.size(), destination_columns.size(),
+                source_columns.size() - destination_columns.size());
+
+            Names kept_names;
+            kept_names.reserve(destination_columns.size());
+            for (size_t i = 0; i < destination_columns.size(); ++i)
+                kept_names.push_back(source_columns[i].name);
+
+            /// `allow_remove_inputs = false` keeps the dropped columns registered as DAG
+            /// inputs (just not as outputs), so `ExpressionActions::execute` still
+            /// recognizes and consumes them from the block instead of passing them through
+            /// unchanged. See the `defaults_dag` merge above for the same pattern.
+            ActionsDAG trim_dag(source_columns);
+            trim_dag.removeUnusedActions(kept_names, false);
+
+            auto trim_step = std::make_unique<ExpressionStep>(
+                plan_for_part.getCurrentHeader(),
+                std::move(trim_dag));
+            trim_step->setStepDescription("Drop source columns beyond destination schema for export");
+            plan_for_part.addStep(std::move(trim_step));
+
+            source_columns = plan_for_part.getCurrentHeader()->getColumnsWithTypeAndName();
+        }
 
         auto dag = ActionsDAG::makeConvertingActions(
-            plan_for_part.getCurrentHeader()->getColumnsWithTypeAndName(),
-            destination_header.getColumnsWithTypeAndName(),
+            source_columns,
+            destination_columns,
             ActionsDAG::MatchColumnsMode::Position,
             local_context);
 
