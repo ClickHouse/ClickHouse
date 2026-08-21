@@ -283,7 +283,7 @@ public:
     bool isCommentAlter() const;
     bool isSettingsOrCommentAlter() const;
 
-    bool isReplacePartition() const;
+    bool isReplacePartitionAlter() const;
 
     String getID(char) const override;
 
