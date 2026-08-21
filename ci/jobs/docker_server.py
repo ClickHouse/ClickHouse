@@ -192,7 +192,10 @@ def parse_args() -> argparse.Namespace:
         help="if set, point apt at the in-region AWS Ubuntu mirror for this region "
         "(e.g. us-east-1) instead of Canonical's archive.ubuntu.com / "
         "ports.ubuntu.com, which are frequently unreachable from the runners. "
-        "Empty means use the Dockerfile default (canonical mirror).",
+        "An image whose retries are exhausted on an apt download failure is then "
+        "rebuilt against Canonical, for the days when the in-region mirror is the "
+        "broken one. Empty means use the Dockerfile default (canonical mirror) "
+        "with no second attempt.",
     )
 
     return parser.parse_args()
@@ -261,6 +264,45 @@ BUILDX_RETRY_ERRORS = [
     "Connection timed out",
 ]
 
+# A single apt mirror can stay broken for longer than `BUILDX_RETRIES` attempts
+# take: on 2026-08-21 `us-east-1.ec2.ports.ubuntu.com` answered `503` and served
+# ~20 kB/s for half an hour, which is long enough to exhaust every retry and red
+# the arm64 server image on master. When the retries against one mirror are used
+# up on an apt *download* failure, the whole build is repeated against the next
+# mirror in `apt_mirror_variants` instead of failing the check. These signatures
+# say "this mirror did not hand over the file"; a broken package name, an
+# unsatisfiable dependency or any other genuine packaging error produces none of
+# them and still fails right away.
+APT_MIRROR_ERRORS = [
+    # `apt-get install` could not download a .deb, and the summary line after it
+    "Failed to fetch",
+    "Unable to fetch some archives",
+    # `apt-get update` could not refresh the package lists
+    "Some index files failed to download",
+]
+
+
+def is_apt_mirror_failure(info: str) -> bool:
+    return any(error in info for error in APT_MIRROR_ERRORS)
+
+
+def apt_mirror_variants(apt_mirror_region: str) -> List[List[str]]:
+    """buildx `--build-arg` sets pointing apt at each mirror to try, in order."""
+    # An empty set of arguments leaves the Dockerfile defaults in place, i.e.
+    # Canonical's archive.ubuntu.com (amd64) and ports.ubuntu.com (arm64).
+    canonical: List[str] = []
+    if not apt_mirror_region:
+        return [canonical]
+    # The in-region AWS mirror goes first: Canonical's mirrors are frequently
+    # unreachable over IPv4 from the runners, while the in-region one is normally
+    # reachable and fast. Canonical is kept as the second attempt for the days
+    # when the in-region mirror is the broken one.
+    in_region = [
+        f"--build-arg=apt_archive=http://{apt_mirror_region}.ec2.archive.ubuntu.com",
+        f"--build-arg=apt_ports_archive=http://{apt_mirror_region}.ec2.ports.ubuntu.com",
+    ]
+    return [in_region, canonical]
+
 
 def buildx_args(
     urls: Dict[str, str],
@@ -269,7 +311,6 @@ def buildx_args(
     version: str,
     sha: str,
     action_url: str,
-    apt_mirror_region: str,
 ) -> List[str]:
     args = [
         "--provenance=true",
@@ -285,17 +326,6 @@ def buildx_args(
         url = urls[arch]
         args.append(f"--build-arg=REPOSITORY='{url}'")
         args.append(f"--build-arg=deb_location_url='{url}'")
-    # Point apt at the in-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com
-    # (amd64) and ports.ubuntu.com (arm64) are frequently unreachable over IPv4
-    # from the runners; the in-region mirror is reachable and fast. The Dockerfile
-    # defaults stay canonical so images build normally outside CI.
-    if apt_mirror_region:
-        args.append(
-            f"--build-arg=apt_archive=http://{apt_mirror_region}.ec2.archive.ubuntu.com"
-        )
-        args.append(
-            f"--build-arg=apt_ports_archive=http://{apt_mirror_region}.ec2.ports.ubuntu.com"
-        )
     return args
 
 
@@ -330,7 +360,6 @@ def build_and_push_image(
         arch_tag = f"{tag}-{arch}"
         metadata_path = temp_path / arch_tag
         dockerfile = f"{image.path}/Dockerfile.{os}"
-        cmd_args = list(init_args)
         urls = []
         if direct_urls:
             # distroless and ubuntu-server use an Ubuntu builder with dpkg, so they
@@ -352,6 +381,7 @@ def build_and_push_image(
                     urls = [url for url in tgz_urls if "clickhouse-keeper" in url]
                 else:
                     urls = tgz_urls
+        cmd_args = list(init_args)
         cmd_args.extend(
             buildx_args(
                 repo_urls,
@@ -360,7 +390,6 @@ def build_and_push_image(
                 version=version,
                 action_url=run_url,
                 sha=sha,
-                apt_mirror_region=apt_mirror_region,
             )
         )
         if not push:
@@ -377,22 +406,46 @@ def build_and_push_image(
         # explicitly to ensure the published image has no shell.
         if os == "distroless":
             cmd_args.append("--target=production")
-        cmd_args.extend(
-            [
-                f"--file={dockerfile}",
-                Path(image.path).as_posix(),
-            ]
-        )
-        cmd = " ".join(cmd_args)
-        logging.info("Building image %s:%s for arch %s: %s", image.name, tag, arch, cmd)
-        result.append(
-            Result.from_commands_run(
+        mirrors = apt_mirror_variants(apt_mirror_region)
+        for attempt, apt_mirror_args in enumerate(mirrors, start=1):
+            cmd = " ".join(
+                [
+                    *cmd_args,
+                    *apt_mirror_args,
+                    f"--file={dockerfile}",
+                    Path(image.path).as_posix(),
+                ]
+            )
+            logging.info(
+                "Building image %s:%s for arch %s, apt mirror %s/%s: %s",
+                image.name,
+                tag,
+                arch,
+                attempt,
+                len(mirrors),
+                cmd,
+            )
+            build_result = Result.from_commands_run(
                 name=f"{image.name}:{tag}-{arch}",
                 command=cmd,
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
             )
-        )
+            if build_result.is_ok() or not is_apt_mirror_failure(build_result.info):
+                break
+            logging.info(
+                "Image %s:%s for arch %s exhausted its retries on an apt download "
+                "failure; %s",
+                image.name,
+                tag,
+                arch,
+                (
+                    "rebuilding against the next apt mirror"
+                    if attempt < len(mirrors)
+                    else "no apt mirror left to try"
+                ),
+            )
+        result.append(build_result)
         if not result[-1].is_ok():
             return result
         with open(metadata_path, "rb") as m:
