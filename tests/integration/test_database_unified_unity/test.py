@@ -88,8 +88,8 @@ def start_unity_catalog(node):
 
 
 def link_uniform_table(node):
-    """`marksheet_uniform` is registered at /tmp/marksheet_uniform but is
-    stored in the catalog tree."""
+    # `marksheet_uniform` is registered at /tmp/marksheet_uniform but is
+    # stored in the catalog tree. Soft link  Soft link them.
     table_dir = UC_HOME + "/etc/data/external/unity/default/tables/marksheet_uniform"
     node.exec_in_container(
         [
@@ -111,6 +111,8 @@ def start_proxy(node):
         os.path.join(os.path.dirname(__file__), "mock_servers", "uc_proxy.py"),
         PROXY_PATH,
     )
+
+    # Start proxy.
     node.exec_in_container(
         [
             "bash",
@@ -119,6 +121,7 @@ def start_proxy(node):
         ]
     )
 
+    # Wait for proxy.
     try:
         node.exec_in_container(
             [
@@ -154,12 +157,6 @@ def started_cluster():
         cluster.start()
 
         node = cluster.instances["node1"]
-        engines = node.query(
-            "SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'"
-        )
-        if int(engines.strip()) == 0:
-            pytest.skip("DeltaLake engine is not available")
-
         start_unity_catalog(node)
         link_uniform_table(node)
         start_proxy(node)
