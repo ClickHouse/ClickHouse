@@ -63,11 +63,12 @@ PlanTier tier(CacheTier t, bool populates, std::vector<CacheResolution> cells)
     return pt;
 }
 
-VectorWithMemoryTracking<PlanTier> tiers(std::vector<PlanTier> ts)
+/// Variadic (not an initializer_list) because PlanTier is move-only - a braced list would copy.
+template <typename... Ts>
+VectorWithMemoryTracking<PlanTier> tiers(Ts &&... ts)
 {
     VectorWithMemoryTracking<PlanTier> out;
-    for (auto & t : ts)
-        out.push_back(std::move(t));
+    (out.push_back(std::forward<Ts>(ts)), ...);
     return out;
 }
 
@@ -75,15 +76,14 @@ VectorWithMemoryTracking<PlanTier> tiers(std::vector<PlanTier> ts)
 
 TEST(ReadPlan, HitsServeFromReaderPerCell)
 {
+    std::vector<CacheResolution> c;
+    c.push_back(hit({0, 1}));
+    c.push_back(hit({1, 1}));
+    c.push_back(hit({2, 1}));
+
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(3, tiers({tier(CacheTier::PageCache, true, [] {
-        std::vector<CacheResolution> v;
-        v.push_back(hit({0, 1}));
-        v.push_back(hit({1, 1}));
-        v.push_back(hit({2, 1}));
-        return v;
-    }())}));
+    plan.extend(3, tiers(tier(CacheTier::PageCache, true, std::move(c))));
 
     auto r0 = plan.runAt(0);
     EXPECT_NE(r0.reader, nullptr);
@@ -96,16 +96,15 @@ TEST(ReadPlan, HitsServeFromReaderPerCell)
 
 TEST(ReadPlan, MissesCoalesceIntoOneFetchRun)
 {
+    std::vector<CacheResolution> c;
+    c.push_back(miss({0, 1}));
+    c.push_back(miss({1, 1}));
+    c.push_back(hit({2, 1}));
+    c.push_back(miss({3, 1}));
+
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(4, tiers({tier(CacheTier::PageCache, true, [] {
-        std::vector<CacheResolution> v;
-        v.push_back(miss({0, 1}));
-        v.push_back(miss({1, 1}));
-        v.push_back(hit({2, 1}));
-        v.push_back(miss({3, 1}));
-        return v;
-    }())}));
+    plan.extend(4, tiers(tier(CacheTier::PageCache, true, std::move(c))));
 
     /// [0,2) is an uncommitted miss run; it coalesces and stops at the hit at 2.
     auto r = plan.runAt(0);
@@ -126,9 +125,9 @@ TEST(ReadPlan, CommittedWriterBecomesServable)
     plan.reset(0);
     auto missed = miss({0, 2});
     auto * writer = static_cast<MockWriter *>(missed.writer.get());
-    std::vector<CacheResolution> cells;
-    cells.push_back(std::move(missed));
-    plan.extend(2, tiers({tier(CacheTier::PageCache, true, std::move(cells))}));
+    std::vector<CacheResolution> c;
+    c.push_back(std::move(missed));
+    plan.extend(2, tiers(tier(CacheTier::PageCache, true, std::move(c))));
 
     EXPECT_TRUE(plan.runAt(0).isFetch());   /// nothing committed yet
 
@@ -141,26 +140,21 @@ TEST(ReadPlan, CommittedWriterBecomesServable)
 
 TEST(ReadPlan, FastestTierWinsAndSlowHitCapsFetch)
 {
+    std::vector<CacheResolution> page;
+    page.push_back(miss({0, 1}));
+    page.push_back(miss({1, 1}));
+    page.push_back(miss({2, 1}));
+    page.push_back(miss({3, 1}));
+    std::vector<CacheResolution> fs;
+    fs.push_back(miss({0, 1}));
+    fs.push_back(miss({1, 1}));
+    fs.push_back(hit({2, 2}));
+
     ReadPlan plan;
     plan.reset(0);
-    /// page (fast): all miss; fs (slow): hit at [2,4).
-    plan.extend(4, tiers({
-        tier(CacheTier::PageCache, true, [] {
-            std::vector<CacheResolution> v;
-            v.push_back(miss({0, 1}));
-            v.push_back(miss({1, 1}));
-            v.push_back(miss({2, 1}));
-            v.push_back(miss({3, 1}));
-            return v;
-        }()),
-        tier(CacheTier::FilesystemCache, true, [] {
-            std::vector<CacheResolution> v;
-            v.push_back(miss({0, 1}));
-            v.push_back(miss({1, 1}));
-            v.push_back(hit({2, 2}));
-            return v;
-        }()),
-    }));
+    plan.extend(4, tiers(
+        tier(CacheTier::PageCache, true, std::move(page)),
+        tier(CacheTier::FilesystemCache, true, std::move(fs))));
 
     /// [0,2) miss on both tiers -> fetch, capped at the fs hit at 2.
     auto r = plan.runAt(0);
@@ -179,15 +173,14 @@ TEST(ReadPlan, FastestTierWinsAndSlowHitCapsFetch)
 
 TEST(ReadPlan, RetireBeforeReleasesConsumedPrefix)
 {
+    std::vector<CacheResolution> c;
+    c.push_back(hit({0, 1}));
+    c.push_back(hit({1, 1}));
+    c.push_back(hit({2, 1}));
+
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(3, tiers({tier(CacheTier::PageCache, true, [] {
-        std::vector<CacheResolution> v;
-        v.push_back(hit({0, 1}));
-        v.push_back(hit({1, 1}));
-        v.push_back(hit({2, 1}));
-        return v;
-    }())}));
+    plan.extend(3, tiers(tier(CacheTier::PageCache, true, std::move(c))));
 
     plan.retireBefore(2);
     EXPECT_EQ(plan.spanStart(), 2u);
@@ -199,19 +192,15 @@ TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
     ReadPlan plan;
     plan.reset(0);
     /// First span [0,2): a miss segment overhangs to 3.
-    plan.extend(2, tiers({tier(CacheTier::PageCache, true, [] {
-        std::vector<CacheResolution> v;
-        v.push_back(hit({0, 1}));
-        v.push_back(miss({1, 2}));   /// [1,3) overhangs the span end 2
-        return v;
-    }())}));
+    std::vector<CacheResolution> first;
+    first.push_back(hit({0, 1}));
+    first.push_back(miss({1, 2}));   /// [1,3) overhangs the span end 2
+    plan.extend(2, tiers(tier(CacheTier::PageCache, true, std::move(first))));
     /// Next span [2,4): resolve re-returns the [1,3) segment; extend must drop the overlap.
-    plan.extend(4, tiers({tier(CacheTier::PageCache, true, [] {
-        std::vector<CacheResolution> v;
-        v.push_back(miss({1, 2}));   /// duplicate of the held overhang -> dropped
-        v.push_back(hit({3, 1}));
-        return v;
-    }())}));
+    std::vector<CacheResolution> second;
+    second.push_back(miss({1, 2}));   /// duplicate of the held overhang -> dropped
+    second.push_back(hit({3, 1}));
+    plan.extend(4, tiers(tier(CacheTier::PageCache, true, std::move(second))));
 
     EXPECT_EQ(plan.resolvedEnd(), 4u);
     /// [1,3) is one coalesced miss (not doubled); the hit at 3 caps it.
@@ -224,14 +213,13 @@ TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
 
 TEST(ReadPlan, ResetDiscardsAndReanchors)
 {
+    std::vector<CacheResolution> c;
+    c.push_back(hit({0, 1}));
+    c.push_back(hit({1, 1}));
+
     ReadPlan plan;
     plan.reset(0);
-    plan.extend(2, tiers({tier(CacheTier::PageCache, true, [] {
-        std::vector<CacheResolution> v;
-        v.push_back(hit({0, 1}));
-        v.push_back(hit({1, 1}));
-        return v;
-    }())}));
+    plan.extend(2, tiers(tier(CacheTier::PageCache, true, std::move(c))));
 
     plan.reset(10);
     EXPECT_TRUE(plan.empty());
