@@ -34,7 +34,7 @@ constexpr const char * SESSION_READONLY_NOTE
     = R"(The session is read-only: the `readonly` setting is 1, so the server accepts only read-only queries (SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS) and rejects every change of a setting. Consequences for you:
 - Do not run SET, and do not put a SETTINGS clause into a query, not even to raise a limit: the server rejects the whole query.
 - Do not run writes or DDL (INSERT, ALTER, DROP, CREATE, TRUNCATE, OPTIMIZE, SYSTEM, ...): run_query refuses them without asking the user, so tell the user that their session does not allow it instead of trying.
-- run_readonly_query cannot apply its own time and memory limits here, so it refuses unconfirmed queries. Do not call it; explain that the user must run an allowed query themselves.)";
+- run_readonly_query cannot apply its own time and memory limits here, so it refuses every query. Run read-only queries through run_query instead: the user confirms each one, and it runs under the limits of the session itself.)";
 
 /// Appended to the system prompt when the session forbids writes but allows changing settings
 /// (the `readonly` setting is 2).

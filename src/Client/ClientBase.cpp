@@ -4111,8 +4111,8 @@ bool ClientBase::processAIChat(const String & text_)
         /// set the limits of its read-only queries and the server refuses the rest outright.
         if (const UInt64 readonly = aiSessionReadonly(); readonly == 1)
             output_stream << "Your session is read-only (readonly = 1): the read-only tool cannot enforce its\n"
-                             "execution-time and memory limits, so it refuses unconfirmed queries. Everything else\n"
-                             "is refused instead of being confirmed.\n"
+                             "execution-time and memory limits, so the agent asks for your confirmation even for\n"
+                             "read-only queries. Writes, DDL and setting changes are refused instead of being confirmed.\n"
                              "\n";
         else if (readonly != 0)
             output_stream << "Your session is read-only (readonly = " << readonly << "): writes and DDL are refused\n"
