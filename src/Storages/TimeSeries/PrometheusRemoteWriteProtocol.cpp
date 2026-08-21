@@ -250,12 +250,6 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
     auto * queue = context->tryGetAsynchronousInsertQueue();
     const bool async_insert = queue && context->getSettingsRef()[Setting::async_insert];
 
-    if (async_insert)
-    {
-        context->setSetting("deduplicate_insert", String{"disable"});
-        context->setSetting("async_insert_deduplicate", false);
-    }
-
     auto [ast, io] = executeQuery(insert_query->formatWithSecretsOneLine(), context);
     try
     {
