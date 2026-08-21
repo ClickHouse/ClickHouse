@@ -73,14 +73,13 @@ SELECT comment, hex(secret) FROM encryption_test;
         {
             "Incorrectly decrypting encrypted data",
             R"(
-SELECT comment, decrypt('aes-256-cfb8', secret, '12345678910121314151617181920212') AS plaintext FROM encryption_test
+SELECT comment, hex(decrypt('aes-256-cfb8', secret, '12345678910121314151617181920212')) AS plaintext FROM encryption_test
             )",
             R"DOCS_MD(
-aes-256-ofb no IV	S��(�
-aes-256-ofb no IV, different key	�k�@M�
-aes-256-ofb with IV	�e�Y*
-aes-256-cbc no IV	�U.P��EY��s/�
-��
+aes-256-ofb no IV	53A69A28E815
+aes-256-ofb no IV, different key	C86BD2404D8A
+aes-256-ofb with IV	B9658159142A
+aes-256-cbc no IV	FC552E5096F1455997B2732FB31DCFEB
             )DOCS_MD"
         }
     };
