@@ -18,7 +18,7 @@ parking = "2"
 # The same MPMC channel `vortex-io` uses; the scan hands its chunks to any number of consumer
 # threads through it.
 kanal = "0.1"
-vortex = { version = "0.83.0", default-features = false, features = ["files", "zstd"] }
+vortex = { version = "0.84.0", default-features = false, features = ["files", "zstd"] }
 
 [lib]
 crate-type = ["staticlib"]

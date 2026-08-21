@@ -815,12 +815,24 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                         .iter()
                         .map(|name| FieldName::from(name.as_str()))
                         .collect();
-                    builder = builder.with_projection(select(field_names, root()));
+                    // `with_projection` and `with_filter` take an expression already bound to
+                    // the file's type, which is where a column that is not in the file or a
+                    // comparison of two types that cannot be compared is now caught.
+                    builder = builder.with_projection(
+                        select(field_names, root())
+                            .bind(reader.file.dtype())
+                            .map_err(|e| e.to_string())?,
+                    );
                     schema = Arc::new(Schema::new(fields));
                 }
 
                 if !options.filter.is_null() {
-                    builder = builder.with_filter((*options.filter).0.clone());
+                    builder = builder.with_filter(
+                        (*options.filter)
+                            .0
+                            .bind(reader.file.dtype())
+                            .map_err(|e| e.to_string())?,
+                    );
                 }
 
                 if options.row_range_begin != 0 || options.row_range_end != 0 {
