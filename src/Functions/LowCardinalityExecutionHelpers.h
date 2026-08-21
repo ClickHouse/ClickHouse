@@ -267,16 +267,29 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
         cast_type = removeNullable(cast_type);
     }
 
-    /// The cast above narrows without reporting loss, so UInt64(256) reaches a UInt8 dictionary as 0
-    /// and UInt32(4294967295) an Int32 one as -1, each denoting an element the constant is not equal
-    /// to. A constant the element type cannot represent equals no element.
-    if (!target_type->equals(*value_type_without_low_cardinality)
-        && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
-        return false;
-
     const auto & dictionary = low_cardinality_data.getDictionary();
 
-    if (auto maybe_index = dictionary.getOrFindValueIndex(value->getDataAt(0)))
+    /// A number narrows without the cast reporting loss, so UInt32(4294967295) reaches an Int32
+    /// dictionary as -1, an entry it is not equal to. The string family instead compares padded, where
+    /// a shorter needle does equal a longer entry, so only a number can wrap onto a wrong index.
+    const bool needle_may_wrap = isNumber(removeNullable(cast_type)) || isEnum(removeNullable(cast_type));
+
+    auto find_in_dictionary = [&](std::string_view elem) -> std::optional<UInt64>
+    {
+        /// The default slot holds its value whether or not any row references it, so a wrapped
+        /// constant matches it even when the dictionary never saw that value.
+        const bool is_default_slot
+            = elem == dictionary.getNestedNotNullableColumn()->getDataAt(dictionary.getNestedTypeDefaultValueIndex());
+
+        if ((needle_may_wrap || is_default_slot)
+            && !target_type->equals(*value_type_without_low_cardinality)
+            && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
+            return {};
+
+        return dictionary.getOrFindValueIndex(elem);
+    };
+
+    if (auto maybe_index = find_in_dictionary(value->getDataAt(0)))
     {
         dictionary_index = *maybe_index;
         return true;

@@ -31,10 +31,17 @@ SELECT '-- unsigned element, same-width signed needle';
 SELECT 'UInt32/Int32', has(v, -1::Int32) AS got, arrayExists(x -> x = -1::Int32, v) AS oracle FROM u32;
 SELECT 'UInt64/Int64', has(v, -1::Int64) AS got, arrayExists(x -> x = -1::Int64, v) AS oracle FROM u64;
 
-SELECT '-- narrow widths (integer promotion already made these correct)';
+SELECT '-- same-width narrow pairs, which integer promotion already compared correctly';
 SELECT 'Int16/UInt16', has(v, 65535::UInt16) AS got, arrayExists(x -> x = 65535::UInt16, v) AS oracle FROM i16;
 SELECT 'Int8/UInt8', has(v, 255::UInt8) AS got, arrayExists(x -> x = 255::UInt8, v) AS oracle FROM i8;
 SELECT 'UInt8/Int8', has(v, -1::Int8) AS got, arrayExists(x -> x = -1::Int8, v) AS oracle FROM u8;
+
+SELECT '-- a narrow signed element against a wider unsigned needle promotes to the needle, so it wrapped';
+SELECT 'Int8/UInt32', has(v, 4294967295::UInt32) AS got, arrayExists(x -> x = 4294967295::UInt32, v) AS oracle FROM i8;
+SELECT 'Int16/UInt32', has(v, 4294967295::UInt32) AS got, arrayExists(x -> x = 4294967295::UInt32, v) AS oracle FROM i16;
+SELECT 'Int8/UInt64', has(v, 18446744073709551615::UInt64) AS got, arrayExists(x -> x = 18446744073709551615::UInt64, v) AS oracle FROM i8;
+SELECT 'Int16/UInt64', has(v, 18446744073709551615::UInt64) AS got, arrayExists(x -> x = 18446744073709551615::UInt64, v) AS oracle FROM i16;
+SELECT 'Int8/UInt32 rep', has(v, 1::UInt32) AS got, arrayExists(x -> x = 1::UInt32, v) AS oracle FROM i8;
 
 SELECT '-- representable mixed-sign needles must keep matching';
 SELECT 'Int32/UInt32 rep', has(v, 1::UInt32) AS got, arrayExists(x -> x = 1::UInt32, v) AS oracle FROM i32;
@@ -119,8 +126,16 @@ INSERT INTO fnan VALUES ([nan, 1.0]);
 SELECT 'NaN needle', has(v, nan) AS got, arrayExists(x -> x = nan, v) AS oracle FROM fnan;
 SELECT 'NaN element, int needle', has(v, 1::UInt64) AS got, arrayExists(x -> x = 1::UInt64, v) AS oracle FROM fnan;
 
-SELECT '-- Enum elements are unaffected';
+SELECT '-- an Enum element compares through its underlying Int8, so a wider needle wrapped it too';
 CREATE TABLE en (v Array(Enum8('a' = 1, 'b' = -1))) ENGINE = Memory;
 INSERT INTO en VALUES (['a', 'b']);
 SELECT 'Enum8/UInt8', has(v, 255::UInt8) AS got FROM en;
 SELECT 'Enum8/UInt8 rep', has(v, 1::UInt8) AS got FROM en;
+SELECT 'Enum8/UInt32', has(v, 4294967295::UInt32) AS got FROM en;
+SELECT 'Enum8/UInt32 rep', has(v, 1::UInt32) AS got FROM en;
+
+SELECT '-- a String needle shorter than a FixedString element still matches, since equality pads';
+CREATE TABLE fs (v Array(LowCardinality(FixedString(4)))) ENGINE = Memory;
+INSERT INTO fs VALUES ([CAST('a', 'FixedString(4)'), CAST('zz', 'FixedString(4)')]);
+SELECT 'LC(FixedString(4))/String', has(v, 'a') AS got, arrayExists(x -> x = 'a', v) AS oracle FROM fs;
+SELECT 'LC(FixedString(4))/String absent', has(v, 'q') AS got, arrayExists(x -> x = 'q', v) AS oracle FROM fs;
