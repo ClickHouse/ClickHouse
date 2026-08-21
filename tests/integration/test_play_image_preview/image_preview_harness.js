@@ -295,6 +295,9 @@ function makeElement(tag) {
         renderError() {},
         clearError() {},
         clearSelection() {},
+        resetViewToggles() {},
+        setViewState() {},
+        finalizeFailedTable() {},
         flushFragment() {},
         async renderChart() {},
         redrawChart() {},
@@ -931,6 +934,30 @@ async function main() {
             s && s.display === 'none' && s.src === '' && s.owner === null, s);
     }
 
+    /// 5a.1: clearing a successful tab must also withdraw Download/Copy and erase their shared
+    /// backing state, so a subsequent connection-check error cannot export the previous result.
+    {
+        const { run } = await bootRealTab(js, url);
+        const res = JSON.parse(run(`(function () {
+            const tab = getActiveTab();
+            tab.downloadVisible = true; tab.copyVisible = true;
+            tab.downloadQuery = 'SELECT previous'; tab.downloadParams = { x: '1' };
+            tab.downloadDatabase = 'previous_db'; tab.downloadUrl = 'http://previous'; tab.downloadUser = 'previous_user';
+            paintDownloadCopy(tab);
+            clearPanel(tab);
+            return JSON.stringify({
+                visible: tab.downloadVisible || tab.copyVisible,
+                query: tab.downloadQuery,
+                globals: [last_query_for_download, last_database_for_download, last_url_for_download, last_user_for_download],
+                downloadDisplay: document.getElementById('download-div').style.display,
+                copyDisplay: document.getElementById('copy-div').style.display,
+            });
+        })()`));
+        check('clearPanel-download', 'clearing a tab removes stale Download/Copy state',
+            !res.visible && res.query === '' && res.globals.every(x => x === '')
+            && res.downloadDisplay === 'none' && res.copyDisplay === 'none', res);
+    }
+
     /// 5b: clearing a BACKGROUND tab must not dismiss a preview owned by the active tab; clearing the
     /// owning (active) tab then does dismiss it.
     {
@@ -981,6 +1008,121 @@ async function main() {
         const s = ownedState(run);
         check('tab-removal', 'removing a background tab does not dismiss the active preview',
             s && s.display === 'block' && s.owner === 'set', s);
+    }
+
+    /// Contract 6: the page must use the production JS fallback tokenizer when the embedded WASM
+    /// lexer is unavailable. `makeContext` deliberately makes the lexer fetch fail, so this drives
+    /// `tokenizeOrNull` -> `tokenizeWithFallback` instead of merely exercising the C++ port of the
+    /// token walk. These cases must not mistake identifiers or string contents for query clauses.
+    {
+        const page = await bootPage(js);
+        const res = JSON.parse(await page.run(`(async () => {
+            const quoted = await detectFramingSetting("SELECT 'framing_output_format = None'");
+            const column = await detectFramingSetting("SELECT settings x, framing_output_format = 'None' FROM t");
+            const identifier = await detectExplicitFormatClause('WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1');
+            const clause = await detectExplicitFormatClause('SELECT 1 FORMAT JSONCompactColumns');
+            const inputSetting = await detectFramingSetting("INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\\nline");
+            const inputPayload = await detectExplicitFormatClause("INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString\\nFORMAT JSONCompactColumns");
+            const ambiguousPostFormatSettings = await detectFramingSetting("INSERT INTO FUNCTION null('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\\nline");
+            const withPayload = await detectFramingSetting("WITH 1 AS x INSERT INTO FUNCTION null('line String') FORMAT LineAsString\\nSETTINGS framing_output_format = 'None'");
+            const explainPayload = await detectExplicitFormatClause("EXPLAIN AST INSERT INTO FUNCTION null('line String') FORMAT LineAsString\\nFORMAT JSONCompactColumns");
+            const keywordAlias = "WITH 1 AS insert SELECT * FROM input('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'";
+            const keywordAliasFormat = await detectExplicitFormatClause(keywordAlias);
+            const keywordAliasFraming = await detectFramingSetting(keywordAlias);
+            const explainKeywordAlias = "EXPLAIN AST WITH 1 AS insert SELECT * FROM input('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'";
+            const explainKeywordAliasFormat = await detectExplicitFormatClause(explainKeywordAlias);
+            const explainKeywordAliasFraming = await detectFramingSetting(explainKeywordAlias);
+            const restored = { error: null, raw: null, updateRaw(text) { this.raw = text; }, renderError(text) { this.error = text; } };
+            /// The last argument is the persisted provenance bit: true only for a non-OK plain
+            /// each-row response, whose exception object IS the error. A transport failure saves the
+            /// same shape as ordinary output, so it must restore as raw output with its own error.
+            renderFailedSnapshot(restored, '{"exception":"each-row failure"}\\n', 'JSONEachRow', undefined, 'each-row failure', true);
+            const transportRestored = { error: null, raw: null, updateRaw(text) { this.raw = text; }, renderError(text) { this.error = text; } };
+            renderFailedSnapshot(transportRestored, '{"exception":"ordinary row"}\\n', 'JSONEachRow', undefined, 'Network error', false);
+            const parallelWithWrite = await queryIsReadOnly('SELECT 1 PARALLEL WITH INSERT INTO t SELECT 1');
+            const explainDetachFormat = await detectExplicitFormatClause('EXPLAIN AST DETACH TABLE insert FORMAT TabSeparated');
+            const withShowFormat = await detectExplicitFormatClause('WITH 1 AS x SHOW CREATE TABLE insert FORMAT TabSeparated');
+            const explainSettingsPayload = await detectExplicitFormatClause("EXPLAIN PLAN header = 1 INSERT INTO FUNCTION null('line String') FORMAT LineAsString\\nFORMAT JSONCompactColumns");
+            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload, ambiguousPostFormatSettings, withPayload, explainPayload, keywordAliasFormat, keywordAliasFraming, explainKeywordAliasFormat, explainKeywordAliasFraming, restored, transportRestored, parallelWithWrite, explainDetachFormat, withShowFormat, explainSettingsPayload });
+        })()`));
+        check('fallback-tokenizer', 'a setting name inside a string does not select user framing',
+            !res.quoted.user_framing && !res.quoted.user_disables_framing, res);
+        check('fallback-tokenizer', 'a column named settings does not open a SETTINGS clause',
+            !res.column.user_framing && !res.column.user_disables_framing, res);
+        check('fallback-tokenizer', 'identifier uses of format do not become a FORMAT clause',
+            res.identifier === null, res);
+        check('fallback-tokenizer', 'a real FORMAT clause is still detected without WASM',
+            res.clause && res.clause.name === 'JSONCompactColumns', res);
+        check('fallback-tokenizer', '`input` post-FORMAT SETTINGS remains inline data by default',
+            !res.inputSetting.user_framing && !res.inputSetting.user_disables_framing, res);
+        check('fallback-tokenizer', '`input` inline data is not treated as an output FORMAT clause',
+            res.inputPayload === null, res);
+        check('fallback-tokenizer', 'ambiguous post-FORMAT SETTINGS fails closed without WASM',
+            res.ambiguousPostFormatSettings.has_ambiguous_post_format_settings, res);
+        check('fallback-tokenizer', 'a leading WITH insert does not scan inline payload as SETTINGS',
+            !res.withPayload.user_framing && !res.withPayload.user_disables_framing, res);
+        check('fallback-tokenizer', 'an EXPLAIN INSERT does not scan inline payload as a FORMAT clause',
+            res.explainPayload === null, res);
+        check('fallback-tokenizer', 'a keyword-shaped WITH alias does not turn a SELECT input() query into INSERT payload',
+            res.keywordAliasFormat && res.keywordAliasFormat.name === 'LineAsString'
+                && !res.keywordAliasFraming.user_framing
+                && res.keywordAliasFraming.user_disables_framing
+                && !res.keywordAliasFraming.has_ambiguous_post_format_settings, res);
+        check('fallback-tokenizer', 'an EXPLAIN WITH keyword-shaped alias does not turn a SELECT input() query into INSERT payload',
+            res.explainKeywordAliasFormat && res.explainKeywordAliasFormat.name === 'LineAsString'
+                && !res.explainKeywordAliasFraming.user_framing
+                && res.explainKeywordAliasFraming.user_disables_framing
+                && !res.explainKeywordAliasFraming.has_ambiguous_post_format_settings, res);
+        check('failed-snapshot', 'a saved JSONEachRow HTTP exception restores as the live error alone',
+            res.restored.error === 'each-row failure' && res.restored.raw === null, res);
+        check('failed-snapshot', 'a transport failure preserves an ordinary JSONEachRow exception field as raw output',
+            res.transportRestored.error === 'Network error' && res.transportRestored.raw === '{"exception":"ordinary row"}\n', res);
+        check('fallback-tokenizer', '`PARALLEL WITH` is a retry and Run all barrier without WASM',
+            !res.parallelWithWrite, res);
+        /// `EXPLAIN AST` is handed to the full `ParserQuery`, so any statement kind can follow it.
+        /// A table named `insert` inside one must not make the real trailing clause inline payload.
+        check('fallback-tokenizer', 'an EXPLAIN-wrapped non-INSERT statement keeps its FORMAT clause',
+            res.explainDetachFormat && res.explainDetachFormat.name === 'TabSeparated', res);
+        check('fallback-tokenizer', 'a WITH-wrapped non-INSERT statement keeps its FORMAT clause',
+            res.withShowFormat && res.withShowFormat.name === 'TabSeparated', res);
+        check('fallback-tokenizer', 'EXPLAIN settings before an INSERT do not resolve the prefix',
+            res.explainSettingsPayload === null, res);
+    }
+
+    /// Contract 7: `Run all` must not dispatch a later write after a prior statement reports an
+    /// in-band framed failure. Drive the real `postMulti` grouping loop; the transport boundary is
+    /// replaced only with the already-decoded result returned by `postImpl`, as a stream harness
+    /// cannot make a browser `Response` from this minimal DOM fake.
+    {
+        const page = await bootPage(js);
+        const res = JSON.parse(await page.run(`(async () => {
+            const tab = makeTab('Run all', 'SELECT fail; INSERT later');
+            tab.reqNum = 1;
+            tab.panel = document.createElement('div');
+            tab.resultEl = document.createElement('div');
+            tab.resultEl.clear = () => {};
+            tab.panel.appendChild(tab.resultEl);
+            tabs.push(tab);
+            activeTabId = tab.id;
+            const calls = [];
+            const savedPostImpl = postImpl;
+            postImpl = async (_tab, _req, query) => {
+                calls.push(query);
+                return { format: '', reply: '', response_ok: false, is_error: true,
+                    is_table: false, is_raw: false, is_chart: false, is_image: false,
+                    is_base64: false, is_truncated: false, framing_kind: '' };
+            };
+            await postMulti(tab, 1, [
+                { query: 'SELECT fail', is_select: true, queryStart: 0 },
+                { query: 'INSERT later', is_select: false, queryStart: 13 },
+            ], {}, tab.query, { url: 'http://example.test', user: '', password: '' }, true, '');
+            postImpl = savedPostImpl;
+            return JSON.stringify({ calls, failed: tab.failed, phase: tab.progressPhase });
+        })()`));
+        check('run-all-framed-failure', 'a failed first statement prevents a later write from being sent',
+            res.calls.length === 1 && res.calls[0] === 'SELECT fail', res);
+        check('run-all-framed-failure', 'the tab retains the failed state',
+            res.failed && res.phase === 'error', res);
     }
 
     if (failures === 0) {

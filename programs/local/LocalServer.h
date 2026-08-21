@@ -55,6 +55,10 @@ protected:
 
     String getName() const override { return "local"; }
 
+    /// In `clickhouse-local`, `--format` keeps its historical meaning of both the default input
+    /// and the default output format, so it maps to the bidirectional `format` setting.
+    std::string_view mappedFormatOptionSetting() const override { return "format"; }
+
     void printHelpMessage(const OptionsDescription & options_description) override;
 
     void addExtraOptions(OptionsDescription & options_description) override;
@@ -83,6 +87,10 @@ private:
 
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
+
+    /// Removes the client's own format options from the global context, leaving them on
+    /// `client_context`, so they do not leak into the sessions of the embedded protocol listeners.
+    void makeFormatOptionsPrivateToTheClient();
 
     void createClientContext();
 
