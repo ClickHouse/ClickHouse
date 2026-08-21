@@ -7,36 +7,36 @@
       "versionId": "3915da6f92b40e6eff0be61bc108be40668964851aca08d295febd67341da029",
       "translations": {
         "ru": {
-          "updatedAt": "2026-08-21T11:13:35.422Z",
+          "updatedAt": "2026-08-21T17:07:40.410Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-21T11:13:35.627Z",
+          "updatedAt": "2026-08-21T17:07:40.659Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-21T11:13:36.063Z",
+          "updatedAt": "2026-08-21T17:07:41.140Z",
           "fileName": "docs.json",
-          "postProcessHash": "8584d9fc0150b688bcd685e9289737c671e515b1e34d44bf09fe5d8dc7aed88a"
+          "postProcessHash": "319d5044392307ec8490e18e5d447f9e8d74b48bcf1793a174598c977d46e0b6"
         },
         "es": {
-          "updatedAt": "2026-08-21T11:13:34.542Z",
+          "updatedAt": "2026-08-21T17:07:39.384Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-21T11:13:34.774Z",
+          "updatedAt": "2026-08-21T17:07:39.652Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-21T11:13:34.982Z",
+          "updatedAt": "2026-08-21T17:07:39.891Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-21T11:13:35.208Z",
+          "updatedAt": "2026-08-21T17:07:40.144Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-21T11:13:35.857Z",
+          "updatedAt": "2026-08-21T17:07:40.909Z",
           "fileName": "docs.json"
         }
       },
@@ -136889,6 +136889,54 @@
         }
       },
       "fileName": "clickstack/demo-days/2026/2026-08-07.mdx",
+      "staged": false
+    },
+    {
+      "fileId": "d863f8fb9d0c4aa3fafa779adaaf5c23de23a5f68361f1d80fd6ca3c78eccd10",
+      "versionId": "a6512f9f5fea9fae21b9621287445323f5c92c43a4022c8332f17f8ff6dd3d80",
+      "translations": {
+        "ja": {
+          "updatedAt": "2026-08-21T17:07:46.140Z",
+          "fileName": "ja/clickstack/demo-days/2026/2026-08-15.mdx",
+          "postProcessHash": "8fe16ad71938e7e4914d048b5239f3e776cccab273e47bb994ce9db1844437de"
+        },
+        "ar": {
+          "updatedAt": "2026-08-21T17:07:46.141Z",
+          "fileName": "ar/clickstack/demo-days/2026/2026-08-15.mdx",
+          "postProcessHash": "dad294dad3c0c9916fca30d961fd954c5c1365b24478005717efabd37ad47ed4"
+        },
+        "es": {
+          "updatedAt": "2026-08-21T17:07:46.141Z",
+          "fileName": "es/clickstack/demo-days/2026/2026-08-15.mdx",
+          "postProcessHash": "2a27c797cefe0670b04c1d7a07e4df479796390a3d41505b14ed59828347a3a2"
+        },
+        "ko": {
+          "updatedAt": "2026-08-21T17:07:46.142Z",
+          "fileName": "ko/clickstack/demo-days/2026/2026-08-15.mdx",
+          "postProcessHash": "4cb6cb60a87dfa2f94937a6f069c5aecfc2afefd6496c096529e055b3041caf9"
+        },
+        "fr": {
+          "updatedAt": "2026-08-21T17:07:46.142Z",
+          "fileName": "fr/clickstack/demo-days/2026/2026-08-15.mdx",
+          "postProcessHash": "816367b9caefb1454f78e725f4366bf14bc719680b53ce99327e437fed9b91ee"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-21T17:07:46.143Z",
+          "fileName": "pt-BR/clickstack/demo-days/2026/2026-08-15.mdx",
+          "postProcessHash": "98884026ae848d1414d83ae65b9f6efcc9e90b712d7ad2221358e2839d291108"
+        },
+        "zh": {
+          "updatedAt": "2026-08-21T17:07:46.143Z",
+          "fileName": "zh/clickstack/demo-days/2026/2026-08-15.mdx",
+          "postProcessHash": "707d6ea21bc23751493737102b48b7584f45d4009d8d834bb2a06d54f13df8d5"
+        },
+        "ru": {
+          "updatedAt": "2026-08-21T17:07:46.144Z",
+          "fileName": "ru/clickstack/demo-days/2026/2026-08-15.mdx",
+          "postProcessHash": "9318a02374540255d76fec93fbc1b0f961eb818041b0f82f61379ffdc559f68a"
+        }
+      },
+      "fileName": "clickstack/demo-days/2026/2026-08-15.mdx",
       "staged": false
     }
   ]
