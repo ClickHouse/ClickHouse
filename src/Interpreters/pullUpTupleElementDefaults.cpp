@@ -140,6 +140,28 @@ void stripDefaultFromNameTypePair(ASTNameTypePair & pair)
         pair.children.push_back(pair.type);
 }
 
+/// A type that already admits NULL and must not be wrapped again: `Nullable(...)` or
+/// `LowCardinality(Nullable(...))`.
+bool typeIsAlreadyNullable(const ASTPtr & type)
+{
+    const auto * data_type = type->as<ASTDataType>();
+    if (!data_type)
+        return false;
+
+    if (data_type->name == "Nullable")
+        return true;
+
+    if (data_type->name == "LowCardinality")
+    {
+        const auto arguments = data_type->getArguments();
+        if (arguments && arguments->children.size() == 1)
+            if (const auto * inner = arguments->children[0]->as<ASTDataType>())
+                return inner->name == "Nullable";
+    }
+
+    return false;
+}
+
 /// Match the `DEFAULT NULL` normalization for ordinary column declarations: NULL defaults promote
 /// a non-nullable type to Nullable. LowCardinality can only wrap Nullable, not the other way round.
 ASTPtr makeNullableType(ASTPtr type)
@@ -237,8 +259,7 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, const NameSet & outer_element_nam
                 if (explicit_default)
                 {
                     checkDefaultDoesNotReferenceElements(*explicit_default, element_names, column_name);
-                    if (isLiteralNull(explicit_default)
-                        && (!pair->type->as<ASTDataType>() || pair->type->as<ASTDataType>()->name != "Nullable"))
+                    if (isLiteralNull(explicit_default) && !typeIsAlreadyNullable(pair->type))
                         pair->type = makeNullableType(pair->type);
                     stripDefaultFromNameTypePair(*pair);
                 }
