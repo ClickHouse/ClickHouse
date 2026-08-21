@@ -255,14 +255,39 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     stop_watch = Utils.Stopwatch()
     info = ""
 
+    def budget_remaining():
+        """Seconds left of the budget, negative once it is overspent."""
+        return Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC - int(stop_watch.duration)
+
     def budget_left():
         """Seconds still available to this path, never zero.
 
         `timeout 0` enforces no deadline at all, so an exhausted budget has to be
         expressed as a deadline that fires immediately.
         """
-        spent = int(stop_watch.duration)
-        return max(Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC - spent, 1)
+        return max(budget_remaining(), 1)
+
+    def clone_within_budget(env):
+        """Run the clone, retrying a transient failure out of the shared budget.
+
+        Each attempt is deadlined by what is left rather than by a slice of the budget, so
+        the attempts together cannot outlast it however many are configured.
+        """
+        attempts = Settings.SUBMODULE_CACHE_CLONE_ATTEMPTS
+        for attempt in range(1, attempts + 1):
+            # `budget_left` never returns zero, so the remainder has to be tested here or
+            # an overspent budget would still permit another attempt.
+            if attempt > 1 and budget_remaining() <= 0:
+                break
+            if Shell.check(
+                f"timeout -s KILL {budget_left()} "
+                "git submodule update --depth=1 --single-branch --jobs 64",
+                verbose=True,
+                env=env,
+            ):
+                return
+            print(f"WARNING: submodule clone attempt {attempt}/{attempts} failed")
+        raise RuntimeError("submodule clone did not succeed within its budget")
 
     try:
         submodule_shas = Digest.get_submodule_shas()
@@ -299,13 +324,7 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
             # evaluated after the deadline would leave the clone starting with a deadline
             # computed before that work was paid for.
             clone_env = _submodule_auth_env(workflow, timeout=budget_left())
-            Shell.check(
-                f"timeout -s KILL {budget_left()} "
-                "git submodule update --depth=1 --single-branch --jobs 64",
-                verbose=True,
-                strict=True,
-                env=clone_env,
-            )
+            clone_within_budget(clone_env)
             archive_path = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
             # The deadline wraps the whole pipeline: applied to `tar` alone it leaves a
             # stalled compressor running past it. `pipefail` is what makes a killed `tar`

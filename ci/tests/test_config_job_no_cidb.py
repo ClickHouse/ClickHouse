@@ -399,11 +399,12 @@ def test_a_clone_bound_that_crowds_the_job_cap_is_refused():
         importlib.import_module("ci.praktika.native_jobs")
 
 
-def test_submodule_cache_clone_is_bounded_and_not_retried():
-    """The cache-population clone must run under `timeout` exactly once.
+def test_submodule_cache_clone_is_bounded():
+    """A clone that succeeds runs under `timeout` and is attempted once.
 
-    An unbounded or retried clone can outlast the job cap, which kills the job that
-    computes the matrix and leaves no result naming the cause.
+    An unbounded clone can outlast the job cap, which kills the job that computes the
+    matrix and leaves no result naming the cause. `retries` must not be delegated to
+    `Shell.check`, which rebuilds the deadline per attempt and so multiplies it.
     """
     import ci.praktika.native_jobs as nj
     from ci.praktika.settings import Settings
@@ -459,9 +460,10 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
     # before it have already spent some.
     clone_deadline = int(command.split()[3])
     assert 0 < clone_deadline <= budget, command
-    # Catches a trailing `|| true`, which would mask the exit code before `strict` sees it.
+    # Catches a trailing `|| true`, which would mask the failing exit code.
     assert command.endswith("--jobs 64"), command
-    assert kwargs.get("strict") is True, kwargs
+    # `Shell.check(retries=)` builds its deadline inside the retry loop, so delegating
+    # there would let the attempts take `retries` budgets between them.
     assert kwargs.get("retries", 1) == 1, kwargs
     # A hash is only meaningful once the object it names exists, so the archive must be
     # uploaded, exactly once, and as a conditional create.
@@ -869,6 +871,150 @@ def test_an_exhausted_budget_still_yields_a_deadline_that_fires():
     assert all(d >= 1 for d in deadlines), deadlines
 
 
+def _population_with_scripted_clone(clone_fails, attempts=3, budget=1200, spend=0):
+    """Run the population with a clone that fails its first `clone_fails` attempts.
+
+    `spend` advances an injected clock by that many seconds per attempt, which is what
+    makes a per-attempt deadline distinguishable from a shared one.
+    """
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.settings import Settings
+
+    seen = {"clones": 0}
+    deadlines = []
+    clock = [0.0]
+
+    class _FakeStopwatch:
+        start_time = 0.0
+
+        @property
+        def duration(self):
+            return clock[0]
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **_kwargs):
+            if "submodule update" not in command:
+                return True
+            seen["clones"] += 1
+            deadlines.append(int(command.split()[3]))
+            clock[0] += spend
+            return seen["clones"] > clone_fails
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p, timeout=None):
+            return False
+
+        @staticmethod
+        def put(**_kwargs):
+            return True
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    cfg = _Cfg()
+    orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth
+    original_stopwatch = nj.Utils.Stopwatch
+    original_budget = Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
+    original_attempts = Settings.SUBMODULE_CACHE_CLONE_ATTEMPTS
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        nj.Utils.Stopwatch = _FakeStopwatch
+        Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC = budget
+        Settings.SUBMODULE_CACHE_CLONE_ATTEMPTS = attempts
+        result = nj._prepare_submodule_cache(None, cfg)
+    finally:
+        Settings.SUBMODULE_CACHE_CLONE_ATTEMPTS = original_attempts
+        Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC = original_budget
+        nj.Utils.Stopwatch = original_stopwatch
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
+    return result, cfg, seen["clones"], deadlines
+
+
+def test_a_transient_clone_failure_does_not_lose_the_population():
+    """A clone that fails once must be retried rather than failing the job.
+
+    Population failure is fatal, so without a retry one refused connection drops the whole
+    matrix. The rest of the repo retries submodule population for the same reason
+    (`ci/jobs/fast_test.py`, `ci/jobs/build_clickhouse.py`).
+    """
+    result, cfg, clones, _deadlines = _population_with_scripted_clone(clone_fails=1)
+
+    assert result.status == "OK", result.status
+    assert clones == 2, clones
+    assert cfg.submodule_cache_hash, "a rescued population must still publish its hash"
+
+
+def test_the_clone_attempts_share_one_budget():
+    """The attempts together must fit the budget, not take one deadline each.
+
+    A per-attempt deadline bounds no total: `SUBMODULE_CACHE_CLONE_ATTEMPTS` is
+    repository-overridable, so N attempts of the full budget would overrun the job cap by
+    N-1 budgets and reproduce the SIGTERM this path exists to prevent. Every attempt
+    spends a third of the budget here, so a shared deadline has to shrink.
+    """
+    result, cfg, clones, deadlines = _population_with_scripted_clone(
+        clone_fails=99, attempts=6, budget=1200, spend=400
+    )
+
+    assert result.status == "FAIL", result.status
+    assert cfg.submodule_cache_hash == "", cfg.submodule_cache_hash
+    # Deadlines shrink by what earlier attempts spent, and the last one starts before the
+    # budget is gone, so together they cannot exceed it.
+    assert deadlines == sorted(deadlines, reverse=True), deadlines
+    assert len(set(deadlines)) > 1, deadlines
+    assert deadlines[0] <= 1200, deadlines
+    for index, deadline in enumerate(deadlines):
+        assert deadline + index * 400 <= 1200, (index, deadline, deadlines)
+    # Fewer than configured: the budget, not the attempt count, is what stops it.
+    assert clones < 6, clones
+
+
+def test_the_configured_attempt_count_is_what_bounds_the_retries():
+    """The loop must read `SUBMODULE_CACHE_CLONE_ATTEMPTS` rather than a fixed count.
+
+    With budget to spare the setting is the only thing that stops the loop, so a
+    hardcoded default would both refuse a repository that raised it and keep retrying one
+    that lowered it. Each arm needs more attempts than the default to succeed, which a
+    fixed three could not deliver.
+    """
+    # Spends nothing, so only the attempt count can end the loop.
+    result, cfg, clones, _deadlines = _population_with_scripted_clone(
+        clone_fails=4, attempts=5, spend=0
+    )
+    assert result.status == "OK", result.status
+    assert clones == 5, clones
+    assert cfg.submodule_cache_hash, cfg.submodule_cache_hash
+
+    # Lowered below the default: the loop must stop early rather than retry to three.
+    result, _cfg, clones, _deadlines = _population_with_scripted_clone(
+        clone_fails=4, attempts=2, spend=0
+    )
+    assert result.status == "FAIL", result.status
+    assert clones == 2, clones
+
+
+def test_an_attempt_that_overspends_the_budget_is_not_followed_by_another():
+    """Once the budget is gone the loop must stop instead of starting another attempt.
+
+    An exhausted budget still yields a deadline of at least one second, so without this
+    check a failing clone would keep being retried past the point the budget allows.
+    """
+    result, _cfg, clones, _deadlines = _population_with_scripted_clone(
+        clone_fails=99, attempts=5, budget=600, spend=900
+    )
+
+    assert result.status == "FAIL", result.status
+    assert clones == 1, clones
+
+
 def test_submodule_cache_overrun_fails_closed():
     """A population that does not complete must fail, not report OK.
 
@@ -885,8 +1031,7 @@ def test_submodule_cache_overrun_fails_closed():
         @staticmethod
         def check(command, **kwargs):
             if "submodule update" in command:
-                # `timeout` fired; `strict=True` turns the non-zero exit into a raise.
-                raise RuntimeError("command failed, exit code 137")
+                return False  # `timeout` fired and killed the clone
             return True
 
     class _FakeS3:

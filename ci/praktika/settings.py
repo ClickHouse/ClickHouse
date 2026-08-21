@@ -117,6 +117,10 @@ class _Settings:
     # job's own cap.
     SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC: int = 1200
 
+    # Clone attempts inside that budget. The attempts share it rather than each getting
+    # their own, so raising this cannot extend the population's total.
+    SUBMODULE_CACHE_CLONE_ATTEMPTS: int = 3
+
     # v2: records carry the producing workflow event, used as the reuse trust
     # signal instead of the branch (see CacheRunnerHooks.configure).
     CACHE_VERSION: int = 2
@@ -229,6 +233,7 @@ _USER_DEFINED_SETTINGS = [
     "ENABLE_SUBMODULE_CACHE",
     "ENABLE_SUBMODULE_CLONE_AUTH",
     "SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC",
+    "SUBMODULE_CACHE_CLONE_ATTEMPTS",
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
