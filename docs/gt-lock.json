@@ -7,36 +7,36 @@
       "versionId": "6dce0a76f98100d4b4f03d277602f294b5ffc1afcac33c58718ad1c957cd17cd",
       "translations": {
         "zh": {
-          "updatedAt": "2026-08-21T21:52:54.422Z",
+          "updatedAt": "2026-08-21T22:45:12.818Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-21T21:52:54.791Z",
+          "updatedAt": "2026-08-21T22:45:13.294Z",
           "fileName": "docs.json",
           "postProcessHash": "833945fdd41a4f386cab5b3b33d934243dc3f6fed6dac29e8b050bb4ee0ae4d0"
         },
         "es": {
-          "updatedAt": "2026-08-21T21:52:53.441Z",
+          "updatedAt": "2026-08-21T22:45:11.583Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-21T21:52:53.637Z",
+          "updatedAt": "2026-08-21T22:45:11.863Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-21T21:52:54.235Z",
+          "updatedAt": "2026-08-21T22:45:12.568Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-21T21:52:53.821Z",
+          "updatedAt": "2026-08-21T22:45:12.088Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-21T21:52:54.608Z",
+          "updatedAt": "2026-08-21T22:45:13.050Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-21T21:52:54.050Z",
+          "updatedAt": "2026-08-21T22:45:12.334Z",
           "fileName": "docs.json"
         }
       },
@@ -64173,47 +64173,47 @@
     },
     {
       "fileId": "1f9cadf66214cc43061d93c6cf31bb4ebd0347ade66d63764bfd922f30e95acc",
-      "versionId": "6e2dbda484e8e15db364b8f59af29b4ea1bfa6aaed934e48be75cdf720c651b5",
+      "versionId": "3b664a6a26f7d9c178dd77a990e8cad6ba6f7d8bff3d9861e712d8c53471feba",
       "translations": {
-        "ar": {
-          "updatedAt": "2026-08-20T15:52:45.301Z",
-          "fileName": "ar/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "4a4e486d492048002f3aa8d773f6caef7e2dc1b2274535966bef759a23cb069d"
-        },
-        "ru": {
-          "updatedAt": "2026-08-20T15:52:45.498Z",
-          "fileName": "ru/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "270e54623fdffe13b5c08bc81d2be6af13c29eab75effad820dae211b304db36"
-        },
-        "es": {
-          "updatedAt": "2026-08-20T15:52:45.711Z",
-          "fileName": "es/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "1e0c8453cc2e4e626f158e4d0879d309ce1265716ad6948a3bc3e198c9452da5"
-        },
         "pt-BR": {
-          "updatedAt": "2026-08-20T15:52:46.313Z",
+          "updatedAt": "2026-08-21T22:45:18.256Z",
           "fileName": "pt-BR/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "d1856c31f74f68244ecb1aec3a24a45499c732dceaed872355ed16f1476aef7b"
-        },
-        "ja": {
-          "updatedAt": "2026-08-20T15:52:46.314Z",
-          "fileName": "ja/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "8be5346685a99a664eb399eef55f250a3e4301f1382d1c7b63728eed490239cd"
-        },
-        "ko": {
-          "updatedAt": "2026-08-20T15:52:46.318Z",
-          "fileName": "ko/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "a8cc089b4d32e93f30089ff7cfb6852dea949840a2cee16b22280575b5acd141"
+          "postProcessHash": "aade5d6e97b0ec1f35fc22c2f5293ad854414df2488eaa567968f2a3962a3048"
         },
         "zh": {
-          "updatedAt": "2026-08-20T15:52:46.549Z",
+          "updatedAt": "2026-08-21T22:45:18.257Z",
           "fileName": "zh/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "2bfdfb6c4931f0cefc090aa31661d434ef7ca0abad4e35fe02c29fdb631ca068"
+          "postProcessHash": "842fcbbada1ffb85d07854c78a6ed2ffc7418f40b6dae64367f2f96947219bb3"
+        },
+        "ru": {
+          "updatedAt": "2026-08-21T22:45:18.258Z",
+          "fileName": "ru/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "9f31919f51c58c4e20212b72a079553502efb76d534799dfc5d423d61f8daa72"
+        },
+        "ko": {
+          "updatedAt": "2026-08-21T22:45:18.259Z",
+          "fileName": "ko/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "91f53d3ac00dd8a2bd8fcfda25a78a4fe6598898804cbf61becef53f613206d9"
+        },
+        "ja": {
+          "updatedAt": "2026-08-21T22:45:18.259Z",
+          "fileName": "ja/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "ead811079a48ece736cbdf2908a2e402575a71df0162e8a5ac58c7f9833c5152"
+        },
+        "ar": {
+          "updatedAt": "2026-08-21T22:45:18.260Z",
+          "fileName": "ar/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "aa1197c267b4fbbcefbb01641917b7c8016d7d253696a62beb6277fff3955bd3"
         },
         "fr": {
-          "updatedAt": "2026-08-20T15:52:46.625Z",
+          "updatedAt": "2026-08-21T22:45:18.261Z",
           "fileName": "fr/reference/functions/table-functions/iceberg.mdx",
-          "postProcessHash": "4d6042646f6045e1a24aa895fb0ef2cd8b325046b8827ffb8d98247e6b73bc6c"
+          "postProcessHash": "4df862e5bfe217e3ed07403c9c2c92c53fc6bfede37bd98414e409e6e8b6dab1"
+        },
+        "es": {
+          "updatedAt": "2026-08-21T22:45:18.263Z",
+          "fileName": "es/reference/functions/table-functions/iceberg.mdx",
+          "postProcessHash": "9da77435b6c2cd72b212ca39177f986a1857fcf30b9f4c0061a50adf2671a48d"
         }
       },
       "fileName": "reference/functions/table-functions/iceberg.mdx",
@@ -77661,47 +77661,47 @@
     },
     {
       "fileId": "c2f52e47816a6aa28a1c9df6d5fc559e3edb09e20ffc1abd7d57f014f2eeab21",
-      "versionId": "a6a9aa5afcb5b459b037d30fa57a179d4063a6903637e451b5560941617fda82",
+      "versionId": "84ee468f50c4a09f200b04cb5a561170c4462c7ec15905987758fc6906d84111",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.965Z",
-          "fileName": "es/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
-          "postProcessHash": "63e1fa7d32dd0d60041f656fd2c67ac2fb50512d3ea5be4ad1e9b99fa1641e4c"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.965Z",
-          "fileName": "ja/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
-          "postProcessHash": "9c0c95a94b9ec398a2f8cd8ebfc52519ade17a69adbc62237b5a6e87b7a92497"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.966Z",
-          "fileName": "ko/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
-          "postProcessHash": "fb4ba0e3fd19712cfe74e9bb9a2f8b10e0dd597d4c98cc18ab5d672dea36b19f"
+        "ar": {
+          "updatedAt": "2026-08-21T22:45:18.261Z",
+          "fileName": "ar/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
+          "postProcessHash": "a5da912a1b9f01a4c3c90a1d2e790992e0e262b212ea723abe126e44286e76c4"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.966Z",
+          "updatedAt": "2026-08-21T22:45:18.262Z",
           "fileName": "pt-BR/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
-          "postProcessHash": "846209cf1a76c37c183500059d80c15557eff7b62f6f33f71208dbfe6e400f52"
+          "postProcessHash": "bf1d6fa76bed53a7696c0b4cb30dabdf5eadd084a3a6ea573dc842de77aa4514"
         },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.966Z",
-          "fileName": "ru/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
-          "postProcessHash": "1ba27f6261b738d590cb4d09582597dee1c4abdfa2a38ee6903a448ebb7b42dd"
+        "ko": {
+          "updatedAt": "2026-08-21T22:45:18.263Z",
+          "fileName": "ko/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
+          "postProcessHash": "55f06385a052c1a39ac3c44cf22b00bf5c7007f4f62556d9990bff282b114c22"
+        },
+        "es": {
+          "updatedAt": "2026-08-21T22:45:18.264Z",
+          "fileName": "es/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
+          "postProcessHash": "15cebffaaf98016f21564e7632f4fe979fb7ad5809735ad761672043c6c9b2a8"
+        },
+        "ja": {
+          "updatedAt": "2026-08-21T22:45:18.264Z",
+          "fileName": "ja/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
+          "postProcessHash": "15de59aa05c287aadc178be1c7d2ca15a2a7157e4ccbe641ccd54023c4388fee"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:07.966Z",
+          "updatedAt": "2026-08-21T22:45:18.265Z",
           "fileName": "zh/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
-          "postProcessHash": "ae3c04ad5870aff0736225fde61fdc913c5c98fb44be7f98118b0dfb2a6feb3b"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:07.966Z",
-          "fileName": "ar/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
-          "postProcessHash": "9f1c70fa6858a4160e8441bb5084f59b6ff72d5aee0db93ad6e04f2df7a05570"
+          "postProcessHash": "26a6dca0ea6c0e16c3e6c4bf905538cf46e5e82b58134b8b41f01505fdac1770"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:07.966Z",
+          "updatedAt": "2026-08-21T22:45:18.266Z",
           "fileName": "fr/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
-          "postProcessHash": "9859b707b5ff8ac0943e96965998ce4915cf8bd829ffdfcc811f38cd1a4ea221"
+          "postProcessHash": "26b8298fabea89e76802b6ccbc4a4472d10feba4eeee34f2bb25182d73bd2aa2"
+        },
+        "ru": {
+          "updatedAt": "2026-08-21T22:45:18.266Z",
+          "fileName": "ru/guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
+          "postProcessHash": "37e0d000924d0df302ade80470c486a748fc5fa2043fc7be18f1f6403d11a9c3"
         }
       },
       "fileName": "guides/use-cases/data-warehousing/getting-started/writing-data.mdx",
