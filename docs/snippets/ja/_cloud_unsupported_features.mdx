@@ -1,0 +1,111 @@
+---
+title: Cloud でサポートされていない機能
+---
+
+以下の表に、ClickHouse Cloud でサポート対象外とされている機能およびセルフマネージド環境での手順を示します。各エントリには、リンク先のページでサポート対象の機能も扱われている場合でも、サポート対象外の具体的な機能を記載しています。
+
+<div id="unsupported-managed-infrastructure-and-operations">
+  ### マネージドインフラストラクチャと運用
+</div>
+
+| サポートされていない機能                                | ドキュメント                                                                                                                                 |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| セルフマネージド環境での `ClickHouse Keeper` のデプロイと設定 | [Keeper ガイド](/ja/guides/oss/deployment-and-scaling/keeper)、[ZooKeeper 接続の保護](/ja/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)     |
+| TLS 証明書の手動プロビジョニングとサーバー設定                 | [ACME プロビジョニング](/ja/concepts/features/security/tls/configuring-tls-acme-client)、[TLS 設定](/ja/concepts/features/security/tls/configuring-tls) |
+| `TTL` を使用したホット/ウォーム/コールドストレージ階層の手動設定      | [ガイド](/ja/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture)                                                |
+| セルフマネージド環境でのハードウェア性能テストの実行                | [ガイド](/ja/concepts/features/performance/troubleshoot/performance-test)                                                                    |
+| セルフマネージド環境向けの運用に関する推奨事項の適用                | [ガイド](/ja/guides/oss/best-practices/tips)                                                                                                 |
+
+<div id="unsupported-authentication-and-security">
+  ### 認証とセキュリティ
+</div>
+
+| サポートされていない機能     | ドキュメント                                                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| HTTP 外部認証        | [リファレンス](/ja/concepts/features/security/external-authenticators/http)                                                         |
+| Kerberos 外部認証    | [リファレンス](/ja/concepts/features/security/external-authenticators/kerberos)                                                     |
+| LDAP 認証とロールマッピング | [設定](/ja/concepts/features/security/configuring-ldap), [認証器](/ja/concepts/features/security/external-authenticators/ldap)        |
+| X.509 証明書認証      | [ユーザー認証](/ja/concepts/features/security/ssl-user-auth), [外部認証器](/ja/concepts/features/security/external-authenticators/ssl-x509) |
+
+<div id="unsupported-interfaces-and-integrations">
+  ### インターフェイスとインテグレーション
+</div>
+
+| サポートされていない機能                          | ドキュメント                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PostgreSQLワイヤプロトコルインターフェイス            | [リファレンス](/ja/concepts/features/interfaces/postgresql)                                                                                                                                                                                                                                                                                                     |
+| PTY 対応 SSH インターフェイス                   | [リファレンス](/ja/concepts/features/interfaces/ssh)                                                                                                                                                                                                                                                                                                            |
+| `MaterializedPostgreSQL` レプリケーションエンジン | [ClickPipes ガイド](/ja/integrations/clickpipes/postgres/connecting-to-postgresql#using-the-materializedpostgresql-database-engine), [コネクタガイド](/ja/integrations/connectors/data-sources/postgres), [データベースエンジン](/ja/reference/engines/database-engines/materialized-postgresql), [テーブルエンジン](/ja/reference/engines/table-engines/integrations/materialized-postgresql) |
+| `ODBC` テーブルエンジン                       | [リファレンス](/ja/reference/engines/table-engines/integrations/odbc)                                                                                                                                                                                                                                                                                           |
+| MinIO の S3 互換オブジェクトストレージインテグレーション     | [ガイド](/ja/integrations/connectors/data-ingestion/s3-minio)                                                                                                                                                                                                                                                                                                |
+| Tigris の S3 互換オブジェクトストレージインテグレーション    | [ガイド](/ja/integrations/connectors/data-ingestion/s3-tigris)                                                                                                                                                                                                                                                                                               |
+
+<div id="unsupported-database-and-table-engines">
+  ### サポートされていないデータベースおよびテーブルエンジン
+</div>
+
+| サポートされていない機能                                       | ドキュメント                                                                                                                                                                                                                                                 |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MySQL` データベースエンジン                                 | [リファレンス](/ja/reference/engines/database-engines/mysql)                                                                                                                                                                                                    |
+| `EmbeddedRocksDB` テーブルエンジン                         | [リファレンス](/ja/reference/engines/table-engines/integrations/embedded-rocksdb)                                                                                                                                                                               |
+| `HDFS` テーブルエンジン                                    | [リファレンス](/ja/reference/engines/table-engines/integrations/hdfs)                                                                                                                                                                                           |
+| `Hive` テーブルエンジン                                    | [リファレンス](/ja/reference/engines/table-engines/integrations/hive)                                                                                                                                                                                           |
+| `JDBC` テーブルエンジン                                    | [リファレンス](/ja/reference/engines/table-engines/integrations/jdbc)                                                                                                                                                                                           |
+| フェデレーテッドクエリ用の `Redis` テーブルエンジン                     | [リファレンス](/ja/reference/engines/table-engines/integrations/redis)                                                                                                                                                                                          |
+| `SQLite` テーブルエンジン                                  | [リファレンス](/ja/reference/engines/table-engines/integrations/sqlite)                                                                                                                                                                                         |
+| `TimeSeries` テーブルエンジン                              | [リファレンス](/ja/reference/engines/table-engines/integrations/time-series)                                                                                                                                                                                    |
+| `YTsaurus` テーブルエンジン                                | [リファレンス](/ja/reference/engines/table-engines/integrations/ytsaurus)                                                                                                                                                                                       |
+| `Log`ファミリーのテーブルエンジン (`Log`、`StripeLog`、`TinyLog`)  | [ファミリーの概要](/ja/reference/engines/table-engines/log-family)、[`Log`](/ja/reference/engines/table-engines/log-family/log)、[`StripeLog`](/ja/reference/engines/table-engines/log-family/stripelog)、[`TinyLog`](/ja/reference/engines/table-engines/log-family/tinylog) |
+
+<div id="unsupported-dictionaries-and-server-configuration">
+  ### Dictionary とサーバー設定
+</div>
+
+| サポートされていない機能                                                                | ドキュメント                                                                                                                                                                                                               |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 名前付きコレクション、および `CREATE NAMED COLLECTION` と `ALTER NAMED COLLECTION` ステートメント | [概要](/ja/concepts/features/configuration/server-config/named-collections)、[作成](/ja/reference/statements/create/named-collection)、[変更](/ja/reference/statements/alter/named-collection)                                        |
+| ファイルベースの Dictionary 設定                                                      | [リファレンス](/ja/reference/statements/create/dictionary#creating-a-dictionary-with-a-configuration-file)                                                                                                                    |
+| 埋め込み geobase Dictionary                                                     | [リファレンス](/ja/reference/statements/create/dictionary/embedded)                                                                                                                                                           |
+| ローカルの `YAMLRegExpTree` Dictionary ソース                                       | [レイアウトガイド](/ja/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)、[ソースリファレンス](/ja/reference/statements/create/dictionary/sources/yamlregexptree) |
+| `YTsaurus` Dictionary ソース                                                   | [リファレンス](/ja/reference/statements/create/dictionary/sources/ytsaurus)                                                                                                                                                   |
+| サーバーで設定された日本語トークナイザー Dictionary                                             | [リファレンス](/ja/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary)                                                                                                                |
+
+<div id="unsupported-data-formats-and-codecs">
+  ### サポート対象外のデータフォーマットとコーデック
+</div>
+
+| サポートされていない機能                                                            | ドキュメント                                                                                                                                                                                   |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| サーバー側のスキーマファイルを使用する `CapnProto` フォーマット                                | [フォーマットリファレンス](/ja/reference/formats/CapnProto)、[ガイド](/ja/guides/clickhouse/data-formats/binary#capn-proto)                                                                                    |
+| サーバー側のスキーマファイルを使用する `Protobuf`、`ProtobufList`、`ProtobufSingle` フォーマット | [ガイド](/ja/guides/clickhouse/data-formats/binary#protocol-buffers)、[`ProtobufList`](/ja/reference/formats/Protobuf/ProtobufList)、[`ProtobufSingle`](/ja/reference/formats/Protobuf/ProtobufSingle) |
+| 廃止された `ZSTD_QAT` および `DEFLATE_QPL` コーデック                              | [`ZSTD_QAT`](/ja/reference/statements/create/table#zstd_qat)、[`DEFLATE_QPL`](/ja/reference/statements/create/table#deflate_qpl)                                                                |
+
+<div id="unsupported-functions-and-experimental-features">
+  ### 関数および実験的機能
+</div>
+
+| サポートされていない機能                                  | ドキュメント                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 実験的な自然言語処理関数                                  | [リファレンス](/ja/reference/functions/regular-functions/nlp-functions)                                                                                                                                                                                                                                                            |
+| commit および rollback を伴う実験的なマルチステートメントトランザクション | [ガイド](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                                 |
+| 実験的なトランザクションイントロスペクション関数                      | [`transactionID`](/ja/reference/functions/regular-functions/other-functions#transactionID), [`transactionLatestSnapshot`](/ja/reference/functions/regular-functions/other-functions#transactionLatestSnapshot), [`transactionOldestSnapshot`](/ja/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
+| `WindowView` 用の時間ウィンドウ関数                      | [リファレンス](/ja/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                    |
+| 実験的な `WindowView`                             | [リファレンス](/ja/reference/statements/create/view#window-view)                                                                                                                                                                                                                                                                   |
+| WebAssembly ユーザー定義関数                          | [概要](/ja/reference/functions/regular-functions/udf#webassembly-user-defined-functions), [ガイド](/ja/reference/functions/regular-functions/wasm_udf)                                                                                                                                                                               |
+| ドライバーを利用する実行可能なユーザー定義関数                       | [リファレンス](/ja/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions)                                                                                                                                                                                                                       |
+| サーバーローカルのファイルに対する `filesystem` テーブル関数         | [リファレンス](/ja/reference/functions/table-functions/filesystem)                                                                                                                                                                                                                                                                 |
+
+<div id="unsupported-administration-and-access-control">
+  ### 管理とアクセス制御
+</div>
+
+| サポートされていない機能                                 | ドキュメント                                                                                                                                              |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ALTER TABLE` によるカラム統計の操作                    | [リファレンス](/ja/reference/statements/alter/statistics)                                                                                                    |
+| `EXECUTE AS` によるユーザーの権限借用                    | [リファレンス](/ja/reference/statements/execute_as)                                                                                                          |
+| テーブルエンジン固有の権限付与                              | [権限付与](/ja/reference/statements/grant#table-engine)、[サーバー設定](/ja/reference/settings/server-settings/settings/other#table_engines_require_grant)           |
+| `GRANT ALL` 権限のショートカット                       | [リファレンス](/ja/reference/statements/grant#all)                                                                                                           |
+| `SYSTEM SHUTDOWN` によるサーバーのシャットダウン            | [リファレンス](/ja/reference/statements/system#shutdown)                                                                                                     |
+| `SYSTEM` ステートメントによるバックグラウンドフェッチの開始と停止        | [`SYSTEM STOP FETCHES`](/ja/reference/statements/system#stop-fetches)、[`SYSTEM START FETCHES`](/ja/reference/statements/system#start-fetches)             |
+| `SYSTEM` ステートメントによるバックグラウンドマージの開始と停止         | [`SYSTEM STOP MERGES`](/ja/reference/statements/system#stop-merges)、[`SYSTEM START MERGES`](/ja/reference/statements/system#start-merges)                 |
+| `SYSTEM` ステートメントによるバックグラウンドの `TTL` マージの開始と停止 | [`SYSTEM STOP TTL MERGES`](/ja/reference/statements/system#stop-ttl-merges)、[`SYSTEM START TTL MERGES`](/ja/reference/statements/system#start-ttl-merges) |

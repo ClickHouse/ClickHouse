@@ -43,13 +43,13 @@ SET TIME ZONE 'UTC';
 SET TIME ZONE 'Europe/Amsterdam';
 SET TIME ZONE 'America/New_York';
 
--- 現在のセッションのタイムゾーンを確認する
+-- Verify the current session time zone
 SELECT getSetting('session_timezone');
 ```
 
 timezone の値には、[IANA Time Zone Database](https://www.iana.org/time-zones) にある有効な名前を指定する必要があります。無効な timezone 名を指定すると、エラーになります。
 
-`session_timezone` 設定の詳細については、[session&#95;timezone](/ja/reference/settings/session-settings#session_timezone) を参照してください。
+`session_timezone` 設定の詳細については、[session&#95;timezone](/ja/reference/settings/session-settings/other#session_timezone) を参照してください。
 
 <div id="setting-query-parameters">
   ## クエリパラメータの設定

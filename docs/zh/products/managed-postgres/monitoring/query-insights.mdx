@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Postgres Query insights'
-description: 'Managed Postgres 的逐语句遥测信息：展示数据库运行的每一种查询模式，按影响排序，并附带说明每条查询为何缓慢的诊断计数器'
+description: 'ClickHouse Managed Postgres 的逐语句遥测信息：展示数据库运行的每一种查询模式，按影响排序，并附带说明每条查询为何缓慢的诊断计数器'
 keywords: ['Managed Postgres', 'query insights', 'pg_stat_ch', '慢查询', 'p99 延迟', '查询模式', 'Postgres 性能', '临时块', '并行工作线程', 'wal']
 doc_type: 'guide'
 ---
@@ -13,7 +13,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 Query Insights 会从你的
-[Managed Postgres](/zh/products/managed-postgres/overview) 实例中采集每条语句的遥测数据，并按影响程度对每种查询
+[ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 实例中采集每条语句的遥测数据，并按影响程度对每种查询
 模式进行排序，因此你无需离开 Cloud 控制台，就能从 &quot;p99 正在缓慢上升&quot; 定位到 &quot;这个模式
 正在落盘&quot;。
 
@@ -27,8 +27,9 @@ ClickHouse Cloud。遥测数据会在离开 Postgres 之前于数据库内部完
   ## 打开 Query insights
 </div>
 
-在 Cloud 控制台 中打开你的 Managed Postgres 实例，然后点击左侧边栏中的
-**Query insights**。该页面分为四个区域，顺序与实际使用流程一致：
+在 Cloud 控制台中打开你的 ClickHouse Managed Postgres 实例，然后点击
+左侧边栏中的 **Query insights**。该页面分为四个
+区域，顺序与实际使用流程一致：
 
 * 一个可在单屏内完成数据库健康检查的 **概览**。
 * 一个 **慢查询模式** 表，对数据库运行过的每种查询模式进行排名，
@@ -239,6 +240,6 @@ ClickHouse。源代码和问题跟踪见
 
 * [监控仪表板](/zh/products/managed-postgres/monitoring/dashboard) — 内置资源与活动图表
 * [Prometheus 端点](/zh/products/managed-postgres/monitoring/prometheus) — 将主机级指标抓取到您自己的可观测性栈中
-* [Managed Postgres OpenAPI](/zh/products/managed-postgres/openapi#query-insights) — 以编程方式查询慢查询模式和最近的执行记录
-* [扩展](/zh/products/managed-postgres/extensions) — Managed Postgres 实例上可用的扩展
+* [ClickHouse Managed Postgres OpenAPI](/zh/products/managed-postgres/openapi#query-insights) — 以编程方式查询慢查询模式和最近执行记录
+* [扩展](/zh/products/managed-postgres/extensions) — ClickHouse Managed Postgres 实例上可用的扩展
 * [GitHub 上的 `pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch) — 为 Query Insights 提供支持的开源扩展
