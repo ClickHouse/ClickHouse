@@ -184,7 +184,7 @@ dbt использует модель согласованности чтени�
 | structure                         | Структура столбцов данных в бакете в виде списка пар имя/тип данных, например `['id UInt32', 'date DateTime', 'value String']`. Если не указано, ClickHouse определит структуру автоматически. |
 | aws&#95;access&#95;key&#95;id     | Идентификатор ключа доступа S3.                                                                                                                                                                |
 | aws&#95;secret&#95;access&#95;key | Секретный ключ S3.                                                                                                                                                                             |
-| role&#95;arn                      | ARN роли IAM ClickhouseAccess, используемой для безопасного доступа к объектам S3. Подробнее см. в этой [документации](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).        |
+| role&#95;arn                      | ARN роли IAM, созданной для безопасного доступа к S3. Подробнее см. в этой [документации](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).                                     |
 | compression                       | Метод сжатия, используемый для объектов S3. Если не указан, ClickHouse попытается определить тип сжатия по имени файла.                                                                        |
 
 См.
