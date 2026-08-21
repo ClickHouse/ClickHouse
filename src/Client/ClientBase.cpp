@@ -45,7 +45,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
 
-#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFromJSON.h>
@@ -3702,186 +3701,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
 bool ClientBase::processQueryText(const String & text)
 {
-    const auto is_dialect_command = [](std::string_view line)
-    {
-        const auto trimmed_line = trim(String(line), [](char c) { return isWhitespaceASCII(c) || c == ';'; });
-        for (const std::string_view prefix : {"/dialect", "/language", "/lang"})
-        {
-            if (boost::iequals(trimmed_line, prefix)
-                || (trimmed_line.size() > prefix.size() && boost::istarts_with(trimmed_line, prefix)
-                    && isWhitespaceASCII(trimmed_line[prefix.size()])))
-                return true;
-        }
-        return false;
-    };
-
-    const auto has_dialect_command_line = [&](std::string_view script)
-    {
-        size_t line_begin = 0;
-        while (line_begin < script.size())
-        {
-            const size_t line_end = script.find('\n', line_begin);
-            const size_t line_size = (line_end == std::string_view::npos ? script.size() : line_end) - line_begin;
-            if (is_dialect_command(std::string_view{script.data() + line_begin, line_size}))
-                return true;
-
-            if (line_end == std::string_view::npos)
-                break;
-            line_begin = line_end + 1;
-        }
-        return false;
-    };
-
-    /// Execute a chunk of the script that surrounds a dialect command. It goes through the regular
-    /// path, so that the other text-level meta-commands (`clear`, `ls`, `help`, `\i`, `exit`) keep
-    /// working in a script that also contains a dialect command. The recursion is bounded: a chunk
-    /// with a dialect-command line left in it (a line that belongs to inline `INSERT` data) is
-    /// executed as SQL directly, so the nested call never re-enters the splitter.
-    const auto execute_chunk = [&](const String & sql_chunk)
-    {
-        if (has_dialect_command_line(sql_chunk))
-            return executeMultiQuery(sql_chunk);
-        return processQueryText(sql_chunk);
-    };
-
-    /// Whether the chunk is the beginning of a statement that continues on the following lines,
-    /// e.g. a string literal or a bracket left open. Such a continuation line is a part of the SQL
-    /// even when it looks like a dialect command.
-    const auto chunk_is_unfinished = [](const String & sql_chunk)
-    {
-        Lexer lexer(sql_chunk.data(), sql_chunk.data() + sql_chunk.size());
-        ssize_t bracket_depth = 0;
-        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
-        {
-            switch (token.type)
-            {
-                case TokenType::ErrorMultilineCommentIsNotClosed:
-                case TokenType::ErrorSingleQuoteIsNotClosed:
-                case TokenType::ErrorDoubleQuoteIsNotClosed:
-                case TokenType::ErrorBackQuoteIsNotClosed:
-                    return true;
-                case TokenType::OpeningRoundBracket:
-                case TokenType::OpeningSquareBracket:
-                case TokenType::OpeningCurlyBrace:
-                    ++bracket_depth;
-                    break;
-                case TokenType::ClosingRoundBracket:
-                case TokenType::ClosingSquareBracket:
-                case TokenType::ClosingCurlyBrace:
-                    --bracket_depth;
-                    break;
-                default:
-                    break;
-            }
-
-            if (token.isError())
-                return false;
-        }
-
-        return bracket_depth > 0;
-    };
-
-    const auto dialect_command_is_insert_data = [&](const String & sql_chunk)
-    {
-        const char * query_begin = sql_chunk.data();
-        const char * const queries_end = query_begin + sql_chunk.size();
-        const auto & settings = client_context->getSettingsRef();
-
-        while (query_begin < queries_end)
-        {
-            const char * query_end = query_begin;
-            ASTPtr parsed_query;
-            try
-            {
-                parsed_query = parseQuery(query_end, queries_end, settings, /*allow_multi_statements=*/ true);
-            }
-            catch (...)
-            {
-                /// Ok: an unparseable chunk is either an unfinished ClickHouse statement, whose next
-                /// line is a continuation rather than a command, or a statement in another dialect -
-                /// and the latter is exactly the case the command exists for: after an earlier
-                /// `SET dialect = 'kusto'` the rest of the chunk does not parse as ClickHouse SQL,
-                /// and `/dialect` still has to switch back. The surrounding SQL keeps its own error
-                /// reporting in `executeMultiQuery`.
-                return chunk_is_unfinished(sql_chunk);
-            }
-
-            /// An empty, blank or comment-only prefix is not inline data either.
-            if (!parsed_query)
-                return false;
-
-            const auto * insert = parsed_query->as<ASTInsertQuery>();
-            if (!insert)
-            {
-                if (const auto * explain = parsed_query->as<ASTExplainQuery>(); explain && explain->getExplainedQuery())
-                    insert = explain->getExplainedQuery()->as<ASTInsertQuery>();
-            }
-
-            if (insert && insert->format != "Values")
-            {
-                /// Generic inline INSERT data ends at the first empty line. If the accumulated SQL
-                /// chunk reaches its end first, the following physical line is still data, not a
-                /// client meta-command.
-                if (!insert->data)
-                    return true;
-
-                const auto data_end = String(insert->data, queries_end).find("\n\n");
-                if (data_end == std::string::npos)
-                    return true;
-                query_begin = insert->data + data_end + 2;
-                continue;
-            }
-
-            if (query_end <= query_begin)
-                return true;
-            adjustQueryEnd(
-                query_end,
-                queries_end,
-                static_cast<uint32_t>(settings[Setting::max_parser_depth]),
-                static_cast<uint32_t>(settings[Setting::max_parser_backtracks]));
-            query_begin = query_end;
-        }
-
-        return false;
-    };
-
-    /// `clickhouse-local` accepts client meta-commands in noninteractive input. Split standalone
-    /// dialect-command lines from a script before feeding the surrounding SQL to the multiquery
-    /// parser, because the latter necessarily parses a whole input chunk with one dialect.
-    if (supportsLocalMetaCommands() && !is_interactive && text.contains('\n') && has_dialect_command_line(text))
-    {
-        String sql_chunk;
-        size_t line_begin = 0;
-        while (line_begin < text.size())
-        {
-            const size_t line_end = text.find('\n', line_begin);
-            const size_t line_size = (line_end == String::npos ? text.size() : line_end) - line_begin;
-            const std::string_view line{text.data() + line_begin, line_size};
-
-            if (is_dialect_command(line) && !dialect_command_is_insert_data(sql_chunk))
-            {
-                if (!sql_chunk.empty() && !execute_chunk(sql_chunk))
-                    return false;
-                sql_chunk.clear();
-
-                if (!processQueryText(String(line)))
-                    return false;
-            }
-            else
-            {
-                sql_chunk.append(line);
-                if (line_end != String::npos)
-                    sql_chunk += '\n';
-            }
-
-            if (line_end == String::npos)
-                break;
-            line_begin = line_end + 1;
-        }
-
-        return sql_chunk.empty() || execute_chunk(sql_chunk);
-    }
-
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
     if (exit_strings.contains(trimmed_input))
@@ -3978,7 +3797,9 @@ bool ClientBase::processQueryText(const String & text)
     /// A `SET` query is not always expressible in the current dialect: after `SET dialect = 'kusto'` the input
     /// is parsed with the Kusto parser, so a regular `SET dialect = 'clickhouse'` cannot be used to switch back.
     /// Without an argument, prints the current dialect.
-    if (is_interactive || supportsLocalMetaCommands())
+    /// Interactive only: a noninteractive script gets the whole input parsed as SQL, and the dialect
+    /// for it is selected with the `--dialect` option or a `SET dialect = ...` statement.
+    if (is_interactive)
     {
         for (const std::string_view prefix : {"/dialect", "/language", "/lang"})
         {
@@ -4003,28 +3824,12 @@ bool ClientBase::processQueryText(const String & text)
                 && dialect_name->back() == dialect_name->front())
                 dialect_name = dialect_name->substr(1, dialect_name->size() - 2);
 
-            /// A rejected command has to behave exactly like the equivalent `SET dialect = ...`:
-            /// an interactive user just retries at the next prompt, but a script must stop instead
-            /// of running the remaining statements under the old dialect.
-            const auto continue_after_rejection = [&] { return is_interactive || ignore_error; };
-
-            try
-            {
-                /// Execute the equivalent SQL through the normal query path. Besides validating the
-                /// value, this lets the server enforce query-setting constraints. The normal SET
-                /// bookkeeping persists the setting only after a successful exchange, so a rejected
-                /// command leaves the prompt and parser on the previous dialect.
-                if (!processTextAsSingleQuery("SET dialect = " + quoteString(*dialect_name)))
-                    return continue_after_rejection();
-            }
-            catch (...)
-            {
-                /// In a script the failure has to stay fatal, exactly like the equivalent
-                /// `SET dialect = ...`, so that the message and the exit code are the usual ones.
-                if (!continue_after_rejection())
-                    throw;
-                error_stream << getCurrentExceptionMessage(false) << std::endl;
-            }
+            /// Execute the equivalent SQL through the normal query path. Besides validating the
+            /// value, this lets the server enforce query-setting constraints. The normal `SET`
+            /// bookkeeping persists the setting only after a successful exchange, so a rejected
+            /// command leaves the prompt and the parser on the previous dialect, and the user
+            /// retries at the next prompt.
+            processTextAsSingleQuery("SET dialect = " + quoteString(*dialect_name));
             return true;
         }
     }
