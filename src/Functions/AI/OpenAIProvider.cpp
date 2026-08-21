@@ -121,7 +121,33 @@ void OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTimeouts
             "AI chat response is missing output message");
 
     response.result = message->optValue<String>("content", "");
-    response.finish_reason = choice->optValue<String>("finish_reason", "stop");
+
+    /// A structured-output safety refusal arrives as a populated `message.refusal` with a null
+    /// `content`, and `finish_reason` stays "stop" because the generation itself ended normally.
+    auto refusal = message->optValue<String>("refusal", "");
+    if (!refusal.empty())
+    {
+        response.result = refusal;
+        response.raw_finish_reason = "refusal";
+        response.finish_reason = FinishReason::ContentFilter;
+    }
+    else
+    {
+        /// Map OpenAI's `finish_reason` onto the canonical `FinishReason`. An absent field means the
+        /// generation completed normally. OpenAI reuses "stop" for both a natural end and a stop-sequence
+        /// hit, so a stop sequence does not look like truncation.
+        response.raw_finish_reason = choice->optValue<String>("finish_reason", "stop");
+        if (response.raw_finish_reason == "stop")
+            response.finish_reason = FinishReason::Complete;
+        else if (response.raw_finish_reason == "length")
+            response.finish_reason = FinishReason::Truncated;
+        else if (response.raw_finish_reason == "content_filter")
+            response.finish_reason = FinishReason::ContentFilter;
+        else if (response.raw_finish_reason == "tool_calls" || response.raw_finish_reason == "function_call")
+            response.finish_reason = FinishReason::RequiresAction;
+        else
+            response.finish_reason = FinishReason::Unknown;
+    }
 }
 
 void OpenAIProvider::embed(
