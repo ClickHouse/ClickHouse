@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from praktika import Secret
+from praktika import Secret, SecretMisconfigured
 from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
@@ -141,7 +141,7 @@ class ClickHouseBinary:
             strict=True,
         )
 
-        self.log_export_host, self.log_export_password = (
+        host, password = (
             Secret.Config(
                 name="clickhouse_ci_logs_host",
                 type=Secret.Type.AWS_SSM_PARAMETER,
@@ -159,13 +159,16 @@ class ClickHouseBinary:
 
         config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
             CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
-            CLICKHOUSE_CI_LOGS_HOST=self.log_export_host,
+            CLICKHOUSE_CI_LOGS_HOST=host,
             CLICKHOUSE_CI_LOGS_USER=CLICKHOUSE_CI_LOGS_USER,
-            CLICKHOUSE_CI_LOGS_PASSWORD=self.log_export_password,
+            CLICKHOUSE_CI_LOGS_PASSWORD=password,
         )
 
         with open(config_file, "w") as f:
             f.write(config_content)
+        # Assigned last: a set `log_export_host` means `start_log_exports` may
+        # export against the cluster, which requires the file to be on disk.
+        self.log_export_host, self.log_export_password = host, password
         return True
 
     def start_log_exports(self, check_start_time):
@@ -364,6 +367,9 @@ def main():
         if not info.is_local_run:
             try:
                 ch.create_log_export_config()
+            except SecretMisconfigured:
+                # Permanent, unlike the transient fetch failure tolerated below.
+                raise
             except Exception as e:
                 print(f"WARNING: Failed to configure log export: {e}")
                 info.add_workflow_warning(f"Failed to configure log export: {e}")

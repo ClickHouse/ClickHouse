@@ -6,6 +6,11 @@ from typing import List, Union
 from .utils import Shell
 
 
+class SecretMisconfigured(RuntimeError):
+    """A secret's value is absent or empty: the request reached the store and was
+    answered, so retrying or tolerating it would hide a real misconfiguration."""
+
+
 class Secret:
 
     class Type:
@@ -76,7 +81,9 @@ class Secret:
 
             for n in self.name:
                 if n not in names:
-                    raise RuntimeError(f"Failed to get value for parameter [{n}]")
+                    raise SecretMisconfigured(
+                        f"Failed to get value for parameter [{n}]"
+                    )
 
             # Sort to match requested order and validate values:
             name_value_pairs = list(zip(names, values))
@@ -84,7 +91,7 @@ class Secret:
 
             for name, value in name_value_pairs:
                 if not value:
-                    raise RuntimeError(f"Empty value for parameter [{name}]")
+                    raise SecretMisconfigured(f"Empty value for parameter [{name}]")
 
             values = [pair[1] for pair in name_value_pairs]
             return values

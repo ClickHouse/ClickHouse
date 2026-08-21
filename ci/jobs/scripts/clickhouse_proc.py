@@ -341,7 +341,7 @@ class ClickHouseProc:
         config_file = Path(config_dir) / "config.d" / "system_logs_export.yaml"
         config_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.log_export_host, self.log_export_password = (
+        host, password = (
             Secret.Config(
                 name="clickhouse_ci_logs_host",
                 type=Secret.Type.AWS_SSM_PARAMETER,
@@ -359,13 +359,16 @@ class ClickHouseProc:
 
         config_content = LOG_EXPORT_CONFIG_TEMPLATE.format(
             CLICKHOUSE_CI_LOGS_CLUSTER=CLICKHOUSE_CI_LOGS_CLUSTER,
-            CLICKHOUSE_CI_LOGS_HOST=self.log_export_host,
+            CLICKHOUSE_CI_LOGS_HOST=host,
             CLICKHOUSE_CI_LOGS_USER=CLICKHOUSE_CI_LOGS_USER,
-            CLICKHOUSE_CI_LOGS_PASSWORD=self.log_export_password,
+            CLICKHOUSE_CI_LOGS_PASSWORD=password,
         )
 
         with open(config_file, "w") as f:
             f.write(config_content)
+        # Assigned last: a set `log_export_host` means `start_log_exports` may
+        # export against the cluster, which requires the file to be on disk.
+        self.log_export_host, self.log_export_password = host, password
         return True
 
     def start_log_exports(self, check_start_time):

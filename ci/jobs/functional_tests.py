@@ -13,6 +13,7 @@ from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.praktika import SecretMisconfigured
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -883,6 +884,9 @@ def main():
                 print("prepare log export config")
                 try:
                     return CH.create_log_export_config()
+                except SecretMisconfigured:
+                    # Permanent, unlike the transient fetch failure tolerated below.
+                    raise
                 except Exception as e:
                     print(f"WARNING: Failed to configure log export: {e}")
                     info.add_workflow_warning(f"Failed to configure log export: {e}")
