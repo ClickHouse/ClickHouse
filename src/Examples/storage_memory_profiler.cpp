@@ -389,16 +389,7 @@ void StorageMemoryProfiler::cleanup()
 
     /// Clean up temporary directory
     if (temporary_directory_to_delete)
-    {
-        try
-        {
-            fs::remove_all(*temporary_directory_to_delete);
-        }
-        catch (...)
-        {
-            fmt::print(stderr, "Warning: Failed to remove temporary directory: {}\n", temporary_directory_to_delete->string());
-        }
-    }
+        fs::remove_all(*temporary_directory_to_delete);
 }
 
 
