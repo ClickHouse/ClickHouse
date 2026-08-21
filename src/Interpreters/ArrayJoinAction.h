@@ -66,9 +66,8 @@ public:
     bool hasNext() const;
 
 private:
-    /// Element-space filtered variant of next(): applies array_join->element_filter to the nested
-    /// element columns of one window and expands only the surviving elements.
-    Block nextWithElementFilter();
+    /// Nested element column (+ element type) of each joined column for the window [current_row, current_row + window_rows).
+    Block extractJoinedNested(const ColumnPtr & cut_any_col, const ColumnArray & cut_any_array, size_t window_rows) const;
 
     const ArrayJoinAction * array_join;
     Block block;
