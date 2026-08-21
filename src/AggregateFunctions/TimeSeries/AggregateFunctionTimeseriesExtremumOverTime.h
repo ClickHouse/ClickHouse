@@ -37,18 +37,6 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
         return is_max ? "timeSeriesMaxToGrid" : "timeSeriesMinToGrid";
     }
 
-    /// Returns whether `candidate` should replace `current` as the running extremum. Mirrors PromQL's
-    /// `if v > max || isnan(max) { max = v }` (and the symmetric rule for min): a NaN currently held as the
-    /// running extremum is unconditionally overwritten by the next sample (even another NaN), but once a real
-    /// number is the extremum, a later NaN is silently ignored.
-    static bool isBetter(ValueType candidate, ValueType current)
-    {
-        if constexpr (is_max)
-            return candidate > current || std::isnan(current);
-        else
-            return candidate < current || std::isnan(current);
-    }
-
     /// Per-bucket (and, once combined, per-window) running extremum: the value and the timestamp of whichever
     /// sample is currently the extremum.
     struct Summary
@@ -57,11 +45,25 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
         ValueType second = 0;      /// value of the running extremum
         bool has_value = false;
 
+        /// Total order over (value, timestamp): a real beats NaN, among NaNs the latest timestamp wins, among
+        /// IEEE-equal reals the earliest wins - matching a time-ordered PromQL scan and keeping add/merge commutative.
+        bool shouldReplace(TimestampType timestamp, ValueType value) const
+        {
+            if (!has_value)
+                return true;
+            if (std::isnan(static_cast<double>(second)))
+                return !std::isnan(static_cast<double>(value)) || timestamp > first;
+            if (std::isnan(static_cast<double>(value)))
+                return false;
+            if constexpr (is_max)
+                return value > second || (value == second && timestamp < first);
+            else
+                return value < second || (value == second && timestamp < first);
+        }
+
         void add(TimestampType timestamp, ValueType value)
         {
-            /// An IEEE-equal value (e.g. -0.0 vs +0.0) keeps the earliest sample, like PromQL's
-            /// time-ordered `if v > max` scan; this makes add/merge order-independent bit-for-bit.
-            if (!has_value || isBetter(value, second) || (value == second && timestamp < first))
+            if (shouldReplace(timestamp, value))
             {
                 first = timestamp;
                 second = value;
@@ -75,15 +77,11 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
                 add(timestamps[i], values[i]);
         }
 
-        /// Commutative and associative: strictly better value wins, an IEEE-equal value resolves to the
-        /// earliest timestamp (see add), so the Two-Stacks strategy, which combines out of arrival
-        /// order, returns bit-for-bit what a time-ordered fold returns (an all-NaN run may keep a
-        /// different NaN, whose returned value is NaN either way).
+        /// Commutative and associative (shouldReplace is a total order), so Two-Stacks' out-of-order combining
+        /// returns bit-for-bit what a time-ordered fold returns, including the surviving NaN payload.
         void merge(const Summary & other)
         {
-            if (!other.has_value)
-                return;
-            if (!has_value || isBetter(other.second, second) || (other.second == second && other.first < first))
+            if (other.has_value && shouldReplace(other.first, other.second))
             {
                 first = other.first;
                 second = other.second;

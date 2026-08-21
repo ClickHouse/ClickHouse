@@ -44,3 +44,8 @@ signed-zero ties keep the earliest sample (1/max: -inf, -inf, -inf, inf):
 -inf
 -inf
 inf
+all-NaN windows keep the latest payload (FFF800000000000A x4):
+FFF800000000000A
+FFF800000000000A
+FFF800000000000A
+FFF800000000000A

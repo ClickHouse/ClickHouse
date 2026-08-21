@@ -125,3 +125,17 @@ CREATE TABLE ts_zero2 (timestamp DateTime, value Float64) ENGINE = MergeTree ORD
 INSERT INTO ts_zero2 VALUES (100, 0.), (101, -0.);
 SELECT 1 / (timeSeriesMaxToGrid(101, 121, 1, 50)(timestamp, value))[1] FROM ts_zero2;
 DROP TABLE ts_zero2;
+
+-- An all-NaN window must keep the latest sample's NaN payload on every path, observable via
+-- reinterpretAsUInt64 (recompute, two-stacks, split -State merges, and min alike).
+SELECT 'all-NaN windows keep the latest payload (FFF800000000000A x4):';
+DROP TABLE IF EXISTS ts_nan;
+CREATE TABLE ts_nan (timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY timestamp;
+INSERT INTO ts_nan VALUES (100, reinterpret(0x7FF8000000000001, 'Float64')), (101, reinterpret(0xFFF800000000000A, 'Float64'));
+SELECT hex(reinterpretAsUInt64((timeSeriesMaxToGrid(101, 101, 1, 5)(timestamp, value))[1])) FROM ts_nan;
+SELECT hex(reinterpretAsUInt64((timeSeriesMaxToGrid(101, 121, 1, 50)(timestamp, value))[1])) FROM ts_nan;
+SELECT hex(reinterpretAsUInt64((timeSeriesMaxToGridMerge(101, 121, 1, 50)(s))[1]))
+  FROM (SELECT timeSeriesMaxToGridState(101, 121, 1, 50)(timestamp, value) AS s
+        FROM ts_nan GROUP BY toUnixTimestamp(timestamp) % 2);
+SELECT hex(reinterpretAsUInt64((timeSeriesMinToGrid(101, 121, 1, 50)(timestamp, value))[1])) FROM ts_nan;
+DROP TABLE ts_nan;
