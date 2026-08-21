@@ -108,6 +108,9 @@
     M(IcebergMetadataFilesCacheMisses, "Number of times iceberg metadata files have not been found in the iceberg metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(IcebergMetadataFilesCacheStaleMisses, "Number of times iceberg metadata files have been found in the cache, but were considered stale and had to be read from (remote) disk.", ValueType::Number) \
     M(IcebergMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the iceberg metadata cache.", ValueType::Number) \
+    M(IcebergObjectMetadataCacheHits, "Number of Iceberg data/delete file metadata cache hits.", ValueType::Number) \
+    M(IcebergObjectMetadataCacheMisses, "Number of Iceberg data/delete file metadata cache misses.", ValueType::Number) \
+    M(IcebergObjectMetadataCacheWeightLost, "Approximate bytes evicted from the Iceberg object metadata cache.", ValueType::Number) \
     M(PaimonMetadataFilesCacheHits, "Number of times paimon metadata files have been found in the cache.", ValueType::Number) \
     M(PaimonMetadataFilesCacheMisses, "Number of times paimon metadata files have not been found in the paimon metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(PaimonMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the paimon metadata cache.", ValueType::Number) \
