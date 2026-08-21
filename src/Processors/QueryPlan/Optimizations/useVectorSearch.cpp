@@ -415,6 +415,14 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
+        /// The name of the search column extracted from the `ORDER BY` clause is sometimes the plain column name
+        /// (the qualifier is stripped when the distance function reads an `INPUT` node directly), while the nodes of
+        /// the DAGs checked below keep the qualified name, e.g. `__table1.vec`. Match both forms.
+        auto is_search_column = [&search_column](const String & name)
+        {
+            return name == search_column || (name.contains('.') && name.ends_with("." + search_column));
+        };
+
         /// Remove the distance-sort output from a copy of the projection DAG before checking
         /// inputs. Apart from the distance expression itself, every remaining dependency must
         /// be satisfiable from the reader header after the rewrite. In particular, a projection
@@ -426,7 +434,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
         for (const auto * input : pruned_projection_expression.getInputs())
         {
-            if (input->result_name == search_column)
+            if (is_search_column(input->result_name))
             {
                 optimize_plan = false;
                 break;
@@ -459,7 +467,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
                 for (const auto * input : pruned_row_level_filter.getInputs())
                 {
-                    if (input->result_name == search_column)
+                    if (is_search_column(input->result_name))
                     {
                         optimize_plan = false;
                         break;
@@ -500,7 +508,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
             for (const auto * input : pruned_filter_expression->getInputs())
             {
-                if (input->result_name == search_column)
+                if (is_search_column(input->result_name))
                 {
                     optimize_plan = false;
                     break;

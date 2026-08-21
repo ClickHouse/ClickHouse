@@ -4,3 +4,7 @@ no vector projection, no rescoring: the vector column is replaced (control)
 1
 SELECT on the vector column, no rescoring: the vector column is kept
 1
+plain SELECT of the vector column, no rescoring: correct result
+0	[0,1]
+plain SELECT of the vector column, no rescoring: the vector column is kept
+1

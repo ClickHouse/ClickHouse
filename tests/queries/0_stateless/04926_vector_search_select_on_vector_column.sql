@@ -36,4 +36,18 @@ SELECT count() = 0 FROM (
         SETTINGS vector_search_with_rescoring = 0)
 WHERE explain LIKE '%_distance%';
 
+-- The plain `SELECT vec` form produces a different projection DAG: the distance function reads the
+-- `INPUT` node directly, so the search column name extracted from `ORDER BY` loses its table
+-- qualifier while the DAG nodes keep it (`__table1.vec`). Both forms must be recognized.
+SELECT 'plain SELECT of the vector column, no rescoring: correct result';
+SELECT id, vec FROM t_04926 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
+    SETTINGS vector_search_with_rescoring = 0;
+
+SELECT 'plain SELECT of the vector column, no rescoring: the vector column is kept';
+SELECT count() = 0 FROM (
+    EXPLAIN actions = 1
+    SELECT id, vec FROM t_04926 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
+        SETTINGS vector_search_with_rescoring = 0)
+WHERE explain LIKE '%_distance%';
+
 DROP TABLE t_04926;
