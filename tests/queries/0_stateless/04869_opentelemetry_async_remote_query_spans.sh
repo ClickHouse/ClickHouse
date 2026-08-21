@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Trace context propagation for a distributed SELECT must not depend on
 # async_query_sending_for_remote. The query to the remote node is sent from inside the
-# RemoteQueryExecutorReadContext fiber, which starts with an empty fiber-local tracing
+# RemoteQueryExecutorReadContext fiber (span `RemoteQueryExecutor::execute`), which starts with an empty fiber-local tracing
 # context; it used to lose the trace there: no CLIENT span was created and
 # client_trace_context was not overridden, so the remote SERVER spans did not parent
 # under the initiator. Now AsyncTaskExecutor seeds the fiber with the tracing context
@@ -45,7 +45,7 @@ function trace_counts_query
             -- CLIENT span for sending the remote query
             countIf(operation_name = 'Connection::sendQuery()' and kind = 'CLIENT'),
             -- span covering the fiber task execution
-            countIf(operation_name = 'RemoteQueryExecutorReadContext'),
+            countIf(operation_name = 'RemoteQueryExecutor::execute'),
             -- remote SERVER handler parented under the CLIENT span
             (select count()
                 from system.opentelemetry_span_log server_span,
@@ -78,7 +78,7 @@ for async_send in 0 1; do
         select
             if(countIf(operation_name = 'Connection::sendQuery()' and kind = 'CLIENT') >= 1,
                'sendQuery CLIENT span: OK', 'sendQuery CLIENT span: FAIL'),
-            if(countIf(operation_name = 'RemoteQueryExecutorReadContext' and parent_span_id != 0) >= 1,
+            if(countIf(operation_name = 'RemoteQueryExecutor::execute' and parent_span_id != 0) >= 1,
                'task span: OK', 'task span: FAIL')
         from system.opentelemetry_span_log
         where finish_date >= yesterday() and trace_id = t
@@ -165,7 +165,7 @@ ${CLICKHOUSE_CLIENT} \
 # Wait until the remote leg is in flight before killing: the non-initial entry appears in
 # system.processes (127.0.0.2 loops back to this same server) only after
 # Connection::sendQuery succeeded, and with async_query_sending_for_remote=1 sendQuery
-# runs inside the RemoteQueryExecutorReadContext fiber, so its presence proves the fiber
+# runs inside the RemoteQueryExecutorReadContext fiber (span `RemoteQueryExecutor::execute`), so its presence proves the fiber
 # is created and suspended. Waiting only for the initiator query would race with query
 # startup: a kill landing before the first resume finds no fiber to unwind and no task
 # span is ever emitted.
@@ -179,7 +179,7 @@ wait
 
 poll_spans "
     with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
-    select countIf(operation_name = 'RemoteQueryExecutorReadContext')
+    select countIf(operation_name = 'RemoteQueryExecutor::execute')
     from system.opentelemetry_span_log
     where finish_date >= yesterday() and trace_id = t" "1" \
 || exit 1
