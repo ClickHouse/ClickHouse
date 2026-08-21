@@ -599,6 +599,22 @@ TEST_F(DiskEncryptedTest, ConfigurationRejectsPathEscapingDelegateRoot)
     EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
 }
 
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSymlinkEscapingDelegateRoot)
+{
+    const fs::path delegate_root = fs::path(getDirectory()) / "delegate";
+    const fs::path outside_root = fs::path(getDirectory()) / "outside";
+    fs::create_directories(delegate_root);
+    fs::create_directories(outside_root);
+    fs::create_directory_symlink(outside_root, delegate_root / "link");
+
+    auto delegate_disk = std::make_shared<DiskLocal>("delegate_disk", delegate_root);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "delegate_disk", "link/encrypted/");
+
+    DisksMap disks{{"delegate_disk", delegate_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
 TEST_F(DiskEncryptedTest, ConfigurationAllowsDifferentPathsOrDelegates)
 {
     auto other_local_disk = std::make_shared<DiskLocal>("other_local_disk", getDirectory() + "other/");
@@ -656,6 +672,22 @@ TEST_F(DiskEncryptedTest, StoragePolicyRejectsLocalDiskAliases)
     Volumes volumes{
         std::make_shared<SingleDiskVolume>("volume1", local_disk),
         std::make_shared<SingleDiskVolume>("volume2", local_disk_alias),
+    };
+    EXPECT_THROW(StoragePolicy("policy", std::move(volumes), 0.1), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, StoragePolicyRejectsLocalDiskSymlinkAliases)
+{
+    const fs::path real_path = fs::path(getDirectory()) / "real";
+    const fs::path alias_path = fs::path(getDirectory()) / "alias";
+    fs::create_directories(real_path);
+    fs::create_directory_symlink(real_path, alias_path);
+
+    auto real_disk = std::make_shared<DiskLocal>("real_disk", real_path);
+    auto alias_disk = std::make_shared<DiskLocal>("alias_disk", alias_path);
+    Volumes volumes{
+        std::make_shared<SingleDiskVolume>("volume1", real_disk),
+        std::make_shared<SingleDiskVolume>("volume2", alias_disk),
     };
     EXPECT_THROW(StoragePolicy("policy", std::move(volumes), 0.1), DB::Exception);
 }

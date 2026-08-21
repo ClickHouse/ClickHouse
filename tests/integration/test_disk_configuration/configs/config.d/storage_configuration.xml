@@ -11,6 +11,27 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </s3>
+            <s3_plain_bucket_root>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/data/disks/shared_plain/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <readonly>true</readonly>
+            </s3_plain_bucket_root>
+            <s3_plain_bucket_root2>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root2/data/disks/shared_plain/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <readonly>true</readonly>
+            </s3_plain_bucket_root2>
+            <s3_plain_bucket_root_alias>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/data/disks/shared_plain/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <readonly>true</readonly>
+            </s3_plain_bucket_root_alias>
         </disks>
         <policies>
             <local>
@@ -37,6 +58,16 @@
                     </s3>
                 </volumes>
             </hybrid>
+            <object_storage_different_buckets>
+                <volumes>
+                    <root>
+                        <disk>s3_plain_bucket_root</disk>
+                    </root>
+                    <root2>
+                        <disk>s3_plain_bucket_root2</disk>
+                    </root2>
+                </volumes>
+            </object_storage_different_buckets>
 
         </policies>
     </storage_configuration>

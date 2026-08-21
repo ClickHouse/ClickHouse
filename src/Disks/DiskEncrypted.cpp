@@ -224,11 +224,17 @@ namespace
                 "Disk path must be relative to the wrapped disk, but '{}' is absolute.",
                 quoteString(out_path));
 
-        /// `DiskLocal` resolves the wrapped path on the filesystem, so traversal (`..`), current-directory (`.`)
-        /// and repeated-separator components are collapsed when files are accessed. Normalize the effective path
-        /// before checking that it stays under the delegate's root.
-        const fs::path delegate_root = fs::path(out_disk->getPath()).lexically_normal();
-        const fs::path effective_path = fs::path(out_disk->getPath() + out_path).lexically_normal();
+        /// Normalize the effective path before checking that it stays under the delegate's root. For local disks,
+        /// canonicalize the paths to resolve existing symlink components too. `weakly_canonical` also works when
+        /// the encrypted disk's trailing directories do not exist yet.
+        fs::path delegate_root = fs::path(out_disk->getPath()).lexically_normal();
+        fs::path effective_path = fs::path(out_disk->getPath() + out_path).lexically_normal();
+        if (out_disk->getDataSourceDescription().type == DataSourceType::Local)
+        {
+            delegate_root = fs::weakly_canonical(delegate_root);
+            effective_path = fs::weakly_canonical(effective_path);
+        }
+
         if (const auto relative_to_root = effective_path.lexically_relative(delegate_root);
             relative_to_root.empty() || *relative_to_root.begin() == "..")
             throw Exception(
