@@ -1240,10 +1240,12 @@ def _validate_settings_routing(
                 f"{index} in {source}: {target!r} is outside {base_route!r}"
             )
         target_parts = target[len(target_prefix):].split("/")
-        if any(
-            not part or not re.fullmatch(r"[A-Za-z0-9_.-]+", part)
-            for part in target_parts
-        ):
+        if len(target_parts) != 1:
+            raise ValueError(
+                f"invalid {family_name} settings route target at index "
+                f"{index} in {source}: {target!r} must identify one flat shard"
+            )
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", target_parts[0]):
             raise ValueError(
                 f"invalid {family_name} settings route target at index "
                 f"{index} in {source}: {target!r}"

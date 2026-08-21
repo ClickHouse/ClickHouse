@@ -437,6 +437,14 @@ def main():
             "is outside",
         )
 
+        invalid_route = dict(valid_routes[0])
+        invalid_route["target"] = base_route + "/stable/nested"
+        expect_invalid_routing(
+            [invalid_route, valid_routes[1]],
+            valid_anchor_routes,
+            "must identify one flat shard",
+        )
+
         duplicate_prefix = dict(valid_routes[1])
         duplicate_prefix["prefix"] = "stable"
         expect_invalid_routing(
