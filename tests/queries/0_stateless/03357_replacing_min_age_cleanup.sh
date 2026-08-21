@@ -135,6 +135,24 @@ INSERT INTO t03357_replacing_replicated2 VALUES (1, 1, 2, 1);
 
 wait_for_number_of_parts 't03357_replacing_replicated2' 0 30
 
+# min_partition_age_to_force_merge_seconds makes the regular selector pick up stale partitions, which
+# would pre-empt the whole-partition merge the tables above rely on: only that merge is marked final,
+# and only a final merge runs CLEANUP. The combination is refused rather than silently losing cleanup.
+$CLICKHOUSE_CLIENT -mq "
+CREATE TABLE replacing3 (key int, value int, version int, deleted UInt8) ENGINE = ReplacingMergeTree(version, deleted) ORDER BY key
+SETTINGS min_age_to_force_merge_on_partition_only = true,
+    min_age_to_force_merge_seconds = 1,
+    min_partition_age_to_force_merge_seconds = 1; -- { serverError BAD_ARGUMENTS }
+
+-- Same combination reached by ALTER on a table that already merges whole partitions.
+ALTER TABLE replacing2 MODIFY SETTING min_partition_age_to_force_merge_seconds = 1; -- { serverError BAD_ARGUMENTS }
+
+-- Either mechanism on its own is fine.
+ALTER TABLE replacing2 MODIFY SETTING min_age_to_force_merge_on_partition_only = false;
+ALTER TABLE replacing2 MODIFY SETTING min_partition_age_to_force_merge_seconds = 1;
+SELECT 'combination rejected, each setting accepted on its own';
+"
+
 $CLICKHOUSE_CLIENT -mq "
 DROP TABLE replacing;
 DROP TABLE replacing2;
