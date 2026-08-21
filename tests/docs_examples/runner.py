@@ -302,8 +302,14 @@ def load_examples(client):
 
 
 def normalize(text):
-    """Keep response bytes intact, including `TSV` separators and empty rows."""
-    return text
+    """Compare responses the way the documentation renders them.
+
+    `FunctionDocumentation::examplesAsString` trims the documented response before wrapping it into
+    its fenced block, so leading and trailing whitespace of a response is not observable here, while
+    the response of the server always ends with a line terminator. Everything between the ends is
+    kept intact, including `TSV` separators and empty rows.
+    """
+    return text.strip()
 
 
 # The scratch databases and sessions carry a name unique to this run, so that concurrent

@@ -28,7 +28,11 @@ def test_global_object_detection_ignores_other_functions():
 
 def test_normalize_preserves_tsv_empty_fields_and_blank_rows():
     assert runner.normalize("a\t\nb") != runner.normalize("a\nb")
-    assert runner.normalize("\n") != runner.normalize("")
+    assert runner.normalize("a\n\nb") != runner.normalize("a\nb")
+
+
+def test_normalize_ignores_the_trailing_line_terminator():
+    assert runner.normalize("a\n") == runner.normalize("a")
 
 
 def test_client_does_not_retry_a_request_after_a_transport_error(monkeypatch):
