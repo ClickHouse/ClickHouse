@@ -1,0 +1,38 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+    </logger>
+
+    <remote_servers>
+        <!-- Deliberately asymmetric: shard 1 has 2 replicas, shard 2 has 3. The mark-segment-size heuristic
+             must size each shard by its own replica set, so the two shards must not have the same count. -->
+        <test_asymmetric_shards>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n4</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n5</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_asymmetric_shards>
+    </remote_servers>
+</clickhouse>

@@ -98,10 +98,14 @@ static void setClusterForParallelReplicas(const ContextMutablePtr & context, con
             previous_cluster_name,
             cluster_name);
 
-    /// This count belongs to the parallel-replica dispatch that selected the previous cluster. A nested
-    /// Distributed read can retarget the setting to another cluster, whose coordinator must select its own count.
-    if (previous_cluster_name != cluster_name)
-        context->getClientInfo().obsolete_count_participating_replicas = 0;
+    /// Any count present here was selected by an outer parallel-replica dispatch, not by the one this
+    /// `Distributed` read is about to start: every replica set reached through this step gets its own
+    /// coordinator from `executeQueryWithParallelReplicas`, which owns and re-sends the count. Clear it
+    /// unconditionally. Keying the reset on the cluster name alone would not be enough, because
+    /// `prepareClusterForParallelReplicas` scopes the coordinator by the per-query `_shard_num` scalar as well:
+    /// a fan-out over the same cluster name but a different shard is a different replica set, and must not
+    /// inherit the previous shard's count.
+    context->getClientInfo().obsolete_count_participating_replicas = 0;
 
     LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
     context->setSetting("cluster_for_parallel_replicas", cluster_name);

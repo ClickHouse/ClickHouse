@@ -762,21 +762,27 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     return context_mutable;
 }
 
+/// The shard the parallel-replicas scope is narrowed to, taken from the `_shard_num` scalar propagated by the
+/// query initiator. `shard_num` is 1-based, so 0 means that no shard is specified.
+static UInt64 getParallelReplicasShardNum(const ContextPtr & context)
+{
+    auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+
+    const auto it = scalars.find("_shard_num");
+    if (it == scalars.end())
+        return 0;
+
+    const Block & block = it->second;
+    const auto & column = block.safeGetByPosition(0).column;
+    return column->getUInt(0);
+}
+
 static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
 {
     /// check cluster for parallel replicas
     auto not_optimized_cluster = context->getClusterForParallelReplicas();
 
-    auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
-
-    UInt64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
-    const auto it = scalars.find("_shard_num");
-    if (it != scalars.end())
-    {
-        const Block & block = it->second;
-        const auto & column = block.safeGetByPosition(0).column;
-        shard_num = column->getUInt(0);
-    }
+    const UInt64 shard_num = getParallelReplicasShardNum(context);
 
     ClusterPtr new_cluster = not_optimized_cluster;
     /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
@@ -932,17 +938,25 @@ size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, con
     if (const auto coordinator_replicas_count = context->getClientInfo().obsolete_count_participating_replicas)
         return coordinator_replicas_count;
 
-    const size_t all_nodes_count = cluster->getShardsInfo().at(0).getAllNodeCount();
+    /// Narrow the cluster to the shard the coordinator is scoped to, exactly like
+    /// `prepareClusterForParallelReplicas` does: with a multi-shard cluster, shard 0 is not necessarily the
+    /// shard this query reads, and its replica set (and liveness) can differ.
+    ClusterPtr shard_cluster = cluster;
+    if (const UInt64 shard_num = getParallelReplicasShardNum(context);
+        shard_num > 0 && shard_num <= cluster->getShardCount() && cluster->getShardCount() > 1)
+        shard_cluster = cluster->getClusterWithSingleShard(shard_num - 1);
+
+    const size_t all_nodes_count = shard_cluster->getShardsInfo().at(0).getAllNodeCount();
 
     /// Mirror `prepareConnectionPoolsForParallelReplicas` so the mark-segment-size heuristic sizes by the same
     /// replica count the reading coordinator does: validate liveness against the cluster definition, force the
     /// local (initiator) replica active, then cap by `max_parallel_replicas`. The two test-only failpoints
     /// there perturb liveness to exercise the coordinator and are intentionally not applied here.
-    std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, cluster);
+    std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, shard_cluster);
     if (!is_active.empty() && is_active.size() != all_nodes_count)
         is_active.clear();
     if (!is_active.empty())
-        if (auto local_replica_index = findLocalReplicaIndexForLiveness(cluster, is_active.size()))
+        if (auto local_replica_index = findLocalReplicaIndexForLiveness(shard_cluster, is_active.size()))
             is_active[*local_replica_index] = true;
 
     return countAndCapReplicas(is_active, all_nodes_count, context->getSettingsRef(), /*logger=*/ nullptr).second;
