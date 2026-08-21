@@ -83,6 +83,29 @@ String formatNameForLogs(const String & postgres_database_name, const String & p
     return postgres_database_name + '.' + postgres_table_name;
 }
 
+bool isTransientConnectionError(std::string_view message)
+{
+    /// libpq frames connect failures as `connection to server at "host", port N failed: <reason>`,
+    /// where `<reason>` for a transport failure is the OS `strerror`.
+    static constexpr std::string_view transient_markers[] = {
+        "Connection refused",
+        "Connection timed out",
+        "timeout expired",
+        "No route to host",
+        "Network is unreachable",
+        "Connection reset by peer",
+        "could not connect to server",
+        /// `EAI_AGAIN` only: the resolver was unreachable. `EAI_NONAME` (`Name or service not known`)
+        /// means the host does not exist, which is a permanent misconfiguration.
+        "Temporary failure in name resolution",
+    };
+
+    for (const auto marker : transient_markers)
+        if (message.contains(marker))
+            return true;
+    return false;
+}
+
 }
 
 #endif
