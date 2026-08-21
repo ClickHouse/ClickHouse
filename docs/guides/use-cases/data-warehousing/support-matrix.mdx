@@ -142,7 +142,7 @@ From version 25.6, ClickHouse reads Delta Lake tables using the Delta Lake Rust 
 | Local filesystem | ❌ | ⚠️ | Experimental. Via [`paimonLocal()`](/reference/functions/table-functions/paimon) |
 | **Access methods** | | | |
 | Table function | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. [`paimon()`](/reference/functions/table-functions/paimon) with variants per backend |
-| Table engine | ❌ | ❌ | No dedicated table engine |
+| Table engine | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. [`Paimon`](/reference/engines/table-engines/integrations/paimon) with variants per backend. Requires `allow_experimental_paimon_storage_engine = 1`. |
 | Cluster-distributed reads | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. [`paimonS3Cluster`](/reference/functions/table-functions/paimonCluster), [`paimonAzureCluster`](/reference/functions/table-functions/paimonCluster), [`paimonHDFSCluster`](/reference/functions/table-functions/paimonCluster) |
 | Named collections | <Tooltip tip="Contact Support for availability">⚠️</Tooltip> | ⚠️ | Experimental. DDL-created [named collections](/concepts/features/configuration/server-config/named-collections) can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. |
 | **Read features** | | | |
