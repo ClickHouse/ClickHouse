@@ -399,12 +399,10 @@ public:
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
     /// Update state of hash function with values in range [begin, end).
-    /// Used for deduplication, so the passed bytes must identify the logical values in the range
-    /// unambiguously: two ranges holding different data must not hash alike, or an insert is
-    /// silently dropped. The converse is a weaker requirement, and the hash may still differ for
-    /// logically equivalent data stored differently in memory (e.g. different dynamic/shared path
-    /// layout in ColumnObject, or different variant layout in ColumnDynamic), which only costs a
-    /// missed deduplication.
+    /// Used for deduplication: the hash must be the same for the same INSERT data producing
+    /// the same in-memory representation. It does NOT guarantee the same hash for logically
+    /// equivalent data stored differently in memory (e.g. different dynamic/shared path layout
+    /// in ColumnObject, or different variant layout in ColumnDynamic).
     /// Default implementation calls updateHashWithValue for each element.
     virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
 

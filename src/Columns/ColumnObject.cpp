@@ -1275,13 +1275,12 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
 
 void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
+    /// Typed paths are always in the same order for all instances of the same Object type,
+    /// so there is no need to hash the paths themselves.
     for (const auto & path : sorted_typed_paths)
         typed_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
 
-    /// The path name must be hashed next to its values. Hashing the values alone made the hash
-    /// blind to which path they belong to, so `{"a":1}` and `{"b":1}` collided and insert
-    /// deduplication silently dropped one of them. The length keeps the name from running into
-    /// the values that follow it.
+    /// Dynamic paths may differ, so we hash the paths together with values.
     for (const auto & path : sorted_dynamic_paths)
     {
         hash.update(path.size());
