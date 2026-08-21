@@ -240,34 +240,9 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
     }
 }
 
-bool whereOnlyReferencesTable(const QueryTreeNodePtr & where, const QueryTreeNodePtr & table)
-{
-    std::vector<QueryTreeNodePtr> stack = {where};
-    while (!stack.empty())
-    {
-        auto current = std::move(stack.back());
-        stack.pop_back();
-
-        if (const auto * column = current->as<ColumnNode>())
-        {
-            auto source = column->getColumnSourceOrNull();
-            if (!source || source.get() != table.get())
-                return false;
-        }
-
-        for (const auto & child : current->getChildren())
-        {
-            if (child)
-                stack.push_back(child);
-        }
-    }
-    return true;
-}
-
-/// `IStorageCluster` JOINs wrap the left table in a subquery planned with an empty
-/// `FiltersForTableExpressionMap`, so initiator file listing would miss left-only WHERE.
-/// Attach dummy-analysis filters to the wrap source for listing only; do not add a
-/// FilterStep, which would drop unused columns from the wrap header.
+/// `IStorageCluster` JOINs wrap the left table in a subquery. Attach dummy-analysis
+/// filters to the wrap source for listing only; do not add a FilterStep, which would
+/// drop unused columns from the wrap header.
 void tryAddClusterWrapFilter(QueryPlan & query_plan, const TableExpressionData & table_expression_data)
 {
     const auto & filter_actions = table_expression_data.getFilterActions();
@@ -1566,13 +1541,29 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         auto columns = table_expression_data.getColumns();
         table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, original_table_expression, query_context);
 
-        /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy a left-only
-        /// WHERE onto that subquery so initiator file listing sees the same predicate as a
-        /// single-table `icebergCluster` read (which already prunes).
+        /// Wrap is planned as `SELECT cols FROM icebergCluster` with no JOIN. Copy left-only
+        /// WHERE/PREWHERE so initiator file listing sees the same predicate as a single-table
+        /// `icebergCluster` read. Same helper as `IStorageCluster::updateQueryWithJoinToSendIfNeeded`.
         if (const auto * parent_query = select_query_info.query_tree->as<QueryNode>())
         {
-            if (parent_query->hasWhere() && whereOnlyReferencesTable(parent_query->getWhere(), original_table_expression))
-                table_expression->as<QueryNode &>().getWhere() = parent_query->getWhere()->clone();
+            auto copy_left_only = [&](const QueryTreeNodePtr & predicate) -> QueryTreeNodePtr
+            {
+                auto cloned = predicate->clone();
+                removeExpressionsThatDoNotDependOnTableIdentifiers(cloned, original_table_expression, query_context);
+                return cloned;
+            };
+
+            auto & wrap_query = table_expression->as<QueryNode &>();
+            if (parent_query->hasWhere())
+            {
+                if (auto pred = copy_left_only(parent_query->getWhere()))
+                    wrap_query.getWhere() = std::move(pred);
+            }
+            if (parent_query->hasPrewhere())
+            {
+                if (auto pred = copy_left_only(parent_query->getPrewhere()))
+                    wrap_query.getPrewhere() = std::move(pred);
+            }
         }
     }
 
