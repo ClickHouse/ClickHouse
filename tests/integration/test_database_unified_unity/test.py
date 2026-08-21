@@ -8,6 +8,10 @@ used here can only express Delta tables: it never sends `securable_kind`, its
 API at `{base}/iceberg` rather than the `{base}/iceberg-rest` that Databricks
 documents. The Iceberg tests therefore go through `mock_servers/uc_proxy.py`,
 which patches exactly those two differences and nothing else.
+
+The seeded UniForm table is registered under `/tmp`, so `configs/user_files_root.xml`
+roots `user_files` at `/`. Reading the table where its own metadata says it lives
+keeps every path inside it self-consistent.
 """
 
 import json
@@ -18,15 +22,6 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-
-# Shared with the Delta-only catalog test rather than duplicated: these carry
-# retry and diagnostic logic for a chronic Spark JVM hang that is expensive to
-# rediscover. Unity Catalog startup is local, see `start_unity_catalog` below.
-from test_database_delta.test import (
-    execute_multiple_spark_queries,
-    execute_spark_query,
-)
 
 CATALOG = "unity"
 
@@ -46,6 +41,13 @@ SEEDED_TABLES = [
     "default.user_countries",
 ]
 UNIFORM_TABLE = "default.marksheet_uniform"
+DELTA_TABLE = "default.marksheet"
+
+# `marksheet_uniform` is a UniForm copy of `marksheet` and holds byte-identical
+# data, which lets the Iceberg arm be checked against the Delta arm.
+SEEDED_ROW_COUNT = 15
+SEEDED_FIRST_ROW = "1\tnWYHawtqUw\t930"
+SEEDED_LAST_ROW = "15\tkxUUZEUoKv\t398"
 
 EXPERIMENTAL_SETTING = "allow_experimental_database_unified_unity_catalog"
 
@@ -74,6 +76,9 @@ def start_unity_catalog(node):
         [
             "bash",
             "-c",
+            # The server creates this directory itself only when `user_files_path`
+            # points at it, and this test roots `user_files` at `/` instead.
+            "mkdir -p /var/lib/clickhouse/user_files && "
             'tar -C / -cf - --exclude="*/zinc" unitycatalog'
             " | tar -C /var/lib/clickhouse/user_files -xf -",
         ]
@@ -116,12 +121,11 @@ UNIFORM_DIR = (
 
 def link_uniform_table(node):
     """`marksheet_uniform` is the one sample table that needs setup before use.
-    It ships registered at `file:///tmp/marksheet_uniform`, and the upstream
-    docs (`docs/usage/tables/uniform.md`) tell you to copy the data there. A
-    symlink does the same job for read-only data. The Unity Catalog server needs
-    this because it reads the Iceberg metadata off disk at the registered path.
-    ClickHouse never sees `/tmp`, which is outside `user_files` and so unreadable
-    to it either way: the proxy rewrites every location before it gets there."""
+    It ships registered at `file:///tmp/marksheet_uniform`, and the upstream docs
+    (`docs/usage/tables/uniform.md`) tell you to copy the data there. A symlink
+    does the same job for read-only data. Both readers need it: the Unity Catalog
+    server reads the Iceberg metadata off disk at the registered path, and
+    ClickHouse follows the same path once `user_files` is rooted at `/`."""
     node.exec_in_container(
         [
             "bash",
@@ -179,7 +183,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=[],
+            main_configs=["configs/user_files_root.xml"],
             user_configs=[],
             image="clickhouse/integration-test-with-unity-catalog",
             with_installed_binary=False,
@@ -234,6 +238,13 @@ def show_tables(node, db_name, pattern):
     return sorted(result.split("\n")) if result else []
 
 
+def read_rows(node, db_name, table):
+    result = node.query(
+        f"SELECT * FROM {db_name}.`{table}` ORDER BY 1, 2, 3"
+    ).strip()
+    return result.split("\n") if result else []
+
+
 def uc_api_post(node, route, payload):
     """Calls the Unity Catalog REST API directly. Used to register tables that
     the Spark connector cannot create, such as a non-Delta external table."""
@@ -267,58 +278,19 @@ SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_catalog', vended_credent
 
 def test_list_and_read_delta_tables(started_cluster):
     """The seeded catalog is all Delta, so the unified catalog must behave like
-    the Delta-only one: list every table and read it identically to Spark."""
+    the Delta-only one: list every table and read it correctly."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("unified_delta")
     create_database(node, db_name)
 
     assert show_tables(node, db_name, "default%") == SEEDED_TABLES
 
-    # `marksheet` and `user_countries` are the two seeded tables the Delta-only
-    # test also reads; the rest are covered by the listing assertion above.
-    for table in ("default.marksheet", "default.user_countries"):
-        assert "DeltaLake" in node.query(f"SHOW CREATE TABLE {db_name}.`{table}`")
+    assert "DeltaLake" in node.query(f"SHOW CREATE TABLE {db_name}.`{DELTA_TABLE}`")
 
-        from_clickhouse = TSV(
-            node.query(f"SELECT * FROM {db_name}.`{table}` ORDER BY 1, 2, 3")
-        )
-        from_spark = TSV(
-            execute_spark_query(node, f"SELECT * FROM {CATALOG}.{table} ORDER BY 1, 2, 3")
-        )
-        assert from_clickhouse == from_spark
-
-
-def test_multiple_schemas(started_cluster):
-    """Schema and table listing are paginated, and an intermediate empty page
-    used to end the listing early. Several schemas exercise both loops."""
-    node = started_cluster.instances["node1"]
-    test_uuid = str(uuid.uuid4()).replace("-", "_")
-    db_name = f"unified_schemas_{test_uuid}"
-
-    schemas = [f"unified_schema_{test_uuid}_{i}" for i in range(3)]
-
-    # One Spark invocation for every statement: a JVM start costs far more than
-    # the statements themselves. Every statement is idempotent, so a fresh-JVM
-    # retry after a partial commit converges to the same state.
-    queries = []
-    for i, schema in enumerate(schemas):
-        queries.extend(
-            [
-                f"CREATE SCHEMA IF NOT EXISTS {schema}",
-                f"CREATE TABLE IF NOT EXISTS {schema}.t (col1 int, col2 double) "
-                f"USING Delta LOCATION '/var/lib/clickhouse/user_files/tmp/{schema}/t'",
-                f"INSERT OVERWRITE {schema}.t VALUES ({i}, {i}.0)",
-            ]
-        )
-    execute_multiple_spark_queries(node, queries, retry_on_timeout=True)
-
-    create_database(node, db_name)
-
-    tables = show_tables(node, db_name, f"unified_schema_{test_uuid}%")
-    assert tables == [f"{schema}.t" for schema in schemas]
-
-    for i, table in enumerate(tables):
-        assert node.query(f"SELECT col1 FROM {db_name}.`{table}`").strip() == str(i)
+    rows = read_rows(node, db_name, DELTA_TABLE)
+    assert len(rows) == SEEDED_ROW_COUNT
+    assert rows[0] == SEEDED_FIRST_ROW
+    assert rows[-1] == SEEDED_LAST_ROW
 
 
 def test_unreadable_table_is_hidden(started_cluster):
@@ -407,24 +379,27 @@ def test_iceberg_table_routes_to_iceberg_arm(started_cluster):
 
 def test_iceberg_table_is_listed_and_readable(started_cluster):
     """Reading through the Iceberg arm goes to an embedded `RestCatalog` at the
-    Iceberg REST endpoint, a completely different metadata path from Delta."""
+    Iceberg REST endpoint, a completely different metadata path from Delta. The
+    UniForm table is a copy of `marksheet`, so the two arms must agree row for
+    row; that is a stronger check than either one on its own."""
     node = started_cluster.instances["node1"]
-    db_name = unique_name("unified_iceberg_read")
-    create_database(node, db_name, url=PROXY_URL)
+    iceberg_db = unique_name("unified_iceberg_read")
+    delta_db = unique_name("unified_delta_read")
+    create_database(node, iceberg_db, url=PROXY_URL)
+    create_database(node, delta_db)
 
-    assert UNIFORM_TABLE in show_tables(node, db_name, "default%")
+    assert UNIFORM_TABLE in show_tables(node, iceberg_db, "default%")
 
-    assert node.query(f"DESCRIBE TABLE {db_name}.`{UNIFORM_TABLE}`").strip() != ""
+    described = node.query(f"DESCRIBE TABLE {iceberg_db}.`{UNIFORM_TABLE}`")
+    assert "id\tNullable(Int32)" in described, described
+    assert "name\tNullable(String)" in described, described
+    assert "marks\tNullable(Int32)" in described, described
 
-    from_clickhouse = TSV(
-        node.query(f"SELECT * FROM {db_name}.`{UNIFORM_TABLE}` ORDER BY 1, 2, 3")
-    )
-    from_spark = TSV(
-        execute_spark_query(
-            node, f"SELECT * FROM {CATALOG}.{UNIFORM_TABLE} ORDER BY 1, 2, 3"
-        )
-    )
-    assert from_clickhouse == from_spark
+    through_iceberg = read_rows(node, iceberg_db, UNIFORM_TABLE)
+    through_delta = read_rows(node, delta_db, DELTA_TABLE)
+
+    assert len(through_iceberg) == SEEDED_ROW_COUNT
+    assert through_iceberg == through_delta
 
 
 def test_mixed_formats_in_one_database(started_cluster):

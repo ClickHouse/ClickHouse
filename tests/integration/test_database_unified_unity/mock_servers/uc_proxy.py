@@ -9,13 +9,13 @@ Databricks-specific behaviours `UnifiedUnityCatalog` depends on:
    never sends `securable_kind` and cannot register an Iceberg table at all, so
    the kind is injected into the response for the UniForm tables listed below.
 
-It also repairs a defect in the server's own seeded sample data: the UniForm
-table is registered at `file:/tmp/marksheet_uniform`, a location that is both
-outside `user_files` and, in the Iceberg metadata, missing the `//` that
-`TableMetadata::setLocation` requires. Responses are rewritten to the directory
-the data really lives in. The metadata file on disk is left alone on purpose:
-`IcebergPathResolver` takes the table location from there and uses it to rebase
-the `file:/tmp/...` paths embedded in the manifests onto the real directory.
+It also makes one cosmetic repair. The Iceberg metadata reports the table
+location as `file:/tmp/marksheet_uniform`, with a single slash, and
+`TableMetadata::setLocation` requires a `://` scheme. Only the scheme is
+normalised; the directory is left exactly as the server reports it, so the
+metadata stays self-consistent and ClickHouse never has to rebase the
+`file:/tmp/...` paths embedded in the manifests. The test roots `user_files` at
+`/` so that location is readable.
 
 Only the tables in `UNIFORM_TABLES` are patched, so a database pointed at this
 proxy still sees every other table exactly as the upstream server reports it.
@@ -35,28 +35,16 @@ UNIFORM_TABLES = {"marksheet_uniform"}
 
 ICEBERG_SECURABLE_KIND = "TABLE_DELTA_ICEBERG_EXTERNAL"
 
-# Where `start_unity_catalog` copies the server, and where the UniForm table's
-# data really is. The seeded registration points at /tmp instead.
-UC_ROOT = "/var/lib/clickhouse/user_files/unitycatalog"
-UNIFORM_DIR = UC_ROOT + "/etc/data/external/unity/default/tables/marksheet_uniform"
-
-# The server reports this table's location in three shapes: `file:///tmp/...`
-# (tables API), `file:/tmp/...` (Iceberg `metadata.location`) and a bare
-# `/tmp/...` (Iceberg `metadata-location`). Both patterns are anchored on the
-# table name, so nothing else can match. Order matters: the scheme-ful forms are
-# replaced first, so the bare pattern only sees what is left.
-SCHEME_LOCATION = re.compile(r"file:/{1,3}tmp/marksheet_uniform")
-BARE_LOCATION = re.compile(r"/tmp/marksheet_uniform")
+# `file:/tmp/...` -> `file:///tmp/...`. The lookahead makes this a no-op on the
+# already-well-formed `file:///tmp/...` the tables API returns.
+SINGLE_SLASH_SCHEME = re.compile(r"file:/(?=tmp/marksheet_uniform)")
 
 # Headers that describe this hop rather than the request, so they must not be forwarded.
 HOP_BY_HOP_HEADERS = {"host", "content-length", "accept-encoding", "connection"}
 
 
-def repair_locations(data):
-    """Relocates the table without changing the shape of each reference: a value
-    that arrived with a scheme keeps one, a bare path stays bare."""
-    body = SCHEME_LOCATION.sub("file://" + UNIFORM_DIR, data.decode())
-    return BARE_LOCATION.sub(UNIFORM_DIR, body).encode()
+def normalize_scheme(data):
+    return SINGLE_SLASH_SCHEME.sub("file:///", data.decode()).encode()
 
 
 def patch_table(table):
@@ -112,9 +100,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if status == 200:
             if "/unity-catalog/tables" in path:
-                data = patch_tables_response(repair_locations(data))
+                data = patch_tables_response(data)
             elif "/unity-catalog/iceberg/" in path:
-                data = repair_locations(data)
+                data = normalize_scheme(data)
 
         self.send_response(status)
         self.send_header("Content-Type", content_type)

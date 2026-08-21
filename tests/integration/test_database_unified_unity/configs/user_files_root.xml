@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- The seeded UniForm table is registered under /tmp by upstream design, and
+         ClickHouse only reads local files inside user_files. Rooting user_files at /
+         lets it read the table where the catalog says it is, so the Iceberg metadata
+         stays self-consistent and no path rewriting is needed. -->
+    <user_files_path>/</user_files_path>
+</clickhouse>
