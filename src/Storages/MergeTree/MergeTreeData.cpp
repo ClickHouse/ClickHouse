@@ -7598,6 +7598,9 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(
 
 void MergeTreeData::checkDatabaseRowsLimit(UInt64 incoming_rows, UInt64 outgoing_rows) const
 {
+    /// This is a best-effort snapshot check, not a reservation spanning the commit: concurrent
+    /// operations may each observe free headroom and transiently overshoot the limit together.
+    /// The `max_rows` setting is documented accordingly.
     if (incoming_rows <= outgoing_rows)
         return;
 

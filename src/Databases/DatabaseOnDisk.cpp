@@ -325,6 +325,9 @@ void DatabaseOnDisk::createTableImpl(
 
 void DatabaseOnDisk::checkRowsLimit(const StoragePtr & table, const String & table_name) const
 {
+    /// This is a best-effort snapshot check, not a reservation spanning the commit: concurrent
+    /// operations may each observe free headroom and transiently overshoot the limit together.
+    /// The setting is documented accordingly.
     const UInt64 limit = getMaxRows();
     if (limit == 0)
         return;

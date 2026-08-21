@@ -7509,15 +7509,11 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, query_context, renamed_parts);
 
-    UInt64 incoming_rows = 0;
-    for (const auto & part : loaded_parts)
-        incoming_rows += part->rows_count;
-
-    /// `SYSTEM RESTORE REPLICA` reattaches the first replica's existing parts while
-    /// readonly. Those parts are already accounted for, so an over-limit database must
-    /// not prevent metadata recovery. User-issued ATTACH commands still enforce the limit.
-    if (!allow_attach_while_readonly)
-        checkDatabaseRowsLimit(incoming_rows);
+    /// The database `max_rows` limit is enforced per part inside `ReplicatedMergeTreeSink::commitPart`,
+    /// once ZooKeeper deduplication is known, so that attaching a duplicate part stays a no-op even
+    /// when the database is over the limit. `SYSTEM RESTORE REPLICA` reattaches the first replica's
+    /// existing parts while readonly; those parts are already accounted for, so an over-limit
+    /// database must not prevent metadata recovery, and the check is skipped for that path.
 
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(
@@ -9263,10 +9259,11 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     assertNoPatchesForParts(src_all_parts, src_patch_parts, "REPLACE PARTITION " + partition_id + " FROM");
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
-    UInt64 incoming_rows = 0;
-    for (const auto & part : src_all_parts)
-        incoming_rows += part->rows_count;
-
+    /// For the database `max_rows` limit: rows freed by REPLACE, and rows charged so far for the
+    /// source parts that actually acquired a block number. Parts skipped as already attached
+    /// (deduplicated by their block id below) are not charged, so a duplicate or partially
+    /// duplicated ATTACH PARTITION FROM only pays for the accepted remainder.
+    UInt64 accepted_rows = 0;
     UInt64 outgoing_rows = 0;
     if (replace)
     {
@@ -9274,7 +9271,6 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
         for (const auto & part : destination_parts)
             outgoing_rows += part->rows_count;
     }
-    checkDatabaseRowsLimit(incoming_rows, outgoing_rows);
 
     /// REPLACE PARTITION FROM a source that has no parts in the requested partition would
     /// silently drop the destination partition's data without writing anything in its place
@@ -9382,6 +9378,12 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
                 continue;
             }
+
+            /// The part acquired a block number, so it will actually add rows: charge it against
+            /// the database `max_rows` limit before cloning. Throwing here is safe: the block
+            /// number locks are ephemeral and released on unwind, and no rows were added yet.
+            accepted_rows += src_part->rows_count;
+            checkDatabaseRowsLimit(accepted_rows, outgoing_rows);
 
             UInt64 index = lock.getNumber();
             MergeTreePartInfo dst_part_info(partition_id, index, index, getLevelForAdoptedPart(src_data, src_part->info.level));

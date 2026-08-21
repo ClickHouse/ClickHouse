@@ -644,7 +644,12 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
     try
     {
-        auto conflicts = commitPart(zookeeper, part, deduplication_hashes, deduplication_ids);
+        /// Enforce the database `max_rows` limit only for user-issued ATTACH commands. Backup
+        /// restore (deduplicate_part = false) reattaches data the user explicitly restores, and
+        /// `SYSTEM RESTORE REPLICA` (allow_attach_while_readonly = true) recovers parts that are
+        /// already accounted for; neither of them is subject to the limit.
+        const bool check_database_rows_limit = deduplicate_part && !allow_attach_while_readonly;
+        auto conflicts = commitPart(zookeeper, part, deduplication_hashes, deduplication_ids, check_database_rows_limit);
         bool deduplicated = !conflicts.empty();
 
         int error = 0;
@@ -735,7 +740,8 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const std::vector<DeduplicationHash> & deduplication_hashes,
-    const std::vector<String> & deduplication_block_ids)
+    const std::vector<String> & deduplication_block_ids,
+    bool check_database_rows_limit)
 {
     /// It is possible that we alter a part with different types of source columns.
     /// In this case, if column was not altered, the result type will be different with what we have in metadata.
@@ -958,6 +964,14 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
                 return CommitRetryContext::RESOLVE_CONFLICTS;
             }
         }
+
+        /// The part is not a duplicate (the block id check above would have returned a conflict),
+        /// so it will actually add rows: enforce the database `max_rows` limit only now that
+        /// deduplication is decided. A duplicate attach thus stays a no-op even when the database
+        /// is over the limit. Throwing here is safe: only the ephemeral block number node exists
+        /// at this point, and it is released by the lock's destructor.
+        if (check_database_rows_limit)
+            storage.checkDatabaseRowsLimit(part->rows_count);
 
         auto block_number = block_number_lock.getNumber();
 
