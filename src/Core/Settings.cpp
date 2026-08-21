@@ -2299,21 +2299,24 @@ Possible values:
 \
     DECLARE(DeduplicateInsertMode, deduplicate_insert, DeduplicateInsertMode::ENABLE, R"(
 Enables or disables block deduplication of  `INSERT INTO` (for Replicated\* tables).
-The setting overrides `insert_deduplicate` and `async_insert_deduplicate` settings.
+The setting applies to both synchronous and asynchronous inserts, and it supersedes the `insert_deduplicate` and `async_insert_deduplicate` settings.
 That setting has three possible values:
 - disable — Deduplication is disabled for `INSERT INTO` query.
 - enable — Deduplication is enabled for `INSERT INTO` query.
 - backward_compatible_choice — Deduplication is enabled if `insert_deduplicate` or `async_insert_deduplicate` are enabled for specific insert type.
+
+For `INSERT SELECT` queries, [`deduplicate_insert_select`](#deduplicate_insert_select) is consulted first. Deduplication also requires the destination table to keep a deduplication log, see [replicated_deduplication_window](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) and [non_replicated_deduplication_window](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 )", 0) \
 \
     DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
 Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
-The setting overrids `insert_deduplicate` and `deduplicate_insert` for `INSERT SELECT` queries.
+For `INSERT SELECT` queries this setting is consulted before [`deduplicate_insert`](#deduplicate_insert).
+A `SELECT` is stable when it carries `ORDER BY ALL` and its pipeline ends in a single stream. A non-empty [`insert_deduplication_token`](#insert_deduplication_token) is an equivalent substitute for stability.
 That setting has four possible values:
 - disable — Deduplication is disabled for `INSERT SELECT` query.
-- force_enable — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
-- enable_when_possible — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
-- enable_even_for_bad_queries - Deduplication is enabled if `insert_deduplicate` is enable. If select result is not stable, warning is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
+- force_enable — Deduplication is enabled for `INSERT SELECT` query, regardless of `deduplicate_insert`. If select result is not stable and no token is provided, exception is thrown.
+- enable_when_possible — Deduplication is enabled if it is enabled by `deduplicate_insert` and the select result is stable, otherwise disabled.
+- enable_even_for_bad_queries - Deduplication is enabled if it is enabled by `deduplicate_insert`, regardless of whether the select result is stable. If select result is not stable, a message is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
 )", 0) \
 \
     DECLARE(Bool, insert_deduplicate, true, R"(
