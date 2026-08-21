@@ -45,12 +45,8 @@ mem_gb = round(Utils.physical_memory() // (1024**3), 1)
 
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
-# Flaky/targeted checks run with --dist=each, so every worker runs the full set
-# of changed modules concurrently (each with its own Docker cluster) instead of
-# splitting modules across workers. A worker's peak footprint is therefore much
-# larger, so it needs a bigger memory budget to avoid exhausting the container
-# cgroup and tripping the kernel OOM killer (see OOM_IN_DMESG_TEST_NAME).
-MAX_MEM_PER_WORKER_DIST_EACH = 20
+# Each --dist=each worker runs all modules in its own Docker cluster (see OOM_IN_DMESG_TEST_NAME).
+MAX_MEM_PER_WORKER_DIST_EACH = 24
 
 INFRASTRUCTURE_ERROR_PATTERNS = [
     "timed out after",
