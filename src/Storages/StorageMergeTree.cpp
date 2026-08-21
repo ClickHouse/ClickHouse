@@ -2462,8 +2462,7 @@ bool StorageMergeTree::optimize(
             /// real merge. Thus a fully merged table and no-op partitions do not wait for or pin
             /// foreground merge capacity.
             const size_t max_parallel_merges = std::min(
-                partition_ids.size(),
-                std::min(merge_mutate_executor->getMaxThreads(), merge_mutate_executor->getMaxTasksCount()));
+                {partition_ids.size(), merge_mutate_executor->getMaxThreads(), merge_mutate_executor->getMaxTasksCount()});
 
             ThreadPool pool(
                 CurrentMetrics::OptimizeFinalThreads,
