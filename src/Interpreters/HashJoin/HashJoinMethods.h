@@ -21,14 +21,18 @@ size_t getMinBytesForPrefetchInJoin();
 template <typename HashMap, typename KeyGetter>
 struct Inserter
 {
+    /// `any_take_last_row` is read from the join once, before the loop that calls this. Reading it here
+    /// costs a load per row: the map this writes to lives inside the join object, so the compiler cannot
+    /// prove that the write leaves the flag alone and has to reload it.
     static ALWAYS_INLINE bool
-    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
+    insertOne(bool any_take_last_row, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
-        if (emplace_result.isInserted() || join.anyTakeLastRow())
+        const bool store_row = emplace_result.isInserted() || any_take_last_row;
+        if (store_row)
             new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
-        return emplace_result.isInserted() || join.anyTakeLastRow();
+        return store_row;
     }
 
     static ALWAYS_INLINE bool
