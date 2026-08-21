@@ -695,11 +695,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     def run_test(self, cmd, timeout=7200):
         """Run a `clickhouse-test` command and return its integer exit code.
 
-        Returns 0 on success, non-zero on failure. In particular, exit code
-        `STOP_TESTING_EXIT_CODE` (2) signals that `clickhouse-test` aborted
-        the run via `StopTesting` (server died, hung check failed, etc.) and
-        is forwarded to `FTResultsProcessor.run` as `runner_exit_code` so it
-        can populate the synthetic "Server died" leaf.
+        Returns 0 on success, non-zero on failure. The code is forwarded
+        verbatim to `FTResultsProcessor.run` as `runner_exit_code`, which
+        distinguishes the abort causes `clickhouse-test` raises `StopTesting`
+        with and names the synthetic leaf accordingly.
         """
         print(f"Run test: [{cmd}]")
         with open(self.test_output_file, "w") as f:

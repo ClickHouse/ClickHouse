@@ -405,6 +405,21 @@ bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const
     return false;
 }
 
+/// True when the element name is a bare ordinal that is not guaranteed to occur in the file schema:
+/// an unnamed tuple names its elements "1", "2", ... while a source reading them from a file matches
+/// the flattened `<column>.<element>` by string. A source serving subcolumns from its own metadata does have it.
+bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const DataTypeTuple & tuple)
+{
+    if (tuple.hasExplicitNames())
+        return false;
+
+    auto storage = getStorageForColumnSource(column_source);
+    if (!storage)
+        return false;
+
+    return !storage->supportsOptimizationToSubcolumns();
+}
+
 template <typename DataType>
 void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
@@ -429,7 +444,8 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
 
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
         if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name)
-            || sourceHasColumnCaseInsensitive(ctx.column_source, column.name))
+            || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
+            || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete))
             return;
 
     if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))

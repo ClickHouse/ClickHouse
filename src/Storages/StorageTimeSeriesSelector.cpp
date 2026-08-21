@@ -772,6 +772,26 @@ namespace
 }
 
 
+ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
+    const StorageID & tags_table_id,
+    const PrometheusQueryTree::MatcherList & matchers,
+    const TimeSeriesSettings & time_series_settings,
+    const std::optional<DateTime64> & min_time,
+    const std::optional<DateTime64> & max_time,
+    const DataTypePtr & timestamp_data_type)
+{
+    auto select_query = makeSelectQueryFromTagsTable(
+        tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings), min_time, max_time, timestamp_data_type);
+
+    /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
+    const auto & select_with_union = typeid_cast<const ASTSelectWithUnionQuery &>(*select_query);
+    auto & select = typeid_cast<ASTSelectQuery &>(*select_with_union.list_of_selects->children.at(0));
+    select.select()->children.at(0)->setAlias("series_id");
+
+    return select_query;
+}
+
+
 void StorageTimeSeriesSelector::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
