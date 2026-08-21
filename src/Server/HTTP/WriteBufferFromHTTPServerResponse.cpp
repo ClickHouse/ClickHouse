@@ -173,6 +173,12 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, Co
     }
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
+
+    /// The accepted_* counters belong to the final X-ClickHouse-Summary only, so an update carrying
+    /// nothing else would be emitted here as an empty X-ClickHouse-Progress header.
+    if (progress.onlyHasAcceptedFields())
+        return;
+
     if (send_progress && (progress_watch.elapsed() >= send_progress_interval_ms * 1000000))
     {
         accumulated_progress.incrementElapsedNs(progress_watch.elapsed());

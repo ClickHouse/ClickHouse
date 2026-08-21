@@ -167,6 +167,18 @@ void Progress::reset()
     memory_usage = 0;
 }
 
+bool Progress::onlyHasAcceptedFields() const
+{
+    if (!accepted_rows.load(std::memory_order_relaxed) && !accepted_bytes.load(std::memory_order_relaxed))
+        return false;
+
+    return !read_rows.load(std::memory_order_relaxed) && !read_bytes.load(std::memory_order_relaxed)
+        && !total_rows_to_read.load(std::memory_order_relaxed) && !total_bytes_to_read.load(std::memory_order_relaxed)
+        && !written_rows.load(std::memory_order_relaxed) && !written_bytes.load(std::memory_order_relaxed)
+        && !result_rows.load(std::memory_order_relaxed) && !result_bytes.load(std::memory_order_relaxed)
+        && !elapsed_ns.load(std::memory_order_relaxed) && !memory_usage.load(std::memory_order_relaxed);
+}
+
 ProgressValues Progress::getValues() const
 {
     ProgressValues res;
