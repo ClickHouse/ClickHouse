@@ -518,13 +518,11 @@ def test_submodule_cache_overrun_fails_closed():
     assert uploads == [], uploads
 
 
-def test_submodule_cache_upload_error_is_not_read_as_a_lost_race():
-    """Only a lost conditional race may be accepted as somebody else's success.
+def _run_cache_population_with_upload_error(aws_stderr, object_exists_after):
+    """Drive `_prepare_submodule_cache` over a failing upload.
 
-    The upload is a conditional create, so a `False` return is ambiguous: it is the
-    other writer winning the race, or it is an ordinary error. Reading every `False` as
-    the race publishes a hash naming an object that was never stored, and dependants
-    then restore nothing.
+    The real `S3.put` runs, so how it classifies the AWS error is part of what is under
+    test; only the shell beneath it and the existence probe are substituted.
     """
     import ci.praktika.native_jobs as nj
     import ci.praktika.s3 as s3mod
@@ -534,20 +532,24 @@ def test_submodule_cache_upload_error_is_not_read_as_a_lost_race():
     archive.parent.mkdir(parents=True, exist_ok=True)
     archive.write_bytes(b"x")
 
+    heads = []
+
     class _FakeShell:
         @staticmethod
-        def check(command, **_kwargs):
+        def check(_command, **_kwargs):
             return True
 
         @staticmethod
         def get_res_stdout_stderr(_command, **_kwargs):
-            # Not PreconditionFailed / ConditionalRequestConflict: an ordinary error.
-            return 1, "", "An error occurred (AccessDenied) calling PutObject"
+            return 1, "", aws_stderr
 
     class _FakeS3(nj.S3):
         @staticmethod
-        def head_object(_p):
-            return False
+        def head_object(path):
+            # False on the first call, the cache-miss probe; the later call is the
+            # publishability check on a refused conditional write.
+            heads.append(path)
+            return object_exists_after if len(heads) > 1 else False
 
     class _Cfg:
         submodule_cache_hash = ""
@@ -556,7 +558,6 @@ def test_submodule_cache_upload_error_is_not_read_as_a_lost_race():
             pass
 
     cfg = _Cfg()
-    # The real S3.put runs, so its no_strict handling is what is under test here.
     orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth, s3mod.Shell
     try:
         nj.Shell = _FakeShell
@@ -564,14 +565,51 @@ def test_submodule_cache_upload_error_is_not_read_as_a_lost_race():
         nj.S3 = _FakeS3
         nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
         nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
-        result = nj._prepare_submodule_cache(None, cfg)
+        return nj._prepare_submodule_cache(None, cfg), cfg
     finally:
         nj.Shell, nj.S3, nj.Digest, nj.GHAuth, s3mod.Shell = orig
         archive.unlink(missing_ok=True)
 
+
+@pytest.mark.parametrize(
+    "aws_stderr",
+    [
+        "An error occurred (AccessDenied) calling PutObject",
+        # A refused conditional write. AWS also raises it for a concurrent delete, so it
+        # does not by itself mean the object is there.
+        "An error occurred (ConditionalRequestConflict) calling PutObject",
+        "An error occurred (PreconditionFailed) calling PutObject",
+    ],
+)
+def test_an_upload_that_stored_nothing_publishes_no_hash(aws_stderr):
+    """A failed upload must not publish a hash naming an object that is not there.
+
+    Every one of these makes `S3.put` return False or raise, and reading a bare False as
+    somebody else's success schedules dependants that restore nothing.
+    """
+    result, cfg = _run_cache_population_with_upload_error(
+        aws_stderr, object_exists_after=False
+    )
+
     assert result.status == "FAIL", result.status
     assert cfg.submodule_cache_hash == "", cfg.submodule_cache_hash
     assert "concurrently" not in (result.info or ""), result.info
+
+
+def test_a_lost_race_is_a_success_once_the_object_is_there():
+    """The write-once race must stay a success, or a normal collision fails the run.
+
+    Two jobs that both saw a cache miss is ordinary, and the loser's key is already
+    populated by the winner, so it has nothing left to do.
+    """
+    result, cfg = _run_cache_population_with_upload_error(
+        "An error occurred (ConditionalRequestConflict) calling PutObject",
+        object_exists_after=True,
+    )
+
+    assert result.status == "OK", result.status
+    assert cfg.submodule_cache_hash == "ba7816bf8f01cfea", cfg.submodule_cache_hash
+    assert "concurrently" in (result.info or ""), result.info
 
 
 if __name__ == "__main__":

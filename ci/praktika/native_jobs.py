@@ -291,15 +291,21 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
             # immutable closes a race where two concurrent writers (both saw a
             # cache miss above) overwrite the same key while a third job is
             # downloading it, causing the reader's multipart download to abort
-            # with an ETag mismatch. A lost race returns False rather than raising,
-            # because the other writer already populated the object; every other upload
-            # failure must raise, or the hash below would name a nonexistent object.
+            # with an ETag mismatch. Any other upload failure must raise, or the hash
+            # below would name a nonexistent object.
             created = S3.put(
                 s3_path=s3_path,
                 local_path=archive_path,
                 if_none_matched=True,
             )
             Shell.check(f"rm -f {archive_path}")
+            # A refused conditional write means somebody else holds the key, but not that
+            # the object is readable: a 409 is also raised for a concurrent delete. The
+            # hash is only publishable once the object is actually there.
+            if not created and not S3.head_object(s3_path):
+                raise RuntimeError(
+                    f"conditional upload was refused and {s3_path} does not exist"
+                )
             info = (
                 f"cache miss, created: {cache_hash}"
                 if created
