@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS t_normalized;
 DROP TABLE IF EXISTS t_preprocessed_wrapped;
 DROP TABLE IF EXISTS t_preprocessed_plain;
 DROP TABLE IF EXISTS t_preprocessed_map;
+DROP TABLE IF EXISTS t_preprocessed_folded;
 
 CREATE TABLE t_text (x Nullable(String), INDEX i x TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 INSERT INTO t_text SELECT if(number % 100 = 7, NULL, 'word' || toString(number)) FROM numbers(1000);
@@ -250,3 +251,4 @@ DROP TABLE t_normalized;
 DROP TABLE t_preprocessed_wrapped;
 DROP TABLE t_preprocessed_plain;
 DROP TABLE t_preprocessed_map;
+DROP TABLE t_preprocessed_folded;
