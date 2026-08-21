@@ -3,6 +3,7 @@ import json
 import logging
 import random
 import re
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +23,7 @@ from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
+    LongType,
     NestedField,
     StringType,
     StructType,
@@ -1629,6 +1631,59 @@ def test_delete_on_lazy_initialized_table(started_cluster):
     )
 
     assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
+
+
+def test_catalog_cache_concurrent_first_use(started_cluster):
+    """Cached StorageObjectStorage must be initialized before concurrent publication."""
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    suffix = uuid.uuid4().hex
+    namespace = f"cache_race_{suffix}"
+    table_name = f"table_{suffix}"
+    database = f"catalog_cache_{suffix}"
+    catalog.create_namespace(namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+    table = create_table(
+        catalog,
+        namespace,
+        table_name,
+        schema=schema,
+        partition_spec=PartitionSpec(),
+        sort_order=SortOrder(),
+    )
+    table.append(pa.table({"id": pa.array([1], type=pa.int64())}))
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        database,
+        additional_settings={
+            "catalog_cache_staleness_ms": 600000,
+            "catalog_cache_max_entries": 100,
+        },
+    )
+    table_ref = f"{database}.`{namespace}.{table_name}`"
+
+    try:
+        for _ in range(3):
+            node.query("SYSTEM CLEAR DATALAKE CATALOG CACHE")
+            # Materialize and cache the StoragePtr without executing a table read.
+            assert node.query(
+                "SELECT count() FROM system.tables "
+                f"WHERE database = '{database}' AND endsWith(name, '{table_name}') "
+                "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+            ) == "1\n"
+
+            barrier = threading.Barrier(64)
+
+            def first_read(_):
+                barrier.wait(timeout=30)
+                return node.query(f"SELECT count() FROM {table_ref} SETTINGS max_threads=1")
+
+            with ThreadPoolExecutor(max_workers=64) as executor:
+                assert list(executor.map(first_read, range(64))) == ["1\n"] * 64
+            assert node.query("SELECT 1") == "1\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {database}")
 
 
 def test_writes_schema_evolution(started_cluster):

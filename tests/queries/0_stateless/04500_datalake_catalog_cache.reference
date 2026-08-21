@@ -1,0 +1,11 @@
+--- SHOW CREATE DATABASE ---
+catalog_cache_staleness_ms = 12345, catalog_cache_max_entries = 99
+--- SYSTEM CLEAR DATALAKE CATALOG CACHE ---
+OK
+--- ProfileEvents existence ---
+DataLakeCatalogCacheHits
+DataLakeCatalogCacheMisses
+DataLakeCatalogCacheStaleMisses
+DataLakeCatalogCacheWeightLost
+0
+OK
