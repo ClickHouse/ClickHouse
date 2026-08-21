@@ -1,6 +1,5 @@
--- Tags: no-sanitizers, no-flaky-check
+-- Tags: no-sanitizers
 -- no-sanitizers: too slow
--- no-flaky-check: the test normally takes ~2 minutes in the debug build, so repeated runs under random settings exceed the 180 s per-test limit; this PR only changed the table SETTINGS line
 
 -- Regression test: automatic parallel replicas must not hit
 -- 'local_replica_plan_reading_step->getAnalyzedResult() == nullptr' when
@@ -10,7 +9,7 @@
 
 DROP TABLE IF EXISTS t;
 
-CREATE TABLE t(WatchID UInt64, ClientIP UInt32, ResolutionWidth UInt16) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128, optimize_row_order_if_no_order_by = 0;
+CREATE TABLE t(WatchID UInt64, ClientIP UInt32, ResolutionWidth UInt16) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';

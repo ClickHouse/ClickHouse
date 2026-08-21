@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas, no-flaky-check
+# Tags: no-parallel-replicas
 # no-parallel-replicas - because explain produced different plan
-# no-flaky-check - the test is close to the 180 s per-test limit in the tsan and asan builds, so repeated runs under random settings time out; this PR does not change this test (it is pulled into the flaky check by the name prefix of the sibling `.sql` test)
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
