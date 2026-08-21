@@ -280,6 +280,7 @@
             "reference/data-types/enum",
             "reference/data-types/geo",
             "reference/data-types/qbit",
+            "reference/data-types/version",
             "reference/data-types/domains/index"
           ]
         },
