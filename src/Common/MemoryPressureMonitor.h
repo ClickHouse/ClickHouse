@@ -21,19 +21,43 @@ enum class MemoryPressureLevel : uint8_t
 
 inline constexpr int memoryPressureLevelCount() { return 4; }
 
-/// The three thresholds as percent of a tracker's hard limit.
+/// The three thresholds as percent of a tracker's hard limit, with the generation that identifies this
+/// publication of them. The generation is assigned by the store, so a caller never supplies one, and it
+/// moves only when the values change - that is what lets a cooldown tell one ladder from another.
 struct MemoryPressureThresholds
 {
-    UInt64 elevated_pct;
-    UInt64 high_pct;
-    UInt64 critical_pct;
+    UInt64 elevated_pct = 0;
+    UInt64 high_pct = 0;
+    UInt64 critical_pct = 0;
+    uint32_t generation = 0;
+
+    /// The values alone, as one word. Two ladders are the same ladder when these are equal.
+    constexpr uint32_t packValues() const
+    {
+        return (static_cast<uint32_t>(elevated_pct) << 16)
+             | (static_cast<uint32_t>(high_pct) << 8)
+             | static_cast<uint32_t>(critical_pct);
+    }
+
+    /// The published form, `(generation << 32) | packValues()`. Values and generation share one word, so
+    /// a reader can never pair a new generation with an old ladder.
+    constexpr uint64_t pack() const { return (static_cast<uint64_t>(generation) << 32) | packValues(); }
+
+    static constexpr MemoryPressureThresholds unpack(uint64_t packed)
+    {
+        return {(packed >> 16) & 0xFFu, (packed >> 8) & 0xFFu, packed & 0xFFu, static_cast<uint32_t>(packed >> 32)};
+    }
+
+    /// Classify a pressure ratio against these thresholds. No cooldown, lock-free.
+    MemoryPressureLevel classify(double pressure) const;
 };
 
 /// Each threshold must be in [0, 100] with `elevated <= high <= critical`, else throws `BAD_ARGUMENTS`.
 void validateMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct);
 
 /// The thresholds are server-wide: one shared ladder every monitor classifies against. `set` validates
-/// and publishes atomically (config reload); `get` reads the live values (observability).
+/// and publishes atomically (config reload), assigning the generation itself; `get` reads the live
+/// values together with the generation they were published under.
 void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct);
 MemoryPressureThresholds getMemoryPressureThresholds();
 
@@ -52,10 +76,11 @@ public:
 
     explicit PressureCooldown(uint64_t cooldown_ns_ = COOLDOWN_NS) : cooldown_ns(cooldown_ns_) {}
 
-    /// `thresholds_set_ns` is when the shared ladder was last (re)set. If that is newer than the sticky
-    /// level's timestamp, the level was classified against an old ladder and is accepted anew at once,
-    /// bypassing the cooldown - a reload takes effect immediately without a per-monitor flag.
-    MemoryPressureLevel apply(MemoryPressureLevel raw, uint64_t now_ns, uint64_t thresholds_set_ns);
+    /// `thresholds_generation` identifies the shared ladder `raw` was classified against. A generation
+    /// other than the one the sticky level was classified against means that level came from a ladder
+    /// that no longer exists, so it is replaced at once instead of decaying over a cooldown - a reload
+    /// takes effect immediately without a per-monitor flag.
+    MemoryPressureLevel apply(MemoryPressureLevel raw, uint64_t now_ns, uint32_t thresholds_generation);
 
     /// Clear the sticky level and timestamp.
     void reset();
@@ -65,6 +90,8 @@ private:
     mutable std::mutex mutex;
     uint8_t level{0};
     uint64_t last_at_or_above_ns{0};
+    /// The ladder generation `level` was classified against.
+    uint32_t last_generation{0};
 };
 
 /// Watches one memory tracker and classifies its pressure with a sticky cooldown. Levels compose
