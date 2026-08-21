@@ -20,11 +20,10 @@ MaterializedColumnDependencies::MaterializedColumnDependencies(const ColumnsDesc
     : columns(columns_)
     , context(context_)
 {
-    /// Only the nodes here. Their expressions are rewritten and analysed on demand, because this runs
-    /// per read task per part and a task usually touches a few of the columns at most.
+    /// Only the nodes here; their expressions are analysed on demand.
     for (const auto & column : columns)
         if (isMaterializedColumn(column))
-            materialized_columns.emplace(column.name, Column{});
+            materialized_columns.emplace(column.name, MaterializedDependencyNode{});
 }
 
 const NamesAndTypesList & MaterializedColumnDependencies::getSourceColumns() const
@@ -44,7 +43,8 @@ const NamesAndTypesList & MaterializedColumnDependencies::getSourceColumns() con
     return *source_columns;
 }
 
-const MaterializedColumnDependencies::Column * MaterializedColumnDependencies::analyse(const String & column_name) const
+const MaterializedColumnDependencies::MaterializedDependencyNode *
+MaterializedColumnDependencies::findNode(const String & column_name) const
 {
     auto it = materialized_columns.find(column_name);
     if (it == materialized_columns.end())
@@ -55,17 +55,13 @@ const MaterializedColumnDependencies::Column * MaterializedColumnDependencies::a
 
     const auto & source_columns_ = getSourceColumns();
 
-    Column materialized;
+    MaterializedDependencyNode materialized;
     materialized.expression = columns.get(column_name).default_desc.expression->clone();
 
-    /// A MATERIALIZED default may read an ALIAS column, and an ALIAS is computed on read and never
-    /// stored. Merely adding aliases to the analysis set would let TreeRewriter resolve the name, but
-    /// the expression would then demand a column that is not in any part and the recompute stage would
-    /// fail on it, so the reference has to be replaced by what it stands for. `replaceAliasColumnsInQuery`
-    /// is the expansion reading an ALIAS goes through, and it carries the declared type with it: for
-    /// `a UInt8 ALIAS x` over a `UInt16 x` the substituted expression has to narrow exactly as a read of
-    /// `a` does, or the recomputed value differs from the inserted one. Done before the subcolumn
-    /// rewrite, so a subcolumn reached through an alias is normalized too.
+    /// An ALIAS is computed on read and never stored, so a reference to one has to be replaced by what
+    /// it stands for, cast to its declared type — resolving the name alone would leave the recompute
+    /// stage demanding a column no part holds, and skipping the cast would recompute a value that
+    /// differs from the inserted one. Before the subcolumn rewrite, so an alias to one is normalized too.
     replaceAliasColumnsInQuery(materialized.expression, columns, {}, context);
 
     /// Both the read set and the recompute stage are keyed on top-level columns, so a default over a
@@ -83,43 +79,47 @@ const MaterializedColumnDependencies::Column * MaterializedColumnDependencies::a
     return &it->second;
 }
 
-const MaterializedColumnDependencies::Column * MaterializedColumnDependencies::tryGet(const String & column_name) const
+const Names & MaterializedColumnDependencies::findColumnsToRecalculate(
+    const String & column_name, const NameSet & changed_columns) const
 {
-    return analyse(column_name);
-}
+    static const Names none;
 
-bool MaterializedColumnDependencies::willBeRecalculated(const String & column_name, const NameSet & changed_columns) const
-{
     if (changed_columns.empty())
-        return false;
+        return none;
 
-    /// Checked once per entry into the walk, not once per recursive step.
+    /// This is the entry into the walk, so the memo is keyed here — once per walk rather than once
+    /// per column the recursion below visits.
     if (memo_changed_columns != changed_columns)
     {
         memo_changed_columns = changed_columns;
         will_be_recalculated.clear();
     }
 
-    return willBeRecalculatedImpl(column_name, changed_columns);
+    /// A recalculated column needs all of its dependencies — the stage that rewrites it evaluates the
+    /// whole expression, including the parts reading a column no mutation touches.
+    if (!willBeRecalculated(column_name, changed_columns))
+        return none;
+
+    /// The walk above reached the column, so this is the memoised entry, not a second analysis.
+    return findNode(column_name)->dependencies;
 }
 
-bool MaterializedColumnDependencies::willBeRecalculatedImpl(const String & column_name, const NameSet & changed_columns) const
+bool MaterializedColumnDependencies::willBeRecalculated(const String & column_name, const NameSet & changed_columns) const
 {
-    /// The insertion doubles as an in-progress marker: a walk that comes back into a column still
-    /// being answered reads the `false` left here and stops. `CREATE TABLE` already rejects cyclic
-    /// defaults (`CYCLIC_ALIASES`), so this is not reachable today — but it costs nothing, because the
-    /// marker is the memo entry itself, and it makes the recursion total without relying on that.
+    /// The insertion doubles as an in-progress marker, so a walk that re-enters a column still being
+    /// answered stops here. Unreachable today — `CREATE TABLE` rejects cyclic defaults (`CYCLIC_ALIASES`)
+    /// — but the marker is the memo entry itself, so making the recursion total costs nothing.
     auto [it, inserted] = will_be_recalculated.emplace(column_name, false);
     if (!inserted)
         return it->second;
 
-    const auto * materialized = analyse(column_name);
+    const auto * materialized = findNode(column_name);
     if (!materialized || materialized->reads_ephemeral)
         return false;
 
     bool result = std::ranges::any_of(materialized->dependencies, [&](const auto & dependency)
     {
-        return changed_columns.contains(dependency) || willBeRecalculatedImpl(dependency, changed_columns);
+        return changed_columns.contains(dependency) || willBeRecalculated(dependency, changed_columns);
     });
 
     /// Not through `it`: the recursion above can rehash the map, which invalidates iterators.

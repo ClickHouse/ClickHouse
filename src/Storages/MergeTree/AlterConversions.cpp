@@ -486,16 +486,9 @@ static void addColumnsRequiredForMaterialized(
         auto column_name = std::move(columns_to_visit.front());
         columns_to_visit.pop();
 
-        /// A recalculated column needs all of its dependencies, because the stage that rewrites it
-        /// evaluates its whole expression against the block, including the parts that read a column
-        /// no mutation touches. A column that keeps its stored value needs nothing. Asked per column
-        /// rather than as a precomputed set, so only the reachable part of the graph is analysed.
-        if (!dependencies.willBeRecalculated(column_name, updated_columns))
-            continue;
-
-        const auto * materialized = dependencies.tryGet(column_name);
-
-        for (const auto & dependency : materialized->dependencies)
+        /// Asked per column rather than as a precomputed set, so only the reachable part of the
+        /// graph is analysed.
+        for (const auto & dependency : dependencies.findColumnsToRecalculate(column_name, updated_columns))
         {
             if (read_columns_set.emplace(dependency).second)
             {

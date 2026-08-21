@@ -21,14 +21,13 @@ class ColumnsDescription;
 /// pending mutation unapplied for that read task and returns the stale stored value.
 ///
 /// Analysing a default costs a `TreeRewriter` run, and this graph is built per read task per part, so
-/// nothing is analysed until it is asked for. A query reading one column of a table with a hundred
-/// MATERIALIZED columns must not pay for the ninety-nine it does not touch.
+/// nothing is analysed until it is asked for.
 ///
 /// Must not outlive the `ColumnsDescription` it was built from.
 class MaterializedColumnDependencies
 {
 public:
-    struct Column
+    struct MaterializedDependencyNode
     {
         /// ALIAS references expanded and subcolumn references replaced by `getSubcolumn`.
         /// Clone before rewriting it.
@@ -41,34 +40,31 @@ public:
 
     MaterializedColumnDependencies(const ColumnsDescription & columns_, const ContextPtr & context_);
 
+    /// The node of @column_name: the expression to evaluate and the columns it reads directly.
     /// Null unless @column_name is a MATERIALIZED column with a default expression.
-    const Column * tryGet(const String & column_name) const;
+    const MaterializedDependencyNode * findNode(const String & column_name) const;
 
-    /// Whether @column_name has to be recomputed when @changed_columns change — because its own
-    /// expression reads one of them, or because it reads another column that has to be recomputed.
-    /// False for anything that is not a MATERIALIZED column, and for one reading an EPHEMERAL column.
-    ///
-    /// Walks upstream from @column_name so only the reachable part of the graph is analysed. Answers
-    /// are memoised for one @changed_columns set; passing a different one starts over.
-    bool willBeRecalculated(const String & column_name, const NameSet & changed_columns) const;
+    /// The columns that have to be read to recalculate @column_name when @changed_columns are updated.
+    /// Empty unless @column_name is a MATERIALIZED column that has to be recalculated — because its
+    /// own expression reads one of @changed_columns, or because it reads another column that has to
+    /// be recalculated. Also empty for a column reading an EPHEMERAL one, which is never recalculated.
+    /// Answers are memoised for one @changed_columns set; passing a different one starts over.
+    const Names & findColumnsToRecalculate(const String & column_name, const NameSet & changed_columns) const;
 
 private:
-    /// @changed_columns is already the memoised one, so the recursion does not re-check it.
-    bool willBeRecalculatedImpl(const String & column_name, const NameSet & changed_columns) const;
+    /// The memo must already be keyed on @changed_columns; the only walk starts above.
+    bool willBeRecalculated(const String & column_name, const NameSet & changed_columns) const;
 
-    const Column * analyse(const String & column_name) const;
     const NamesAndTypesList & getSourceColumns() const;
 
     const ColumnsDescription & columns;
     ContextPtr context;
 
     /// Every MATERIALIZED column of the table. An entry is created empty and filled in on first use;
-    /// a set `expression` is what marks it analysed, and it is assigned in one step at the end of the
-    /// analysis, so a throw part-way leaves the entry untouched rather than half-filled.
-    mutable std::unordered_map<String, Column> materialized_columns;
+    /// a set `expression` is what marks it analysed.
+    mutable std::unordered_map<String, MaterializedDependencyNode> materialized_columns;
 
-    /// Physical columns plus EPHEMERAL ones, which `getAllPhysical` omits although a MATERIALIZED
-    /// expression may read one. Built on the first analysis, not before.
+    /// Physical columns plus EPHEMERAL ones, built on the first analysis.
     mutable std::optional<NamesAndTypesList> source_columns;
     mutable NameSet ephemeral_columns;
 
