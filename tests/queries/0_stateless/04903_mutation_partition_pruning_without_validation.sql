@@ -24,8 +24,11 @@ INSERT INTO mutation_pruning_without_validation VALUES ('2026-01-01', 1);
 -- enqueued and retried later rather than rejected by the pruning analysis.
 ALTER TABLE mutation_pruning_without_validation DELETE WHERE d IN (SELECT d FROM created_later);
 
+-- The mutation entry is created in ZooKeeper synchronously by the ALTER, while
+-- `system.mutations` is populated asynchronously by the mutations-updating task,
+-- so only the former can be asserted without a race.
 SELECT count()
-FROM system.mutations
-WHERE database = currentDatabase() AND table = 'mutation_pruning_without_validation' AND is_done = 0;
+FROM system.zookeeper
+WHERE path = '/clickhouse/tables/' || currentDatabase() || '/mutation_pruning_without_validation/mutations';
 
-DROP TABLE mutation_pruning_without_validation;
+DROP TABLE mutation_pruning_without_validation SYNC;
