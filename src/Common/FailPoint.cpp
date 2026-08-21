@@ -207,6 +207,7 @@ static struct InitFiu
     PAUSEABLE(storage_merge_create_children_plans_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
+    ONCE(database_replicated_create_replica_nodes_lose_response) \
     ONCE(keeper_leader_sets_invalid_digest) \
     PAUSEABLE_ONCE(keeper_save_snapshot_pause_mid_transfer) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \

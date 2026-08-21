@@ -11,6 +11,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <base/defines.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 
 namespace zkutil
@@ -72,7 +73,8 @@ public:
                        const String & zookeeper_name_, const String & zookeeper_path_,
                        const String & shard_name_, const String & replica_name_,
                        DatabaseReplicatedSettings db_settings_,
-                       ContextPtr context);
+                       ContextPtr context,
+                       const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_ = {});
 
     ~DatabaseReplicated() override;
 
@@ -271,6 +273,12 @@ private:
     DatabaseReplicatedSettings db_settings;
 
     ZooKeeperPtr getZooKeeper() const;
+
+    /// Retry settings of the CREATE DATABASE query, used only while that query initializes the replica.
+    /// Taken and reset there, because it holds the query's process list element.
+    ZooKeeperRetriesInfo takeCreateQueryZooKeeperRetriesInfo();
+    ZooKeeperRetriesInfo create_query_zookeeper_retries_info TSA_GUARDED_BY(create_query_zookeeper_retries_info_mutex);
+    std::mutex create_query_zookeeper_retries_info_mutex;
 
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;

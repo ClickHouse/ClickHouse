@@ -2460,8 +2460,19 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (fault(thread_local_rng))
         {
             /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
+            /// The storage is constructed at this point, so it owns Keeper state that only drop() removes.
+            /// Best effort, like validateStorage above: the original exception is what the user must see.
             if (!create.attach)
-                replicated_storage->dropIfEmpty();
+            {
+                try
+                {
+                    replicated_storage->drop();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("InterpreterCreateQuery");
+                }
+            }
 
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }

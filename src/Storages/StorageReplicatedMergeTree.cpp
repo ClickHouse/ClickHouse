@@ -1400,7 +1400,13 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
         switch (code)
         {
             case Coordination::Error::ZNODEEXISTS:
-                throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "Replica {} already exists", replica_path);
+                /// The reuse check above is keyed on this statement's table UUID, so a registration left
+                /// by an earlier statement is never adopted here and has no local table to DROP.
+                throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS,
+                                "Replica {} already exists. If it is a leftover of a failed table creation "
+                                "and no other server uses it, remove it with "
+                                "SYSTEM DROP REPLICA '{}' FROM ZKPATH '{}'",
+                                replica_path, replica_name, zookeeper_path);
             case Coordination::Error::ZBADVERSION:
                 LOG_INFO(log, "Retrying createReplica(), because some other replicas were created at the same time");
                 break;
