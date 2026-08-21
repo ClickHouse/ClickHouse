@@ -62,6 +62,64 @@ FROM
 )
 ORDER BY value;
 
+-- Sorting must use the complete curve, not just its value or anchor time.
+-- At every common evaluation time, the recent magnitude-2 curves are farther
+-- from zero than the old magnitude-100 curves in this example.
+SELECT id
+FROM
+(
+    SELECT
+        id,
+        exponentialTimeDecayingFloat64(10)(value, time) AS decaying_value
+    FROM VALUES(
+        'id UInt8, value Float64, time Float64',
+        (1, -100, 0),
+        (2, -2, 45),
+        (3, 0, -1000),
+        (4, 100, 0),
+        (5, 2, 45))
+    GROUP BY id
+)
+ORDER BY decaying_value, id;
+
+SELECT id
+FROM
+(
+    SELECT
+        id,
+        exponentialTimeDecayingFloat64(10)(value, time) AS decaying_value
+    FROM VALUES(
+        'id UInt8, value Float64, time Float64',
+        (1, -100, 0),
+        (2, -2, 45),
+        (3, 0, -1000),
+        (4, 100, 0),
+        (5, 2, 45))
+    GROUP BY id
+)
+ORDER BY decaying_value DESC, id;
+
+WITH
+    exponentialTimeDecayingFloat64(10)(100, toFloat64(0)) AS old_positive,
+    exponentialTimeDecayingFloat64(10)(2, toFloat64(45)) AS recent_positive,
+    exponentialTimeDecayingFloat64(10)(-100, toFloat64(0)) AS old_negative,
+    exponentialTimeDecayingFloat64(10)(-2, toFloat64(45)) AS recent_negative
+SELECT
+    old_positive < recent_positive,
+    old_positive <= recent_positive,
+    old_positive > recent_positive,
+    old_positive >= recent_positive,
+    recent_negative < old_negative,
+    recent_negative <= old_negative,
+    recent_negative > old_negative,
+    recent_negative >= old_negative;
+
+-- Equal curves reconstructed at different anchor times have the same sort key.
+WITH
+    exponentialTimeDecayingFloat64(10)(2, toFloat64(0)) AS a,
+    exponentialTimeDecayingFloat64(10)(1, toFloat64(10 * log(2))) AS b
+SELECT a = b, a <= b, a >= b, a < b, a > b;
+
 WITH
     exponentialTimeDecayingFloat64(10)(-2, toFloat64(0)) AS a,
     exponentialTimeDecayingFloat64(10)(-1, toFloat64(0)) AS b

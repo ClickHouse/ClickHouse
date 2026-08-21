@@ -114,10 +114,16 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
 
         auto column = block.getColumnOrSubcolumnByName(sort_column_description.column_name);
 
-        if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-                removeLowCardinalityAndNullable(column.type)))
-            validateExponentialTimeDecayingFloat64Column(
-                *column.column, *decay_length, "sorting");
+        /// Some internal sorting paths intentionally omit type metadata because the
+        /// column implementation is sufficient for sorting. Only custom-type
+        /// validation needs the type; the existing tuple sorter remains unchanged.
+        if (column.type)
+        {
+            if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+                    removeLowCardinalityAndNullable(column.type)))
+                validateExponentialTimeDecayingFloat64Column(
+                    *column.column, *decay_length, "sorting");
+        }
 
         if (isCollationRequired(sort_column_description))
         {

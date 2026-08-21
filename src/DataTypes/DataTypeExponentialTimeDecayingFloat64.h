@@ -17,6 +17,11 @@ struct ExponentialTimeDecayingFloat64Value
     Float64 signed_unit_time;
 };
 
+/// This is also the native lexicographic sort key for a fixed decay length.
+/// `sign` orders negative, zero, and positive curves. For positive curves the
+/// value grows with unit_time; for negative curves it decreases, so storing
+/// `-unit_time` gives the same ascending order as the curve value. The order is
+/// therefore identical at every common evaluation time.
 inline ExponentialTimeDecayingFloat64Value normalizeExponentialTimeDecayingFloat64(
     Float64 value, Float64 time, Float64 decay_length)
 {
