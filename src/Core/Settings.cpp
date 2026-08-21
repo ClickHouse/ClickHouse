@@ -8979,6 +8979,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     void rememberBeforeDistributedPlanAdjustment(std::string_view name);
     void restoreDistributedPlanAdjustments();
+    void dropDistributedPlanAdjustmentMemory() { settings_adjusted_for_distributed_plan.clear(); }
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
@@ -9231,7 +9232,10 @@ Settings::Settings()
 
 Settings::Settings(const Settings & settings)
     : impl(std::make_unique<SettingsImpl>(*settings.impl))
-{}
+{
+    /// The adjustment memory is local to the object it was recorded on - see the note in Settings.h.
+    impl->dropDistributedPlanAdjustmentMemory();
+}
 
 Settings::Settings(Settings && settings) noexcept = default;
 
@@ -9242,6 +9246,7 @@ Settings & Settings::operator=(const Settings & other)
     if (&other == this)
         return *this;
     *impl = *other.impl;
+    impl->dropDistributedPlanAdjustmentMemory();
     return *this;
 }
 
