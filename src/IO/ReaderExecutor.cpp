@@ -377,6 +377,11 @@ void ReaderExecutor::ensureResolved(size_t pos)
     else
         read_plan.retireBefore(pos);
 
+    /// Refill lazily: grow only once less than half the look-ahead remains ahead of the cursor, and
+    /// then resolve up to the full length. Batches the per-window top-ups into fewer, larger resolves.
+    if (read_plan.resolvedEnd() - pos > plan_look_ahead / 2)
+        return;
+
     size_t target = pos + plan_look_ahead;
     if (!offset_map.hasUnknownSize())
         target = std::min(target, offset_map.totalSize());
