@@ -38,6 +38,7 @@
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 
 namespace DB
@@ -476,6 +477,20 @@ public:
 
         try
         {
+            const String uri_path = Poco::URI(uri).getPath();
+
+            if (uri_path.ends_with("/format_query"))
+            {
+                PrometheusQueryTree query_tree{params->get("query", ""), 9};
+                String formatted_query = query_tree.toString();
+
+                auto & output = getOutputStream(response);
+                writeString(R"({"status":"success","data":)", output);
+                writeJSONString(formatted_query, output, FormatSettings{});
+                writeString("}", output);
+                return;
+            }
+
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
@@ -488,8 +503,6 @@ public:
             /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
             /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
             /// percent-encoded label name in ".../label/<name>/values" is read correctly.
-            const String uri_path = Poco::URI(uri).getPath();
-
             if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
@@ -535,10 +548,6 @@ public:
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
-            }
-            else if (uri_path.ends_with("/format_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
             }
             else if (uri_path.ends_with("/parse_query"))
             {

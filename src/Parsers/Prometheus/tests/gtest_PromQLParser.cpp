@@ -38,6 +38,12 @@ namespace
 }
 
 
+TEST(PromQLParser, TrailingComment)
+{
+    expectRoundTrip("up # comment", "up");
+}
+
+
 TEST(PromQLParser, QuotedSelectorIdentifiers)
 {
     EXPECT_EQ(parse(R"({"http.server.request.duration"})"), R"(
@@ -1736,6 +1742,7 @@ PrometheusQueryTree(STRING):
     StringLiteral('日本語')
 )");
 
+    expectRoundTrip(R"("\a\v\000\001\037\177")", R"("\a\v\x00\x01\x1f\x7f")");
 }
 
 
