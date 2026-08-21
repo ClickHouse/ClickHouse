@@ -4477,6 +4477,16 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             src_transaction.commit(src_data_parts_lock);
         }
 
+        /// The moved-out source parts were retired by the covering empty parts committed above.
+        /// Remove them without waiting for `old_parts_lifetime` and retire their block ids in the
+        /// source deduplication log, like every other coverage-based retirement (see
+        /// `renameAndCommitEmptyParts` and `replacePartitionFrom`). Without this, an `INSERT`
+        /// retrying data that was just moved out of the source table would be silently
+        /// deduplicated against block ids of a partition the source no longer contains.
+        for (const auto & part : src_parts)
+            part->remove_time.store(0, std::memory_order_relaxed);
+        dropDeduplicationLogParts(src_parts);
+
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
     }

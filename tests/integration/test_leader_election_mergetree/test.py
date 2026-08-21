@@ -3894,3 +3894,145 @@ def test_uncommitted_detach_clone_not_attachable_after_failover(started_cluster)
                 node.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_VANISHED_PARTS = "12345678-abcd-abcd-abcd-12345678ab43"
+
+
+def test_vanished_parts_retired_on_takeover(started_cluster):
+    """
+    Regression for the additive-only refresh path (`loadNewlyAppearedParts`): a replica used to
+    learn about a retirement only through the covering empty part ("tombstone") the leader
+    publishes for `TRUNCATE` / `DROP PARTITION` / `REPLACE PARTITION` / `MOVE PARTITION`. That
+    tombstone is itself removed by `clearEmptyParts` once the parts it covers are gone from the
+    shared storage, so a replica that did not refresh in that window missed the retirement
+    entirely — it kept serving the dropped partition, and kept those parts active when it later
+    took over as the leader.
+
+    The refresh now also diffs the active set against the storage listing and retires the parts
+    that vanished (`retirePartsVanishedFromStorage`), which is what makes the retirement converge
+    without the tombstone. The same function serves the periodic follower refresh and the
+    takeover scan; the takeover is exercised here because it is both the dangerous case (the
+    stale replica becomes the writer) and the deterministic one (the scan is forced by the
+    leadership change).
+
+    The follower's periodic refresh is frozen with the `merge_tree_refresh_parts_skip` failpoint
+    once it has loaded the parts, so that it provably keeps the pre-`DROP PARTITION` view while
+    the leader publishes and then cleans up the tombstone. The takeover scan calls
+    `loadNewlyAppearedParts` directly and is not affected by that failpoint.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    failpoint = "merge_tree_refresh_parts_skip"
+    table = "test_vanished_parts"
+    columns = "(x UInt64) ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x"
+
+    def parts_of_dropped_partition(node):
+        return int(
+            node.query(
+                f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                f" AND table = '{table}' AND active AND partition = '1'"
+            ).strip()
+        )
+
+    try:
+        # Aggressive cleanup on the leader: the tombstone must actually be removed from the
+        # shared storage during the test, which is the situation the fix is about.
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_VANISHED_PARTS}' {columns}
+            SETTINGS {TABLE_SETTINGS},
+                     old_parts_lifetime = 0,
+                     merge_tree_clear_old_parts_interval_seconds = 1,
+                     cleanup_delay_period = 1, cleanup_delay_period_random_add = 0
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (1), (3)")
+        node1.query(f"INSERT INTO {table} VALUES (2), (4)")
+
+        node2.query(
+            f"""
+            ATTACH TABLE {table} UUID '{SHARED_UUID_VANISHED_PARTS}' {columns}
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        assert leader == node1, "node1 must stay the leader for this scenario"
+        follower = followers[0]
+
+        # The follower needs one periodic refresh to pick up the parts (its snapshot of the
+        # `plain_rewritable` path map predates the table), and is frozen right afterwards.
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if follower.query(
+                f"SELECT x FROM {table} WHERE x > 0 ORDER BY x"
+            ).split() == ["1", "2", "3", "4"]:
+                break
+            time.sleep(1)
+        assert follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == [
+            "1", "2", "3", "4",
+        ], "The follower did not load the parts written by the leader"
+
+        follower.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+        node1.query(f"ALTER TABLE {table} DROP PARTITION 1")
+        assert node1.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == ["2", "4"]
+
+        # Wait until nothing of the dropped partition is left on the leader: neither the dropped
+        # parts nor the covering empty part that retired them. From this moment on, the shared
+        # storage holds no record of the retirement at all.
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if parts_of_dropped_partition(node1) == 0:
+                break
+            time.sleep(1)
+        assert parts_of_dropped_partition(node1) == 0, (
+            "The covering empty part of DROP PARTITION was not cleaned up on the leader, "
+            "so the scenario under test was not reached"
+        )
+
+        # Precondition: the dropped partition is still active in the follower's frozen view.
+        # (Its data is gone from the shared storage, so the rows themselves are not readable
+        # there any more — the point is that the follower still considers the part part of the
+        # table, and would keep it after becoming the leader.)
+        assert parts_of_dropped_partition(follower) == 1, (
+            "The follower refreshed although its periodic refresh is disabled"
+        )
+
+        # The follower takes over with that stale view. The takeover scan must retire the parts
+        # that are no longer on the shared storage; before the fix the new leader resurrected the
+        # dropped partition and served it as the authoritative data.
+        node1.stop_clickhouse(kill=True)
+        wait_for_leader([follower], table_name=table)
+        follower.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        rows = follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split()
+        assert rows == ["2", "4"], (
+            f"The new leader resurrected the partition dropped by the previous leader, got: {rows}"
+        )
+        assert follower.contains_in_log("no longer exists on the shared storage"), (
+            "The vanished-parts retirement never ran during the takeover scan"
+        )
+
+        # And the resurrection must not come back through a reload of the shared storage either.
+        follower.query(f"DETACH TABLE {table}")
+        follower.query(f"ATTACH TABLE {table}")
+        wait_for_leader([follower], table_name=table)
+        assert follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == [
+            "2", "4",
+        ], "The dropped partition came back after reloading from the shared storage"
+    finally:
+        for node in (node1, node2):
+            try:
+                ensure_node_up(node)
+            except Exception:
+                pass
+            try:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass

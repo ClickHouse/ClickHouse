@@ -433,6 +433,7 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    extern const char merge_tree_refresh_parts_skip[];
 
     /// Deterministically simulates a leadership lease that went stale in the middle of the
     /// strict takeover scan, right before it would replay a skipped detach/remove of a
@@ -3286,6 +3287,65 @@ void MergeTreeData::startStatisticsCache()
     }
 }
 
+size_t MergeTreeData::retirePartsVanishedFromStorage(
+    const NameSet & part_directories_on_storage, const NameSet & scanned_disks, bool strict_takeover)
+{
+    /// Under `leader_election` the refresh scan is the only channel through which a replica learns
+    /// about changes made by the current leader, and it used to be additive-only: a part that the
+    /// leader retired and then deleted from the shared storage stayed active here forever unless
+    /// the covering empty part (the "tombstone" published by TRUNCATE / DROP PARTITION /
+    /// REPLACE PARTITION / MOVE PARTITION) happened to still be there at the next refresh. That
+    /// made the tombstone the only cross-replica retirement record, so a replica that refreshed
+    /// after the leader had cleaned it up kept serving the old partition — and kept it active when
+    /// it later took over. Diffing the active set against the storage listing removes that
+    /// dependency: whatever is no longer on the shared storage is no longer part of the table.
+    ///
+    /// This is not a destructive operation: the parts are only forgotten in memory (their data is
+    /// already gone from the storage), and if a listing was somehow incomplete, the very next
+    /// refresh re-adds the parts it finds. Only a follower (or a takeover scan, which runs before
+    /// writes are enabled) does this: a writing leader can have just published a part that a
+    /// cached listing does not show yet.
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+        return 0;
+
+    if (!strict_takeover && mayMutateSharedStorage())
+        return 0;
+
+    DataPartsVector vanished_parts;
+
+    {
+        auto parts_lock = lockParts();
+
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active, DataPartKind::Regular))
+        {
+            /// A broken disk is not scanned at all, so its parts are unknown, not vanished.
+            if (!scanned_disks.contains(part->getDataPartStorage().getDiskName()))
+                continue;
+
+            if (part_directories_on_storage.contains(part->getDataPartStorage().getPartDirectory()))
+                continue;
+
+            vanished_parts.push_back(part);
+        }
+
+        for (const auto & part : vanished_parts)
+        {
+            auto it = data_parts_by_info.find(part->info);
+            if (it == data_parts_by_info.end())
+                continue;
+
+            LOG_INFO(log, "Retiring active part {}: it no longer exists on the shared storage", part->name);
+
+            /// Forget the part entirely instead of moving it to `Outdated`: there is nothing left
+            /// to clean up on the storage, and a follower must not attempt such a cleanup anyway.
+            modifyPartState(it, DataPartState::Temporary, parts_lock);
+            data_parts_indexes.erase(it);
+        }
+    }
+
+    return vanished_parts.size();
+}
+
 size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
 {
     Stopwatch watch;
@@ -3299,10 +3359,18 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
 
     PartLoadingTree::PartLoadingInfos parts_to_load;
 
+    /// The full set of part directories seen by this scan, together with the disks it covered.
+    /// Used below to retire active parts that vanished from the shared storage (see the comment
+    /// there); a part on a disk that was not scanned (broken) must not be retired.
+    NameSet part_directories_on_storage;
+    NameSet scanned_disks;
+
     for (const auto & disk_ptr : disks)
     {
         if (disk_ptr->isBroken())
             continue;
+
+        scanned_disks.insert(disk_ptr->getName());
 
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
@@ -3313,7 +3381,10 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
                 continue;
 
             if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
+            {
+                part_directories_on_storage.insert(it->name());
                 parts_to_load.emplace_back(*part_info, it->name(), disk_ptr);
+            }
         }
     }
 
@@ -3444,11 +3515,13 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
     if (have_parts_with_version_metadata)
         transactions_enabled.store(true);
 
+    size_t retired_parts = retirePartsVanishedFromStorage(part_directories_on_storage, scanned_disks, strict_takeover);
+
     auto old_parts = grabOldParts(true);
 
     watch.stop();
-    LOG_DEBUG(log, "Refreshing data parts (added {} items, removed {} items) took {:.3f} seconds",
-        parts_to_add.size(), old_parts.size(), watch.elapsedSeconds());
+    LOG_DEBUG(log, "Refreshing data parts (added {} items, retired {} items, removed {} items) took {:.3f} seconds",
+        parts_to_add.size(), retired_parts, old_parts.size(), watch.elapsedSeconds());
 
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
@@ -3456,11 +3529,11 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
     return parts_to_add.size();
 }
 
-/// Re-scan the data directory once: reload disk metadata and add parts that appeared since the
-/// last scan (it does not detect parts that vanished from disk; `grabOldParts` only cleans up
-/// parts already marked outdated). Shared by the background refresh task (which reschedules
-/// itself afterwards) and by `SYSTEM RESTART DISK` (an explicit, one-shot refresh). The two
-/// callers are serialized so they cannot load the same new part concurrently.
+/// Re-scan the data directory once: reload disk metadata, add parts that appeared since the last
+/// scan and (under `leader_election`) retire the active parts that vanished from the shared
+/// storage. Shared by the background refresh task (which reschedules itself afterwards) and by
+/// `SYSTEM RESTART DISK` (an explicit, one-shot refresh). The two callers are serialized so they
+/// cannot load the same new part concurrently.
 void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 {
     std::lock_guard refresh_lock(refresh_parts_mutex);
@@ -3469,6 +3542,12 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected transient failure into MergeTreeData::refreshDataPartsOnce");
     });
+
+    /// Test hook that freezes the periodic follower refresh of a `leader_election` replica while
+    /// the leader changes the shared storage, so that the staleness of the frozen view — and its
+    /// reconciliation on the next leadership takeover — is deterministic. The takeover scan calls
+    /// `loadNewlyAppearedParts` directly and is intentionally not affected.
+    fiu_do_on(FailPoints::merge_tree_refresh_parts_skip, { return; });
 
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
@@ -4814,14 +4893,18 @@ size_t MergeTreeData::clearEmptyParts()
         if (is_leader_election)
         {
             /// First remove all covered parts, then remove the covering empty part. Under
-            /// `leader_election` the active empty covering part is the only durable tombstone
+            /// `leader_election` the active empty covering part is the durable tombstone
             /// for the outdated parts it covers: if some covered part is still on the shared
             /// storage (for example, a reader still holds it, or its delete rolled back after
             /// an I/O error), dropping the covering part now would let the old part be loaded
             /// again on the next ATTACH or leader takeover — undoing the TRUNCATE /
             /// DROP PARTITION / REPLACE PARTITION that produced the empty part. This mirrors
             /// the `EMPTY_PART_COVERS_OTHER_PARTS` invariant in `grabOldParts`; the skipped
-            /// parts are retried on the next cleanup round. Without `leader_election` the
+            /// parts are retried on the next cleanup round. Dropping the covering part once the
+            /// covered parts are gone is safe for the other replicas: `loadNewlyAppearedParts`
+            /// retires active parts that vanished from the shared storage
+            /// (`retirePartsVanishedFromStorage`), so the retirement converges without the
+            /// tombstone. Without `leader_election` the
             /// empty part is dropped right away, as before: keeping it active until the
             /// covered parts are gone would change the long-standing visible behavior of
             /// ordinary tables (an extra active part lingering after TRUNCATE or DETACH).

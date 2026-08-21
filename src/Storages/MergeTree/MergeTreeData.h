@@ -858,6 +858,14 @@ public:
     /// read-only (a follower merely skips parts it cannot load).
     size_t loadNewlyAppearedParts(bool strict_takeover = false);
 
+    /// Retire (forget) active parts that are no longer present on the shared storage, according to
+    /// the listing collected by `loadNewlyAppearedParts`. Only for `leader_election`, and only on a
+    /// replica that is not currently writing (a follower refresh, or a takeover scan that runs
+    /// before writes are enabled). Returns the number of retired parts. See the implementation for
+    /// why this is what makes coverage-based retirements converge across replicas.
+    size_t retirePartsVanishedFromStorage(
+        const NameSet & part_directories_on_storage, const NameSet & scanned_disks, bool strict_takeover);
+
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
 
