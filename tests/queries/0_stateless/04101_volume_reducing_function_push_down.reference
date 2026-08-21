@@ -47,7 +47,7 @@ plan: mixed roots keep only volume-reducing functions below sort
 plan: do not push when the lifted expression needs the argument
 0
 plan: mixed filter functions on one argument — not pushed
-0
+1
 eq: filter
 eq: unsupported UUID/IP roots
 eq: sort+limit
