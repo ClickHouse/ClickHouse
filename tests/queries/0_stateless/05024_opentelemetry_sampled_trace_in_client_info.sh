@@ -36,19 +36,36 @@ ${CLICKHOUSE_CLIENT} \
     --query_id "$query_id" \
     --query "select * from remote('127.0.0.2', system, one) format Null"
 
-# The trace id is taken from the initiator's 'query' span (only the initiator has this
-# query_id; the secondary query on 127.0.0.2 has its own). The secondary query must appear
-# in the same trace: at least two 'query' spans, and at least one of them from a query
-# whose query_id differs from the initiator's.
+# Find the initiator's 'query' span by query_id, walk parent_span_id links down from it,
+# and require that the remote rewritten SELECT is among the descendants. The check
+# targets the remote SELECT because it is sent from a connection thread with no ambient
+# trace context, so only the ClientInfo write-back can parent it correctly (unlike the
+# remote DESC TABLE, which the query thread's ambient context parents anyway).
 counts_query="
-    with (select any(trace_id) from system.opentelemetry_span_log
-          where finish_date >= yesterday() and operation_name = 'query'
-            and attribute['clickhouse.query_id'] = '$query_id') as t
+    with recursive initiator_descendants as
+        (
+            select span_id
+            from system.opentelemetry_span_log
+            where finish_date >= yesterday() and operation_name = 'query'
+                and attribute['clickhouse.query_id'] = '$query_id'
+            union all
+            select l.span_id
+            from system.opentelemetry_span_log as l
+            inner join initiator_descendants as d on l.parent_span_id = d.span_id
+            where l.finish_date >= yesterday()
+        )
     select
         countIf(operation_name = 'query'),
-        countIf(operation_name = 'query' and attribute['clickhouse.query_id'] != '$query_id')
+        countIf(operation_name = 'query'
+            and attribute['clickhouse.query_id'] != '$query_id'
+            and attribute['db.statement'] like 'SELECT%'
+            and span_id in (select span_id from initiator_descendants))
     from system.opentelemetry_span_log
-    where finish_date >= yesterday() and trace_id = t"
+    where finish_date >= yesterday()
+        and trace_id = (select any(trace_id) from system.opentelemetry_span_log
+                        where finish_date >= yesterday() and operation_name = 'query'
+                            and attribute['clickhouse.query_id'] = '$query_id')
+    settings enable_analyzer = 1"
 
 poll_spans "$counts_query" "2 1" || exit 1
-echo "sampled trace joins remote query: OK"
+echo "remote query span attached under initiator query span: OK"
