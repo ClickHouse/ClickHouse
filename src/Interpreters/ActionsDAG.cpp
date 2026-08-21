@@ -2927,9 +2927,11 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::getParents(const Node * target) const
     return parents;
 }
 
-ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameSet & sort_columns) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(
+    const NameSet & sort_columns,
+    std::unordered_set<const Node *> additional_split_nodes) const
 {
-    std::unordered_set<const Node *> split_nodes;
+    std::unordered_set<const Node *> split_nodes = std::move(additional_split_nodes);
     for (const auto & sort_column : sort_columns)
         if (const auto * node = tryFindInOutputs(sort_column))
         {
@@ -3021,7 +3023,9 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
     return false;
 }
 
-ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & column_name) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(
+    const std::string & column_name,
+    std::unordered_set<const Node *> additional_split_nodes) const
 {
     const auto * node = tryFindInOutputs(column_name);
     if (!node)
@@ -3030,7 +3034,8 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
                         column_name,
                         dumpDAG());
 
-    std::unordered_set<const Node *> split_nodes = {node};
+    std::unordered_set<const Node *> split_nodes = std::move(additional_split_nodes);
+    split_nodes.insert(node);
     /// The filter name may also be an input name. Two same-named outputs of different structure in the
     /// first half would break the Block invariant, so let split() rename the promoted node and repair
     /// the second half. The mapping carries the final name of the filter node.
