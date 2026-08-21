@@ -5346,7 +5346,15 @@ void ClientBase::runInteractive()
 #if USE_CLIENT_AI
     /// The AI agent adds the queries it runs to the history through this reader, so they can be
     /// recalled and edited like the queries the user typed themselves.
+    /// The reader itself lives on the heap (`lr` merely owns it), and the `SCOPE_EXIT` below is
+    /// destroyed before `lr`, clearing the field first - but the lifetime analysis conflates the
+    /// owner with the pointee and cannot see through the scope guard, so it reports a dangling
+    /// field here. The warning exists only in newer clang, hence `-Wunknown-warning-option`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+#pragma clang diagnostic ignored "-Wlifetime-safety-dangling-field"
     ai_line_reader = lr.get();
+#pragma clang diagnostic pop
     SCOPE_EXIT({ ai_line_reader = nullptr; });
 #endif
 
