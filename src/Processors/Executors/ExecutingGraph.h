@@ -113,9 +113,9 @@ public:
         Port::UpdateInfo::UpdateList post_updated_output_ports;
 
         /// Counters for profiling.
-        std::atomic<int64_t> num_executed_jobs = 0;
-        std::atomic<int64_t> execution_time_ns = 0;
-        std::atomic<int64_t> preparation_time_ns = 0;
+        uint64_t num_executed_jobs = 0;
+        uint64_t execution_time_ns = 0;
+        uint64_t preparation_time_ns = 0;
         /// Cached clock for EXPLAIN ANALYZE
         StepWallClockCache cached_clock{};
 
@@ -140,7 +140,7 @@ public:
     explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
 
     const Processors & getProcessors() const { return *processors; }
-    String dump() const;
+    String dump(bool with_profile_counters = true) const;
 
     /// Traverse graph the first time to update all the childless nodes.
     void initializeExecution(Queue & queue, Queue & async_queue);
