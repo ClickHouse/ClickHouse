@@ -568,3 +568,31 @@ SELECT 'case47_projection';
 SELECT key, sum(b) FROM t_skip_empty_case47 GROUP BY key ORDER BY key SETTINGS force_optimize_projection = 1;
 
 DROP TABLE t_skip_empty_case47;
+
+-- ============================================================================
+-- CASE 48: Wide marker-only CLEAR rebuilds dependent MATERIALIZED columns.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case48;
+
+CREATE TABLE t_skip_empty_case48
+(
+    key UInt64,
+    b UInt64,
+    c UInt64 MATERIALIZED b + 1
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case48 (key, b) VALUES (1, 0);
+ALTER TABLE t_skip_empty_case48 MODIFY COLUMN b UInt64 DEFAULT 999;
+ALTER TABLE t_skip_empty_case48 CLEAR COLUMN b;
+
+SELECT 'case48_data';
+SELECT key, b, c FROM t_skip_empty_case48 ORDER BY key;
+
+DROP TABLE t_skip_empty_case48;

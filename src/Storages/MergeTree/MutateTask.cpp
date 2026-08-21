@@ -716,7 +716,11 @@ static void splitAndModifyMutationCommands(
                 if (alter_conversions->isColumnRenamed(marker_name))
                     marker_name = alter_conversions->getColumnOldName(marker_name);
                 if (part->getSerializationInfos().isMissingColumn(marker_name))
+                {
+                    if (command.clear)
+                        for_interpreter.push_back(command);
                     for_file_renames.push_back(command);
+                }
             }
         }
 
