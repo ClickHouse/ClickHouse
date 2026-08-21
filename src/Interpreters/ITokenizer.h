@@ -356,17 +356,19 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
-/// Text index tokenizer for a `Map(String, String)` column. One token per `(key, value)` pair:
+/// Tokenizer for a text index on a `Map(String, String)` column: one token per `(key, value)` pair.
 ///
-///     token = key ‖ value ‖ reversed-varint((key.size() << 1) | is_rest)
+///     token = key ‖ value ‖ trailer
 ///
-/// Tokens sort by key, then value, so a key prefix selects a dictionary range. The range is a superset:
-/// it also admits tokens of a shorter key whose value continues the prefix, so a scan must decode and
-/// filter. The trailer carries the key length, which makes the key/value split recoverable and lets both
-/// hold arbitrary bytes; it is written reversed so a decoder scans backward from the token end.
-/// `is_rest` is 1 for a key's later duplicates in a row; `m['key']` is the first occurrence, so it
-/// matches `is_rest = 0`.
-/// The aggregator encodes the pairs, so the string-tokenization methods below all throw.
+/// The trailer is `(length(key) << 1) | is_rest`, a varint with its bytes reversed so that a reader,
+/// which knows only where the token ends, can walk backwards to its start. The key length splits the
+/// token back into key and value, so both may hold any byte, unlike a `key=value` separator.
+/// `is_rest` is 0 for a key's first occurrence in a row and 1 for repetitions; `m['key']` is the first
+/// occurrence, so its lookup matches `is_rest = 0`. It shares the varint and costs no extra byte.
+/// Key first orders tokens by key, then value, so a search for one key reads a single range of tokens,
+/// which may also hold longer keys with the same start.
+///
+/// Tokens are built in `MergeTreeIndexAggregatorText::addDocumentsFromMap`; the methods below throw.
 struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsTokenizer>
 {
     KeyValuePairsTokenizer() : ITokenizerHelper(Type::KeyValuePairs) {}
@@ -375,8 +377,7 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
     static const char * getExternalName() { return getName(); }
     String getDescription() const override { return getName(); }
 
-    /// `out` is cleared first; lets a hot loop reuse one buffer. The PaddedPODArray overload is for
-    /// callers that feed the token to StringHashTable, which reads past both ends.
+    /// `out` is cleared first, so a hot loop can reuse one buffer.
     static void encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out);
     static void encodeToken(std::string_view key, std::string_view value, bool is_rest, PaddedPODArray<UInt8> & out);
     static String encodeToken(std::string_view key, std::string_view value, bool is_rest);
@@ -646,7 +647,7 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         }
         case ITokenizer::Type::KeyValuePairs:
         {
-            /// The virtual `nextInString` throws; keep the message in one place.
+            /// This tokenizer does not split strings: `nextInString` throws.
             detail::forEachTokenImpl(tokenizer, data, length, callback);
             return;
         }
