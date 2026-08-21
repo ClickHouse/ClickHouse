@@ -137,6 +137,13 @@ ATTACH MATERIALIZED VIEW time_decay_mv_attach_blocked
 ENGINE = Memory
 AS SELECT value FROM time_decay_mv_source; -- { serverError ILLEGAL_COLUMN }
 
+CREATE MATERIALIZED VIEW time_decay_mv_nested_type_blocked
+(
+    value Array(ExponentialTimeDecayingFloat64(10))
+)
+ENGINE = Memory
+AS SELECT [value] FROM time_decay_mv_source; -- { serverError ILLEGAL_COLUMN }
+
 -- Materialized views historically skip unrelated suspicious-type validation.
 -- Adding the time-decay gate must not change that behavior.
 CREATE MATERIALIZED VIEW time_decay_mv_unrelated_validation
@@ -590,6 +597,8 @@ SET allow_experimental_time_decay_aggregate_functions = 0;
 SET enable_analyzer = 0;
 CREATE VIEW time_decay_parameterized_view_gate AS
 SELECT tupleElement({value:ExponentialTimeDecayingFloat64(10)}, 1); -- { serverError ILLEGAL_COLUMN }
+CREATE VIEW time_decay_nested_parameterized_view_gate AS
+SELECT length({values:Array(ExponentialTimeDecayingFloat64(10))}); -- { serverError ILLEGAL_COLUMN }
 -- Full ATTACH definitions are rejected before type validation, so they cannot
 -- bypass the experimental setting.
 ATTACH VIEW time_decay_parameterized_view_attach_gate AS
