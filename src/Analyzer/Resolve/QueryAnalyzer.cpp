@@ -1049,6 +1049,13 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
                     return true;
 
                 auto result_type = expression->getResultType();
+
+                /// An unresolved node may report the missing type by returning nullptr instead of
+                /// throwing (e.g. a lambda used as the `ARRAY JOIN` expression). Assume collision,
+                /// same as for the unresolved carriers above.
+                if (!result_type)
+                    return true;
+
                 if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
                     result_type = array_type->getNestedType();
 

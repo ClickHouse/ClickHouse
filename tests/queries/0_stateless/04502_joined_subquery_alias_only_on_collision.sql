@@ -171,6 +171,13 @@ SELECT `a.x`
 FROM numbers(1), (SELECT 2 AS `a.x`)
 ARRAY JOIN (SELECT [tuple(1)]) AS a; -- { serverError ALIAS_REQUIRED }
 
+-- A lambda used as an `ARRAY JOIN` alias is also unresolved while its inner join tree is validated,
+-- but unlike a query node it reports the missing type by returning an empty result type instead of
+-- throwing. The dotted output must take the same conservative `ALIAS_REQUIRED` path.
+SELECT `a.x`
+FROM numbers(1), (SELECT 2 AS `a.x`)
+ARRAY JOIN (y -> [1]) AS a; -- { serverError ALIAS_REQUIRED }
+
 -- An `ARRAY JOIN` expression that is neither aliased nor a plain identifier (here a `COLUMNS(...)` matcher)
 -- exposes names that are only known after resolution, so the validation cannot prove the absence of a
 -- collision and keeps the strict behavior: the unaliased subquery is rejected even without a provable
