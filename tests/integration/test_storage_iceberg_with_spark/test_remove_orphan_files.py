@@ -33,10 +33,10 @@ class OrphanTestEnv:
 
     # -- table lifecycle -----------------------------------------------------
 
-    def populate(self, n_rows, format_version=2):
+    def populate(self, n_rows, format_version=2, **kwargs):
         create_iceberg_table(
             self.storage_type, self.instance, self.table_name,
-            self.cluster, "(x Int)", format_version,
+            self.cluster, "(x Int)", format_version, **kwargs,
         )
         for val in range(1, n_rows + 1):
             self.instance.query(
@@ -580,3 +580,32 @@ def test_remove_orphan_files_ignores_pinned_metadata(started_cluster_iceberg_wit
     assert full_result == "1\n2\n3\n", (
         f"All data should be intact when reading latest metadata, got: {full_result}"
     )
+
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_remove_orphan_files_preserves_version_hint(started_cluster_iceberg_with_spark, storage_type):
+    """remove_orphan_files must treat metadata/version-hint.text as reachable.
+
+    The hint is a fixed object under the storage root, not a path stored in
+    metadata, so the reachable set must contain its storage key.  If that key is
+    malformed the live hint is classified as an orphan and deleted, and with
+    iceberg_use_version_hint = 1 the table then stops reading entirely."""
+    env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_orphan_version_hint")
+    env.populate(2, use_version_hint=True)
+
+    # Guard against a fixture that never wrote the hint: without this the test
+    # would pass on a binary that deletes it.
+    assert env.exists("metadata", "version-hint.text"), \
+        "Fixture did not create metadata/version-hint.text"
+
+    env.add_orphan("data", "orphan-version-hint.parquet")
+    time.sleep(2)
+
+    env.remove_orphans(older_than=env.now_ts())
+
+    assert env.exists("metadata", "version-hint.text"), \
+        "remove_orphan_files deleted the live metadata/version-hint.text"
+    # The user-visible consequence: with the hint gone the table stops reading.
+    env.assert_data_intact()
+    assert not env.exists("data", "orphan-version-hint.parquet"), \
+        "The orphan data file should still have been deleted"

@@ -5,7 +5,10 @@ set min_bytes_to_use_direct_io = 0;
 
 drop table if exists 03595_data;
 
+-- min_bytes_for_full_part_storage=0 forces full storage: a packed part is read from a single
+-- data.packed archive, bypassing the per-file pread_threadpool/O_DIRECT path this test checks.
 create table 03595_data (key UInt32, val String) engine = MergeTree order by key
+settings min_bytes_for_full_part_storage = 0
 as
 select number, 'val-' || number from numbers(100000);
 

@@ -56,6 +56,27 @@ const char * __tsan_default_options()
 {
     return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768 allocator_may_return_null=1";
 }
+const char * __tsan_default_suppressions()
+{
+    /// The release/acquire handoff on `slot.pos` orders every access to a slot payload, so the
+    /// reports these entries suppress are not real races (see the comment in
+    /// Common/NonblockingBoundedQueue.h). A function attribute cannot suppress them, because the
+    /// element type's implicitly generated move assignment is a separate, still-instrumented
+    /// function, and the attribute additionally prevents it from being inlined.
+    ///
+    /// Of the queue entries, only `tryPush` is listed. Both Keeper queues have a single consumer
+    /// thread, so two `tryPop` calls never overlap and every reported pair contains the `tryPush` write.
+    /// Patterns are matched against each frame's function, file and module name, so an unqualified
+    /// name would also match this header's file name and the unrelated asynchronous logging queue.
+    /// Keep them narrow: a `race:` entry also hides heap-use-after-free reports through the frame
+    /// it names.
+    /// The same handoff orders the request: its vptr is written only by the constructor, and the
+    /// payload fields `bytesSize` reads are never assigned after publication. `race_top` matches
+    /// the innermost frame only; the request's other virtual calls are not listed.
+    return "race:^NonblockingBoundedQueue<DB::KeeperRequestForSession>::tryPush\n"
+           "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n"
+           "race_top:^DB::getRequestBytesCost\n";
+}
 #endif
 
 #ifdef UNDEFINED_BEHAVIOR_SANITIZER

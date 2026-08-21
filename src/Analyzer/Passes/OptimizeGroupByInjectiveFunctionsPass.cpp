@@ -44,22 +44,19 @@ public:
         if (!query->hasGroupBy())
             return;
 
-        if (query->isGroupByWithCube() || query->isGroupByWithRollup())
+        /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
+        /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH
+        /// TOTALS row. In such a row the key is output as its column default. Rewriting f(g) -> g
+        /// makes the output projection recompute f(defaultOf(g)) instead of defaultOf(typeOf(f(g))),
+        /// which changes the result. See #110715.
+        if (query->isGroupByWithCube() || query->isGroupByWithRollup()
+            || query->isGroupByWithGroupingSets() || query->isGroupByWithTotals())
             return;
 
         bool allow_suspicious_types = getSettings()[Setting::allow_suspicious_types_in_group_by];
 
         auto & group_by = query->getGroupBy().getNodes();
-        if (query->isGroupByWithGroupingSets())
-        {
-            for (auto & set : group_by)
-            {
-                auto & grouping_set = set->as<ListNode>()->getNodes();
-                grouping_set = unwrapInjectiveFunctionsInKeys(grouping_set, allow_suspicious_types);
-            }
-        }
-        else
-            group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types);
+        group_by = unwrapInjectiveFunctionsInKeys(group_by, allow_suspicious_types);
     }
 };
 

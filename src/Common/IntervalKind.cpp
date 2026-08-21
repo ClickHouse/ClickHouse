@@ -38,6 +38,11 @@ Int64 IntervalKind::toAvgNanoseconds() const
     }
 }
 
+Int64 IntervalKind::toAvgMilliseconds() const
+{
+    return toAvgNanoseconds() / 1'000'000;
+}
+
 Int32 IntervalKind::toAvgSeconds() const
 {
     switch (kind)

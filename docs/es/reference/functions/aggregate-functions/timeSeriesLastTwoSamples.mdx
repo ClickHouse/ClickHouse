@@ -15,9 +15,9 @@ Introducido en: v25.6.0
 
 Función de agregación para remuestrear datos de series temporales y calcular `irate` e `idelta` al estilo de PromQL.
 
-Función de agregación que toma datos de series temporales como pares de marcas de tiempo y valores, y almacena como máximo las 2 muestras más recientes. Esta función de agregación está pensada para usarse con una vista materializada y una tabla agregada que almacena datos de series temporales remuestreados para marcas de tiempo alineadas con la cuadrícula.
+Función de agregación que toma datos de series temporales como pares de marcas temporales y valores, y almacena como máximo las 2 muestras más recientes. Esta función de agregación está pensada para usarse con una vista materializada y una tabla agregada que almacena datos de series temporales remuestreados para marcas temporales alineadas con la cuadrícula.
 
-La tabla agregada almacena solo los 2 últimos valores para cada marca de tiempo alineada. Esto permite calcular `irate` e `idelta` al estilo de PromQL leyendo muchos menos datos de los que se almacenan en la tabla sin procesar.
+La tabla agregada almacena solo los 2 últimos valores para cada marca temporal alineada. Esto permite calcular `irate` e `idelta` al estilo de PromQL leyendo muchos menos datos de los que se almacenan en la tabla sin procesar.
 
 <Warning>
   Esta función es experimental; actívela estableciendo `allow_experimental_ts_to_grid_aggregate_function=true`.
@@ -43,7 +43,8 @@ Devuelve un par de arrays de la misma longitud, entre 0 y 2. El primer array con
 **Tabla de ejemplo para datos sin procesar y otra tabla para almacenar datos remuestreados**
 
 ```sql title=Query
--- Tabla para datos sin procesar
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
 CREATE TABLE t_raw_timeseries
 (
     metric_id UInt64,
@@ -53,17 +54,17 @@ CREATE TABLE t_raw_timeseries
 ENGINE = MergeTree()
 ORDER BY (metric_id, timestamp);
 
--- Tabla con datos remuestreados a intervalos de tiempo mayores (15 seg)
+-- Table with data re-sampled to bigger (15 sec) time steps
 CREATE TABLE t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
-    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- Timestamp alineado a 15 seg
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- Timestamp aligned to 15 sec
     samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
 )
 ENGINE = AggregatingMergeTree()
 ORDER BY (metric_id, grid_timestamp);
 
--- Vista materializada para poblar la tabla remuestreada
+-- MV for populating re-sampled table
 CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
 (
     metric_id UInt64,
@@ -72,15 +73,15 @@ CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_se
 )
 AS SELECT
     metric_id,
-    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Redondear el timestamp hacia arriba al siguiente punto de la cuadrícula
+    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Round timestamp up to the next grid point
     initializeAggregation('timeSeriesLastTwoSamplesState', timestamp, value) AS samples
 FROM t_raw_timeseries
 ORDER BY metric_id, grid_timestamp;
 
--- Insertar algunos datos
+-- Insert some data
 INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
 
--- Verificar datos sin procesar
+-- Check raw data
 SELECT *
 FROM t_raw_timeseries
 WHERE metric_id = 3 AND timestamp BETWEEN '2024-12-12 12:00:12' AND '2024-12-12 12:00:31'
@@ -111,10 +112,48 @@ ORDER BY metric_id, timestamp;
 3    2024-12-12 12:00:30.869    25
 ```
 
-**Consultar las 2 últimas muestras de las marcas de tiempo &#39;2024-12-12 12:00:15&#39; y &#39;2024-12-12 12:00:30&#39;**
+**Consultar las 2 últimas muestras para las marcas temporales &#39;2024-12-12 12:00:15&#39; y &#39;2024-12-12 12:00:30&#39;**
 
 ```sql title=Query
--- Verificar datos remuestreados
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
+CREATE TABLE t_raw_timeseries
+(
+    metric_id UInt64,
+    timestamp DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD),
+    value Float64 CODEC(DoubleDelta)
+)
+ENGINE = MergeTree()
+ORDER BY (metric_id, timestamp);
+
+-- Table with data re-sampled to bigger (15 sec) time steps
+CREATE TABLE t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- Timestamp aligned to 15 sec
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY (metric_id, grid_timestamp);
+
+-- MV for populating re-sampled table
+CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD),
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+AS SELECT
+    metric_id,
+    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Round timestamp up to the next grid point
+    initializeAggregation('timeSeriesLastTwoSamplesState', timestamp, value) AS samples
+FROM t_raw_timeseries
+ORDER BY metric_id, grid_timestamp;
+
+-- Insert some data
+INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
+
+-- Check re-sampled data
 SELECT metric_id, grid_timestamp, (finalizeAggregation(samples).1 as timestamp, finalizeAggregation(samples).2 as value)
 FROM t_resampled_timeseries_15_sec
 WHERE metric_id = 3 AND grid_timestamp BETWEEN '2024-12-12 12:00:15' AND '2024-12-12 12:00:30'
@@ -129,14 +168,28 @@ ORDER BY metric_id, grid_timestamp;
 **Calcular `idelta` e `irate` a partir de datos sin procesar**
 
 ```sql title=Query
--- La tabla agregada almacena solo los últimos 2 valores para cada marca de tiempo alineada a 15 segundos.
--- Esto permite calcular irate e idelta al estilo de PromQL leyendo muchos menos datos que los almacenados en la tabla sin procesar.
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
+CREATE TABLE t_raw_timeseries
+(
+    metric_id UInt64,
+    timestamp DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD),
+    value Float64 CODEC(DoubleDelta)
+)
+ENGINE = MergeTree()
+ORDER BY (metric_id, timestamp);
+
+-- Insert some data
+INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
+
+-- The aggregated table stores only last 2 values for each 15-second aligned timestamp.
+-- This allows to calculate PromQL-like irate and idelta by reading much less data then is stored in the raw table.
 
 WITH
-    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- inicio de la cuadrícula de timestamps
-    start_ts + INTERVAL 60 SECOND AS end_ts,   -- fin de la cuadrícula de timestamps
-    15 AS step_seconds,   -- paso de la cuadrícula de timestamps
-    45 AS window_seconds  -- ventana de "obsolescencia"
+    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- start of timestamp grid
+    start_ts + INTERVAL 60 SECOND AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
 SELECT
     metric_id,
     timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value),
@@ -153,11 +206,49 @@ GROUP BY metric_id;
 **Calcular idelta e irate a partir de datos remuestreados**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
+-- Table for raw data
+CREATE TABLE t_raw_timeseries
+(
+    metric_id UInt64,
+    timestamp DateTime64(3, 'UTC') CODEC(DoubleDelta, ZSTD),
+    value Float64 CODEC(DoubleDelta)
+)
+ENGINE = MergeTree()
+ORDER BY (metric_id, timestamp);
+
+-- Table with data re-sampled to bigger (15 sec) time steps
+CREATE TABLE t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD), -- Timestamp aligned to 15 sec
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY (metric_id, grid_timestamp);
+
+-- MV for populating re-sampled table
+CREATE MATERIALIZED VIEW mv_resampled_timeseries TO t_resampled_timeseries_15_sec
+(
+    metric_id UInt64,
+    grid_timestamp DateTime('UTC') CODEC(DoubleDelta, ZSTD),
+    samples AggregateFunction(timeSeriesLastTwoSamples, DateTime64(3, 'UTC'), Float64)
+)
+AS SELECT
+    metric_id,
+    ceil(toUnixTimestamp(timestamp + interval 999 millisecond) / 15, 0) * 15 AS grid_timestamp, -- Round timestamp up to the next grid point
+    initializeAggregation('timeSeriesLastTwoSamplesState', timestamp, value) AS samples
+FROM t_raw_timeseries
+ORDER BY metric_id, grid_timestamp;
+
+-- Insert some data
+INSERT INTO t_raw_timeseries(metric_id, timestamp, value) SELECT number%10 AS metric_id, '2024-12-12 12:00:00'::DateTime64(3, 'UTC') + interval ((number/10)%100)*900 millisecond as timestamp, number%3+number%29 AS value FROM numbers(1000);
+
 WITH
-    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- inicio de la cuadrícula de timestamps
-    start_ts + INTERVAL 60 SECOND AS end_ts,   -- fin de la cuadrícula de timestamps
-    15 AS step_seconds,   -- paso de la cuadrícula de timestamps
-    45 AS window_seconds  -- ventana de "obsolescencia"
+    '2024-12-12 12:00:15'::DateTime64(3,'UTC') AS start_ts,       -- start of timestamp grid
+    start_ts + INTERVAL 60 SECOND AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
 SELECT
     metric_id,
     timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values),

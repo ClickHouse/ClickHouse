@@ -15,9 +15,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 
 <div className="mt-2 flex flex-wrap gap-2">
   <Badge size="lg" color="blue">Analítica en tiempo real</Badge>
-  <Badge size="lg" color="blue">Data warehousing</Badge>
+  <Badge size="lg" color="blue">Almacén de datos</Badge>
   <Badge size="lg" color="blue">Observabilidad</Badge>
-  <Badge size="lg" color="blue">AI/ML</Badge>
+  <Badge size="lg" color="blue">IA/ML</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
 
@@ -37,9 +37,7 @@ En esta guía de inicio rápido crearás tu primer servicio de ClickHouse Cloud,
 Al final, tendrás un servicio de ClickHouse Cloud en funcionamiento, con datos cargados y listo para usarlo como base para el resto de la serie de guías de inicio rápido.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Regístrate en ClickHouse Cloud
-
+  <Step title="Regístrate en ClickHouse Cloud" id="sign-up-for-clickhouse-cloud">
     Ve a [console.clickhouse.cloud](https://console.clickhouse.cloud/). Verás la página de inicio de sesión. Haz clic en **Register** junto a &quot;¿Todavía no tienes una cuenta?&quot;, en la parte inferior.
 
     <Frame caption="Haz clic en Register para crear una cuenta nueva">
@@ -66,9 +64,7 @@ Al final, tendrás un servicio de ClickHouse Cloud en funcionamiento, con datos 
     Una vez verificada, inicia sesión con tu nuevo correo electrónico y password.
   </Step>
 
-  <Step>
-    ### Crear un nuevo servicio
-
+  <Step title="Crear un nuevo servicio" id="create-a-new-service">
     Después de iniciar sesión por primera vez, se te llevará directamente a la página de configuración del servicio. Configura lo siguiente:
 
     | Configuración           | Recomendación                                                                                                 |
@@ -91,9 +87,7 @@ Al final, tendrás un servicio de ClickHouse Cloud en funcionamiento, con datos 
     </Frame>
   </Step>
 
-  <Step>
-    ### Cargar un conjunto de datos de ejemplo
-
+  <Step title="Cargar un conjunto de datos de ejemplo" id="load-an-example-dataset">
     Haz clic en **Data sources** en la barra lateral izquierda. Verás varias opciones para incorporar datos a tu servicio.
 
     <Frame caption="Página de Data sources con opciones para cargar datos">
@@ -115,9 +109,7 @@ Al final, tendrás un servicio de ClickHouse Cloud en funcionamiento, con datos 
     La importación tardará uno o dos minutos. Cuando termine, podrás consultar los datos.
   </Step>
 
-  <Step>
-    ### Consultar los datos
-
+  <Step title="Consultar los datos" id="query-the-data">
     Haz clic en **SQL Console** en la barra lateral izquierda para abrir el editor de consultas integrado. Aquí podrás escribir y ejecutar consultas SQL directamente en tu navegador, sin necesidad de herramientas externas.
 
     Prueba algunas consultas para explorar los datos de precios inmobiliarios del Reino Unido.
@@ -152,7 +144,9 @@ Al final, tendrás un servicio de ClickHouse Cloud en funcionamiento, con datos 
   </Step>
 </Steps>
 
-## Siguientes pasos
+<div id="next-steps">
+  ## Siguientes pasos
+</div>
 
 Ahora tiene un servicio de ClickHouse Cloud en funcionamiento con 30 millones de filas de datos reales ya cargadas. Este servicio y este conjunto de datos se utilizan en el resto de la serie de guías de inicio rápido.
 

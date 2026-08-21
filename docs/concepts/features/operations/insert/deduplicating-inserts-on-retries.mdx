@@ -26,7 +26,7 @@ If more than `*_deduplication_window` other insert operations occur during the r
 
 **Only `*MergeTree` engines support deduplication on insertion.**
 
-For `*ReplicatedMergeTree` engines, insert deduplication is enabled by default and is controlled by the [`replicated_deduplication_window`](/reference/settings/merge-tree-settings#replicated_deduplication_window) and [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) settings. For non-replicated `*MergeTree` engines, deduplication is controlled by the [`non_replicated_deduplication_window`](/reference/settings/merge-tree-settings#non_replicated_deduplication_window) setting.
+For `*ReplicatedMergeTree` engines, insert deduplication is enabled by default and is controlled by the [`replicated_deduplication_window`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) and [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) settings. For non-replicated `*MergeTree` engines, deduplication is controlled by the [`non_replicated_deduplication_window`](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) setting.
 
 The settings above determine the parameters of the deduplication log for a table. The deduplication log stores a finite number of `block_id`s, which determine how deduplication works (see below).
 
@@ -53,11 +53,11 @@ When a table has one or more materialized views, the inserted data is also inser
 
 You can control this process using the following settings for the source table:
 
-- [`replicated_deduplication_window`](/reference/settings/merge-tree-settings#replicated_deduplication_window)
-- [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
-- [`non_replicated_deduplication_window`](/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+- [`replicated_deduplication_window`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)
+- [`replicated_deduplication_window_seconds`](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
+- [`non_replicated_deduplication_window`](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
 
-You have to also enable the user profile setting [`deduplicate_blocks_in_dependent_materialized_views`](/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views).
+You have to also enable the user profile setting [`deduplicate_blocks_in_dependent_materialized_views`](/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views).
 With enabled setting `insert_deduplicate=1` an inserted data is deduplicated in source table. The setting `deduplicate_blocks_in_dependent_materialized_views=1` additionally enables deduplication in dependant tables. You have to enable both if full deduplication is desired.
 
 When inserting blocks into tables under materialized views, ClickHouse calculates the `block_id` by hashing a string that combines the `block_id`s from the source table and additional identifiers. This ensures accurate deduplication within materialized views, allowing data to be distinguished based on its original insertion, regardless of any transformations applied before reaching the destination table under the materialized view.

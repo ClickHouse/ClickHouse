@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'ClickStack'
+slug: /cloud/manage/clickstack
+title: 'ClickStack'
+description: 'Disponibiliza a ClickStack UI - uma plataforma de observabilidade pronta para produção, baseada em ClickHouse e OpenTelemetry (OTel), que unifica logs, traces, métricas e sessões em uma única solução escalável e de alto desempenho.'
+doc_type: 'guide'
+keywords: ['hyperdx', 'observabilidade', 'integração', 'recursos de nuvem', 'monitoramento', 'clickstack']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+[**Managed ClickStack**](/pt-BR/clickstack/overview) traz a plataforma de observabilidade [ClickStack](/pt-BR/clickstack/overview) de código aberto para o ClickHouse Cloud em uma versão totalmente gerenciada. Baseado em ClickHouse e OpenTelemetry (OTel), ele unifica logs, traces, métricas e dados de sessão em uma única solução de alto desempenho. Projetado para monitoramento e depuração de sistemas complexos, o Managed ClickStack permite que desenvolvedores e SREs rastreiem problemas de ponta a ponta sem alternar entre ferramentas nem correlacionar dados manualmente usando timestamps ou IDs de correlação.
+
+Como oferta gerenciada, o Managed ClickStack entrega o projeto de código aberto com a ClickStack UI integrada diretamente ao console do ClickHouse Cloud, Controle de Acesso Baseado em Funções (RBAC) nativo e recursos adicionais, como AI Notebooks e alertas de nível empresarial. Não há infraestrutura para gerenciar nem autenticação separada para configurar.
+
+A ClickStack UI (HyperDX) é um frontend criado especificamente para explorar e visualizar dados de observabilidade, com suporte a consultas no estilo Lucene e SQL, dashboards interativos, alertas, exploração de traces e muito mais, tudo otimizado para o ClickHouse como backend.
+
+O Managed ClickStack pode ser iniciado com um único clique e conectado aos seus dados, totalmente integrado ao sistema de autenticação do ClickHouse Cloud para oferecer acesso seguro e contínuo aos seus insights de observabilidade.
+
+<div id="main-concepts">
+  ## Implantação
+</div>
+
+Você encontrará o ClickStack no menu de navegação principal à esquerda ao selecionar qualquer serviço.
+
+<Image img="/images/use-cases/observability/clickstack-cloud.webp" alt="Managed ClickStack no ClickHouse Cloud" size="lg" />
+
+Para começar a usar o ClickStack no ClickHouse Cloud, recomendamos nosso [guia de primeiros passos](/pt-BR/clickstack/deployment/managed).
+
+Para mais detalhes sobre o ClickStack, consulte a [documentação completa](/pt-BR/clickstack/overview).

@@ -15,6 +15,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
@@ -67,6 +68,8 @@ SHOW CREATE SETTINGS PROFILE p;
 * `DROP ALL SETTINGS` / `DROP ALL PROFILES` — удаляет все настройки или все родительские профили.
 
 Несколько таких секций можно объединить в одном операторе, например `DROP SETTINGS a ADD SETTINGS b = 1`.
+
+`SET variable = value` — это псевдоним для `MODIFY SETTINGS variable = value`. Он предусмотрен, потому что `SET` звучит естественно, а ввод заменяющего предложения `SETTINGS`, когда предполагалось инкрементальное изменение, — распространённая ошибка.
 
 <div id="examples">
   ## Примеры

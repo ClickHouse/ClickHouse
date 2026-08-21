@@ -19,40 +19,41 @@ ClickPipes는 다양한 소스의 데이터를 몇 번의 클릭만으로 손쉽
 가장 까다로운 워크로드를 위해 설계된 ClickPipes의 견고하고 확장 가능한 아키텍처는 일관된 성능과 안정성을 보장합니다.
 ClickPipes는 장기간 스트리밍이 필요한 경우나 일회성 데이터 적재 작업에 사용할 수 있습니다.
 
-| Name                                                        | Logo                                                                                                 | Type    | Status  | Description                                                               |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------- | ------- | ------------------------------------------------------------------------- |
-| [Apache Kafka](/ko/integrations/clickpipes/kafka/index)        | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka 로고" width="32" />                  | 스트리밍    | 안정      | ClickPipes를 구성하고 Apache Kafka에서 ClickHouse Cloud로 스트리밍 데이터 수집을 시작합니다.     |
-| Confluent Cloud                                             | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud 로고" width="32" />           | 스트리밍    | 안정      | 직접 통합을 통해 Confluent와 ClickHouse Cloud의 강점을 함께 활용하십시오.                     |
-| Redpanda                                                    | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda 로고" width="32" />              | 스트리밍    | 안정      | ClickPipes를 구성하고 Redpanda에서 ClickHouse Cloud로 스트리밍 데이터 수집을 시작합니다.         |
-| AWS MSK                                                     | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK 로고" width="32" />                         | 스트리밍    | 안정      | ClickPipes를 구성하고 AWS MSK에서 ClickHouse Cloud로 스트리밍 데이터 수집을 시작합니다.          |
-| Azure Event Hubs                                            | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 로고" width="32" />   | 스트리밍    | 안정      | ClickPipes를 구성하고 Azure Event Hubs에서 ClickHouse Cloud로 스트리밍 데이터 수집을 시작합니다. |
-| WarpStream                                                  | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 로고" width="32" />               | 스트리밍    | 안정      | ClickPipes를 구성하고 WarpStream에서 ClickHouse Cloud로 스트리밍 데이터 수집을 시작합니다.       |
-| Amazon S3                                                   | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 로고" width="32" />            | 객체 스토리지 | 안정      | 객체 스토리지에서 대량의 데이터를 수집하도록 ClickPipes를 구성합니다.                               |
-| Google Cloud Storage                                        | <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage 로고" width="32" />            | 객체 스토리지 | 안정      | 객체 스토리지에서 대량의 데이터를 수집하도록 ClickPipes를 구성합니다.                               |
-| DigitalOcean Spaces                                         | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean 로고" width="32" />          | 객체 스토리지 | 안정      | 객체 스토리지에서 대량의 데이터를 수집하도록 ClickPipes를 구성합니다.                               |
-| Azure Blob Storage                                          | <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage 로고" width="32" /> | 객체 스토리지 | 비공개 베타  | 객체 스토리지에서 대량의 데이터를 수집하도록 ClickPipes를 구성합니다.                               |
-| [Amazon Kinesis](/ko/integrations/clickpipes/kinesis/overview) | <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="Amazon Kinesis 로고" width="32" />  | 스트리밍    | 안정      | ClickPipes를 구성하고 Amazon Kinesis에서 ClickHouse Cloud로 스트리밍 데이터 수집을 시작합니다.   |
-| [Postgres](/ko/integrations/clickpipes/postgres/index)         | <img src="/images/integrations/logos/postgresql.svg" alt="Postgres 로고" width="32" />                 | DBMS    | 안정      | ClickPipes를 구성하고 Postgres에서 ClickHouse Cloud로 데이터 수집을 시작합니다.              |
-| [MySQL](/ko/integrations/clickpipes/mysql/index)               | <img src="/images/integrations/logos/mysql.svg" alt="MySQL 로고" width="32" />                         | DBMS    | 비공개 베타  | ClickPipes를 구성하고 MySQL에서 ClickHouse Cloud로 데이터 수집을 시작합니다.                 |
-| [MongoDB](/ko/integrations/clickpipes/mongodb/index)           | <img src="/images/integrations/logos/mongodb.svg" alt="MongoDB 로고" width="32" />                     | DBMS    | 비공개 프리뷰 | ClickPipes를 구성하고 MongoDB에서 ClickHouse Cloud로 데이터 수집을 시작합니다.               |
+| 이름                                                                                                                                                                                                             | 유형                                    | 상태                                    | 설명                                                                             |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
+| <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka 로고" className="integration-table-logo" width="24" height="24" /> [Apache Kafka](/ko/integrations/clickpipes/kafka/index)                        | <Badge color="blue">스트리밍</Badge>      | <Badge color="green">안정</Badge>       | ClickPipes를 구성하고 Apache Kafka의 스트리밍 데이터를 ClickHouse Cloud로 수집하기 시작합니다.         |
+| <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud 로고" className="integration-table-logo" width="24" height="24" /> Confluent Cloud                                                      | <Badge color="blue">스트리밍</Badge>      | <Badge color="green">안정</Badge>       | 직접 통합을 통해 Confluent와 ClickHouse Cloud의 시너지를 활용하십시오.                            |
+| <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda 로고" className="integration-table-logo" width="24" height="24" /> Redpanda                                                               | <Badge color="blue">스트리밍</Badge>      | <Badge color="green">안정</Badge>       | ClickPipes를 구성하고 Redpanda의 스트리밍 데이터를 ClickHouse Cloud로 수집하기 시작하십시오.            |
+| <img src="/images/integrations/logos/msk.svg" alt="AWS MSK 로고" className="integration-table-logo" width="24" height="24" /> AWS MSK                                                                            | <Badge color="blue">스트리밍</Badge>      | <Badge color="green">안정</Badge>       | ClickPipes를 구성하고 AWS MSK에서 ClickHouse Cloud로 스트리밍 데이터 수집을 시작합니다.               |
+| <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 로고" className="integration-table-logo" width="24" height="24" /> Azure Event Hubs                                             | <Badge color="blue">스트리밍</Badge>      | <Badge color="green">안정</Badge>       | ClickPipes를 구성하고 Azure Event Hubs에서 ClickHouse Cloud로 스트리밍 데이터 수집을 시작합니다.      |
+| <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 로고" className="integration-table-logo" width="24" height="24" /> WarpStream                                                               | <Badge color="blue">스트리밍</Badge>      | <Badge color="green">안정</Badge>       | ClickPipes를 구성하고 WarpStream에서 ClickHouse Cloud로 스트리밍 데이터를 수집하기 시작하세요.          |
+| <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="Amazon Kinesis 로고" className="integration-table-logo" width="24" height="24" /> [Amazon Kinesis](/ko/integrations/clickpipes/kinesis/overview) | <Badge color="blue">스트리밍</Badge>      | <Badge color="green">안정</Badge>       | ClickPipes를 구성하고 Amazon Kinesis에서 ClickHouse Cloud로 스트리밍 데이터를 수집하기 시작하세요.      |
+| <img src="/images/integrations/logos/google_pubsub.svg" alt="Google Cloud Pub/Sub 로고" className="integration-table-logo" width="24" height="24" /> [GCP Pub/Sub](/ko/integrations/clickpipes/pubsub/overview)     | <Badge color="blue">스트리밍</Badge>      | <Badge color="purple">비공개 프리뷰</Badge> | ClickPipes를 구성하고 Google Cloud Pub/Sub의 스트리밍 데이터를 ClickHouse Cloud로 수집하기 시작합니다. |
+| <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 로고" className="integration-table-logo" width="24" height="24" /> Amazon S3                                                             | <Badge color="orange">객체 스토리지</Badge> | <Badge color="green">안정</Badge>       | 객체 스토리지의 대용량 데이터를 수집하도록 ClickPipes를 구성합니다.                                     |
+| <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage 로고" className="integration-table-logo" width="24" height="24" /> Google Cloud Storage                                                  | <Badge color="orange">객체 스토리지</Badge> | <Badge color="green">안정</Badge>       | 객체 스토리지에서 대량의 데이터를 수집할 수 있도록 ClickPipes를 구성합니다.                                |
+| <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean 로고" className="integration-table-logo" width="24" height="24" /> DigitalOcean Spaces                                                 | <Badge color="orange">객체 스토리지</Badge> | <Badge color="green">안정</Badge>       | 객체 스토리지에서 대량의 데이터를 수집할 수 있도록 ClickPipes를 구성합니다.                                |
+| <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage 로고" className="integration-table-logo" width="24" height="24" /> Azure Blob Storage                                         | <Badge color="orange">객체 스토리지</Badge> | <Badge color="green">안정</Badge>       | ClickPipes를 구성하여 객체 스토리지에서 대용량의 데이터를 수집합니다.                                    |
+| <img src="/images/integrations/logos/postgresql.svg" alt="Postgres 로고" className="integration-table-logo" width="24" height="24" /> [Postgres](/ko/integrations/clickpipes/postgres/index)                        | <Badge color="purple">DBMS</Badge>    | <Badge color="green">안정</Badge>       | ClickPipes를 구성하고 Postgres 데이터를 ClickHouse Cloud로 수집하기 시작합니다.                   |
+| <img src="/images/integrations/logos/mysql.svg" alt="MySQL 로고" className="integration-table-logo" width="24" height="24" /> [MySQL](/ko/integrations/clickpipes/mysql/index)                                      | <Badge color="purple">DBMS</Badge>    | <Badge color="yellow">공개 베타</Badge>   | ClickPipes를 구성하고 MySQL 데이터를 ClickHouse Cloud로 수집하기 시작합니다.                      |
+| <img src="/images/integrations/logos/mongodb.svg" alt="MongoDB 로고" className="integration-table-logo" width="24" height="24" /> [MongoDB](/ko/integrations/clickpipes/mongodb/index)                              | <Badge color="purple">DBMS</Badge>    | <Badge color="purple">비공개 프리뷰</Badge> | ClickPipes를 구성하고 MongoDB 데이터를 ClickHouse Cloud로 수집하기 시작합니다.                    |
 
 <div id="language-client-integrations">
   ## 언어 클라이언트 통합
 </div>
 
-ClickHouse는 다양한 언어 클라이언트 통합을 제공하며, 각 통합의 문서는 아래 링크에서 확인할 수 있습니다.
+ClickHouse는 다양한 언어 클라이언트 통합을 제공하며, 각 통합에 대한 문서는 아래 링크에서 확인할 수 있습니다.
 
-| 페이지                                                                                | 설명                                                              |
-| ---------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| [C++](/ko/concepts/features/interfaces/cpp)                                        | C++ 클라이언트 라이브러리 및 userver 비동기 프레임워크                             |
-| [C#](/ko/integrations/language-clients/csharp/overview)                               | C# 프로젝트를 ClickHouse에 연결하는 방법을 알아보십시오.                           |
-| [Go](/ko/integrations/language-clients/go/index)                                      | Go 프로젝트를 ClickHouse에 연결하는 방법을 알아보십시오.                           |
-| [JavaScript](/ko/integrations/language-clients/js)                                    | 공식 JS client를 사용해 JavaScript 프로젝트를 ClickHouse에 연결하는 방법을 알아보십시오. |
-| [Java](/ko/integrations/language-clients/java/index)                                  | Java와 ClickHouse를 위한 여러 통합에 대해 자세히 알아보십시오.                      |
-| [Python](/ko/integrations/language-clients/python/index)                              | Python 프로젝트를 ClickHouse에 연결하는 방법을 알아보십시오.                       |
-| [Rust](/ko/integrations/language-clients/rust)                                        | Rust 프로젝트를 ClickHouse에 연결하는 방법을 알아보십시오.                         |
-| [Third-party clients](/ko/integrations/language-clients/third-party/client-libraries) | 서드파티 개발자가 제공하는 클라이언트 라이브러리에 대해 자세히 알아보십시오.                      |
+| Page                                                                    | Description                                             |
+| ----------------------------------------------------------------------- | ------------------------------------------------------- |
+| [C++](/ko/concepts/features/interfaces/cpp)                                | C++ 클라이언트 라이브러리 및 userver 비동기 프레임워크                     |
+| [C#](/ko/integrations/language-clients/csharp/overview)                    | C# 프로젝트를 ClickHouse에 연결하는 방법을 알아보십시오.                   |
+| [Go](/ko/integrations/language-clients/go/index)                           | Go 프로젝트를 ClickHouse에 연결하는 방법을 알아보십시오.                   |
+| [JavaScript](/ko/integrations/language-clients/js)                         | 공식 JS 클라이언트를 사용하여 JS 프로젝트를 ClickHouse에 연결하는 방법을 알아보십시오. |
+| [Java](/ko/integrations/language-clients/java/index)                       | Java와 ClickHouse를 위한 여러 통합에 대해 자세히 알아보십시오.              |
+| [Python](/ko/integrations/language-clients/python/index)                   | Python 프로젝트를 ClickHouse에 연결하는 방법을 알아보십시오.               |
+| [Rust](/ko/integrations/language-clients/rust)                             | Rust 프로젝트를 ClickHouse에 연결하는 방법을 알아보십시오.                 |
+| [타사 클라이언트](/ko/integrations/language-clients/third-party/client-libraries) | 타사 개발자가 제공하는 클라이언트 라이브러리에 대해 자세히 알아보십시오.                |
 
-ClickPipes와 언어 클라이언트 외에도 ClickHouse는 핵심 통합,
-파트너 통합, 커뮤니티 통합 등 다양한 통합을 지원합니다.
-전체 목록은 문서의 [&quot;통합&quot;](/ko/integrations/home) 섹션을 참조하십시오.
+언어 클라이언트와 ClickPipes 외에도 ClickHouse는 핵심 통합,
+파트너 통합, 커뮤니티 통합 등 다양한 추가 통합을 지원합니다.
+전체 목록은 문서의 [&quot;Integrations&quot;](/ko/integrations/home) 섹션에서 확인하십시오.

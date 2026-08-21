@@ -2,7 +2,7 @@
 sidebarTitle: 'JDBC'
 keywords: ['clickhouse', 'jdbc', 'connecter', 'intégrer']
 slug: /integrations/jdbc/jdbc-with-clickhouse
-description: 'La passerelle JDBC de ClickHouse permet à ClickHouse d’accéder aux données de toute source de données externe pour laquelle un pilote JDBC est disponible'
+description: 'ClickHouse JDBC Bridge permet à ClickHouse d’accéder aux données de toute source de données externe pour laquelle un pilote JDBC est disponible'
 title: 'Connecter ClickHouse à des sources de données externes via JDBC'
 doc_type: 'guide'
 ---
@@ -155,7 +155,7 @@ Pour installer ClickHouse JDBC Bridge à l’extérieur, procédez comme suit :
 
 1. Installez, configurez et exécutez ClickHouse JDBC Bridge sur un hôte dédié en suivant les étapes décrites dans la section 1 de ce guide.
 
-2. Sur chaque hôte ClickHouse, ajoutez le bloc de configuration suivant à la <a href="/fr/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">configuration du serveur ClickHouse</a> (selon le format de configuration choisi, utilisez la version XML ou YAML) :
+2. Sur chaque hôte ClickHouse, ajoutez le bloc de configuration suivant à la <a href="/fr/concepts/features/configuration/server-config/configuration-files" target="_blank">configuration du serveur ClickHouse</a> (selon le format de configuration choisi, utilisez la version XML ou YAML) :
 
 <Tabs>
   <Tab title="XML">
@@ -181,18 +181,18 @@ Pour installer ClickHouse JDBC Bridge à l’extérieur, procédez comme suit :
   * nous avons indiqué le port par défaut de ClickHouse JDBC Bridge, `9019` ; si vous utilisez un autre port pour JDBC Bridge, vous devez adapter la configuration ci-dessus en conséquence
 </Note>
 
-[//]: # "## 4. Additional Info"
+[//]: # "## 4. Informations supplémentaires"
 
 [//]: #
 
-[//]: # "TODO: "
+[//]: # "TODO : "
 
-[//]: # "- mention that for jdbc table function it is more performant (not two queries each time) to also specify the schema as a parameter"
-
-[//]: #
-
-[//]: # "- mention ad hoc query vs table query, saved query, named query"
+[//]: # "- mentionner que pour la `jdbc table function`, il est plus performant (pas deux requêtes à chaque fois) de spécifier également le schéma comme paramètre"
 
 [//]: #
 
-[//]: # "- mention insert into "
+[//]: # "- mentionner la requête ad hoc vs la requête de table, la requête enregistrée, la requête nommée"
+
+[//]: #
+
+[//]: # "- mentionner insert into "

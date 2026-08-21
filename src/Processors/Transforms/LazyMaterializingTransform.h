@@ -11,7 +11,22 @@ namespace DB
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
-struct LazyMaterializingRows
+/// Shared state between the two branches of lazy materialization: the main branch (which decides
+/// which rows survive the LIMIT) and the lazy branch (which reads the deferred columns for exactly
+/// those rows). Each storage supporting lazy materialization provides its own implementation
+/// that maps global row indexes back to storage-specific row locations.
+struct ILazyMaterializingRows
+{
+    virtual ~ILazyMaterializingRows() = default;
+
+    /// Called once, after the main branch is fully read, with the sorted and deduplicated
+    /// `__global_row_index` values of the rows that survived the LIMIT.
+    virtual void filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes) = 0;
+};
+
+using ILazyMaterializingRowsPtr = std::shared_ptr<ILazyMaterializingRows>;
+
+struct LazyMaterializingRows : public ILazyMaterializingRows
 {
     using PartOffsetInDataPart = PaddedPODArray<UInt64>;
     /// part_index_in_query -> row numbers
@@ -22,7 +37,7 @@ struct LazyMaterializingRows
 
     explicit LazyMaterializingRows(RangesInDataParts ranges_in_data_parts_);
 
-    void filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes);
+    void filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes) override;
 };
 
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
@@ -35,7 +50,7 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class LazyMaterializingTransform final : public IProcessor
 {
 public:
-    LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+    LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, ILazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     static Block transformHeader(const Block & main_header, const Block & lazy_header);
 
@@ -58,7 +73,7 @@ private:
     PaddedPODArray<UInt64> offsets;
     PaddedPODArray<size_t> permutation;
 
-    LazyMaterializingRowsPtr lazy_materializing_rows;
+    ILazyMaterializingRowsPtr lazy_materializing_rows;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     /// When true, pass lazy chunks directly to output without combining

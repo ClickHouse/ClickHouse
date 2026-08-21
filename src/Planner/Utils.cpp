@@ -59,6 +59,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString additional_result_filter;
+    extern const SettingsBool analyzer_compatibility_apply_final_to_all_joined_tables;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_estimated_execution_time;
@@ -370,7 +371,7 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
     const auto & query_node_typed = query_node->as<const QueryNode &>();
 
     std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
-    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
+    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTreeNode());
 
     while (!join_tree_nodes_to_process.empty())
     {
@@ -406,8 +407,8 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpressionNode());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpressionNode());
                 break;
             }
             default:
@@ -449,7 +450,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
                 if (query_node_to_process.isGroupByWithTotals())
                     return true;
 
-                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree().get());
+                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTreeNode().get());
                 break;
             }
             case QueryTreeNodeType::UNION:
@@ -464,7 +465,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 const auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
-                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression().get());
+                join_tree_nodes_to_process.push_back(array_join_node.getTableExpressionNode().get());
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
@@ -478,8 +479,8 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression().get());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression().get());
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpressionNode().get());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpressionNode().get());
                 break;
             }
             default:
@@ -498,7 +499,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
 bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
 {
     const auto & query_node_typed = query_node->as<const QueryNode &>();
-    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTree().get());
+    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTreeNode().get());
 }
 
 
@@ -515,11 +516,11 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const QueryTreeNodePtr & query_node,
-    const QueryTreeNodes & table_nodes,
+    const TableExpressionNodes & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map)
 {
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    IQueryTreeNode::ReplacementMap replacement_map;
 
     for (const auto & table_expression : table_nodes)
     {
@@ -546,7 +547,10 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
                 result_replacement_map->emplace(table_expression, dummy_table_node);
 
             dummy_table_node->setAlias(table_expression->getAlias());
-            replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
+            if (table_node)
+                replacement_map.emplace(table_node, std::move(dummy_table_node));
+            else
+                replacement_map.emplace(table_function_node, std::move(dummy_table_node));
         }
     }
 
@@ -559,11 +563,13 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
     select_query_info.query = queryNodeToSelectQuery(query_tree);
     select_query_info.query_tree = query_tree;
     select_query_info.planner_context = planner_context;
+    select_query_info.apply_query_level_final_if_no_modifiers
+        = planner_context->getQueryContext()->getSettingsRef()[Setting::analyzer_compatibility_apply_final_to_all_joined_tables];
     return select_query_info;
 }
 
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
+        const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter)
 {
@@ -602,7 +608,7 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
 }
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
-        const QueryTreeNodePtr & table_expression,
+        const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter)
 {
@@ -782,14 +788,30 @@ QueryPlanStepPtr projectOnlyUsedColumns(
 {
     ActionsDAG project_only_used_columns_actions;
 
-    NameSet used_column_identifiers_set(used_column_identifiers.begin(), used_column_identifiers.end());
-
-    auto & outputs = project_only_used_columns_actions.getOutputs();
+    /// The projection must reproduce the header this subplan was referenced with: one output per used
+    /// identifier, in identifier order, resolved to the first same-named column (exactly how
+    /// `CommonSubplanReferenceStep`'s header is built, with `getByName` per identifier). In particular,
+    /// when the stream carries the same name more than once (e.g. `SELECT number, *` projects the same
+    /// identifier twice), the surplus duplicates must not leak into the output: the plan above the
+    /// reference was built against the deduplicated header. All stream columns become inputs, so the
+    /// unused ones are consumed and dropped.
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> first_input_by_name;
     for (const auto & column : stream_header->getColumnsWithTypeAndName())
     {
         const auto * input_node = &project_only_used_columns_actions.addInput(column);
-        if (used_column_identifiers_set.contains(column.name))
-            outputs.push_back(input_node);
+        first_input_by_name.emplace(column.name, input_node);
+    }
+
+    auto & outputs = project_only_used_columns_actions.getOutputs();
+    for (const auto & identifier : used_column_identifiers)
+    {
+        auto it = first_input_by_name.find(identifier);
+        if (it == first_input_by_name.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Used column {} is missing from the common subplan header: [{}]",
+                identifier,
+                stream_header->dumpNames());
+        outputs.push_back(it->second);
     }
 
     auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));

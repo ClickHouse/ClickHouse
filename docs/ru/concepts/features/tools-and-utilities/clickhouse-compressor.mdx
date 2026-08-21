@@ -5,7 +5,7 @@ title: 'clickhouse-compressor'
 doc_type: 'reference'
 ---
 
-Простая программа для сжатия и распаковки данных.
+Простая утилита для сжатия и распаковки данных.
 
 <div id="examples">
   ### Примеры
@@ -17,19 +17,19 @@ doc_type: 'reference'
 $ ./clickhouse-compressor < input_file > output_file
 ```
 
-Распакуйте данные в формате LZ4:
+Распаковка данных из формата LZ4:
 
 ```bash
 $ ./clickhouse-compressor --decompress < input_file > output_file
 ```
 
-Сжимайте данные с помощью ZSTD на уровне 5:
+Сожмите данные с помощью ZSTD на уровне 5:
 
 ```bash
 $ ./clickhouse-compressor --codec 'ZSTD(5)' < input_file > output_file
 ```
 
-Сожмите данные с помощью Delta с размером 4 байта и ZSTD уровня 10.
+Сжимайте данные с помощью кодека Delta с параметром 4 байта и кодека ZSTD уровня 10.
 
 ```bash
 $ ./clickhouse-compressor --codec 'Delta(4)' --codec 'ZSTD(10)' < input_file > output_file

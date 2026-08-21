@@ -33,6 +33,31 @@ html:not(.dark) .ch-usecase-arrow {
 .dark .ch-usecase-arrow {
     color: #FCFF74;
 }
+
+/* Restore the layout and appearance of the legacy Docusaurus VersionBadge. */
+.versionBadge {
+    background-color: #F6F7FA;
+    border-radius: 16px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+}
+
+.dark .versionBadge {
+    background-color: #282828;
+    color: white;
+}
+
+/* Highlight the `View` selector above the table of contents with theme accents. */
+html:not(.dark) .multi-view-dropdown-trigger {
+    border-color: #135BE6 !important;
+}
+.dark .multi-view-dropdown-trigger {
+    border-color: #FDFF75 !important;
+}
 /* Homepage content hidden until React has mounted and child effects have settled.
    Double-RAF in PageWrapper ensures FullWidthDivider's own RAF fires first. */
 .ch-page-hidden {
@@ -539,164 +564,10 @@ details.accordion > summary,
     background-color: #2a2a2a !important;
 }
 
-/* ============================================
-   Pagination Links - Light Mode
-   ============================================ */
-
-html:not(.dark) .pagination-next,
-html:not(.dark) .pagination-prev {
-    background-color: #f7f7f7 !important;
-}
-
-html:not(.dark) .pagination-next:hover,
-html:not(.dark) .pagination-prev:hover {
-    background-color: #efefef !important;
-}
-
-/* ============================================
-   Pagination Links - Dark Mode
-   ============================================ */
-
-.dark .pagination-next,
-.dark .pagination-prev,
-:is(.dark) .pagination-next,
-:is(.dark) .pagination-prev {
-    border-color: rgba(255, 255, 255, 0.15) !important;
-    background-color: rgba(255, 255, 255, 0.05) !important;
-}
-
-.dark .pagination-next:hover,
-.dark .pagination-prev:hover,
-:is(.dark) .pagination-next:hover,
-:is(.dark) .pagination-prev:hover {
-    border-color: rgba(255, 255, 255, 0.3) !important;
-    background-color: rgba(255, 255, 255, 0.08) !important;
-}
-
-.dark .pagination-title,
-:is(.dark) .pagination-title {
-    color: #E6E7E9 !important;
-}
-
-/* Previous/Next pagination (#pagination): restyle the maple pill bar into
-   two bordered cards matching the home-page hero cards (.ch-hero-card above;
-   colors duplicated because the hero card's base colors live in Tailwind
-   utilities in index.mdx). CSS-only on top of Mintlify's own markup, so the
-   Previous card shows just the chevron + label — maple's markup doesn't
-   include the previous page's title. */
-#pagination {
-    display: grid !important;
-    grid-template-columns: 1fr;
-    gap: 1rem;
-    background: none !important;
-    padding: 0 !important;
-}
-
-@media (min-width: 1024px) {
-    #pagination {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    /* Next-only pages keep their card in the right column */
-    #pagination > a:first-child:has(svg.lucide-chevron-right) {
-        grid-column: 2;
-    }
-}
-
-/* Card chrome */
-#pagination > a {
-    background-color: #f9f9f9;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.5rem;
-    padding: 1rem !important;
-    transition: background-color 0.12s ease, border-color 0.12s ease;
-}
-
-.dark #pagination > a,
-:is(.dark) #pagination > a {
-    background-color: #191919;
-    border-color: #2B2B2B;
-}
-
-#pagination > a:hover {
-    background-color: #f0f0f0;
-    border-color: #d1d5db;
-}
-
-.dark #pagination > a:hover,
-:is(.dark) #pagination > a:hover {
-    background-color: #272727;
-    border-color: #535353;
-}
-
-/* Mintlify gives the pagination card's inner flex wrapper its own page-level
-   background. Keep it transparent so the complete button uses the parent
-   card color in both its resting and hover states. */
-#pagination > a > div {
-    background: transparent !important;
-}
-
-/* Previous card: keep chevron + label together on the left (maple's
-   justify-between would otherwise spread them across the card) */
-#pagination > a:has(svg.lucide-chevron-left) {
-    justify-content: flex-start !important;
-}
-
-/* Next card: drop the pill-era inner background, fixed height, divider and
-   description, and stack the title over the label row, right-aligned. */
-#pagination > a:has(svg.lucide-chevron-right) > div {
-    height: auto !important;
-    background: none !important;
-    box-shadow: none !important;
-    flex-direction: column !important;
-    align-items: flex-end !important;
-}
-
-#pagination > a:has(svg.lucide-chevron-right) > div > div {
-    padding: 0 !important;
-}
-
-#pagination > a:has(svg.lucide-chevron-right) > div > div:last-child {
-    margin-top: 0.25rem;
-}
-
-#pagination .font-semibold {
-    font-size: 1rem;
-    color: #111827 !important;
-}
-
-.dark #pagination .font-semibold,
-:is(.dark) #pagination .font-semibold {
-    color: #fff !important;
-}
-
-/* Description and vertical divider have no place in the card layout */
-#pagination .truncate,
-#pagination .w-px {
+/* Keep Mintlify's default pagination and hide only the next page's
+   description. */
+#pagination > a[rel="next"] [data-component-part="pagination-description"] {
     display: none !important;
-}
-
-/* "Previous" / "Next" labels and their chevrons */
-#pagination .font-medium.tracking-tight {
-    color: #6b7280 !important;
-}
-
-.dark #pagination .font-medium.tracking-tight,
-:is(.dark) #pagination .font-medium.tracking-tight {
-    color: #a1a1aa !important;
-}
-
-#pagination svg.lucide-chevron-left,
-#pagination svg.lucide-chevron-right {
-    width: 0.875rem;
-    height: 0.875rem;
-    color: #6b7280 !important;
-}
-
-.dark #pagination svg.lucide-chevron-left,
-.dark #pagination svg.lucide-chevron-right,
-:is(.dark) #pagination svg.lucide-chevron-left,
-:is(.dark) #pagination svg.lucide-chevron-right {
-    color: #a1a1aa !important;
 }
 
 /* "Copy page" split-button group: make the resting state clearly visible
@@ -818,23 +689,19 @@ html:not(.dark) .pagination-prev:hover {
     max-width: none !important;
 }
 
-/* Fix code block text alignment: JetBrains Mono renders box-drawing characters
-   (─, ┌, ┐, │, etc.) at ~13.6px vs ASCII at ~8.6px because it falls back to a
-   system font for box-drawing. Monaco renders both at equal width. Target the
-   pre.shiki and code elements directly since Mintlify overrides .font-mono. */
+/* Match the monospace stack used by the server's built-in documentation. */
 [data-component-part="code-block-root"] pre.shiki,
 [data-component-part="code-block-root"] code,
 [data-component-part="code-block-root"] .line,
 [data-component-part="code-block-root"] .line span {
-    font-family: "Monaco", "Menlo", "Consolas", "Ubuntu Mono", monospace !important;
-    font-variant-ligatures: none !important;
-    font-feature-settings: "kern" 0 !important;
+    font-family: "DejaVu Sans Mono", "Liberation Mono", "MonoLisa", "Consolas", monospace !important;
 }
 
-/* Tighten line-height for code blocks to match monospace table output
-   while ensuring box-drawing characters render fully */
 [data-component-part="code-block-root"] .font-mono {
-    line-height: 1.5 !important;
+    font-variant-ligatures: none !important;
+    font-feature-settings: "kern" 0 !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.25 !important;
 }
 
 
@@ -1569,6 +1436,14 @@ button.rounded-xl {
     border-radius: 4px !important;
 }
 
+/* Match navigation division dropdowns to the sidebar's 4px radius. Mintlify
+   uses an arbitrary radius on the trigger and `rounded-2xl` on the menu, so
+   neither is covered by the shared `rounded-xl` override above. */
+.nav-dropdown-trigger,
+.nav-dropdown-content {
+    border-radius: 4px !important;
+}
+
 /* Override topbar CTA button styling */
 
 #topbar-cta-button {
@@ -1652,14 +1527,14 @@ button.rounded-xl {
    query for <img>-loaded SVGs while Blink ignores it — so the same icon paints a
    different grey in Safari vs Chrome. Force a deterministic grey keyed to the
    SITE theme instead: brightness(0) collapses whatever colour the SVG picked to
-   black, then invert() sets an exact grey — identical in every browser. The five
-   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp, server) are
-   not part of this grey family and are excluded. */
-img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+   black, then invert() sets an exact grey — identical in every browser. The four
+   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp) are not
+   part of this grey family and are excluded. */
+img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.31); /* rgb(79,79,79) — matches the SVGs' light value */
 }
-.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]),
-:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]),
+:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.78); /* rgb(199,199,199) — matches the SVGs' dark value */
 }
 
@@ -1801,40 +1676,41 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 
 /* Beta Badge */
 .betaBadge {
-    background-color: #E5FFFB;
+    background-color: #DBEAFE;
     border-radius: 16px;
     display: flex;
     align-items: center;
     padding: 5px 12px;
-    color: #004237;
+    color: #1D4ED8;
     display: inline-flex;
     margin-right: 5px;
     font-size: 0.875rem;
 }
 
-.betaIcon {
+.betaBadge::before {
+    content: "β";
+    flex: 0 0 auto;
     margin-right: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1;
 }
 
-.betaIcon svg path {
-    fill: #004237;
-}
-
-.betaBadge a {
-    color: black;
+html:not(.dark) .prose a.betaBadge:not(.card):not(.card *),
+a.betaBadge {
+    color: #1D4ED8 !important;
+    text-decoration: none !important;
 }
 
 .dark .betaBadge {
-    background-color: #1A332D;
-    color: #66FFE5;
+    background-color: #1E3A6B;
+    color: #93C5FD;
 }
 
-.dark .betaBadge a {
-    color: #66FFE5;
-}
-
-.dark .betaIcon svg path {
-    fill: #66FFE5;
+html.dark .prose a.betaBadge:not(.card):not(.card *),
+.dark a.betaBadge {
+    color: #93C5FD !important;
+    text-decoration: none !important;
 }
 
 /* ClickHouse Supported Badge */
@@ -1892,6 +1768,12 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
     margin-right: 8px;
 }
 
+html:not(.dark) .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+a.cloudNotSupportedBadge {
+    color: #660099 !important;
+    text-decoration: none !important;
+}
+
 .cloudNotSupportedIcon svg path {
     stroke: #660099;
 }
@@ -1899,6 +1781,12 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 .dark .cloudNotSupportedBadge {
     background-color: #33004D;
     color: #EECCFF;
+}
+
+html.dark .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+.dark a.cloudNotSupportedBadge {
+    color: #EECCFF !important;
+    text-decoration: none !important;
 }
 
 .dark .cloudNotSupportedIcon svg path {
@@ -1982,6 +1870,7 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 /* Deprecated Badge */
 .deprecatedBadge {
     background-color: #DFDFDF;
+    color: #53575F;
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -1996,16 +1885,16 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 }
 
 .deprecatedBadge a {
-    color: black;
+    color: inherit;
 }
 
 .dark .deprecatedBadge {
     background-color: #414141;
-    color: #000000;
+    color: #E6E7E9;
 }
 
 .dark .deprecatedBadge a {
-    color: #000000;
+    color: inherit;
 }
 
 .deprecatedIcon svg path {
@@ -2047,7 +1936,7 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 }
 
 .dark .enterprisePlanFeatureContainer {
-    background-color: #F6F7FA;
+    background-color: #1F1F1C;
     border: 1px solid #414141;
 }
 
@@ -2058,9 +1947,9 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 
 /* Experimental Badge */
 .experimentalBadge {
-    background-color: #FFEDD8;
+    background-color: #F3E8FF;
     border-radius: 16px;
-    color: black;
+    color: #6D28D9;
     display: flex;
     align-items: center;
     padding: 5px 12px;
@@ -2073,25 +1962,29 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
     margin-right: 8px;
 }
 
-.experimentalBadge a {
-    color: black;
+html:not(.dark) .prose a.experimentalBadge:not(.card):not(.card *),
+a.experimentalBadge {
+    color: #6D28D9 !important;
+    text-decoration: none !important;
 }
 
 .dark .experimentalBadge {
-    background-color: #E9D5FF;
-    color: #000000;
+    background-color: #3B1D6B;
+    color: #D8B4FE;
 }
 
-.dark .experimentalBadge a {
-    color: #000000;
+html.dark .prose a.experimentalBadge:not(.card):not(.card *),
+.dark a.experimentalBadge {
+    color: #D8B4FE !important;
+    text-decoration: none !important;
 }
 
 .experimentalIcon svg path {
-    stroke: #4F2B00;
+    stroke: #6D28D9;
 }
 
 .dark .experimentalIcon svg path {
-    stroke: #000000;
+    stroke: #D8B4FE;
 }
 
 /* Partner Badge */
@@ -2140,8 +2033,8 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 
 /* Private Preview Badge */
 .privatePreviewBadge {
-    background-color: #F4FF66;
-    color: #4A4D00;
+    background-color: #FEF3C7;
+    color: #B45309;
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -2152,8 +2045,8 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 }
 
 .dark .privatePreviewBadge {
-    background-color: #3C4601;
-    color: #FEFFC2;
+    background-color: #4B3410;
+    color: #FCD34D;
 }
 
 .privatePreviewIcon {
@@ -2161,11 +2054,11 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 }
 
 .privatePreviewIcon svg path {
-    stroke: #4A4D00;
+    stroke: #B45309;
 }
 
 .dark .privatePreviewIcon svg path {
-    stroke: #FEFFC2;
+    stroke: #FCD34D;
 }
 
 /* Scale Plan Feature Badge */
@@ -2212,6 +2105,12 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 /* Reset negative margin on Table of Contents to prevent overlap with description */
 #table-of-contents {
     margin-top: 0 !important;
+}
+
+/* Keep contextual controls visible below long tables of contents */
+#table-of-contents-content {
+    max-height: calc(100vh - 22rem);
+    overflow-y: auto;
 }
 
 /* Fix layout overlap in flex-row-reverse pages (like secure-rds) */
@@ -2491,22 +2390,31 @@ html:not(.dark) .ch-logo-invert {
     }
 }
 
-/* On wide viewports, doc pages spread their content out: content-area centers
-   via mx-auto while content-side-layout (TOC / API request+response panels) sticks
-   to the right edge, leaving a big gap between them. Cap #content-container at
-   the exact width of content (768) + gap (32) + side-layout (448) + 32px x 2
-   padding = 1312px, and center it. The footer mirrors the same horizontal range
-   so its left and right edges line up with the content block. */
-@media (min-width: 1616px) {
+/* On wide viewports, give the article more room while keeping it aligned with
+   content-side-layout (TOC / API request+response panels). Cap #content-container
+   at the exact width of content (960) + gap (32) + side-layout (448) + 32px x 2
+   padding = 1504px, and center it. The 1824px breakpoint accommodates the
+   sidebar (304), the capped container (1504), and a desktop scrollbar, so the
+   layout cannot overflow when it takes effect. The footer mirrors the same
+   horizontal range so its edges line up with the content block. */
+@media (min-width: 1824px) {
+    html:not([data-page-mode="custom"]) #content-area {
+        max-width: 60rem !important;
+    }
+
     html:not([data-page-mode="custom"]) #content-container {
-        max-width: 1312px !important;
-        margin-left: max(19rem, calc((100vw - 1312px) / 2)) !important;
+        max-width: 1504px !important;
+        margin-left: max(19rem, calc((100vw - 1504px) / 2)) !important;
         margin-right: auto !important;
     }
 
     html:not([data-page-mode="custom"]) #ch-custom-footer {
-        padding-left: max(calc(19rem + 2rem), calc((100vw - 1312px) / 2 + 2rem)) !important;
-        padding-right: min(calc(100vw - 19rem - 1312px + 2rem), calc((100vw - 1312px) / 2 + 2rem)) !important;
+        padding-left: max(calc(19rem + 2rem), calc((100vw - 1504px) / 2 + 2rem)) !important;
+        padding-right: min(calc(100vw - 19rem - 1504px + 2rem), calc((100vw - 1504px) / 2 + 2rem)) !important;
+    }
+
+    html:not([data-page-mode="custom"]) #ch-custom-footer [data-inner] {
+        max-width: 1440px !important;
     }
 }
 
@@ -2863,7 +2771,7 @@ div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) {
 
 /* Match clickhouse.com/clickhouse navbar dropdown panel radius (8px instead
    of Mintlify's default 16px). Targets the panel that wraps `.nav-dropdown-item`. */
-div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div {
+div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div:not(.nav-dropdown-content) {
     border-radius: 8px !important;
 }
 

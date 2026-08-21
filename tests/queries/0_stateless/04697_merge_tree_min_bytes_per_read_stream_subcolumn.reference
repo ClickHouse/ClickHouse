@@ -1,0 +1,4 @@
+-- the selective subcolumn read is wide enough for the cap to matter --
+1
+-- parent-column fallback skips the bytes-aware cap --
+1

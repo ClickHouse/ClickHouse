@@ -12,6 +12,7 @@
 
 #include <deque>
 #include <optional>
+#include <unordered_set>
 
 namespace DB
 {
@@ -180,13 +181,39 @@ struct Reader
         UInt8 max_array_def = 0;
 
         bool use_bloom_filter = false;
-        const KeyCondition * column_index_condition = nullptr;
+
+        /// A single-column `KeyCondition` used for page-level pruning through the column index.
+        struct ColumnIndexCondition
+        {
+            const KeyCondition * condition = nullptr;
+
+            /// Index into `spatial_key_conditions` when this condition was extracted from a
+            /// GeoParquet `covering.bbox` spatial predicate, `SIZE_MAX` otherwise. A NULL bbox
+            /// means the row's spatial extent is unknown, so such a condition may prune a page
+            /// only under the same four-column zero-nulls guarantee the row-group path requires
+            /// (see `spatialBboxStatsHaveNoNulls`).
+            size_t spatial_key_condition_idx = SIZE_MAX;
+        };
+
+        /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
+        /// on the same geometry, or a regular WHERE condition plus a spatial one on the same bbox
+        /// column) each contribute their own KeyCondition here; a page must pass all of them.
+        std::vector<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
+        bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
 
-        /// If use_bloom_filter, these are the values that we need to find in bloom filter.
+        /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this
+        /// column). Values from an `IN` set larger than `bloom_filter_max_set_size` are deliberately
+        /// left out - such a set is still hashed for the exact dictionary filter (which reads no extra
+        /// data per value), but probing the probabilistic bloom filter for it would read one filter
+        /// block per value for little benefit. So this is empty exactly when the only query constants
+        /// for the column come from such over-cap sets, in which case the bloom filter stays disabled
+        /// for the column (see hash_many and initializePrefetches). It can hold hashes for some atoms
+        /// while an over-cap `IN` on the same column contributes none, so the bloom filter still prunes
+        /// row groups using the smaller atoms.
         std::vector<UInt64> bloom_filter_hashes;
 
         PrimitiveColumnInfo() = default;
@@ -315,6 +342,10 @@ struct Reader
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch;
         PrefetchHandle bloom_filter_data_prefetch;
+        /// Length of bloom_filter_data_prefetch, i.e. how many bytes of bloom filter (header +
+        /// bitset) the file claims to have. Upper bound if the file didn't say (see
+        /// need_to_find_bloom_filter_lengths_the_hard_way).
+        size_t bloom_filter_data_bytes = 0;
         PrefetchHandle dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
         PrefetchHandle offset_index_prefetch;
@@ -343,6 +374,14 @@ struct Reader
         /// Note that older parquet writers may omit dictionary info in file metadata, so we don't
         /// necessarily know in advance whether the column chunk has a dictionary.
         Dictionary dictionary;
+        /// When the dictionary is decoded on the pruning path (`BloomFilterBlocksOrDictionary` stage),
+        /// its decoded footprint is reserved live against the shared pruning-stage budget through this
+        /// handle so it is visible to every row group pruning in parallel, not only after the batch
+        /// flushes (see `PruningMemoryReservation`, `ReadManager::runTask` / `pruningMemoryReservation`,
+        /// and `clearColumnChunk`, which releases `dictionary_reserved_bytes`). Both stay default /
+        /// zero when the dictionary is decoded later on the throttled data-read path instead.
+        PruningMemoryReservation dictionary_reservation;
+        size_t dictionary_reserved_bytes = 0;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
@@ -426,6 +465,11 @@ struct Reader
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
         bool need_to_process = false;
+
+        /// Lazy materialization: set iff FormatFilterInfo::rows_to_read is set.
+        /// Half-open range of indexes in `rows_to_read` that fall into this row group.
+        std::pair<size_t, size_t> requested_rows_slice {0, 0};
+
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
         std::vector<ColumnChunk> columns;
@@ -499,8 +543,22 @@ struct Reader
 
     /// Per-column KeyConditions for page-level filter push-down (column index).
     /// Stored here to keep the shared_ptrs alive, since raw pointers from them
-    /// are referenced by PrimitiveColumnInfo::column_index_condition.
+    /// are referenced by PrimitiveColumnInfo::column_index_conditions.
     std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
+
+    /// KeyConditions built from GeoParquet covering.bbox spatial filters.
+    /// One per spatial predicate; checked against the hyperrectangle of bbox column stats.
+    std::vector<std::shared_ptr<KeyCondition>> spatial_key_conditions;
+    /// For each spatial_key_conditions[i], the primitive_columns indices of its four bbox
+    /// columns (xmin, ymin, xmax, ymax). SIZE_MAX means not found. Used to check null_count
+    /// before applying row-group and page pruning: NULL bbox means unknown extent, must not prune.
+    std::vector<std::array<size_t, 4>> spatial_key_condition_bbox_col_indices;
+
+    /// Per-column KeyConditions extracted from spatial_key_conditions for page-level
+    /// spatial bbox pruning. Stored here (not as a local variable) to keep the shared_ptrs
+    /// alive, since raw pointers from them are referenced by
+    /// PrimitiveColumnInfo::column_index_conditions.
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
 
@@ -515,10 +573,34 @@ struct Reader
     /// Deserialize bf header and determine which bf blocks to read.
     void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
-    bool decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    /// On the dictionary-filter pruning path, pass a bounded `reservation` (see
+    /// `ReadManager::pruningMemoryReservation`): the decoded dictionary's full footprint is predicted
+    /// from the page header and reserved live against the shared `BloomFilterBlocksOrDictionary` stage
+    /// budget *before* anything is decoded, so a dictionary that would push the pruning memory past the
+    /// reader's high watermark - across the several row groups pruning in parallel - is rejected before
+    /// `Dictionary::decode` allocates anything and false is returned so the caller falls back to a full
+    /// scan for that column. On success the reservation is reduced to the dictionary's actual
+    /// `Dictionary::allocatedBytes` and that amount is returned in `*held_reserved_bytes` for the caller
+    /// to release when the chunk is cleared. This bounds a highly compressible dictionary whose decoded
+    /// size the compressed-page limit alone cannot bound; see the memory-budget note in
+    /// `hashDictionaryValues`. Pass a default (unbounded) reservation and `nullptr` on the data-read
+    /// path, where the dictionary must be decoded regardless of size.
+    bool decodeDictionaryPage(
+        ColumnChunk & column, const PrimitiveColumnInfo & column_info,
+        const PruningMemoryReservation & reservation = {}, size_t * held_reserved_bytes = nullptr);
+
+    /// Whether the column chunk is eligible for dictionary-based row group filtering: it has a
+    /// dictionary page no larger than `options.dictionary_filter_limit_bytes`, and all of its data
+    /// pages are dictionary-encoded (so the dictionary holds the complete set of column values).
+    bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
 
     /// Returns false if the row group was filtered out and should be skipped.
-    bool applyBloomAndDictionaryFilters(RowGroup & row_group);
+    /// `reservation` bounds the value sets built for dictionary filtering; it is the memory
+    /// still available for pruning, charged live to the shared `BloomFilterBlocksOrDictionary` stage
+    /// counter for the lifetime of each value set, so several dictionary-filtered columns in this row
+    /// group and several row groups pruning in parallel on other threads cannot collectively overshoot
+    /// the reader's memory high watermark. See `ReadManager::pruningMemoryReservation`.
+    bool applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation);
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
@@ -555,7 +637,20 @@ private:
         bool findAnyHash(const std::vector<uint64_t> & hashes) override;
     };
 
-    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
+    /// Like BloomFilterLookup, but backed by the (already decoded) dictionary page, which holds the
+    /// exact set of values present in the column chunk. Dictionary value hashes are computed lazily
+    /// on the first lookup. If the values can't be hashed, the lookup conservatively reports a match.
+    /// Defined out of line in Reader.cpp so that its `HashSet` member does not pull the hash-table
+    /// headers (and their transitive includes) into every translation unit that includes Reader.h.
+    struct DictionaryLookup;
+
+    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox = false) const;
+    /// Whether all four `covering.bbox` columns of `spatial_key_conditions[spatial_key_condition_idx]`
+    /// report a known `null_count` of zero in this row group. Spatial pruning (both row-group and
+    /// page level) is only allowed then: a NULL in any bbox column means the row's spatial extent is
+    /// unknown, and min/max statistics summarize the non-null values only, so a bbox predicate can
+    /// look false for the row group or page while a NULL-bbox row inside it still matches.
+    bool spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
     void prepareBloomFilterCondition();
     void initializePrefetches();

@@ -180,7 +180,7 @@ namespace Net
 #endif // POCO_HAVE_IPv6
 
 
-#if defined(POCO_OS_FAMILY_UNIX)
+#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
 
 
         class Net_API LocalSocketAddressImpl : public SocketAddressImpl
@@ -252,7 +252,7 @@ namespace Net
         }
 
 
-#endif // POCO_OS_FAMILY_UNIX
+#endif // POCO_OS_FAMILY_UNIX && !POCO_NO_UNIX_SOCKETS
 
 
     }

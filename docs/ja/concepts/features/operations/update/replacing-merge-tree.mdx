@@ -16,7 +16,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 挿入された行の自動 upsert
 </div>
 
-[ReplacingMergeTree table engine](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) では、非効率な `ALTER` や `DELETE` ステートメントを使わなくても、同じ行の複数のコピーを挿入し、そのうち 1 つを最新バージョンとして示すことで、更新操作を適用できます。これに対し、バックグラウンドプロセスが同じ行の古いバージョンを非同期に削除し、不変な insert を使って更新操作を効率的に再現します。
+[ReplacingMergeTree テーブルエンジン](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) では、非効率な `ALTER` や `DELETE` ステートメントを使わなくても、同じ行の複数のコピーを挿入し、そのうち 1 つを最新バージョンとして示すことで、更新操作を適用できます。これに対し、バックグラウンドプロセスが同じ行の古いバージョンを非同期に削除し、不変な insert を使って更新操作を効率的に再現します。
 これは、テーブルエンジンが重複行を識別できることに依存しています。これは、一意性の判定に `ORDER BY` 句を使うことで実現されます。つまり、2 つの行が `ORDER BY` で指定されたカラムに対して同じ値を持つ場合、それらは重複と見なされます。テーブル定義時に指定する `version` カラムにより、2 つの行が重複と識別された場合に最新バージョンの行を保持できます。つまり、version の値が最も大きい行が保持されます。
 このプロセスを以下の例で示します。ここでは、行は A カラム (このテーブルの `ORDER BY`) によって一意に識別されます。これらの行は 2 つの batches として挿入され、その結果、ディスク上に 2 つのパーツが作成されたと仮定します。その後、非同期のバックグラウンドプロセスで、これらのパーツがマージされます。
 

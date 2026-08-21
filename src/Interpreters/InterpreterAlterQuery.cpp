@@ -20,6 +20,7 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -314,7 +315,15 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+            /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
+            /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
+            /// then all repopulate from the metadata committed as of holding the lock.
+            if (auto metadata_cache = context->getQueryMetadataCache())
+            {
+                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
+                cache->clear();
+            }
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 
             bool share_nested = true;
@@ -423,6 +432,18 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
+        /// Substitute the database of the altered table into table functions that use the current database
+        /// implicitly, e.g. `merge('tables_regexp')` in a mutation, so that they read the same tables
+        /// as in the non-clustered case. It has to be done before `executeDDLQueryOnCluster`,
+        /// which replaces `currentDatabase()` with the database of the session.
+        /// The table identifiers are not qualified here: they are qualified with the database
+        /// of the altered table when the query is interpreted on each host.
+        if (table_id)
+        {
+            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+            visitor.substituteDatabaseInTableFunctions(*alter.command_list);
+        }
+
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -470,7 +491,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (modify_query)
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor(getContext()).visit(*modify_query);
+        ApplyWithSubqueryVisitor::visit(*modify_query);
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
@@ -619,6 +640,10 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::ADD_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_COLUMN, database, table, column_name_from_col_decl());
+            /// A column-declaration STATISTICS adds statistics like the dedicated ADD STATISTICS command does,
+            /// so it must not bypass the corresponding access right.
+            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
+                required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::DROP_COLUMN:
@@ -632,6 +657,10 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_MODIFY_COLUMN, database, table, column_name_from_col_decl());
+            /// A column-declaration STATISTICS replaces the explicit statistics of the column like the dedicated
+            /// MODIFY STATISTICS command does, so it must not bypass the corresponding access right.
+            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
+                required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::COMMENT_COLUMN:
