@@ -26,11 +26,12 @@ SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Nullable(Tup
 SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Nullable(Tuple(UInt16, UInt64))') NOT IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError TYPE_MISMATCH }
 SELECT CAST((1, number), 'Nullable(Tuple(UInt8, UInt64))') IN (SELECT CAST((1, 0), 'Tuple(UInt8, UInt64)')) FROM numbers(2); -- { serverError TYPE_MISMATCH }
 
--- Types with dynamic structure are rejected by `IN` before set-key casting, while a plain
--- `Variant` keeps a tuple value as one key. The rewrite must preserve each regular `IN` behavior.
+-- Types with dynamic structure are rejected by `IN` itself, before any set-key casting: the
+-- analyzer-time column-count validation skips them, so the regular `IN` error is preserved and
+-- the rewrite must report the very same error.
 SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Dynamic') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT count() FROM numbers(1) WHERE CAST('{"a":1}', 'JSON') IN (SELECT CAST('{"a":1}', 'JSON')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Variant(Tuple(UInt16, UInt64), UInt8)') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Variant(Tuple(UInt16, UInt64), UInt8)') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError TYPE_MISMATCH }
 
 -- A multi-column right side of the same arity is unpacked element-wise by regular IN, so the
 -- rewrite still applies there and must keep working.
