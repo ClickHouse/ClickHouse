@@ -1140,6 +1140,10 @@ class JobConfigs:
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
+                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
+                # not cover ./tests/ci.
+                "./tests/ci/get_previous_release_tag.py",
+                "./tests/ci/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
