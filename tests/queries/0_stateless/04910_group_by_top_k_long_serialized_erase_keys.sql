@@ -38,18 +38,27 @@ INSERT INTO gt_long_serialized
 SELECT s, n, count() FROM t_long_serialized GROUP BY s, n ORDER BY s ASC, n ASC LIMIT 100
 SETTINGS enable_group_by_top_k_optimization = 0;
 
+DROP TABLE IF EXISTS opt_long_serialized;
+CREATE TABLE opt_long_serialized ENGINE = Memory EMPTY AS
+SELECT s, n, count() FROM t_long_serialized GROUP BY s, n ORDER BY s ASC, n ASC LIMIT 100;
+
+INSERT INTO opt_long_serialized
+SELECT s, n, count() FROM t_long_serialized GROUP BY s, n ORDER BY s ASC, n ASC LIMIT 100;
+
 -- Standalone execution for the profile-event assertion: a `log_comment` inside
 -- a set-operation operand does not reach the statement's query_log entry.
 SELECT s, n, count() FROM t_long_serialized GROUP BY s, n ORDER BY s ASC, n ASC LIMIT 100
 SETTINGS log_comment = '04910_long_serialized' FORMAT Null;
 
+-- Compare both directions and the cardinalities: a one-sided `EXCEPT` stays
+-- empty when the optimized query drops winners and returns a strict subset of
+-- the correct top-100, which is exactly the mis-pruning this test pins down.
 SELECT 'results match the unoptimized aggregation';
-SELECT count() FROM
-(
-    (SELECT s, n, count() FROM t_long_serialized GROUP BY s, n ORDER BY s ASC, n ASC LIMIT 100)
-    EXCEPT
-    SELECT * FROM gt_long_serialized
-);
+SELECT
+    (SELECT count() FROM (SELECT * FROM opt_long_serialized EXCEPT SELECT * FROM gt_long_serialized)),
+    (SELECT count() FROM (SELECT * FROM gt_long_serialized EXCEPT SELECT * FROM opt_long_serialized)),
+    (SELECT count() FROM opt_long_serialized),
+    (SELECT count() FROM gt_long_serialized);
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -59,5 +68,6 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND current_database = currentDatabase()
     AND type = 'QueryFinish' AND log_comment = '04910_long_serialized';
 
+DROP TABLE opt_long_serialized;
 DROP TABLE gt_long_serialized;
 DROP TABLE t_long_serialized;
