@@ -374,8 +374,40 @@ enum class SortingQueueStrategy : uint8_t
     Batch
 };
 
+enum class SortingQueueContainer : uint8_t
+{
+    /// Binary heap of cursors. The minimum cursor is identified in O(1) comparisons (it is at
+    /// the front), reinsertion of the advanced front cursor costs up to 2 * log2(K) comparisons
+    /// (only one comparison when the front cursor is still the minimum, which is the common
+    /// case for clustered data).
+    Heap,
+
+    /// Sorted array of cursors. Reinsertion of the advanced front cursor costs exactly
+    /// ceil(log2(K)) comparisons (a binary search) plus a shift of on average half of the
+    /// array. The shifted elements are plain pointers, so the shift is cheap and this container
+    /// wins when comparisons are expensive relative to the data structure maintenance: generic
+    /// cursors compare through a virtual call per column (possibly over several columns),
+    /// strings, or a collation. With too many cursors the shifts start to dominate, so above
+    /// `max_array_container_size` cursors the implementation falls back to the heap behavior
+    /// (a sorted array is a valid heap layout, which makes the switch free).
+    Array
+};
+
+/// Comparisons through these cursors are expensive: a loop with a virtual call per column
+/// (possibly over several columns), or a collation. For them the number of comparisons matters
+/// more than the data structure maintenance costs, and the sorted array container performs
+/// fewer of them than the heap (see `SortingQueueContainer`). Measured on 64-way merges of
+/// non-clustered data: the multi-column cursor is 7-8% faster with the sorted array, while the
+/// specialized single-column cursors (including strings, whose comparisons usually resolve
+/// within the first bytes) are faster with the heap.
+template <typename Cursor>
+inline constexpr bool sort_cursor_compare_is_expensive = false;
+
+template <> inline constexpr bool sort_cursor_compare_is_expensive<SortCursor> = true;
+template <> inline constexpr bool sort_cursor_compare_is_expensive<SortCursorWithCollation> = true;
+
 /// Allows to fetch data from multiple sort cursors in sorted order (merging sorted data streams).
-template <typename Cursor, SortingQueueStrategy strategy>
+template <typename Cursor, SortingQueueStrategy strategy, SortingQueueContainer container = SortingQueueContainer::Heap>
 class SortingQueueImpl
 {
 public:
@@ -395,7 +427,18 @@ public:
             queue.emplace_back(&cursors[i]);
         }
 
-        std::make_heap(queue.begin(), queue.end());
+        if constexpr (container == SortingQueueContainer::Array)
+        {
+            /// The decision is based on the number of sources rather than the number of
+            /// non-empty cursors: `push` re-adds sources that were empty here or removed
+            /// later, so the queue can grow up to the number of sources.
+            array_mode = size <= max_array_container_size;
+        }
+
+        if (isArrayMode())
+            std::sort(queue.begin(), queue.end(), [](const Cursor & lhs, const Cursor & rhs) { return rhs.greater(lhs); });
+        else
+            std::make_heap(queue.begin(), queue.end());
 
         if constexpr (strategy == SortingQueueStrategy::Batch)
         {
@@ -467,9 +510,16 @@ public:
 
     void removeTop()
     {
-        std::pop_heap(queue.begin(), queue.end());
-        queue.pop_back();
-        next_child_idx = 0;
+        if (isArrayMode())
+        {
+            queue.erase(queue.begin());
+        }
+        else
+        {
+            std::pop_heap(queue.begin(), queue.end());
+            queue.pop_back();
+            next_child_idx = 0;
+        }
 
         if constexpr (strategy == SortingQueueStrategy::Batch)
         {
@@ -482,9 +532,24 @@ public:
 
     void push(SortCursorImpl & cursor)
     {
-        queue.emplace_back(&cursor);
-        std::push_heap(queue.begin(), queue.end());
-        next_child_idx = 0;
+        if (isArrayMode())
+        {
+            Cursor new_cursor(&cursor);
+            queue.insert(queue.begin() + arrayUpperBound(new_cursor, 0), new_cursor);
+
+            if constexpr (container == SortingQueueContainer::Array)
+            {
+                /// A sorted array is a valid heap layout, so the switch is free.
+                if (queue.size() > max_array_container_size)
+                    array_mode = false;
+            }
+        }
+        else
+        {
+            queue.emplace_back(&cursor);
+            std::push_heap(queue.begin(), queue.end());
+            next_child_idx = 0;
+        }
 
         if constexpr (strategy == SortingQueueStrategy::Batch)
             updateBatchSize();
@@ -498,8 +563,41 @@ private:
     size_t next_child_idx = 0;
     size_t batch_size = 0;
 
+    /// Whether the queue currently operates as a sorted array (only with the Array container,
+    /// see `SortingQueueContainer`). Above `max_array_container_size` cursors the shifts of the
+    /// sorted array become noticeable, so the queue switches to the heap behavior.
+    static constexpr size_t max_array_container_size = 256;
+    bool array_mode = false;
+
+    bool ALWAYS_INLINE isArrayMode() const
+    {
+        if constexpr (container == SortingQueueContainer::Heap)
+            return false;
+        else
+            return array_mode;
+    }
+
+    /// The first position in [first, queue.size()) whose cursor is greater than the given one.
+    size_t ALWAYS_INLINE arrayUpperBound(const Cursor & cursor, size_t first) const
+    {
+        size_t lo = first;
+        size_t hi = queue.size();
+        while (lo < hi)
+        {
+            size_t mid = lo + (hi - lo) / 2;
+            if (queue[mid].greater(cursor))
+                hi = mid;
+            else
+                lo = mid + 1;
+        }
+        return lo;
+    }
+
     size_t ALWAYS_INLINE nextChildIndex()
     {
+        if (isArrayMode())
+            return 1;
+
         if (next_child_idx == 0)
         {
             next_child_idx = 1;
@@ -520,6 +618,28 @@ private:
         size_t size = queue.size();
         if (size < 2)
             return;
+
+        if (isArrayMode())
+        {
+            /// Check if the front cursor is still the minimum.
+            if (check_in_order && queue[1].greater(queue[0]))
+            {
+                if constexpr (strategy == SortingQueueStrategy::Batch)
+                    updateBatchSize();
+                return;
+            }
+
+            /// Reinsert the advanced front cursor at its sorted position: exactly
+            /// ceil(log2(size)) comparisons, then a shift of plain pointers.
+            Cursor top = queue[0];
+            size_t upper = arrayUpperBound(top, 1);
+            std::move(queue.begin() + 1, queue.begin() + upper, queue.begin());
+            queue[upper - 1] = top;
+
+            if constexpr (strategy == SortingQueueStrategy::Batch)
+                updateBatchSize();
+            return;
+        }
 
         auto begin = queue.begin();
 
@@ -642,6 +762,14 @@ using SortingQueue = SortingQueueImpl<Cursor, SortingQueueStrategy::Default>;
 template <typename Cursor>
 using SortingQueueBatch = SortingQueueImpl<Cursor, SortingQueueStrategy::Batch>;
 
+/// The queue type used for the given cursor: cursors with expensive comparators get the sorted
+/// array container, the rest get the heap (see `SortingQueueContainer`).
+template <typename Cursor, SortingQueueStrategy strategy>
+using SortingQueueForCursor = SortingQueueImpl<
+    Cursor,
+    strategy,
+    sort_cursor_compare_is_expensive<Cursor> ? SortingQueueContainer::Array : SortingQueueContainer::Heap>;
+
 /** SortQueueVariants allow to specialize sorting queue for concrete types and sort description.
   * To access queue variant callOnVariant method must be used.
   * To access batch queue variant callOnBatchVariant method must be used.
@@ -672,89 +800,89 @@ public:
 
     bool variantSupportJITCompilation() const
     {
-        return std::holds_alternative<SortingQueue<SimpleSortCursor>>(default_queue_variants)
-            || std::holds_alternative<SortingQueue<SortCursor>>(default_queue_variants)
-            || std::holds_alternative<SortingQueue<SortCursorWithCollation>>(default_queue_variants);
+        return std::holds_alternative<SortingQueueForCursor<SimpleSortCursor, SortingQueueStrategy::Default>>(default_queue_variants)
+            || std::holds_alternative<SortingQueueForCursor<SortCursor, SortingQueueStrategy::Default>>(default_queue_variants)
+            || std::holds_alternative<SortingQueueForCursor<SortCursorWithCollation, SortingQueueStrategy::Default>>(default_queue_variants);
     }
 
 private:
     template <typename Cursor>
     void initializeQueues()
     {
-        default_queue_variants = SortingQueue<Cursor>();
-        batch_queue_variants = SortingQueueBatch<Cursor>();
+        default_queue_variants = SortingQueueForCursor<Cursor, SortingQueueStrategy::Default>();
+        batch_queue_variants = SortingQueueForCursor<Cursor, SortingQueueStrategy::Batch>();
     }
 
     static DataTypes extractSortDescriptionTypesFromHeader(const Block & header, const SortDescription & sort_description);
 
     template <SortingQueueStrategy strategy>
     using QueueVariants = std::variant<
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt8>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UInt256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UInt8>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UInt16>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UInt32>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UInt64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UInt128>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UInt256>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int8>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Int256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int8>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int16>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int32>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int128>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Int256>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<Float64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Float32>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<Float64>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal32>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<UUID>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<IPv4>>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnVector<IPv6>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UUID>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<IPv4>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<IPv6>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnString>, strategy>,
-        SortingQueueImpl<SpecializedSingleColumnSortCursor<ColumnFixedString>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnString>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnFixedString>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt8>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt256>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int8>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt8>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt16>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt32>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt128>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UInt256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int8>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int16>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int32>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int128>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Int256>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<BFloat16>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float32>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<Float64>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal32>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal32>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal128>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Decimal256>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<DateTime64>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnDecimal<Time64>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<UUID>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv4>>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv6>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UUID>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv4>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv6>>, strategy>,
 
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnString>, strategy>,
-        SortingQueueImpl<SpecializedSingleNullableColumnSortCursor<ColumnFixedString>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnString>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnFixedString>, strategy>,
 
-        SortingQueueImpl<SimpleSortCursor, strategy>,
-        SortingQueueImpl<SortCursor, strategy>,
-        SortingQueueImpl<SortCursorWithCollation, strategy>>;
+        SortingQueueForCursor<SimpleSortCursor, strategy>,
+        SortingQueueForCursor<SortCursor, strategy>,
+        SortingQueueForCursor<SortCursorWithCollation, strategy>>;
 
     using DefaultQueueVariants = QueueVariants<SortingQueueStrategy::Default>;
     using BatchQueueVariants = QueueVariants<SortingQueueStrategy::Batch>;
