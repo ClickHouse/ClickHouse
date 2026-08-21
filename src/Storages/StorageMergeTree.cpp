@@ -2457,12 +2457,19 @@ bool StorageMergeTree::optimize(
             /// A default-constructed std::expected holds a value (i.e. "assigned successfully").
             auto results = std::make_shared<std::vector<std::expected<void, PreformattedMessage>>>(partition_ids.size());
 
-            /// Run no more helpers than the merge executor can execute concurrently. Every helper
-            /// first selects its partition, then reserves a slot only if that selection found a
-            /// real merge. Thus a fully merged table and no-op partitions do not wait for or pin
-            /// foreground merge capacity.
+            /// Every helper first selects its partition, then reserves an executor slot only if
+            /// that selection found a real merge. Thus a fully merged table and no-op partitions
+            /// neither wait for nor pin foreground merge capacity.
+            ///
+            /// Because selection installs a `CurrentlyMergingPartsTagger` (which holds the source
+            /// parts and reserves disk space) before the slot is reserved, the number of helpers is
+            /// bounded by the slots that are free right now rather than by the configured pool size.
+            /// Otherwise, on a saturated executor, every helper could tag its partition and reserve
+            /// disk space while waiting for a slot, and those pending reservations could make
+            /// unrelated merges fail their free-space check. At least one helper always runs: it
+            /// then holds a single selection while waiting, exactly as the sequential path does.
             const size_t max_parallel_merges = std::min(
-                {partition_ids.size(), merge_mutate_executor->getMaxThreads(), merge_mutate_executor->getMaxTasksCount()});
+                {partition_ids.size(), std::max<size_t>(1, merge_mutate_executor->getAvailableTaskSlots())});
 
             ThreadPool pool(
                 CurrentMetrics::OptimizeFinalThreads,

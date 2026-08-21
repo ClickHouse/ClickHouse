@@ -8,8 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Keep all but one merge-executor worker occupied. `OPTIMIZE FINAL` must then start only one
-# partition helper: the implementation reserves the currently-free capacity before selection,
-# preventing waiting helpers from tagging parts or reserving output space.
+# partition helper: the implementation sizes the helper pool by the currently-free capacity, so
+# helpers cannot tag parts or reserve output space for merges the executor cannot run yet.
 pool_size=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'background_pool_size'")
 blockers=$((pool_size - 1))
 
