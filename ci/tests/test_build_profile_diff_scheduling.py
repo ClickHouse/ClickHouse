@@ -96,8 +96,6 @@ BUILD_FREE_DIFFS = [
     pytest.param(["docs/en/development/continuous-integration.md"], id="docs-only"),
     pytest.param(["tests/queries/0_stateless/0001_x.sql"], id="stateless-test-only"),
     pytest.param([".github/workflows/pull_request.yml"], id="generated-yaml"),
-    pytest.param(["ci/defs/job_configs.py"], id="job-registry"),
-    pytest.param(["ci/defs/defs.py"], id="defs-registry"),
     pytest.param(["ci/jobs/scripts/workflow_hooks/filter_job.py"], id="filter-hook"),
 ]
 
@@ -167,18 +165,21 @@ def test_inherited_carriers_are_not_listed_on_the_job_itself(changed_files):
     assert BPD not in _schedule(changed_files)
 
 
-def test_registry_edits_do_not_schedule_a_run_without_profile_data():
-    """A change to the job registry does not affect the build, so the build stays
-    cache-reusable and uploads no profile for this head. Scheduling the diff job then
-    reproduces the waste this filtering exists to prevent.
+@pytest.mark.parametrize(
+    "changed_files",
+    [
+        pytest.param(["ci/defs/job_configs.py"], id="job-registry"),
+        pytest.param(["ci/defs/defs.py"], id="defs-registry"),
+    ],
+)
+def test_the_job_does_not_track_the_registry_that_declares_it(changed_files):
+    """The registry declares every job, so a job that digests it is affected by every
+    unrelated CI edit.
 
-    Phrased as "these paths do not schedule the job" rather than as a literal copy of
-    the digest list, so adding a genuine consumer input later does not fail this test.
+    This job has something to compare only when the profiled build itself rebuilt, so it
+    must arrive through `requires` rather than through a registry path of its own.
     """
-    for path in ("ci/defs/job_configs.py", "ci/defs/defs.py"):
-        skipped = _schedule([path])
-        assert PROFILED_BUILD in skipped, path
-        assert BPD in skipped, path
+    assert not _job(BPD).is_affected_by(changed_files)
 
 
 def test_the_job_requires_the_profiled_build_rather_than_running_after_it():
