@@ -16,6 +16,7 @@
 #if USE_AVRO
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/StorageCredentials.h>
 
 #include <base/find_symbols.h>
@@ -1067,9 +1068,9 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     if (!params.empty())
         url.setQueryParameters(params);
 
-    auto create_buffer = [&](bool update_token)
+    auto create_buffer = [&](bool force_refresh)
     {
-        auto result_headers = auth_headers ? *auth_headers : getAuthHeaders(catalog_state, update_token);
+        auto result_headers = auth_headers ? *auth_headers : getAuthHeaders(catalog_state, force_refresh);
         std::move(headers.begin(), headers.end(), std::back_inserter(result_headers));
 
         return DB::BuilderRWBufferFromHTTP(url)
@@ -1085,21 +1086,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
     LOG_DEBUG(log, "Requesting: {}", url.toString());
 
-    try
-    {
-        return create_buffer(false);
-    }
-    catch (const DB::HTTPException & e)
-    {
-        const auto status = e.getHTTPStatus();
-        if (update_token_if_expired &&
-            (status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED
-             || status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN))
-        {
-            return create_buffer(true);
-        }
-        throw;
-    }
+    return requestWithTokenRefresh(update_token_if_expired, create_buffer);
 }
 
 bool RestCatalog::empty() const

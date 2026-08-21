@@ -51,6 +51,8 @@ public:
         return DB::DatabaseDataLakeCatalogType::UNITY;
     }
 
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::DELTA; }
+
 private:
     const std::filesystem::path base_url;
     const LoggerPtr log;
