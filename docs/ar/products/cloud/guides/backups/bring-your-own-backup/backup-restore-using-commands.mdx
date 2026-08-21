@@ -189,13 +189,27 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
 
   <Tab title="الاستعادة">
     ```sql
-    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    RESTORE ALL
     FROM S3(
         'https://testchbackups.s3.amazonaws.com/<uuid>',
         '<key id>',
         '<key secret>'
     )
+    SETTINGS restore_access_entities_with_current_grants = 1
     ```
+
+    تتوفر إعدادات `restore_access_entities_with_current_grants` بدءًا من إصدار ClickHouse Cloud **26.4** (البنية **26.4.1.1942** أو إصدار أحدث).
+    يمكنك التحقق من الإصدار الذي تعمل به خدمتك باستخدام:
+
+    ```sql
+    SELECT version()
+    ```
+
+    عند تمكين `restore_access_entities_with_current_grants`، تُقيَّد منح المستخدمين والأدوار المستعادة بما يُسمح للمستخدم الذي يجري الاستعادة بمنحه
+    (بنفس دلالات [`GRANT CURRENT GRANTS`](/ar/reference/statements/grant))، بدلًا من فشل `RESTORE`
+    بـ `ACCESS_DENIED` عندما تحتوي النسخة الاحتياطية على أذونات أكثر مما يمكن للمستخدم الذي يجري الاستعادة منحه.
+
+    في الإصدارات الأقدم من 26.4، احذف هذا الإعداد.
   </Tab>
 </Tabs>
 

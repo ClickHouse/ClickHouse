@@ -7,6 +7,8 @@ keywords: ['ClickHouse Cloud', '호환성']
 doc_type: 'guide'
 ---
 
+import CloudUnsupportedFeatures from '/snippets/ko/_cloud_unsupported_features.mdx';
+
 이 가이드는 ClickHouse Cloud에서 기능 및 운영 측면에서 무엇을 기대할 수 있는지 개괄적으로 설명합니다. ClickHouse Cloud는 오픈소스 ClickHouse 배포판을 기반으로 하지만, 아키텍처와 구현 방식에는 일부 차이가 있을 수 있습니다. 배경 이해를 위해 [ClickHouse Cloud를 구축한 방법](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year)에 관한 이 블로그도 함께 읽어보면 도움이 됩니다.
 
 <div id="clickhouse-cloud-architecture">
@@ -48,7 +50,7 @@ ClickHouse Cloud는 기본적으로 [SharedMergeTree](/ko/products/cloud/feature
 
 `Replicated*` 엔진도 동일한 `Shared*` 대응 엔진으로 변환됩니다. 이 치환은 `SHOW CREATE TABLE`에서 확인할 수 있으며, SQL 문에서 일반 변형을 지정했더라도 `Shared*` 엔진으로 표시됩니다.
 
-다음 엔진도 지원되며 작성한 그대로 사용됩니다:
+다음 테이블 엔진도 지원되며 작성한 그대로 사용됩니다. 지원되는 `MySQL` 테이블 엔진은 지원되지 않는 `MySQL` 데이터베이스 엔진과 구별됩니다:
 
 * URL
 * View
@@ -151,9 +153,7 @@ MergeTree 테이블의 `max_parts_in_total` 설정 기본값이 100,000에서 10
 </div>
 
 더 높은 동시성을 지원하기 위해 이 서버 수준 설정의 기본값을 `100`에서 `1000`으로 늘렸습니다.
-그 결과, 제공되는 tier 서비스에서는 `레플리카 수 * 1,000`개의 동시 쿼리를 처리할 수 있습니다.
-단일 레플리카로 제한되는 Basic tier service는 동시 쿼리 `1000`개까지 지원하며, Scale 및 Enterprise는
-구성된 레플리카 수에 따라 `1000+`개를 지원합니다.
+그 결과, 서비스는 `레플리카 수 * 1,000`개의 동시 쿼리를 처리할 수 있습니다. 단일 레플리카 서비스는 tier와 관계없이 동시 쿼리를 최대 `1000`개까지 지원합니다. Scale 및 Enterprise tier의 다중 레플리카 서비스는 레플리카당 동시 쿼리를 최대 `1000`개까지 지원합니다.
 
 <div id="max_table_size_to_drop-1000000000000">
   #### `max_table_size_to_drop: 1,000,000,000,000`
@@ -172,6 +172,12 @@ ClickHouse Cloud는 가변적인 워크로드에 맞게 최적화되어 있으�
 </div>
 
 ClickHouse 서비스를 생성하는 과정에서 기본 데이터베이스와 이 데이터베이스에 대한 광범위한 권한을 가진 기본 사용자(`default`)를 생성합니다. 이 초기 사용자는 추가 사용자를 생성하고 이 데이터베이스에 대한 권한을 할당할 수 있습니다. 이와 별개로, 현재는 Kerberos, LDAP 또는 SSL X.509 인증서 인증을 사용해 데이터베이스 내에서 다음 보안 기능을 활성화하는 기능은 지원되지 않습니다.
+
+<div id="list-of-unsupported-features">
+  ## 지원되지 않는 기능 목록
+</div>
+
+<CloudUnsupportedFeatures />
 
 <div id="roadmap">
   ## 로드맵

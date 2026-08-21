@@ -226,7 +226,7 @@ sess.query("CREATE DATABASE IF NOT EXISTS youtube")
 ```
 
 现在我们可以根据 JSON 文件 中的 schema，使用 `CREATE...EMPTY AS` 方法创建一个 `dislikes` 表。
-我们将使用 [`schema_inference_make_columns_nullable`](/zh/reference/settings/formats#schema_inference_make_columns_nullable) 设置，这样列类型就不会全部被设为 `Nullable`。
+我们将使用 [`schema_inference_make_columns_nullable`](/zh/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) 设置，这样列类型就不会全部被设为 `Nullable`。
 
 ```python
 sess.query(f"""
