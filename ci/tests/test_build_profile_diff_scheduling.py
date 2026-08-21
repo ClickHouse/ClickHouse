@@ -170,6 +170,7 @@ def test_inherited_carriers_are_not_listed_on_the_job_itself(changed_files):
     [
         pytest.param(["ci/defs/job_configs.py"], id="job-registry"),
         pytest.param(["ci/defs/defs.py"], id="defs-registry"),
+        pytest.param(["ci/workflows/pull_request.py"], id="workflow-registry"),
     ],
 )
 def test_the_job_does_not_track_the_registry_that_declares_it(changed_files):
@@ -180,6 +181,29 @@ def test_the_job_does_not_track_the_registry_that_declares_it(changed_files):
     must arrive through `requires` rather than through a registry path of its own.
     """
     assert not _job(BPD).is_affected_by(changed_files)
+
+
+@pytest.mark.parametrize(
+    "changed_files",
+    [
+        pytest.param(["ci/defs/job_configs.py"], id="job-registry"),
+        pytest.param(["ci/defs/defs.py"], id="defs-registry"),
+        pytest.param(["ci/workflows/pull_request.py"], id="workflow-registry"),
+    ],
+)
+def test_a_registry_edit_schedules_the_job_only_through_the_build(changed_files):
+    """A job can also be scheduled without being affected: the rescue pass keeps it when
+    an affected job requires it, which is how a registry edit reaches the profiled build.
+
+    Reaching this job that way would run it with nothing to compare, and the assertion on
+    its own digest above cannot see it, because the rescue reads `requires` and `provides`
+    and never consults `digest_config`. The build being affected is the other admissible
+    outcome: the registry declares the build, so an edit to it can move the build's own
+    key, and then there is a fresh profile and the comparison is real.
+    """
+    assert BPD in _schedule(changed_files) or _job(PROFILED_BUILD).is_affected_by(
+        changed_files
+    )
 
 
 def test_the_job_requires_the_profiled_build_rather_than_running_after_it():
