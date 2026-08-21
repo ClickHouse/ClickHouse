@@ -180,7 +180,7 @@ ATTACH TABLE time_decay_mv_reattach;
 SELECT 'aggregate metadata attach preserved';
 SELECT 'simple aggregate metadata attach preserved';
 SELECT 'materialized view short attach preserved';
-INSERT INTO time_decay_mv_source VALUES ((2, 1, 10));
+INSERT INTO time_decay_mv_source VALUES ((1, 1, 10));
 SELECT count() FROM time_decay_mv_reattach;
 
 -- Full ATTACH definitions are fresh DDL, not metadata recovery, and must obey

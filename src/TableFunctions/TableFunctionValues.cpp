@@ -3,6 +3,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/PODArray.h>
 #include <Common/Exception.h>
 
 #include <Core/Block.h>
@@ -41,7 +42,7 @@ namespace
 void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
 {
     const DataTypes target_types = sample_block.getDataTypes();
-    std::vector<bool> validate_decaying_values;
+    PaddedPODArray<UInt8> validate_decaying_values;
     validate_decaying_values.reserve(target_types.size());
     for (const auto & target_type : target_types)
         validate_decaying_values.push_back(containsExponentialTimeDecayingFloat64(target_type));
