@@ -7,36 +7,36 @@
       "versionId": "3915da6f92b40e6eff0be61bc108be40668964851aca08d295febd67341da029",
       "translations": {
         "ru": {
-          "updatedAt": "2026-08-21T10:41:05.576Z",
+          "updatedAt": "2026-08-21T11:13:35.422Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-21T10:41:05.707Z",
+          "updatedAt": "2026-08-21T11:13:35.627Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-21T10:41:05.935Z",
+          "updatedAt": "2026-08-21T11:13:36.063Z",
           "fileName": "docs.json",
-          "postProcessHash": "c7c37f6a8a686f8764d2d52984649f4bf6630d11f6191cf7cae6c601ef070118"
+          "postProcessHash": "8584d9fc0150b688bcd685e9289737c671e515b1e34d44bf09fe5d8dc7aed88a"
         },
         "es": {
-          "updatedAt": "2026-08-21T10:41:04.972Z",
+          "updatedAt": "2026-08-21T11:13:34.542Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-21T10:41:05.154Z",
+          "updatedAt": "2026-08-21T11:13:34.774Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-21T10:41:05.299Z",
+          "updatedAt": "2026-08-21T11:13:34.982Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-21T10:41:05.441Z",
+          "updatedAt": "2026-08-21T11:13:35.208Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-21T10:41:05.817Z",
+          "updatedAt": "2026-08-21T11:13:35.857Z",
           "fileName": "docs.json"
         }
       },
@@ -136841,6 +136841,54 @@
         }
       },
       "fileName": "products/bring-your-own-cloud/connector/reference/configuration.mdx",
+      "staged": false
+    },
+    {
+      "fileId": "3fed4ac42d1e1dd95f4e2fe059a8b8a285b87e6e16eafae18f974a48f60f1c39",
+      "versionId": "c8555edf112dcae45ed846b0b88d5fe8ae1f179aac42718832239845b914deb5",
+      "translations": {
+        "es": {
+          "updatedAt": "2026-08-21T11:13:41.349Z",
+          "fileName": "es/clickstack/demo-days/2026/2026-08-07.mdx",
+          "postProcessHash": "ea00eae02c0c139912cb79a2c105a2ec8d6127056385fcb974cc43a041a51f7b"
+        },
+        "fr": {
+          "updatedAt": "2026-08-21T11:13:41.350Z",
+          "fileName": "fr/clickstack/demo-days/2026/2026-08-07.mdx",
+          "postProcessHash": "d2a541fc05343daa2f35c31d3547bd18acc6fab474bc75166f915bf48c206d6f"
+        },
+        "zh": {
+          "updatedAt": "2026-08-21T11:13:41.351Z",
+          "fileName": "zh/clickstack/demo-days/2026/2026-08-07.mdx",
+          "postProcessHash": "b3db45b91d7a5add1d4b94784fb8d86caff3d9c6009f43b0259881ac5d74a7f6"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-21T11:13:41.351Z",
+          "fileName": "pt-BR/clickstack/demo-days/2026/2026-08-07.mdx",
+          "postProcessHash": "a13fc2ee500fb403460d44094aea04eef3c524c94eafbbba46a8ae027c13e28b"
+        },
+        "ko": {
+          "updatedAt": "2026-08-21T11:13:41.352Z",
+          "fileName": "ko/clickstack/demo-days/2026/2026-08-07.mdx",
+          "postProcessHash": "f2f5d1395cdc8d759355154f6ce6a2f95049366d1d41df9b29c487656ab50043"
+        },
+        "ja": {
+          "updatedAt": "2026-08-21T11:13:41.353Z",
+          "fileName": "ja/clickstack/demo-days/2026/2026-08-07.mdx",
+          "postProcessHash": "6d78120b59152ea7a03bdd07cdd3f95339bc1d93f2914006ce8269109e97308f"
+        },
+        "ru": {
+          "updatedAt": "2026-08-21T11:13:41.353Z",
+          "fileName": "ru/clickstack/demo-days/2026/2026-08-07.mdx",
+          "postProcessHash": "0155c9db72291f6305320ab2aeeaf7b06410adf5875cf859b33e2466a7f27dc3"
+        },
+        "ar": {
+          "updatedAt": "2026-08-21T11:13:41.354Z",
+          "fileName": "ar/clickstack/demo-days/2026/2026-08-07.mdx",
+          "postProcessHash": "1d99470c3304683ddcdd44320df6b9793bb4e4275600ec86ff816efa0325ab46"
+        }
+      },
+      "fileName": "clickstack/demo-days/2026/2026-08-07.mdx",
       "staged": false
     }
   ]
