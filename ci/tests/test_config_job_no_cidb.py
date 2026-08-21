@@ -20,6 +20,7 @@ import os
 import pathlib
 import shlex
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -428,15 +429,18 @@ def _population_deadlines_after_job_elapsed(job_elapsed_sec, spend_offered=False
             pass
 
     orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch
+    orig_monotonic = nj._MonotonicStopwatch
     try:
         nj.Shell = _FakeShell
         nj.S3 = _FakeS3
         nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
         nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
         nj.Utils.Stopwatch = _FakeStopwatch
+        nj._MonotonicStopwatch = _FakeStopwatch
         nj._prepare_submodule_cache(None, _Cfg(), job_elapsed_sec=job_elapsed_sec)
     finally:
         nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch = orig
+        nj._MonotonicStopwatch = orig_monotonic
     return offered, clock[0]
 
 
@@ -461,6 +465,229 @@ def test_the_elapsed_job_time_is_read_from_the_running_job():
 
     on_time, _ = _population_deadlines_after_job_elapsed(0)
     assert late[0] < on_time[0], (late, on_time)
+
+
+def test_the_job_clock_cannot_report_a_job_as_younger_than_it_is():
+    """The elapsed time must come from a clock the system cannot set backwards.
+
+    The remainder is subtracted from a watchdog that counts real time, so a clock that
+    can jump backwards reports a shrinking elapsed time and yields a remainder larger
+    than the job has left, which is the overrun the clamp exists to prevent.
+    """
+    import ci.praktika.native_jobs as nj
+
+    readings = [nj._JOB_STOPWATCH.duration for _ in range(50)]
+    assert readings == sorted(readings), readings
+
+    # Step every settable clock backwards, which is the case the readings above cannot
+    # produce on a healthy host, and leave `time.monotonic` alone: it is the one source
+    # the system cannot rewind. Both ends are exercised, since `start_time` is taken while
+    # the clocks read high and `duration` while they read low, so a stopwatch measuring
+    # from any of them at either end reports the job as younger than it is.
+    stepped = [10_000.0, 10_000.0, 0.0, 0.0, 0.0, 0.0]
+
+    def _settable_now():
+        return stepped.pop(0) if stepped else 0.0
+
+    class _SteppingDateTime:
+        @staticmethod
+        def now():
+            return _SteppingDateTime(_settable_now())
+
+        def __init__(self, value=0.0):
+            self._value = value
+
+        def timestamp(self):
+            return self._value
+
+    watch_type = type(nj._JOB_STOPWATCH)
+    watch_module = sys.modules[watch_type.__module__]
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        for module in (nj, watch_module):
+            if hasattr(module, "datetime"):
+                monkeypatch.setattr(module, "datetime", _SteppingDateTime)
+            if hasattr(module, "time"):
+                # A module-level stand-in, because `time.time` cannot be assigned on the
+                # stdlib module the production code imports.
+                monkeypatch.setattr(
+                    module,
+                    "time",
+                    type(
+                        "_Clocks",
+                        (),
+                        {
+                            "time": staticmethod(_settable_now),
+                            "monotonic": staticmethod(time.monotonic),
+                        },
+                    ),
+                )
+        watch = watch_type()
+        elapsed = [watch.duration, watch.duration]
+    finally:
+        monkeypatch.undo()
+
+    assert min(elapsed) >= 0.0, elapsed
+    assert elapsed == sorted(elapsed), elapsed
+
+
+def test_a_clock_stepped_back_mid_population_does_not_reopen_the_budget():
+    """Spend already made cannot be given back by a backward clock correction.
+
+    The deadlines are subtracted from a watchdog that counts real time, so a clock that
+    jumps backwards while the steps run would report the budget as unspent and hand the
+    remaining steps their full allowance again, past the cap the job actually has.
+    """
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.native_jobs import _workflow_config_job
+
+    offered = []
+    real = [0.0]
+    wall_offset = [0.0]
+
+    class _WallClockThatSteps:
+        """What `Utils.Stopwatch` reports: real time plus an offset that can jump."""
+
+        start_time = 0.0
+
+        @property
+        def duration(self):
+            return real[0] + wall_offset[0]
+
+    class _RealMonotonic:
+        """A monotonic clock: advances with real time and never carries the offset."""
+
+        start_time = 0.0
+
+        @property
+        def duration(self):
+            return real[0]
+
+    def _spend(seconds):
+        offered.append(seconds)
+        real[0] += seconds
+        if len(offered) == 2:
+            wall_offset[0] = -100_000.0
+
+    def _record(command):
+        parts = command.split()
+        if parts[:3] == ["timeout", "-s", "KILL"]:
+            _spend(int(parts[3]))
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **_kwargs):
+            _record(command)
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p, timeout=None):
+            if timeout is not None:
+                _spend(timeout)
+            return False
+
+        @staticmethod
+        def put(timeout=None, **_kwargs):
+            if timeout is not None:
+                _spend(timeout)
+            return True
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    orig = (nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch)
+    orig_monotonic = nj._MonotonicStopwatch
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        nj.Utils.Stopwatch = _WallClockThatSteps
+        nj._MonotonicStopwatch = _RealMonotonic
+        nj._prepare_submodule_cache(None, _Cfg(), job_elapsed_sec=0.0)
+    finally:
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch = orig
+        nj._MonotonicStopwatch = orig_monotonic
+
+    # Every step is entitled to the deadline it was offered, so their sum is what the
+    # watchdog has to survive.
+    assert sum(offered) <= _workflow_config_job.timeout, (sum(offered), offered)
+
+
+def test_a_clock_stepped_forward_mid_population_does_not_exhaust_the_budget():
+    """A clock jumping forward is not time the watchdog has counted.
+
+    The budget is the job's own allowance, so treating a forward correction as spend
+    would refuse deadlines the job can still honour and fail a healthy run.
+    """
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.result import Result
+
+    offered = []
+
+    class _WallClockJumpedForward:
+        start_time = 0.0
+
+        @property
+        def duration(self):
+            return 3600.0
+
+    class _RealMonotonic:
+        start_time = 0.0
+
+        @property
+        def duration(self):
+            return 1.0
+
+    class _FakeShell:
+        @staticmethod
+        def check(command, **_kwargs):
+            parts = command.split()
+            if parts[:3] == ["timeout", "-s", "KILL"]:
+                offered.append(int(parts[3]))
+            return True
+
+    class _FakeS3:
+        @staticmethod
+        def head_object(_p, timeout=None):
+            if timeout is not None:
+                offered.append(timeout)
+            return False
+
+        @staticmethod
+        def put(timeout=None, **_kwargs):
+            if timeout is not None:
+                offered.append(timeout)
+            return True
+
+    class _Cfg:
+        submodule_cache_hash = ""
+
+        def dump(self):
+            pass
+
+    orig = (nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch)
+    orig_monotonic = nj._MonotonicStopwatch
+    try:
+        nj.Shell = _FakeShell
+        nj.S3 = _FakeS3
+        nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
+        nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
+        nj.Utils.Stopwatch = _WallClockJumpedForward
+        nj._MonotonicStopwatch = _RealMonotonic
+        result = nj._prepare_submodule_cache(None, _Cfg(), job_elapsed_sec=0.0)
+    finally:
+        nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch = orig
+        nj._MonotonicStopwatch = orig_monotonic
+
+    assert result.status == Result.Status.OK, (result.status, result.info)
+    # One second of real time has passed, so no step may be reduced to the floor a
+    # spent budget produces.
+    assert min(offered) > 1, offered
 
 
 def test_the_population_budget_shrinks_by_what_the_job_already_spent():
@@ -836,15 +1063,18 @@ def test_the_budget_shrinks_as_the_population_spends_it():
 
     orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth
     original_stopwatch = nj.Utils.Stopwatch
+    orig_monotonic = nj._MonotonicStopwatch
     try:
         nj.Shell = _FakeShell
         nj.S3 = _FakeS3
         nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
         nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
         nj.Utils.Stopwatch = _FakeStopwatch
+        nj._MonotonicStopwatch = _FakeStopwatch
         result = nj._prepare_submodule_cache(None, _Cfg())
     finally:
         nj.Utils.Stopwatch = original_stopwatch
+        nj._MonotonicStopwatch = orig_monotonic
         nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
 
     assert result.status == "OK", result.status
@@ -1108,15 +1338,18 @@ def test_the_clone_deadline_accounts_for_authenticated_setup():
 
     orig = nj.Shell, nj.S3, nj.Digest, nj._submodule_auth_env
     original_stopwatch = nj.Utils.Stopwatch
+    orig_monotonic = nj._MonotonicStopwatch
     try:
         nj.Shell = _FakeShell
         nj.S3 = _FakeS3
         nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
         nj._submodule_auth_env = _fake_auth_env
         nj.Utils.Stopwatch = _FakeStopwatch
+        nj._MonotonicStopwatch = _FakeStopwatch
         nj._prepare_submodule_cache(None, _Cfg())
     finally:
         nj.Utils.Stopwatch = original_stopwatch
+        nj._MonotonicStopwatch = orig_monotonic
         nj.Shell, nj.S3, nj.Digest, nj._submodule_auth_env = orig
 
     # The setup's own external call has to be bounded too: it runs before the clone, so
@@ -1236,6 +1469,7 @@ def _population_with_scripted_clone(clone_fails, attempts=3, budget=1200, spend=
     cfg = _Cfg()
     orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth
     original_stopwatch = nj.Utils.Stopwatch
+    orig_monotonic = nj._MonotonicStopwatch
     original_budget = Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC
     original_attempts = Settings.SUBMODULE_CACHE_CLONE_ATTEMPTS
     try:
@@ -1244,6 +1478,7 @@ def _population_with_scripted_clone(clone_fails, attempts=3, budget=1200, spend=
         nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
         nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
         nj.Utils.Stopwatch = _FakeStopwatch
+        nj._MonotonicStopwatch = _FakeStopwatch
         Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC = budget
         Settings.SUBMODULE_CACHE_CLONE_ATTEMPTS = attempts
         result = nj._prepare_submodule_cache(None, cfg)
@@ -1251,6 +1486,7 @@ def _population_with_scripted_clone(clone_fails, attempts=3, budget=1200, spend=
         Settings.SUBMODULE_CACHE_CLONE_ATTEMPTS = original_attempts
         Settings.SUBMODULE_CACHE_POPULATE_TIMEOUT_SEC = original_budget
         nj.Utils.Stopwatch = original_stopwatch
+        nj._MonotonicStopwatch = orig_monotonic
         nj.Shell, nj.S3, nj.Digest, nj.GHAuth = orig
     return result, cfg, seen["clones"], deadlines
 
@@ -1639,15 +1875,18 @@ def _population_over_a_lost_race():
 
     cfg = _Cfg()
     orig = nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch
+    orig_monotonic = nj._MonotonicStopwatch
     try:
         nj.Shell = _FakeShell
         nj.S3 = _FakeS3
         nj.Digest = type("D", (), {"get_submodule_shas": staticmethod(lambda: "abc")})
         nj.GHAuth = type("A", (), {"auth": staticmethod(lambda *a, **k: False)})
         nj.Utils.Stopwatch = _FakeStopwatch
+        nj._MonotonicStopwatch = _FakeStopwatch
         result = nj._prepare_submodule_cache(None, cfg)
     finally:
         nj.Shell, nj.S3, nj.Digest, nj.GHAuth, nj.Utils.Stopwatch = orig
+        nj._MonotonicStopwatch = orig_monotonic
     return result, cfg, heads
 
 

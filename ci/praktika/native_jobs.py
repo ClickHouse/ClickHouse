@@ -5,6 +5,7 @@ import os
 import platform
 import shlex
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -54,9 +55,26 @@ _workflow_config_job = Job.Config(
 # it: the watchdog covers the whole command and produces no result at all.
 _POPULATE_REPORT_RESERVE_SEC = 60
 
+
+class _MonotonicStopwatch:
+    """Elapsed time that never runs backwards, exposed as `Utils.Stopwatch` is.
+
+    The watchdog this measures against counts real time, so a clock the system can
+    step backwards would report a job as younger than it is and yield a remainder
+    larger than the job actually has.
+    """
+
+    def __init__(self):
+        self.start_time = time.monotonic()
+
+    @property
+    def duration(self) -> float:
+        return time.monotonic() - self.start_time
+
+
 # Started when the job's own module is imported, which is the closest the job gets to
 # knowing when the watchdog covering it started.
-_JOB_STOPWATCH = Utils.Stopwatch()
+_JOB_STOPWATCH = _MonotonicStopwatch()
 
 
 # Subtracted from the remainder, so a negative one would be added to it instead and hand a
@@ -275,6 +293,7 @@ def _prepare_submodule_cache(
     archive exists in S3.  Stores the hash in workflow_config so that downstream
     jobs with needs_submodules=True can restore it."""
     stop_watch = Utils.Stopwatch()
+    spend_watch = _MonotonicStopwatch()
     info = ""
 
     # The configured budget is what the population may spend when the job started on time;
@@ -308,8 +327,13 @@ def _prepare_submodule_cache(
         )
 
     def budget_remaining():
-        """Seconds left of the budget, negative once it is overspent."""
-        return budget - int(stop_watch.duration)
+        """Seconds left of the budget, negative once it is overspent.
+
+        Spend is real time, which is what the watchdog counts; a wall clock corrected in
+        either direction would either hand out deadlines the job cannot honour or refuse
+        the ones it can.
+        """
+        return budget - int(spend_watch.duration)
 
     def budget_left():
         """Seconds the producing steps may still spend, never zero.
