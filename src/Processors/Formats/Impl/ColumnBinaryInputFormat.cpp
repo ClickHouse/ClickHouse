@@ -33,28 +33,8 @@ ColumnBinaryInputFormat::ColumnBinaryInputFormat(
         ColumnarV1::validateColumnarV1SupportedType(col.type);
 }
 
-Chunk ColumnBinaryInputFormat::read()
+void ColumnBinaryInputFormat::checkNumCols(uint32_t num_cols) const
 {
-    if (eof_)
-        return {};
-
-    // Try to read the 8-byte header; empty read means clean EOF.
-    char hdr_buf[ColumnarV1::COLUMNAR_HEADER_BYTES];
-    size_t hdr_read = in->read(hdr_buf, ColumnarV1::COLUMNAR_HEADER_BYTES);
-    if (hdr_read == 0)
-    {
-        eof_ = true;
-        return {};
-    }
-    if (hdr_read < ColumnarV1::COLUMNAR_HEADER_BYTES)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "ColumnBinary: truncated frame header ({} of {} bytes)", hdr_read, ColumnarV1::COLUMNAR_HEADER_BYTES);
-
-    uint32_t num_rows = 0;
-    uint32_t num_cols = 0;
-    std::memcpy(&num_rows, hdr_buf, 4);
-    std::memcpy(&num_cols, hdr_buf + 4, 4);
-
     // num_cols comes straight from the (network-facing) frame and is otherwise
     // untrusted; reject it before sizing any buffer off of it. ColumnBinary is
     // schema-driven, so anything other than an exact match is invalid: fewer
@@ -66,29 +46,23 @@ Chunk ColumnBinaryInputFormat::read()
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ColumnBinary: frame declares {} columns, expected {}",
             num_cols, header_->columns());
+}
 
-    // Read header + descriptor table into a single buffer.
-    const size_t desc_total = static_cast<size_t>(num_cols) * ColumnarV1::COLUMNAR_DESC_BYTES;
-    const size_t hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + desc_total;
-
-    std::vector<uint8_t> frame(hdr_desc_size);
-    std::memcpy(frame.data(), hdr_buf, ColumnarV1::COLUMNAR_HEADER_BYTES);
-
-    if (desc_total > 0)
-        in->readStrict(reinterpret_cast<char *>(frame.data() + ColumnarV1::COLUMNAR_HEADER_BYTES), desc_total);
-
+uint64_t ColumnBinaryInputFormat::validateDescriptorsAndGetFrameEnd(
+    std::span<const uint8_t> hdr_desc, uint32_t num_cols, size_t hdr_desc_size) const
+{
     // Compute the furthest byte referenced by any descriptor to get the total frame size.
     // Descriptors use absolute byte offsets from the start of the frame buffer and are
     // otherwise untrusted (network-facing): a hostile frame could set data_offset/data_size
     // to overflow the addition, or to a huge-but-non-overflowing value (e.g. 1 << 40) to
-    // make the frame.resize() below try to reserve an absurd amount of host memory before
-    // any of the actual column data has even been validated. Reject both.
+    // make the caller try to reserve an absurd amount of host memory before any of the
+    // actual column data has even been validated. Reject both.
     uint64_t data_end = static_cast<uint64_t>(hdr_desc_size);
     for (uint32_t i = 0; i < num_cols; ++i)
     {
         ColumnarV1::ColDescriptor desc{};
         std::memcpy(&desc,
-                    frame.data() + ColumnarV1::COLUMNAR_HEADER_BYTES + i * ColumnarV1::COLUMNAR_DESC_BYTES,
+                    hdr_desc.data() + ColumnarV1::COLUMNAR_HEADER_BYTES + i * ColumnarV1::COLUMNAR_DESC_BYTES,
                     sizeof(desc));
 
         // null_offset/offsets_offset use 0 as the sentinel for "absent" (no null map / no
@@ -137,16 +111,99 @@ Chunk ColumnBinaryInputFormat::read()
             "ColumnBinary: frame data size {} exceeds column_binary_max_frame_size limit {}",
             data_end - hdr_desc_size, format_settings_.column_binary.max_frame_size);
 
-    // Read the column data section exactly.
-    if (data_end > static_cast<uint64_t>(hdr_desc_size))
+    return data_end;
+}
+
+Chunk ColumnBinaryInputFormat::read()
+{
+    if (eof_)
+        return {};
+
+    // Fills the read buffer when it is empty, so `available()` below reports how much of the
+    // frame is contiguously in memory. Nothing left means a clean EOF between frames.
+    if (in->eof())
     {
-        const size_t data_bytes = static_cast<size_t>(data_end - hdr_desc_size);
-        frame.resize(data_end);
-        in->readStrict(reinterpret_cast<char *>(frame.data() + hdr_desc_size), data_bytes);
+        eof_ = true;
+        return {};
+    }
+
+    uint32_t num_rows = 0;
+    uint32_t num_cols = 0;
+    size_t hdr_desc_size = 0;
+    uint64_t data_end = 0;
+
+    // Backing storage for the copying branch below; stays empty when the frame is decoded in
+    // place. `frame` is what the decoder actually reads from, and points at one or the other.
+    std::vector<uint8_t> frame_storage;
+    std::span<const uint8_t> frame;
+
+    // Decode straight out of the read buffer whenever it already holds the whole frame
+    // contiguously. That is the common case for memory-backed sources — `ReadBufferFromMemory`
+    // over a WASM UDF result, `ReadBufferFromString`, a memory-mapped file — and it is worth a
+    // dedicated branch because the alternative copies the entire frame into a `std::vector`
+    // that is value-initialized first, so every byte is touched twice before it is ever
+    // decoded. Nothing is consumed from the buffer until the whole frame is known to be
+    // present, so falling through to the copying branch below re-reads from the frame start.
+    if (in->available() >= ColumnarV1::COLUMNAR_HEADER_BYTES)
+    {
+        const auto * pos = reinterpret_cast<const uint8_t *>(in->position());
+        std::memcpy(&num_rows, pos, 4);
+        std::memcpy(&num_cols, pos + 4, 4);
+
+        checkNumCols(num_cols);
+        hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + static_cast<size_t>(num_cols) * ColumnarV1::COLUMNAR_DESC_BYTES;
+
+        if (in->available() >= hdr_desc_size)
+        {
+            data_end = validateDescriptorsAndGetFrameEnd({pos, hdr_desc_size}, num_cols, hdr_desc_size);
+            if (in->available() >= data_end)
+            {
+                frame = {pos, static_cast<size_t>(data_end)};
+                in->position() += data_end;
+            }
+        }
+    }
+
+    if (frame.empty())
+    {
+        // Try to read the 8-byte header; a short read means the frame is truncated (a clean
+        // EOF was already handled above).
+        char hdr_buf[ColumnarV1::COLUMNAR_HEADER_BYTES];
+        size_t hdr_read = in->read(hdr_buf, ColumnarV1::COLUMNAR_HEADER_BYTES);
+        if (hdr_read < ColumnarV1::COLUMNAR_HEADER_BYTES)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "ColumnBinary: truncated frame header ({} of {} bytes)", hdr_read, ColumnarV1::COLUMNAR_HEADER_BYTES);
+
+        std::memcpy(&num_rows, hdr_buf, 4);
+        std::memcpy(&num_cols, hdr_buf + 4, 4);
+
+        checkNumCols(num_cols);
+
+        // Read header + descriptor table into a single buffer.
+        const size_t desc_total = static_cast<size_t>(num_cols) * ColumnarV1::COLUMNAR_DESC_BYTES;
+        hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + desc_total;
+
+        frame_storage.resize(hdr_desc_size);
+        std::memcpy(frame_storage.data(), hdr_buf, ColumnarV1::COLUMNAR_HEADER_BYTES);
+
+        if (desc_total > 0)
+            in->readStrict(reinterpret_cast<char *>(frame_storage.data() + ColumnarV1::COLUMNAR_HEADER_BYTES), desc_total);
+
+        data_end = validateDescriptorsAndGetFrameEnd(frame_storage, num_cols, hdr_desc_size);
+
+        // Read the column data section exactly.
+        if (data_end > static_cast<uint64_t>(hdr_desc_size))
+        {
+            const size_t data_bytes = static_cast<size_t>(data_end - hdr_desc_size);
+            frame_storage.resize(data_end);
+            in->readStrict(reinterpret_cast<char *>(frame_storage.data() + hdr_desc_size), data_bytes);
+        }
+
+        frame = frame_storage;
     }
 
     // Decode columns from the complete in-memory frame.
-    const std::span<const uint8_t> buf{frame};
+    const std::span<const uint8_t> buf = frame;
     MutableColumns result;
     result.reserve(num_cols);
 
