@@ -12,10 +12,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # connected to, so a request with `?query=SELECT...&query=INSERT...` reaches the server only if the
 # proxy routes by the first occurrence.
 
-CONFIG="${CLICKHOUSE_TMP}/05023_proxy_config.xml"
-LOG="${CLICKHOUSE_TMP}/05023_proxy.log"
+CONFIG="${CLICKHOUSE_TMP}/05024_proxy_config.xml"
+LOG="${CLICKHOUSE_TMP}/05024_proxy.log"
 
-NONCE="05023_${CLICKHOUSE_DATABASE}"
+NONCE="05024_${CLICKHOUSE_DATABASE}"
 
 PROXY_PID=
 PROXY_PORT=
