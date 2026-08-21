@@ -394,6 +394,14 @@ public:
 
         auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment, stop_token);
 
+        // Build the format settings and the empty sample header once per call. `getFormatSettings`
+        // reads several hundred settings and allocates for every string-valued one, and it used to
+        // run three times per invocation (probe, real output format, input format), with
+        // `block.cloneEmpty()` running twice on top of that. They are query-invariant, so hoisting
+        // them changes nothing about which settings apply while removing the repeated work.
+        const FormatSettings format_settings = wasmFormatSettings(context);
+        const Block empty_header = block.cloneEmpty();
+
         WasmMemoryGuard wasm_data = nullptr;
         if (!block.empty())
         {
@@ -408,7 +416,7 @@ public:
             // to serialize. A local NullWriteBuffer (not the probe_null_wb member) avoids a
             // data race if this const method is called concurrently for the same instance.
             NullWriteBuffer local_probe_wb;
-            auto probe = context->getOutputFormat(serialization_format, local_probe_wb, block.cloneEmpty(), wasmFormatSettings(context));
+            auto probe = context->getOutputFormat(serialization_format, local_probe_wb, empty_header, format_settings);
             std::optional<uint64_t> precomputed = probe->precomputeSerializedSize(block, num_rows);
 
             if (precomputed)
@@ -426,7 +434,7 @@ public:
                         "Maybe '{}' function implementation in WebAssembly module is incorrect",
                         *precomputed, wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
                 WriteBufferFromPointer wb(reinterpret_cast<char *>(wasm_mem.data()), *precomputed);
-                auto out = context->getOutputFormat(serialization_format, wb, block.cloneEmpty(), wasmFormatSettings(context));
+                auto out = context->getOutputFormat(serialization_format, wb, empty_header, format_settings);
                 // write()+finalize() instead of formatBlock(): formatBlock calls flush()
                 // which triggers out.next() — fatal for WriteBufferFromPointer.
                 // auto_flush defaults to false so neither write() nor finalize() flush.
@@ -443,7 +451,7 @@ public:
                 StringWithMemoryTracking input_data;
                 {
                     WriteBufferFromStringWithMemoryTracking buf(input_data);
-                    auto out = context->getOutputFormat(serialization_format, buf, block.cloneEmpty(), wasmFormatSettings(context));
+                    auto out = context->getOutputFormat(serialization_format, buf, empty_header, format_settings);
                     formatBlock(out, block);
                 }
                 wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
@@ -470,7 +478,7 @@ public:
 
         auto input_format = context->getInputFormat(
             serialization_format, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE,
-            wasmFormatSettings(context));
+            format_settings);
         readSingleBlock(*input_format, result_header);
 
         if (result_header.columns() != 1 || result_header.rows() != num_rows)
