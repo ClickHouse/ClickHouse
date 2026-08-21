@@ -135,13 +135,10 @@ static HashJoin::Type mergeJoinMethods(HashJoin::Type lhs, HashJoin::Type rhs)
 }
 
 /// The right columns a join with several disjuncts adds to the result. Every right key is read to build
-/// the maps, but only the keys the query asks for belong in the result; the analyzer is what says which
-/// those are, so without it every key is kept, as before.
+/// the maps, but only the keys the query asks for belong in the result; `requiredRightKeys` says which
+/// those are - the planner fills it in `setUsedColumns`, `TreeRewriter` in `addJoinedColumn`.
 static Block rightColumnsToAddWithSeveralDisjuncts(const TableJoin & table_join, const Block & right_columns)
 {
-    if (!table_join.enableAnalyzer())
-        return right_columns;
-
     NameSet key_names;
     for (const auto & clause : table_join.getClauses())
         key_names.insert(clause.key_names_right.begin(), clause.key_names_right.end());
