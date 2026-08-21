@@ -53,7 +53,7 @@ MulticastSocket::MulticastSocket()
 
 MulticastSocket::MulticastSocket(SocketAddress::Family family): DatagramSocket(family)
 {
-#if defined(POCO_OS_FAMILY_UNIX)
+#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_UNIX_SOCKETS)
 	if (family == SocketAddress::UNIX_LOCAL)
 		throw Poco::InvalidArgumentException("Cannot create a MulticastSocket with UNIX_LOCAL socket");
 #endif

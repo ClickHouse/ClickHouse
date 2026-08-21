@@ -51,6 +51,8 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 └─────────────┘
 ```
 
+There is one exception: `arrayJoin`, including via its `unnest` alias, is not allowed in a `JOIN ON` condition that is evaluated during the join, because such a condition must preserve the number of rows and is evaluated separately for each batch of joined rows. A condition that applies to one side only, and an equality key over `arrayJoin`, are extracted before the join and are unaffected. A non-disjunctive `ALL INNER JOIN` condition is also unaffected, because there the condition is applied after the join instead. Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured.
+
 A query can use multiple `arrayJoin` functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 For example:
 

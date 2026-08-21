@@ -47,7 +47,15 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
         writeCString("\n", out);
 
         writeCString("Estimation:\n", out);
-        writeString(fmt::format("  source:           {}\n", idx.estimate_source), out);
+
+        String estimate_source_str;
+        switch (idx.estimate_source)
+        {
+            case IndexResult::Empirical: estimate_source_str = "empirical"; break;
+            case IndexResult::Statistical: estimate_source_str = "statistical"; break;
+            case IndexResult::ApplicabilityOnly: estimate_source_str = "applicability_only"; break;
+        }
+        writeString(fmt::format("  source:           {}\n", estimate_source_str), out);
 
         String empirical_status_str;
         switch (idx.empirical_status)
@@ -57,6 +65,14 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
             case IndexResult::Disabled: empirical_status_str = "disabled"; break;
         }
         writeString(fmt::format("  empirical_status: {}\n", empirical_status_str), out);
+
+        if (idx.empirical_status == IndexResult::Unsupported)
+        {
+            String reason = idx.empirical_unsupported_reason;
+            if (reason.empty())
+                reason = "The empirical estimate could not be produced for this candidate";
+            writeString(fmt::format("  empirical_reason: {}\n", reason), out);
+        }
 
         if (idx.empirical_status == IndexResult::Ok)
         {
