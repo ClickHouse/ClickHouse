@@ -493,11 +493,18 @@ def test_foreign_processing_node_cache_deadline_is_not_refreshed_by_another_tabl
     keeper_path = f"/clickhouse/test_foreign_deadline_{suffix}"
     files_path = f"test_foreign_deadline_{suffix}_data"
 
+    ttl_sec = 30
+
     generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=1)
     common_settings = {
         "keeper_path": keeper_path,
         "s3queue_processing_threads_num": 1,
         "s3queue_loading_retries": 100,
+        # Keep both tables polling at a steady one-second pace, so that the moment of the
+        # last keeper probe of each of them is known within a second.
+        "s3queue_polling_min_timeout_ms": 1000,
+        "s3queue_polling_max_timeout_ms": 1000,
+        "s3queue_polling_backoff_ms": 0,
     }
     create_table(
         started_cluster,
@@ -507,7 +514,7 @@ def test_foreign_processing_node_cache_deadline_is_not_refreshed_by_another_tabl
         files_path,
         additional_settings={
             **common_settings,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 4,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": ttl_sec,
         },
     )
     create_table(
@@ -528,27 +535,40 @@ def test_foreign_processing_node_cache_deadline_is_not_refreshed_by_another_tabl
     zk.ensure_path(f"{keeper_path}/processing")
     zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
 
-    try:
-        create_mv(node, first_table_name, first_dst_table_name)
-        run_with_retry(lambda count: count == 0, lambda: int(node.query(f"SELECT count() FROM {first_dst_table_name}").strip()), retries=10)
+    def get_first_count():
+        return int(node.query(f"SELECT count() FROM {first_dst_table_name}").strip())
 
-        # The zero-TTL table probes the same foreign node after the first table has cached it.
+    try:
+        # The first table observes the foreign node, then stops polling: its own
+        # observation stays as old as the moment of this observation.
+        create_mv(node, first_table_name, first_dst_table_name)
+        run_with_retry(
+            lambda status: status == "Processing",
+            lambda: node.query(
+                f"SELECT status FROM system.s3queue_metadata_cache WHERE file_path LIKE '%{conflict_file}'"
+            ).strip(),
+        )
+        observed_at = time.time()
+        node.query(f"SYSTEM PAUSE {first_table_name}")
+
+        # The zero-TTL table probes the same foreign node once a second, until it is
+        # paused shortly before the first table's own observation expires.
         create_mv(node, second_table_name, second_dst_table_name)
-        time.sleep(3)
+        time.sleep(max(0, observed_at + ttl_sec - 5 - time.time()))
         node.query(f"SYSTEM PAUSE {second_table_name}")
 
-        # Expire the first table's own observation, then release the node. Before the fix,
-        # the second table's last probe resets the shared deadline and delays this retry.
-        time.sleep(2)
+        # Now the first table's own observation is expired, while the last probe of the
+        # second table is recent: before the fix, that probe kept the shared deadline
+        # alive and the first table would not retry the file for another 25 seconds.
+        time.sleep(max(0, observed_at + ttl_sec + 2 - time.time()))
         zk.delete(f"{keeper_path}/processing/{conflict_node}")
-        run_with_retry(
-            lambda count: count == 1,
-            lambda: int(node.query(f"SELECT count() FROM {first_dst_table_name}").strip()),
-            retries=2,
-        )
+        node.query(f"SYSTEM START {first_table_name}")
+
+        run_with_retry(lambda count: count == 1, get_first_count, retries=12)
     finally:
         node.query(
             f"""
+        SYSTEM START {first_table_name};
         SYSTEM START {second_table_name};
         DROP TABLE IF EXISTS {second_dst_table_name};
         DROP TABLE IF EXISTS {first_dst_table_name};
@@ -914,9 +934,13 @@ def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_clu
 
     A `processed` pointer is a high-water mark, not a record of the outcome of every
     preceding file. A foreign processor can leave a terminal `failed` node for one file
-    and later process another file. In that case the listing pre-filter must report the
-    former as `Failed`, including its Keeper payload, rather than overwriting it with
-    `Processed` in `system.s3queue_metadata_cache`.
+    and later advance the pointer of its bucket past it. In that case the listing
+    pre-filter must report the former as `Failed`, including its Keeper payload, rather
+    than overwriting it with `Processed` in `system.s3queue_metadata_cache`.
+
+    The queue uses more buckets than there are files, so that at least one bucket never
+    advances: listing then cannot be resumed from the smallest processed key
+    (`getStartAfterForListing`) and the failed file keeps being listed.
     """
     node = started_cluster.instances["instance"]
 
@@ -924,6 +948,9 @@ def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_clu
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
+    # More buckets than files: at least one bucket never advances, so listing cannot be
+    # resumed from the smallest processed key and the failed file keeps being listed.
+    buckets = 4
 
     generate_random_files(started_cluster, files_path, 3, start_ind=0, row_num=1)
 
@@ -936,14 +963,15 @@ def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_clu
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
+            "s3queue_buckets": buckets,
             "s3queue_loading_retries": 100,
             "s3queue_foreign_processing_node_cache_ttl_seconds": 1,
         },
     )
 
     failed_file = f"{files_path}/test_1.csv"
-    later_processed_file = f"{files_path}/test_2.csv"
     failed_node = node.query(f"SELECT sipHash64('{failed_file}')").strip()
+    failed_bucket = node.query(f"SELECT sipHash64('{failed_file}') % {buckets}").strip()
     zk = started_cluster.get_kazoo_client("zoo1")
 
     def foreign_node_metadata(file_path, exception, retries):
@@ -977,23 +1005,31 @@ def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_clu
 
         run_with_retry(lambda x: x == "Processing", get_cached_record)
 
-        # The foreign processor now fails `test_1.csv`, then processes `test_2.csv`.
-        # The ordered high-water mark covers both files, but the failed node remains
-        # authoritative for the cached record of `test_1.csv`.
+        # The foreign processor now fails `test_1.csv` and advances the pointer of its
+        # bucket over it. The failed node remains authoritative for the cached record.
         zk.delete(f"{keeper_path}/processing/{failed_node}")
         zk.ensure_path(f"{keeper_path}/failed")
         zk.create(
             f"{keeper_path}/failed/{failed_node}",
             foreign_node_metadata(failed_file, exception="Failed by another processor", retries=100),
         )
-        processed_metadata = foreign_node_metadata(later_processed_file, exception="", retries=0)
-        if zk.exists(f"{keeper_path}/processed"):
-            zk.set(f"{keeper_path}/processed", processed_metadata)
+        processed_path = f"{keeper_path}/buckets/{failed_bucket}/processed"
+        processed_metadata = foreign_node_metadata(failed_file, exception="", retries=0)
+        zk.ensure_path(f"{keeper_path}/buckets/{failed_bucket}")
+        if zk.exists(processed_path):
+            zk.set(processed_path, processed_metadata)
         else:
-            zk.create(f"{keeper_path}/processed", processed_metadata)
+            zk.create(processed_path, processed_metadata)
 
         run_with_retry(lambda x: x == "Failed\tFailed by another processor", get_cached_record)
-        assert node.query(f"SELECT count() FROM {dst_table_name}").strip() == "0"
+
+        # The failed file itself was never ingested by this table.
+        assert (
+            node.query(
+                f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%{failed_file}'"
+            ).strip()
+            == "0"
+        )
     finally:
         node.query(
             f"""
