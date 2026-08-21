@@ -161,7 +161,6 @@ ENGINE = MergeTree
 UNIQUE KEY (`c.size`)
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
-SET allow_experimental_variant_type = 1;
 CREATE TABLE uk_t (id UInt64, c Variant(String, UInt64))
 ENGINE = MergeTree
 UNIQUE KEY (`c.String`)
@@ -172,7 +171,6 @@ ENGINE = MergeTree
 UNIQUE KEY (`c.String.null`)
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
-SET enable_dynamic_type = 1;
 CREATE TABLE uk_t (id UInt64, c Dynamic)
 ENGINE = MergeTree
 UNIQUE KEY (`c.String`)
@@ -180,7 +178,6 @@ ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
 -- A JSON path subcolumn was already rejected, as a key column of a type that cannot
 -- be used in a key; it is now rejected earlier, for naming a subcolumn.
-SET enable_json_type = 1;
 CREATE TABLE uk_t (id UInt64, c JSON)
 ENGINE = MergeTree
 UNIQUE KEY (`c.a`)
@@ -239,6 +236,70 @@ ATTACH TABLE uk_t_attach_sub UUID '00000000-0000-0000-0000-000000114470'
 ENGINE = MergeTree
 UNIQUE KEY (`c.null`)
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- 7i. A virtual column's subcolumn is rejected too. `_partition_value` is the only
+-- virtual with a composite type, so it is the only one exposing subcolumns; the
+-- others reach `getKeyFromAST` and raise UNKNOWN_IDENTIFIER, which 7f already covers.
+CREATE TABLE uk_t (id UInt64, p UInt64)
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.1`)
+PARTITION BY p
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- A later element of a multi-column partition key.
+CREATE TABLE uk_t (id UInt64, p UInt64, q String)
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.2`)
+PARTITION BY (p, q)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- A subcolumn of the tuple element, so the rejected name has two dots.
+CREATE TABLE uk_t (id UInt64, p String)
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.1.size`)
+PARTITION BY p
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_t (id UInt64, p Nullable(UInt64))
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.1.null`)
+PARTITION BY p
+ORDER BY (id)
+SETTINGS allow_nullable_key = 1; -- { serverError BAD_ARGUMENTS }
+
+-- The tuple-list spelling.
+CREATE TABLE uk_t (id UInt64, p UInt64)
+ENGINE = MergeTree
+UNIQUE KEY (id, `_partition_value.1`)
+PARTITION BY p
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- 7i-1. A stored column may be named after a virtual column's subcolumn, so it
+-- stays accepted and writable.
+DROP TABLE IF EXISTS uk_t_vcoincide;
+CREATE TABLE uk_t_vcoincide (id UInt64, p UInt64, `_partition_value.1` String)
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.1`)
+PARTITION BY p
+ORDER BY (id);
+INSERT INTO uk_t_vcoincide VALUES (1, 2, 'x');
+SELECT count() FROM uk_t_vcoincide;
+
+-- Same for a scalar virtual, whose type exposes no subcolumn at all.
+DROP TABLE IF EXISTS uk_t_vcoincide2;
+CREATE TABLE uk_t_vcoincide2 (id UInt64, `_part.size` String)
+ENGINE = MergeTree
+UNIQUE KEY (`_part.size`)
+ORDER BY (id);
+INSERT INTO uk_t_vcoincide2 VALUES (1, 'x');
+SELECT count() FROM uk_t_vcoincide2;
+
+-- 7i-2. Without a PARTITION BY there is no `_partition_value` virtual, so the same
+-- name reaches `getKeyFromAST` and is rejected for matching no column at all.
+CREATE TABLE uk_t (id UInt64)
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.1`)
+ORDER BY (id); -- { serverError UNKNOWN_IDENTIFIER }
 
 -- 8. ALTER DROP COLUMN on a unique-key column -> error (via ORDER BY key guard).
 CREATE TABLE uk_t (id UInt64, user_id UInt32, v String)
@@ -454,3 +515,5 @@ DROP TABLE plain_dst_from_uk;
 DROP TABLE IF EXISTS uk_ttl_inline_pk;
 DROP TABLE IF EXISTS uk_ttl_storage_pk;
 DROP TABLE IF EXISTS uk_ttl_full;
+DROP TABLE IF EXISTS uk_t_vcoincide;
+DROP TABLE IF EXISTS uk_t_vcoincide2;
