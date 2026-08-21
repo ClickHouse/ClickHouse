@@ -32,4 +32,23 @@ $CLICKHOUSE_LOCAL -m -q "
     WHERE format = 'Vortex' AND additional_format_info LIKE '%schema_inference_make_columns_nullable%';
 "
 
+# A written entry is only half of it: the second identical inference has to read it back, or the
+# key could be wrong in a way no schema shows.
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('$DATA_FILE', 'Vortex') FORMAT Null;
+    DESC file('$DATA_FILE', 'Vortex') FORMAT Null;
+    SELECT
+        'schema cache hits',
+        (SELECT value FROM system.events WHERE event = 'SchemaInferenceCacheSchemaHits') > 0;
+"
+
+# `allow_geoparquet_parser` reaches the Vortex reader too, so it has to be part of the key: the two
+# values must not share an entry. A fresh process is used so that only these two are in the cache.
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('$DATA_FILE', 'Vortex') SETTINGS input_format_parquet_allow_geoparquet_parser = 1 FORMAT Null;
+    DESC file('$DATA_FILE', 'Vortex') SETTINGS input_format_parquet_allow_geoparquet_parser = 0 FORMAT Null;
+    SELECT 'geoparquet cache keys', count(), countDistinct(additional_format_info)
+    FROM system.schema_inference_cache WHERE format = 'Vortex';
+"
+
 rm -f "$DATA_FILE"
