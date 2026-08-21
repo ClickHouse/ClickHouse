@@ -1,5 +1,5 @@
 {
-  "settings": 1313,
+  "settings": 1316,
   "anchorRoutes": {
     "adaptive_aggregator_freeze_threshold": "/reference/settings/session-settings/other",
     "add_http_cors_header": "/reference/settings/session-settings/other",
@@ -434,6 +434,7 @@
     "exclude_materialize_skip_indexes_on_insert": "/reference/settings/session-settings/other",
     "execute_exists_as_scalar_subquery": "/reference/settings/session-settings/other",
     "explain_query_plan_default": "/reference/settings/session-settings/other",
+    "explain_syntax_single_record": "/reference/settings/session-settings/other",
     "external_storage_connect_timeout_sec": "/reference/settings/session-settings/external-storage",
     "external_storage_max_read_bytes": "/reference/settings/session-settings/external-storage",
     "external_storage_max_read_rows": "/reference/settings/session-settings/external-storage",
@@ -1119,9 +1120,11 @@
     "restore_replace_external_table_functions_to_null": "/reference/settings/session-settings/restore-replace",
     "restore_replicated_merge_tree_to_shared_merge_tree": "/reference/settings/session-settings/other",
     "result_overflow_mode": "/reference/settings/session-settings/other",
+    "resumable_backup_from_snapshot": "/reference/settings/session-settings/other",
     "rewrite_count_distinct_if_with_count_distinct_implementation": "/reference/settings/session-settings/rewrite",
     "rewrite_in_to_join": "/reference/settings/session-settings/rewrite",
     "rows_before_aggregation": "/reference/settings/session-settings/other",
+    "run_query_in_background": "/reference/settings/session-settings/other",
     "s3_allow_multipart_copy": "/reference/settings/session-settings/s3-allow",
     "s3_allow_parallel_part_upload": "/reference/settings/session-settings/s3-allow",
     "s3_allow_server_credentials_in_user_queries": "/reference/settings/session-settings/s3-allow",
