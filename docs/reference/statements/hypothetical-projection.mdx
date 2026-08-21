@@ -1,0 +1,53 @@
+---
+description: 'Documentation for hypothetical (what-if) projections'
+sidebarTitle: 'HYPOTHETICAL PROJECTION'
+slug: /sql-reference/statements/hypothetical-projection
+title: 'Hypothetical Projections'
+doc_type: 'reference'
+---
+
+Hypothetical projections are virtual, session-scoped projections that you can attach to a `MergeTree` family table without building or storing them. They exist only inside the current session and are listed by [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif).
+
+:::note
+`EXPLAIN WHATIF` does not estimate the benefit of a hypothetical projection yet; it reports each one as `not_applicable`. Defining them today is useful for validating a definition against the table and for tooling that reads `system.hypothetical_projections`.
+:::
+
+## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
+
+```sql
+CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name
+    ON [db.]table_name (SELECT <columns> [GROUP BY ...] [ORDER BY ...])
+```
+
+The syntax mirrors `ALTER TABLE ... ADD PROJECTION`, and the definition is validated the same way, so a projection that is rejected here could not have been materialized either. Nothing is built or written — only the description is stored, in the current session.
+
+- `name` — projection name; must be unique within `(database, table)` for this session, and must not collide with a real projection.
+- The target table must be a `MergeTree` family table in an `Atomic` database, because the session store keys entries by table UUID.
+
+**Example**
+
+```sql
+CREATE HYPOTHETICAL PROJECTION p_by_b ON t (SELECT a, b ORDER BY b);
+```
+
+## DROP HYPOTHETICAL PROJECTION {#drop-hypothetical-projection}
+
+```sql
+DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
+DROP ALL HYPOTHETICAL PROJECTIONS
+```
+
+`DROP ALL HYPOTHETICAL PROJECTIONS` removes every hypothetical projection in the session and leaves hypothetical indexes alone; `DROP ALL HYPOTHETICAL INDEXES` does the reverse.
+
+## Introspection {#introspection}
+
+```sql
+SELECT database, table, name, type, query FROM system.hypothetical_projections;
+```
+
+See [`system.hypothetical_projections`](/operations/system-tables/hypothetical_projections).
+
+## See also {#see-also}
+
+- [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index)
+- [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif)

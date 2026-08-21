@@ -1,0 +1,30 @@
+---
+description: 'System table showing session-scoped hypothetical projections'
+sidebarTitle: 'hypothetical_projections'
+slug: /operations/system-tables/hypothetical_projections
+title: 'system.hypothetical_projections'
+doc_type: 'reference'
+---
+
+Contains the hypothetical projections defined in the current session with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection). The table is session-scoped: another session sees its own projections only, and entries whose table has been dropped are hidden.
+
+Columns:
+
+- `database` ([String](../../sql-reference/data-types/string.md)) — Database name.
+- `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
+- `name` ([String](../../sql-reference/data-types/string.md)) — Projection name.
+- `type` ([String](../../sql-reference/data-types/string.md)) — `normal` or `aggregate`.
+- `query` ([String](../../sql-reference/data-types/string.md)) — The projection `SELECT` query.
+
+**Example**
+
+```sql
+CREATE HYPOTHETICAL PROJECTION p_by_b ON t (SELECT a, b ORDER BY b);
+SELECT name, type FROM system.hypothetical_projections;
+```
+
+```text
+┌─name───┬─type───┐
+│ p_by_b │ normal │
+└────────┴────────┘
+```
