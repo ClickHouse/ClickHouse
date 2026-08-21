@@ -40,6 +40,11 @@ namespace ErrorCodes
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
 }
 
+std::unique_ptr<WriteBuffer> IBackupWriter::writeFileIfNotExists(const String & file_name)
+{
+    return writeFile(file_name);
+}
+
 void fsyncBackupFileContents(const fs::path & path)
 {
     int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);

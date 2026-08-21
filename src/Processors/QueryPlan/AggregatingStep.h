@@ -141,6 +141,7 @@ public:
     size_t getMergeThreads() const noexcept { return merge_threads; }
     size_t getTemporaryDataMergeThreads() const noexcept { return temporary_data_merge_threads; }
     bool shouldProduceResultsInBucketOrder() const noexcept { return should_produce_results_in_order_of_bucket_number; }
+    void setShouldProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
     bool usingMemoryBoundMerging() const noexcept { return memory_bound_merging_of_aggregation_results_enabled; }
 
     bool supportsDataflowStatisticsCollection() const override
@@ -171,7 +172,7 @@ private:
     SortDescription group_by_sort_description;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
-    const bool should_produce_results_in_order_of_bucket_number;
+    bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
     bool enable_sharding_aggregator;
