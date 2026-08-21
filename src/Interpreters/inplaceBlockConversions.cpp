@@ -28,6 +28,7 @@
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -179,7 +180,13 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
             continue;
 
         const auto & column_in_block = block.getByName(required_column.name);
-        if (column_in_block.type->equals(*required_column.type))
+        const bool equal_types = column_in_block.type->equals(*required_column.type);
+        const bool requires_experimental_time_decay_validation
+            = equal_types
+            && isExponentialTimeDecayingFloat64(removeLowCardinalityAndNullable(required_column.type))
+            && column_in_block.type->getName() != required_column.type->getName();
+
+        if (equal_types && !requires_experimental_time_decay_validation)
             continue;
 
         /// Converting a column from nullable to non-nullable may cause 'Cannot convert column' error when NULL values exist.

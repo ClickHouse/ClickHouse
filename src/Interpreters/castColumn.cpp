@@ -2,6 +2,8 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
@@ -14,7 +16,13 @@ namespace DB
 
 static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr)
 {
-    if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
+    const bool equal_types = arg.type->equals(*type);
+    const bool requires_experimental_time_decay_validation
+        = equal_types
+        && isExponentialTimeDecayingFloat64(removeLowCardinalityAndNullable(type))
+        && arg.type->getName() != type->getName();
+
+    if (equal_types && cast_type != CastType::accurateOrNull && !requires_experimental_time_decay_validation)
         return arg.column;
 
     const auto from_name = arg.type->getName();
