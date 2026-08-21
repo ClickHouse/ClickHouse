@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -43,6 +44,7 @@ namespace
             case StoreMethod::SINGLE_SCALAR:
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
+            case StoreMethod::HISTOGRAM_GRID:
             {
                 expression.start_time += offset_value;
                 expression.end_time += offset_value;
@@ -50,8 +52,9 @@ namespace
             }
 
             case StoreMethod::RAW_DATA:
+            case StoreMethod::HISTOGRAM_RAW_DATA:
             {
-                /// SELECT group, timestamp + INTERVAL X, value
+                /// SELECT group, timestamp + INTERVAL X, value [, <payload columns>, is_histogram]
                 /// FROM <raw_data>
                 SelectQueryBuilder builder;
 
@@ -64,9 +67,8 @@ namespace
                     chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
                     /// Round up the scale to next number divisible by 3.
                     UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
-                    /// The interval functions do not accept Decimal arguments, so the literal must be
-                    /// the integer number of units of 10^-scale seconds. The conversion is exact because
-                    /// scale >= timestamp_scale.
+                    /// The interval functions do not accept Decimal arguments, so the literal must be the integer
+                    /// number of units of 10^-scale seconds; the conversion is exact because scale >= timestamp_scale.
                     Int64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
 
                     static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
@@ -90,6 +92,14 @@ namespace
                 builder.select_list.push_back(std::move(new_timestamp));
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+                if (expression.store_method == StoreMethod::HISTOGRAM_RAW_DATA)
+                {
+                    /// The payload columns and `is_histogram` are forwarded unchanged.
+                    for (const auto & [name, type] : getTimeSeriesHistogramPayloadColumns())
+                        builder.select_list.push_back(make_intrusive<ASTIdentifier>(name));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::IsHistogram));
+                }
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
@@ -149,18 +159,13 @@ namespace
 
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
+            case StoreMethod::HISTOGRAM_GRID:
             {
-                /// For scalar grid:
-                /// SELECT arrayResize([], <count_of_time_steps>, values[1])) AS values
-                /// FROM <scalar_grid>
-                ///
-                /// For vector grid:
-                /// SELECT group,
-                ///        arrayResize([], <count_of_time_steps>, values[1])) AS values
-                /// FROM <vector_grid>
+                /// SELECT [group,] arrayResize([], <count_of_time_steps>, values[1]) AS values FROM <scalar_grid | vector_grid>;
+                /// a combined grid additionally repeats histogram_values[1] and sample_kinds[1] the same way.
                 SelectQueryBuilder builder;
 
-                if (expression.store_method == StoreMethod::VECTOR_GRID)
+                if (expression.store_method == StoreMethod::VECTOR_GRID || expression.store_method == StoreMethod::HISTOGRAM_GRID)
                     builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
                 auto new_values = makeASTFunction(
@@ -172,6 +177,30 @@ namespace
 
                 new_values->setAlias(ColumnNames::Values);
                 builder.select_list.push_back(std::move(new_values));
+
+                if (expression.store_method == StoreMethod::HISTOGRAM_GRID)
+                {
+                    auto new_histogram_values = makeASTFunction(
+                        "arrayResize",
+                        make_intrusive<ASTLiteral>(Array{}),
+                        make_intrusive<ASTLiteral>(
+                            stepsInTimeSeriesRange(node_range.start_time, node_range.end_time, node_range.step)),
+                        makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues), make_intrusive<ASTLiteral>(1u)));
+
+                    new_histogram_values->setAlias(ColumnNames::HistogramValues);
+                    builder.select_list.push_back(std::move(new_histogram_values));
+
+                    /// The precedence oracle column of a combined grid is forwarded the same way.
+                    auto new_sample_kinds = makeASTFunction(
+                        "arrayResize",
+                        make_intrusive<ASTLiteral>(Array{}),
+                        make_intrusive<ASTLiteral>(
+                            stepsInTimeSeriesRange(node_range.start_time, node_range.end_time, node_range.step)),
+                        makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds), make_intrusive<ASTLiteral>(1u)));
+
+                    new_sample_kinds->setAlias(ColumnNames::SampleKinds);
+                    builder.select_list.push_back(std::move(new_sample_kinds));
+                }
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
@@ -186,10 +215,9 @@ namespace
             }
 
             case StoreMethod::RAW_DATA:
+            case StoreMethod::HISTOGRAM_RAW_DATA:
             {
-                /// SELECT group,
-                ///        arrayJoin(timeSeriesRange(<start_time>, <end_time>, <step>)) AS timestamp,
-                ///        value
+                /// SELECT group, arrayJoin(timeSeriesRange(...)) AS timestamp, value [, <payload columns>, is_histogram]
                 /// FROM <raw_data>
                 SelectQueryBuilder builder;
 
@@ -207,6 +235,14 @@ namespace
                 builder.select_list.push_back(std::move(new_timestamp));
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+                if (expression.store_method == StoreMethod::HISTOGRAM_RAW_DATA)
+                {
+                    /// The payload columns and `is_histogram` are forwarded unchanged.
+                    for (const auto & [name, type] : getTimeSeriesHistogramPayloadColumns())
+                        builder.select_list.push_back(make_intrusive<ASTIdentifier>(name));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::IsHistogram));
+                }
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);

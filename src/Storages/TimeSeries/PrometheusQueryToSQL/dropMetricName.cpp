@@ -35,29 +35,15 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
         }
 
         case StoreMethod::VECTOR_GRID:
+        case StoreMethod::HISTOGRAM_GRID:
         {
-            /// When we remove the metric name `__name__` it's possible that we get the same set of tags (i.e. the same `group`)
-            /// on time series which were different before we removed the metric name.
-            /// This is not allowed, we can't have multiple time series with the same set of tags in the same resultset.
-            ///
-            /// Example:
-            ///             tags                           timestamp1        timestamp2
-            /// metric1{tag1='value1', tag2='value2'}       value_a           value_b
-            /// metric2{tag1='value1', tag2='value2'}       value_c           value_d
-            ///                                 ||
-            ///                                 \/
-            ///             tags                           timestamp1        timestamp2
-            /// {tag1='value1', tag2='value2'}              value_a           value_b
-            /// {tag1='value1', tag2='value2'}              value_c           value_d
-            ///
-            /// That's why we need the function timeSeriesThrowDuplicateSeriesIf() to detect such cases and throw an exception.
+            /// Removing `__name__` can make previously-distinct series share the same tags (the same `group`), which is not allowed;
+            /// `timeSeriesThrowDuplicateSeriesIf` detects such duplicates and throws.
 
-            /// Step 1:
-            /// SELECT timeSeriesRemoveTag(group, '__name__') AS new_group,
-            ///        any(values) AS values
-            /// FROM <vector_grid>
-            /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, new_group) = 0
+            const bool has_histogram_values = query_piece.store_method == StoreMethod::HISTOGRAM_GRID;
+
+            /// Step 1: SELECT timeSeriesRemoveTag(group, '__name__') AS new_group, any(values) [, any(histogram_values), any(sample_kinds)]
+            /// FROM <vector_grid> GROUP BY new_group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, new_group) = 0
             ASTPtr metric_name_removing_query;
             {
                 SelectQueryBuilder builder;
@@ -68,6 +54,15 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
 
                 builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
                 builder.select_list.back()->setAlias(ColumnNames::Values);
+
+                if (has_histogram_values)
+                {
+                    builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues)));
+                    builder.select_list.back()->setAlias(ColumnNames::HistogramValues);
+
+                    builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)));
+                    builder.select_list.back()->setAlias(ColumnNames::SampleKinds);
+                }
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(query_piece.select_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
@@ -85,9 +80,7 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
                 metric_name_removing_query = builder.getSelectQuery();
             }
 
-            /// Step 2:
-            /// SELECT new_group AS group, values
-            /// FROM step1
+            /// Step 2: SELECT new_group AS group, values [, histogram_values, sample_kinds] FROM step1
             ASTPtr column_renaming_query;
             {
                 SelectQueryBuilder builder;
@@ -96,6 +89,12 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
                 builder.select_list.back()->setAlias(ColumnNames::Group);
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+                if (has_histogram_values)
+                {
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds));
+                }
 
                 context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(metric_name_removing_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
@@ -110,8 +109,9 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
         }
 
         case StoreMethod::RAW_DATA:
+        case StoreMethod::HISTOGRAM_RAW_DATA:
         {
-            /// dropMetricName() must not be called with StoreMethod::RAW_DATA.
+            /// dropMetricName() must not be called with StoreMethod::RAW_DATA or StoreMethod::HISTOGRAM_RAW_DATA.
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Cannot drop the metric name from the result of expression {} because of its store method {}",
                             getPromQLText(query_piece, context), query_piece.store_method);

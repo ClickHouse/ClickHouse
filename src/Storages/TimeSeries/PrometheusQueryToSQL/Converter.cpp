@@ -115,7 +115,16 @@ Converter::Converter(std::shared_ptr<const PrometheusQueryTree> promql_tree_, Pr
 
 ColumnsDescription Converter::getResultColumns() const
 {
-    return DB::PrometheusQueryToSQL::getResultColumns(*promql_tree, settings);
+    /// Histogram-ness of the result (extra `histogram`/`histogram_series` column) depends on the root node's store
+    /// method, so the conversion runs here; without a histograms target no piece can carry histograms, so skip it.
+    bool histogram_result = false;
+    if (settings.storage_has_native_histograms)
+    {
+        ConverterContext context{promql_tree, settings};
+        const auto root_store_method = visitNode(promql_tree->getRoot(), context).store_method;
+        histogram_result = (root_store_method == StoreMethod::HISTOGRAM_GRID) || (root_store_method == StoreMethod::HISTOGRAM_RAW_DATA);
+    }
+    return DB::PrometheusQueryToSQL::getResultColumns(*promql_tree, settings, histogram_result);
 }
 
 

@@ -42,10 +42,7 @@ namespace
 String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, std::string_view arg_name)
 {
     const auto value = evaluateConstantExpressionAsColumn(arg, context);
-    /// Accept `Nullable`/`LowCardinality` wrappers: the previous `Field`-based code read the value
-    /// via `operator[]`, which flattens wrappers, so a non-NULL `Nullable(String)`/
-    /// `LowCardinality(String)` constant passed the String check. Preserve that, and still reject a
-    /// NULL value as before.
+    /// Accept `Nullable`/`LowCardinality` wrappers (the old `Field`-based code flattened them via `operator[]`), still rejecting NULL.
     if (!isStringOrFixedString(removeLowCardinalityAndNullable(value.getType())))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, value.getType()->getName());
     if (value.isNull())
@@ -147,6 +144,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
     evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
     evaluation_settings.scalar_data_type = std::move(scalar_data_type);
+    evaluation_settings.storage_has_native_histograms = time_series_storage->hasTarget(ViewTarget::Histograms);
     evaluation_settings.mode = mode;
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
@@ -193,9 +191,8 @@ void StoragePrometheusQuery::readImpl(
     LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
-    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
-    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
+    /// The generated SQL relies on `AS MATERIALIZED` (see SQLSubqueryType::MATERIALIZED_TABLE) to avoid re-evaluating
+    /// shared subqueries, which needs `enable_materialized_cte`; enable it unless the user set it explicitly.
     auto query_context = context;
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
     {
