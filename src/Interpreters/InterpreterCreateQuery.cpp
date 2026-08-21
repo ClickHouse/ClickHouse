@@ -3461,14 +3461,21 @@ BlockIO InterpreterCreateQuery::execute()
         {
             /// Older distributed DDL entry formats dispatch the query before createTable() reaches
             /// getColumnsDescription(). Normalize here so older workers receive a regular
-            /// column-level DEFAULT rather than the new Tuple element syntax.
-            if (create.columns_list && create.columns_list->columns)
+            /// column-level DEFAULT rather than the new Tuple element syntax. Inner column lists of
+            /// targets (e.g. `SAMPLES INNER COLUMNS (...)` of a TimeSeries table) are dispatched
+            /// the same way, so they are normalized too.
+            auto pull_up_tuple_element_defaults = [](const ASTColumns * columns_list)
             {
-                for (const auto & column : create.columns_list->columns->children)
-                {
+                if (!columns_list || !columns_list->columns)
+                    return;
+                for (const auto & column : columns_list->columns->children)
                     pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>());
-                }
-            }
+            };
+
+            pull_up_tuple_element_defaults(create.columns_list);
+            if (create.targets)
+                for (const auto & target : create.targets->targets)
+                    pull_up_tuple_element_defaults(target.inner_columns ? target.inner_columns->as<ASTColumns>() : nullptr);
 
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
             /// run with no user by default.
