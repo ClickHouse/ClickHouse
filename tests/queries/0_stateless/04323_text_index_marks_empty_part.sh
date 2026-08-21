@@ -15,12 +15,7 @@ CREATE TABLE t_text_idx_empty
 )
 ENGINE = MergeTree
 ORDER BY tuple()
--- min_bytes_for_full_part_storage=0: the test edits/removes raw part files (skp_idx_idx.mrk4,
--- checksums.txt); a packed part keeps them inside the single data.packed archive, not on disk.
--- remove_empty_parts=0: the whole test operates on the empty part left by the DELETE mutation;
--- otherwise the cleanup thread may drop it before the checks below see it in system.parts.
-SETTINGS prewarm_mark_cache = true, compress_marks = 0, min_bytes_for_full_part_storage = 0,
-         remove_empty_parts = 0"
+SETTINGS prewarm_mark_cache = true, compress_marks = 0"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_text_idx_empty SELECT toFixedString(toString(number), 37) FROM numbers(5)"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_text_idx_empty SELECT toFixedString(toString(number + 5), 37) FROM numbers(5)"

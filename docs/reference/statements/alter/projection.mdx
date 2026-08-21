@@ -365,9 +365,9 @@ Similarly, if the table is stored using the `AggregatingMergeTree` table engine,
 
 Before ClickHouse v24.8, projection parts either silently got out of sync with the main data, or certain operations like updates and deletes could not be run at all as the database automatically threw an exception if the table had projections.
 
-Since v24.8, a new table-level setting [`deduplicate_merge_projection_mode`](/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode) controls the behavior if the aforementioned non-trivial background merge operations occur in parts of the original table.
+Since v24.8, a new table-level setting [`deduplicate_merge_projection_mode`](/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode) controls the behavior if the aforementioned non-trivial background merge operations occur in parts of the original table.
 
-Delete mutations are another example of part merge operations that drop rows in the parts of the original table. Since v24.7, we also have a setting to control the behavior w.r.t. delete mutations triggered by lightweight deletes: [`lightweight_mutation_projection_mode`](/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode).
+Delete mutations are another example of part merge operations that drop rows in the parts of the original table. Since v24.7, we also have a setting to control the behavior w.r.t. delete mutations triggered by lightweight deletes: [`lightweight_mutation_projection_mode`](/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode).
 
 Below are the possible values for both `deduplicate_merge_projection_mode` and `lightweight_mutation_projection_mode`:
 

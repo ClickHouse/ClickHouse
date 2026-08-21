@@ -242,7 +242,7 @@ Note: typed slices and maps are supported, provide the sub-columns in the named 
 
 ### Nested {#nested}
 
-A Nested field is equivalent to an Array of named Tuples. Usage depends on whether the user has set [flatten_nested](/reference/settings/session-settings/other#flatten_nested) to 1 or 0.
+A Nested field is equivalent to an Array of named Tuples. Usage depends on whether the user has set [flatten_nested](/reference/settings/session-settings#flatten_nested) to 1 or 0.
 
 By setting flatten_nested to 0, Nested columns stay as a single array of tuples. This allows you to use slices of maps for insertion and retrieval and arbitrary levels of nesting. The map's key must equal the column's name, as shown in the example below.
 

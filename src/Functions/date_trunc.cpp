@@ -276,9 +276,9 @@ Returns the truncated date and time value.
 
 | Unit Argument               | `datetime` Argument                   | Return Type                                                                            |
 |-----------------------------|---------------------------------------|----------------------------------------------------------------------------------------|
-| Year, Quarter, Month, Week  | `Date32` or `DateTime64` or `Date` or `DateTime` | [`Date32`](/reference/data-types/date32) or [`Date`](/reference/data-types/date)                 |
-| Day, Hour, Minute, Second   | `Date32`, `DateTime64`, `Date`, or `DateTime` | [`DateTime64`](/reference/data-types/datetime64) or [`DateTime`](/reference/data-types/datetime) |
-| Millisecond, Microsecond,   | Any                                   | [`DateTime64`](/reference/data-types/datetime64)                                            |
+| Year, Quarter, Month, Week  | `Date32` or `DateTime64` or `Date` or `DateTime` | [`Date32`](../data-types/date32.md) or [`Date`](../data-types/date.md)                 |
+| Day, Hour, Minute, Second   | `Date32`, `DateTime64`, `Date`, or `DateTime` | [`DateTime64`](../data-types/datetime64.md) or [`DateTime`](../data-types/datetime.md) |
+| Millisecond, Microsecond,   | Any                                   | [`DateTime64`](../data-types/datetime64.md)                                            |
 | Nanosecond                  |                                       | with scale 3, 6, or 9                                                                  |
       )", {}};
     FunctionDocumentation::Examples examples = {

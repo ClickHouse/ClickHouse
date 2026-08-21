@@ -36,7 +36,7 @@ doc_type: 'guide'
 
 **Только движки `*MergeTree` поддерживают дедупликацию при вставке.**
 
-Для движков `*ReplicatedMergeTree` дедупликация при вставке включена по умолчанию и управляется настройками [`replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) и [`replicated_deduplication_window_seconds`](/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds). Для нереплицируемых движков `*MergeTree` дедупликация управляется настройкой [`non_replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
+Для движков `*ReplicatedMergeTree` дедупликация при вставке включена по умолчанию и управляется настройками [`replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window) и [`replicated_deduplication_window_seconds`](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds). Для нереплицируемых движков `*MergeTree` дедупликация управляется настройкой [`non_replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
 
 Перечисленные выше настройки определяют параметры журнала дедупликации таблицы. Журнал дедупликации хранит конечное число `block_id`, которые определяют, как работает дедупликация (см. ниже).
 
@@ -69,11 +69,11 @@ doc_type: 'guide'
 
 Управлять этим процессом можно с помощью следующих настроек исходной таблицы:
 
-* [`replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)
-* [`replicated_deduplication_window_seconds`](/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
-* [`non_replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
+* [`replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
 
-Также необходимо включить в профиле пользователя настройку [`deduplicate_blocks_in_dependent_materialized_views`](/ru/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views).
+Также необходимо включить в профиле пользователя настройку [`deduplicate_blocks_in_dependent_materialized_views`](/ru/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views).
 Если включена настройка `insert_deduplicate=1`, вставленные данные дедуплицируются в исходной таблице. Настройка `deduplicate_blocks_in_dependent_materialized_views=1` дополнительно включает дедупликацию в зависимых таблицах. Для полной дедупликации необходимо включить обе настройки.
 
 При вставке блоков в таблицы materialized view ClickHouse вычисляет `block_id`, хешируя строку, которая объединяет `block_id` исходной таблицы и дополнительные идентификаторы. Это обеспечивает точную дедупликацию в materialized view и позволяет различать данные по их исходной вставке независимо от преобразований, применённых до записи в целевую таблицу materialized view.

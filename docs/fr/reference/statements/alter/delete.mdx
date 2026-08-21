@@ -12,23 +12,21 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 
 Supprime les données correspondant à l’expression de filtrage spécifiée. Cette opération est implémentée sous forme de [mutation](/fr/reference/statements/alter/index#mutations).
 
-<Warning>
-  Le préfixe `ALTER TABLE` indique qu’il s’agit d’une opération lourde, contrairement à des requêtes similaires dans les bases de données OLTP. `ALTER TABLE ... DELETE` réécrit chaque partie de données contenant des lignes correspondant à l’expression de filtrage, ce qui génère d’importantes E/S d’écriture. Utilisez-la avec parcimonie, car elle peut affecter les performances de `SELECT`.
-
-  Pour les tables `MergeTree`, envisagez d’utiliser la [requête `DELETE FROM`](/fr/reference/statements/delete), qui effectue une suppression légère et peut être nettement plus rapide. Pour les charges de travail nécessitant des suppressions ou des corrections fréquentes, envisagez d’utiliser [`ReplacingMergeTree`](/fr/concepts/features/operations/update/replacing-merge-tree) ou [`CollapsingMergeTree`](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree).
-</Warning>
+<Note>
+  Le préfixe `ALTER TABLE` distingue cette syntaxe de celle de la plupart des autres systèmes prenant en charge SQL. Il indique que, contrairement à des requêtes similaires dans les bases de données OLTP, il s’agit d’une opération lourde qui n’est pas conçue pour un usage fréquent. `ALTER TABLE` est considéré comme une opération lourde qui nécessite la fusion des données sous-jacentes avant leur suppression. Pour les tables MergeTree, envisagez d’utiliser la [requête `DELETE FROM`](/fr/reference/statements/delete), qui effectue une suppression légère et peut être nettement plus rapide.
+</Note>
 
 Le `filter_expr` doit être de type `UInt8`. La requête supprime les lignes de la table pour lesquelles cette expression prend une valeur non nulle.
 
 Une requête peut contenir plusieurs commandes séparées par des virgules.
 
-Le mode de synchronisation du traitement de la requête est défini par le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings/mutations#mutations_sync). Par défaut, il est asynchrone.
+Le mode de synchronisation du traitement de la requête est défini par le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings#mutations_sync). Par défaut, il est asynchrone.
 
 **Voir aussi**
 
 * [Mutations](/fr/reference/statements/alter/index#mutations)
 * [Synchronisation des requêtes ALTER](/fr/reference/statements/alter/index#synchronicity-of-alter-queries)
-* paramètre [mutations&#95;sync](/fr/reference/settings/session-settings/mutations#mutations_sync)
+* paramètre [mutations&#95;sync](/fr/reference/settings/session-settings#mutations_sync)
 
 <div id="related-content">
   ## Contenu connexe

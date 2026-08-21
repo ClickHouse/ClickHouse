@@ -499,7 +499,6 @@ const char * auto_contributors[] {
     "Dylan",
     "Eduard Karacharov",
     "Eduardo Gomez Saldias",
-    "Eduardo Gómez",
     "Egor O'Sten",
     "Egor Savin",
     "Eirik",

@@ -568,16 +568,8 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
         if (cur->type == ActionsDAG::ActionType::ARRAY_JOIN)
             return false;
 
-        if (cur->type == ActionsDAG::ActionType::INPUT && allowed_inputs)
-        {
-            /// Match the type as well as the name: the predicate may come from a scope where a
-            /// column of the same name has a different type (e.g. `engine` is `Nullable(String)`
-            /// in the `information_schema.tables` view but `String` in `system.tables`), and
-            /// evaluating the subtree over a block with a mismatched column type fails.
-            const auto * input = allowed_inputs->findByName(cur->result_name);
-            if (!input || !input->type->equals(*cur->result_type))
-                return false;
-        }
+        if (cur->type == ActionsDAG::ActionType::INPUT && allowed_inputs && !allowed_inputs->has(cur->result_name))
+            return false;
 
         for (const auto * child : cur->children)
             nodes.push(child);

@@ -2,7 +2,7 @@
 title: OTel 구성 예시
 ---
 
-엔드포인트 및 password 자리 표시자를 ClickStack에서 생성한 자격 증명으로 대체하십시오:
+이 구성의 예시는 아래와 같습니다(UI에서 복사하면 환경 변수가 미리 채워집니다):
 
 ```yaml
 receivers:
@@ -20,9 +20,9 @@ receivers:
 processors:
   batch:
   memory_limiter:
-    # 80% of maximum memory up to 2G, adjust for low memory environments
+    # 최대 메모리의 80%(최대 2G), 메모리가 부족한 환경에서는 조정 필요
     limit_mib: 1500
-    # 25% of limit up to 2G, adjust for low memory environments
+    # 제한의 25%(최대 2G), 메모리가 부족한 환경에서는 조정 필요
     spike_limit_mib: 512
     check_interval: 5s
 connectors:
@@ -34,6 +34,10 @@ connectors:
         statement: route() where IsMatch(attributes["rr-web.event"], ".*")
         pipelines: [logs/out-rrweb]
 exporters:
+  debug:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
   clickhouse/rrweb:
     database: default
     endpoint: <clickhouse_cloud_endpoint>

@@ -151,7 +151,7 @@ para que el comportamiento de ClickHouse se ajuste más al SQL estándar.
 
 Esta sección describe qué configuraciones modifica el controlador ODBC y por qué.
 
-**[cast&#95;keep&#95;nullable](/es/reference/settings/session-settings/cast#cast_keep_nullable)**
+**[cast&#95;keep&#95;nullable](/es/reference/settings/session-settings#cast_keep_nullable)**
 
 De forma predeterminada, ClickHouse no permite convertir tipos Nullable en tipos no anulables. Sin embargo, muchas herramientas de BI no distinguen entre tipos anulables y no anulables al realizar conversiones de tipo. Como resultado, es habitual ver consultas como la siguiente generadas por herramientas de BI:
 
@@ -170,7 +170,7 @@ DB::Exception: Cannot convert NULL value to non-Nullable type: while executing '
 Habilitar `cast_keep_nullable` cambia el comportamiento de `CAST` para que preserve la nulabilidad de sus argumentos. Esto
 hace que el comportamiento de ClickHouse se acerque más al de otras bases de datos y al estándar SQL para este tipo de conversión.
 
-**[prefer&#95;column&#95;name&#95;to&#95;alias](/es/reference/settings/session-settings/prefer#prefer_column_name_to_alias)**
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/es/reference/settings/session-settings#prefer_column_name_to_alias)**
 
 ClickHouse permite hacer referencia a expresiones de la misma lista `SELECT` mediante sus alias. Por ejemplo, esta consulta evita
 la repetición y es más fácil de escribir:

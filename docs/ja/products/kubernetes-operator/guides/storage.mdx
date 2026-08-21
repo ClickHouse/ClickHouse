@@ -41,9 +41,7 @@ spec:
 
 * `accessModes` を省略した場合、オペレーター はデフォルトで `ReadWriteOnce` を使用します。
 * クラスターが削除されてもレプリカごとの PVC は保持されるため、Custom Resource を
-  削除して再作成してもデータは維持されます。[暗号化ポリシー](#at-rest-encryption) 上の
-  データについては、これに加えて暗号化鍵を保持する必要があります。該当セクションの注記を
-  参照してください。
+  削除して再作成してもデータは維持されます。
 * 同じフィールドが `KeeperCluster` にもあり、同様に動作します。
 
 <div id="ephemeral-storage">
@@ -153,54 +151,12 @@ S3 をバックエンドにしたディスクなどです。ここに追加し�
 [ClickHouse storage documentation](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)
 を参照してください。
 
-<div id="at-rest-encryption">
-  ## 保存時暗号化
-</div>
-
-`spec.settings.encryption` を設定すると、table データの保存時暗号化が有効になります。
-オペレーター は 16 バイトの AES 秘密鍵 (Managed クラスターの Secret に保存されるか、
-`externalSecret` を通じて指定) と、各
-data ディスクを ClickHouse の `encrypted` disk type で包む専用の storage policy を生成します。
-
-```yaml
-spec:
-  settings:
-    encryption: {}   # enables the feature; the policy defaults to "encrypted"
-```
-
-暗号化はテーブル単位で有効化するオプトイン方式です。デフォルトのストレージポリシーは平文のままです。テーブル作成時に
-暗号化ポリシーを選択します。
-
-```sql
-CREATE TABLE secret_data (id UInt64) ENGINE = MergeTree ORDER BY id
-SETTINGS storage_policy = 'encrypted';
-```
-
-`encryption.policyName` を設定して、別のポリシー名を使用します。
-
-<Note>
-  これにより、暗号化ポリシー経由で書き込まれる MergeTree のデータパーツは
-  AES-128-CTR で暗号化されます。ClickHouse server のメタデータと
-  データルート上のログは対象に含まれません —
-  それらについては、LUKS や CSI ドライバーなどのディスクレベル暗号化を使用してください。
-  実行中のクラスターで暗号化を有効にすると、秘密鍵を注入するために
-  一回限りのローリング再起動がトリガーされます。レプリカでは、その再起動が完了するまで
-  一時的に設定の再読み込みエラーが報告されることがあります。
-
-  秘密鍵は オペレーター が管理するクラスター Secret に保存され、この Secret は
-  Custom Resource によって所有され、Custom Resource の削除時に一緒に削除されます。暗号化されたパーツは
-  秘密鍵がなければ読み取れません。暗号化データを CR の削除後も保持する必要がある場合
-  (PVC は保持されます) は、`externalSecret` を通じて秘密鍵を提供するか、
-  削除前に `disk-encryption-key` エントリをバックアップしてください。
-  管理対象の Secret は削除しないでください — オペレーター が新しい秘密鍵を生成し、
-  既存の暗号化パーツが読み取れなくなります。
-</Note>
-
 <div id="immutability">
   ## 作成後に変更できない項目
 </div>
 
-クラスターが作成されると、ストレージレイアウトは基本的に固定されます。データが孤立したり PersistentVolumeClaims が再バインドされたりする更新は、admission の段階で拒否されます。
+クラスターが作成されると、ストレージレイアウトは基本的に固定されます。admission webhook は、
+PersistentVolumeClaims が孤立したり再バインドされたりする更新を拒否します。
 
 * `dataVolumeClaimSpec` の有無は変更できません。つまり、これを持たない状態で作成したクラスターにデータ
   ボリュームを**追加**したり、これを持つ状態で作成したクラスターから**削除**したりすることはできません。
@@ -208,28 +164,23 @@ SETTINGS storage_policy = 'encrypted';
   **削除**、または**リネーム**することはできません。
 * 既存のエントリの `resources.requests.storage` を拡張することは**可能**です (StorageClass がサポート
   している場合。[ストレージの拡張](#expanding-storage)を参照してください) 。
-* 暗号化は一度有効にすると**無効化**できず、`encryption.policyName` も**リネーム**できません。すでに暗号化ポリシーを使用している
-  テーブルにアクセスできなくなるためです。
 
 <div id="validation-reference">
   ## 検証リファレンス
 </div>
 
-| 条件                                                                          | 結果                                             |
-| --------------------------------------------------------------------------- | ---------------------------------------------- |
-| `dataVolumeClaimSpec` がなく、`/var/lib/clickhouse` にカスタムボリュームもマウントされていない       | 警告 — 再起動時にデータが失われる可能性があります                     |
-| `dataVolumeClaimSpec` が設定されているのに、`/var/lib/clickhouse` にカスタムボリュームがマウントされている | 拒否                                             |
-| `additionalVolumeClaimTemplates` が設定されているが、`dataVolumeClaimSpec` がない        | 拒否                                             |
-| `default` という名前の追加ディスク                                                      | 拒否 — ClickHouse のデフォルトディスク用に予約されています           |
-| 名前の末尾が `-encrypted` の追加ディスク                                                 | 拒否 — 生成される暗号化ディスク名と競合します                       |
-| `clickhouse-storage-volume` という名前の追加ディスク                                    | 拒否 — プライマリデータボリューム名と競合します                      |
-| 追加ディスク名が重複している                                                              | 拒否                                             |
-| 名前が `^[a-z]([-a-z0-9]*[a-z0-9])?$` に一致しない、または 63 文字を超えている                   | CRD スキーマによって拒否                                 |
-| 作成後に `dataVolumeClaimSpec` を追加または削除する                                       | 拒否                                             |
-| 作成後に `additionalVolumeClaimTemplates` を追加、削除、または名前変更する                      | 拒否                                             |
-| `podTemplate.volumes` に予約済みのボリューム名がある                                       | 拒否                                             |
-| `encryption.policyName` が `default` に設定されている                                | CRD スキーマによって拒否 — 暗号化ポリシーでデフォルトポリシーを置き換えてはなりません |
-| 作成後に `encryption` を無効化する、またはそのポリシー名を変更する                                    | CRD スキーマによって拒否                                 |
+| 条件                                                                          | 結果                                   |
+| --------------------------------------------------------------------------- | ------------------------------------ |
+| `dataVolumeClaimSpec` がなく、`/var/lib/clickhouse` にカスタムボリュームもマウントされていない       | 警告 — 再起動時にデータが失われる可能性があります           |
+| `dataVolumeClaimSpec` が設定されているのに、`/var/lib/clickhouse` にカスタムボリュームがマウントされている | 拒否                                   |
+| `additionalVolumeClaimTemplates` が設定されているが、`dataVolumeClaimSpec` がない        | 拒否                                   |
+| `default` という名前の追加ディスク                                                      | 拒否 — ClickHouse のデフォルトディスク用に予約されています |
+| `clickhouse-storage-volume` という名前の追加ディスク                                    | 拒否 — プライマリデータボリューム名と競合します            |
+| 追加ディスク名が重複している                                                              | 拒否                                   |
+| 名前が `^[a-z]([-a-z0-9]*[a-z0-9])?$` に一致しない、または 63 文字を超えている                   | CRD スキーマによって拒否                       |
+| 作成後に `dataVolumeClaimSpec` を追加または削除する                                       | 拒否                                   |
+| 作成後に `additionalVolumeClaimTemplates` を追加、削除、または名前変更する                      | 拒否                                   |
+| `podTemplate.volumes` に予約済みのボリューム名がある                                       | 拒否                                   |
 
 <div id="related-guides">
   ## 関連ガイド

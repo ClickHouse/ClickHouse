@@ -11,13 +11,17 @@ TEST(OffsetMap, SingleObject)
 
     OffsetMap map;
     map.build(objects);
-    EXPECT_EQ(map.totalSize(), 1000);
+    EXPECT_EQ(map.totalSize(), 1000u);
+    EXPECT_FALSE(map.hasUnknownSize());
 
-    auto ranges = map.map(ByteRange{100, 200});
-    ASSERT_EQ(ranges.size(), 1);
-    EXPECT_EQ(ranges[0].object.remote_path, "obj_a");
-    EXPECT_EQ(ranges[0].object_offset, 100);
-    EXPECT_EQ(ranges[0].size, 200);
+    const auto * o = map.findObjectAt(100);
+    ASSERT_NE(o, nullptr);
+    EXPECT_EQ(o->object.remote_path, "obj_a");
+    EXPECT_EQ(o->file_offset, 0u);
+
+    EXPECT_NE(map.findObjectAt(999), nullptr);
+    EXPECT_EQ(map.findObjectAt(1000), nullptr);  // at end
+    EXPECT_EQ(map.findObjectAt(5000), nullptr);  // past end
 }
 
 TEST(OffsetMap, MultipleObjects)
@@ -29,34 +33,28 @@ TEST(OffsetMap, MultipleObjects)
 
     OffsetMap map;
     map.build(objects);
-    EXPECT_EQ(map.totalSize(), 1000);
+    EXPECT_EQ(map.totalSize(), 1000u);
 
-    /// ByteRange fully within first object
-    auto r1 = map.map(ByteRange{0, 100});
-    ASSERT_EQ(r1.size(), 1);
-    EXPECT_EQ(r1[0].object.remote_path, "blob_0");
-    EXPECT_EQ(r1[0].object_offset, 0);
-    EXPECT_EQ(r1[0].size, 100);
+    const auto * a = map.findObjectAt(0);
+    ASSERT_NE(a, nullptr);
+    EXPECT_EQ(a->object.remote_path, "blob_0");
+    EXPECT_EQ(a->file_offset, 0u);
 
-    /// ByteRange spanning first and second objects
-    auto r2 = map.map(ByteRange{200, 200});
-    ASSERT_EQ(r2.size(), 2);
-    EXPECT_EQ(r2[0].object.remote_path, "blob_0");
-    EXPECT_EQ(r2[0].object_offset, 200);
-    EXPECT_EQ(r2[0].size, 100);
-    EXPECT_EQ(r2[1].object.remote_path, "blob_1");
-    EXPECT_EQ(r2[1].object_offset, 0);
-    EXPECT_EQ(r2[1].size, 100);
+    const auto * b = map.findObjectAt(300);
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->object.remote_path, "blob_1");
+    EXPECT_EQ(b->file_offset, 300u);
 
-    /// ByteRange spanning all three objects
-    auto r3 = map.map(ByteRange{250, 700});
-    ASSERT_EQ(r3.size(), 3);
-    EXPECT_EQ(r3[0].size, 50);
-    EXPECT_EQ(r3[1].size, 500);
-    EXPECT_EQ(r3[2].size, 150);
+    const auto * c = map.findObjectAt(800);
+    ASSERT_NE(c, nullptr);
+    EXPECT_EQ(c->object.remote_path, "blob_2");
+    EXPECT_EQ(c->file_offset, 800u);
+
+    EXPECT_NE(map.findObjectAt(999), nullptr);
+    EXPECT_EQ(map.findObjectAt(1000), nullptr);
 }
 
-TEST(OffsetMap, RangeAtObjectBoundary)
+TEST(OffsetMap, ObjectBoundary)
 {
     StoredObjects objects;
     objects.emplace_back("a", "", 100);
@@ -65,11 +63,12 @@ TEST(OffsetMap, RangeAtObjectBoundary)
     OffsetMap map;
     map.build(objects);
 
-    auto r = map.map(ByteRange{100, 50});
-    ASSERT_EQ(r.size(), 1);
-    EXPECT_EQ(r[0].object.remote_path, "b");
-    EXPECT_EQ(r[0].object_offset, 0);
-    EXPECT_EQ(r[0].size, 50);
+    const auto * o = map.findObjectAt(100);  // first byte of the second object
+    ASSERT_NE(o, nullptr);
+    EXPECT_EQ(o->object.remote_path, "b");
+    EXPECT_EQ(o->file_offset, 100u);
+
+    EXPECT_EQ(map.findObjectAt(200), nullptr);
 }
 
 TEST(OffsetMap, UnknownSize)
@@ -82,10 +81,8 @@ TEST(OffsetMap, UnknownSize)
     EXPECT_TRUE(map.hasUnknownSize());
     EXPECT_EQ(map.totalSize(), StoredObject::UnknownSize);
 
-    /// Any offset below the sentinel maps into the single object.
-    auto ranges = map.map(ByteRange{1'000'000, 100});
-    ASSERT_EQ(ranges.size(), 1u);
-    EXPECT_EQ(ranges[0].object.remote_path, "obj");
-    EXPECT_EQ(ranges[0].object_offset, 1'000'000u);
-    EXPECT_EQ(ranges[0].size, 100u);
+    /// Any offset below the sentinel resolves to the single object.
+    const auto * o = map.findObjectAt(1'000'000);
+    ASSERT_NE(o, nullptr);
+    EXPECT_EQ(o->object.remote_path, "obj");
 }

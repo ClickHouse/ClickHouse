@@ -1,20 +1,20 @@
 ---
 slug: /use-cases/data-lake/nessie-catalog
-sidebarTitle: 'Nessie 目录'
-title: 'Nessie 目录'
-description: '本指南将逐步介绍如何使用 ClickHouse 和 Nessie 目录查询
+sidebarTitle: 'Nessie Catalog'
+title: 'Nessie Catalog'
+description: '本指南将逐步介绍如何使用 ClickHouse 和 Nessie Catalog 查询
  您的数据。'
 keywords: ['Nessie', 'REST', '事务型', '数据湖', 'Iceberg', '类似 Git']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
 <Note>
-  与 Nessie 目录的集成仅适用于 Iceberg 表。
+  与 Nessie Catalog 的集成仅适用于 Iceberg 表。
   此集成同时支持 AWS S3 和其他云存储提供商。
 </Note>
 
@@ -24,7 +24,7 @@ Nessie 是一个面向数据湖的开源事务目录，提供：
 
 * **受 Git 启发的** 数据版本控制，支持分支和提交
 * **跨表事务** 和可见性保证
-* **REST API**，符合 Iceberg REST 目录规范
+* **REST API**，符合 Iceberg REST catalog 规范
 * **开放数据湖** 方法，支持 Hive、Spark、Dremio、Trino 等
 * **适用于生产环境的** Docker 或 Kubernetes 部署
 
@@ -50,7 +50,7 @@ Nessie 是一个面向数据湖的开源事务目录，提供：
   ### 配置本地 Nessie Catalog
 </div>
 
-你可以使用官方的 [Nessie docker-compose setup](https://projectnessie.org/guides/)，它提供了一个包含 Nessie、内存版本存储以及用于对象存储的 MinIO 在内的完整环境。
+你可以使用官方的 [Nessie docker-compose setup](https://projectnessie.org/guides/setting-up/)，它提供了一个包含 Nessie、内存版本存储以及用于对象存储的 MinIO 在内的完整环境。
 
 **步骤 1：** 创建一个新文件夹来运行此示例，然后创建一个名为 `docker-compose.yml` 的文件，内容如下：
 
@@ -108,13 +108,13 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:head
     container_name: nessie-clickhouse
-    user: '0:0'  # Ensures root permissions
+    user: '0:0'  # 确保 root 权限
     ports:
       - "8123:8123"
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Mount dataset folder
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # 挂载数据集文件夹
     networks:
       - iceberg_net
     environment:

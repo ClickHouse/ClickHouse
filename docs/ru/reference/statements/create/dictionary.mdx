@@ -6,8 +6,8 @@ title: 'CREATE DICTIONARY'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { CloudSupportedBadge } from "/snippets/ru/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudSupportedBadge from "/snippets/ru/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
 
 Словарь — это соответствие (`key -> attributes`), удобное для различных типов справочных списков.
 ClickHouse поддерживает специальные функции для работы со словарями, которые можно использовать в запросах. Использовать словари через функции проще и эффективнее, чем `JOIN` со справочными таблицами.
@@ -76,14 +76,14 @@ COMMENT 'Comment'
 
 ```xml
 <clickhouse>
-    <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
+    <comment>Необязательный элемент с произвольным содержимым. Игнорируется сервером ClickHouse.</comment>
 
-    <!--Optional element. File name with substitutions-->
-    <include_from>/etc/clickhouse-server/substitutions.xml</include_from>
+    <!--Необязательный элемент. Имя файла с подстановками-->
+    <include_from>/etc/metrika.xml</include_from>
 
     <dictionary>
-        <!-- Dictionary configuration. -->
-        <!-- There can be any number of dictionary sections in a configuration file. -->
+        <!-- Конфигурация словаря. -->
+        <!-- В файле конфигурации может быть любое количество секций dictionary. -->
     </dictionary>
 
 </clickhouse>

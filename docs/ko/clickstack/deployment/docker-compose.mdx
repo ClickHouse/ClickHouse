@@ -45,7 +45,9 @@ Docker Compose는 기본 `otel-collector` 설정을 기준으로 관측성과 �
 <br />
 
 <Steps>
-  <Step title="리포지토리 복제" id="clone-the-repo">
+  <Step>
+    ### 리포지토리 복제
+
     Docker Compose로 배포하려면 ClickStack 리포지토리를 복제한 후 해당 디렉터리로 이동하여 `docker-compose up`을 실행하세요:
 
     ```shell
@@ -54,12 +56,14 @@ Docker Compose는 기본 `otel-collector` 설정을 기준으로 관측성과 �
     ```
   </Step>
 
-  <Step title="HyperDX UI로 이동" id="navigate-to-hyperdx-ui">
-    HyperDX UI에 접속하려면 [http://localhost:8080](http://localhost:8080)으로 이동하세요.
+  <Step>
+    ### HyperDX UI로 이동
+
+    HyperDX UI에 접속하려면 [http://localhost:8080](http://localhost:8080)을 여세요.
 
     요구 사항을 충족하는 사용자 이름과 비밀번호를 입력하여 사용자를 생성합니다.
 
-    `Create`를 클릭하면 Docker Compose로 배포된 ClickHouse 인스턴스에 대한 데이터 소스가 생성됩니다.
+    `Create`를 클릭하면 Docker Compose로 배포된 ClickHouse 인스턴스의 데이터 소스가 생성됩니다.
 
     <Info>
       **기본 연결 재정의**
@@ -72,12 +76,14 @@ Docker Compose는 기본 `otel-collector` 설정을 기준으로 관측성과 �
     다른 ClickHouse 인스턴스를 사용하는 예시는 [&quot;ClickHouse Cloud 사용&quot;](#using-clickhouse-cloud)을 참조하세요.
   </Step>
 
-  <Step title="연결 정보 입력" id="complete-connection-details">
+  <Step>
+    ### 연결 정보 입력
+
     배포된 ClickHouse 인스턴스에 연결하려면 **Create**를 클릭하고 기본 설정을 그대로 사용하면 됩니다.
 
     자체 **외부 ClickHouse 클러스터**(예: ClickHouse Cloud)에 연결하려는 경우 연결 자격 증명을 직접 입력할 수 있습니다.
 
-    소스를 생성하라는 메시지가 표시되면 모든 기본값을 유지하고 `Table` 필드에 `otel_logs`를 입력하세요. 다른 모든 설정은 자동으로 감지되므로 `Save New Source`를 클릭하면 됩니다.
+    source를 생성하라는 메시지가 표시되면 모든 기본값을 유지하고 `Table` 필드에 `otel_logs`를 입력하세요. 다른 모든 설정은 자동으로 감지되므로 `Save New Source`를 클릭하면 됩니다.
 
     <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="로그 소스 생성" size="md" />
   </Step>

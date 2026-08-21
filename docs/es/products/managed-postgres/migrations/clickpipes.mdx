@@ -7,12 +7,12 @@ keywords: ['postgres', 'postgresql', 'replicación lógica', 'migración', 'Clic
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
-ClickHouse Cloud ahora ofrece ClickPipes para migrar su base de datos externa de PostgreSQL a un servicio Managed Postgres. Esta integración incorporada ofrece una experiencia optimizada para conectarse a su base de datos de origen, exportar el esquema, importarlo en Managed Postgres y configurar la replicación continua.
+ClickHouse Cloud ahora ofrece ClickPipes para migrar su base de datos externa de PostgreSQL a un servicio de Managed Postgres. Esta integración incorporada ofrece una experiencia optimizada para conectarse a su base de datos de origen, exportar el esquema, importarlo en Managed Postgres y configurar la replicación continua.
 
 <div id="prerequisites">
   ## Prerrequisitos
@@ -49,13 +49,13 @@ Abre la [consola de ClickHouse Cloud](https://clickhouse.cloud) y selecciona tu 
 
 <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Tarjeta del servicio de Managed Postgres en la lista de servicios de ClickHouse Cloud" size="lg" border />
 
-En la barra lateral izquierda, haz clic en **fuentes de datos**.
+En la barra lateral izquierda, haz clic en **fuente de datos**.
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrada fuentes de datos en la barra lateral del servicio de Managed Postgres" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrada fuente de datos en la barra lateral del servicio de Managed Postgres" size="lg" border />
 
 Haz clic en **Start import**.
 
-<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Página de fuentes de datos con el botón Start import" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Página de fuente de datos con el botón Start import" size="lg" border />
 
 Completa los detalles de conexión de tu base de datos PostgreSQL de origen: host, puerto, nombre de usuario, contraseña y nombre de la base de datos. Habilita **TLS** si la base de datos de origen lo requiere.
 
@@ -71,43 +71,11 @@ Elige un método de ingestión:
 
 Haz clic en **Next**.
 
-<div id="automated-schema-migration">
-  ## Migración automática del esquema
-</div>
-
-<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="Paso 2: Migración automática del esquema con selector de base de datos de destino" size="lg" border />
-
-Al elegir esta opción, ClickPipe extraerá automáticamente el esquema de la base de datos de origen y lo aplicará a su servicio Managed Postgres durante la [fase de Setup](/es/integrations/clickpipes/postgres/lifecycle#setup) de ClickPipe, después de crearlo.
-
-Esta funcionalidad presupone una **base de datos de destino vacía**, ya que extrae todos los objetos de la base de datos de origen, independientemente de las tablas que seleccione posteriormente en el asistente. Si ya tiene datos en la base de datos de destino o desea una configuración más personalizada, debe elegir el modo [**Manual**](#manual-schema-migration).
-
-Seleccione la base de datos de destino en el menú desplegable o haga clic en **Crear una nueva base de datos** para aprovisionarla.
-
-<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="Cuadro de diálogo para crear una nueva base de datos de Postgres" size="lg" border />
-
-<div id="monitoring">
-  ### Supervisión
-</div>
-
-Puede seguir el progreso de la migración de esquema en la vista de detalles de ClickPipes. Los **registros** indicarán el estado de la migración de esquema y también mostrarán los errores que se produzcan.
-
-Este modo tiene las siguientes limitaciones:
-
-* Los pipes que utilizan túneles SSH no pueden usar la migración automática del esquema. El esquema debe [exportarse e importarse manualmente](#manual-schema-migration).
-
-<div id="manual-schema-migration">
-  ## Migración manual del esquema
-</div>
-
-Si ya tiene datos en la base de datos de destino o desea una configuración más personalizada que la instalación desde cero que requiere el modo automatizado, puede seleccionar aquí el modo **Manual**.
-
-<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="Paso 2: Migración manual del esquema con el comando de exportación pg_dump" size="lg" border />
-
 <div id="step-2-export-schema">
-  ### Exporta el esquema de tu base de datos
+  ## Paso 2: Exporta el esquema de tu base de datos
 </div>
 
-El asistente muestra un comando `pg_dump` ya rellenado con los detalles de conexión de tu origen. Ejecútalo en una terminal:
+El asistente muestra un comando `pg_dump` rellenado previamente con los detalles de conexión de origen. Ejecútalo en una terminal:
 
 <Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Paso 2: comando pg_dump para exportar el esquema" size="lg" border />
 
@@ -120,19 +88,19 @@ pg_dump \
   -f pg.sql
 ```
 
-Esto crea `pg.sql` en tu directorio actual.
+Esto crea `pg.sql` en el directorio actual.
 
-<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Salida de la terminal después de ejecutar pg_dump" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Salida de la terminal tras ejecutar pg_dump" size="lg" border />
 
 Haz clic en **Next**.
 
 <div id="step-3-import-schema">
-  ### Importa el esquema en tu servicio de Managed Postgres
+  ## Paso 3: Importa el esquema en tu servicio de Managed Postgres
 </div>
 
-Selecciona la base de datos de destino en el menú desplegable o haz clic en **Crear una nueva base de datos** para aprovisionar una.
+Selecciona la base de datos de destino en el menú desplegable o haz clic en **Crear una nueva base de datos** para crear una.
 
-El asistente muestra un comando `psql` para aplicar el volcado de esquema a tu servicio de Managed Postgres. Ejecútalo en una terminal:
+El asistente muestra un comando `psql` para aplicar el volcado del esquema a tu servicio de Managed Postgres. Ejecútalo en una terminal:
 
 <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Paso 3: comando psql para importar el esquema" size="lg" border />
 
@@ -145,9 +113,9 @@ psql \
   -f pg.sql
 ```
 
-<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Salida de la terminal después de ejecutar la importación del esquema con psql" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Salida de la terminal tras ejecutar la importación del esquema con psql" size="lg" border />
 
-Haz clic en **Next**.
+Haz clic en **Siguiente**.
 
 <div id="step-4-ingestion-settings">
   ## Paso 4: Configurar los ajustes de ingestión
@@ -187,7 +155,7 @@ Después de crear la migración, la verás en **Fuentes de datos** con el estado
 
 <Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Lista de fuentes de datos que muestra una migración en ejecución" size="lg" border />
 
-Haz clic en la migración para abrir la vista de detalles. La pestaña **Tablas** muestra el progreso de la carga inicial de cada tabla, incluidas las filas procesadas, las particiones y el tiempo medio por partición. La pestaña **Métricas** muestra el retraso de replicación y el rendimiento una vez que se inicia CDC.
+Haz clic en la migración para abrir la vista de detalles. La pestaña **Tablas** muestra el progreso de la carga inicial de cada tabla, incluidas las filas procesadas, las particiones y el tiempo medio por partición. La pestaña **Métricas** muestra la latencia de replicación y el rendimiento una vez que se inicia CDC.
 
 <Image img="/images/managed-postgres/pgpg/initialload.webp" alt="Vista de detalles de la migración que muestra estadísticas de la carga inicial por tabla" size="lg" border />
 
@@ -255,9 +223,9 @@ SELECT pg_drop_replication_slot('<slot_name>');
 ```
 
 <div id="next-steps">
-  ## Próximos pasos
+  ## Siguientes pasos
 </div>
 
 * [Guía de inicio rápido de Managed Postgres](/es/products/managed-postgres/quickstart)
 * [Detalles de conexión de Managed Postgres](/es/products/managed-postgres/connection)
-* [Preguntas frecuentes sobre Postgres en ClickPipes](/es/integrations/clickpipes/postgres/faq)
+* [FAQ de ClickPipes para Postgres](/es/integrations/clickpipes/postgres/faq)

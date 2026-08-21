@@ -254,7 +254,7 @@ std::optional<std::string> ClickStackUIRequestHandler::getResourcePath(const std
     if (decoded.empty())
         return std::string("index.html");
 
-    if (decoded.contains('.'))
+    if (decoded.find('.') != std::string::npos)
         return decoded;
 
     // assuming a path with no "." is an html page
@@ -307,7 +307,7 @@ const ClickStack::EmbeddedResource * resolveDynamicRoute(const std::string & res
             continue;
         if (!tail.ends_with(dynamic_tail_suffix))
             continue;
-        if (tail.contains('/'))
+        if (tail.find('/') != std::string_view::npos)
             continue;
 
         return &candidate;

@@ -38,7 +38,7 @@ doc_type: 'reference'
   ### دوال JSONExtract غير الحساسة لحالة الأحرف
 </div>
 
-تُجري هذه الدوال مطابقة المفاتيح دون مراعاة حالة أحرف ASCII عند استخراج القيم من كائنات JSON.
+تُجري هذه الدوال مطابقة غير حساسة لحالة أحرف ASCII للمفاتيح عند استخراج القيم من كائنات JSON.
 وهي تعمل تمامًا مثل نظيراتها الحساسة لحالة الأحرف، باستثناء أن مطابقة مفاتيح الكائنات تتم من دون مراعاة حالة الأحرف.
 وعند وجود عدة مفاتيح متطابقة مع اختلاف حالة الأحرف، تُعاد أول مطابقة.
 
@@ -46,63 +46,11 @@ doc_type: 'reference'
   قد يكون أداء هذه الدوال أقل من نظيراتها الحساسة لحالة الأحرف، لذا استخدم دوال JSONExtract العادية إن أمكن.
 </Note>
 
-<div id="jsonpath-syntax">
-  ## صياغة JSONPath
-</div>
-
-تقبل الدوال `JSON_EXISTS` و`JSON_VALUE` و`JSON_QUERY` تعبير JSONPath
-كوسيطة ثانية. يدعم ClickHouse مجموعة فرعية محدودة من JSONPath،
-تستند بصورة عامة إلى معيار SQL/JSON ‏(ISO/IEC TR 19075-6)، وهي أضيق نطاقًا عمدًا من [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)
-والتنفيذات الشائعة الأخرى. تُدرج عوامل التشغيل المدعومة أدناه.
-
-يوجد التنفيذ المعتمد في
-[`src/Functions/JSONPath/Parsers`](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions/JSONPath/Parsers).
-
-<div id="supported-operators">
-  ### العوامل المدعومة
-</div>
-
-| البنية        | الوصف                                                                                                                                                    | المثال                            |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `$`           | العنصر الجذر. يجب أن يبدأ كل مسار به.                                                                                                                    | `$`                               |
-| `.key`        | الوصول إلى العضو بصيغة النقطة دون اقتباس. يمكن أن يبدأ المفتاح بأرقام أو أن يتكوّن منها فقط.                                                             | `$.store.book`, `$.1key`, `$.123` |
-| `."key"`      | الوصول إلى العضو بصيغة النقطة مع اقتباس. استخدمه للمفاتيح التي تحتوي على مسافات أو أحرف خاصة. تُقبل علامات الاقتباس المزدوجة أو علامات الاقتباس الخلفية. | `$."foo bar"`                     |
-| `[key]`       | الوصول إلى العضو بصيغة الأقواس دون اقتباس.                                                                                                               | `$[hello]`                        |
-| `['key']`     | الوصول إلى العضو بصيغة الأقواس مع اقتباس. تُقبل علامات الاقتباس المفردة أو المزدوجة أو علامات الاقتباس الخلفية.                                          | `$['foo bar']`                    |
-| `[n]`         | الوصول إلى عنصر في مصفوفة حسب الفهرس (يبدأ من 0).                                                                                                        | `$.items[0]`                      |
-| `[n, m, ...]` | الوصول إلى عدة عناصر من المصفوفة.                                                                                                                        | `$.items[0, 2, 4]`                |
-| `[n to m]`    | نطاق من عناصر المصفوفة. فهرس النهاية `m` غير شامل.                                                                                                       | `$.items[0 to 3]`                 |
-| `[*]`         | حرف بدل يطابق جميع عناصر المصفوفة.                                                                                                                       | `$.items[*]`                      |
-
-ملاحظات:
-
-* يمكن دمج الفهارس والنطاقات داخل زوج الأقواس نفسه (على سبيل المثال، `[0 to 2, 4]`).
-* لا يمكن دمج نطاقات الفهارس وحرف البدل داخل زوج الأقواس نفسه (على سبيل المثال، `[* , 0]` غير صالح).
-* في النطاق `[n to m]`، يجب أن تكون البداية `n` أصغر من النهاية `m`، وإلا يُثار استثناء.
-* الفهرس المفرد `[n]` مكافئ للنطاق &#96;[n to n+1].
-
-<div id="unsupported-operators">
-  ### العوامل غير المدعومة
-</div>
-
-عوامل JSONPath التالية، المتاحة في RFC 9535 أو في تطبيقات أخرى،
-**غير** مدعومة في ClickHouse:
-
-| بنية                  | الوصف                                                         |
-| ----------------------- | ------------------------------------------------------------- |
-| `..`                    | نزول تعاودي.                                                  |
-| `?(@.expr)`             | تعبيرات التصفية.                                              |
-| `[start:end:step]`      | صياغة الشرائح. استخدم `[n to m]` بدلًا منها.                  |
-| `@`                     | مرجع العقدة الحالية.                                          |
-| `[-n]`                  | فهارس المصفوفات السالبة (من النهاية).                         |
-| Script expressions      | تعبيرات حسابية أو دوال داخل مسار.                             |
-| `ON ERROR` / `ON EMPTY` | بنود SQL/JSON القياسية للتحكم في سلوك الخطأ والحالات الفارغة. |
-
 {/* 
-    يُستبدل المحتوى الداخلي للوسوم أدناه أثناء مرحلة البناء في إطار التوثيق بـ
-    الوثائق المُولَّدة من system.functions. يُرجى عدم تعديل هذه الوسوم أو إزالتها.
-    راجع: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
-    */}
+  يُستبدل المحتوى الداخلي للوسوم أدناه أثناء مرحلة البناء في إطار التوثيق بـ
+  الوثائق المُولَّدة من system.functions. يُرجى عدم تعديل هذه الوسوم أو إزالتها.
+  راجع: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
 
 {/*AUTOGENERATED_START*/}
 
@@ -773,7 +721,7 @@ SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
 
 أُضيف في: v20.1.0
 
-يحلّل أزواج مفتاح-قيمة من JSON، حيث تكون القيم من نوع بيانات ClickHouse المحدد.
+يحلّل أزواج المفتاح والقيمة من JSON، حيث تكون القيم من نوع بيانات ClickHouse المحدد.
 
 **الصيغة**
 
@@ -789,20 +737,20 @@ JSONExtractKeysAndValues(json[, indices_or_keys, ...], value_type)
 
 **القيمة المُعادة**
 
-يعيد مصفوفة من قيم Tuple تحتوي على أزواج مفتاح-قيمة بعد تحليلها. [`Array(Tuple(String, value_type))`](/ar/reference/data-types/array)
+يعيد مصفوفة من قيم Tuple تحتوي على أزواج المفتاح والقيمة بعد تحليلها. [`Array(Tuple(String, value_type))`](/ar/reference/data-types/array)
 
 **أمثلة**
 
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') AS res
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
 ```
 
 ```response title=Response
-┌─res────────────────────────┐
+┌─res────────────────────┐
 │ [('a',5),('b',7),('c',11)] │
-└────────────────────────────┘
+└────────────────────────┘
 ```
 
 <div id="JSONExtractKeysAndValuesCaseInsensitive">
@@ -847,7 +795,7 @@ SELECT JSONExtractKeysAndValuesCaseInsensitive('{"Name": "Alice", "AGE": 30}', '
 
 أُضيفت في: v20.4.0
 
-يعيد مصفوفة من Tuple تتضمن المفاتيح والقيم من كائن JSON. تُمثَّل جميع القيم كسلاسل نصية غير محلَّلة.
+يعيد مصفوفة من Tuples تتضمن المفاتيح والقيم من كائن JSON. تُمثَّل جميع القيم كسلاسل نصية غير محلَّلة.
 
 **الصياغة**
 
@@ -874,7 +822,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
 
 ```response title=Response
 ┌─res──────────────────────────────────┐
-│ [('a','[-100,200]'),('b','"hello"')] │
+│ [('a','[-100,200.0]'),('b','"hello"')] │
 └──────────────────────────────────────┘
 ```
 
@@ -1406,10 +1354,10 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 
 ```response title=Response
 ┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                 │
-│ {"b":"Hello"}                        │ {'b':'String'}                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
-└──────────────────────────────────────┴────────────────────────────────────┘
+│ {"a":"42"}                           │ {}                                  │
+│ {"b":"Hello"}                        │ {'b':'String'}                      │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                        │
+└──────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
 <div id="JSONType">
@@ -2217,14 +2165,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 أُضيف في: v21.7.0
 
 يحوِّل قيمة إلى تمثيلها بتنسيق JSON. وتُدعَم أنواع البيانات المختلفة والبُنى المتداخلة.
-تُحاط [الأعداد الصحيحة](/ar/reference/data-types/int-uint) بطول 64 بت أو أكثر (مثل `UInt64` أو `Int128`) بعلامات اقتباس افتراضيًا. ويحدّد [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ar/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) هذا السلوك.
-تُستبدل القيم الخاصة `NaN` و `inf` بـ `null`. فعِّل الإعداد [output&#95;format&#95;json&#95;quote&#95;denormals](/ar/reference/settings/formats/output-format#output_format_json_quote_denormals) لإظهارها.
+تُحاط [الأعداد الصحيحة](/ar/reference/data-types/int-uint) بطول 64 بت أو أكثر (مثل `UInt64` أو `Int128`) بعلامات اقتباس افتراضيًا. ويحدّد [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ar/reference/settings/formats#output_format_json_quote_64bit_integers) هذا السلوك.
+تُستبدل القيم الخاصة `NaN` و `inf` بـ `null`. فعِّل الإعداد [output&#95;format&#95;json&#95;quote&#95;denormals](/ar/reference/settings/formats#output_format_json_quote_denormals) لإظهارها.
 عند تحويل قيمة [Enum](/ar/reference/data-types/enum)، تُخرج الدالة اسمها.
 
 انظر أيضًا:
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ar/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/ar/reference/settings/formats/output-format#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ar/reference/settings/formats#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/ar/reference/settings/formats#output_format_json_quote_denormals)
 
 **البنية**
 

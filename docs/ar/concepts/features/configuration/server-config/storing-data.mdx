@@ -35,10 +35,6 @@ doc_type: 'guide'
 تخزين البيانات في `S3` و`AzureBlobStorage` و`HDFS` (غير مدعوم) باستخدام قرص من الأنواع `s3`،
 و`azure_blob_storage` و`hdfs` (غير مدعوم) على التوالي.
 
-<Note>
-  يمكن أيضًا استخدام نوع القرص `s3` مع موفري تخزين الكائنات المتوافقين مع S3، مثل Alibaba Cloud Object Storage Service. قم بتهيئة `endpoint` باستخدام نقطة النهاية المتوافقة مع S3 الخاصة بالموفر، مع مراعاة أي متطلبات توافق خاصة به.
-</Note>
-
 يتطلب إعداد القرص ما يلي:
 
 1. قسم `type`، وتكون قيمته إحدى القيم `s3` أو `azure_blob_storage` أو `hdfs` (غير مدعوم) أو `local_blob_storage` أو `web`.
@@ -1109,7 +1105,7 @@ SETTINGS storage_policy='web';
 | `remote_fs_read_backoff_threashold` | الحد الأقصى لوقت الانتظار عند محاولة قراءة البيانات من القرص البعيد      | `10000` ثانية     |
 | `remote_fs_read_backoff_max_tries`  | الحد الأقصى لعدد محاولات القراءة باستخدام backoff                        | `5`               |
 
-إذا فشل استعلام مع الاستثناء `DB:Exception Unreachable URL`، فيمكنك محاولة ضبط الإعدادات التالية: [http&#95;connection&#95;timeout](/ar/reference/settings/session-settings/http#http_connection_timeout)، و[http&#95;receive&#95;timeout](/ar/reference/settings/session-settings/http#http_receive_timeout)، و[keep&#95;alive&#95;timeout](/ar/reference/settings/server-settings/settings/other#keep_alive_timeout).
+إذا فشل استعلام مع الاستثناء `DB:Exception Unreachable URL`، فيمكنك محاولة ضبط الإعدادات التالية: [http&#95;connection&#95;timeout](/ar/reference/settings/session-settings#http_connection_timeout)، و[http&#95;receive&#95;timeout](/ar/reference/settings/session-settings#http_receive_timeout)، و[keep&#95;alive&#95;timeout](/ar/reference/settings/server-settings/settings#keep_alive_timeout).
 
 للحصول على الملفات المراد رفعها، شغّل:
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (يمكن العثور على `--metadata-path` في الاستعلام `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).

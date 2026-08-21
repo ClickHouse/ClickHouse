@@ -7,12 +7,12 @@ keywords: ['النسخ المتماثلة للقراءة', 'قابلية الت�
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
-تتيح لك النسخ المتماثلة للقراءة إنشاء نسخة واحدة أو أكثر من قاعدة بيانات ClickHouse Managed Postgres الأساسية لديك. وتتابع هذه النسخ قاعدة بياناتك الأساسية باستمرار باستخدام النسخ المتماثل الأصلي في PostgreSQL، لضمان مواكبة التغييرات أولًا بأول.
+تتيح لك النسخ المتماثلة للقراءة إنشاء نسخة واحدة أو أكثر من قاعدة بيانات Managed Postgres الأساسية لديك. وتتابع هذه النسخ قاعدة بياناتك الأساسية باستمرار باستخدام النسخ المتماثل الأصلي في PostgreSQL، لضمان مواكبة التغييرات أولًا بأول.
 
 لإدارة النسخ المتماثلة للقراءة، انقر على أيقونة Edit في الـ warehouse لديك:
 
@@ -64,7 +64,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## كيف تعمل النسخ المتماثلة للقراءة
 </div>
 
-تعتمد النسخ المتماثلة للقراءة في ClickHouse Managed Postgres على معمارية شحن WAL بدلًا من النسخ المتماثل المتدفق. ويهدف هذا الخيار التصميمي إلى تقليل التأثير على قاعدة البيانات الأساسية لديك.
+تعتمد النسخ المتماثلة للقراءة في Managed Postgres على معمارية شحن WAL بدلًا من النسخ المتماثل المتدفق. ويهدف هذا الخيار التصميمي إلى تقليل التأثير على قاعدة البيانات الرئيسية لديك.
 
 <div id="wal-shipping-from-object-storage">
   ### شحن WAL من تخزين الكائنات

@@ -266,16 +266,6 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     {
         return std::make_shared<DeserializeStateLowCardinality>(*this);
     }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (global_dictionary)
-            callback(global_dictionary);
-        if (additional_keys)
-            callback(additional_keys);
-        if (null_map)
-            callback(null_map);
-    }
 };
 
 void SerializationLowCardinality::serializeBinaryBulkStatePrefix(

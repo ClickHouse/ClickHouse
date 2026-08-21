@@ -25,7 +25,7 @@ import S3Settings from '/snippets/ar/_s3_settings.mdx';
 معالجة غير صحيحة للبيانات أو تلفها.
 
 في كثير من الحالات، ستؤثر أخطاء كهذه في جميع النسخ المتماثلة. يتضمن ClickHouse
-وسائل حماية مدمجة لمنع بعض أنواع الأخطاء، فعلى سبيل المثال، [افتراضيًا](/ar/reference/settings/session-settings/max#max_table_size_to_drop)
+وسائل حماية مدمجة لمنع بعض أنواع الأخطاء، فعلى سبيل المثال، [افتراضيًا](/ar/reference/settings/session-settings#max_table_size_to_drop)
 لا يمكنك ببساطة حذف الجداول التي تستخدم محركًا من عائلة `MergeTree` وتحتوي على أكثر من
 50 غيغابايت من البيانات. ومع ذلك، لا تغطي وسائل الحماية هذه جميع الحالات الممكنة، وقد
 تظل المشكلات واردة.
@@ -66,7 +66,7 @@ import S3Settings from '/snippets/ar/_s3_settings.mdx';
 * [متزامنة أو غير متزامنة](#synchronous-vs-asynchronous)
 * [متوازية أو غير متوازية](#concurrent-vs-non-concurrent)
 * [مضغوطة أو غير مضغوطة](#compressed-vs-uncompressed)
-* تستخدم [المجموعات المسماة](#using-named-collections)
+* تستخدم [مجموعات مسمى](#using-named-collections)
 * محمية بكلمة مرور
 * مأخوذة من [جداول النظام أو جداول السجل أو جداول إدارة الوصول](#system-backups)
 

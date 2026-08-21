@@ -130,14 +130,6 @@ def drop_distributed_table(node, table_name):
     time.sleep(1)
 
 
-def sync_distributed_table(node, nodes_to_sync, table_name):
-    # The spool must drain before a replica has anything to fetch, so the order matters.
-    # Any replica can serve a shard leg under load_balancing=RANDOM, so all are synced.
-    node.query("SYSTEM FLUSH DISTRIBUTED {}".format(table_name))
-    for node_to_sync in nodes_to_sync:
-        node_to_sync.query("SYSTEM SYNC REPLICA {}_replicated".format(table_name))
-
-
 def insert(
     node,
     table_name,
@@ -771,13 +763,11 @@ def test_rename_distributed(started_cluster):
     try:
         create_distributed_table(node1, table_name)
         insert(node1, table_name, 1000)
-        sync_distributed_table(node1, nodes, table_name)
 
         rename_column_on_cluster(node1, table_name, "num2", "foo2")
         rename_column_on_cluster(node1, "%s_replicated" % table_name, "num2", "foo2")
 
         insert(node1, table_name, 1000, col_names=["num", "foo2"])
-        sync_distributed_table(node1, nodes, table_name)
 
         select(node1, table_name, "foo2", "1998\n", poll=30)
     finally:

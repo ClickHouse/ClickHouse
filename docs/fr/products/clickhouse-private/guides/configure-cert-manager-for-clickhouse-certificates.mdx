@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "Configurer Cert Manager pour les certificats de ClickHouse"
+sidebarTitle: "Configurer Cert Manager"
+description: "Générer des certificats TLS pour ClickHouse Server et Keeper à l’aide de Cert Manager."
+---
+
+Générez des certificats TLS pour ClickHouse Server et Keeper à l’aide de Cert Manager.
+
+> Pour comprendre les principes de ce guide — l’utilité de chaque certificat, le fonctionnement des modes de vérification et le déroulement de la rotation — consultez [PKI and mTLS in ClickHouse Private](/fr/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private).
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* [Cert Manager](https://cert-manager.io/) installé sur le cluster
+* Nom du cluster choisi (ce guide utilise `default-xx-01` à titre d&#39;exemple)
+
+<div id="steps">
+  ## Étapes
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Créez un émetteur de certificats
+
+    Créez un `Issuer` auto-signé pour servir d’autorité de certification :
+
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Issuer
+    metadata:
+      name: selfsigned-issuer
+      namespace: ns-default-xx-01
+    spec:
+      selfSigned: {}
+    ```
+
+    > **Remarque :** L’`Issuer` est propre à un espace de noms et doit se trouver dans le même espace de noms que les ressources `Certificate` qui le référencent. Un émetteur auto-signé convient aux tests. Pour la production, consultez la [liste des options d’émetteur](https://cert-manager.io/docs/configuration/issuers/).
+  </Step>
+
+  <Step>
+    ### 2. Créez des ressources `Certificate`
+
+    Créez une ressource `Certificate` pour ClickHouse Server :
+
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-server-tls
+      namespace: ns-default-xx-01
+    spec:
+      secretName: default-xx-01-server-cert-secret
+      dnsNames:
+        - "*.c-default-xx-01-server-headless.ns-default-xx-01.svc.cluster.local"
+      issuerRef:
+        name: selfsigned-issuer
+        kind: Issuer
+    ```
+
+    Cela crée un secret Kubernetes nommé `default-xx-01-server-cert-secret` contenant les clés `ca.crt`, `tls.crt` et `tls.key`.
+
+    Répétez l’opération avec les `dnsNames` et le `secretName` appropriés pour Keeper si nécessaire.
+  </Step>
+
+  <Step>
+    ### 3. Configurez les valeurs Helm pour utiliser les clés du secret Cert Manager
+
+    Par défaut, le chart Helm `onprem-clickhouse-cluster` s’attend à trouver dans le secret des clés nommées `ca.crt`, `server.crt` et `server.key`. Cert Manager produit `ca.crt`, `tls.crt` et `tls.key`. Redéfinissez les noms de clés dans vos valeurs Helm :
+
+    ```yaml
+    server:
+      openSSL:
+        enabled: true
+        secret:
+          caKey: ca.crt
+          certKey: tls.crt
+          keyKey: tls.key
+    ```
+
+    Les certificats sont montés dans `/etc/clickhouse-server/certs/` pour le serveur et dans `/etc/clickhouse-keeper/certs/` pour Keeper. Le chart Helm génère automatiquement la configuration OpenSSL appropriée.
+  </Step>
+</Steps>
+
+<div id="notes-on-cacrt-availability">
+  ## Remarques sur la disponibilité de ca.crt
+</div>
+
+La clé `ca.crt` n’est ajoutée au secret que si elle est fournie par l’émetteur. Par exemple, les émetteurs ACME n’incluent pas `ca.crt`. Dans ce cas, ajoutez manuellement la CA racine publique à la clé `ca.crt`, ou utilisez [trust-manager](https://cert-manager.io/docs/trust/trust-manager/) pour générer un bundle de CA et cibler le bon secret.
