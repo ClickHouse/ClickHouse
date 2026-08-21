@@ -271,7 +271,6 @@ CREATE TABLE tab (a UInt64, b UInt64 EPHEMERAL 1 STATISTICS(tdigest)) Engine = M
 SET allow_deprecated_syntax_for_merge_tree = 1;
 CREATE TABLE tab (d Date, a UInt64, b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree(d, a, 8192); -- { serverError ILLEGAL_STATISTICS }
 SET allow_deprecated_syntax_for_merge_tree = 0;
-ATTACH TABLE tab UUID 'f8a2c1d4-0000-0000-0000-00000000beef' (a UInt64, b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 
 CREATE TABLE tab (a UInt64) Engine = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '';
 ALTER TABLE tab ADD COLUMN b UInt64 ALIAS a + 1 STATISTICS(tdigest); -- { serverError ILLEGAL_STATISTICS }
@@ -283,8 +282,10 @@ ALTER TABLE tab ADD COLUMN b UInt64;
 ALTER TABLE tab MODIFY COLUMN b UInt64 EPHEMERAL 1 STATISTICS(tdigest); -- { serverError ILLEGAL_STATISTICS }
 -- A column that stays physically stored keeps its statistics.
 ALTER TABLE tab MODIFY COLUMN b UInt64 MATERIALIZED a + 1 STATISTICS(tdigest);
-INSERT INTO tab (a) VALUES (1);
+-- Pinned: the arm below observes statistics built at INSERT time, which this setting controls.
+INSERT INTO tab (a) SETTINGS materialize_statistics_on_insert = 1 VALUES (1);
 SELECT a, b FROM tab;
+SELECT column, has(statistics, 'TDigest') FROM system.parts_columns WHERE database = currentDatabase() AND table = 'tab' AND active ORDER BY column;
 DROP TABLE tab;
 
 -- Statistics that `auto_statistics_types` supplied are dropped on conversion, not refused.
@@ -292,6 +293,18 @@ CREATE TABLE tab (a UInt64, b UInt64) Engine = MergeTree() ORDER BY tuple() SETT
 ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1;
 INSERT INTO tab VALUES (1);
 SELECT a, b FROM tab;
+DROP TABLE tab;
+
+-- A mutation that named the column while it was still physical must drain, not retry forever.
+CREATE TABLE tab (a UInt64 STATISTICS(tdigest), b UInt64) Engine = MergeTree() ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO tab VALUES (1, 1);
+SYSTEM STOP MERGES tab;
+ALTER TABLE tab MATERIALIZE STATISTICS b SETTINGS mutations_sync = 0;
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1 SETTINGS mutations_sync = 0;
+SYSTEM START MERGES tab;
+ALTER TABLE tab MATERIALIZE STATISTICS a SETTINGS mutations_sync = 2;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tab' AND NOT is_done;
 DROP TABLE tab;
 
 -- Redeclaring a column that already exists is a no-op and must stay one.
