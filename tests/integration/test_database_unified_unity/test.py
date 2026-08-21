@@ -21,13 +21,12 @@ from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import TSV
 
-# The Spark and Unity Catalog plumbing is shared with the Delta-only catalog test
-# rather than duplicated: it carries retry and diagnostic logic for a chronic
-# Spark JVM hang that is expensive to rediscover.
+# Shared with the Delta-only catalog test rather than duplicated: these carry
+# retry and diagnostic logic for a chronic Spark JVM hang that is expensive to
+# rediscover. Unity Catalog startup is local, see `start_unity_catalog` below.
 from test_database_delta.test import (
     execute_multiple_spark_queries,
     execute_spark_query,
-    start_unity_catalog,
 )
 
 CATALOG = "unity"
@@ -51,6 +50,63 @@ UNIFORM_TABLE = "default.marksheet_uniform"
 EXPERIMENTAL_SETTING = "allow_experimental_database_unified_unity_catalog"
 
 
+UC_HOME = "/var/lib/clickhouse/user_files/unitycatalog"
+UC_LOG = UC_HOME + "/uc.log"
+UC_START_TIMEOUT = 300
+
+
+def start_unity_catalog(node):
+    """Local variant of the one in `test_database_delta`. That one backgrounds the
+    copy and the server together, so a failure to start is indistinguishable from
+    a slow copy and leaves no log to read. Here the copy is synchronous and the
+    server is checked for liveness, so a failure says what actually broke."""
+    # The server's classpath (`server/target/classpath`) names 253 dependency
+    # jars under `/root/.cache/coursier`, but the container runs as uid 1000 and
+    # `/root` is mode 0700, so the JVM cannot load any of them. Opening the
+    # directory for traversal is enough; nothing writes there.
+    node.exec_in_container(["bash", "-c", "chmod o+rx /root"], user="root")
+
+    # `cp -r` fails here: eight sbt incremental-compile caches under */zinc are
+    # mode 0600 and owned by root, while this runs as the container's own user.
+    # tar skips them, and they have no role at runtime.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            'tar -C / -cf - --exclude="*/zinc" unitycatalog'
+            " | tar -C /var/lib/clickhouse/user_files -xf -",
+        ]
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"cd {UC_HOME} && setsid nohup bin/start-uc-server > {UC_LOG} 2>&1 < /dev/null &",
+        ]
+    )
+
+    try:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"for i in $(seq 1 {UC_START_TIMEOUT}); do "
+                "(echo > /dev/tcp/localhost/8080) 2>/dev/null && exit 0; sleep 1; done; "
+                f"echo 'Unity Catalog did not start within {UC_START_TIMEOUT}s' >&2; exit 1",
+            ]
+        )
+    except Exception:
+        for description, command in (
+            ("server process", "pgrep -af start-uc-server || echo '(not running)'"),
+            ("log file", f"ls -la {UC_LOG} 2>&1"),
+            ("log tail", f"tail -n 50 {UC_LOG} 2>&1"),
+            ("java", "java -version 2>&1 | head -3"),
+        ):
+            output = node.exec_in_container(["bash", "-c", command], nothrow=True)
+            print(f"Unity Catalog {description}:\n{output}")
+        raise
+
+
 UNIFORM_DIR = (
     "/var/lib/clickhouse/user_files/unitycatalog"
     "/etc/data/external/unity/default/tables/marksheet_uniform"
@@ -58,10 +114,13 @@ UNIFORM_DIR = (
 
 
 def link_uniform_table(node):
-    """The seeded UniForm table is registered at `file:///tmp/marksheet_uniform`
-    but its data ships elsewhere. The Unity Catalog server reads the Iceberg
-    metadata from that registered path, so it needs the link. ClickHouse never
-    sees a `/tmp` path: the proxy rewrites every location it is given."""
+    """`marksheet_uniform` is the one sample table that needs setup before use.
+    It ships registered at `file:///tmp/marksheet_uniform`, and the upstream
+    docs (`docs/usage/tables/uniform.md`) tell you to copy the data there. A
+    symlink does the same job for read-only data. The Unity Catalog server needs
+    this because it reads the Iceberg metadata off disk at the registered path.
+    ClickHouse never sees `/tmp`, which is outside `user_files` and so unreadable
+    to it either way: the proxy rewrites every location before it gets there."""
     node.exec_in_container(
         [
             "bash",

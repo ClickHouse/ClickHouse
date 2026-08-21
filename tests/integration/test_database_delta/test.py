@@ -14,11 +14,16 @@ UC_LOG = "/var/lib/clickhouse/user_files/unitycatalog/uc.log"
 
 
 def start_unity_catalog(node):
+    # The server's classpath names its dependency jars under /root/.cache/coursier,
+    # unreadable when the container runs as a non-root uid, as it does outside CI.
+    node.exec_in_container(["bash", "-c", "chmod o+rx /root"], user="root")
+    # tar, not `cp -r`: the sbt caches under */zinc are mode 0600 and owned by root,
+    # so a non-root copy fails on them. They have no role at runtime.
     node.exec_in_container(
         [
             "bash",
             "-c",
-            """cp -r /unitycatalog /var/lib/clickhouse/user_files/ && cd /var/lib/clickhouse/user_files/unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
+            """tar -C / -cf - --exclude="*/zinc" unitycatalog | tar -C /var/lib/clickhouse/user_files -xf - && cd /var/lib/clickhouse/user_files/unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
         ]
     )
     # Wait for Unity Catalog to accept connections on port 8080 before returning.
