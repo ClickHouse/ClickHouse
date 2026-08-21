@@ -40,12 +40,17 @@
            engaged at its least favorable point: it keeps per-partition hash tables while removing only
            12.5% of the rows.
          * t_dup_head_uniq_tail: the heavy duplicate head anchors the cumulative unique rate below the
-           abandon threshold, so the deduplication stays engaged through the unique tail. -->
+           abandon threshold, so the deduplication stays engaged through the unique tail.
+         * t_lc_nullable: LowCardinality(Nullable) key with mostly-unique values and a few NULLs. The
+           NULL rows are dropped before deduplication like the set fill drops them (default
+           transform_null_in = 0), so the observation sees only the unique non-NULL rows and abandons.
+           All NULLs land in one partition, so only a small NULL share keeps the layout balanced. -->
     <create_query>CREATE TABLE t_all_unique (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
     <create_query>CREATE TABLE t_all_unique_str (a String) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
     <create_query>CREATE TABLE t_half_dup (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
     <create_query>CREATE TABLE t_mild_dup (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
     <create_query>CREATE TABLE t_dup_head_uniq_tail (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 16</create_query>
+    <create_query>CREATE TABLE t_lc_nullable (a LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(coalesce(a, '')) % 16</create_query>
 
     <!-- ~100 duplicates per key: the set fill deduplicates 10M rows down to 100K unique keys. -->
     <fill_query>INSERT INTO test_{partitions} SELECT number % 100000, number FROM numbers_mt(10000000)</fill_query>
@@ -77,6 +82,9 @@
     <fill_query>INSERT INTO t_dup_head_uniq_tail SELECT 10000000 + number FROM numbers_mt(25000000)</fill_query>
     <fill_query>OPTIMIZE TABLE t_dup_head_uniq_tail FINAL</fill_query>
 
+    <fill_query>INSERT INTO t_lc_nullable SELECT if(number % 16 = 0, NULL, concat('k', toString(number))) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_lc_nullable FINAL</fill_query>
+
     <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM test_{partitions}) FORMAT Null</query>
 
     <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM test_{partitions} WHERE b > 1) FORMAT Null</query>
@@ -104,6 +112,8 @@
 
     <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_dup_head_uniq_tail) FORMAT Null</query>
 
+    <query>SELECT count() FROM numbers_mt(100000) WHERE concat('k', toString(number)) IN (SELECT a FROM t_lc_nullable) FORMAT Null</query>
+
     <drop_query>DROP TABLE test_{partitions}</drop_query>
     <drop_query>DROP TABLE test_unsorted_{partitions}</drop_query>
     <drop_query>DROP TABLE t_skew90_uniq</drop_query>
@@ -113,4 +123,5 @@
     <drop_query>DROP TABLE t_half_dup</drop_query>
     <drop_query>DROP TABLE t_mild_dup</drop_query>
     <drop_query>DROP TABLE t_dup_head_uniq_tail</drop_query>
+    <drop_query>DROP TABLE t_lc_nullable</drop_query>
 </test>
