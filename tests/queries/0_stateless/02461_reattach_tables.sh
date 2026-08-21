@@ -675,7 +675,7 @@ REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
 REATTACH_STATUS=$?
 if [ "$REATTACH_STATUS" -eq 0 ]; then
     echo "FAIL (query unexpectedly succeeded)"
-elif ! echo "$REATTACH_OUTPUT" | grep -q "THERE_IS_NO_SUCH_USER"; then
+elif ! echo "$REATTACH_OUTPUT" | grep -q "UNKNOWN_USER"; then
     echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
 elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_dest_src"; then
     echo "FAIL (source detached for a SQL-security-rejected query)"
