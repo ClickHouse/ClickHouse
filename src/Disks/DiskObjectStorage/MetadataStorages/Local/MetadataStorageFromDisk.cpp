@@ -7,23 +7,9 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
-#include <Common/ErrnoException.h>
 
-#include <fcntl.h>
-
-#include <filesystem>
 #include <memory>
 #include <shared_mutex>
-
-namespace fs = std::filesystem;
-
-namespace ProfileEvents
-{
-    extern const Event FileSync;
-    extern const Event FileSyncElapsedMicroseconds;
-}
 
 namespace DB
 {
@@ -31,9 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_FSYNC;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_CLOSE_FILE;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, std::string compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_, bool persist_removal_queue_, size_t removal_log_compaction_threshold_)
@@ -53,39 +37,16 @@ const std::string & MetadataStorageFromDisk::getPath() const
 
 void MetadataStorageFromDisk::syncMetadataFile(const std::string & path)
 {
-    /// The metadata write only finalizes the file (no fsync). Reopen the committed file on the
-    /// local `disk` and fdatasync it. Called only when the caller requested fsync, so it is opt-in.
+    /// Absence here means the caller ran before the metadata was recorded, which no caller is
+    /// allowed to do: a silent skip would make the sync invisibly dead.
     if (!disk->existsFile(path))
-        return;
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't fsync metadata file {}, it does not exist", path);
 
-    const auto full_path = fs::path(disk->getPath()) / path;
-    int fd = ::open(full_path.c_str(), O_RDONLY | O_CLOEXEC);
-    if (-1 == fd)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, full_path.string(), "Cannot open file {} to fsync", full_path.string());
-
-    ProfileEvents::increment(ProfileEvents::FileSync);
-    Stopwatch watch;
-#if defined(OS_DARWIN)
-    int res = ::fsync(fd);
-#else
-    int res = ::fdatasync(fd);
-#endif
-    ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
-
-    if (-1 == res)
-    {
-        const int fsync_errno = errno; /// close() below may overwrite errno
-        [[maybe_unused]] int close_err = ::close(fd);
-        ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_FSYNC, full_path.string(), fsync_errno, "Cannot fsync {}", full_path.string());
-    }
-
-    if (-1 == ::close(fd))
-        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file {}", full_path.string());
-}
-
-SyncGuardPtr MetadataStorageFromDisk::getDirectorySyncGuard(const std::string & path) const
-{
-    return disk->getDirectorySyncGuard(path);
+    /// WriteMode::Append neither truncates the file nor writes to it, so the buffer only serves to
+    /// carry the descriptor its sync() fdatasyncs. Nothing is ever buffered, hence the 1-byte size.
+    auto buf = disk->writeFile(path, 1, WriteMode::Append);
+    buf->sync();
+    buf->finalize();
 }
 
 bool MetadataStorageFromDisk::existsFile(const std::string & path) const
@@ -436,14 +397,14 @@ void MetadataStorageFromDiskTransaction::writeStringToFile(
      const std::string & path,
      const std::string & data)
 {
-    operations.addOperation(std::make_unique<WriteFileOperation>(path, data, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<WriteFileOperation>(path, data, *metadata_storage.getDisk(), sync_metadata));
 }
 
 void MetadataStorageFromDiskTransaction::writeInlineDataToFile(
      const std::string & path,
      const std::string & data)
 {
-    operations.addOperation(std::make_unique<WriteInlineDataOperation>(path, data, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<WriteInlineDataOperation>(path, data, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), sync_metadata));
 }
 
 void MetadataStorageFromDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
@@ -458,17 +419,17 @@ void MetadataStorageFromDiskTransaction::chmod(const String & path, mode_t mode)
 
 void MetadataStorageFromDiskTransaction::unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects)
 {
-    operations.addOperation(std::make_unique<UnlinkFileOperation>(path, if_exists, should_remove_objects, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove));
+    operations.addOperation(std::make_unique<UnlinkFileOperation>(path, if_exists, should_remove_objects, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove, sync_metadata));
 }
 
 void MetadataStorageFromDiskTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects)
 {
-    operations.addOperation(std::make_unique<RemoveRecursiveOperation>(path, should_remove_objects, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove));
+    operations.addOperation(std::make_unique<RemoveRecursiveOperation>(path, should_remove_objects, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove, sync_metadata));
 }
 
 void MetadataStorageFromDiskTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
-    operations.addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
+    operations.addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, metadata_storage.compatible_key_prefix, *metadata_storage.disk, sync_metadata));
 }
 
 void MetadataStorageFromDiskTransaction::createDirectory(const std::string & path)
@@ -498,27 +459,27 @@ void MetadataStorageFromDiskTransaction::moveDirectory(const std::string & path_
 
 void MetadataStorageFromDiskTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
-    operations.addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove));
+    operations.addOperation(std::make_unique<ReplaceFileOperation>(path_from, path_to, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove, sync_metadata));
 }
 
 void MetadataStorageFromDiskTransaction::setReadOnly(const std::string & path)
 {
-    operations.addOperation(std::make_unique<SetReadonlyFileOperation>(path, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk()));
+    operations.addOperation(std::make_unique<SetReadonlyFileOperation>(path, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), sync_metadata));
 }
 
 void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
 {
-    operations.addOperation(std::make_unique<RewriteFileOperation>(path, objects, metadata_storage.compatible_key_prefix, *metadata_storage.disk, objects_to_remove));
+    operations.addOperation(std::make_unique<RewriteFileOperation>(path, objects, metadata_storage.compatible_key_prefix, *metadata_storage.disk, objects_to_remove, sync_metadata));
 }
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, const StoredObject & object)
 {
-    operations.addOperation(std::make_unique<AddBlobOperation>(path, object, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
+    operations.addOperation(std::make_unique<AddBlobOperation>(path, object, metadata_storage.compatible_key_prefix, *metadata_storage.disk, sync_metadata));
 }
 
 void MetadataStorageFromDiskTransaction::truncateFile(const std::string & src_path, size_t target_size)
 {
-    operations.addOperation(std::make_unique<TruncateMetadataFileOperation>(src_path, target_size, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove));
+    operations.addOperation(std::make_unique<TruncateMetadataFileOperation>(src_path, target_size, metadata_storage.compatible_key_prefix, *metadata_storage.getDisk(), objects_to_remove, sync_metadata));
 }
 
 ObjectStorageKey MetadataStorageFromDiskTransaction::generateObjectKeyForPath(const std::string & /*path*/)

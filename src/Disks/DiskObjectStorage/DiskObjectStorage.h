@@ -111,15 +111,6 @@ public:
 
     MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
-    /// Delegate to the metadata storage so `fsync_part_directory` can fsync the local metadata
-    /// directory. Only when its transactions apply operations immediately: otherwise the directory
-    /// is created later, at commit, so it does not exist yet when the guard is requested. Returns
-    /// nullptr otherwise (also for metadata not backed by a local directory).
-    SyncGuardPtr getDirectorySyncGuard(const String & path) const override
-    {
-        return metadata_storage->appliesOperationsEagerly() ? metadata_storage->getDirectorySyncGuard(path) : nullptr;
-    }
-
     UInt32 getRefCount(const String & path) const override;
 
     /// Return metadata for each file path. Also, before serialization reset

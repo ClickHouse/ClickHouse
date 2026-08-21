@@ -74,10 +74,8 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
-    /// The metadata files live on a local `disk`, so honor the MergeTree fsync settings by
-    /// fsync'ing the local metadata file / its directory (otherwise ignored on object-storage disks).
+    /// The metadata files live on a local `disk`, so they are syncable.
     void syncMetadataFile(const std::string & path) override;
-    SyncGuardPtr getDirectorySyncGuard(const std::string & path) const override;
 
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return true; }
@@ -140,11 +138,16 @@ private:
     StoredObjects objects_to_remove;
     MetadataOperationsHolder operations;
 
+    /// Whether the metadata files written by this transaction have to be fsync'ed.
+    bool sync_metadata = false;
+
 public:
     explicit MetadataStorageFromDiskTransaction(MetadataStorageFromDisk & metadata_storage_);
 
     void commit(const TransactionCommitOptionsVariant & options) override;
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &options) override;
+
+    void setSyncMetadata(bool sync) override { sync_metadata = sync; }
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 

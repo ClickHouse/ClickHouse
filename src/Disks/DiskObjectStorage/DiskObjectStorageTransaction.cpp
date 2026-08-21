@@ -413,11 +413,15 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             disk_tx->commit();
     };
 
-    /// When the caller syncs the write buffer (e.g. fsync_after_insert), fsync the local metadata
-    /// file that commits this path to its blobs (see requestMetadataSync).
-    auto sync_metadata_callback = [disk_tx = shared_from_this(), path]()
+    /// A synced write buffer also needs the metadata file committing this path to its blobs synced.
+    /// An autocommit write has already committed that file when the buffer reports the intent;
+    /// every other write records it later, in commit(), so the two take different routes.
+    auto sync_metadata_callback = [disk_tx = shared_from_this(), path, autocommit]()
     {
-        disk_tx->requestMetadataSync(path);
+        if (autocommit)
+            disk_tx->syncCommittedMetadataFile(path);
+        else
+            disk_tx->requestMetadataFileSync();
     };
 
     /// Defer the inline-vs-blob decision until the size is known (see `WriteBufferInlineOrBlob`).
@@ -433,14 +437,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         buf_size);
 }
 
-void DiskObjectStorageTransaction::requestMetadataSync(const std::string & path)
+void DiskObjectStorageTransaction::requestMetadataFileSync()
 {
-    /// The metadata file exists here only for a fake (immediate) transaction, whose commit runs in
-    /// the finalize callback before the buffer is synced. syncMetadataFile touches only its own fd,
-    /// so it is safe from the parallel file-sync pool. A queued transaction creates the file later,
-    /// at commit, so it is skipped here.
-    if (metadata_storage->existsFile(path))
-        metadata_storage->syncMetadataFile(path);
+    sync_metadata.store(true, std::memory_order_relaxed);
+}
+
+void DiskObjectStorageTransaction::syncCommittedMetadataFile(const std::string & path)
+{
+    metadata_storage->syncMetadataFile(path);
 }
 
 void DiskObjectStorageTransaction::recordBlobReplication(const StoredObject & object, const Locations & missing_locations)
@@ -643,6 +647,9 @@ void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_fi
 void DiskObjectStorageTransaction::commit()
 {
     auto component_guard = Coordination::setCurrentComponent("DiskObjectStorageTransaction::commit");
+    /// Before the replay loop: that is where the operations writing the metadata files are built,
+    /// so they can only observe the intent if it is published first.
+    metadata_transaction->setSyncMetadata(sync_metadata.load(std::memory_order_relaxed));
     chassert(operations_to_execute.empty() || !metadata_storage->appliesOperationsEagerly());
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {
@@ -687,6 +694,7 @@ void DiskObjectStorageTransaction::commit()
 
 TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
 {
+    metadata_transaction->setSyncMetadata(sync_metadata.load(std::memory_order_relaxed));
     chassert(operations_to_execute.empty() || !metadata_storage->appliesOperationsEagerly());
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {

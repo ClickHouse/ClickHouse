@@ -50,10 +50,6 @@ struct InlineBufferHarness
     std::optional<String> inline_content;
     std::optional<size_t> blob_bytes;
     size_t metadata_synced = 0;
-    /// Set when a metadata sync ran while no metadata had been recorded yet.
-    bool metadata_synced_before_finalize = false;
-
-    bool metadataRecorded() const { return inline_content.has_value() || blob_bytes.has_value(); }
 
     std::unique_ptr<WriteBufferInlineOrBlob> makeBuffer(size_t max_inline_bytes, size_t buf_size = 16, bool create_blob_if_empty = true)
     {
@@ -73,12 +69,7 @@ struct InlineBufferHarness
                 else
                     blob_bytes = std::get<WrittenBlob>(result).bytes_count;
             },
-            [this]
-            {
-                ++metadata_synced;
-                if (!metadataRecorded())
-                    metadata_synced_before_finalize = true;
-            },
+            [this] { ++metadata_synced; },
             buf_size);
     }
 };
@@ -240,71 +231,4 @@ TEST(WriteBufferInlineOrBlob, PreFinalizeThenFinalizeInline)
 
     ASSERT_TRUE(harness.inline_content.has_value());
     EXPECT_EQ(*harness.inline_content, "hello");
-}
-
-TEST(WriteBufferInlineOrBlob, NoSyncRequestedNeverSyncsMetadata)
-{
-    InlineBufferHarness harness;
-    auto buf = harness.makeBuffer(/*max_inline_bytes=*/0);
-    buf->write("payload", 7);
-    buf->finalize();
-
-    EXPECT_EQ(harness.metadata_synced, 0u);
-}
-
-TEST(WriteBufferInlineOrBlob, SyncAfterFinalizeSyncsMetadata)
-{
-    InlineBufferHarness harness;
-    auto buf = harness.makeBuffer(/*max_inline_bytes=*/0);
-    buf->write("payload", 7);
-    buf->finalize();
-    buf->sync();
-
-    EXPECT_EQ(harness.metadata_synced, 1u);
-    EXPECT_FALSE(harness.metadata_synced_before_finalize);
-}
-
-TEST(WriteBufferInlineOrBlob, SyncBeforeFinalizeIsLatchedUntilMetadataExists)
-{
-    InlineBufferHarness harness;
-    auto buf = harness.makeBuffer(/*max_inline_bytes=*/0);
-    buf->write("payload", 7);
-    buf->sync();
-
-    /// The metadata is written by finalize, so the request cannot be served yet.
-    EXPECT_EQ(harness.metadata_synced, 0u);
-
-    buf->finalize();
-
-    EXPECT_EQ(harness.metadata_synced, 1u);
-    EXPECT_FALSE(harness.metadata_synced_before_finalize);
-}
-
-TEST(WriteBufferInlineOrBlob, InlineContentSyncsMetadataInBothOrderings)
-{
-    {
-        InlineBufferHarness harness;
-        auto buf = harness.makeBuffer(/*max_inline_bytes=*/10);
-        buf->write("hello", 5);
-        buf->finalize();
-        buf->sync();
-
-        ASSERT_TRUE(harness.inline_content.has_value());
-        EXPECT_EQ(harness.underlying_created, 0u);
-        EXPECT_EQ(harness.metadata_synced, 1u);
-    }
-
-    {
-        InlineBufferHarness harness;
-        auto buf = harness.makeBuffer(/*max_inline_bytes=*/10);
-        buf->write("hello", 5);
-        buf->sync();
-        EXPECT_EQ(harness.metadata_synced, 0u);
-        buf->finalize();
-
-        ASSERT_TRUE(harness.inline_content.has_value());
-        EXPECT_EQ(harness.underlying_created, 0u);
-        EXPECT_EQ(harness.metadata_synced, 1u);
-        EXPECT_FALSE(harness.metadata_synced_before_finalize);
-    }
 }

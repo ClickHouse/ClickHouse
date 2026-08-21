@@ -34,11 +34,6 @@ void MetadataStorageFromCacheObjectStorage::syncMetadataFile(const std::string &
     underlying->syncMetadataFile(path);
 }
 
-SyncGuardPtr MetadataStorageFromCacheObjectStorage::getDirectorySyncGuard(const std::string & path) const
-{
-    return underlying->getDirectorySyncGuard(path);
-}
-
 std::string MetadataStorageFromCacheObjectStorage::getZooKeeperName() const
 {
     return underlying->getZooKeeperName();
@@ -313,6 +308,11 @@ TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction
     }
 
     return result;
+}
+
+void MetadataStorageFromCacheObjectStorageTransaction::setSyncMetadata(bool sync)
+{
+    underlying->setSyncMetadata(sync);
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::writeStringToFile(const std::string & path, const std::string & data)

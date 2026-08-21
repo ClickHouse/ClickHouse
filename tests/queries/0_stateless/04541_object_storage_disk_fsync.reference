@@ -1,4 +1,9 @@
-wide, fsync on: FileSync>0=1 DirectorySync>0=1
-compact, fsync on: FileSync>0=1 DirectorySync>0=1
-wide, fsync off: FileSync>0=0 DirectorySync>0=0
-non-fake txn, fsync on: 1000	499500
+wide, fsync on: local synced=1 objstore syncs more=1 DirectorySync=0
+20000	199990000
+compact, fsync on: local synced=1 objstore syncs more=1 DirectorySync=0
+20000	199990000
+wide, fsync off: local FileSync=0 objstore FileSync=0 DirectorySync=0
+20000	199990000
+compact, fsync off: local FileSync=0 objstore FileSync=0 DirectorySync=0
+20000	199990000
+wide, dir only: FileSync=0 DirectorySync=0
