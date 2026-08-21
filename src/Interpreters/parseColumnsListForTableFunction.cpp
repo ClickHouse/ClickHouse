@@ -1,4 +1,3 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -68,9 +67,14 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         {
             bool is_experimental_time_decay_type = isExponentialTimeDecayingFloat64(data_type);
             if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type))
+            {
+                const String function_name = aggregate_function_type->getFunctionName();
                 is_experimental_time_decay_type
-                    |= AggregateFunctionFactory::instance().hasExecutionAvailabilityCheck(
-                        aggregate_function_type->getFunctionName());
+                    = function_name == "exponentialTimeDecayedSum"
+                    || function_name == "exponentialTimeDecayedAvg"
+                    || function_name == "exponentialTimeDecayedCount"
+                    || function_name == "exponentialTimeDecayingFloat64";
+            }
 
             if (is_experimental_time_decay_type)
                 throw Exception(
