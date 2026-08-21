@@ -131,9 +131,19 @@ ClickHouse supports reading Iceberg tables that use the following deletion metho
 
 - [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
 - [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) stored in Puffin files (Iceberg v3, read-only)
 
-The following deletion method is **not supported**:
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+The following limitations apply to deletion vectors:
+
+- Only `deletion-vector-v1` Puffin blobs are supported
+- Data files must be in Parquet format
+- Column-scoped deletion vectors (user column ids in puffin `fields`) are not supported. Writers may set `fields` to `[]` or to the Iceberg reserved `_pos` id (`2147483645`) for file-scoped deletion vectors.
+- Writing deletion vectors is not supported
+- `DELETE` / `UPDATE` mutations on Iceberg format version 3+ tables are rejected (writers must not add position-delete files)
+
+Parsed deletion vectors can be cached in memory when `use_puffin_files_cache` is enabled and the puffin file has a non-empty `etag`. Empty deletion vectors are cached as well, so repeated reads do not re-fetch the puffin file. Parsed footers for coalesced multi-DV Puffin files are memoized with that cache (same identity: storage, path, `etag`) so slices share one footer parse; the memo shares `puffin_files_cache_size` / max-entry limits and is dropped when the cache is disabled (`puffin_files_cache_size=0`) or cleared. The cache can be cleared with `SYSTEM DROP PUFFIN FILES CACHE`.
+
+For [`icebergCluster`](/sql-reference/table-functions/icebergCluster.md) (and `object_storage_cluster`), the initiator loads and materializes each data file's deletion vector while distributing tasks, then sends the resulting row bitmap to workers with the task. Workers apply the bitmap; they do not re-read the Puffin blob for that path. On wide v3 tables this can make the initiator a serialization point for deletion-vector I/O and decode.
 
 ### Basic usage {#basic-usage}
  ```sql

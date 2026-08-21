@@ -90,6 +90,59 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
 {
     auto protocol_version
         = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION));
+
+    /// Fail closed: protocol < 2 omits `schema_transform`, so workers would skip data-lake schema
+    /// evolution and return wrong columns / values.
+    if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA
+        && data_lake_metadata.schema_transform
+        && !data_lake_metadata.schema_transform->getInputs().empty())
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `schema_transform`, which is required for "
+            "distributed data-lake reads with schema evolution (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA);
+    }
+
+    /// Fail closed: downgrading would omit deletion / selection vectors and return deleted rows.
+    if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS
+        && hasNonEmptyExcludedRows(data_lake_metadata))
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `excluded_rows`, which is required for distributed "
+            "reads with deletion vectors / selection vectors (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS);
+    }
+
+    /// Fail closed: protocol < 3 omits `iceberg_info`, so workers rebuild a plain `ObjectInfo`
+    /// and lose Iceberg schema IDs / file format / delete transforms.
+    if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA
+        && iceberg_info.has_value())
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `iceberg_info` "
+            "(minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA);
+    }
+
+    /// Fail closed: protocol < 4 omits `file_bucket_info`, so each bucket task becomes a full-file
+    /// read and bucket-split cluster queries return duplicated rows.
+    if (protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO
+        && file_bucket_info)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `file_bucket_info`, which is required for "
+            "distributed bucket-split reads (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO);
+    }
+
     writeVarUInt(protocol_version, out);
     writeStringBinary(path, out);
 

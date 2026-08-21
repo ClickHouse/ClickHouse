@@ -10,6 +10,7 @@
 #include <base/defines.h>
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -22,6 +23,19 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+/// Outcome of `CacheBase::getOrSetWithOutcome`, decided under the cache lock together with the
+/// returned value so callers can classify hits/misses without a follow-up `contains()` race.
+enum class CacheGetOrSetOutcome : uint8_t
+{
+    /// Value was resident when returned (this caller did not run `load_func`).
+    Hit,
+    /// This caller ran `load_func` and inserted the value into the cache.
+    MissInserted,
+    /// Value was produced (by this caller or a stampede peer) but is not resident — e.g. a concurrent
+    /// `clear()` discarded the insert token. The returned `MappedPtr` is still valid for the caller.
+    MissNotResident,
+};
 
 /// Thread-safe cache that evicts entries using special cache policy
 /// (default policy evicts entries which are not used for a long time).
@@ -156,9 +170,9 @@ public:
     /// Exceptions occurring in load_func will be propagated to the caller. Another thread from the
     /// set of concurrent threads will then try to call its load_func etc.
     ///
-    /// Returns std::pair of the cached value and a bool indicating whether the value was produced during this call.
+    /// Returns the value together with an outcome that is atomic with residency (see CacheGetOrSetOutcome).
     template <typename LoadFunc>
-    std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
+    std::pair<MappedPtr, CacheGetOrSetOutcome> getOrSetWithOutcome(const Key & key, LoadFunc && load_func)
     {
         InsertTokenHolder token_holder;
         {
@@ -167,7 +181,7 @@ public:
             if (val)
             {
                 ++hits;
-                return std::make_pair(val, false);
+                return std::make_pair(val, CacheGetOrSetOutcome::Hit);
             }
 
             auto & token = insert_tokens[key];
@@ -186,8 +200,18 @@ public:
         if (token->value)
         {
             /// Another thread already produced the value while we waited for token->mutex.
-            ++hits;
-            return std::make_pair(token->value, false);
+            /// If a concurrent clear() discarded that insert, the value is not resident —
+            /// count a miss (same class of outcome as the producer when insertion is skipped).
+            {
+                std::lock_guard cache_lock(mutex);
+                if (auto cached = cache_policy->get(key))
+                {
+                    ++hits;
+                    return std::make_pair(std::move(cached), CacheGetOrSetOutcome::Hit);
+                }
+            }
+            ++misses;
+            return std::make_pair(token->value, CacheGetOrSetOutcome::MissNotResident);
         }
 
         ++misses;
@@ -197,18 +221,28 @@ public:
 
         /// Insert the new value only if the token is still in present in insert_tokens.
         /// (The token may be absent because of a concurrent clear() call).
-        bool result = false;
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
             cache_policy->set(key, token->value);
-            result = true;
+            if (!token->cleaned_up)
+                token_holder.cleanup(token_lock, cache_lock);
+            return std::make_pair(token->value, CacheGetOrSetOutcome::MissInserted);
         }
 
         if (!token->cleaned_up)
             token_holder.cleanup(token_lock, cache_lock);
 
-        return std::make_pair(token->value, result);
+        return std::make_pair(token->value, CacheGetOrSetOutcome::MissNotResident);
+    }
+
+    /// Same as getOrSetWithOutcome, but the bool is true only when this call inserted the value
+    /// (`CacheGetOrSetOutcome::MissInserted`). Prefer getOrSetWithOutcome when classifying hits/misses.
+    template <typename LoadFunc>
+    std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
+    {
+        auto [value, outcome] = getOrSetWithOutcome(key, std::forward<LoadFunc>(load_func));
+        return std::make_pair(std::move(value), outcome == CacheGetOrSetOutcome::MissInserted);
     }
 
     void getStats(size_t & out_hits, size_t & out_misses) const
@@ -216,6 +250,17 @@ public:
         std::lock_guard lock(mutex);
         out_hits = hits;
         out_misses = misses;
+    }
+
+    /// Number of concurrent getOrSet callers holding the insert token for `key`, or 0 if none.
+    /// Useful for tests that wait until a second thread has joined an in-flight load.
+    size_t getInsertTokenRefcount(const Key & key) const
+    {
+        std::lock_guard lock(mutex);
+        auto it = insert_tokens.find(key);
+        if (it == insert_tokens.end())
+            return 0;
+        return it->second->refcount;
     }
 
     std::vector<KeyMapped> dump() const

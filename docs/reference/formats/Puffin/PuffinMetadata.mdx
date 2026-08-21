@@ -1,6 +1,10 @@
 ---
 description: 'Documentation for the PuffinMetadata format'
+input_format: true
+output_format: false
 keywords: ['PuffinMetadata']
+sidebar_label: 'PuffinMetadata'
+sidebar_position: 2
 slug: /interfaces/formats/PuffinMetadata
 title: 'PuffinMetadata'
 doc_type: 'reference'
@@ -9,9 +13,7 @@ doc_type: 'reference'
 ## Description {#description}
 
 Special input format for reading [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) file footer metadata.
-It outputs one row per blob entry from the footer `BlobMetadata` list.
-
-`deletion-vector-v1` is the only supported blob type: a file containing any other blob type (for example `apache-datasketches-theta-v1`) is rejected.
+It outputs one row per blob entry from the footer `BlobMetadata` list, including non-deletion-vector types (for example `apache-datasketches-theta-v1`). Full deletion-vector property validation applies only to `deletion-vector-v1` entries.
 
 Fixed output columns:
 - `blob_type` (`String`) - blob type, for example `deletion-vector-v1`
