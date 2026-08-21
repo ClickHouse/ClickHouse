@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Common/Exception.h>
 
 #include <memory>
 #include <vector>
@@ -19,7 +20,7 @@ using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 /// Rejects sets that worker tasks cannot receive (currently: sets backed by a `GLOBAL IN` /
 /// `GLOBAL JOIN` external table; a task has no way to carry a temporary table). Runs before
 /// the optimization passes, so no such set is built for a query that is rejected.
-void validateSetsForDistributedPlan(QueryPlan::Node & root);
+std::optional<PreformattedMessage> validateSetsForDistributedPlan(QueryPlan::Node & root);
 
 /// Detaches the IN-subquery sets from the delayed set steps and removes those steps from the
 /// plan, so the fragments never carry them; the caller re-adds the sets to the initiator plan.

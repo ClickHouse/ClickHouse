@@ -34,7 +34,10 @@ String describeSet(const FutureSetFromSubquery & future_set)
 
 }
 
-void validateSetsForDistributedPlan(QueryPlan::Node & root)
+std::optional<FutureSetFromSubqueryPtr> findOffendingSetsForDistributedPlan(QueryPlan::Node & root);
+
+// find offending Sets for Distributed plan
+std::optional<FutureSetFromSubqueryPtr> findOffendingSetsForDistributedPlan(QueryPlan::Node & root)
 {
     std::vector<QueryPlan::Node *> stack;
     stack.push_back(&root);
@@ -50,9 +53,7 @@ void validateSetsForDistributedPlan(QueryPlan::Node & root)
             for (const auto & future_set : delayed->getSets())
             {
                 if (future_set && future_set->hasExternalTable())
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "make_distributed_plan does not support sets backed by an external table "
-                        "(`GLOBAL IN` / `GLOBAL JOIN`): IN-subquery {}", describeSet(*future_set));
+                   return future_set;
             }
         }
 
@@ -63,6 +64,49 @@ void validateSetsForDistributedPlan(QueryPlan::Node & root)
             if (child_plan && child_plan->getRootNode())
                 stack.push_back(child_plan->getRootNode());
     }
+
+    return std::nullopt;
+}
+
+std::optional<PreformattedMessage> validateSetsForDistributedPlan(QueryPlan::Node & root)
+{
+    auto maybe_offending_set = findOffendingSetsForDistributedPlan(root);
+    if (!maybe_offending_set)
+        return std::nullopt;
+
+    auto &future_set = *maybe_offending_set;
+    if (!future_set)
+        return std::nullopt;
+
+    return PreformattedMessage::create("make_distributed_plan does not support sets backed by an external table (`GLOBAL IN` / `GLOBAL JOIN`): IN-subquery {}", describeSet(*future_set));
+
+    // std::vector<QueryPlan::Node *> stack;
+    // stack.push_back(&root);
+    // while (!stack.empty())
+    // {
+    //     auto * node = stack.back();
+    //     stack.pop_back();
+    //     if (!node || !node->step)
+    //         continue;
+    //
+    //     if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
+    //     {
+    //         for (const auto & future_set : delayed->getSets())
+    //         {
+    //             if (future_set && future_set->hasExternalTable())
+    //                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+    //                     "make_distributed_plan does not support sets backed by an external table "
+    //                     "(`GLOBAL IN` / `GLOBAL JOIN`): IN-subquery {}", describeSet(*future_set));
+    //         }
+    //     }
+    //
+    //     for (auto * child : node->children)
+    //         stack.push_back(child);
+    //
+    //     for (auto * child_plan : node->step->getChildPlans())
+    //         if (child_plan && child_plan->getRootNode())
+    //             stack.push_back(child_plan->getRootNode());
+    // }
 }
 
 PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
@@ -135,7 +179,10 @@ void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPt
 
     QueryPlanOptimizationSettings optimization_settings(context);
     source_plan.optimize(optimization_settings);
-    source_plan.convertToDistributed(optimization_settings);
+    if (source_plan.supportsDistributed(optimization_settings))
+    {
+        source_plan.convertToDistributed(optimization_settings);
+    }
 }
 
 }

@@ -16,7 +16,9 @@
 #include <optional>
 #include <unordered_map>
 #include <vector>
+
 #include <IO/WriteBufferFromString.h>
+#include "Optimizations/QueryPlanOptimizationSettings.h"
 
 namespace DB
 {
@@ -145,6 +147,11 @@ public:
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
 
+    bool supportsDistributed(const QueryPlanOptimizationSettings & optimization_settings)
+    {
+        return optimization_settings.make_distributed_plan && !fallback_distributed_to_local;
+    }
+
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings,
@@ -256,6 +263,9 @@ private:
     /// Cached serialized representation
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
+
+
+    bool fallback_distributed_to_local = false;
 };
 
 /// This is a structure which contains a query plan and a list of sets.
