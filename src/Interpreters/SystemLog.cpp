@@ -522,17 +522,27 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
     }
     else
     {
-        #define GET_MAP_VALUES(log_type, member, descr) \
-            { getLowerCaseAndRemoveUnderscores(#member), (member).get() }, \
-            { getLowerCaseAndRemoveUnderscores((member).get() ? (member)->getTableID().getFullTableName() : "system."#member), (member).get() },
+        std::unordered_map<String, ISystemLog *> logs_map;
 
-        std::unordered_map<String, ISystemLog *> logs_map
+        /// Several logs can be exposed under the same public table name: `system.metric_log` is
+        /// backed by `metric_log`, `transposed_metric_log` or `bucketed_metric_log` depending on
+        /// the configured `schema_type`, and only one of them is instantiated. The name must
+        /// resolve to the instantiated log, so an empty slot never replaces a live one.
+        auto add_log_name = [&](const String & name, ISystemLog * log)
         {
-            LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
-            #if CLICKHOUSE_CLOUD
-                LIST_OF_CLOUD_SYSTEM_LOGS(GET_MAP_VALUES)
-            #endif
+            auto [it, inserted] = logs_map.emplace(name, log);
+            if (!inserted && it->second == nullptr)
+                it->second = log;
         };
+
+        #define GET_MAP_VALUES(log_type, member, descr) \
+            add_log_name(getLowerCaseAndRemoveUnderscores(#member), (member).get()); \
+            add_log_name(getLowerCaseAndRemoveUnderscores((member).get() ? (member)->getTableID().getFullTableName() : "system."#member), (member).get());
+
+        LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
+        #if CLICKHOUSE_CLOUD
+            LIST_OF_CLOUD_SYSTEM_LOGS(GET_MAP_VALUES)
+        #endif
         #undef GET_MAP_VALUES
 
         for (const auto & name : names)
@@ -1120,7 +1130,22 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
     /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
     /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
-    if (!flush_policy->shouldSkipAliasColumns())
+    if (flush_policy->shouldSkipAliasColumns())
+    {
+        /// Some logs keep their user-facing interface only in the alias columns
+        /// (the `bucketed` schema of `system.metric_log` stores everything in a single Map
+        /// column and exposes every metric as an alias). Silently dropping the aliases would
+        /// silently break every query against such a table, so reject the combination instead.
+        if constexpr (requires { LogElement::alias_columns_are_required; })
+            if (LogElement::alias_columns_are_required)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The table {} cannot be created without alias columns, but they are disabled "
+                    "(the storage does not support them, or "
+                    "`default_system_log_flush_policy.skip_alias_columns` is set in the configuration). "
+                    "Use another schema of this table",
+                    table_id.getFullTableName());
+    }
+    else
         ordinary_columns.setAliases(alias_columns);
 
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));

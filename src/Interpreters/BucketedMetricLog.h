@@ -29,6 +29,11 @@ struct BucketedMetricLogElement
     Array histogram_count;
     Array histogram_sum;
 
+    /// The whole per-metric interface of this schema (`ProfileEvent_*` / `CurrentMetric_*`)
+    /// consists of ALIAS columns over the `metrics` Map, so the table is unusable if
+    /// alias columns are skipped (see `ISystemLogFlushPolicy::shouldSkipAliasColumns`).
+    static constexpr bool alias_columns_are_required = true;
+
     static std::string name() { return "BucketedMetricLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();

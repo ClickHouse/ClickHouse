@@ -9,9 +9,11 @@ node1 = cluster.add_instance(
     main_configs=["config/metric_log_config.xml"],
     stay_alive=True,
 )
+# The `bucketed` schema adds engine settings to the default table definition, which is only
+# used when the configuration does not specify `engine` explicitly, hence a separate config.
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["config/metric_log_config.xml"],
+    main_configs=["config/metric_log_bucketed_config.xml"],
     stay_alive=True,
 )
 node3 = cluster.add_instance(
@@ -27,7 +29,17 @@ node4 = cluster.add_instance(
     stay_alive=True,
 )
 
+node5 = cluster.add_instance(
+    "node5",
+    main_configs=[
+        "config/metric_log_bucketed_config.xml",
+        "config/skip_alias_columns.xml",
+    ],
+    stay_alive=True,
+)
+
 LOG_PATH = "/etc/clickhouse-server/config.d/metric_log_config.xml"
+BUCKETED_LOG_PATH = "/etc/clickhouse-server/config.d/metric_log_bucketed_config.xml"
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -75,12 +87,14 @@ def test_bucketed_schema(start_cluster):
     assert int(node2.query("select count() from system.metric_log").strip()) > 0
     assert "ProfileEvent_Query" in node2.query("SHOW CREATE TABLE system.metric_log")
 
-    node2.replace_in_config(LOG_PATH, ">wide<", ">bucketed<")
+    node2.replace_in_config(BUCKETED_LOG_PATH, ">wide<", ">bucketed<")
 
     # bucketed mode: a single Map(Enum16(...), Int64) column with bucketed serialization and per-metric aliases
     node2.restart_clickhouse()
 
-    node2.query("SYSTEM FLUSH LOGS")
+    # The public table name must resolve to the bucketed log for named flushes as well
+    node2.query("SYSTEM FLUSH LOGS metric_log")
+    node2.query("SYSTEM FLUSH LOGS system.metric_log")
 
     create_query = node2.query("SHOW CREATE TABLE system.metric_log")
     assert "`metrics` Map(Enum16(" in create_query
@@ -98,8 +112,25 @@ def test_bucketed_schema(start_cluster):
     # the old wide table was rotated
     assert int(node2.query("select count() from system.metric_log_0").strip()) > 0
 
-    node2.replace_in_config(LOG_PATH, ">bucketed<", ">wide<")
+    node2.replace_in_config(BUCKETED_LOG_PATH, ">bucketed<", ">wide<")
     node2.restart_clickhouse()
+
+
+def test_bucketed_schema_is_rejected_without_alias_columns(start_cluster):
+    # With `default_system_log_flush_policy.skip_alias_columns` the per-metric columns of the
+    # bucketed schema cannot be created, so the server must refuse to start instead of
+    # silently exposing a table without the `ProfileEvent_*` / `CurrentMetric_*` columns.
+    node5.query("SYSTEM FLUSH LOGS")
+    assert "ProfileEvent_Query" in node5.query("SHOW CREATE TABLE system.metric_log")
+
+    node5.replace_in_config(BUCKETED_LOG_PATH, ">wide<", ">bucketed<")
+    node5.stop_clickhouse()
+    node5.start_clickhouse(expected_to_fail=True)
+
+    assert node5.contains_in_log("cannot be created without alias columns")
+
+    node5.replace_in_config(BUCKETED_LOG_PATH, ">bucketed<", ">wide<")
+    node5.start_clickhouse()
 
 
 def insert_into_transposed_metric_log(node, table_name, size):
