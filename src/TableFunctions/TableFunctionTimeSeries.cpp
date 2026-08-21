@@ -275,6 +275,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
+**Note**: A series is considered absent only when all of its selected samples are stale markers. If a series is stale on a part of a range query, it is still present at the other evaluation timestamps, so two such series which are live at disjoint timestamps and collapse to the same labelset are reported as duplicate series instead of being matched step by step. The same applies to ordinary series which have samples in disjoint parts of the queried range.
+
 **Note**: Prometheus stale markers are recognized only when the sample value column of the `TimeSeries` table is `Float64`. The stale marker is a specific `NaN` payload, and a `Float32` value column cannot preserve it: the marker is downcast to an ordinary `NaN` on insert, so on such a table stale samples are treated as regular `NaN` values by selectors and range functions.
 
 ### Operators {#operators}
@@ -353,6 +355,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+
+**Note**: A series is considered absent only when all of its selected samples are stale markers. If a series is stale on a part of a range query, it is still present at the other evaluation timestamps, so two such series which are live at disjoint timestamps and collapse to the same labelset are reported as duplicate series instead of being matched step by step. The same applies to ordinary series which have samples in disjoint parts of the queried range.
 
 **Note**: Prometheus stale markers are recognized only when the sample value column of the `TimeSeries` table is `Float64`. The stale marker is a specific `NaN` payload, and a `Float32` value column cannot preserve it: the marker is downcast to an ordinary `NaN` on insert, so on such a table stale samples are treated as regular `NaN` values by selectors and range functions.
 

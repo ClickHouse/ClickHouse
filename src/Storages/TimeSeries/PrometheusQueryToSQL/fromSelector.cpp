@@ -67,6 +67,17 @@ namespace
                 /// must not survive here either: downstream duplicate-series checks (vector matching,
                 /// `dropMetricName`) count rows, and two such rows collapsing to the same labelset would
                 /// otherwise raise a duplicate-series exception for series Prometheus does not return at all.
+                ///
+                /// A series which is stale only on a part of a range query keeps its row, because it is still
+                /// present at the other evaluation timestamps. Two such series which are live at disjoint
+                /// timestamps and collapse to the same labelset are therefore still reported as duplicates,
+                /// even though Prometheus evaluates every step independently and accepts them. This is not
+                /// specific to stale markers: two ordinary series which simply have samples in disjoint parts
+                /// of the range behave the same way, because the duplicate-labelset checks in
+                /// `applySimpleBinaryOperator`, `dropMetricName` and `applyLabelManipulationFunction` count
+                /// rows rather than per-timestamp presence. Making those checks step-aware would also require
+                /// merging the matching rows per timestamp, which changes the result of every PromQL binary
+                /// operation and is out of the scope of stale-marker handling.
                 builder.where = makeASTFunction(
                     "arrayExists",
                     makeASTLambda({"x"}, makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x"))),
