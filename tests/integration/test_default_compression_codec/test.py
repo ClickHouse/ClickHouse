@@ -531,6 +531,86 @@ def test_missing_codec_file_fails_closed_for_modern_part(start_cluster):
     node4.query("DROP TABLE no_codec_file SYNC")
 
 
+def test_full_rewrite_mutation_records_exact_codec(start_cluster):
+    # Counterpart of `test_missing_codec_file_fails_closed_for_modern_part`, which pins the
+    # column-only mutation path. The `UNKNOWN` provenance marker exists because that path hardlinks
+    # the columns it does not rewrite and so inherits their unknown codec. A full rewrite - the path
+    # a `Compact` part takes - re-encodes every column with the codec it picks, so that codec is an
+    # exact fact about the new part and has to be recorded as one. Propagating `UNKNOWN` here would
+    # leave a part that is now fully described permanently unknown, and an unknown codec makes the
+    # recompression TTL selector reconsider the part on every pass.
+    #
+    # `min_bytes_for_wide_part` is pinned high for the same reason the sibling test pins it to zero:
+    # the part format decides which mutation path runs, so it must not be left to the default.
+    node4.query(
+        """
+    CREATE TABLE unknown_codec_full_rewrite (
+        key UInt64 CODEC(ZSTD(1)),
+        data String CODEC(ZSTD(1))
+    )
+    ENGINE MergeTree ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 1000000000
+    """
+    )
+
+    node4.query("INSERT INTO unknown_codec_full_rewrite VALUES (1, 'Hello world')")
+
+    part_name = node4.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='unknown_codec_full_rewrite' AND active AND rows > 0"
+    ).strip()
+    data_path = node4.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='unknown_codec_full_rewrite'"
+    ).strip()
+
+    node4.query(f"ALTER TABLE unknown_codec_full_rewrite DETACH PART '{part_name}'")
+    node4.exec_in_container(
+        [
+            "python3",
+            "-c",
+            "import sys; open(sys.argv[1], 'w').write('UNKNOWN')",
+            f"{data_path}detached/{part_name}/default_compression_codec.txt",
+        ]
+    )
+    node4.query(f"ALTER TABLE unknown_codec_full_rewrite ATTACH PART '{part_name}'")
+
+    assert (
+        node4.query(
+            "SELECT part_type, default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='unknown_codec_full_rewrite' AND active AND rows > 0"
+        ).strip()
+        == "Compact\tUNKNOWN"
+    )
+
+    node4.query(
+        "ALTER TABLE unknown_codec_full_rewrite UPDATE data = concat(data, '!') WHERE 1",
+        settings={"mutations_sync": 2},
+    )
+
+    mutated_part_name = node4.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='unknown_codec_full_rewrite' AND active AND rows > 0"
+    ).strip()
+    recorded_codec = node4.exec_in_container(
+        ["cat", f"{data_path}{mutated_part_name}/default_compression_codec.txt"]
+    ).strip()
+    assert recorded_codec.startswith("CODEC(") and recorded_codec.endswith(")")
+
+    # The system table must agree with the file: it reports the codec without the `CODEC(...)`
+    # wrapper, and `UNKNOWN` only when the part has no authoritative codec.
+    assert (
+        node4.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='unknown_codec_full_rewrite' AND active AND rows > 0"
+        ).strip()
+        == recorded_codec.removeprefix("CODEC(").removesuffix(")")
+    )
+
+    node4.query("DETACH TABLE unknown_codec_full_rewrite")
+    node4.query("ATTACH TABLE unknown_codec_full_rewrite")
+    assert node4.query("SELECT data FROM unknown_codec_full_rewrite") == "Hello world!\n"
+
+    node4.query("DROP TABLE unknown_codec_full_rewrite SYNC")
+
+
 def test_malformed_codec_file_fails_closed_for_modern_part(start_cluster):
     # A `default_compression_codec.txt` file can be present but unparseable (corrupted or truncated,
     # for example after an interrupted detach/copy/restore). When every column has an explicit
