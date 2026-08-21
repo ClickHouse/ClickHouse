@@ -52,6 +52,8 @@ private:
     bool tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bool use_strict_pattern);
 };
 
+std::string expandRegionToAmazonPath(const std::string & region);
+
 }
 
 #endif

@@ -189,7 +189,8 @@
         {
           "group": "OSS to Cloud",
           "pages": [
-            "get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+            "get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
+            "get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {

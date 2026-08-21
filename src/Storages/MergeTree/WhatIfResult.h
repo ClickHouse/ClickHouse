@@ -26,7 +26,11 @@ struct WhatIfCandidateResult
 
     enum EmpiricalStatus { Ok, Unsupported, Disabled };
     EmpiricalStatus empirical_status = Disabled;
-    String estimate_source; /// "empirical", "statistical", "applicability_only"
+    /// Why the empirical estimate could not run, set only when empirical_status == Unsupported
+    String empirical_unsupported_reason;
+
+    enum EstimateSource { Empirical, Statistical, ApplicabilityOnly };
+    EstimateSource estimate_source = ApplicabilityOnly;
 
     UInt64 sampled_parts = 0;
     UInt64 total_parts = 0;
@@ -35,7 +39,8 @@ struct WhatIfCandidateResult
     UInt64 elapsed_us = 0;
 };
 
-/// The whole `EXPLAIN WHATIF` answer: the baseline read plus one row per candidate
+/// The whole `EXPLAIN WHATIF` answer: the baseline read plus one row per candidate.
+/// Rendered by `WhatIfResultFormatter.cpp`
 struct WhatIfResult
 {
     /// Baseline after PK + partition + existing indexes

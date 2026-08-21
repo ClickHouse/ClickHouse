@@ -19,7 +19,7 @@ namespace DB::PrometheusQueryToSQL
 {
 
 void checkArgumentTypesForSetBinaryOperator(
-    const PQT::BinaryOperator * operator_node,
+    const PrometheusQueryTree::BinaryOperator * operator_node,
     const SQLQueryPiece & left_argument,
     const SQLQueryPiece & right_argument,
     const ConverterContext & context)
@@ -59,7 +59,10 @@ void checkArgumentTypesForSetBinaryOperator(
 
 
 SQLQueryPiece applyBinaryOperatorAnd(
-    const PQT::BinaryOperator * operator_node, SQLQueryPiece && left_argument, SQLQueryPiece && right_argument, ConverterContext & context)
+    const PrometheusQueryTree::BinaryOperator * operator_node,
+    SQLQueryPiece && left_argument,
+    SQLQueryPiece && right_argument,
+    ConverterContext & context)
 {
     checkArgumentTypesForSetBinaryOperator(operator_node, left_argument, right_argument, context);
 

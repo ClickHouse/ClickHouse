@@ -46,11 +46,11 @@
     {
       "group": "集成开发",
       "pages": [
+        "zh/resources/develop-contribute/integrations/index",
         "zh/resources/develop-contribute/integrations/building-integrations",
         "zh/resources/develop-contribute/integrations/testing-your-integration",
         "zh/resources/develop-contribute/integrations/documenting-your-integration"
-      ],
-      "root": "zh/resources/develop-contribute/integrations/index"
+      ]
     },
     {
       "group": "路线图",
