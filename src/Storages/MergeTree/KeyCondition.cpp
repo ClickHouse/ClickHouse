@@ -1132,6 +1132,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
 
+    /// An inversion may only be pushed onto a node whose negation equals its two-valued complement.
+    /// `NOT NULL` is `NULL`, so absorb the inversion at an all-NULL node. That substitutes the
+    /// operand's type for the `not()` result type, so it is only valid where the value is discarded.
+    if (need_inversion && boolean_context
+        && ((node.column && node.column->onlyNull()) || node.result_type->onlyNull()))
+        return cloneDAGWithInversionPushDown(node, inverted_dag, inputs_mapping, context, false, boolean_context);
+
     switch (node.type)
     {
         case ActionsDAG::ActionType::INPUT:
@@ -1405,10 +1412,16 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
             && action.node->children.size() >= 2
             && space_filling_curve_name_to_type.contains(action.node->function_base->getName()))
         {
+            /// A curve is only usable here through its key column position, so a curve that is
+            /// an intermediate value of the key expression rather than a key column is skipped.
+            auto it = key_columns.find(action.node->result_name);
+            if (it == key_columns.end())
+                continue;
+
             SpaceFillingCurveDescription curve;
             curve.function_name = action.node->function_base->getName();
             curve.type = space_filling_curve_name_to_type.at(curve.function_name);
-            curve.key_column_pos = key_columns.at(action.node->result_name);
+            curve.key_column_pos = it->second;
             for (const auto & child : action.node->children)
             {
                 /// All arguments should be regular input columns.
@@ -1454,7 +1467,8 @@ KeyCondition::KeyCondition(
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
-    bool skip_analysis_)
+    bool skip_analysis_,
+    bool require_ready_sets_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
@@ -1479,7 +1493,10 @@ KeyCondition::KeyCondition(
         return;
     }
 
-    auto info = BuildInfo {.key_expr = key_expr_, .key_subexpr_names = getAllSubexpressionNames(*key_expr_)};
+    auto info = BuildInfo {
+        .key_expr = key_expr_,
+        .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
+        .require_ready_sets = require_ready_sets_};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
         getAllSpaceFillingCurves(info);
@@ -2676,6 +2693,11 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
     auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
+        return false;
+
+    /// `buildOrderedSetInplace` below executes the subquery and consumes its plan. `get()` is non-null
+    /// only for an already-built set, same check as `tryRewriteInTruthyCondition` above.
+    if (info.require_ready_sets && !future_set->get())
         return false;
 
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
