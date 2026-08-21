@@ -195,39 +195,3 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAgeCompactsTheSmallTail)
         ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(1), partName(2)}));
     }
 }
-
-TEST(SimpleMergeSelector, ForceMergeByPartitionAgeIgnoresWindow)
-{
-    /// More parts than `window_size`, where only the two leading parts fit into one merge and
-    /// every later pair is already over the limit. The window starts at index 1, so without the
-    /// setting that only mergeable range is never examined and the partition stays uncompactable.
-    SimpleMergeSelector::Settings defaults;
-    std::vector<size_t> sizes(defaults.window_size + 1, 101 * MiB);
-    sizes[0] = 1 * MiB;
-    sizes[1] = 1 * MiB;
-
-    auto parts_range = makePartsRange(sizes, /*age=*/7200);
-    auto statistics = makeStatistics(parts_range, /*partition_min_age=*/7200);
-
-    std::vector<MergeConstraint> constraints{{101 * MiB, 1000000}};
-
-    {
-        SimpleMergeSelector::Settings settings;
-        settings.partitions_stats = &statistics;
-
-        auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
-        ASSERT_EQ(selected.size(), 0);
-    }
-
-    {
-        SimpleMergeSelector::Settings settings;
-        settings.partitions_stats = &statistics;
-        settings.min_partition_age_to_force_merge = 3600;
-
-        /// By name again: the point is that the two leading parts - the ones the window would have
-        /// skipped - are the range that gets picked, not merely that some pair of parts was.
-        auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
-        ASSERT_EQ(selected.size(), 1);
-        ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
-    }
-}

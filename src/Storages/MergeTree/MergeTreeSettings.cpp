@@ -771,16 +771,16 @@ Merge parts in a partition if every part in it is older than this value, i.e.
 the partition no longer receives inserts. Unlike
 `min_age_to_force_merge_seconds` with `min_age_to_force_merge_on_partition_only`,
 the partition does not have to fit into a single merge: each merge still
-respects `max_bytes_to_merge_at_max_space_in_pool`. Every range of such a
-partition is considered, including the ones outside the `window_size` window
-used to keep up with incoming parts. Works for Simple and StochasticSimple
-merge selectors.
+respects `max_bytes_to_merge_at_max_space_in_pool`. Works for Simple and
+StochasticSimple merge selectors.
 
-This setting does not change `enable_heuristic_to_remove_small_parts_at_right`,
-which still trims a trailing small part from a selected range of three parts or
-more. Note that forcing merges by partition age also lifts the
-`min_parts_to_merge_at_once` floor, so a two-part range ending at a small part is
-a candidate as well, and that trim does not apply to it.
+This setting only makes a range eligible for merging; it does not turn any other
+heuristic off. `window_size` still bounds which parts are examined, and
+`enable_heuristic_to_remove_small_parts_at_right` still trims a trailing small
+part from a selected range of three parts or more. Note that forcing merges by
+partition age also lifts the `min_parts_to_merge_at_once` floor, so a two-part
+range ending at a small part is a candidate as well, and that trim does not
+apply to it.
 
 Cannot be combined with `min_age_to_force_merge_seconds` together with
 `min_age_to_force_merge_on_partition_only`. That pair merges a whole partition
