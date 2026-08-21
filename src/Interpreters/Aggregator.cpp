@@ -112,19 +112,18 @@ void initDataVariantsWithSizeHint(
     const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
     if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
     {
-        /// An engaged run always starts single-level (a two-level table cannot freeze),
-        /// pre-sized to at most what it can hold before the key-count freeze. Gating this on
-        /// the hint's median reaching the key threshold would leave a hole: the generic
-        /// initialization below goes two-level once the median reaches
-        /// `group_by_two_level_threshold`, so whenever that threshold is set below the freeze
-        /// threshold, a median between the two (recorded by a byte-triggered freeze or by a
-        /// run that never froze) would initialize the next run two-level and make it
-        /// unfreezable, alternating the query between the adaptive and baseline paths. A
-        /// table predicted to stay small initializes at its predicted size; if the prediction
-        /// holds, the run gives up on freezing through the ordinary learning rule.
+        /// An engaged run starts single-level at the default size, ignoring the hint. Two-level
+        /// is ruled out because a two-level table cannot freeze: the generic initialization
+        /// below goes two-level once the sizes reach `group_by_two_level_threshold`, and sizes
+        /// recorded by a run that ended large would make the next run unfreezable. The hint's
+        /// size is ignored because the freeze bounds make it worthless or harmful: an engaged
+        /// table stays small enough that the rehash chain from the default size is trivial,
+        /// while a pre-allocation at or above the byte bound would count as the table's
+        /// footprint and freeze it at its first between-blocks check, after one block of keys.
+        /// Ignoring the size keeps a warm run's freeze point identical to a cold run's.
         if (params.enable_adaptive_aggregator)
         {
-            result.init(method_chosen, std::min<size_t>(hint->median_size, 2 * params.adaptive_aggregator_freeze_threshold));
+            result.init(method_chosen);
         }
         else
         {

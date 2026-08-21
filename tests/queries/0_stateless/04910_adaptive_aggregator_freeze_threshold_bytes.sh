@@ -10,9 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # first, while the freeze counter is still zero, so every assertion can test the counter's
 # absolute value instead of a delta. Everything runs in one clickhouse-local process, so the
 # counters in `system.events` belong to these queries alone. The hash-table statistics are
-# disabled to keep the cells independent: a size hint recorded by an earlier cell would
-# pre-size a later cell's table past the tiny byte bound at birth, and the freeze under test
-# should come from the table growing across blocks.
+# disabled so every cell's behavior is a pure function of its own settings: the statistics
+# are process-global, and a verdict or size recorded by one cell could otherwise reach the
+# admission or initialization of a later one.
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET enable_adaptive_aggregator = 1;
