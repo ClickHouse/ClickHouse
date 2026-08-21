@@ -58,6 +58,10 @@ asORCInputStream(ReadBuffer & in, const FormatSettings & settings, bool use_pref
 // Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
 std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in, std::atomic<int> & is_cancelled);
 
+/// Use instead of orc::createReader wherever the bytes are file-controlled: reports a feature the
+/// bundled reader does not implement as NOT_IMPLEMENTED rather than letting a std::logic_error escape.
+std::unique_ptr<orc::Reader> createORCReader(std::unique_ptr<orc::InputStream> input_stream, const orc::ReaderOptions & options);
+
 std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings);
 
