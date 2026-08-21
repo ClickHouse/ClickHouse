@@ -779,6 +779,13 @@ merge selectors.
 To also merge the small parts left at the right of a selected range, turn
 `enable_heuristic_to_remove_small_parts_at_right` off explicitly.
 
+Cannot be combined with `min_age_to_force_merge_seconds` together with
+`min_age_to_force_merge_on_partition_only`. That pair merges a whole partition
+at once, and only such a merge is marked final, which is what lets a
+`ReplacingMergeTree` run `CLEANUP`; forcing regular merges by partition age
+would pre-empt it. Use the pair for partitions that fit into a single merge and
+this setting for the ones that do not.
+
 Possible values:
 - Positive integer.
 )", 0) \
@@ -2658,6 +2665,26 @@ void MergeTreeSettingsImpl::sanityCheck(
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
             (*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition].value,
             background_pool_tasks);
+    }
+
+    /// Both force merges of partitions that stopped receiving inserts, but through different paths.
+    /// `min_age_to_force_merge_on_partition_only` routes such a partition to the whole-partition
+    /// merge, which is the only one marked final - and so the only one that can run a
+    /// ReplacingMergeTree CLEANUP. `min_partition_age_to_force_merge_seconds` makes the regular
+    /// selector pick those partitions first, which would pre-empt that path and silently stop
+    /// cleanup from ever running. Refuse the combination instead of quietly disabling one of them.
+    if ((*this)[MergeTreeSetting::min_partition_age_to_force_merge_seconds]
+        && (*this)[MergeTreeSetting::min_age_to_force_merge_on_partition_only]
+        && (*this)[MergeTreeSetting::min_age_to_force_merge_seconds])
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'min_partition_age_to_force_merge_seconds' cannot be combined with "
+            "'min_age_to_force_merge_seconds' + 'min_age_to_force_merge_on_partition_only': the latter merges a "
+            "whole partition at once, and only that merge is marked final, which is what enables "
+            "ReplacingMergeTree cleanup. Use one of the two mechanisms: "
+            "'min_age_to_force_merge_on_partition_only' for partitions that fit into a single merge, "
+            "'min_partition_age_to_force_merge_seconds' for partitions that do not.");
     }
 
     // Zero index_granularity is nonsensical.
