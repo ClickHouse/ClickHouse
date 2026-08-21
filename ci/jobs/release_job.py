@@ -496,8 +496,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    # `not args.skip_docker`: the changelog is generated in the style-test docker image, so skip-docker (recovery, or the docker-less patch dry-run check) skips its generation too.
-    if ok and args.release_type == "patch" and changelog_absent and not args.skip_docker:
+    if ok and args.release_type == "patch" and changelog_absent:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
         uid = os.getuid()
@@ -606,11 +605,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if (
-        args.release_type == "patch"
-        and not args.skip_repo
-        and not args.skip_docker
-    ):
+    if args.release_type == "patch" and not args.skip_repo:
         # Restore the working tree after the changelog/version-bump steps, which
         # dirty it. A no-op on recovery / out-of-order runs (they skip the
         # changelog steps); the always-run "Checkout Back" below is the safety net
