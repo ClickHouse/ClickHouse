@@ -235,7 +235,7 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 
 
 # `docker buildx build` resolves base/SBOM-scanner images such as
-# `docker/buildkit-syft-scanner` (pulled by `--sbom=true`) from docker.io, which
+# `docker/buildkit-syft-scanner` (pulled for the SBOM attestation) from docker.io, which
 # intermittently returns transient HTTP errors while resolving and while pushing
 # image layers, and the build itself hits `apt-get` package mirrors that occasionally
 # refuse connections. Retry the buildx commands only on genuine
@@ -451,9 +451,11 @@ def buildx_args(
     # Attestations survive only in pushed manifests (the local docker exporter
     # drops them), while the SBOM scan of a multi-GB image OOMs smaller runners,
     # so generate them only for pushed images.
+    # The scanner is pinned because the floating stable-1 tag can silently move
+    # to a version whose scan of a multi-GB image exceeds the runner's memory.
     if attest:
         args.append("--provenance=true")
-        args.append("--sbom=true")
+        args.append("--attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11")
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
     elif urls:
