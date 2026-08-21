@@ -304,23 +304,11 @@ ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemo
     return result;
 }
 
-std::shared_ptr<ExecutingGraph::PendingRemovalGroup> ExecutingGraph::findGroupReadyForRemoval()
-{
-    for (const auto & [_, group] : removed_processors)
-        if (group->not_finished.load() == 0)
-            return group;
-
-    return nullptr;
-}
-
 ExecutingGraph::RemoveGroupResult ExecutingGraph::removeReadyGroups(Processors & delayed_destruction)
 {
-    RemoveGroupResult result;
-
     std::unique_lock lock(nodes_mutex);
 
-    /// Retire everything that is removable right now: a group is only looked at again when some node
-    /// is prepared, so leaving a ready group behind may keep its processors in the pipeline forever.
+    RemoveGroupResult result;
     while (auto group = findGroupReadyForRemoval())
     {
         auto group_result = removePendingGroup(*group, delayed_destruction);
@@ -329,6 +317,15 @@ ExecutingGraph::RemoveGroupResult ExecutingGraph::removeReadyGroups(Processors &
     }
 
     return result;
+}
+
+std::shared_ptr<ExecutingGraph::PendingRemovalGroup> ExecutingGraph::findGroupReadyForRemoval()
+{
+    for (const auto & [_, group] : removed_processors)
+        if (group->not_finished.load() == 0)
+            return group;
+
+    return nullptr;
 }
 
 void ExecutingGraph::accountFinishedProcessorInGroup(const ProcessorPtr & processor)
@@ -548,10 +545,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
 
                 if (update_status != UpdateNodeStatus::Done)
                 {
-                    /// `updatePipeline` has already queued its removals, but this thread is leaving the graph
-                    /// for good and nobody is going to prepare a node again, so the queue would never be
-                    /// looked at. Retire what is already removable, otherwise those processors stay in the
-                    /// pipeline until the whole query is destroyed.
+                    /// updatePipeline has already queued its removals, but this thread is leaving the graph forever.
                     removeReadyGroups(delayed_destruction);
                     return update_status;
                 }
