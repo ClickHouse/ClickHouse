@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 
+#include <base/unit.h>
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -12,8 +14,6 @@ using namespace DB;
 
 namespace
 {
-
-constexpr size_t MiB = 1024 * 1024;
 
 PartsRange makePartsRange(const std::vector<size_t> & sizes, time_t age)
 {
