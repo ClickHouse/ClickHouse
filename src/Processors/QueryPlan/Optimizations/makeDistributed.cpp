@@ -835,10 +835,9 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
     node->children = std::move(node->children[0]->children);
 }
 
-/// True if `column_name` reaches the step's output with its value unchanged. Two shapes qualify: `dag`
-/// does not mention the column at all, in which case `ActionsDAG::updateHeader` copies the input column
-/// straight into the output header, or `dag` outputs the input column of the same name, only possibly
-/// aliased. Such a column keeps its value, so a merge by it stays sort-preserving.
+/// True if `column_name` reaches the step's output with its value unchanged, so a merge by it stays
+/// sort-preserving. A column the `dag` does not mention is preserved: the step forwards it untouched.
+/// A column the `dag` does mention is preserved only if it is the input column of the same name.
 static bool isSortColumnPreserved(const ActionsDAG & dag, const String & column_name)
 {
     const auto * node = dag.tryFindInOutputs(column_name);
@@ -1032,6 +1031,11 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
                     /// depend on the whole block stream; below a gather they would run per shard and
                     /// produce different values. Keep such a step above the gather.
                     if (dag && dagContainsNonDeterministicFunction(*dag))
+                        can_move_gather_up = false;
+
+                    /// A stateful function's output depends on the rows that precede it in the same
+                    /// stream, so below the gather it would see one bucket instead of the whole input.
+                    if (can_move_gather_up && dag && dag->hasStatefulFunctions())
                         can_move_gather_up = false;
 
                     /// Moving the sorted GatherExchange above the step is only valid if every sort column

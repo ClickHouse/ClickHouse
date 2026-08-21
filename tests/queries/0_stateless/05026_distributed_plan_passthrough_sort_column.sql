@@ -27,6 +27,7 @@ CREATE TABLE t_passthrough_sort
 ENGINE = MergeTree ORDER BY (a, v) SETTINGS index_granularity = 256, allow_nullable_key = 1;
 
 -- Two parts so the fragment below the gather reads with more than one stream.
+SYSTEM STOP MERGES t_passthrough_sort;
 INSERT INTO t_passthrough_sort SELECT number % 10, if(number % 13 = 0, NULL, number % 10),
     toString(number % 7), if(number % 11 = 0, NULL, toString(number % 7)), [number % 3], number
 FROM numbers(4000);
@@ -126,18 +127,23 @@ SETTINGS make_distributed_plan = 0;
 -- The move-up is only correct if the pass-through column reaches the step's output unchanged. If it did
 -- not, `GatherReceive` would merge by a sort description that no longer matches the data and the inner
 -- window would be computed over the wrong row sequence, so its values would diverge from the
--- non-distributed plan. Comparing every window value against the local plan is what checks that.
+-- non-distributed plan. Both sides run the shape that reaches the branch, so the outer constant-keyed
+-- window is kept and every inner window value stays live in the hash.
 SELECT 'window values match local', d.h = l.h FROM
 (
-    SELECT sum(cityHash64(a, v, s)) AS h FROM
+    SELECT sum(cityHash64(a, v, s, r)) AS h FROM
     (
-        SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort
+        SELECT a, v, s, uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
+            OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
+        FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort)
     )
 ) AS d,
 (
-    SELECT sum(cityHash64(a, v, s)) AS h FROM
+    SELECT sum(cityHash64(a, v, s, r)) AS h FROM
     (
-        SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort
+        SELECT a, v, s, uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
+            OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
+        FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort)
     ) SETTINGS make_distributed_plan = 0
 ) AS l;
 
