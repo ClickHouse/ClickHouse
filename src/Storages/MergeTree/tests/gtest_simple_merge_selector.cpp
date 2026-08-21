@@ -163,8 +163,10 @@ TEST(SimpleMergeSelector, NoForceMergeWhilePartitionReceivesInserts)
     ASSERT_EQ(selected.size(), 0);
 }
 
-TEST(SimpleMergeSelector, ForceMergeByPartitionAgeLeavesRightTailHeuristicAlone)
+TEST(SimpleMergeSelector, ForceMergeByPartitionAgeCompactsTheSmallTail)
 {
+    /// What the setting is for: an idle partition gets its trailing small part merged away, which the
+    /// base heuristic refuses as an unbalanced merge.
     auto parts_range = makePartsRange({10 * MiB, 10 * MiB, 1024}, /*age=*/7200);
     auto statistics = makeStatistics(parts_range, /*partition_min_age=*/7200);
 
@@ -173,27 +175,24 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAgeLeavesRightTailHeuristicAlone)
     {
         SimpleMergeSelector::Settings settings;
         settings.partitions_stats = &statistics;
-        settings.min_partition_age_to_force_merge = 3600;
 
-        /// The right-tail heuristic still drops the trailing small part: forcing merges by
-        /// partition age does not silently turn another heuristic off. Assert the parts by name -
-        /// a length of 2 would also match merging the tail as [10 * MiB, 1024], the regression
-        /// this test exists to catch.
         auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
-        ASSERT_EQ(selected.size(), 1);
-        ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
+        ASSERT_EQ(selected.size(), 0);
     }
 
     {
         SimpleMergeSelector::Settings settings;
         settings.partitions_stats = &statistics;
         settings.min_partition_age_to_force_merge = 3600;
-        settings.enable_heuristic_to_remove_small_parts_at_right = false;
 
-        /// Merging the tail in too is opted into explicitly.
+        /// The tail ends up in the merge, and not because this setting disables the right-tail
+        /// heuristic - it does not. That heuristic only trims a range of three parts or more, and
+        /// forcing by partition age also lifts the `min_parts_to_merge_at_once` floor (see `allow`),
+        /// so the cheapest candidate here is the two-part range ending at the tail, which the trim
+        /// never applies to.
         auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
         ASSERT_EQ(selected.size(), 1);
-        ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
+        ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(1), partName(2)}));
     }
 }
 
