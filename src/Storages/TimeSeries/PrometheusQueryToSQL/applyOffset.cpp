@@ -63,8 +63,11 @@ namespace
                     /// timestamp + INTERVAL x MILLISECONDS
                     chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
                     /// Round up the scale to next number divisible by 3.
-                    UInt32 scale = std::max<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
-                    Decimal64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale);
+                    UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
+                    /// The interval functions do not accept Decimal arguments, so the literal must be
+                    /// the integer number of units of 10^-scale seconds. The conversion is exact because
+                    /// scale >= timestamp_scale.
+                    Int64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
 
                     static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
                     std::string_view to_interval_function = to_interval_functions[scale / 3];

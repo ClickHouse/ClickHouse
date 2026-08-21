@@ -883,6 +883,7 @@
             "reference/formats/Parquet/ParquetMetadata"
           ]
         },
+        "reference/formats/PNG",
         "reference/formats/PostgreSQLWire",
         {
           "expanded": false,
@@ -910,6 +911,14 @@
             "reference/formats/Protobuf/Protobuf",
             "reference/formats/Protobuf/ProtobufList",
             "reference/formats/Protobuf/ProtobufSingle"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "Puffin",
+          "pages": [
+            "reference/formats/Puffin/Puffin",
+            "reference/formats/Puffin/PuffinMetadata"
           ]
         },
         "reference/formats/RawBLOB",
@@ -950,6 +959,15 @@
         "reference/formats/Values",
         "reference/formats/Vertical",
         "reference/formats/XML"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
+      "group": "Interfaces",
+      "pages": [
+        "reference/interfaces/specs/NativeProtocol",
+        "reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1019,11 +1037,15 @@
         "reference/system-tables/detached_parts",
         "reference/system-tables/detached_tables",
         "reference/system-tables/dictionaries",
+        "reference/system-tables/dictionary_layouts",
+        "reference/system-tables/dictionary_sources",
         "reference/system-tables/dimensional_metrics",
         "reference/system-tables/disks",
+        "reference/system-tables/disk_types",
         "reference/system-tables/distributed_ddl_queue",
         "reference/system-tables/distribution_queue",
         "reference/system-tables/dns_cache",
+        "reference/system-tables/documentation",
         "reference/system-tables/dropped_tables",
         "reference/system-tables/dropped_tables_parts",
         "reference/system-tables/enabled_roles",
@@ -1043,6 +1065,7 @@
         "reference/system-tables/histogram_metric_log",
         "reference/system-tables/histogram_metrics",
         "reference/system-tables/hypothetical_indexes",
+        "reference/system-tables/iceberg_files",
         "reference/system-tables/iceberg_history",
         "reference/system-tables/iceberg_metadata_log",
         "reference/system-tables/information_schema",
@@ -1051,6 +1074,9 @@
         "reference/system-tables/jemalloc_stats",
         "reference/system-tables/jemalloc_profile_text",
         "reference/system-tables/kafka_consumers",
+        "reference/system-tables/keeper_changelogs",
+        "reference/system-tables/keeper_cluster",
+        "reference/system-tables/keeper_snapshots",
         "reference/system-tables/keeper_storage",
         "reference/system-tables/keywords",
         "reference/system-tables/licenses",

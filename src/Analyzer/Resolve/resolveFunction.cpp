@@ -929,11 +929,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         !scope.context->getSettingsRef()[Setting::transform_null_in] &&
         !scope.in_prewhere)
     {
-        if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
-
         const bool is_function_not_in = function_name == "notIn";
 
         auto & function_in_arguments_nodes = function_node_ptr->getArguments().getNodes();
@@ -966,6 +961,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (in_second_argument->as<QueryNode>())
             {
+                /// The rewrite below produces a correlated subquery, so it requires the setting.
+                /// Checked here (not at the gate) so constant/tuple `IN` is never rejected.
+                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+
                 /// An array subquery on the right of IN is the set of its elements (see
                 /// `flattenArraySubqueryOnRightOfIn`). Flatten it with arrayJoin before building the
                 /// EXISTS rewrite, so the comparison below is `x = <element>` rather than `x = <array>`.
@@ -1392,6 +1394,41 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     else if (mask_secret_constants(secret_node))
                         arguments_projection_names[n] = "[HIDDEN]";
                 });
+        }
+    }
+
+    /** Bind an unqualified dictionary name to the current database.
+      *
+      * The dictionary name of `dictGet` and its variations is resolved against the current database of
+      * the server that evaluates the function. A shard of a `Distributed` table evaluates it in a session
+      * whose current database comes from the cluster configuration - `default` unless `<default_database>`
+      * is set - and not from the initiator, so an unqualified name shipped to a shard either fails to
+      * resolve or, worse, silently resolves to a different dictionary that happens to have the same name.
+      * Bind the name here, while the current database of the initiator is still known. The old analyzer
+      * does the same in `AddDefaultDatabaseVisitor` for the query it sends to the shards.
+      *
+      * `arguments_projection_names` is already calculated at this point, so the column name of the
+      * expression stays exactly as it was written by the user.
+      *
+      * `qualifyDictionaryNameWithDatabase` leaves the name alone when it is already qualified, when it
+      * belongs to an XML dictionary, and when no such dictionary exists in the current database - in the
+      * last case the name may still be meant for a dictionary that only exists on the shards.
+      */
+    if (is_special_function_dict_get)
+    {
+        auto & dict_get_arguments = function_node_ptr->getArguments().getNodes();
+        if (!dict_get_arguments.empty())
+        {
+            const auto * dictionary_name_node = dict_get_arguments[0]->as<ConstantNode>();
+            if (dictionary_name_node && dictionary_name_node->getValue().getType() == Field::Types::String)
+            {
+                const auto & dictionary_name = dictionary_name_node->getValue().safeGet<String>();
+                auto qualified_dictionary_name = scope.context->getExternalDictionariesLoader()
+                    .qualifyDictionaryNameWithDatabase(dictionary_name, scope.context).getFullName();
+
+                if (qualified_dictionary_name != dictionary_name)
+                    dict_get_arguments[0] = std::make_shared<ConstantNode>(qualified_dictionary_name);
+            }
         }
     }
 
