@@ -166,7 +166,7 @@ protected:
                 {
                     for (const auto & column : columns)
                     {
-                        if (storage->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, column.name))
+                        if (storage->isGrantedByStorage(context, AccessType::SHOW_COLUMNS, column.name))
                         {
                             can_expose_any_column_metadata = true;
                             break;
@@ -210,7 +210,7 @@ protected:
                 if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
-                if (!storage->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, column.name))
+                if (!storage->isGrantedByStorage(context, AccessType::SHOW_COLUMNS, column.name))
                     continue;
 
                 size_t src_index = 0;

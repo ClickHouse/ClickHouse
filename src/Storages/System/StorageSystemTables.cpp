@@ -558,7 +558,7 @@ protected:
                     for (auto & table : external_tables)
                     {
                         const bool can_expose_metadata
-                            = table.second->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {});
+                            = table.second->isGrantedByStorage(context, AccessType::SHOW_TABLES, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -731,7 +731,7 @@ protected:
                 /// whole system.tables scan. Every metadata-dependent column below is guarded on
                 /// `table` being non-null.
 
-                const bool can_expose_metadata = table && table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {});
+                const bool can_expose_metadata = table && table->isGrantedByStorage(context, AccessType::SHOW_TABLES, {});
 
                 TableLockHolder lock;
 

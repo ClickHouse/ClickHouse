@@ -84,7 +84,7 @@ protected:
 
         auto add_constraints = [&](const String & db_name, const String & tbl_name, const StoragePtr & table)
         {
-            if (!table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {}))
+            if (!table->isGrantedByStorage(context, AccessType::SHOW_TABLES, {}))
                 return;
 
             const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);

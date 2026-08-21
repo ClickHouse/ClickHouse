@@ -115,7 +115,7 @@ protected:
                 if (!table)
                     continue;
 
-                if (!table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {}))
+                if (!table->isGrantedByStorage(context, AccessType::SHOW_TABLES, {}))
                     continue;
 
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);

@@ -161,7 +161,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         if (!is_dictionary)
         {
             auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-            if (table && !table->isGrantedToExposeMetadata(getContext(), AccessType::SHOW_COLUMNS, {}))
+            if (table && !table->isGrantedByStorage(getContext(), AccessType::SHOW_COLUMNS, {}))
                 throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to show metadata exposed by {}", table_id.getNameForLogs());
         }
 

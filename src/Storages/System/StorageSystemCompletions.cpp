@@ -97,7 +97,7 @@ static void fillDataWithTableColumns(
         if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
             continue;
 
-        if (!table->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, column.name))
+        if (!table->isGrantedByStorage(context, AccessType::SHOW_COLUMNS, column.name))
             continue;
 
         res_columns[0]->insert(column.name);
