@@ -501,13 +501,18 @@ def test_submodule_cache_clone_is_bounded_and_not_retried():
     assert all(h and 0 < h <= budget for h in heads), heads
 
 
-def test_every_population_step_is_bounded_by_the_shared_budget():
-    """No step of the population may run without a deadline drawn from the budget.
+def test_every_subprocess_of_the_population_is_bounded_by_the_shared_budget():
+    """Every subprocess the population starts must carry a deadline drawn from the budget.
 
     The clone is not the only step that can hang: the S3 probes and the upload are AWS
     client subprocesses whose own socket deadline is minutes long and is retried, so an
     unbounded one can outlast the budget by itself and let the job watchdog fire, which is
     the outcome the budget exists to prevent. Asserting only the clone leaves that open.
+
+    `GHAuth.auth` is deliberately out of this scope: it is bounded by nothing, but the job
+    already authenticates unconditionally before the population starts, so this path only
+    ever reaches it after that earlier attempt failed, and bounding it here would leave
+    that earlier one to overrun the cap on its own.
     """
     import ci.praktika.native_jobs as nj
     from ci.praktika.settings import Settings
@@ -674,6 +679,62 @@ def test_the_auth_setup_bounds_its_own_token_call():
     assert bounded == "timeout -s KILL 45 gh auth token", bounded
     # Omitting it must leave the command alone, so other callers are unaffected.
     assert plain == "gh auth token", plain
+
+
+def test_the_job_authenticates_before_the_population_can_reach_auth():
+    """The population's own `GHAuth.auth` call is reached only after an earlier failure.
+
+    The token is minted at most once per process, and the job mints it unconditionally
+    before configuring anything, so on the ordinary path this call returns from the cache
+    without touching the network. That earlier call is what a bound on authentication has
+    to cover; bounding only this one would leave the dominant case unbounded.
+    """
+    import inspect
+
+    import ci.praktika.gh_auth as gh_auth_module
+    import ci.praktika.native_jobs as nj
+    from ci.praktika.gh_auth import GHAuth
+
+    source, first_line = inspect.getsourcelines(nj._config_workflow)
+    unconditional = [
+        first_line + offset
+        for offset, line in enumerate(source)
+        if "GHAuth.auth(" in line and "force=True" in line
+    ]
+    population = [
+        first_line + offset
+        for offset, line in enumerate(source)
+        if "_prepare_submodule_cache(" in line
+    ]
+    assert unconditional and population, (unconditional, population)
+    assert max(unconditional) < min(population), (unconditional, population)
+
+    # Reached after a failure, cached after a success, so count the mints rather than the
+    # calls: a helper that authenticated again on every call would satisfy the order above.
+    # Both the mint and the login are replaced, or the login would reach GitHub for real
+    # and this test would hang on exactly the stall the change is about.
+    mints = []
+    original = GHAuth._authenticated
+    original_mint = GHAuth.__dict__["_get_access_token_from_lambda"]
+    original_shell = gh_auth_module.Shell
+    try:
+        GHAuth._get_access_token_from_lambda = classmethod(
+            lambda cls, name, region: mints.append(name) or "token"
+        )
+        gh_auth_module.Shell = type(
+            "S", (), {"check": staticmethod(lambda *a, **k: True)}
+        )
+        GHAuth._authenticated = True
+        assert GHAuth.auth(None, no_strict=True) is True
+        assert mints == [], mints
+        # The window this path is left with, and the only one worth bounding here.
+        GHAuth._authenticated = False
+        GHAuth.auth(None, no_strict=True)
+        assert len(mints) == 1, mints
+    finally:
+        gh_auth_module.Shell = original_shell
+        GHAuth._get_access_token_from_lambda = original_mint
+        GHAuth._authenticated = original
 
 
 def test_the_clone_deadline_accounts_for_authenticated_setup():
