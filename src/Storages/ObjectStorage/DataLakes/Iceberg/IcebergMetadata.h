@@ -229,7 +229,31 @@ private:
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 
     void backgroundMetadataPrefetcherThread();
+
+    /// Parsed-state cache: while the metadata version is unchanged, reuse the
+    /// last parsed {data snapshot, table state} instead of re-parsing the
+    /// metadata JSON + re-registering schemas into the SchemaProcessor on
+    /// every query (the latter takes the processor's write lock and was the
+    /// per-storage serialization point). Swapped atomically (free-function
+    /// overloads on shared_ptr) so the warm path is lock-free; time-travel
+    /// queries bypass it (their result depends on query-local settings).
+    struct StateCacheEntry
+    {
+        Iceberg::IcebergDataSnapshotPtr data_snapshot;
+        Iceberg::TableStateSnapshot table_state;
+        Int32 metadata_version = 0;
+        String metadata_file_path;
+    };
+    mutable std::shared_ptr<const StateCacheEntry> state_cache;
+
+    struct DerivedMetadataCacheEntry
+    {
+        Iceberg::TableStateSnapshot state;
+        std::shared_ptr<const StorageInMemoryMetadata> metadata;
+    };
+    mutable std::shared_ptr<const DerivedMetadataCacheEntry> derived_metadata_cache;
 };
+
 }
 
 #endif

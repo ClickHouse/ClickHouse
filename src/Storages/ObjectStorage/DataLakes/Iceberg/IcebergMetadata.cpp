@@ -95,6 +95,8 @@ namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
+extern const Event IcebergStorageMetadataCacheHits;
+extern const Event IcebergStorageMetadataCacheMisses;
 extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
@@ -231,7 +233,40 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method,
         force_fetch_latest_metadata);
-    return getState(context, metadata_file_path, metadata_version);
+
+    /// Parsed-state reuse: while the metadata version is unchanged and no
+    /// time-travel settings are in play, serve the previously parsed
+    /// {snapshot, table state} without re-reading or re-parsing the metadata
+    /// JSON (which re-registers schemas into the SchemaProcessor under its
+    /// write lock on every query). Lock-free on the warm path via atomic
+    /// shared_ptr load.
+    const auto & query_settings = context->getSettingsRef();
+    const bool time_travel = query_settings[Setting::iceberg_timestamp_ms].changed
+        || query_settings[Setting::iceberg_snapshot_id].changed;
+
+    if (!force_fetch_latest_metadata && !time_travel)
+    {
+        if (auto cached = std::atomic_load_explicit(&state_cache, std::memory_order_acquire);
+            cached && cached->metadata_version == metadata_version && cached->metadata_file_path == metadata_file_path)
+            return {cached->data_snapshot, cached->table_state};
+    }
+
+    auto result = getState(context, metadata_file_path, metadata_version);
+
+    /// A historical query must not replace the singleton current-state entry:
+    /// the metadata path/version can be the same while the selected snapshot is
+    /// different, poisoning the next ordinary query.
+    if (!time_travel)
+    {
+        auto entry = std::make_shared<StateCacheEntry>();
+        entry->data_snapshot = result.first;
+        entry->table_state = result.second;
+        entry->metadata_version = metadata_version;
+        entry->metadata_file_path = metadata_file_path;
+        std::atomic_store_explicit(&state_cache, std::const_pointer_cast<const StateCacheEntry>(entry), std::memory_order_release);
+    }
+
+    return result;
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -1337,11 +1372,35 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataUpdateMicroseconds);
     chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
+    const auto & query_settings = local_context->getSettingsRef();
+    const bool time_travel = query_settings[Setting::iceberg_timestamp_ms].changed
+        || query_settings[Setting::iceberg_snapshot_id].changed;
+    if (!time_travel)
+    {
+        if (auto cached = std::atomic_load_explicit(&derived_metadata_cache, std::memory_order_acquire);
+            cached && cached->state == iceberg_state)
+        {
+            ProfileEvents::increment(ProfileEvents::IcebergStorageMetadataCacheHits);
+            return std::make_unique<StorageInMemoryMetadata>(*cached->metadata);
+        }
+        ProfileEvents::increment(ProfileEvents::IcebergStorageMetadataCacheMisses);
+    }
+
     auto result = std::make_unique<StorageInMemoryMetadata>();
     result->setColumns(
         ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);
+    if (!time_travel)
+    {
+        auto entry = std::make_shared<DerivedMetadataCacheEntry>();
+        entry->state = iceberg_state;
+        entry->metadata = std::make_shared<const StorageInMemoryMetadata>(*result);
+        std::atomic_store_explicit(
+            &derived_metadata_cache,
+            std::const_pointer_cast<const DerivedMetadataCacheEntry>(entry),
+            std::memory_order_release);
+    }
     return result;
 }
 
