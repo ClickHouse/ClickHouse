@@ -53,6 +53,8 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
+
     void drop() override;
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
