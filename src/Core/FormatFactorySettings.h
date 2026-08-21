@@ -201,6 +201,9 @@ Schedule prefetches more aggressively if memory usage is below than threshold. P
     DECLARE(UInt64, input_format_parquet_memory_high_watermark, 4ul << 30, R"(
 Approximate memory limit for Parquet reader v3. Limits how many row groups or columns can be read in parallel. When reading multiple files in one query, the limit is on total memory usage across those files.
 )", 0) \
+    DECLARE(Map, input_format_parquet_read_stage_weights, "", R"(
+Expert tuning knob for the Parquet reader scheduler. Overrides the relative memory and thread budget weights assigned to each read stage. Keys have the form `<stage>.<resource>`, where `<resource>` is `memory` or `threads` and `<stage>` is one of `bloom_filter_header`, `bloom_filter_blocks_or_dictionary`, `column_index_and_offset_index`, `offset_index`, `column_data_prefetch`, `column_data`. Values are relative weights (they need not sum to 1; each is normalized against the sum of that resource across stages). Only the specified keys override the built-in defaults; unspecified stages keep their defaults. Example: `{'column_data_prefetch.memory': 12, 'column_data.threads': 4}`. Advanced and experimental: the internal stage model may change between versions.
+)", EXPERIMENTAL) \
     DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
 Skip pages using min/max values from column index.
 )", 0) \

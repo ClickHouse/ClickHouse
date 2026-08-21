@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_compatibility_apply_final_to_all_joined_tables", true, false, "Fixed a bug in the analyzer where FINAL on the left-most table of a JOIN was incorrectly applied to the other joined tables as well. previous_value=true so `compatibility` with versions before 26.6 restores the old behavior."},
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the new analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"input_format_parquet_read_stage_weights", "", "", "New experimental setting to override the per-stage memory and thread budget weights of the Parquet reader scheduler."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},

@@ -223,6 +223,31 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
     format_settings.parquet.memory_low_watermark = settings[Setting::input_format_parquet_memory_low_watermark];
     format_settings.parquet.memory_high_watermark = settings[Setting::input_format_parquet_memory_high_watermark];
+    {
+        const Map & stage_weights = settings[Setting::input_format_parquet_read_stage_weights].value;
+        for (const auto & key_value : stage_weights)
+        {
+            if (key_value.getType() != Field::Types::Tuple || key_value.safeGet<Tuple>().size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The value of the `input_format_parquet_read_stage_weights` setting must be a Map(String, Float64)");
+            const Tuple & pair = key_value.safeGet<Tuple>();
+            if (pair.at(0).getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The keys of the `input_format_parquet_read_stage_weights` setting must be Strings");
+            const Field & weight = pair.at(1);
+            double value;
+            switch (weight.getType())
+            {
+                case Field::Types::UInt64: value = static_cast<double>(weight.safeGet<UInt64>()); break;
+                case Field::Types::Int64:  value = static_cast<double>(weight.safeGet<Int64>()); break;
+                case Field::Types::Float64: value = weight.safeGet<Float64>(); break;
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The values of the `input_format_parquet_read_stage_weights` setting must be numbers");
+            }
+            format_settings.parquet.read_stage_weights[pair.at(0).safeGet<String>()] = value;
+        }
+    }
     format_settings.parquet.allow_missing_columns = settings[Setting::input_format_parquet_allow_missing_columns];
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference];
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];

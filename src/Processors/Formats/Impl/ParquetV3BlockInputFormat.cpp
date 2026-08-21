@@ -90,6 +90,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 
                 ext->total_memory_low_watermark = format_settings.parquet.memory_low_watermark;
                 ext->total_memory_high_watermark = format_settings.parquet.memory_high_watermark;
+                ext->read_stage_weights = format_settings.parquet.read_stage_weights;
                 parser_shared_resources->opaque = ext;
             });
 
