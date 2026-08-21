@@ -4707,6 +4707,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         /// is re-analyzed in a synthetic subquery created by `analyzer_compatibility_join_using_top_level_identifier`).
         if (table_function_argument->as<TableFunctionNode>())
         {
+            /// An argument already marked unresolved must stay marked: `resolve` below overwrites the whole
+            /// index set, and traversal helpers rely on it to not descend into a not-fully-resolved subtree.
+            const auto & previous_unresolved_indexes = table_function_node_typed.getUnresolvedArgumentIndexes();
+            if (std::find(previous_unresolved_indexes.begin(), previous_unresolved_indexes.end(), table_function_argument_index)
+                != previous_unresolved_indexes.end())
+                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+
             result_table_function_arguments.push_back(table_function_argument);
             continue;
         }
@@ -4854,7 +4861,28 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     column.name = identifier_node->getIdentifier().getFullName();
                     /// Change ephemeral columns to default columns.
                     column.default_desc.kind = ColumnDefaultKind::Default;
-                    structure_hint.add(std::move(column));
+
+                    /** The same column of the table function can be selected more than once,
+                      * as in `INSERT INTO t (x, y) SELECT c, c FROM file(...)`.
+                      * A source column has a single type, so the hint is usable only if all the
+                      * insert table columns that it is mapped to agree on the type.
+                      */
+                    if (const auto * already_hinted = structure_hint.tryGet(column.name))
+                    {
+                        if (!already_hinted->type->equals(*column.type))
+                        {
+                            if (use_structure_from_insertion_table_in_table_functions == 1)
+                                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                    "Column {} is selected more than once in INSERT SELECT query, "
+                                    "but the corresponding columns of the insert table have different types: {} and {}.",
+                                    backQuote(column.name), already_hinted->type->getName(), column.type->getName());
+
+                            use_columns_from_insert_query = false;
+                            break;
+                        }
+                    }
+                    else
+                        structure_hint.add(std::move(column));
                 }
 
                 /// Once we hit asterisk we want to find end of the range covered by asterisk
