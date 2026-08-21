@@ -79,3 +79,8 @@ LC(FixedString(4))/String absent	0	0
 -- the dictionary shortcut over a float element must not resolve a lossy integer needle
 LC(Float64)/Int64	0	0
 LC(Float64)/Int64 rep	1	1
+-- a temporal element narrows a wider temporal needle, so the dictionary must not answer either
+LC(Date)/DateTime	0	0
+LC(Date)/DateTime rep	1	1
+LC(IPv4)/UInt64	0
+LC(IPv4)/UInt64 rep	1

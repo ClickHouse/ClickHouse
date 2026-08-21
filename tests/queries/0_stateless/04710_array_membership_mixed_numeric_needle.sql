@@ -149,3 +149,13 @@ CREATE TABLE lcf (v Array(LowCardinality(Float64))) ENGINE = Memory;
 INSERT INTO lcf VALUES ([9007199254740992.0, 1.5]);
 SELECT 'LC(Float64)/Int64', has(v, 9007199254740993::Int64) AS got, arrayExists(x -> x = 9007199254740993::Int64, v) AS oracle FROM lcf;
 SELECT 'LC(Float64)/Int64 rep', has(v, 9007199254740992::Int64) AS got, arrayExists(x -> x = 9007199254740992::Int64, v) AS oracle FROM lcf;
+
+SELECT '-- a temporal element narrows a wider temporal needle, so the dictionary must not answer either';
+CREATE TABLE lcd (v Array(LowCardinality(Date))) ENGINE = Memory;
+INSERT INTO lcd VALUES ([toDate('1970-01-01'), toDate('2020-01-01')]);
+SELECT 'LC(Date)/DateTime', has(v, toDateTime('2020-01-01 00:00:05')) AS got, arrayExists(x -> x = toDateTime('2020-01-01 00:00:05'), v) AS oracle FROM lcd SETTINGS session_timezone = 'UTC';
+SELECT 'LC(Date)/DateTime rep', has(v, toDateTime('2020-01-01 00:00:00')) AS got, arrayExists(x -> x = toDateTime('2020-01-01 00:00:00'), v) AS oracle FROM lcd SETTINGS session_timezone = 'UTC';
+CREATE TABLE lcip (v Array(LowCardinality(IPv4))) ENGINE = Memory;
+INSERT INTO lcip VALUES ([toIPv4('0.0.0.0'), toIPv4('0.0.0.1')]);
+SELECT 'LC(IPv4)/UInt64', has(v, 4294967297::UInt64) AS got FROM lcip;
+SELECT 'LC(IPv4)/UInt64 rep', has(v, 1::UInt64) AS got FROM lcip;

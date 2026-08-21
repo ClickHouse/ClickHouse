@@ -269,10 +269,10 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
 
     const auto & dictionary = low_cardinality_data.getDictionary();
 
-    /// A number narrows without the cast reporting loss, so UInt32(4294967295) reaches an Int32
-    /// dictionary as -1, an entry it is not equal to. The string family instead compares padded, where
-    /// a shorter needle does equal a longer entry, so only a number can wrap onto a wrong index.
-    const bool needle_may_wrap = isNumber(removeNullable(cast_type)) || isEnum(removeNullable(cast_type));
+    /// The cast narrows without reporting loss, so UInt32(4294967295) reaches an Int32 dictionary as
+    /// -1, an entry it is not equal to. The string family is the exception: equality pads a shorter
+    /// needle to the element width, so there a cast image does equal a different entry.
+    const bool needle_may_wrap = !isStringOrFixedString(removeNullable(cast_type));
 
     auto find_in_dictionary = [&](std::string_view elem) -> std::optional<UInt64>
     {
