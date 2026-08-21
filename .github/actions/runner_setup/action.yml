@@ -3,6 +3,13 @@ description: Setup environment
 runs:
   using: "composite"
   steps:
+    - name: Configure docker proxy and dataset mirror host
+      shell: bash
+      run: |
+          proxy_host=dockerhub-proxy.dockerhub-proxy-zone
+          if ! timeout 5 getent ahostsv4 "$proxy_host" >/dev/null; then
+            echo "65.108.242.32 $proxy_host" | sudo tee -a /etc/hosts
+          fi
     - name: Setup zram
       shell: bash
       run: |
