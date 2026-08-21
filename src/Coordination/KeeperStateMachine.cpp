@@ -30,6 +30,7 @@
 #include <sys/mman.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -593,6 +594,8 @@ union XidHelper
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
     double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
@@ -1026,7 +1029,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             {
                 KEEPER_STORAGE_LOCK_SHARED(lock);
                 {
-                    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+                    ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
                     KeeperResponsesForSessions responses_for_sessions
                         = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
                     for (auto & response_for_session : responses_for_sessions)
@@ -2198,7 +2201,7 @@ void KeeperStateMachine::processReadRequests(const KeeperRequestsForSessions & r
 {
     /// Pure local request, just process them with storage
     KEEPER_STORAGE_LOCK_SHARED(storage_lock);
-    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+    ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
 
     auto responses = storage->processLocalRequests(requests, /*check_acl=*/ true);
 
@@ -2247,6 +2250,16 @@ KeeperStorageStats KeeperStateMachine::getStorageStats() const
     std::shared_lock storage_lock(state_machine_storage_mutex);
     std::lock_guard response_lock(process_and_responses_lock);
     return storage->getStorageStats();
+}
+
+KeeperStorageStats KeeperStateMachine::getStorageStatsAndAsynchronousMetrics(AsynchronousMetricValues & new_values) const
+{
+    /// (Unprofiled because we don't care how long the monitoring threads wait for locks.)
+    std::shared_lock storage_lock(state_machine_storage_mutex);
+    std::lock_guard response_lock(process_and_responses_lock);
+    auto stats = storage->getStorageStats();
+    storage->nodes_storage->fillAsynchronousMetrics(new_values);
+    return stats;
 }
 
 std::unique_ptr<KeeperNodesReadView> KeeperStateMachine::getStorageReadView() const

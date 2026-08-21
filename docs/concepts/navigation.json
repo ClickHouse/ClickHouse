@@ -149,7 +149,8 @@
                 "concepts/features/configuration/server-config/workload-scheduling",
                 "concepts/features/configuration/server-config/quotas",
                 "concepts/features/configuration/server-config/composable-protocols",
-                "concepts/features/configuration/server-config/startup-scripts"
+                "concepts/features/configuration/server-config/startup-scripts",
+                "concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
@@ -219,7 +220,7 @@
                 "concepts/features/interfaces/tcp",
                 "concepts/features/interfaces/jdbc",
                 "concepts/features/interfaces/mysql",
-                "concepts/features/interfaces/odbc",
+                { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
                 "concepts/features/interfaces/prometheus",
                 "concepts/features/interfaces/ssh",

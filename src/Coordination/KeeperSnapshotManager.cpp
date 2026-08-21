@@ -39,6 +39,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int KEEPER_EXCEPTION;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
@@ -152,6 +153,28 @@ namespace
             if (stats.isTTL())
                 writeBinary(stats.getTTL(), out);
         }
+        else if (stats.isTTL())
+        {
+            /// KeeperContext::validateWriteSnapshotVersion already checked that CREATE_TTL feature
+            /// flag is disabled, so this is pretty unexpected. Still possible if the feature flag
+            /// was disabled after the node was created.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot serialize snapshot with version {}: storage contains TTL node, which requires write_snapshot_version "
+                "{} or higher.",
+                static_cast<uint8_t>(version),
+                static_cast<uint8_t>(SnapshotVersion::V8));
+        }
+
+        if (stats.isContainer() && version < SnapshotVersion::V9)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot serialize snapshot with version {}: storage contains container node, which requires write_snapshot_version "
+                "{} or higher.",
+                static_cast<uint8_t>(version),
+                static_cast<uint8_t>(SnapshotVersion::V9));
+        }
     }
 
     void serializeSnapshotMetadata(const SnapshotMetadataPtr & snapshot_meta, WriteBuffer & out)
@@ -174,31 +197,6 @@ namespace
 
 void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
-    if (snapshot.version < SnapshotVersion::V8)
-    {
-        SharedLockGuard storage_lock(snapshot.storage->storage_mutex);
-        if (!snapshot.storage->ttl_paths.empty())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot serialize snapshot with version {}: storage contains {} TTL node(s), which require snapshot "
-                "version {} or higher. Bump write_snapshot_version after every replica has been upgraded.",
-                static_cast<uint8_t>(snapshot.version),
-                snapshot.storage->ttl_paths.size(),
-                static_cast<uint8_t>(SnapshotVersion::V8));
-    }
-    if (snapshot.version < SnapshotVersion::V9)
-    {
-        SharedLockGuard storage_lock(snapshot.storage->storage_mutex);
-        if (!snapshot.storage->container_paths.empty())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot serialize snapshot with version {}: storage contains {} container node(s), which require snapshot "
-                "version {} or higher. Bump write_snapshot_version after every replica has been upgraded.",
-                static_cast<uint8_t>(snapshot.version),
-                snapshot.storage->container_paths.size(),
-                static_cast<uint8_t>(SnapshotVersion::V9));
-    }
-
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
 

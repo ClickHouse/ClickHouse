@@ -3326,8 +3326,7 @@ private:
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
 
-        auto [mutable_empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(
-            part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn);
+        auto [mutable_empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn, std::nullopt);
         /// Drop the wrapped mutation's old part (living under tmp_mut_<part>) first, while its
         /// directory holder in ctx->temporary_directory_lock is still alive, so the old temp dir is
         /// never cleaned up without a temporary_parts entry (the lock-before-cleanup invariant). Only
@@ -3906,7 +3905,9 @@ bool MutateTask::prepare()
                 ctx->source_part->partition,
                 ctx->future_part->name,
                 ctx->source_part->getMetadataSnapshot(),
-                ctx->txn);
+                ctx->txn,
+                /*patch_part_index=*/ std::nullopt);
+
             /// Keep the temporary-directory holder alive until the part is renamed/committed, so
             /// the in-memory `temporary_parts` entry outlives the physical `tmp_empty_<part>`
             /// directory, keeping the holder authoritative for every createEmptyPart caller.
@@ -4066,7 +4067,7 @@ bool MutateTask::prepare()
     if (rewrites_all_columns)
     {
         /// In case of replicated merge tree with zero copy replication
-        /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+        /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
         /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
@@ -4135,7 +4136,7 @@ bool MutateTask::prepare()
             ctx->mrk_extension);
 
         /// In case of replicated merge tree with zero copy replication
-        /// Here Clickhouse has to follow the common procedure when deleting new part in temporary state
+        /// Here ClickHouse has to follow the common procedure when deleting new part in temporary state
         /// Some of the files within the blobs are shared with source part, some belongs only to the part
         /// Keeper has to be asked with unlock request to release the references to the blobs
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
