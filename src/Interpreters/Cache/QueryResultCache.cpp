@@ -57,8 +57,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_writes_to_query_cache;
-    extern const SettingsBool enable_writes_to_query_cache_on_disk;
-    extern const SettingsString query_cache_on_disk_cache_name;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
@@ -232,13 +230,14 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     return finder_data.has_system_tables;
 }
 
-bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
+bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache, bool skip_context_check)
 {
     const Settings & settings = context->getSettingsRef();
 
     const bool writes_to_memory_cache_enabled = settings[Setting::enable_writes_to_query_cache];
-    const bool writes_to_on_disk_cache_enabled = settings[Setting::enable_writes_to_query_cache_on_disk]
-        && !settings[Setting::query_cache_on_disk_cache_name].value.empty();
+    /// Judge the on-disk backend by the resolved object, not by the raw settings: a configured but unavailable backend
+    /// (e.g. a filesystem cache which is not initialized yet) never receives a write, so it must not trigger the checks below.
+    const bool writes_to_on_disk_cache_enabled = on_disk_cache && on_disk_cache->writesEnabled();
 
     if ((skip_context_check || context->getCanUseQueryResultCache()) && (writes_to_memory_cache_enabled || writes_to_on_disk_cache_enabled))
     {

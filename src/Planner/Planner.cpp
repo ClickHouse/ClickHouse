@@ -2916,7 +2916,7 @@ void Planner::buildPlanForQueryNode()
     /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in),
     /// skip the context flag check in checkCanWriteQueryResultCache while still respecting safety checks.
     bool skip_context_check = should_cache && !can_use_query_result_cache;
-    if (should_cache && checkCanWriteQueryResultCache(ast, query_context, skip_context_check))
+    if (should_cache && checkCanWriteQueryResultCache(ast, query_context, query_result_cache_on_disk, skip_context_check))
     {
         auto created_at = std::chrono::system_clock::now();
         auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());

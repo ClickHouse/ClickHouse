@@ -3142,7 +3142,7 @@ static BlockIO executeQueryImpl(
                     res = interpreter->execute();
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (checkCanWriteQueryResultCache(out_ast, context))
+                    if (checkCanWriteQueryResultCache(out_ast, context, query_result_cache_on_disk))
                     {
                             auto created_at = std::chrono::system_clock::now();
                             auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
