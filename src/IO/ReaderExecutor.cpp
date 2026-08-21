@@ -444,13 +444,12 @@ ChainedBuffers ReaderExecutor::fetchAndServe(size_t pos, ByteRange miss_run, siz
     if (writers.empty())
         return readSource(pos, fetch_end - pos);
 
-    /// Claim each writing tier's lead role before the fetch (a held claim dedups the download). If a
-    /// tier already committed a prefix covering `pos` (filled since resolve), serve from it - no read.
-    /// Note the head-covering writer a concurrent downloader leads (in practice one coordinating cache
-    /// tier, so we don't track whether we also lead the head elsewhere).
+    /// One pass over the tiers (fastest-first), handling the head (`pos`) inline: a committed prefix is
+    /// served from cache; a segment a concurrent downloader leads is waited on once and served from
+    /// cache if it lands; otherwise we take the download role (a held claim) to fill it. Later blocks in
+    /// the coalesced run only contribute their claims. Only after the pass, if nobody served, do we fetch.
     struct Claimed { CacheWriter * writer; CacheWriter::Claim claim; };
     VectorWithMemoryTracking<Claimed> claimed;
-    CacheWriter * concurrent_head = nullptr;
     for (auto * writer : writers)
     {
         const bool covers_head = writer->range().offset <= pos && pos < writer->range().end();
@@ -458,31 +457,15 @@ ChainedBuffers ReaderExecutor::fetchAndServe(size_t pos, ByteRange miss_run, siz
         const ByteRange avail = lead.available;
         if (covers_head && avail.size && avail.offset <= pos && pos < avail.end())
             return writer->read(ByteRange{pos, serve_len(std::min(avail.end(), writer->range().end()))});
-        if (covers_head && !lead.claim && !concurrent_head)
-            concurrent_head = writer;
+        if (covers_head && !lead.claim)
+        {
+            /// Locked by a concurrent downloader: wait once and serve from cache if it commits;
+            /// otherwise fall through and let the source read below serve the bytes.
+            ChainedBuffers waited = writer->waitAndRead(ByteRange{pos, serve_len(fetch_end)});
+            if (!waited.empty())
+                return waited;
+        }
         claimed.push_back({writer, std::move(lead.claim)});
-    }
-
-    /// Another thread is downloading the head and it is not committed yet: wait once for that download
-    /// and serve the head block from cache instead of re-reading it from source.
-    if (concurrent_head)
-    {
-        ChainedBuffers waited = concurrent_head->waitAndRead(ByteRange{pos, serve_len(fetch_end)});
-        if (!waited.empty())
-            return waited;
-        /// The wait did not deliver. Try once to take the role now - the downloader may have released
-        /// it on timeout - so the fetch below populates the cache; if it committed meanwhile, serve
-        /// that. Otherwise it is still led elsewhere and the source read below just serves the bytes.
-        for (auto & c : claimed)
-            if (c.writer == concurrent_head)
-            {
-                auto lead = concurrent_head->claimLeadRole(concurrent_head->range());
-                const ByteRange avail = lead.available;
-                if (avail.size && avail.offset <= pos && pos < avail.end())
-                    return concurrent_head->read(ByteRange{pos, serve_len(std::min(avail.end(), concurrent_head->range().end()))});
-                c.claim = std::move(lead.claim);
-                break;
-            }
     }
 
     ChainedBuffers fetched = readSource(pos, fetch_end - pos);
