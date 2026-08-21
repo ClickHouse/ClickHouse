@@ -29,9 +29,13 @@ QUERY_ID="${CLICKHOUSE_DATABASE}_cancel_exception_teardown_pager"
 # The server sends the result header, then fails before the first data block with
 # `DEADLOCK_AVOIDED`. `sleep 1000` neither reads nor exits, so after that exception the client
 # remains in the exception-reset teardown until the signal below releases it.
+# The `sleep` in the subquery only delays the first row: without it the query throws within
+# milliseconds of starting and is never observable in `system.processes`, so the wait for the
+# running state below would time out instead of catching the query.
 $CLICKHOUSE_CLIENT --pager 'sleep 1000' --partial_result_on_first_cancel=1 --query_id="$QUERY_ID" \
-    --query "SELECT number, throwIf(number = 0, 'injected deadlock', 473)
-             FROM numbers(20) SETTINGS allow_custom_error_code_in_throwif = 1, max_block_size = 1, max_threads = 1" \
+    --query "SELECT number, throwIf(number = 0, 'injected deadlock', toInt32(473))
+             FROM (SELECT number FROM numbers(20) WHERE NOT sleep(3))
+             SETTINGS allow_custom_error_code_in_throwif = 1, max_block_size = 1, max_threads = 1" \
     > "$CLIENT_OUT" 2> "$CLIENT_ERR" &
 CLIENT=$!
 

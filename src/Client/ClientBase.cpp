@@ -34,7 +34,6 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Common/TerminalSize.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -1399,9 +1398,16 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
         {
             if (server_logs_file.empty())
             {
-                /// Use stderr by default
-                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
-                logs_out_terminal_buf = assert_cast<WriteBufferFromFileDescriptor *>(out_logs_buf.get());
+                /// Use stderr by default.
+                /// The owning member is assigned first and the raw pointer is taken from it: taking
+                /// the pointer out of a local `unique_ptr` that is then moved into the member is
+                /// flagged by clang 24 (`-Wlifetime-safety-use-after-scope-moved`, seen only in the
+                /// wasm64 build). The downcast is `static_cast` to the exact type that was created -
+                /// `assert_cast` compares typeid for an exact match and rejects the derived
+                /// `AutoCanceledWriteBuffer` wrapper.
+                using StderrLogsBuffer = AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>;
+                out_logs_buf = std::make_unique<StderrLogsBuffer>(stderr_fd);
+                logs_out_terminal_buf = static_cast<StderrLogsBuffer *>(out_logs_buf.get());
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
@@ -1451,10 +1457,11 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
                     }
                 });
 
-                auto file_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(
-                    logs_fd, server_logs_file, DBMS_DEFAULT_BUFFER_SIZE);
-                logs_out_terminal_buf = file_logs_buf.get();
-                out_logs_buf = std::move(file_logs_buf);
+                /// See the note above on why the member is assigned first and downcast with
+                /// `static_cast`.
+                using FileLogsBuffer = AutoCanceledWriteBuffer<WriteBufferFromFile>;
+                out_logs_buf = std::make_unique<FileLogsBuffer>(logs_fd, server_logs_file, DBMS_DEFAULT_BUFFER_SIZE);
+                logs_out_terminal_buf = static_cast<FileLogsBuffer *>(out_logs_buf.get());
                 wb = out_logs_buf.get();
             }
         }
