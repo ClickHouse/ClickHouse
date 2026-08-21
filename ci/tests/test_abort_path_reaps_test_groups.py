@@ -555,11 +555,11 @@ def test_teardown_mode_skips_all_evidence_gathering(monkeypatch):
 def test_failed_kill_neither_propagates_nor_strands_the_group(tmp_path, monkeypatch):
     """A kill that raises must not leave a live group with no record pointing at it.
 
-    ``process_result_impl`` is the sole normal-path remover, and the worker's NEXT test
-    overwrites the same record path (it is named for the worker's pid).  So an exception
-    escaping into ``TestCase.run``'s generic handler - which returns UNKNOWN without setting
-    ``stop_testing``, so the worker keeps going - re-creates the very defect this file
-    guards: a live group nothing can find.
+    ``process_result_impl`` is the sole normal-path remover, and a record is named for the
+    group it points at, so no later test displaces it.  An exception escaping into
+    ``TestCase.run``'s generic handler - which returns UNKNOWN without setting
+    ``stop_testing``, so the worker keeps going - therefore re-creates the very defect this
+    file guards: a live group nothing can find.
     """
     _clear_records()
     ct = runpy.run_path(_CLICKHOUSE_TEST)
@@ -582,7 +582,7 @@ def test_failed_kill_neither_propagates_nor_strands_the_group(tmp_path, monkeypa
             f"{survivors}"
         )
         assert not _records(), (
-            "the record must not outlive the worker's next test, which overwrites it"
+            "the record must not outlive the group it points at"
         )
     finally:
         if pgid:
@@ -682,11 +682,11 @@ def test_record_is_kept_when_the_kill_is_interrupted(tmp_path, monkeypatch):
 def test_reap_leaves_another_invocations_groups_alone():
     """The reap must be scoped to this run's own workers.
 
-    Records live in the repo-wide ``ci/tmp`` and carry a worker pid and a pgid, no run
-    identity.  That was safe while the only caller was ``--cleanup`` at job teardown;
-    called from a LIVE parent it can otherwise SIGKILL a concurrent invocation's in-flight
-    tests, and concurrent invocations over one tree are a documented condition here (see
-    ``test_shared_engine_replacer_discovery.py``).
+    Records live in the repo-wide ``ci/tmp``, so a reap that matched on the worker pid alone
+    could SIGKILL a concurrent invocation's in-flight tests once it runs from a LIVE parent
+    rather than only from ``--cleanup`` at job teardown; concurrent invocations over one tree
+    are a documented condition here (see ``test_shared_engine_replacer_discovery.py``).  The
+    run token in the name is what keeps the two runs apart.
 
     The owned record is named by the real helper, so the scoping is asserted against the
     name shape the code under test actually writes.
