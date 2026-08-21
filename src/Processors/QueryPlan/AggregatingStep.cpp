@@ -684,11 +684,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// Virtual rows steer the ordinary merging transform toward the next primary-key range. The
             /// reshuffle turns one input chunk into separate shard chunks, so it cannot preserve that stream
             /// metadata for every shard merge. Check both pipeline carriers: `VirtualRowTransform` inserts an
-            /// initial boundary, while `MergeTreeSource` can emit later per-block boundaries directly.
+            /// initial boundary, while `MergeTreeSource` can emit later per-block boundaries directly. Both
+            /// are already present here: the child steps build their part of the pipeline first, so
+            /// `ReadFromMergeTree` has installed the conversions on its sources by the time this step runs.
+            /// Do not gate on the `read_in_order_use_virtual_row_per_block` setting itself - it is enabled
+            /// per profile and says nothing about whether the current pipeline actually plans virtual rows.
             && !has_virtual_rows
-            /// Per-block virtual rows are installed after aggregation planning, so they are not always visible
-            /// in the processor graph yet. Do not reshuffle because it cannot retain these boundaries.
-            && !settings.read_in_order_use_virtual_row_per_block
             && max_threads > 1
             && pipeline.getNumStreams() > 1
             /// The reshuffle wires an intermediate graph of `num_streams * num_shards`
