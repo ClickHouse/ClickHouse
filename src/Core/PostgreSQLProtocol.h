@@ -443,7 +443,9 @@ public:
 
             parameters.insert({std::move(parameter_name), std::move(parameter_value)});
 
-            if (payload_size < 0)
+            /// `payload_size` is the declared size of the message and never changes, so the check
+            /// has to be made against the remaining size instead.
+            if (ps < 0)
             {
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                                 "Size of payload is larger than one declared in the message of type {}.",
