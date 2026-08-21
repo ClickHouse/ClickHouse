@@ -92,7 +92,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ورغم أن الطوبولوجيات التي تضم عدة شظايا ونسخ متماثلة ممكنة من دون جدول موزع، فإن عمليات النشر المتقدمة هذه تكون لها عادةً بنية توجيه خاصة بها. لذلك نفترض أن عمليات النشر التي تحتوي على أكثر من شظية واحدة تستخدم جدولًا موزعًا (يمكن استخدام الجداول الموزعة مع عمليات النشر ذات الشظية الواحدة، لكنها لا تكون ضرورية عادةً).
 
-في هذه الحالة، ينبغي أن تضمن تنفيذ توجيه متسق للعقد استنادًا إلى خاصية مثل `session_id` أو `user_id`. يجب [ضبط الإعدادات على مستوى الاستعلام](/ar/concepts/features/configuration/settings/settings-query-level) [`prefer_localhost_replica=0`](/ar/reference/settings/session-settings#prefer_localhost_replica)، [`load_balancing=in_order`](/ar/reference/settings/session-settings#load_balancing). سيضمن ذلك تفضيل أي نسخ متماثلة محلية للشظايا، وإلا فستُفضَّل النسخ المتماثلة بحسب ترتيبها في الإعداد، ما دامت تملك العدد نفسه من الأخطاء — أما إذا كان عدد الأخطاء أعلى فسيحدث التحويل التلقائي عند الفشل مع اختيار عشوائي. ويمكن أيضًا استخدام [`load_balancing=nearest_hostname`](/ar/reference/settings/session-settings#load_balancing) كبديل لهذا الاختيار الحتمي للشظية.
+في هذه الحالة، ينبغي أن تضمن تنفيذ توجيه متسق للعقد استنادًا إلى خاصية مثل `session_id` أو `user_id`. يجب [ضبط الإعدادات على مستوى الاستعلام](/ar/concepts/features/configuration/settings/settings-query-level) [`prefer_localhost_replica=0`](/ar/reference/settings/session-settings/prefer#prefer_localhost_replica)، [`load_balancing=in_order`](/ar/reference/settings/session-settings/load-balancing#load_balancing). سيضمن ذلك تفضيل أي نسخ متماثلة محلية للشظايا، وإلا فستُفضَّل النسخ المتماثلة بحسب ترتيبها في الإعداد، ما دامت تملك العدد نفسه من الأخطاء — أما إذا كان عدد الأخطاء أعلى فسيحدث التحويل التلقائي عند الفشل مع اختيار عشوائي. ويمكن أيضًا استخدام [`load_balancing=nearest_hostname`](/ar/reference/settings/session-settings/load-balancing#load_balancing) كبديل لهذا الاختيار الحتمي للشظية.
 
 > عند إنشاء جدول موزع، ستحدّد cluster. وسيعرض تعريف هذا الـ cluster، المحدد في config.xml، الشظايا (ونسخها المتماثلة) — مما يتيح للمستخدمين التحكم في الترتيب الذي تُستخدم به من كل عقدة. وباستخدام ذلك، يمكنك ضمان أن يكون الاختيار حتميًا.
 
@@ -109,7 +109,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 1. **القراءة/الكتابة إلى العقدة نفسها** - إذا كنت تستخدم البروتوكول الأصلي، أو [جلسة لإجراء الكتابة/القراءة عبر HTTP](/ar/concepts/features/interfaces/http#default-database)، فينبغي حينها أن تكون متصلًا بالنسخة المتماثلة نفسها: في هذا السيناريو، أنت تقرأ مباشرةً من العقدة التي تكتب إليها، وبالتالي ستكون قراءتك متسقة دائمًا.
 2. **مزامنة النسخ المتماثلة يدويًا** - إذا كنت تكتب إلى نسخة متماثلة وتقرأ من أخرى، فيمكنك استخدام الأمر `SYSTEM SYNC REPLICA LIGHTWEIGHT` قبل القراءة.
-3. **تفعيل الاتساق التسلسلي** - عبر إعداد الاستعلام [`select_sequential_consistency = 1`](/ar/reference/settings/session-settings#select_sequential_consistency). في OSS، يجب أيضًا تحديد الإعداد `insert_quorum = 'auto'`.
+3. **تفعيل الاتساق التسلسلي** - عبر إعداد الاستعلام [`select_sequential_consistency = 1`](/ar/reference/settings/session-settings/other#select_sequential_consistency). في OSS، يجب أيضًا تحديد الإعداد `insert_quorum = 'auto'`.
 
 <br />
 
@@ -207,6 +207,5 @@ GROUP BY `table`
 | `HSTORE`             | [Map(K, V)](/ar/reference/data-types/map), [Map](/ar/reference/data-types/map)(K,[Variant](/ar/reference/data-types/variant))                                                                   |
 | `UUID`               | [UUID](/ar/reference/data-types/uuid)                                                                                                                                                     |
 | `ARRAY<T>`           | [ARRAY(T)](/ar/reference/data-types/array)                                                                                                                                                |
-| `JSON`               | [String](/ar/reference/data-types/string), [Variant](/ar/reference/data-types/variant), [Nested](/ar/reference/data-types/nested-data-structures/index), [Tuple](/ar/reference/data-types/tuple)   |
 | `JSON`               | [String](/ar/reference/data-types/string), [Variant](/ar/reference/data-types/variant), [Nested](/ar/reference/data-types/nested-data-structures), [Tuple](/ar/reference/data-types/tuple)         |
 | `JSONB`              | [String](/ar/reference/data-types/string)                                                                                                                                                 |

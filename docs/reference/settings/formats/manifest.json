@@ -1,5 +1,5 @@
 {
-  "settings": 301,
+  "settings": 303,
   "anchorRoutes": {
     "allow_special_bool_values_inside_variant": "/reference/settings/formats/other",
     "bool_false_representation": "/reference/settings/formats/bool",
@@ -104,6 +104,7 @@
     "input_format_json_infer_incomplete_types_as_strings": "/reference/settings/formats/input-format",
     "input_format_json_map_as_array_of_tuples": "/reference/settings/formats/input-format",
     "input_format_json_max_depth": "/reference/settings/formats/input-format",
+    "input_format_json_max_object_size": "/reference/settings/formats/input-format",
     "input_format_json_max_string_column_growth_step": "/reference/settings/formats/input-format",
     "input_format_json_named_tuples_as_objects": "/reference/settings/formats/input-format",
     "input_format_json_read_arrays_as_strings": "/reference/settings/formats/input-format",
@@ -252,6 +253,7 @@
     "output_format_parquet_row_group_size": "/reference/settings/formats/output-format",
     "output_format_parquet_row_group_size_bytes": "/reference/settings/formats/output-format",
     "output_format_parquet_string_as_string": "/reference/settings/formats/output-format",
+    "output_format_parquet_wide_integer_as_decimal": "/reference/settings/formats/output-format",
     "output_format_parquet_write_bloom_filter": "/reference/settings/formats/output-format",
     "output_format_parquet_write_checksums": "/reference/settings/formats/output-format",
     "output_format_parquet_write_page_index": "/reference/settings/formats/output-format",
