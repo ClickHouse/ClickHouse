@@ -272,9 +272,27 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
                 verbose=True,
                 strict=True,
             )
-            S3.copy_file_to_s3(s3_path=s3_path, local_path=archive_path, with_rename=True)
+            # Write-once conditional create (If-None-Match: *) instead of an
+            # unconditional overwrite. The object is content-addressed by the
+            # submodule SHAs, so it never legitimately changes; making it
+            # immutable closes a race where two concurrent writers (both saw a
+            # cache miss above) overwrite the same key while a third job is
+            # downloading it, causing the reader's multipart download to abort
+            # with an ETag mismatch. On a lost race S3.put returns False
+            # (PreconditionFailed) — the other writer already populated the
+            # object, so this is a success, not an error.
+            created = S3.put(
+                s3_path=s3_path,
+                local_path=archive_path,
+                if_none_matched=True,
+                no_strict=True,
+            )
             Shell.check(f"rm -f {archive_path}")
-            info = f"cache miss, created: {cache_hash}"
+            info = (
+                f"cache miss, created: {cache_hash}"
+                if created
+                else f"cache miss, created concurrently: {cache_hash}"
+            )
 
         workflow_config.submodule_cache_hash = cache_hash
         workflow_config.dump()
