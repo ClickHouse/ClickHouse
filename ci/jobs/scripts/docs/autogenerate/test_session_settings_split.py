@@ -100,6 +100,15 @@ def main():
         generator_order.index(family_name)
         for family_name in mod.SETTINGS_SPLIT_FAMILIES
     )
+    selected_generator_names = [
+        generator["name"]
+        for generator in mod.select_generators(
+            mod.SETTINGS_GENERATORS, "session-settings")
+    ]
+    assert selected_generator_names == [
+        "session-settings",
+        "beta-and-experimental",
+    ]
 
     for badge in (
         "CloudNotSupportedBadge",
@@ -1020,6 +1029,13 @@ def main():
         session_manifest_path.parent.mkdir(parents=True)
         session_manifest_path.write_text(
             json.dumps(stale_session_manifest), encoding="utf-8")
+        for family_name, family in mod.SETTINGS_SPLIT_FAMILIES.items():
+            if family_name == "session-settings":
+                continue
+            manifest_path = mod._settings_manifest_path(docs, family)
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(
+                json.dumps(current_manifests[family_name]), encoding="utf-8")
         current_session_artifact = mod.GeneratedArtifact(
             session_manifest_path,
             json.dumps(current_manifests["session-settings"]),
@@ -1079,6 +1095,18 @@ def main():
             lambda artifacts, stale_paths, docs_dir, **kwargs: 0
         )
         assert mod.main(["--docs-dir", str(docs), "--check"]) == 0
+        assert observed_beta_rewrite == [
+            (
+                "[unique_key_max_encoded_size]"
+                "(/reference/settings/session-settings/unique-key"
+                "#unique_key_max_encoded_size)"
+            )
+        ]
+
+        observed_beta_rewrite.clear()
+        assert mod.main([
+            "--docs-dir", str(docs), "--check", "--only", "session-settings",
+        ]) == 0
         assert observed_beta_rewrite == [
             (
                 "[unique_key_max_encoded_size]"
