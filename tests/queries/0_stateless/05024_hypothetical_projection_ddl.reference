@@ -1,0 +1,21 @@
+--- create, introspect, drop ---
+p_agg	aggregate
+p_norm	normal
+after drop:	1
+--- DROP ALL is per kind, indexes are untouched ---
+projections:	0
+indexes:	1
+--- IF NOT EXISTS / IF EXISTS ---
+still one:	1
+--- a name taken by a real projection is rejected ---
+BAD_ARGUMENTS
+--- duplicate without IF NOT EXISTS is rejected ---
+BAD_ARGUMENTS
+--- non-MergeTree is rejected ---
+NOT_IMPLEMENTED
+--- EXPLAIN WHATIF lists the projection as not estimated yet ---
+With p_norm (projection (normal), hypothetical):
+status: not_applicable
+reason: EXPLAIN WHATIF does not estimate hypothetical projections yet
+--- with nothing defined the report says so ---
+No hypothetical indexes or projections defined for this table. Use CREATE HYPOTHETICAL INDEX or CREATE HYPOTHETICAL PROJECTION to define one.

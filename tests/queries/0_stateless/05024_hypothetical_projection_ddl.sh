@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_hypo_proj_ddl;
+    CREATE TABLE t_hypo_proj_ddl (a UInt64, b UInt64, PROJECTION p_real (SELECT a, b ORDER BY b))
+    ENGINE = MergeTree ORDER BY a;
+    INSERT INTO t_hypo_proj_ddl SELECT number, number % 100 FROM numbers(1000);
+"
+
+echo "--- create, introspect, drop ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
+    CREATE HYPOTHETICAL PROJECTION p_agg ON t_hypo_proj_ddl (SELECT b, sum(a) GROUP BY b);
+    SELECT name, type FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl' ORDER BY name;
+    DROP HYPOTHETICAL PROJECTION p_agg ON t_hypo_proj_ddl;
+    SELECT 'after drop:', count() FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl';
+"
+
+echo "--- DROP ALL is per kind, indexes are untouched ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_ddl (b) TYPE minmax GRANULARITY 1;
+    CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
+    DROP ALL HYPOTHETICAL PROJECTIONS;
+    SELECT 'projections:', count() FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl';
+    SELECT 'indexes:', count() FROM system.hypothetical_indexes WHERE table = 't_hypo_proj_ddl';
+"
+
+echo "--- IF NOT EXISTS / IF EXISTS ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
+    CREATE HYPOTHETICAL PROJECTION IF NOT EXISTS p_norm ON t_hypo_proj_ddl (SELECT a ORDER BY a);
+    DROP HYPOTHETICAL PROJECTION IF EXISTS no_such ON t_hypo_proj_ddl;
+    SELECT 'still one:', count() FROM system.hypothetical_projections WHERE table = 't_hypo_proj_ddl';
+"
+
+echo "--- a name taken by a real projection is rejected ---"
+$CLICKHOUSE_CLIENT -q "CREATE HYPOTHETICAL PROJECTION p_real ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);" 2>&1 | grep -m1 -oE 'BAD_ARGUMENTS'
+
+echo "--- duplicate without IF NOT EXISTS is rejected ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
+    CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
+" 2>&1 | grep -m1 -oE 'BAD_ARGUMENTS'
+
+echo "--- non-MergeTree is rejected ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_hypo_proj_log;
+    CREATE TABLE t_hypo_proj_log (a UInt64) ENGINE = Log;
+    CREATE HYPOTHETICAL PROJECTION p ON t_hypo_proj_log (SELECT a ORDER BY a);
+" 2>&1 | grep -m1 -oE 'NOT_IMPLEMENTED'
+
+echo "--- EXPLAIN WHATIF lists the projection as not estimated yet ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_norm ON t_hypo_proj_ddl (SELECT a, b ORDER BY b);
+    EXPLAIN WHATIF SELECT a FROM t_hypo_proj_ddl WHERE b = 42 SETTINGS optimize_use_projections = 0;
+" 2>&1 | grep -oE 'With p_norm \(projection \(normal\), hypothetical\):|status: +not_applicable|reason: +EXPLAIN WHATIF does not estimate.*' | awk '{$1=$1; print}'
+
+echo "--- with nothing defined the report says so ---"
+$CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF SELECT a FROM t_hypo_proj_ddl WHERE b = 42 SETTINGS optimize_use_projections = 0;" 2>&1 | grep -oE 'No hypothetical indexes or projections defined.*' | head -1
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proj_ddl; DROP TABLE IF EXISTS t_hypo_proj_log;"
