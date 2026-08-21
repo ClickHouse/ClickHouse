@@ -295,6 +295,11 @@ def test_uniform_table_reads_as_delta(started_cluster):
     assert "DeltaLake" in create_table, create_table
     assert "Iceberg" not in create_table, create_table
 
+    rows = read_rows(node, db_name, UNIFORM_TABLE)
+    assert len(rows) == SEEDED_ROW_COUNT
+    assert rows[0] == SEEDED_FIRST_ROW
+    assert rows[-1] == SEEDED_LAST_ROW
+
 
 def test_iceberg_table_routes_to_iceberg_arm(started_cluster):
     """Databricks reports managed Iceberg as `data_source_format = DELTA`, so
