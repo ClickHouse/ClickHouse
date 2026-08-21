@@ -154,7 +154,7 @@ namespace
                     /// shifting the underlying value by `offset * scale_multiplier`. That product fits
                     /// Int64 (|offset| < 2^18, scale_multiplier <= 10^9); only the shift can overflow.
                     Int64 offset_scaled = time_zone_offset * scale_multiplier;
-                    Int64 res;
+                    Int64 res = 0;
                     if (to_utc ? common::subOverflow(date_time_val.value, offset_scaled, res)
                                : common::addOverflow(date_time_val.value, offset_scaled, res))
                     {
