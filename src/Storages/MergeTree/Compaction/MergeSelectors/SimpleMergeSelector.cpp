@@ -30,9 +30,14 @@ public:
     {
         if (settings.enable_heuristic_to_remove_small_parts_at_right)
         {
+            /// `allow()` checked the floor on the untrimmed range, so trimming here must stop at it,
+            /// otherwise the accepted range shrinks back below `min_parts_to_merge_at_once`.
+            const size_t min_parts_after_trim = std::max<size_t>(settings.min_parts_to_merge_at_once, 2);
+
             size_t size_delta = 0;
             size_t rows_delta = 0;
-            while (end >= begin + 3 && static_cast<double>((end - 1)->size) < settings.heuristic_to_remove_small_parts_at_right_max_ratio * static_cast<double>(sum_size))
+            while (end >= begin + 3 && static_cast<size_t>(end - begin) > min_parts_after_trim
+                && static_cast<double>((end - 1)->size) < settings.heuristic_to_remove_small_parts_at_right_max_ratio * static_cast<double>(sum_size))
             {
                 size_delta += (end - 1)->size;
                 rows_delta += (end - 1)->rows;

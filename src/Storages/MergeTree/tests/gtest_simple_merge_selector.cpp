@@ -193,3 +193,23 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAgeCompactsTheSmallTail)
         ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(1), partName(2)}));
     }
 }
+
+TEST(SimpleMergeSelector, ForceMergeByPartitionAgeKeepsMinPartsToMergeAtOnce)
+{
+    /// `[0, 3)` is the only range that clears the floor, and the right-tail heuristic must not then
+    /// trim it back to two parts: the selector may not return a merge shorter than the floor.
+    auto parts_range = makePartsRange({10 * MiB, 10 * MiB, 1024}, /*age=*/7200);
+    auto statistics = makeStatistics(parts_range, /*partition_min_age=*/7200);
+
+    SimpleMergeSelector::Settings settings;
+    settings.partitions_stats = &statistics;
+    settings.min_partition_age_to_force_merge = 3600;
+    settings.min_parts_to_merge_at_once = 3;
+    ASSERT_TRUE(settings.enable_heuristic_to_remove_small_parts_at_right);
+
+    std::vector<MergeConstraint> constraints{{100 * MiB, 1000}};
+    auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
+
+    ASSERT_EQ(selected.size(), 1);
+    ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
+}
