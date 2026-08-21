@@ -229,7 +229,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file too short: {} bytes", file_size);
 
     /// Read a tail sized to the file (1%, clamped to [128 KiB, 2 MiB]) so it usually covers the whole
-    /// footer - FileMetaData plus the Column/Offset index just before it - in one read.
+    /// footer - FileMetaData for wider range of layouts - in one read.
     size_t initial_read_size = std::min(file_size, std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20));
     PODArray<char> buf(initial_read_size);
     prefetcher.readSync(buf.data(), initial_read_size, file_size - initial_read_size);
