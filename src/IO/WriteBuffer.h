@@ -44,24 +44,6 @@ public:
         if (canceled)
             return;
 
-        /// This hook can reject a flush before accessing the current buffer. In particular,
-        /// CompressedWriteBuffer may temporarily alias a nested buffer that another writer
-        /// could have invalidated. After finalization nothing more may be written, so a leftover
-        /// `next` (for example `HashingWriteBuffer::getHash`) has no buffer to guard and the
-        /// nested buffer is allowed to have moved on.
-        if (finalized)
-            return;
-
-        try
-        {
-            preNext();
-        }
-        catch (...)
-        {
-            cancel();
-            throw;
-        }
-
         if (!offset())
             return;
 
@@ -101,18 +83,6 @@ public:
 
     void nextIfAtEnd()
     {
-        /// A derived buffer can temporarily alias storage owned by another buffer. Validate
-        /// that storage before `hasPendingData` accesses its current window.
-        try
-        {
-            preNext();
-        }
-        catch (...)
-        {
-            cancel();
-            throw;
-        }
-
         if (!hasPendingData())
             next();
     }
@@ -140,13 +110,6 @@ public:
     /// Get number of times next() has been called (number of flushes)
     size_t getFlushCount() const { return flush_count.load(std::memory_order_relaxed); }
 
-    /// Checks that the current buffer can still be safely accessed. Buffer wrappers that
-    /// expose a nested buffer's working window must call this before touching that window.
-    void checkBeforeWrite()
-    {
-        preNext();
-    }
-
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
     virtual void sync()
@@ -165,8 +128,6 @@ public:
 
 protected:
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}
-
-    virtual void preNext() { }
 
     virtual void finalizeImpl() { next(); }
     virtual void cancelImpl() noexcept { }

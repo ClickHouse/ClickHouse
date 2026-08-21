@@ -4,6 +4,7 @@
 
 #include <base/types.h>
 #include <base/defines.h>
+#include <base/unaligned.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -34,11 +35,10 @@ void CompressedWriteBuffer::setupBufferForNextBlock()
 
         if (out.available() >= required_size)
         {
-            expected_out_position = out.position();
-            expected_out_flush_count = out.getFlushCount();
             char * data_begin = out.position() + COMPRESSED_BLOCK_PREFIX_SIZE;
             working_buffer = Buffer(data_begin, data_begin + block_size);
             pos = working_buffer.begin();
+            block_is_written_in_place = true;
             return;
         }
     }
@@ -48,16 +48,7 @@ void CompressedWriteBuffer::setupBufferForNextBlock()
 
     working_buffer = Buffer(memory.data(), memory.data() + block_size);
     pos = working_buffer.begin();
-    expected_out_position = nullptr;
-}
-
-void CompressedWriteBuffer::preNext()
-{
-    if (expected_out_position && (out.position() != expected_out_position || out.getFlushCount() != expected_out_flush_count))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "CompressedWriteBuffer: the output buffer declared exclusive was changed by someone else, "
-            "the block written in place would be corrupted");
+    block_is_written_in_place = false;
 }
 
 void CompressedWriteBuffer::nextImpl()
@@ -68,18 +59,25 @@ void CompressedWriteBuffer::nextImpl()
     chassert(offset() <= INT_MAX);
     UInt32 decompressed_size = static_cast<UInt32>(offset());
 
-    if (expected_out_position)
+    if (block_is_written_in_place)
     {
-        char * header_ptr = out.position() + sizeof(CityHash_v1_0_2::uint128);
+        /// The frame sits right in front of the working buffer, inside `out`, which is exclusively
+        /// ours (see declareOutBufferExclusive), so `out` has not moved since the buffer was set up.
+        char * frame_begin = working_buffer.begin() - COMPRESSED_BLOCK_PREFIX_SIZE;
+        chassert(out.position() == frame_begin);
+
+        char * header_ptr = frame_begin + sizeof(CityHash_v1_0_2::uint128);
 
         UInt32 compressed_size = codec->writeHeader(header_ptr, decompressed_size, decompressed_size);
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(header_ptr, compressed_size);
 
-        writeBinaryLittleEndian(checksum.low64, out);
-        writeBinaryLittleEndian(checksum.high64, out);
+        /// Raw stores: the checksum goes in front of a payload that is already in place, so `out`
+        /// must not be flushed in between, as a buffered write could do when the frame ends the buffer.
+        unalignedStoreLittleEndian<UInt64>(frame_begin, checksum.low64);
+        unalignedStoreLittleEndian<UInt64>(frame_begin + sizeof(UInt64), checksum.high64);
 
-        out.position() += compressed_size;
+        out.position() = pos;
     }
     else
     {

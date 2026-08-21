@@ -6,9 +6,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromVector.h>
 
 #include <gtest/gtest.h>
 
@@ -179,94 +177,6 @@ TEST(CompressedWriteBufferNone, ChunkedWritesAcrossBlocks)
     auto data = makeData(1 << 18);
     for (size_t chunk : {size_t(1), size_t(7), size_t(63), size_t(997), size_t(65536)})
         roundTrip(data, /*block_size=*/ 16384, /*out_buf_size=*/ 65536, chunk);
-}
-
-TEST(CompressedWriteBufferNone, ViolatedExclusivityWithRelocatedOutputIsDetected)
-{
-    /// The exclusivity declared by declareOutBufferExclusive is enforced, not just documented:
-    /// a foreign flush can relocate `out` while a zero-copy block is in flight. The compressed
-    /// writer must reject it before it reads its now-invalid aliased working buffer.
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
-#else
-    std::vector<char> output(2048);
-    WriteBufferFromVector<std::vector<char>> out(output);
-    CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
-    compressed_out.declareOutBufferExclusive();
-
-    compressed_out.write("hello", 5);
-    /// Someone else fills and flushes `out` even though it was declared exclusive. Growing the
-    /// vector can relocate the storage that the direct block aliases.
-    std::vector<char> foreign_data(2048, 'x');
-    out.write(foreign_data.data(), foreign_data.size());
-    out.next();
-
-    EXPECT_THROW(compressed_out.next(), DB::Exception);
-    EXPECT_TRUE(compressed_out.isCanceled());
-#endif
-}
-
-TEST(CompressedWriteBufferNone, ViolatedExclusivityBeforeWriteIsDetected)
-{
-    /// A write must validate before `nextIfAtEnd` checks the aliased working buffer.
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
-#else
-    auto tmp_file = createTemporaryFile("/tmp/");
-    WriteBufferFromFile out(tmp_file->path(), 1 << 20);
-    CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
-    compressed_out.declareOutBufferExclusive();
-
-    compressed_out.write("hello", 5);
-    out.write("x", 1);
-    out.next();
-
-    EXPECT_THROW(compressed_out.write("!", 1), DB::Exception);
-    EXPECT_TRUE(compressed_out.isCanceled());
-#endif
-}
-
-TEST(CompressedWriteBufferNone, ViolatedExclusivityBeforeCharacterWriteIsDetected)
-{
-    /// `write(char)` must use the same guarded path as bulk writes.
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
-#else
-    auto tmp_file = createTemporaryFile("/tmp/");
-    WriteBufferFromFile out(tmp_file->path(), 1 << 20);
-    CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
-    compressed_out.declareOutBufferExclusive();
-
-    compressed_out.write("hello", 5);
-    out.write("x", 1);
-    out.next();
-
-    EXPECT_THROW(compressed_out.write('!'), DB::Exception);
-    EXPECT_TRUE(compressed_out.isCanceled());
-#endif
-}
-
-TEST(CompressedWriteBufferNone, ViolatedExclusivityThroughHashingBufferIsDetected)
-{
-    /// A wrapper that exposes the compressor's working buffer must validate the nested buffer
-    /// before `write` accesses that potentially aliased storage.
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
-#else
-    auto tmp_file = createTemporaryFile("/tmp/");
-    WriteBufferFromFile out(tmp_file->path(), 1 << 20);
-    CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
-    compressed_out.declareOutBufferExclusive();
-    HashingWriteBuffer hashing_out(compressed_out);
-
-    hashing_out.write("hello", 5);
-    out.write("x", 1);
-    out.next();
-
-    EXPECT_THROW(hashing_out.write("!", 1), DB::Exception);
-    EXPECT_TRUE(hashing_out.isCanceled());
-    EXPECT_TRUE(compressed_out.isCanceled());
-#endif
 }
 
 }

@@ -20,8 +20,10 @@ public:
         bool use_adaptive_buffer_size_ = false,
         size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
 
-    /// Enables zero-copy `NONE` writes when this is the only writer of `out`.
-    /// Call before writes or constructing a wrapper that captures the working buffer.
+    /// Enables zero-copy `NONE` writes: a block is assembled in place inside `out` instead of
+    /// being copied there. The caller guarantees that nothing else writes to or flushes `out`
+    /// while this buffer is alive, the same contract `HashingWriteBuffer` and `ForkWriteBuffer`
+    /// rely on. Call before writes or constructing a wrapper that captures the working buffer.
     void declareOutBufferExclusive();
 
     /// The amount of compressed data
@@ -52,7 +54,6 @@ public:
     WriteBuffer * getNestedBuffer() const { return &out; }
 
 private:
-    void preNext() override;
     void nextImpl() override;
 
     /// Select the direct or owned buffer for the next block.
@@ -82,9 +83,8 @@ private:
     /// See declareOutBufferExclusive.
     bool out_buffer_is_exclusive = false;
 
-    /// Expected `out` position for a direct block; nullptr for an owned block.
-    char * expected_out_position = nullptr;
-    size_t expected_out_flush_count = 0;
+    /// Whether the current block is written in place inside `out` rather than into `memory`.
+    bool block_is_written_in_place = false;
 };
 
 }
