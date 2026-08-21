@@ -11,7 +11,6 @@
 #include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -198,15 +197,7 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     Columns cols;
     cols.reserve(columns.size());
     for (const auto & column : columns)
-    {
-        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeNullable(recursiveRemoveLowCardinality(column.type)));
-        if (decay_length)
-            validateExponentialTimeDecayingFloat64Column(
-                *column.column, *decay_length, "IN set construction");
-
         cols.emplace_back(column.column);
-    }
     return insertFromColumns(cols);
 }
 
@@ -250,12 +241,6 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     {
         holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped()));
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
-
-        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeNullable(recursiveRemoveLowCardinality(data_types[i])));
-        if (decay_length)
-            validateExponentialTimeDecayingFloat64Column(
-                *holder.materialized_columns.back(), *decay_length, "IN set construction");
     }
 
     size_t rows = columns.at(0)->size();
@@ -524,14 +509,6 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }
 
-        auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeNullable(recursiveRemoveLowCardinality(column_before_cast.type)));
-        if (!decay_length)
-            decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-                removeNullable(recursiveRemoveLowCardinality(data_types[i])));
-        if (decay_length)
-            validateExponentialTimeDecayingFloat64Column(*result, *decay_length, "IN set probe");
-
         // Append the result to materialized columns
         materialized_columns.emplace_back(std::move(result));
         key_columns.emplace_back(materialized_columns.back().get());
@@ -681,14 +658,9 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         other_type->getName(), data_types[set_type_idx]->getName());
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(
-    const Columns & set_elements,
-    const DataTypes & set_element_types,
-    std::vector<KeyTuplePositionMapping> && indexes_mapping_)
+MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
-    chassert(set_elements.size() == set_element_types.size());
-
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
@@ -717,7 +689,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(
     for (size_t i = 0; i < tuple_size; ++i)
     {
         String column_name = "_" + toString(i);
-        block_to_sort.insert({ordered_set[i], set_element_types[indexes_mapping[i].tuple_index], column_name});
+        block_to_sort.insert({ordered_set[i], nullptr, column_name});
         sort_description.emplace_back(column_name, 1, 1);
     }
 

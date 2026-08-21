@@ -2,15 +2,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/PreparedSets.h>
 
 
 namespace DB
@@ -92,12 +89,6 @@ public:
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
-        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeLowCardinalityAndNullable(arguments[0].type));
-        if (decay_length)
-            validateExponentialTimeDecayingFloat64Column(
-                *arguments[0].column, *decay_length, "IN set probe");
-
         /// Second argument must be ColumnSet (possibly wrapped in ColumnConst).
         ColumnPtr column_set_ptr = arguments[1].column;
         const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
@@ -108,19 +99,6 @@ public:
                 getName(), column_set_ptr->getName());
 
         auto future_set = column_set->getData();
-
-        /// Tuple-literal sets can lose a custom type name while their common type is inferred.
-        /// Validate their values against the decaying type from the left-hand side before hashing.
-        if (decay_length)
-        {
-            if (const auto * tuple_set = dynamic_cast<const FutureSetFromTuple *>(future_set.get()))
-            {
-                for (const auto & column : tuple_set->getKeyColumns())
-                    validateExponentialTimeDecayingFloat64Column(
-                        *column, *decay_length, "IN set construction");
-            }
-        }
-
         if (!future_set)
         {
             if (dry_run)
