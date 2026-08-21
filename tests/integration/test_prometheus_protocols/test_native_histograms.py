@@ -271,6 +271,12 @@ def test_table_without_histograms_target_drops_histograms():
         "SELECT timestamp, value FROM timeSeriesSamples(prometheus)"
     ) == TSV([["2024-01-01 00:00:07.000", "1"]])
     assert node.contains_in_log("Dropping 1 native histogram samples")
+    assert (
+        node.query(
+            "SELECT value FROM system.events WHERE event = 'PrometheusRemoteWriteDroppedHistograms'"
+        )
+        == "1\n"
+    )
 
 
 def test_invalid_histograms_rejected():
@@ -365,5 +371,34 @@ def test_invalid_histograms_rejected():
             sum=0.0,
             schema=42,
             timestamp=1704067216000,
+        )
+    )
+    # A negative count. The int arms are unsigned, so only the float ones can carry one.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_float=-1.0,
+            sum=0.0,
+            zero_count_float=0.0,
+            timestamp=1704067217000,
+        )
+    )
+    # A negative zero count.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_float=1.0,
+            sum=0.0,
+            zero_count_float=-1.0,
+            timestamp=1704067218000,
+        )
+    )
+    # A negative float bucket count.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_float=1.0,
+            sum=0.0,
+            zero_count_float=0.0,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            positive_counts=[-1.0],
+            timestamp=1704067219000,
         )
     )
