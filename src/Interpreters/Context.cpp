@@ -3146,7 +3146,28 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                         column.name = identifier->name();
                         /// Change ephemeral columns to default columns.
                         column.default_desc.kind = ColumnDefaultKind::Default;
-                        structure_hint.add(std::move(column));
+
+                        /** The same column of the table function can be selected more than once,
+                          * as in `INSERT INTO t (x, y) SELECT c, c FROM file(...)`.
+                          * A source column has a single type, so the hint is usable only if all the
+                          * insert table columns that it is mapped to agree on the type.
+                          */
+                        if (const auto * already_hinted = structure_hint.tryGet(column.name))
+                        {
+                            if (!already_hinted->type->equals(*column.type))
+                            {
+                                if (use_structure_from_insertion_table_in_table_functions == 1)
+                                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                        "Column {} is selected more than once in INSERT SELECT query, "
+                                        "but the corresponding columns of the insert table have different types: {} and {}.",
+                                        backQuote(column.name), already_hinted->type->getName(), column.type->getName());
+
+                                use_columns_from_insert_query = false;
+                                break;
+                            }
+                        }
+                        else
+                            structure_hint.add(std::move(column));
                     }
 
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
