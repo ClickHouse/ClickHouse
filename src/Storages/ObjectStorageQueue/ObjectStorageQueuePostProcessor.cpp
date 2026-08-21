@@ -17,11 +17,13 @@
 
 #include <chrono>
 #include <thread>
+#include <unordered_set>
 
 
 namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueMovedObjects;
+    extern const Event ObjectStorageQueueMoveCollisions;
     extern const Event ObjectStorageQueueRemovedObjects;
     extern const Event ObjectStorageQueueTaggedObjects;
 }
@@ -211,6 +213,18 @@ static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const Str
     return StoredObject(remote_path);
 }
 
+/// With preserve_path = false, objects with equal basenames under different prefixes map to the
+/// same destination; moving them all would silently overwrite data (see #114847).
+static std::vector<UInt8> findDuplicateMoveDestinations(const StoredObjects & objects, const String & move_prefix, bool preserve_path)
+{
+    std::vector<UInt8> duplicate(objects.size(), 0);
+    std::unordered_set<String> destinations;
+    for (size_t i = 0; i < objects.size(); ++i)
+        if (!destinations.insert(applyMovePrefixIfPresent(objects[i], move_prefix, preserve_path).remote_path).second)
+            duplicate[i] = 1;
+    return duplicate;
+}
+
 #if USE_AZURE_BLOB_STORAGE
 
 static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
@@ -242,16 +256,39 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
     TaskTracker task_tracker(schedule, post_process_max_inflight_object_moves, limited_log);
 
     std::atomic<size_t> moved_objects = 0;
+    const auto duplicate_destination = findDuplicateMoveDestinations(objects, move_prefix, preserve_path);
 
     try
     {
-        for (const auto & object_from : objects)
+        for (size_t i = 0; i < objects.size(); ++i)
         {
-            task_tracker.add([&]{
+            const auto & object_from = objects[i];
+            if (duplicate_destination[i])
+            {
+                LOG_ERROR(
+                    log,
+                    "Not moving object {}: its destination collides with another object's destination "
+                    "(consider setting after_processing_move_preserve_path); leaving the object in place",
+                    object_from.remote_path);
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+                continue;
+            }
+            task_tracker.add([&, &object_from = objects[i]]{
                 try
                 {
+                    auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, preserve_path);
+                    if (!preserve_path && object_storage->exists(object_to))
+                    {
+                        LOG_ERROR(
+                            log,
+                            "Not moving object {} to {}: destination object already exists "
+                            "(consider setting after_processing_move_preserve_path); leaving the object in place",
+                            object_from.remote_path,
+                            object_to.remote_path);
+                        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+                        return;
+                    }
                     doWithRetries([&]{
-                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, preserve_path);
                         LOG_TRACE(log, "Copying object {} to {}", object_from.remote_path, object_to.remote_path);
                         object_storage->copyObject(
                             object_from,
@@ -351,17 +388,42 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 ThreadName::S3_COPY_POOL);
 
             size_t moved_objects = 0;
-            for (const auto & object_from : objects)
+            const auto duplicate_destination = findDuplicateMoveDestinations(objects, move_prefix, settings.after_processing_move_preserve_path);
+            for (size_t i = 0; i < objects.size(); ++i)
             {
+                const auto & object_from = objects[i];
+                if (duplicate_destination[i])
+                {
+                    LOG_ERROR(
+                        log,
+                        "Not moving object {}: its destination collides with another object's destination "
+                        "(consider setting after_processing_move_preserve_path); leaving the object in place",
+                        object_from.remote_path);
+                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+                    continue;
+                }
                 try
                 {
+                    auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
+                    if (!settings.after_processing_move_preserve_path
+                        && S3::objectExists(*dst_client, dst_uri.bucket, object_to.remote_path))
+                    {
+                        LOG_ERROR(
+                            log,
+                            "Not moving object {} to bucket {}: destination object {} already exists "
+                            "(consider setting after_processing_move_preserve_path); leaving the object in place",
+                            object_from.remote_path,
+                            dst_uri.bucket,
+                            object_to.remote_path);
+                        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+                        continue;
+                    }
                     doWithRetries([&]{
                         const String src_bucket = s3_storage->getObjectsNamespace();
                         size_t object_size = S3::getObjectSize(
                             *src_client,
                             src_bucket,
                             object_from.remote_path);
-                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
 
                         LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, object_size, dst_uri.bucket);
                         copyS3File(
@@ -444,8 +506,20 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 is_readonly);
 
             size_t moved_objects = 0;
-            for (const auto & object_from : objects)
+            const auto duplicate_destination = findDuplicateMoveDestinations(objects, move_prefix, settings.after_processing_move_preserve_path);
+            for (size_t i = 0; i < objects.size(); ++i)
             {
+                const auto & object_from = objects[i];
+                if (duplicate_destination[i])
+                {
+                    LOG_ERROR(
+                        log,
+                        "Not moving object {}: its destination collides with another object's destination "
+                        "(consider setting after_processing_move_preserve_path); leaving the object in place",
+                        object_from.remote_path);
+                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveCollisions);
+                    continue;
+                }
                 try
                 {
                     doWithRetries([&]{

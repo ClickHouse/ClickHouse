@@ -472,6 +472,68 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
         assert blob_count == 0, f"blobs left: {blob_count}"
 
 
+def test_move_after_processing_basename_collision(started_cluster):
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_collision_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_move_to_prefix"
+    row_num = 10
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    # Two files sharing a basename under different prefixes: with the default
+    # after_processing_move_preserve_path = 0 both map to <prefix>/part.csv.
+    files = [(f"{files_path}/a/part.csv", 0), (f"{files_path}/b/part.csv", 1)]
+    generate_random_files(
+        started_cluster, files_path, len(files), row_num=row_num, files=files
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    expected_count = len(files) * row_num
+    for _ in range(100):
+        count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
+        print(f"{count}/{expected_count}")
+        if count == expected_count:
+            break
+        time.sleep(1)
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
+
+    # Exactly one file may occupy the collided destination; the other must
+    # survive at the source instead of being overwritten and deleted.
+    minio = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    for _ in range(100):
+        moved = count_minio_objects(started_cluster, bucket, processed_prefix)
+        left = count_minio_objects(started_cluster, bucket, files_path)
+        if moved + left == len(files) and moved >= 1:
+            break
+        time.sleep(1)
+    moved = count_minio_objects(started_cluster, bucket, processed_prefix)
+    left = count_minio_objects(started_cluster, bucket, files_path)
+    assert moved == 1, f"expected 1 archived object, got {moved}"
+    assert left == 1, f"expected 1 object left at source, got {left}"
+
+    # No bytes were destroyed: the surviving objects still hold all rows.
+    total_lines = 0
+    for prefix in (processed_prefix, files_path):
+        for obj in minio.list_objects(bucket, prefix=prefix, recursive=True):
+            data = minio.get_object(bucket, obj.object_name).read().decode()
+            total_lines += len(data.strip().splitlines())
+    assert total_lines == expected_count
+
+
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 @pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
 @pytest.mark.parametrize("preserve_move_path", [True, False])
