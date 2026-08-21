@@ -14,11 +14,19 @@ $CLICKHOUSE_LOCAL -q "SELECT 1 AS \`temp\xFF\` FORMAT NetCDF" 2>&1 | grep -c "BA
 $CLICKHOUSE_LOCAL -q "SELECT 1 AS \`\x80bad\` FORMAT NetCDF" 2>&1 | grep -c "BAD_ARGUMENTS"
 $CLICKHOUSE_LOCAL -q "SELECT 1 AS \`temp\xD0\` FORMAT NetCDF" 2>&1 | grep -c "BAD_ARGUMENTS"
 
-echo "--- and a valid UTF-8 name outside of ASCII is written and read back"
-$CLICKHOUSE_LOCAL -q "SELECT 1 AS \`темп\` INTO OUTFILE '$FILE' TRUNCATE FORMAT NetCDF"
-$CLICKHOUSE_LOCAL -q "DESCRIBE file('$FILE', NetCDF)"
-$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$FILE', NetCDF)"
-rm -f "$FILE"
+echo "--- and a valid UTF-8 name outside of ASCII is accepted when it can be validated"
+# The names of the classic format have to be NFC-normalized, which needs ICU. A build without it
+# rejects every non-ASCII name instead of writing a header that may violate the format, so the two
+# builds are checked for the two outcomes and print the same summary.
+if [ "$( ${CLICKHOUSE_LOCAL} -q "SELECT value FROM system.build_options WHERE name = 'USE_ICU' LIMIT 1")" = "1" ]; then
+    $CLICKHOUSE_LOCAL -q "SELECT 1 AS \`темп\` INTO OUTFILE '$FILE' TRUNCATE FORMAT NetCDF"
+    $CLICKHOUSE_LOCAL -q "DESCRIBE file('$FILE', NetCDF)" | grep -cP '^темп\tUInt8\t'
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$FILE', NetCDF)"
+    rm -f "$FILE"
+else
+    $CLICKHOUSE_LOCAL -q "SELECT 1 AS \`темп\` FORMAT NetCDF" 2>&1 | grep -c "BAD_ARGUMENTS"
+    echo 1
+fi
 
 # A file written in the streaming mode does not store its number of records: it is derived from the
 # size of the file, which the schema reader has to do as well, or the number of rows would not be

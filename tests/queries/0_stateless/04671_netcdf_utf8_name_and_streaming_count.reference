@@ -2,8 +2,8 @@
 1
 1
 1
---- and a valid UTF-8 name outside of ASCII is written and read back
-темп	UInt8					
+--- and a valid UTF-8 name outside of ASCII is accepted when it can be validated
+1
 1
 --- the number of rows of a streaming file comes from the metadata
 3
