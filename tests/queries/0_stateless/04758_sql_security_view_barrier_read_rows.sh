@@ -82,12 +82,12 @@ echo "===== lazy FINAL does not consume an outer limit through the barrier =====
 # LIMIT is not considered to apply to the read below the barrier. Before the fence this query kept
 # regular FINAL instead, because the invoker's LIMIT disabled the partial split.
 ${CLICKHOUSE_CLIENT} --enable_analyzer 1 --user "$user" --query "
-    SELECT countIf(explain LIKE '%LazyFinal%')
+    SELECT countIf(explain LIKE '%LazyFinal%') > 0
     FROM (
         EXPLAIN SELECT * FROM $db.lazy_final_owned_view LIMIT 1
         SETTINGS query_plan_optimize_lazy_final = 1,
                  max_rows_for_lazy_final = 10000000,
                  min_filtered_ratio_for_lazy_final = 0
-    ) > 0"
+    )"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"
