@@ -78,7 +78,8 @@ void WriteBufferInlineOrBlob::finalizeImpl()
         finalize_callback(WrittenBlob{bytes_written});
     }
 
-    /// Metadata is now recorded; honor a sync that arrived before finalize (compact parts).
+    /// The metadata operation is now recorded with the transaction, so a sync that arrived earlier
+    /// (compact parts) has something to reach and can be honored.
     metadata_written = true;
     if (sync_requested && sync_metadata_callback)
         sync_metadata_callback();
