@@ -2,15 +2,39 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Registro de cambios de Cloud - 2026'
-description: 'Registro de cambios de ClickHouse Cloud que describe las novedades de cada versión de ClickHouse Cloud'
+description: 'Registro de cambios de ClickHouse Cloud con descripciones de las novedades de cada versión de ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['registro de cambios', 'notas de la versión', 'actualizaciones', 'nuevas características', 'cambios en Cloud']
+keywords: ['changelog', 'notas de versión', 'actualizaciones', 'nuevas funcionalidades', 'cambios de Cloud']
 rss: true
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-Además de este registro de cambios de ClickHouse Cloud, consulta la página de [Cloud Compatibility](/es/products/cloud/guides/cloud-compatibility).
+Además de este registro de cambios de Cloud, consulte la página de [compatibilidad de Cloud](/es/products/cloud/guides/cloud-compatibility).
+
+<Update label="17 de agosto de 2026">
+  Las actualizaciones de esta semana amplían el alcance de la plataforma y mejoran la visibilidad operativa. Managed Postgres ya está disponible en GCP para determinados socios de diseño, los recursos de ClickStack se pueden administrar mediante el proveedor oficial de Terraform y las nuevas notificaciones de facturación avisan a los clientes con antelación antes de que los créditos caduquen o se interrumpa el servicio. También hemos mejorado el tracing de ClickHouse Agents y la experiencia de inicio de sesión con SAML.
+
+  ### Managed Postgres ya está disponible en GCP
+
+  [ClickHouse Cloud Managed Postgres](/es/products/managed-postgres/overview) ya está disponible en GCP para determinados socios de diseño en todas las regiones públicas de GCP, con `us-west1` como primera región privada. Esto amplía Managed Postgres a los clientes que desarrollan en GCP, con una vista previa privada prevista para 2026-08.
+
+  ### Administre los recursos de ClickStack con Terraform
+
+  La compatibilidad con ClickStack ya está disponible en beta a través de la versión 3.25.0 del proveedor oficial de Terraform [`ClickHouse/clickhouse`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha). Los equipos pueden crear, actualizar, importar y eliminar dashboards, alertas, fuentes, búsquedas guardadas, conexiones y webhooks mediante el flujo de trabajo estándar de `terraform plan` y `terraform apply`. La integración admite tanto Managed ClickStack como implementaciones autohospedadas.
+
+  ### Nuevas notificaciones de facturación para créditos y pagos
+
+  Las notificaciones de facturación ahora se administran mediante el Centro de notificaciones de ClickHouse Cloud y se envían a través de la consola, el correo electrónico y Slack. Los clientes reciben avisos anticipados cuando los créditos prepagados o de prueba están a punto de caducar o agotarse, así como notificaciones cuando se añaden créditos, cambian los métodos de pago o una cuenta entra en un período de gracia por falta de pago. Esto proporciona más tiempo para renovar, añadir créditos o resolver problemas de pago antes de que se interrumpa el servicio.
+
+  ### Abra las trazas de sesiones de Langfuse desde ClickHouse Agents
+
+  Los administradores de la organización ahora pueden abrir la sesión de Langfuse correspondiente directamente desde un chat de [ClickHouse Agents](/es/products/cloud/features/ai-ml/agents/index) e inspeccionar las trazas de toda la conversación. Esto facilita la investigación del comportamiento de los agentes y la depuración de ejecuciones de varios pasos. Esta mejora está disponible en Beta pública para los chats creados recientemente.
+
+  ### Las redirecciones SAML ayudan a evitar cuentas duplicadas
+
+  Cuando un usuario intenta iniciar sesión con Google o Microsoft mientras SAML está configurado para su organización, ClickHouse Cloud ahora lo redirige al flujo de inicio de sesión SAML adecuado. Esto ayuda a evitar que los usuarios creen accidentalmente una organización independiente cuando pretendían acceder a una cuenta existente.
+</Update>
 
 <Update label="13 de julio de 2026">
   Las actualizaciones de esta semana incluyen enrutamiento sticky de réplicas a través de HTTPS estándar, fechas de inicio personalizadas para el período de facturación y nuevos controles de carga inicial para los ClickPipes de almacenamiento de objetos.
