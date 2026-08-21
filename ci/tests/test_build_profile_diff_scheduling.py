@@ -98,6 +98,7 @@ BUILD_FREE_DIFFS = [
     pytest.param([".github/workflows/pull_request.yml"], id="generated-yaml"),
     pytest.param(["ci/defs/job_configs.py"], id="job-registry"),
     pytest.param(["ci/defs/defs.py"], id="defs-registry"),
+    pytest.param(["ci/workflows/pull_request.py"], id="workflow-source"),
     pytest.param(["ci/jobs/scripts/workflow_hooks/filter_job.py"], id="filter-hook"),
 ]
 
@@ -175,7 +176,11 @@ def test_registry_edits_do_not_schedule_a_run_without_profile_data():
     Phrased as "these paths do not schedule the job" rather than as a literal copy of
     the digest list, so adding a genuine consumer input later does not fail this test.
     """
-    for path in ("ci/defs/job_configs.py", "ci/defs/defs.py"):
+    for path in (
+        "ci/defs/job_configs.py",
+        "ci/defs/defs.py",
+        "ci/workflows/pull_request.py",
+    ):
         skipped = _schedule([path])
         assert PROFILED_BUILD in skipped, path
         assert BPD in skipped, path
