@@ -1976,6 +1976,19 @@ static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 }
 
 
+/// A half-built view can reach the log with its query stored but not its context. The context
+/// only supplies the log cut-off, so the init one stands in for a missing one.
+String InsertDependenciesBuilder::getViewQueryForLog(StorageID view_id) const
+{
+    auto query_it = select_queries.find(view_id);
+    if (query_it == select_queries.end())
+        return {};
+
+    auto context_it = select_contexts.find(view_id);
+    return getCleanQueryAst(query_it->second, context_it == select_contexts.end() ? init_context : context_it->second);
+}
+
+
 void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start) const
 {
     const auto & settings = init_context->getSettingsRef();
@@ -2020,7 +2033,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
             element.view_name = view_id.getFullTableName();
             element.view_uuid = view_id.uuid;
             element.view_type = view_type;
-            element.view_query = getCleanQueryAst(select_queries.at(view_id), select_contexts.at(view_id));
+            element.view_query = getViewQueryForLog(view_id);
             element.view_target = inner_table_id.getFullTableName();
 
             element.peak_memory_usage = thread_group->memory_tracker.getPeak() > 0 ? thread_group->memory_tracker.getPeak() : 0;
