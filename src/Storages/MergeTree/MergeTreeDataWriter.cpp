@@ -1164,8 +1164,13 @@ static std::pair<const ASTFunction *, const IAST *> extractLambdaParamsAndBody(c
     return {params_tuple, lambda_arg->arguments->children[1].get()};
 }
 
+/// Member step for a constant subscript: `arr[i]` and `m[k]` are the same function, and only the
+/// source type tells them apart, so name the step here and resolve it during the type descent.
+static constexpr std::string_view SUBSCRIPT_MEMBER = "[]";
+
 /// "t.doc" / "t.1" for tupleElement(t, 'doc' | 1) chains, "m.keys"/"m.values" for mapKeys/mapValues(m),
-/// over a plain column base; nullopt when the base is not a plain (possibly nested) column reference.
+/// "x.[]" for a constant subscript, over a plain column base; nullopt when the base is not a plain
+/// (possibly nested) column reference.
 static std::optional<String> tryGetMemberQualifiedName(const IAST & node)
 {
     if (const auto * identifier = node.as<ASTIdentifier>())
@@ -1197,6 +1202,13 @@ static std::optional<String> tryGetMemberQualifiedName(const IAST & node)
     {
         if (auto base = tryGetMemberQualifiedName(*args[0]))
             return *base + "." + (function->name == "mapKeys" ? "keys" : "values");
+        return std::nullopt;
+    }
+
+    if (function->name == "arrayElement" && args.size() == 2 && args[1]->as<ASTLiteral>())
+    {
+        if (auto base = tryGetMemberQualifiedName(*args[0]))
+            return *base + "." + String(SUBSCRIPT_MEMBER);
         return std::nullopt;
     }
 
@@ -1234,7 +1246,8 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
         }
         /// Member access reads one side of its source; qualify the candidate with that member so the
         /// resolver descends into it instead of donating the source's sibling policies.
-        if (function->name == "tupleElement" || function->name == "mapKeys" || function->name == "mapValues")
+        if (function->name == "tupleElement" || function->name == "mapKeys" || function->name == "mapValues"
+            || function->name == "arrayElement")
         {
             if (auto qualified = tryGetMemberQualifiedName(node))
             {
@@ -1351,7 +1364,7 @@ static const IAST * unwrapTransparentProjectionExpression(const IAST & node)
             break;
 
         const auto & args = function->arguments->children;
-        if (function->name == "materialize" && args.size() == 1)
+        if ((function->name == "materialize" || function->name == "toNullable") && args.size() == 1)
             current = args[0].get();
         else if ((function->name == "CAST" || function->name == "_CAST") && args.size() == 2)
             current = args[0].get();
@@ -1518,7 +1531,8 @@ static size_t countJSONObjectTypes(const IDataType & type)
 }
 
 /// One member step of a qualified candidate: Tuple elements by name or 1-based number, Map sides by
-/// "keys"/"values"; Array/Nullable wrappers are looked through (member access maps over arrays).
+/// "keys"/"values", a constant subscript by "[]"; Array/Nullable wrappers are looked through (member
+/// access maps over arrays).
 static DataTypePtr descendJSONPolicySourceIntoMember(DataTypePtr type, std::string_view member)
 {
     while (true)
@@ -1529,6 +1543,15 @@ static DataTypePtr descendJSONPolicySourceIntoMember(DataTypePtr type, std::stri
             type = array->getNestedType();
         else
             break;
+    }
+
+    /// A constant subscript: on a Map it selects the value side, on an Array it selects the element,
+    /// which the wrapper peeling above has already reached.
+    if (member == SUBSCRIPT_MEMBER)
+    {
+        if (const auto * subscripted_map = typeid_cast<const DataTypeMap *>(type.get()))
+            return subscripted_map->getValueType();
+        return type;
     }
 
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))

@@ -45,39 +45,50 @@ ${CLICKHOUSE_CLIENT} --query="
         SETTINGS mutations_sync = 0, alter_sync = 0;
 "
 
-# Control: both source parts must still be named 'j' while the failpoint holds, or this test
-# silently stops covering the race (skip, don't fail, same as the merge check below).
+# Control: both source parts must still be named 'j' while the failpoint holds. Every test that uses
+# this failpoint is no-parallel, so nothing else can clear it here - if the rename has already been
+# applied, the merge below no longer reads a pre-rename part and the test would assert nothing.
 still_prerename=$(${CLICKHOUSE_CLIENT} --query="
     SELECT countDistinct(name) FROM system.parts_columns
     WHERE database = currentDatabase() AND table = 'projection_rename_04839' AND active AND column = 'j'")
-skip=0
 if [ "$still_prerename" != "2" ]; then
-    skip=1
+    echo "FAIL: the rename reached the parts before the merge, so the race went uncovered (pre-rename parts: ${still_prerename})"
+    ${CLICKHOUSE_CLIENT} --query="
+        SELECT name, column, type FROM system.parts_columns
+        WHERE database = currentDatabase() AND table = 'projection_rename_04839' AND active"
+    disable_failpoint
+    ${CLICKHOUSE_CLIENT} --query="DROP TABLE projection_rename_04839"
+    exit 1
 fi
 
 # The merge rebuilds the projection from the still-pre-rename parts, resolving 'payload' back to
 # 'j' via each part's own AlterConversions; optimize_throw_if_noop=1 turns a skipped merge into a failure.
-if [ "$skip" = "0" ]; then
-    if ! err=$(${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE projection_rename_04839 FINAL SETTINGS optimize_throw_if_noop = 1" 2>&1); then
-        case "$err" in
-            *"different mutation version"*|*"different projection sets"*) skip=1 ;;
-            *)
-                echo "FAIL: OPTIMIZE did not run: ${err}"
-                ${CLICKHOUSE_CLIENT} --query="DROP TABLE projection_rename_04839"
-                exit 1
-                ;;
-        esac
+# ADD PROJECTION reaches the parts asynchronously, so retry while the merge still sees a mixed set,
+# and fail if it never runs: a merge that did not happen leaves the regression below unexercised.
+optimized=0
+err=
+for _ in {1..60}; do
+    if err=$(${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE projection_rename_04839 FINAL SETTINGS optimize_throw_if_noop = 1" 2>&1); then
+        optimized=1
+        break
     fi
-fi
+    case "$err" in
+        *"different mutation version"*|*"different projection sets"*) sleep 0.5 ;;
+        *)
+            echo "FAIL: OPTIMIZE did not run: ${err}"
+            disable_failpoint
+            ${CLICKHOUSE_CLIENT} --query="DROP TABLE projection_rename_04839"
+            exit 1
+            ;;
+    esac
+done
 
 disable_failpoint
 
-if [ "$skip" = "1" ]; then
-    # A concurrent test cleared the global failpoint mid-window (or the merge saw a part already at
-    # a different mutation version). That only ever costs coverage here, never a red.
-    echo "OK"
+if [ "$optimized" != "1" ]; then
+    echo "FAIL: OPTIMIZE never merged the pre-rename parts: ${err}"
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE projection_rename_04839"
-    exit 0
+    exit 1
 fi
 
 # Control: the projection's own column really is named after the renamed column.
