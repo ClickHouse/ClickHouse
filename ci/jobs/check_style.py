@@ -349,12 +349,6 @@ CLICKHOUSE_DISKS_WRITE_RE = re.compile(
 # tests instead. The only acceptable additions are false positives - tests that only touch
 # their own scratch files - and they must say so in a comment.
 SERVER_DATA_MANIPULATION_EXCLUSIONS = {
-    # False positive: writes only a `clickhouse-local` configuration under
-    # `CLICKHOUSE_TMP`, then reads the resulting filesystem-cache setting.
-    "03525_filesystem_caches_clickhouse_local.sh",
-    # Being converted to an integration test (test_packed_io) in
-    # https://github.com/ClickHouse/ClickHouse/pull/114057; remove after it merges.
-    "04630_merge_over_stale_packed_tmp_dir.sh",
     # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
     "04326_disks_app_read_checksums.sh",
 }
@@ -389,6 +383,36 @@ def strip_shell_comment(line):
     return line
 
 
+# `clickhouse-local` is not the server: it runs against its own `--path`, so a filesystem
+# path it reports from a system table points into the test's own scratch directory, and
+# removing or rewriting a file there is not a manipulation of the server's data.
+CLICKHOUSE_LOCAL_RE = re.compile(r"\$\{?CLICKHOUSE_LOCAL\}?|\bclickhouse(?:-|\s+)local\b")
+
+
+def unclosed_quote(text, quote=None):
+    """
+    The quote character left open at the end of `text`, or `None` if it ends unquoted.
+    Used to follow a command whose quoted query continues on the following lines.
+    """
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if quote == "'":
+            if c == "'":
+                quote = None
+        elif quote == '"':
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                quote = None
+        elif c == "\\":
+            i += 1
+        elif c in "'\"":
+            quote = c
+        i += 1
+    return quote
+
+
 def executable_shell_content(lines):
     """
     Return the shell text that can execute a system-table query.
@@ -396,9 +420,12 @@ def executable_shell_content(lines):
     `echo` and `printf` payloads are output, not commands, and quoted heredoc bodies are
     similarly inert. Omitting them avoids arming the file-level check on documentation or
     generated SQL text while retaining every executable command and unquoted heredoc.
+    A `clickhouse-local` invocation is omitted as well: it queries its own `--path`, so the
+    paths it reports are the test's own, not the server's.
     """
     result = []
     quoted_heredoc_end = None
+    clickhouse_local_quote = None
     quoted_heredoc_re = re.compile(r"<<-?\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1")
     output_command_re = re.compile(r"^\s*(?:echo|printf)\b")
     command_substitution_re = re.compile(r"`([^`]*)`|\$\(([^()]*)\)")
@@ -413,6 +440,18 @@ def executable_shell_content(lines):
         heredoc_match = quoted_heredoc_re.search(code)
         if heredoc_match:
             quoted_heredoc_end = heredoc_match.group(2)
+
+        if clickhouse_local_quote is not None:
+            # The quoted query of a `clickhouse-local` invocation continues on this line.
+            clickhouse_local_quote = unclosed_quote(code, clickhouse_local_quote)
+            continue
+
+        clickhouse_local_match = CLICKHOUSE_LOCAL_RE.search(code)
+        if clickhouse_local_match:
+            # Keep whatever precedes the invocation - it can query the server - and drop the
+            # invocation itself together with the rest of its query.
+            clickhouse_local_quote = unclosed_quote(code[clickhouse_local_match.start() :])
+            code = code[: clickhouse_local_match.start()]
 
         if output_command_re.match(code):
             # An output command can still execute a query in command substitution, e.g.

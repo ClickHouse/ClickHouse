@@ -458,3 +458,42 @@ def test_empty_command_substitution_does_not_hide_a_violation(tmp_path):
         tmp_path,
         FETCH_PART_PATH + "echo '```' \nrm -f \"$path/data.bin\"\n",
     )
+
+
+def test_clickhouse_local_path_is_not_a_server_path(tmp_path):
+    # `clickhouse-local` queries its own `--path`, so the paths it reports belong to the
+    # test's scratch directory and removing them is not a server data manipulation.
+    assert not _run(
+        tmp_path,
+        'data_path="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"\n'
+        'part_path=$($CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT path FROM system.parts WHERE active")\n'
+        'rm -rf "${data_path:?}"\n',
+    )
+
+
+def test_clickhouse_local_multiline_query_is_not_a_server_path(tmp_path):
+    # The query of a `clickhouse-local` invocation can continue on the following lines.
+    assert not _run(
+        tmp_path,
+        '$CLICKHOUSE_LOCAL --path "$data_path" -m -q "\n'
+        "SELECT path FROM system.parts WHERE active\n"
+        '"\n'
+        'rm -rf "${data_path:?}"\n',
+    )
+
+
+def test_clickhouse_local_does_not_mask_a_server_path_fetch(tmp_path):
+    # A `clickhouse-local` invocation elsewhere in the file, or later on the same line,
+    # must not exempt a path fetched from the server.
+    assert _run(
+        tmp_path,
+        '$CLICKHOUSE_LOCAL -q "SELECT 1"\n'
+        + FETCH_PART_PATH
+        + 'rm -f "$path/data.bin"\n',
+    )
+    assert _run(
+        tmp_path,
+        'path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts LIMIT 1"); '
+        '$CLICKHOUSE_LOCAL -q "SELECT 1"\n'
+        'rm -f "$path/data.bin"\n',
+    )
