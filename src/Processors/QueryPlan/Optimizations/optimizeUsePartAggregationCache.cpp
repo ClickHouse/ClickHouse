@@ -8,6 +8,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/ColumnsDescription.h>
+#include <Core/Names.h>
 #include <Common/SipHash.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -278,18 +279,41 @@ void optimizeUsePartAggregationCache(
                 GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name).has_value();
         };
 
-        bool all_readable = true;
+        /// Mirrors the `columns_to_read` set built by `populatePartAggregationCache`.
+        NameSet columns_to_read;
         for (const auto & key : params.keys)
-            all_readable &= column_is_readable(key);
+            columns_to_read.insert(key);
         for (const auto & agg : params.aggregates)
             for (const auto & arg : agg.argument_names)
-                all_readable &= column_is_readable(arg);
+                columns_to_read.insert(arg);
         for (const auto & action : intermediate_actions)
             for (const auto & col : action.actions->getRequiredColumnsWithTypes())
-                all_readable &= column_is_readable(col.name);
+                columns_to_read.insert(col.name);
+
+        bool all_readable = true;
+        for (const auto & name : columns_to_read)
+            all_readable &= column_is_readable(name);
 
         if (!all_readable)
             return;
+
+        /// Being readable through the storage snapshot is not enough: a column that a selected part
+        /// does not physically store is synthesized at read time by `MergeTreeSequentialSource`
+        /// (`fillMissingColumns` / `evaluateMissingDefaults`) from the column's `DEFAULT` expression
+        /// in the *current* metadata. That expression is not part of the cache key, and changing it
+        /// with `ALTER TABLE ... MODIFY COLUMN x ... DEFAULT ...` is a metadata-only operation: the
+        /// part keeps its name, the column keeps its type, so the key is unchanged and a state
+        /// aggregated from the old default would be reused. A non-deterministic default such as
+        /// `DEFAULT now64()` is wrong for the same reason even without any `ALTER`. Unmaterialized
+        /// column renames have the same shape: the part still stores the old name, so the new name
+        /// is produced through alter conversions rather than read from the part.
+        ///
+        /// Fail closed and skip the optimization when any column the populator would read is absent
+        /// from any selected part; such queries keep going through the normal aggregation path.
+        for (const auto & part : parts)
+            for (const auto & name : columns_to_read)
+                if (!part.data_part->tryGetColumn(name).has_value())
+                    return;
 
         /// When the populator would read no column at all — a keyless global aggregation over
         /// zero-argument aggregates with no intermediate actions, e.g. `SELECT count() FROM t` —
