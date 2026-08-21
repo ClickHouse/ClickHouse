@@ -10,6 +10,7 @@
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
@@ -46,90 +47,6 @@ namespace DB::Iceberg
 {
 
 using namespace DB;
-
-namespace
-{
-    /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
-    /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
-    std::optional<DB::Field> deserializeFieldFromBinaryRepr(std::string str, DB::DataTypePtr expected_type, bool lower_bound)
-    {
-        auto non_nullable_type = DB::removeNullable(expected_type);
-        auto column = non_nullable_type->createColumn();
-        if (DB::WhichDataType(non_nullable_type).isDecimal())
-        {
-            /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
-            /// using the minimum number of bytes for the value
-            /// Our decimal binary representation is little endian
-            /// so we cannot reuse our default code for parsing it.
-            int64_t unscaled_value = 0;
-
-            // Convert from big-endian to signed int
-            for (const auto byte : str)
-                unscaled_value = (unscaled_value << 8) | static_cast<uint8_t>(byte);
-
-            /// Add sign
-            if (str[0] & 0x80)
-            {
-                int64_t sign_extension = -1;
-                sign_extension <<= (str.size() * 8);
-                unscaled_value |= sign_extension;
-            }
-
-            /// NOTE: It's very weird, but Decimal values for lower bound and upper bound
-            /// are stored rounded, without fractional part. What is more strange
-            /// the integer part is rounded mathematically correctly according to fractional part.
-            /// Example: 17.22 -> 17, 8888.999 -> 8889, 1423.77 -> 1424.
-            /// I've checked two implementations: Spark and Amazon Athena and both of them
-            /// do this.
-            ///
-            /// The problem is -- we cannot use rounded values for lower bounds and upper bounds.
-            /// Example: upper_bound(x) = 17.22, but it's rounded 17.00, now condition WHERE x >= 17.21 will
-            /// check rounded value and say: "Oh largest value is 17, so values bigger than 17.21 cannot be in this file,
-            /// let's skip it". But it will produce incorrect result since actual value (17.22 >= 17.21) is stored in this file.
-            ///
-            /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
-            /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
-            /// but at least it doesn't lead to incorrect results.
-            if (int32_t scale = DB::getDecimalScale(*non_nullable_type))
-            {
-                int64_t scaler = lower_bound ? -10 : 10;
-                while (--scale)
-                    scaler *= 10;
-
-                unscaled_value += scaler;
-            }
-
-            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
-            {
-                DB::DecimalField<DB::Decimal32> result(static_cast<Int32>(unscaled_value), decimal_type->getScale());
-                return result;
-            }
-            if (const auto * decimal_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
-            {
-                DB::DecimalField<DB::Decimal64> result(unscaled_value, decimal_type->getScale());
-                return result;
-            }
-            else
-            {
-                return std::nullopt;
-            }
-        }
-        else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
-        {
-            return std::nullopt;
-        }
-        else
-        {
-            /// For all other types except decimal binary representation
-            /// matches our internal representation
-            column->insertData(str.data(), str.length());
-            DB::Field result;
-            column->get(0, result);
-            return result;
-        }
-    }
-
-}
 
 const std::vector<ProcessedManifestFileEntryPtr> &
 ManifestFileIterator::ManifestFileEntriesHandle::getFilesWithoutDeleted(FileContentType content_type) const
@@ -283,13 +200,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     Poco::Dynamic::Var partition_spec_json = parser.parse(*partition_spec_json_string);
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
-    DB::NamesAndTypesList partition_columns_description;
-    std::unordered_set<String> partition_columns_seen;
-    auto partition_key_ast = make_intrusive<ASTFunction>();
-    partition_key_ast->name = "tuple";
-    partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
-    partition_key_ast->children.push_back(partition_key_ast->arguments);
-
     auto schema_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema);
     if (!schema_json_string.has_value())
         throw Exception(
@@ -304,39 +214,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 
     schema_processor.addIcebergTableSchema(schema_object);
 
-    PartitionSpecification partition_spec_vec;
-    for (size_t i = 0; i != partition_specification->size(); ++i)
-    {
-        auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
-
-        auto source_id = partition_specification_field->getValue<Int32>(f_source_id);
-        /// NOTE: tricky part to support RENAME column in partition key. Instead of some name
-        /// we use column internal number as it's name.
-        auto numeric_column_name = DB::backQuote(DB::toString(source_id));
-        std::optional<DB::NameAndTypePair> manifest_file_column_characteristics
-            = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, source_id);
-        if (!manifest_file_column_characteristics.has_value())
-            continue;
-        auto transform_name = partition_specification_field->getValue<String>(f_partition_transform);
-        auto partition_name = partition_specification_field->getValue<String>(f_partition_name);
-        partition_spec_vec.emplace_back(source_id, transform_name, partition_name);
-        auto partition_ast = getASTFromTransform(transform_name, numeric_column_name);
-        /// Unsupported partition key expression
-        if (partition_ast == nullptr)
-            continue;
-
-        partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
-        /// One source column may back several partition fields (e.g. hours(ts) and identity ts).
-        /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
-        /// against these input columns, which must contain each source column at most once.
-        if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
-    }
-
-    std::optional<DB::KeyDescription> partition_key_description;
-    if (!partition_columns_description.empty())
-        partition_key_description.emplace(
-            DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context_));
+    auto partition_key = buildPartitionKeyFromSpec(partition_specification, manifest_schema_id, schema_processor, context_);
 
     size_t total_rows = manifest_file_deserializer_->rows();
 
@@ -350,8 +228,8 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         inherited_snapshot_id_,
         context_,
         manifest_schema_id,
-        std::make_shared<const PartitionSpecification>(std::move(partition_spec_vec)),
-        std::move(partition_key_description),
+        std::make_shared<const PartitionSpecification>(std::move(partition_key.partition_specification)),
+        std::move(partition_key.key_description),
         total_rows,
         std::move(filter_dag_),
         table_snapshot_schema_id_));

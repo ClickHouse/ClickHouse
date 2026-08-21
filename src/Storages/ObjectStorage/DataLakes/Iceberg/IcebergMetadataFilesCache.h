@@ -61,6 +61,8 @@ struct ManifestFileCacheKey
     Iceberg::ManifestFileContentType content_type;
     /// Partition spec the manifest was written with, needed to rewrite each manifest under its own spec during compaction after partition evolution.
     Int32 partition_spec_id;
+    Iceberg::PartitionFieldSummaries partition_summaries;
+    Int64 live_files_count;
 };
 
 using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
@@ -112,6 +114,14 @@ private:
          for (const auto & entry: manifest_file_cache_keys)
          {
              total_size += sizeof(ManifestFileCacheKey) + entry.manifest_file_path.serialize().capacity();
+             total_size += entry.partition_summaries.capacity() * sizeof(Iceberg::PartitionFieldSummary);
+             for (const auto & summary : entry.partition_summaries)
+             {
+                 if (summary.lower_bound.has_value())
+                     total_size += summary.lower_bound->capacity();
+                 if (summary.upper_bound.has_value())
+                     total_size += summary.upper_bound->capacity();
+             }
          }
          return total_size;
     }
