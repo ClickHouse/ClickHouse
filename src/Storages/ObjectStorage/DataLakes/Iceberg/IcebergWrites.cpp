@@ -133,6 +133,10 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
         case TypeIndex::String:
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
             return true;
         default:
             return false;
@@ -163,10 +167,53 @@ std::vector<uint8_t> dumpValue(T value)
     return bytes;
 }
 
+template <typename DecimalType>
+std::vector<uint8_t> dumpDecimalValue(const Field & field)
+{
+    using NativeType = typename DecimalType::NativeType;
+    const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
+
+    std::vector<uint8_t> bytes(sizeof(NativeType));
+    for (size_t i = 0; i < sizeof(NativeType); ++i)
+        bytes[sizeof(NativeType) - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+
+    size_t first = 0;
+    while (first + 1 < bytes.size()
+           && ((bytes[first] == 0x00 && (bytes[first + 1] & 0x80) == 0) || (bytes[first] == 0xFF && (bytes[first + 1] & 0x80) != 0)))
+        ++first;
+
+    return std::vector<uint8_t>(bytes.begin() + first, bytes.end());
+}
+
+template <typename DecimalType>
+avro::GenericDatum makeDecimalFixedDatum(const Field & field, const avro::NodePtr & schema)
+{
+    using NativeType = typename DecimalType::NativeType;
+    const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
+
+    chassert(schema->type() == avro::AVRO_FIXED);
+    const size_t size = schema->fixedSize();
+    std::vector<uint8_t> bytes(size, unscaled_value < 0 ? 0xFF : 0x00);
+    for (size_t i = 0; i < size && i < sizeof(NativeType); ++i)
+        bytes[size - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+
+    avro::GenericDatum datum(schema);
+    datum.value<avro::GenericFixed>().value() = std::move(bytes);
+    return datum;
+}
+
 std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::Decimal32:
+            return dumpDecimalValue<Decimal32>(field);
+        case TypeIndex::Decimal64:
+            return dumpDecimalValue<Decimal64>(field);
+        case TypeIndex::Decimal128:
+            return dumpDecimalValue<Decimal128>(field);
+        case TypeIndex::Decimal256:
+            return dumpDecimalValue<Decimal256>(field);
         case TypeIndex::Nullable:
             return dumpFieldToBytes(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
         case TypeIndex::Int32:
@@ -526,8 +573,10 @@ void generateManifestFile(
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
-            /// Build the Avro datum holding the partition value; throws on an unsupported type.
-            auto make_value_datum = [&]() -> avro::GenericDatum
+            size_t field_index = 0;
+            const avro::NodePtr & field_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
+
+            auto make_value_datum = [&](const avro::NodePtr & value_schema) -> avro::GenericDatum
             {
                 switch (partition_values[i].getType())
                 {
@@ -539,9 +588,13 @@ void generateManifestFile(
                     case Field::Types::Float64:
                         return avro::GenericDatum(partition_values[i].safeGet<Float64>());
                     case Field::Types::Decimal32:
-                        return avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
+                        return makeDecimalFixedDatum<Decimal32>(partition_values[i], value_schema);
                     case Field::Types::Decimal64:
-                        return avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                        return makeDecimalFixedDatum<Decimal64>(partition_values[i], value_schema);
+                    case Field::Types::Decimal128:
+                        return makeDecimalFixedDatum<Decimal128>(partition_values[i], value_schema);
+                    case Field::Types::Decimal256:
+                        return makeDecimalFixedDatum<Decimal256>(partition_values[i], value_schema);
                     default:
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
@@ -556,14 +609,7 @@ void generateManifestFile(
             if (is_nullable_partition)
             {
                 /// Nullable partition columns are Avro `["null", T]` unions: NULL is branch 0, a value is branch 1.
-                size_t field_index = 0;
-                if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Partition field {} not found in manifest schema",
-                        partition_columns[i]);
-
-                const avro::NodePtr & union_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
+                const avro::NodePtr & union_schema = field_schema;
 
                 avro::GenericUnion union_field(union_schema);
                 if (is_null_value)
@@ -573,7 +619,7 @@ void generateManifestFile(
                 else
                 {
                     union_field.selectBranch(1);
-                    union_field.datum() = make_value_datum();
+                    union_field.datum() = make_value_datum(union_schema->leafAt(1));
                 }
                 partition_record.field(partition_columns[i]) = avro::GenericDatum(union_schema, union_field);
             }
@@ -584,7 +630,7 @@ void generateManifestFile(
                         ErrorCodes::LOGICAL_ERROR,
                         "Got NULL partition value for non-nullable partition column {}",
                         partition_columns[i]);
-                partition_record.field(partition_columns[i]) = make_value_datum();
+                partition_record.field(partition_columns[i]) = make_value_datum(field_schema);
             }
         }
 

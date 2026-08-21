@@ -138,6 +138,42 @@ ManifestFilesPruner::ManifestFilesPruner(
     }
 }
 
+namespace
+{
+
+template <typename DecimalType>
+std::optional<Field> decodePartitionDecimal(const String & bytes, UInt32 scale)
+{
+    using NativeType = typename DecimalType::NativeType;
+    if (bytes.empty() || bytes.size() > sizeof(NativeType))
+        return std::nullopt;
+
+    NativeType unscaled_value = 0;
+    for (const auto byte : bytes)
+        unscaled_value = (unscaled_value << 8) | static_cast<uint8_t>(byte);
+
+    if (bytes.size() < sizeof(NativeType) && (bytes[0] & 0x80))
+        unscaled_value |= (~NativeType(0)) << (8 * bytes.size());
+
+    return DecimalField<DecimalType>(unscaled_value, scale);
+}
+
+std::optional<Field> decodePartitionDecimalByType(const String & bytes, const IDataType & type)
+{
+    const UInt32 scale = getDecimalScale(type);
+    if (checkDecimal<Decimal32>(type))
+        return decodePartitionDecimal<Decimal32>(bytes, scale);
+    if (checkDecimal<Decimal64>(type))
+        return decodePartitionDecimal<Decimal64>(bytes, scale);
+    if (checkDecimal<Decimal128>(type))
+        return decodePartitionDecimal<Decimal128>(bytes, scale);
+    if (checkDecimal<Decimal256>(type))
+        return decodePartitionDecimal<Decimal256>(bytes, scale);
+    return std::nullopt;
+}
+
+}
+
 PruningReturnStatus ManifestFilesPruner::canBePruned(
     const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
 {
@@ -154,6 +190,11 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                 field = POSITIVE_INFINITY;
             else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
                 field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
+            else if (field.getType() == Field::Types::String && WhichDataType(type).isDecimal())
+            {
+                if (auto decoded = decodePartitionDecimalByType(field.safeGet<String>(), *type))
+                    field = *decoded;
+            }
         }
 
         bool can_be_true = partition_key_condition->mayBeTrueInRange(

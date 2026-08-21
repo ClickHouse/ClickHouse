@@ -557,6 +557,19 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
+static size_t icebergDecimalRequiredBytes(UInt32 precision)
+{
+    Int256 max_value = 1;
+    for (UInt32 i = 0; i < precision; ++i)
+        max_value *= 10;
+    max_value -= 1;
+
+    size_t bytes = 1;
+    while ((Int256(1) << (8 * bytes - 1)) - 1 < max_value)
+        ++bytes;
+    return bytes;
+}
+
 /// Returns type and required
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter)
 {
@@ -584,6 +597,11 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"string", true};
         case TypeIndex::UUID:
             return {"uuid", true};
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            return {fmt::format("decimal({}, {})", getDecimalPrecision(*type), getDecimalScale(*type)), true};
         case TypeIndex::Tuple:
         {
             auto type_tuple = std::static_pointer_cast<const DataTypeTuple>(type);
@@ -689,6 +707,23 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::String:
         case TypeIndex::UUID:
             return "string";
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+        {
+            const UInt32 precision = getDecimalPrecision(*type);
+            const UInt32 scale = getDecimalScale(*type);
+
+            Poco::JSON::Object::Ptr decimal_type = new Poco::JSON::Object;
+            decimal_type->set("type", "fixed");
+            decimal_type->set("size", icebergDecimalRequiredBytes(precision));
+            decimal_type->set("name", fmt::format("decimal_{}_{}", precision, scale));
+            decimal_type->set("logicalType", "decimal");
+            decimal_type->set("precision", precision);
+            decimal_type->set("scale", scale);
+            return decimal_type;
+        }
         case TypeIndex::Nullable:
         {
             /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`

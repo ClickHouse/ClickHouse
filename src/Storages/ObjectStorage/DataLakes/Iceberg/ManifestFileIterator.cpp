@@ -61,14 +61,19 @@ namespace
             /// using the minimum number of bytes for the value
             /// Our decimal binary representation is little endian
             /// so we cannot reuse our default code for parsing it.
+
+            if (str.empty() || str.size() > sizeof(int64_t))
+                return std::nullopt;
+
             int64_t unscaled_value = 0;
 
             // Convert from big-endian to signed int
             for (const auto byte : str)
                 unscaled_value = (unscaled_value << 8) | static_cast<uint8_t>(byte);
 
-            /// Add sign
-            if (str[0] & 0x80)
+            /// Add sign. A value occupying the whole Int64 is already two's-complement, and shifting
+            /// by the full width of the type would be undefined.
+            if (str.size() < sizeof(int64_t) && (str[0] & 0x80))
             {
                 int64_t sign_extension = -1;
                 sign_extension <<= (str.size() * 8);
