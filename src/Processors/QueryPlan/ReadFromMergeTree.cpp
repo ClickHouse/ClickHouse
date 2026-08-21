@@ -3759,11 +3759,24 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// prefix, see `readInOrder`), and the merges compare the virtual row only on the sort-key
     /// prefix it covers. A narrower prefix could leave the conversion without some of its
     /// inputs, and a prefix beyond the primary key would request index values no part can ever
-    /// provide, so drop the conversion.
+    /// provide, so the conversion cannot stay.
     if (virtual_row_conversion
         && (prefix_size < virtual_row_key_prefix_size
             || prefix_size > storage_snapshot->metadata->primary_key.column_names.size()))
+    {
+        /// A re-request cannot revoke the virtual row. The decision to use it is taken in
+        /// `optimizeReadInOrder`, which runs before `optimizeDistinctInOrder` and
+        /// `optimizeLimitByInOrder`: by the time they widen the prefix, the parent `SortingStep`
+        /// may already be converted with `apply_virtual_row_conversions` (buffering disabled),
+        /// and the read-in-order-through-`JOIN` path may have been accepted only because the
+        /// read emits virtual rows. Clearing just the reader-side state here would leave those
+        /// decisions standing on a premise that no longer holds, so reject the re-request and
+        /// keep the order the plan is already set up for.
+        if (readsInOrder())
+            return false;
+
         resetVirtualRowConversions();
+    }
 
     query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     query_task_size_limit = query_limit ? query_limit : read_limit;

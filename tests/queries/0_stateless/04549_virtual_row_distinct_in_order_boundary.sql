@@ -20,12 +20,12 @@ SETTINGS index_granularity = 8;
 SYSTEM STOP MERGES t_virtual_row_distinct;
 
 -- Several unmerged parts with small granules so an in-order merge across parts is used.
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(20000);
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(20000, 20000);
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(40000, 20000);
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(60000, 20000);
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(80000, 20000);
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(100000, 20000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(2000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(2000, 2000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(4000, 2000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(6000, 2000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(8000, 2000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(10000, 2000);
 
 SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, optimize_distinct_in_order = 1,
     read_in_order_two_level_merge_threshold = 3, max_threads = 2, max_block_size = 64;
@@ -255,3 +255,39 @@ SELECT
   = (SELECT groupArray((a, b)) FROM (SELECT DISTINCT a, b FROM t_virtual_row_truncated_index ORDER BY a DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
 
 DROP TABLE t_virtual_row_truncated_index;
+
+-- Widening past the primary key: `ORDER BY a` installs a virtual row for the prefix (a), which is
+-- the whole primary key, and distinct-in-order then wants to widen the read to (a, b) — a prefix
+-- no part can announce index values for. The virtual row cannot be revoked at that point (the
+-- parent `SortingStep` is already converted with `apply_virtual_row_conversions`, and the
+-- read-in-order-through-JOIN path may have been accepted only because virtual rows are emitted),
+-- so the widening is rejected and the read keeps the ORDER BY prefix with its virtual row.
+DROP TABLE IF EXISTS t_virtual_row_widen_past_pk;
+
+CREATE TABLE t_virtual_row_widen_past_pk (a UInt32, b UInt32)
+ENGINE = MergeTree PRIMARY KEY (a) ORDER BY (a, b)
+SETTINGS index_granularity = 8;
+
+SYSTEM STOP MERGES t_virtual_row_widen_past_pk;
+
+INSERT INTO t_virtual_row_widen_past_pk SELECT number % 10, number % 7 FROM numbers(2000);
+INSERT INTO t_virtual_row_widen_past_pk SELECT number % 10, number % 7 FROM numbers(2000, 2000);
+INSERT INTO t_virtual_row_widen_past_pk SELECT number % 10, number % 7 FROM numbers(4000, 2000);
+INSERT INTO t_virtual_row_widen_past_pk SELECT number % 10, number % 7 FROM numbers(6000, 2000);
+
+-- The virtual row stays in the plan (the rejected widening must not leave the reader without the
+-- conversion the already converted sort relies on).
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT DISTINCT a, b FROM t_virtual_row_widen_past_pk ORDER BY a DESC)
+WHERE explain ILIKE '%Virtual row conversions%';
+
+SELECT
+    (SELECT arraySort(groupArray((a, b))) FROM (SELECT DISTINCT a, b FROM t_virtual_row_widen_past_pk ORDER BY a DESC))
+  = (SELECT arraySort(groupArray((a, b))) FROM (SELECT DISTINCT a, b FROM t_virtual_row_widen_past_pk ORDER BY a DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+-- Same for `LIMIT BY`, which widens the read through the same hook.
+SELECT
+    (SELECT arraySort(groupArray((a, b))) FROM (SELECT * FROM (SELECT a, b FROM t_virtual_row_widen_past_pk ORDER BY a DESC LIMIT 1 BY a, b)))
+  = (SELECT arraySort(groupArray((a, b))) FROM (SELECT * FROM (SELECT a, b FROM t_virtual_row_widen_past_pk ORDER BY a DESC LIMIT 1 BY a, b SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0)));
+
+DROP TABLE t_virtual_row_widen_past_pk;
