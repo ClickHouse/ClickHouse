@@ -11,21 +11,6 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// Whether the expression between the aggregation and the sort forwards the
-/// key column `name` unchanged (possibly through aliases). If the expression
-/// computed a new value under the same name, the sort would order by something
-/// the heap never ranked, so the match must be rejected.
-static bool isSortKeyPassThrough(const ActionsDAG & dag, const std::string & name)
-{
-    const auto * node = dag.tryFindInOutputs(name);
-    if (!node)
-        return false;
-
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-        node = node->children.front();
-    return node->type == ActionsDAG::ActionType::INPUT && node->result_name == name;
-}
-
 /// Returns the AggregatingStep if it is eligible for the top-K heap optimization.
 static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
 {

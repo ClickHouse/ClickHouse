@@ -20,6 +20,12 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 /// the choice has to be communicated to a remote peer errs on the side of communicating it.
 bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
 
+/// Whether `dag` forwards the column `name` unchanged (possibly through aliases). Guards the GROUP BY top-K
+/// optimization: the heap ranks the aggregation keys, so every expression between the aggregation and the sort
+/// must hand the sorted key through untouched. If such an expression computed a new value and published it under
+/// the key's name, the sort would order by something the heap never ranked and pruning could drop real winners.
+bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name);
+
 class AggregatingProjectionStep;
 
 /// Aggregation. See AggregatingTransform.

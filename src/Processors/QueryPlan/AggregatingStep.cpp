@@ -127,6 +127,17 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
     return false;
 }
 
+bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name)
+{
+    const auto * node = dag.tryFindInOutputs(name);
+    if (!node)
+        return false;
+
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node->type == ActionsDAG::ActionType::INPUT && node->result_name == name;
+}
+
 Block appendGroupingSetColumn(Block header)
 {
     Block res;

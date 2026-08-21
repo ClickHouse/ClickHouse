@@ -787,6 +787,12 @@ void applyTopKPushdownToPartialAggregation(
     if (sort_description.empty() || sort_description.size() > params.keys.size())
         return;
 
+    /// The heap ranks the keys as the aggregation produced them, while the sort runs above the projection and the
+    /// ORDER BY expressions. Matching names is not enough on its own: require that both DAGs forward the key
+    /// untouched, the same invariant `tryOptimizeGroupByTopK` enforces on the plan-level expression chain.
+    const auto * before_order_by_dag
+        = expression_analysis_result.hasSort() ? &expression_analysis_result.getSort().before_order_by_actions->dag : nullptr;
+
     std::vector<int> directions;
     std::vector<int> nulls_directions;
     directions.reserve(sort_description.size());
@@ -795,6 +801,12 @@ void applyTopKPushdownToPartialAggregation(
     for (size_t i = 0; i < sort_description.size(); ++i)
     {
         if (sort_description[i].column_name != params.keys[i])
+            return;
+
+        if (projection_actions && !isSortKeyPassThrough(projection_actions->dag, params.keys[i]))
+            return;
+
+        if (before_order_by_dag && !isSortKeyPassThrough(*before_order_by_dag, params.keys[i]))
             return;
 
         if (sort_description[i].collator || sort_description[i].with_fill)
