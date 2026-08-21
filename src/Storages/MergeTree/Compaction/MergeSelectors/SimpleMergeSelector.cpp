@@ -26,9 +26,9 @@ public:
     {
     }
 
-    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, bool force_merge_by_partition_age, const SimpleMergeSelector::Settings & settings)
+    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
-        if (settings.enable_heuristic_to_remove_small_parts_at_right && !force_merge_by_partition_age)
+        if (settings.enable_heuristic_to_remove_small_parts_at_right)
         {
             size_t size_delta = 0;
             size_t rows_delta = 0;
@@ -243,9 +243,11 @@ void selectWithinPartsRange(
     /// grow uncontrollably, similar to a snowball effect.
     /// To address this we will try to assign a merge taking into consideration
     /// only last N parts.
+    /// The window exists to keep up with incoming parts. A partition that no longer receives them
+    /// has no such tail to keep up with, and skipping its prefix would leave it uncompactable.
     const size_t parts_threshold = settings.window_size;
     size_t begin = 0;
-    if (parts_count >= parts_threshold)
+    if (!force_merge_by_partition_age && parts_count >= parts_threshold)
     {
         if (settings.enable_stochastic_sliding)
             begin = calculateRangeWithStochasticSliding(parts_count, parts_threshold);
@@ -334,7 +336,6 @@ void selectWithinPartsRange(
                     sum_size,
                     sum_rows,
                     begin == 0 ? 0 : parts[begin - 1].size,
-                    force_merge_by_partition_age,
                     settings);
         }
     }
