@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -65,6 +66,19 @@ DataTypePtr columnPathReturnType(const String & function_name, const std::vector
     for (const auto & type : makeTypes(argument_types))
         columns.emplace_back(nullptr, type, String{});
     return getAdaptor(resolver).getReturnTypeImpl(columns);
+}
+
+/// Both entry points, resolved with a context carrying non-default settings.
+std::pair<DataTypePtr, DataTypePtr> bothReturnTypes(
+    const ContextPtr & context, const String & function_name, const std::vector<String> & argument_types)
+{
+    tryRegisterFunctions();
+    auto resolver = FunctionFactory::instance().get(function_name, context);
+    auto types = makeTypes(argument_types);
+    ColumnsWithTypeAndName columns;
+    for (const auto & type : types)
+        columns.emplace_back(nullptr, type, String{});
+    return {getAdaptor(resolver).getReturnTypeImpl(types), getAdaptor(resolver).getReturnTypeImpl(columns)};
 }
 
 }
@@ -181,7 +195,7 @@ TEST(TypesOnlyReturnTypePath, TupleAndVariantTypeUseTheirAuthoritativeResolvers)
     EXPECT_EQ(
         typesOnlyReturnType("variantType", variant_arguments)->getName(),
         columnPathReturnType("variantType", variant_arguments)->getName());
-    EXPECT_EQ(typesOnlyReturnType("variantType", variant_arguments)->getName(), "Enum8('String' = 0, 'UInt64' = 1, 'None' = -1)");
+    EXPECT_EQ(typesOnlyReturnType("variantType", variant_arguments)->getName(), "Enum8('None' = -1, 'String' = 0, 'UInt64' = 1)");
 }
 
 TEST(TypesOnlyReturnTypePath, IfNullAndDecimalArithmeticUseTheirAuthoritativeResolvers)
@@ -189,7 +203,7 @@ TEST(TypesOnlyReturnTypePath, IfNullAndDecimalArithmeticUseTheirAuthoritativeRes
     /// With `use_variant_as_common_type` disabled, the documentation signature would select
     /// `leastSupertype` for this shape. The authoritative resolver must still preserve the
     /// Variant and extend it with the fallback type on both entry points.
-    const std::vector<String> if_null_arguments{"Nullable(Variant(String, UInt64))", "Int8"};
+    const std::vector<String> if_null_arguments{"Variant(String, UInt64)", "Int8"};
     EXPECT_EQ(
         typesOnlyReturnType("ifNull", if_null_arguments)->getName(),
         columnPathReturnType("ifNull", if_null_arguments)->getName());
@@ -246,5 +260,51 @@ TEST(TypesOnlyReturnTypePath, JSONResolverReturnTypeAgreesWithBuild)
         auto built = resolver->build(arguments)->getResultType();
         EXPECT_EQ(built->getName(), expected) << function_name;
         EXPECT_EQ(resolver->getReturnType(arguments)->getName(), built->getName()) << function_name;
+    }
+}
+
+/// Under `cast_keep_nullable`, a `Dynamic` or `Variant` argument keeps the conversion result
+/// `Nullable` — a conversion-specific rule the declarative signature cannot express. Both
+/// return-type entry points of `FunctionConvert` must apply it, or a types-only caller (which
+/// only has `DataTypes`) would resolve a non-Nullable type while the analyzer resolves a
+/// `Nullable` one.
+TEST(TypesOnlyReturnTypePath, ConversionsKeepNullableForDynamicAndVariantOnBothPaths)
+{
+    tryRegisterFunctions();
+    auto context = Context::createCopy(getContext().context);
+    context->setSetting("cast_keep_nullable", Field(true));
+
+    for (const auto & [function_name, argument_type, expected] :
+         std::initializer_list<std::tuple<String, String, String>>{
+             {"toUInt64", "Dynamic", "Nullable(UInt64)"},
+             {"toString", "Variant(String, UInt64)", "Nullable(String)"},
+             {"toFloat64", "Variant(String, UInt64)", "Nullable(Float64)"},
+             /// A plain argument is unaffected by the setting.
+             {"toUInt64", "String", "UInt64"}})
+    {
+        auto [types_only, column_path] = bothReturnTypes(context, function_name, {argument_type});
+        EXPECT_EQ(types_only->getName(), expected) << function_name << "(" << argument_type << ")";
+        EXPECT_EQ(column_path->getName(), types_only->getName()) << function_name << "(" << argument_type << ")";
+    }
+}
+
+/// The `naiveBayesClassifier*` signatures are documentation-only because legality depends on the
+/// *value* of the first argument: the named dictionary must have the `NAIVE_BAYES` layout. There
+/// is no types-only answer, so that entry point must decline instead of accepting any
+/// `(String, MaybeNullable(String))` pair through the declarative path.
+TEST(TypesOnlyReturnTypePath, NaiveBayesClassifiersDeclineTheTypesOnlyPath)
+{
+    for (const auto & function_name :
+         {"naiveBayesClassifier", "naiveBayesClassifierWithProb", "naiveBayesClassifierWithAllProbs"})
+    {
+        try
+        {
+            auto result = typesOnlyReturnType(function_name, {"String", "String"});
+            FAIL() << function_name << " must not resolve on the types-only path, got " << result->getName();
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED) << function_name << ": " << e.message();
+        }
     }
 }

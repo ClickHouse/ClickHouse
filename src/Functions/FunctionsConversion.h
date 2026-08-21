@@ -3279,6 +3279,21 @@ public:
         return IFunction::getReturnTypeImpl(arguments);
     }
 
+    /// The types-only entry point must agree with the column-aware one above, so it applies the
+    /// same `cast_keep_nullable` rule before deferring to the declarative path.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (settings.cast_keep_nullable)
+        {
+            for (const auto & type : arguments)
+            {
+                if (isDynamic(*type) || isVariant(*type))
+                    return makeNullable(IFunction::getReturnTypeImpl(arguments));
+            }
+        }
+        return IFunction::getReturnTypeImpl(arguments);
+    }
+
     /// See IFunction::signaturePropagatesNullability. The conversion functions do not use
     /// useDefaultImplementationForNulls, so the declarative path must propagate Nullable itself
     /// for the authoritative `Name`s.

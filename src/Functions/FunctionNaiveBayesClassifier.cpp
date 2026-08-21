@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -143,6 +144,19 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// There is no types-only answer: legality depends on the *value* of the first argument —
+    /// the named dictionary must have the `NAIVE_BAYES` layout. Decline this entry point (as it
+    /// behaved before the documentation-only signature was added) instead of letting the
+    /// declarative path accept shapes the authoritative resolver rejects with `BAD_ARGUMENTS`.
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "getReturnType is not implemented for {}: the dictionary layout can only be validated "
+            "when the value of the first argument is known",
+            getName());
+    }
 };
 
 
@@ -151,6 +165,8 @@ class FunctionNaiveBayesClassifier : public FunctionNaiveBayesBase
 {
 public:
     using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
+
+    using FunctionNaiveBayesBase::getReturnTypeImpl;
 
     static constexpr auto name = "naiveBayesClassifier";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifier>(context_); }
@@ -209,6 +225,8 @@ class FunctionNaiveBayesClassifierWithProb : public FunctionNaiveBayesBase
 {
 public:
     using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
+
+    using FunctionNaiveBayesBase::getReturnTypeImpl;
 
     static constexpr auto name = "naiveBayesClassifierWithProb";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithProb>(context_); }
@@ -283,6 +301,8 @@ class FunctionNaiveBayesClassifierWithAllProbs : public FunctionNaiveBayesBase
 {
 public:
     using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
+
+    using FunctionNaiveBayesBase::getReturnTypeImpl;
 
     static constexpr auto name = "naiveBayesClassifierWithAllProbs";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithAllProbs>(context_); }
