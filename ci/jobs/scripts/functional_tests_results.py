@@ -281,7 +281,7 @@ class FTResultsProcessor:
             and s.unknown == 0
         ):
             # Gate on the counters: `NOT_FAILED` rows are invisible to
-            # `is_failure()`. ERROR goes on the leaf only, where the bugfix
+            # `is_failure`. ERROR goes on the leaf only, where the bugfix
             # inverter reads it - an ERROR aggregate disables coverage collection.
             state = Result.Status.FAIL
             test_results.append(

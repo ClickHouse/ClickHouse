@@ -60,8 +60,12 @@ _ONE_FAILURE = (
 
 
 # A test on the blacklist that unexpectedly passed. It increments the parser's
-# `failed` counter but is stored with a status string outside `is_failure()`.
+# `failed` counter but is stored with a status string outside `is_failure`.
 _NOT_FAILED = "00001_blacklisted_test: [ NOT_FAILED ] 1.00 sec.\n"
+
+# A row the runner could not classify. It increments `unknown`, not `failed`,
+# and is stored as FAIL.
+_UNKNOWN_ROW = "00001_unclassified_test: [ UNKNOWN ] 1.00 sec.\n"
 
 
 def _process(tmp_path, output, runner_exit_code, is_bugfix_validation=False):
@@ -318,8 +322,8 @@ def test_signal_killed_with_no_failures_is_not_labelled_server_died(
     assert leaves[0].status == Result.Status.ERROR
     assert str(runner_exit_code) in leaves[0].info
 
-    # The aggregate stays FAIL: `is_failure()` excludes ERROR, so an ERROR
-    # aggregate would flip the pipeline status and disable coverage collection.
+    # The aggregate stays FAIL: coverage collection is skipped for an `is_error`
+    # aggregate, so the inconclusive signal belongs on the leaf alone.
     assert result.status == Result.Status.FAIL
 
     # The `clickhouse-test` fallback leaf fires only when `state` is still OK.
@@ -411,7 +415,7 @@ def test_bugfix_validation_signal_kill_with_a_blocker_fatal_still_reproduces(tmp
 
 def test_not_failed_row_keeps_server_died(tmp_path):
     """A `[ NOT_FAILED ]` row increments the parser's `failed` counter but is
-    stored with a status string outside `is_failure()`. It is an observed
+    stored with a status string outside `is_failure`. It is an observed
     failure, so the gate must see it - which it does only because it reads the
     summary counters rather than filtering the rows."""
     result = _process(tmp_path, _NOT_FAILED, 128 + signal.SIGTERM)
@@ -421,6 +425,29 @@ def test_not_failed_row_keeps_server_died(tmp_path):
     assert len(row) == 1
     assert row[0].status == "NOT_FAILED"
     assert not row[0].is_failure()
+
+    assert len(_named(result, "Server died")) == 1
+    assert not _named(result, KILLED_BY_SIGNAL_RESULT_NAME)
+
+
+def test_new_leaf_is_excluded_from_auto_revert():
+    """A run-wide abort names no single change to revert, and the auto-revert job
+    reads this set to tell an aborted run from a completed one."""
+    from ci.jobs.revert_ci_regressions import SYNTHETIC_TEST_NAMES
+
+    assert KILLED_BY_SIGNAL_RESULT_NAME in SYNTHETIC_TEST_NAMES
+
+
+def test_unknown_row_keeps_server_died(tmp_path):
+    """An `[ UNKNOWN ]` row is an observed failure counted in `unknown`, not in
+    `failed`, so it is seen only by the gate's second counter."""
+    result = _process(tmp_path, _UNKNOWN_ROW, 128 + signal.SIGTERM)
+
+    # Guard against a vacuous fixture: the row must really have parsed, and it
+    # reaches the aborted-run branch, which demotes the lone culprit to ERROR.
+    row = _named(result, "00001_unclassified_test")
+    assert len(row) == 1
+    assert row[0].status == Result.Status.ERROR
 
     assert len(_named(result, "Server died")) == 1
     assert not _named(result, KILLED_BY_SIGNAL_RESULT_NAME)
