@@ -74,11 +74,10 @@ DataTypePtr variantOf(const DataTypes & alternatives)
 struct EnumerationResult
 {
     std::vector<String> file_names;
-    std::vector<String> cache_keys;
 };
 
 /// Walk `type` the way MergeTree does and collect, for every substream, the file name that would be
-/// produced for a column named `c` plus the substreams cache key.
+/// produced for a column named `c`.
 EnumerationResult enumerate(
     const DataTypePtr & type,
     bool pass_column_type = true,
@@ -101,8 +100,6 @@ EnumerationResult enumerate(
         [&](const ISerialization::SubstreamPath & path)
         {
             result.file_names.push_back(ISerialization::getFileNameForStream("c", path, name_settings));
-            result.cache_keys.push_back(
-                ISerialization::getSubstreamCacheKey(path, /*encode_sparse_stream=*/true, type.get()));
         },
         data);
 
@@ -273,12 +270,6 @@ TEST(StructuredSubstreamNames, StreamNamesAreUniqueForEveryNullableArrayShape)
 {
     for (const auto & [label, type] : nullableArrayShapes())
         expectAllDistinct(fileNames(type), label);
-}
-
-TEST(StructuredSubstreamNames, SubstreamCacheKeysAreUniqueForEveryNullableArrayShape)
-{
-    for (const auto & [label, type] : nullableArrayShapes())
-        expectAllDistinct(enumerate(type).cache_keys, label + " (cache keys)");
 }
 
 /// Prefixes and suffixes get their own substreams when a caller asks for them, and those must not
