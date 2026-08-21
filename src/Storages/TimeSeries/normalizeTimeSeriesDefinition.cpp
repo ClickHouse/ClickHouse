@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
+#include <Common/StringUtils.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -91,6 +92,34 @@ namespace
                     decl->setType(applyUUIDTypeVersion(type, uuid_type_version));
             }
         }
+    }
+
+    /// Rewrites a bare `UUID` type name in the inner-column declarations to its explicit historical alias
+    /// `UUID1`. Called only under `uuid_type_version = 2`, after the setting has been materialized into the
+    /// declared inner columns and after the missing ones have been generated from the resolved types: every
+    /// bare `UUID` remaining at that point denotes a type that must stay historical (an explicitly declared
+    /// `UUID1`, or a column generated from such an id). Spelling it explicitly makes the normalized query
+    /// stable under a second materialization pass - `normalizeTimeSeriesDefinition` runs again over the
+    /// already-normalized query (see `StorageTimeSeries`) and `InterpreterCreateQuery` materializes the
+    /// setting over the whole `CREATE` AST afterwards - which would otherwise turn a generated `UUID` into
+    /// `UUID2` and make the samples and tags inner tables disagree about the `id` type.
+    bool pinHistoricalUUIDTypeName(IAST & ast)
+    {
+        bool pinned = false;
+
+        if (auto * data_type = ast.as<ASTDataType>(); data_type && equalsCaseInsensitive(data_type->name, "UUID"))
+        {
+            data_type->name = "UUID1";
+            pinned = true;
+        }
+
+        for (const auto & child : ast.children)
+        {
+            if (child)
+                pinned |= pinHistoricalUUIDTypeName(*child);
+        }
+
+        return pinned;
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -1120,7 +1149,10 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                 auto inner_columns = create_query.getTargetInnerColumns(kind)
                     ? boost::static_pointer_cast<ASTColumns>(create_query.getTargetInnerColumns(kind)->clone())
                     : make_intrusive<ASTColumns>();
-                if (normalizeInnerTableColumns(*inner_columns, kind, settings, resolved_types, table_id))
+                bool inner_columns_changed = normalizeInnerTableColumns(*inner_columns, kind, settings, resolved_types, table_id);
+                if (uuid_type_version == 2 && inner_columns->columns)
+                    inner_columns_changed |= pinHistoricalUUIDTypeName(*inner_columns->columns);
+                if (inner_columns_changed)
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
                 /// Validate the user-provided types of the inner columns the same way external targets are validated.

@@ -17,7 +17,11 @@ INSERT INTO ts_uuid2_range (metric_name, tags, time_series) VALUES
 
 SELECT toTypeName(id) FROM timeSeriesSelector(ts_uuid2_range, 'foo', 0, 1000) LIMIT 1;
 
-SELECT plan LIKE '%toUUID2(\'ffffffff-ffff-ffff-ffff-ffffffffffff\')%' AS has_uuid2_id_range
+-- The whole-metric lookup must produce a primary-key range covering every `id` of the metric: from the
+-- all-zero `UUID2` up to the all-`f` one. The bounds are matched by value rather than by a `toUUID2` call,
+-- because the plan renders the constant as a folded tuple literal.
+SELECT plan LIKE '%00000000-0000-0000-0000-000000000000%'
+   AND plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_uuid2_id_range
 FROM
 (
     SELECT arrayStringConcat(groupArray(explain), '\n') AS plan
