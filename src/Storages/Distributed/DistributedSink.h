@@ -98,6 +98,13 @@ private:
     /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
     std::string getCurrentStateDescription();
 
+    /// Whether the local jobs of a non-parallel quorum insert must be completed one-by-one: only
+    /// when the resolved local target may actually produce a quorum part (a `ReplicatedMergeTree`
+    /// reachable directly or through its dependent-view graph; fails closed when it cannot be
+    /// resolved). A local target that cannot produce a quorum part has no quorum precondition to
+    /// protect, so its local jobs keep running in parallel under a global quorum profile.
+    bool localJobsRequireSequentialQuorum();
+
     /// Context used for writing to remote tables.
     ContextMutablePtr context;
 
@@ -114,6 +121,9 @@ private:
     bool allow_materialized;
 
     InsertStartGatesPtr insert_start_gates;
+
+    /// Lazily computed by `localJobsRequireSequentialQuorum` under `execution_mutex`.
+    std::optional<bool> local_jobs_require_sequential_quorum;
 
     bool is_first_chunk = true;
 

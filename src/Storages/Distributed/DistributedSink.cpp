@@ -20,6 +20,8 @@
 #include <Processors/Sinks/RemoteSink.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InsertDependenciesBuilder.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -634,15 +636,16 @@ void DistributedSink::writeSync(const Block & block)
         /// different shards. Complete each of those jobs before starting the next:
         /// a later block can commit from `consume`, before `onFinish` serializes
         /// the final pipeline flushes.
+        const bool sequential_local_jobs = localJobsRequireSequentialQuorum();
         finished_jobs_count = 0;
         for (size_t shard_index : collections::range(start, end))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
             {
-                if (!job.is_local_job || !isSequentialQuorumInsert(settings))
+                if (!job.is_local_job || !sequential_local_jobs)
                     pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
             }
 
-        if (isSequentialQuorumInsert(settings))
+        if (sequential_local_jobs)
         {
             for (size_t shard_index : collections::range(start, end))
                 for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
@@ -674,6 +677,29 @@ void DistributedSink::writeSync(const Block & block)
 
     inserted_blocks += 1;
     inserted_rows += block.rows();
+}
+
+
+bool DistributedSink::localJobsRequireSequentialQuorum()
+{
+    if (!isSequentialQuorumInsert(context->getSettingsRef()))
+        return false;
+
+    if (!local_jobs_require_sequential_quorum)
+    {
+        /// All local jobs write the same underlying table, so two of them conflict only when a
+        /// write into that table may create a quorum part - in the table itself or in a
+        /// `ReplicatedMergeTree` reachable through its dependent-view graph, which the nested
+        /// `INSERT` of each job expands. Fail closed when the local target cannot be resolved.
+        /// `remote_storage` is never empty here: a table-function target is rejected by
+        /// `StorageDistributed::write` before a sink is created.
+        auto target = DatabaseCatalog::instance().tryGetTable(storage.remote_storage, context);
+        local_jobs_require_sequential_quorum = !target
+            || InsertDependenciesBuilder::storageMayWriteToReplicatedTable(target, context)
+            || InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(target, context);
+    }
+
+    return *local_jobs_require_sequential_quorum;
 }
 
 
@@ -714,7 +740,7 @@ void DistributedSink::onFinish()
                         /// completed sequentially here for a non-parallel quorum insert. Remote
                         /// jobs remain parallel, while a local job that follows another local job
                         /// sees its predecessor's quorum status node already removed.
-                        if (job.is_local_job && isSequentialQuorumInsert(context->getSettingsRef()))
+                        if (job.is_local_job && localJobsRequireSequentialQuorum())
                             pool->wait();
                     }
                 }
