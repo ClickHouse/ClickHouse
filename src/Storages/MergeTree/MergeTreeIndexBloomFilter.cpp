@@ -954,21 +954,16 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
 
-            /// String comparison is zero-padded, so a constant can match more stored values than the
-            /// single hash built below, which then prunes granules holding a matching row.
-            /// The index is sound only when the constant maps into exactly one indexed value:
-            ///   - a `FixedString` constant against a `String` index matches the unbounded family
-            ///     `value` + trailing '\0'*, so no finite set of hashes represents it;
-            ///   - against a `FixedString(M)` index any constant wider than M keeps its own bytes
-            ///     (`convertFieldToType` pads but never truncates), so it is hashed over more bytes
-            ///     than the index stored while zero-padded comparison still matches.
-            /// Hence require `M >= constant_bytes`; otherwise decline and fall back to a full scan.
-            /// `LowCardinality` and `Nullable` are peeled off the constant type because `tryGetConstant`
-            /// peels only an outer `Nullable`, so `LowCardinality(Nullable(FixedString(N)))` reaches
-            /// here wrapped. Same rule as in `KeyCondition::extractAtomFromTree`.
-            /// `Variant` and `Dynamic` erase the active type: the declared wrapper is kept while the
-            /// `Field` already carries the nested padded bytes, so a `FixedString` alternative cannot
-            /// be told apart from a `String` one here and both are treated as possibly padded.
+            /// `String`/`FixedString` equality compares zero-padded, so a constant of M bytes matches
+            /// the whole family `value` + trailing '\0'*, while the index holds one hash per exact
+            /// stored value. The index is sound only where that family collapses to a single indexed
+            /// value: a `FixedString(N)` index with `N >= M` pads the constant into the one stored
+            /// form, while a `String` index, or a narrower `FixedString`, leaves the family unbounded
+            /// because `convertFieldToType` pads but never truncates.
+            /// The constant type is unwrapped here because `tryGetConstant` peels only an outer
+            /// `Nullable`. `Variant` and `Dynamic` keep their declared wrapper while handing out the
+            /// nested padded value, so an active `FixedString` alternative is indistinguishable from
+            /// a `String` one and both must be treated as possibly padded.
             if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
             {
                 const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
