@@ -1412,7 +1412,7 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                     ? lambda_arg->arguments->children[0]->as<ASTFunction>()
                     : nullptr;
                 const auto * body_tuple = params_tuple ? lambda_arg->arguments->children[1]->as<ASTFunction>() : nullptr;
-                const auto * map_identifier = args[1]->as<ASTIdentifier>();
+                const auto * map_identifier = unwrapTransparentProjectionExpression(*args[1])->as<ASTIdentifier>();
                 if (params_tuple && params_tuple->name == "tuple" && params_tuple->arguments
                     && params_tuple->arguments->children.size() == 2 && map_identifier
                     && body_tuple && body_tuple->name == "tuple" && body_tuple->arguments
@@ -1475,10 +1475,12 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                                 IdentifierNameSet source_names = collectValueCarryingIdentifierNames(*source_it->second);
                                 slot_candidates.insert(slot_candidates.end(), source_names.begin(), source_names.end());
                             }
-                            else if (const auto * source_identifier = source_it->second->as<ASTIdentifier>())
+                            else if (const auto * source_identifier
+                                     = unwrapTransparentProjectionExpression(*source_it->second)->as<ASTIdentifier>())
                             {
-                                /// `x.doc` with x bound to `arr`: name it `arr.doc` and let the member
-                                /// descent in resolveMemberQualifiedPolicySource do the rest.
+                                /// `x.doc` with x bound to `arr` (possibly through materialize()/CAST):
+                                /// name it `arr.doc` and let the member descent in
+                                /// resolveMemberQualifiedPolicySource do the rest.
                                 slot_candidates.push_back(source_identifier->name() + name.substr(dot));
                             }
                         }
