@@ -29,4 +29,5 @@ SELECT length(h3PolygonToCells([(55.66824, 12.595493), (55.667901, 12.593991), (
 
 -- Rows that produce nothing must not shift the offsets of the rows around them.
 
-SELECT length(h3kRing(arrayJoin([579205133326352383, 599405990164561919]), materialize(toUInt16(1))));
+SELECT length(h3kRing(arrayJoin([toUInt64(0), 579205133326352383, toUInt64(0)]), materialize(toUInt16(1))))
+SETTINGS functions_h3_default_if_invalid = 1;
