@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <optional>
 #include <unordered_map>
 
 namespace DB
@@ -17,12 +19,19 @@ class ColumnsDescription;
 /// `AlterConversions` closes the read set of an on-fly read over the graph and `MutationsInterpreter`
 /// resolves the same defaults, so the two must agree: a dependency they spell differently leaves the
 /// pending mutation unapplied for that read task and returns the stale stored value.
+///
+/// Analysing a default costs a `TreeRewriter` run, and this graph is built per read task per part, so
+/// nothing is analysed until it is asked for. A query reading one column of a table with a hundred
+/// MATERIALIZED columns must not pay for the ninety-nine it does not touch.
+///
+/// Must not outlive the `ColumnsDescription` it was built from.
 class MaterializedColumnDependencies
 {
 public:
     struct Column
     {
-        /// Subcolumn references already replaced by `getSubcolumn`. Clone before rewriting it.
+        /// ALIAS references expanded and subcolumn references replaced by `getSubcolumn`.
+        /// Clone before rewriting it.
         ASTPtr expression;
         Names dependencies;
         /// EPHEMERAL columns exist only during INSERT, so a column reading one is never recomputed
@@ -30,19 +39,37 @@ public:
         bool reads_ephemeral = false;
     };
 
-    MaterializedColumnDependencies(const ColumnsDescription & columns, const ContextPtr & context);
+    MaterializedColumnDependencies(const ColumnsDescription & columns_, const ContextPtr & context_);
 
     /// Null unless @column_name is a MATERIALIZED column with a default expression.
     const Column * tryGet(const String & column_name) const;
 
-    /// Every MATERIALIZED column that has to be recomputed when @changed_columns change, including
-    /// the ones reachable only through another recomputed one. A column @changed_columns names is
-    /// included too when its own expression reads a changed column: the recompute overrides the
-    /// assignment, and the read set has to cover it either way.
-    NameSet getAffected(const NameSet & changed_columns) const;
+    /// Whether @column_name has to be recomputed when @changed_columns change — because its own
+    /// expression reads one of them, or because it reads another column that has to be recomputed.
+    /// False for anything that is not a MATERIALIZED column, and for one reading an EPHEMERAL column.
+    ///
+    /// Walks upstream from @column_name so only the reachable part of the graph is analysed. Answers
+    /// are memoised for one @changed_columns set; passing a different one starts over.
+    bool willBeRecalculated(const String & column_name, const NameSet & changed_columns) const;
 
 private:
-    std::unordered_map<String, Column> materialized_columns;
+    const Column * analyse(const String & column_name) const;
+    const NamesAndTypesList & getSourceColumns() const;
+
+    const ColumnsDescription & columns;
+    ContextPtr context;
+
+    /// Every MATERIALIZED column of the table, with `dependencies` filled in on first use.
+    mutable std::unordered_map<String, Column> materialized_columns;
+    mutable std::unordered_map<String, bool> analysed;
+
+    /// Physical columns plus EPHEMERAL ones, which `getAllPhysical` omits although a MATERIALIZED
+    /// expression may read one. Built on the first analysis, not before.
+    mutable std::optional<NamesAndTypesList> source_columns;
+    mutable NameSet ephemeral_columns;
+
+    mutable std::optional<NameSet> memo_changed_columns;
+    mutable std::unordered_map<String, bool> will_be_recalculated;
 };
 
 }

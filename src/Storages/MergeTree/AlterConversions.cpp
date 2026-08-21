@@ -477,7 +477,7 @@ static void addColumnsRequiredForMaterialized(
     Names & read_columns,
     NameSet & read_columns_set,
     const MaterializedColumnDependencies & dependencies,
-    const NameSet & recalculated)
+    const NameSet & updated_columns)
 {
     std::queue<String> columns_to_visit(read_columns_set.begin(), read_columns_set.end());
 
@@ -488,10 +488,12 @@ static void addColumnsRequiredForMaterialized(
 
         /// A recalculated column needs all of its dependencies, because the stage that rewrites it
         /// evaluates its whole expression against the block, including the parts that read a column
-        /// no mutation touches. A column that keeps its stored value needs nothing.
-        const auto * materialized = dependencies.tryGet(column_name);
-        if (!materialized || !recalculated.contains(column_name))
+        /// no mutation touches. A column that keeps its stored value needs nothing. Asked per column
+        /// rather than as a precomputed set, so only the reachable part of the graph is analysed.
+        if (!dependencies.willBeRecalculated(column_name, updated_columns))
             continue;
+
+        const auto * materialized = dependencies.tryGet(column_name);
 
         for (const auto & dependency : materialized->dependencies)
         {
@@ -520,7 +522,6 @@ AlterConversions::MutationChainForRead AlterConversions::buildMutationChainForRe
     }
 
     MaterializedColumnDependencies dependencies(metadata_snapshot->getColumns(), context);
-    auto recalculated = dependencies.getAffected(all_updated_columns);
 
     /// `filterMutationCommands` puts the columns the surviving commands read into the read set, and one
     /// of them can be a MATERIALIZED column of a chain (`DELETE WHERE m2 > 100`); closing the set over
@@ -530,7 +531,7 @@ AlterConversions::MutationChainForRead AlterConversions::buildMutationChainForRe
     do
     {
         num_read_columns = chain.read_columns.size();
-        addColumnsRequiredForMaterialized(chain.read_columns, read_columns_set, dependencies, recalculated);
+        addColumnsRequiredForMaterialized(chain.read_columns, read_columns_set, dependencies, all_updated_columns);
         chain.commands = filterMutationCommands(chain.read_columns, read_columns_set, metadata_snapshot);
     } while (num_read_columns != chain.read_columns.size());
 
