@@ -68,6 +68,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_constraint(Keyword::MODIFY_CONSTRAINT);
 
     ParserKeyword s_add_projection(Keyword::ADD_PROJECTION);
+    ParserKeyword s_modify_projection(Keyword::MODIFY_PROJECTION);
     ParserKeyword s_drop_projection(Keyword::DROP_PROJECTION);
     ParserKeyword s_clear_projection(Keyword::CLEAR_PROJECTION);
     ParserKeyword s_materialize_projection(Keyword::MATERIALIZE_PROJECTION);
@@ -522,6 +523,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
+            }
+            else if (s_modify_projection.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_projection_decl.parse(pos, command_projection_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MODIFY_PROJECTION;
             }
             else if (s_move_part.ignore(pos, expected))
             {
