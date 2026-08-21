@@ -829,8 +829,8 @@ def test_the_deadline_handshake_is_not_vacuous():
 
 # --- Not starting the probe once a stop is already pending --------------------
 #
-# The probe takes 65-165 s to conclude and drags a stacktrace sweep (up to 30 s
-# per server process) behind it, so a run that is already tearing down must not
+# The probe takes 65-165 s to conclude and drags a stacktrace sweep (bounded by
+# the lldb budget) behind it, so a run that is already tearing down must not
 # start one. Whether it ran is not visible in the exit code - a second claim loses
 # to the first either way - so the observable is the call count.
 
@@ -1198,8 +1198,8 @@ if os.environ.get("STUB_HEALTH_CHECK_RAISES") == "1":
     def _boom(self, suite, case_name):
         raise RuntimeError("stub: health check send failed")
     ns["TestCase"].send_test_name_failed = _boom
-# lldb over every server process blocks up to 30s each and the collection itself
-# is not what these tests assert, so it is replaced by a marker they can observe.
+# lldb over every server process blocks for the whole budget and the collection
+# itself is not what these tests assert, so it is replaced by an observable marker.
 def _stub_stacktraces(*a, **k):
     print("stub: print_c_stacktraces")
 ns["print_c_stacktraces"] = _stub_stacktraces
