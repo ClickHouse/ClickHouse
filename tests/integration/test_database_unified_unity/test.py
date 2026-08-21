@@ -2,8 +2,7 @@
 """Integration tests for the unified Unity Catalog (`catalog_type = 'unity_catalog'`).
 
 `UnifiedUnityCatalog` serves Delta and Iceberg tables from one catalog, detecting
-the format per table. The open-source server can only express Delta tables, so the
-Iceberg tests go through `mock_servers/uc_proxy.py`.
+the format per table.
 """
 
 import json
@@ -17,8 +16,7 @@ from helpers.cluster import ClickHouseCluster
 CATALOG = "unity"
 
 UC_PORT = 8080
-PROXY_PORT = 8090  # Unity Catalog itself binds both 8080 and 8081.
-
+PROXY_PORT = 8090
 UC_URL = f"http://localhost:{UC_PORT}/api/2.1/unity-catalog"
 PROXY_URL = f"http://localhost:{PROXY_PORT}/api/2.1/unity-catalog"
 
@@ -40,26 +38,24 @@ SEEDED_LAST_ROW = "15\tkxUUZEUoKv\t398"
 EXPERIMENTAL_SETTING = "allow_experimental_database_unified_unity_catalog"
 
 
-UC_HOME = "/var/lib/clickhouse/user_files/unitycatalog"
+# Copied out of the image because the server writes to its own directory, and
+# the image ships it root-owned. /tmp is writable and, with `user_files` rooted
+# at `/`, readable by ClickHouse.
+UC_HOME = "/tmp/unitycatalog"
 UC_LOG = UC_HOME + "/uc.log"
 UC_START_TIMEOUT = 120
 
 
 def start_unity_catalog(node):
-    # The server's classpath lives under `/root/.cache/coursier`, unreadable to
-    # the container's uid outside CI. `a+rx` because that uid has gid 0, so the
-    # group bits apply, not the other bits.
+    # Make root traversable so that non-root users can access classpath files.
     node.exec_in_container(["bash", "-c", "chmod a+rx /root"], user="root")
 
     # tar, not `cp -r`: the sbt caches under */zinc are root-owned mode 0600.
-    # `user_files` is rooted at `/`, so nothing else creates this directory.
     node.exec_in_container(
         [
             "bash",
             "-c",
-            "mkdir -p /var/lib/clickhouse/user_files && "
-            'tar -C / -cf - --exclude="*/zinc" unitycatalog'
-            " | tar -C /var/lib/clickhouse/user_files -xf -",
+            'tar -C / -cf - --exclude="*/zinc" unitycatalog | tar -C /tmp -xf -',
         ]
     )
     node.exec_in_container(
@@ -93,10 +89,7 @@ def start_unity_catalog(node):
         raise
 
 
-UNIFORM_DIR = (
-    "/var/lib/clickhouse/user_files/unitycatalog"
-    "/etc/data/external/unity/default/tables/marksheet_uniform"
-)
+UNIFORM_DIR = UC_HOME + "/etc/data/external/unity/default/tables/marksheet_uniform"
 
 
 def link_uniform_table(node):
@@ -113,8 +106,8 @@ def link_uniform_table(node):
     )
 
 
-PROXY_PATH = "/var/lib/clickhouse/user_files/uc_proxy.py"
-PROXY_LOG = "/var/lib/clickhouse/user_files/uc_proxy.log"
+PROXY_PATH = "/tmp/uc_proxy.py"
+PROXY_LOG = "/tmp/uc_proxy.log"
 
 
 def start_proxy(node):
