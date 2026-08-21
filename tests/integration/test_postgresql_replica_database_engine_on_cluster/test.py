@@ -534,23 +534,6 @@ def test_upgrade_with_grown_schema_adopts_presalt_identity(started_cluster):
     )
     assert [("public", "growth_a"), ("public", "growth_b")] == cursor.fetchall()
 
-    # A table that reaches the warning on restart is already in the publication. `ATTACH TABLE` must
-    # reuse that membership instead of issuing a duplicate `ALTER PUBLICATION ... ADD TABLE`.
-    cursor.execute(f'ALTER PUBLICATION "{presalt_publication}" ADD TABLE ONLY growth_c')
-    node1.restart_clickhouse()
-    # The warning is emitted by the background replication startup task, not by the restart itself.
-    assert_logs_contain_with_retry(
-        node1,
-        "also publishes the following table(s) this database does not replicate: public.growth_c",
-        retry_count=60,
-        sleep_time=1,
-    )
-
-    node1.query(f"ATTACH TABLE {mat_db}.growth_c")
-    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.growth_c", "10")
-    cursor.execute("INSERT INTO growth_c SELECT i, i FROM generate_series(10, 19) AS i")
-    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.growth_c", "20")
-
     # Dropping the database removes the adopted objects.
     node1.query(f"DROP DATABASE {mat_db} SYNC")
     for _ in range(30):
@@ -564,6 +547,85 @@ def test_upgrade_with_grown_schema_adopts_presalt_identity(started_cluster):
             break
         time.sleep(1)
     assert 0 == slots_left and 0 == publications_left
+    cursor.close()
+    conn.close()
+    server_cursor.execute(f'DROP DATABASE "{pg_db}" WITH (FORCE)')
+
+
+def test_attach_table_reuses_existing_publication_membership(started_cluster):
+    # A whole-schema database tolerates a publication extra - a table the publication publishes but the
+    # database does not materialize - and names it in a warning. `ATTACH TABLE` for such a table must
+    # reuse the existing publication membership instead of issuing a duplicate
+    # `ALTER PUBLICATION ... ADD TABLE`, which PostgreSQL rejects.
+    pg_db = "extras_db"
+    mat_db = "extras_database"
+
+    server_conn = get_postgres_conn(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, database=False
+    )
+    server_cursor = server_conn.cursor()
+    server_cursor.execute(f'DROP DATABASE IF EXISTS "{pg_db}" WITH (FORCE)')
+    server_cursor.execute(f'CREATE DATABASE "{pg_db}"')
+    conn = get_postgres_conn(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        database=True,
+        database_name=pg_db,
+    )
+    cursor = conn.cursor()
+    for table in ("extra_a", "extra_b"):
+        cursor.execute(f"CREATE TABLE {table} (key integer primary key, value integer)")
+        cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 9) AS i")
+
+    node1.query(
+        f"""
+        CREATE DATABASE {mat_db}
+        ENGINE = MaterializedPostgreSQL(
+            '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            '{pg_db}', 'postgres', '{pg_pass}')
+        SETTINGS materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100,
+                 materialized_postgresql_use_unique_replication_consumer_identifier = 1
+        """
+    )
+    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.extra_a", "10")
+    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.extra_b", "10")
+
+    # A table this database never materialized, put into the publication from the outside. This is also
+    # the state a table of the original definition is left in when its first snapshot failed.
+    cursor.execute("SELECT pubname FROM pg_publication")
+    publication = cursor.fetchone()[0]
+    cursor.execute("CREATE TABLE extra_c (key integer primary key, value integer)")
+    cursor.execute("INSERT INTO extra_c SELECT i, i FROM generate_series(0, 9) AS i")
+    cursor.execute(f'ALTER PUBLICATION "{publication}" ADD TABLE ONLY extra_c')
+
+    node1.restart_clickhouse()
+    # The warning is emitted by the background replication startup task, not by the restart itself.
+    assert_logs_contain_with_retry(
+        node1,
+        "also publishes the following table(s) this database does not replicate: public.extra_c",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert "extra_a\nextra_b" == node1.query(f"SHOW TABLES FROM {mat_db}").strip()
+
+    # The attach reuses the publication entry and starts streaming the table.
+    node1.query(f"ATTACH TABLE {mat_db}.extra_c")
+    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.extra_c", "10")
+    cursor.execute("INSERT INTO extra_c SELECT i, i FROM generate_series(10, 19) AS i")
+    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.extra_c", "20")
+
+    cursor.execute(
+        f"SELECT schemaname, tablename FROM pg_publication_tables "
+        f"WHERE pubname = '{publication}' ORDER BY tablename"
+    )
+    assert [
+        ("public", "extra_a"),
+        ("public", "extra_b"),
+        ("public", "extra_c"),
+    ] == cursor.fetchall()
+
+    node1.query(f"DROP DATABASE {mat_db} SYNC")
     cursor.close()
     conn.close()
     server_cursor.execute(f'DROP DATABASE "{pg_db}" WITH (FORCE)')
