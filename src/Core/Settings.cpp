@@ -3718,7 +3718,7 @@ See also:
 - [Join table engine](/reference/engines/table-engines/special/join)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash,ie_join", R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,hash,ie_join", R"(
 Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
@@ -3746,11 +3746,11 @@ Possible values:
 
  When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
- `hash` and `parallel_hash` are aliases of the same join class. Listing one or the other does not control how parallel the join is. Parallelism is chosen automatically from the join kind, `parallel_hash_join_threshold`, and `max_threads`.
+ Parallelism is chosen automatically from the join kind, `parallel_hash_join_threshold`, and `max_threads`. `parallel_hash` is an obsolete alias of this name.
 
 - parallel_hash
 
- Same as `hash`.
+ Obsolete alias of `hash`. Still accepted for compatibility. Listing it does not control how parallel the join is.
 
 - partial_merge
 

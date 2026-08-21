@@ -63,7 +63,7 @@ namespace DB
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.", IMPORTANT) \
     DECLARE(Float, totals_auto_threshold, 0.5, "The threshold for totals_mode = 'auto'.", 0) \
     \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", "Specifies which JOIN algorithm is used.", 0) \
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,hash", "Specifies which JOIN algorithm is used.", 0) \
     \
     DECLARE(UInt64, max_rows_in_join, 0, "Maximum size of the hash table for JOIN (in number of rows).", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).", 0) \
