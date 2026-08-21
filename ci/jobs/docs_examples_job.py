@@ -171,9 +171,11 @@ def main():
             # here and the interpolated paths cannot be reinterpreted.
             # `--global-objects`: the server above is started for this job alone, so the examples
             # that create users, roles or databases can run without disturbing anything.
-            # `--external-calls`: the server is started without model-provider credentials, so
-            # the `ai*` examples cannot reach any external service; running them keeps their
-            # known-failures entries validated.
+            # `--external-calls`: the server is configured with named collections that point at
+            # a loopback port nothing listens on (see `tests/docs_examples/config.d`), so the
+            # `ai*` examples resolve their credentials, reach the provider request, and fail
+            # there instead of reaching any external service; running them keeps their
+            # known-failures entries validated against that boundary.
             with open(RUNNER_LOG, "w", encoding="utf-8") as log:
                 code = subprocess.run(
                     ["python3", "./tests/docs_examples/runner.py", "--global-objects", "--external-calls", "--report", REPORT],

@@ -22,4 +22,30 @@
     <listen_host>127.0.0.1</listen_host>
     <listen_host>127.0.0.2</listen_host>
     <listen_host>127.0.0.3</listen_host>
+
+    <!-- The `ai*` examples name the named collections `ai_text_credentials` and
+         `ai_embedding_credentials`, and the ones that do not name a collection read the two
+         default-credentials settings (set in `users.d/documentation_examples.xml`). Without them
+         the examples stop in `FunctionBaseAI::resolveAIParams` on missing local setup, and their
+         entries in `tests/docs_examples/known_failures.txt` would record a configuration gap of
+         this job instead of the external dependency the examples really have. With them, every
+         `ai*` example is exercised up to the provider request and fails there, against an endpoint
+         that is guaranteed to refuse the connection: port 1 of the loopback interface, which is
+         also exempt from the `https` requirement. The key is not a credential, and there is
+         nothing to send it to. The two collections cannot be one: a text collection must carry
+         `model`, and an embedding collection must not, because `aiEmbed` takes the model as an
+         argument. -->
+    <named_collections>
+        <ai_text_credentials>
+            <provider>openai</provider>
+            <endpoint>http://127.0.0.1:1/v1</endpoint>
+            <api_key>documentation-examples-no-such-key</api_key>
+            <model>gpt-4o-mini</model>
+        </ai_text_credentials>
+        <ai_embedding_credentials>
+            <provider>openai</provider>
+            <endpoint>http://127.0.0.1:1/v1</endpoint>
+            <api_key>documentation-examples-no-such-key</api_key>
+        </ai_embedding_credentials>
+    </named_collections>
 </clickhouse>

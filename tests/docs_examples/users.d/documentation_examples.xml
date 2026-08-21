@@ -16,4 +16,14 @@
             </networks>
         </default>
     </users>
+
+    <profiles>
+        <default>
+            <!-- The `ai*` examples that do not pass `credentials` in their parameter map read the
+                 collection to use from these settings. See the named collections in
+                 `config.d/documentation_examples.xml` for what they point at. -->
+            <ai_function_text_default_credentials>ai_text_credentials</ai_function_text_default_credentials>
+            <ai_function_embedding_default_credentials>ai_embedding_credentials</ai_function_embedding_default_credentials>
+        </default>
+    </profiles>
 </clickhouse>
