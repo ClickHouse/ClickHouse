@@ -75,15 +75,16 @@ class Secret:
                 f"aws ssm get-parameters --names {' '.join(self.name)} --with-decryption --output text --query 'Parameters[*].[Name,Value]' {region}",
                 strict=True,
             )
-            name_value_pairs = res.split("\n")
+            # Keep only lines carrying a Name<TAB>Value pair: `get-parameters` reports
+            # unknown names under `InvalidParameters` and still exits 0, so a response
+            # with none of them is empty and has no pair to split.
+            name_value_pairs = [p for p in res.split("\n") if "\t" in p]
             names = [n.split("\t")[0].strip() for n in name_value_pairs]
             values = [n.split("\t")[1].strip() for n in name_value_pairs]
 
             for n in self.name:
                 if n not in names:
-                    raise SecretMisconfigured(
-                        f"Failed to get value for parameter [{n}]"
-                    )
+                    raise SecretMisconfigured(f"Failed to get value for parameter [{n}]")
 
             # Sort to match requested order and validate values:
             name_value_pairs = list(zip(names, values))

@@ -59,8 +59,8 @@ _AWS_FAILURES = [
     ),
 ]
 
-# The two ways `Secret` itself rejects an answer it did receive. Both must stay fatal:
-# `aws` exited 0, so no amount of retrying or tolerating changes the outcome.
+# The ways `Secret` rejects an answer it did receive. All must stay fatal: `aws` exited
+# 0, so no amount of retrying or tolerating changes the outcome.
 _MISCONFIGURATIONS = {
     # The requested names are simply not in the answer.
     "missing_name": "printf 'some_other_name\\tvalue\\n'\n",
@@ -68,6 +68,10 @@ _MISCONFIGURATIONS = {
     "empty_value": (
         "printf 'clickhouse_ci_logs_host\\t\\nclickhouse_ci_logs_password\\tp\\n'\n"
     ),
+    # `get-parameters` reports unknown names under `InvalidParameters` and still exits 0,
+    # so an answer holding none of them carries no pair to split.
+    "no_names_at_all": "exit 0\n",
+    "answer_is_blank": "printf '\\n'\n",
 }
 
 
@@ -291,13 +295,14 @@ def test_a_failed_write_leaves_no_host_to_export_against(fake_aws, proc, tmp_pat
     """`start_log_exports` reads `log_export_host` to decide the cluster is defined on
     the server, so the fetched value may only be published once the file is on disk.
     A host set without the config written makes the export run against a cluster the
-    server never got - the `Code: 701` failure this method's own comment documents."""
+    server never got - the `Code: 701` failure this method's own comment documents.
+    The write is provoked with a directory at the path so the failure does not depend on
+    the effective uid: this job runs as root, for whom a read-only file is still
+    writable."""
     fake_aws.succeed_with(host="ci-logs.example.com", password="secret")
     config_dir = tmp_path / "etc"
     config_file = config_dir / "config.d" / "system_logs_export.yaml"
-    config_file.parent.mkdir(parents=True)
-    config_file.write_text("PARTIAL")
-    config_file.chmod(0o444)
+    config_file.mkdir(parents=True)
 
     ch = proc()
     with pytest.raises(OSError):
@@ -309,20 +314,21 @@ def test_a_failed_write_leaves_no_host_to_export_against(fake_aws, proc, tmp_pat
 def test_the_sqlstorm_duplicate_also_publishes_only_what_it_wrote(fake_aws, tmp_path):
     """`sqlstorm_test.py` carries its own near-duplicate of the method, with the same
     two attributes and the same `start_log_exports` guard, so it needs the same commit
-    ordering. Asserted separately because a fix applied to one copy leaves the other."""
+    ordering. Asserted separately because a fix applied to one copy leaves the other.
+    The write is provoked with a directory at the path so the failure does not depend on
+    the effective uid: this job runs as root, for whom a read-only file is still
+    writable."""
     fake_aws.succeed_with(host="ci-logs.example.com", password="secret")
     config_path = tmp_path / "config"
     config_file = config_path / "config.d" / "system_logs_export.yaml"
-    config_file.parent.mkdir(parents=True)
-    config_file.write_text("PARTIAL")
-    config_file.chmod(0o444)
+    config_file.mkdir(parents=True)
 
     binary, configure = _sqlstorm_binary_config(config_path)
     with pytest.raises(OSError):
         configure()
     assert getattr(binary, "log_export_host", None) is None
 
-    config_file.chmod(0o644)
+    config_file.rmdir()
     assert configure()
     assert binary.log_export_host == "ci-logs.example.com"
 
