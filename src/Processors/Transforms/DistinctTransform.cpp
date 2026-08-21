@@ -277,9 +277,15 @@ void DistinctTransform::transform(Chunk & chunk)
             lc_optimization_controller.update(num_rows, new_indices_count);
             lc_mask.emplace(std::move(mask));
 
-            /// Empty mask -> no candidate rows in this chunk, emit nothing.
+            /// Empty mask -> no candidate rows in this chunk, emit nothing. The chunk is fully
+            /// duplicate, which is the strongest evidence in favor of keeping the deduplication, so
+            /// the abandon accounting must see it.
             if (lc_mask->empty())
+            {
+                if (abandon_controller)
+                    abandon_controller->update(num_rows, 0, data->getTotalByteCount());
                 return;
+            }
         }
     }
 

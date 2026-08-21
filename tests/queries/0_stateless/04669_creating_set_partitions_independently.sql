@@ -216,6 +216,19 @@ SELECT count() FROM remote('127.0.0.{1,2}', currentDatabase(), test_in_global_pr
 DROP TABLE test_in_global_probe;
 DROP TABLE test_in_global;
 
+-- LowCardinality key with a fully duplicate prefix: chunks whose dictionary was already fully seen are
+-- resolved by the LC mask without touching the hash table, and the abandon accounting must still see
+-- them as duplicate rows; otherwise a unique tail would make the stream look mostly unique.
+DROP TABLE IF EXISTS test_in_lc_dup_prefix;
+CREATE TABLE test_in_lc_dup_prefix (s LowCardinality(String)) ENGINE = MergeTree ORDER BY s PARTITION BY cityHash64(s) % 8;
+SYSTEM STOP MERGES test_in_lc_dup_prefix;
+INSERT INTO test_in_lc_dup_prefix SELECT concat('dup_', toString(number % 512)) FROM numbers_mt(400000);
+INSERT INTO test_in_lc_dup_prefix SELECT concat('uniq_', toString(number)) FROM numbers_mt(100000);
+SELECT (SELECT count() FROM (SELECT concat('dup_', toString(number % 512)) AS s FROM numbers(1000)) WHERE s IN (SELECT s FROM test_in_lc_dup_prefix) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM (SELECT concat('dup_', toString(number % 512)) AS s FROM numbers(1000)) WHERE s IN (SELECT s FROM test_in_lc_dup_prefix) SETTINGS allow_creating_set_partitions_independently = 1);
+-- the set stores exactly the unique keys
+SELECT count() FROM (SELECT concat('dup_', toString(number % 8)) AS s FROM numbers(8)) WHERE s IN (SELECT s FROM test_in_lc_dup_prefix) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 100512, set_overflow_mode = 'throw';
+DROP TABLE test_in_lc_dup_prefix;
+
 -- Mostly-unique input: the preliminary per-stream deduplication observes the first chunks, sees that
 -- almost every row survives, and abandons itself, dropping its hash table and passing the remaining
 -- chunks through. The duplicates inserted second arrive in each stream after that point and reach the
