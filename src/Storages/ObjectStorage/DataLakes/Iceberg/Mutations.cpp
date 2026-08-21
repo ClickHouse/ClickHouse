@@ -12,6 +12,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -41,6 +42,7 @@ namespace DB::ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
+extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -62,6 +64,75 @@ namespace DB::Iceberg
 static constexpr const char * block_datafile_path = "_iceberg_metadata_file_path";
 static constexpr const char * block_row_number = "_row_number";
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
+
+/// Walk an Iceberg type descriptor and return the highest field id found.
+static Int32 getHighestFieldIdFromType(const Poco::Dynamic::Var & type_var)
+{
+    if (type_var.type() != typeid(Poco::JSON::Object::Ptr))
+        return 0;
+    auto obj = type_var.extract<Poco::JSON::Object::Ptr>();
+    Int32 result = 0;
+
+    auto type_str = obj->optValue<String>(Iceberg::f_type, "");
+    if (type_str == "struct")
+    {
+        auto fields = obj->getArray(Iceberg::f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            result = std::max(result, field->getValue<Int32>(Iceberg::f_id));
+            result = std::max(result, getHighestFieldIdFromType(field->get(Iceberg::f_type)));
+        }
+    }
+    else if (type_str == "list")
+    {
+        result = std::max(result, obj->getValue<Int32>(Iceberg::f_element_id));
+        result = std::max(result, getHighestFieldIdFromType(obj->get(Iceberg::f_element)));
+    }
+    else if (type_str == "map")
+    {
+        result = std::max(result, obj->getValue<Int32>(Iceberg::f_key_id));
+        result = std::max(result, obj->getValue<Int32>(Iceberg::f_value_id));
+        result = std::max(result, getHighestFieldIdFromType(obj->get(Iceberg::f_key)));
+        result = std::max(result, getHighestFieldIdFromType(obj->get(Iceberg::f_value)));
+    }
+    return result;
+}
+
+/// Whether the schema already reflects `command`. Used after a commit attempt whose outcome is
+/// unknown: the catalog may have applied the update and still reported a failure, in which case
+/// re-applying the same command on the refreshed metadata would fail with "Column already exists"
+/// or "Not found column" for an ALTER that actually succeeded.
+static bool alterAlreadyApplied(const MetadataGenerator & generator, const AlterCommand & command)
+{
+    switch (command.type)
+    {
+        case AlterCommand::Type::ADD_COLUMN:
+            return generator.isAddColumnApplied(command.column_name, command.data_type);
+        case AlterCommand::Type::DROP_COLUMN:
+            return generator.isDropColumnApplied(command.column_name);
+        case AlterCommand::Type::RENAME_COLUMN:
+            return generator.isRenameColumnApplied(command.column_name, command.rename_to);
+        case AlterCommand::Type::MODIFY_COLUMN:
+            return generator.isModifyColumnApplied(command.column_name, command.data_type);
+        default:
+            return false;
+    }
+}
+
+/// Return the highest field id across all fields in an Iceberg schema object.
+static Int32 getHighestFieldId(Poco::JSON::Object::Ptr schema)
+{
+    Int32 result = 0;
+    auto fields = schema->getArray(Iceberg::f_fields);
+    for (UInt32 i = 0; i < fields->size(); ++i)
+    {
+        auto field = fields->getObject(i);
+        result = std::max(result, field->getValue<Int32>(Iceberg::f_id));
+        result = std::max(result, getHighestFieldIdFromType(field->get(Iceberg::f_type)));
+    }
+    return result;
+}
 
 struct DeleteFileWriteResult
 {
@@ -729,8 +800,13 @@ void alter(
 
     size_t i = 0;
     bool succeeded = false;
+    /// Set once we hand a commit to storage or to the catalog, i.e. once its outcome can be unknown.
+    bool commit_attempted = false;
     while (i < MAX_TRANSACTION_RETRIES)
     {
+        if (auto elem = context->getProcessListElement(); elem && elem->isKilled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "ALTER TABLE cancelled during retry loop");
+
         auto log = getLogger("IcebergMutations");
 
         int last_version = 0;
@@ -797,6 +873,17 @@ void alter(
 
         auto metadata_json_generator = MetadataGenerator(metadata);
 
+        if (commit_attempted && alterAlreadyApplied(metadata_json_generator, params[0]))
+        {
+            LOG_WARNING(
+                log,
+                "A previous ALTER TABLE commit attempt for {} was reported as failed but is present in the "
+                "table metadata, treating the operation as succeeded",
+                storage_id.getNameForLogs());
+            succeeded = true;
+            break;
+        }
+
         switch (params[0].type)
         {
             case AlterCommand::Type::ADD_COLUMN:
@@ -808,8 +895,13 @@ void alter(
                 metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
                 break;
             case AlterCommand::Type::MODIFY_COLUMN:
-                metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
+            {
+                if (!metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type, context))
+                {
+                    succeeded = true;
+                }
                 break;
+            }
             case AlterCommand::Type::RENAME_COLUMN:
                 metadata_json_generator.generateRenameColumnMetadata(params[0].column_name, params[0].rename_to);
                 break;
@@ -817,14 +909,18 @@ void alter(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
         }
 
+        if (succeeded)
+            break;
+
         const auto new_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
         Poco::JSON::Object::Ptr new_schema;
         auto schemas = metadata->getArray(Iceberg::f_schemas);
-        for (UInt32 schema_index = 0; schema_index < schemas->size(); ++schema_index)
+        for (auto schema_index = schemas->size(); schema_index > 0; --schema_index)
         {
-            if (schemas->getObject(schema_index)->getValue<Int32>(Iceberg::f_schema_id) == new_schema_id)
+            auto candidate = schemas->getObject(static_cast<unsigned>(schema_index - 1));
+            if (candidate->getValue<Int32>(Iceberg::f_schema_id) == new_schema_id)
             {
-                new_schema = schemas->getObject(schema_index);
+                new_schema = candidate;
                 break;
             }
         }
@@ -838,25 +934,32 @@ void alter(
         auto hint_path = filename_generator.generateVersionHint();
 
         const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-        if (!catalog_writes_metadata_file
-            && !writeMetadataFileAndVersionHint(
-                persistent_table_components.path_resolver,
-                metadata_info,
-                json_representation,
-                hint_path,
-                object_storage,
-                context,
-                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        if (!catalog_writes_metadata_file)
         {
-            ++i;
-            continue;
+            commit_attempted = true;
+            if (!writeMetadataFileAndVersionHint(
+                    persistent_table_components.path_resolver,
+                    metadata_info,
+                    json_representation,
+                    hint_path,
+                    object_storage,
+                    context,
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+            {
+                ++i;
+                continue;
+            }
         }
 
         if (catalog)
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id))
+            const auto new_last_column_id = std::max(
+                metadata->getValue<Int32>(Iceberg::f_last_column_id),
+                getHighestFieldId(new_schema));
+            commit_attempted = true;
+            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id, new_last_column_id, metadata))
             {
                 ++i;
                 continue;
@@ -868,7 +971,9 @@ void alter(
     }
 
     if (!succeeded)
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+            "ALTER TABLE commit did not succeed after {} retries (concurrent modification or catalog rejection)",
+            MAX_TRANSACTION_RETRIES);
 
     /// Invalidate the metadata files cache so that subsequent operations on this table see the
     /// schema we just wrote. See `PersistentTableComponents::invalidateMetadataCache` for the

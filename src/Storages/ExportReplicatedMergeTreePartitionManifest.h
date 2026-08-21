@@ -248,6 +248,7 @@ struct ExportReplicatedMergeTreePartitionManifest
     std::optional<UInt64> output_format_compression_level;
     std::optional<UInt64> parquet_row_group_size;
     std::optional<UInt64> parquet_row_group_size_bytes;
+    std::optional<MergeTreePartExportSchemaMismatchMode> schema_mismatch_mode;
 
     std::string toJsonString() const
     {
@@ -290,6 +291,8 @@ struct ExportReplicatedMergeTreePartitionManifest
             json.set("parquet_row_group_size", *parquet_row_group_size);
         if (parquet_row_group_size_bytes)
             json.set("parquet_row_group_size_bytes", *parquet_row_group_size_bytes);
+        if (schema_mismatch_mode)
+            json.set("schema_mismatch_mode", String(magic_enum::enum_name(*schema_mismatch_mode)));
         std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
         Poco::JSON::Stringifier::stringify(json, oss);
@@ -357,6 +360,16 @@ struct ExportReplicatedMergeTreePartitionManifest
         /// on upgrade. New tasks always persist the initiator's actual choice.
         manifest.allow_lossy_cast = json->has("allow_lossy_cast") ? json->getValue<bool>("allow_lossy_cast") : true;
 
+        /// Left unset (nullopt) for tasks created before this field existed - such tasks were
+        /// always scheduled under the old, strict column-count check (a mismatch could never
+        /// reach scheduling in the first place), so callers should treat an absent value as
+        /// `strict`.
+        if (json->has("schema_mismatch_mode"))
+        {
+            const auto schema_mismatch_mode = magic_enum::enum_cast<MergeTreePartExportSchemaMismatchMode>(json->getValue<String>("schema_mismatch_mode"));
+            if (schema_mismatch_mode)
+                manifest.schema_mismatch_mode = schema_mismatch_mode;
+        }
 
         if (json->has("parquet_compression_method"))
         {
