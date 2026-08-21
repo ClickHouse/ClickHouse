@@ -86,7 +86,6 @@ public:
                             format_name, getName());
 
         auto columns = arg_columns.getColumns();
-        size_t prev_offset = 0;
         for (size_t i = 0; i != input_rows_count; ++i)
         {
             row_output_format->writePrefixIfNeeded();
@@ -94,15 +93,20 @@ public:
             row_output_format->finalize();
             if (no_newline)
             {
-                /// The buffer is shared by all the rows, so a row that produced no output at all
-                /// must not rewind the position into the previous row: that would make the offsets
-                /// non-monotonic, and the size of the previous row would underflow.
-                if (buffer.count() > prev_offset && buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
+                /// Strip a single trailing newline, but only when this row actually emitted at least one byte.
+                /// `buffer.count()` is the absolute number of bytes written; the current row starts at the
+                /// previous row's end offset (0 for the first row). Comparing against it prevents rewinding into
+                /// the previous row when this row is empty, which would make `offsets` non-monotonic and cause a
+                /// `size_t` underflow in `ColumnString::sizeAt`. The check against `buffer.buffer().begin()`
+                /// additionally keeps the position within the current working buffer so `--buffer.position()`
+                /// never moves the cursor before it.
+                const size_t row_start = i == 0 ? 0 : offsets[i - 1];
+                if (buffer.count() > row_start && buffer.position() > buffer.buffer().begin()
+                    && buffer.position()[-1] == '\n')
                     --buffer.position();
             }
 
             offsets[i] = buffer.count();
-            prev_offset = offsets[i];
             row_output_format->resetFormatter();
         }
 

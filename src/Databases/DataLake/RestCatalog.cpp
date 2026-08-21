@@ -1733,7 +1733,8 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
-    request_body->set("location", metadata_content->getValue<String>("location"));
+    if (!managesTableLocation())
+        request_body->set("location", metadata_content->getValue<String>("location"));
     {
         Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
         Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
@@ -1784,21 +1785,22 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         request_body->set("identifier", identifier);
     }
 
-    if (new_snapshot->has("parent-snapshot-id"))
     {
-        auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
-        if (parent_snapshot_id != -1)
+        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+        requirement->set("type", "assert-ref-snapshot-id");
+        requirement->set("ref", "main");
+
+        if (new_snapshot->has("parent-snapshot-id"))
         {
-            Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-            requirement->set("type", "assert-ref-snapshot-id");
-            requirement->set("ref", "main");
-            requirement->set("snapshot-id", parent_snapshot_id);
-
-            Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
-            requirements->add(requirement);
-
-            request_body->set("requirements", requirements);
+            auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
+            if (parent_snapshot_id != -1)
+                requirement->set("snapshot-id", parent_snapshot_id);
         }
+
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        requirements->add(requirement);
+
+        request_body->set("requirements", requirements);
     }
 
     {
