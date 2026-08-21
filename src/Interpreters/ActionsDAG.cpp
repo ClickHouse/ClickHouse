@@ -2285,7 +2285,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
         const bool requires_experimental_time_decay_validation
             = equal_types
             && res_elem.type->getName() != dst_node->result_type->getName()
-            && isExponentialTimeDecayingFloat64(removeLowCardinalityAndNullable(res_elem.type));
+            && containsExponentialTimeDecayingFloat64(res_elem.type);
         if (!equal_types || requires_experimental_time_decay_validation)
         {
             auto string_type = std::make_shared<DataTypeString>();

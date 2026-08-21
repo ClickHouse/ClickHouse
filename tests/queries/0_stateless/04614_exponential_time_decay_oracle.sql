@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS time_decay_default_simple_aggregate;
 DROP TABLE IF EXISTS time_decay_aggregate_state_reattach;
 DROP TABLE IF EXISTS time_decay_simple_aggregate_reattach;
 DROP TABLE IF EXISTS time_decay_layout_compatible_insert;
+DROP TABLE IF EXISTS time_decay_nested_layout_compatible_insert;
 DROP TABLE IF EXISTS time_decay_layout_compatible_simple_aggregate_insert;
 DROP TABLE IF EXISTS time_decay_mv_source;
 DROP TABLE IF EXISTS time_decay_mv_reattach;
@@ -71,6 +72,22 @@ SELECT CAST(
     'Tuple(sign Float64, signed_unit_time Float64, decay_length Float64)');
 SELECT count() = 1 FROM time_decay_layout_compatible_insert;
 DROP TABLE time_decay_layout_compatible_insert;
+
+CREATE TABLE time_decay_nested_layout_compatible_insert
+(
+    values Array(ExponentialTimeDecayingFloat64(10))
+)
+ENGINE = Memory;
+INSERT INTO time_decay_nested_layout_compatible_insert
+SELECT CAST(
+    [(1., 0., 20.)],
+    'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))'); -- { serverError BAD_ARGUMENTS }
+INSERT INTO time_decay_nested_layout_compatible_insert
+SELECT CAST(
+    [(1., 0., 10.)],
+    'Array(Tuple(sign Float64, signed_unit_time Float64, decay_length Float64))');
+SELECT count() = 1 FROM time_decay_nested_layout_compatible_insert;
+DROP TABLE time_decay_nested_layout_compatible_insert;
 
 CREATE TABLE time_decay_layout_compatible_simple_aggregate_insert
 (

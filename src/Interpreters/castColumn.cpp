@@ -18,13 +18,10 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
 {
     if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
     {
-        if (arg.type->getName() != type->getName())
-        {
-            if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-                    removeLowCardinalityAndNullable(type)))
-                validateExponentialTimeDecayingFloat64Column(
-                    *arg.column, *decay_length, "conversion to ExponentialTimeDecayingFloat64");
-        }
+        if (arg.type->getName() != type->getName()
+            && containsExponentialTimeDecayingFloat64(type))
+            validateExponentialTimeDecayingFloat64Column(
+                *arg.column, type, "conversion to ExponentialTimeDecayingFloat64");
 
         return arg.column;
     }

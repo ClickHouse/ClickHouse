@@ -199,11 +199,8 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     cols.reserve(columns.size());
     for (const auto & column : columns)
     {
-        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeNullable(recursiveRemoveLowCardinality(column.type)));
-        if (decay_length)
-            validateExponentialTimeDecayingFloat64Column(
-                *column.column, *decay_length, "IN set construction");
+        validateExponentialTimeDecayingFloat64Column(
+            *column.column, column.type, "IN set construction");
 
         cols.emplace_back(column.column);
     }
@@ -251,11 +248,8 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
         holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped()));
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
 
-        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeNullable(recursiveRemoveLowCardinality(data_types[i])));
-        if (decay_length)
-            validateExponentialTimeDecayingFloat64Column(
-                *holder.materialized_columns.back(), *decay_length, "IN set construction");
+        validateExponentialTimeDecayingFloat64Column(
+            *holder.materialized_columns.back(), data_types[i], "IN set construction");
     }
 
     size_t rows = columns.at(0)->size();
@@ -524,13 +518,10 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }
 
-        auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeNullable(recursiveRemoveLowCardinality(column_before_cast.type)));
-        if (!decay_length)
-            decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-                removeNullable(recursiveRemoveLowCardinality(data_types[i])));
-        if (decay_length)
-            validateExponentialTimeDecayingFloat64Column(*result, *decay_length, "IN set probe");
+        const auto & validation_type = containsExponentialTimeDecayingFloat64(column_before_cast.type)
+            ? column_before_cast.type
+            : data_types[i];
+        validateExponentialTimeDecayingFloat64Column(*result, validation_type, "IN set probe");
 
         // Append the result to materialized columns
         materialized_columns.emplace_back(std::move(result));

@@ -182,13 +182,12 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
         const auto & column_in_block = block.getByName(required_column.name);
         if (column_in_block.type->equals(*required_column.type))
         {
-            if (column_in_block.type->getName() != required_column.type->getName())
-            {
-                if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-                        removeLowCardinalityAndNullable(required_column.type)))
-                    validateExponentialTimeDecayingFloat64Column(
-                        *column_in_block.column, *decay_length, "insertion into ExponentialTimeDecayingFloat64");
-            }
+            if (column_in_block.type->getName() != required_column.type->getName()
+                && containsExponentialTimeDecayingFloat64(required_column.type))
+                validateExponentialTimeDecayingFloat64Column(
+                    *column_in_block.column,
+                    required_column.type,
+                    "insertion into ExponentialTimeDecayingFloat64");
 
             continue;
         }

@@ -408,10 +408,9 @@ ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sam
     try
     {
         auto wrapper = prepareUnpackDictionaries(getArgumentTypes()[0], getResultType());
-        if (const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-                removeLowCardinalityAndNullable(getResultType())))
+        if (containsExponentialTimeDecayingFloat64(getResultType()))
         {
-            wrapper = [nested = std::move(wrapper), expected_decay_length = *decay_length](
+            wrapper = [nested = std::move(wrapper)](
                           ColumnsWithTypeAndName & arguments,
                           const DataTypePtr & result_type,
                           const ColumnNullable * nullable,
@@ -419,7 +418,7 @@ ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sam
             {
                 auto result = nested(arguments, result_type, nullable, input_rows_count);
                 validateExponentialTimeDecayingFloat64Column(
-                    *result, expected_decay_length, "conversion to ExponentialTimeDecayingFloat64");
+                    *result, result_type, "conversion to ExponentialTimeDecayingFloat64");
                 return result;
             };
         }
