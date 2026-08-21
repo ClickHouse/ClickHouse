@@ -1,0 +1,49 @@
+-- add: e1 + e2 = (count 12, sum 31, buckets x3, x9); the counter reset hint stays `unknown` (0)
+(0,0,0,12,31,0,[(0,2)],[3,9],[],[],[])
+-- sub: e2 - e1 = (count 4, sum 11, buckets x1, x3); the hint is set to gauge (flags 6)
+(6,0,0,4,11,0,[(0,2)],[1,3],[],[],[])
+-- schema mismatch: s1 (schema 1, buckets (0.71,1]x1, (1,1.41]x1, (1.41,2]x6) + e1: s1 is reduced
+-- to schema 0 (buckets x1, x7) before adding: (count 12, sum 31, buckets x2, x10)
+(0,0,0,12,31,0,[(0,2)],[2,10],[],[],[])
+-- custom buckets, same bounds [1,2,4]: c1 + c2 = buckets [1,5,6] over (-Inf,1], (1,2], (2,4]
+(0,-53,0,12,31,0,[(0,3)],[1,5,6],[],[],[1,2,4])
+-- custom buckets, mismatched bounds [1,2,4] vs [2,4,8]: the bounds are intersected to [2,4]
+-- (upstream nhcbBoundsReconciled); c1 maps to [4,0,0], c3 stays [5,7,0] -> [9,7]
+(0,-53,0,8,24,0,[(0,2)],[9,7],[],[],[2,4])
+-- exp + custom: schema-incompatible -> NULL (upstream drops the sample)
+\N	\N
+-- zero-threshold reconciliation: zt 0.6 (zero count 1) + zt 0.0: the threshold adjusts up
+-- to the bucket bound 1.0 and covered buckets fold into the zero count: zc = 1+1+1 = 3, (1,2] bucket: 3+1 = 4
+(0,0,1,6,15,3,[(1,1)],[4],[],[],[])	(0,0,1,6,15,3,[(1,1)],[4],[],[],[])
+-- mul by scalar 2 / by -2 (a negative factor marks the result as a gauge, flags 6)
+(0,0,0,8,20,0,[(0,2)],[2,6],[],[],[])	(6,0,0,-8,-20,-0,[(0,2)],[-2,-6],[],[],[])
+-- div by scalar 2 / by -2 / by 0 (division by zero removes all buckets; the scalar fields
+-- still get divided: count/sum +Inf, zero_count 0/0 = NaN)
+(0,0,0,2,5,0,[(0,2)],[0.5,1.5],[],[],[])	(6,0,0,-2,-5,-0,[(0,2)],[-0.5,-1.5],[],[],[])	(0,0,0,inf,inf,nan,[],[],[],[],[])
+-- NULL handling: NULL in -> NULL out for all four
+\N	\N	\N	\N
+-- row-wise NULLs inside Nullable columns are kept per row (the first row is e1 + e1)
+(0,0,0,8,20,0,[(0,2)],[2,6],[],[],[])
+\N
+-- the counter reset hint of `sum`: two NotCounterReset samples (flags 4) keep the hint (flags 4)
+(4,0,0,12,31,0,[(0,2)],[3,9],[],[],[])
+-- aggregate level: `timeSeriesHistogramSumOverGroup` / `timeSeriesHistogramAvgOverGroup` over e1, e2
+-- sum = (count 12, sum 31, buckets x3, x9); avg = sum/2 = (count 6, sum 15.5, buckets x1.5, x4.5)
+(0,0,0,12,31,0,[(0,2)],[3,9],[],[],[])	(0,0,0,6,15.5,0,[(0,2)],[1.5,4.5],[],[],[])
+-- a single-sample group is the sample itself
+(0,0,0,4,10,0,[(0,2)],[1,3],[],[],[])	(0,0,0,4,10,0,[(0,2)],[1,3],[],[],[])
+-- custom-bucket group: sum/avg over c1, c2
+(0,-53,0,12,31,0,[(0,3)],[1,5,6],[],[],[1,2,4])	(0,-53,0,6,15.5,0,[(0,3)],[0.5,2.5,3],[],[],[1,2,4])
+-- schema-incompatible group (exp + custom): NULL for both (upstream drops the group element)
+\N	\N
+-- an empty group produces NULL
+\N	\N
+-- Kahan accumulation: big (count 1, sum 1e16) + two smalls (count 1, sum 1): the naive sum loses
+-- the ones (ulp(1e16) = 2); Kahan keeps them: sum = 1e16+2, avg = 3333333333333334 (naive ...3333.5)
+(0,0,0,3,10000000000000002,0,[(0,1)],[10000000000000002],[],[],[])	(0,0,0,1,3333333333333334,0,[(0,1)],[3333333333333334],[],[],[])
+-- overflow: two samples with count = sum = bucket = 1.5e308; the `sum` overflows to +Inf
+-- (upstream keeps it), while `avg` switches to the incremental mean and stays finite (1.5e308)
+(0,0,0,inf,inf,0,[(0,1)],[inf],[],[],[])	(0,0,0,1.5e308,1.5e308,0,[(0,1)],[1.5e308],[],[],[])
+-- the -ForEach form over a two-step grid: position 1 aggregates {e1, e2}, position 2 {e2}
+-- (the NULL of the first series is skipped)
+[(0,0,0,12,31,0,[(0,2)],[3,9],[],[],[]),(0,0,0,8,21,0,[(0,2)],[2,6],[],[],[])]	[(0,0,0,6,15.5,0,[(0,2)],[1.5,4.5],[],[],[]),(0,0,0,8,21,0,[(0,2)],[2,6],[],[],[])]
