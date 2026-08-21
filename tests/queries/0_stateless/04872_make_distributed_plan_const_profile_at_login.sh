@@ -9,9 +9,11 @@
 # from a readonly=0 session, and the expectations follow it.
 #
 # A vetoed derivation must also leave no trace: the settings adjusted for distributed plans
-# must keep their profile values (`compile_expressions = 1` is the probe), not latch the
-# adjusted ones. That requires judging the derivation under the incoming profile's own
-# constraints rather than the ones it replaces.
+# must keep their profile values (`compile_expressions = 1` is the probe). This holds the
+# server to judging the derivation under the incoming profile's own constraints, and the
+# client to not deriving at all - a client context has no constraints, and its adjustments
+# would ride back to the server as explicit changes when it applies the pushed session
+# settings.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

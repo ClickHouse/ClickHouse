@@ -3384,6 +3384,13 @@ void Context::finalizeSettingsWithLock(const std::lock_guard<ContextSharedMutex>
 {
     applySettingsQuirks(*settings);
 
+    /// Deriving the plan and adjusting for it is the server's call. clickhouse-client applies the
+    /// session settings the server pushes after the handshake onto a context that has no settings
+    /// constraints, so deriving here would enable the plan the server may have just vetoed, and the
+    /// adjustments would ride back to the server as explicit changes of the client.
+    if (getApplicationType() == ApplicationType::CLIENT)
+        return;
+
     /// A constraint that forbids enabling `make_distributed_plan` also vetoes the derived value.
     const bool derivation_allowed = getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.allowsValue("make_distributed_plan", Field(true));
 
