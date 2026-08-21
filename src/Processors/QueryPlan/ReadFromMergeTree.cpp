@@ -3,12 +3,8 @@
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
 
-#include <cmath>
-#include <limits>
-
-#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
-#include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
 #include <Access/ContextAccess.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Names.h>
@@ -93,6 +89,9 @@
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <cmath>
+#include <limits>
+
 #include <city.h>
 
 #include <boost/functional/hash.hpp>
@@ -3038,7 +3037,7 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource.
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSource.
     if (query_info.isStream())
         return;
 
@@ -3219,7 +3218,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
     }
 
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSource
     /// and return here, bypassing the UNIQUE KEY snapshot/pin + delete-bitmap
     /// filter below. Fail closed rather than serve logically-deleted rows.
     /// TODO(unique-key): wire the delete-bitmap filter into the streaming source.
@@ -4129,8 +4128,11 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
 Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
+#if !defined(OS_LINUX) && !defined(OS_DARWIN)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries are supported only on Linux and macOS");
+#else
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
-    SharedHeader header = getOutputHeader();
+    const SharedHeader header = getOutputHeader();
 
     Pipes pipes;
     pipes.reserve(num_streams);
@@ -4139,7 +4141,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
     {
         auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_streams, i);
         data.subscription_manager.registerSubscription(subscription);
-        pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSequentialSource>(
+        pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSource>(
             header,
             data,
             query_info,
@@ -4152,6 +4154,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 
     data.triggerStreamingSubscriptionEnrichment();
     return Pipe::unitePipes(std::move(pipes));
+#endif
 }
 
 Pipe ReadFromMergeTree::groupStreamsByPartition(

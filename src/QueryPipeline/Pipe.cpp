@@ -9,6 +9,7 @@
 #include <Processors/Transforms/ExtremesOnlyTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Streaming/CalibrateWatermarksProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/Chain.h>
@@ -791,6 +792,14 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
         resize = std::make_shared<ResizeProcessor>(getSharedHeader(), numOutputPorts(), num_streams);
 
     addTransform(std::move(resize));
+}
+
+void Pipe::calibrateWatermarks(size_t num_streams)
+{
+    if (output_ports.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calibrate watermarks of an empty Pipe");
+
+    addTransform(std::make_shared<CalibrateWatermarksProcessor>(getSharedHeader(), numOutputPorts(), num_streams));
 }
 
 void Pipe::setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter)

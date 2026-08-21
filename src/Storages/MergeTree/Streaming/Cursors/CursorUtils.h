@@ -2,10 +2,11 @@
 
 #include <Core/Block.h>
 #include <Core/Streaming/CursorTree.h>
+
 #include <Interpreters/Context_fwd.h>
+
 #include <Storages/SelectQueryInfo.h>
 
-#include <compare>
 #include <map>
 
 namespace DB
@@ -23,7 +24,7 @@ struct PartitionCursor
 /// produced by the parser into a flat per-partition map.
 std::map<String, PartitionCursor> buildMergeTreeCursor(const CursorTreeNodePtr & cursor);
 
-/// Build an ActionsDAG filter for a single partition's snapshot slice.
+/// Build an ActionsDAG filter for a single partition's read round slice.
 FilterDAGInfo buildPartitionFilter(
     const String & partition_id,
     const PartitionCursor & last_emitted_position,

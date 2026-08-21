@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 
 namespace DB
 {
@@ -14,8 +14,8 @@ bool enrichSubscription(
     const CursorPromotersMap & promoters)
 {
     auto snapshot = subscription.snapshot();
-    bool enriched = false;
 
+    std::map<std::string, int64_t> promoted_partitions;
     for (const auto & [partition_id, parts] : local_parts)
     {
         /// If partition is not managed by this subscription - skip.
@@ -54,13 +54,15 @@ bool enrichSubscription(
         }
 
         if (cursor > starting_cursor)
-        {
-            subscription.advance(partition_id, cursor);
-            enriched = true;
-        }
+            promoted_partitions[partition_id] = cursor;
     }
 
-    return enriched;
+    std::set<std::string> removed_partitions;
+    for (const auto & [partition_id, _] : snapshot)
+        if (!local_parts.contains(partition_id))
+            removed_partitions.insert(partition_id);
+
+    return subscription.update(std::move(promoted_partitions), std::move(removed_partitions));
 }
 
 }

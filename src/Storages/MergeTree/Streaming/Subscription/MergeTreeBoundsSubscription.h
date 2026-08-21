@@ -8,6 +8,7 @@
 #include <base/types.h>
 
 #include <map>
+#include <set>
 #include <mutex>
 
 namespace DB
@@ -19,18 +20,13 @@ class MergeTreeBoundsSubscription : public IStreamSubscription
 public:
     MergeTreeBoundsSubscription(size_t query_subscriptions_count_, size_t current_subscription_index_);
 
-    /// Promote the partition's `safe_block_number` to `new_cursor`.
-    void advance(const String & partition_id, Int64 new_cursor);
-    std::map<String, Int64> snapshot() const;
+    bool update(std::map<std::string, int64_t> promoted_partitions, std::set<std::string> removed_partitions);
+    bool wasSubscriptionUpdated() const;
+    std::map<std::string, Int64> snapshot() const;
 
-    bool isDisabled() const;
+    /// Disabled subscription will not be updated anymore.
     void disable();
-
-    /// Record that one enrichment round finished (an empty round counts too) and wake readers.
-    void onEnrichmentRound();
-
-    /// How many enrichment rounds have been applied to this subscription (a bounded source compares this with 0).
-    size_t updatesCount() const;
+    bool isDisabled() const;
 
     /// Read end of the wakeup pipe;
     int fd() const { return wake.fd(); }
@@ -41,10 +37,15 @@ public:
 
 private:
     mutable std::mutex mutex;
-    std::map<String, Int64> safe_block_numbers TSA_GUARDED_BY(mutex);
-    bool is_disabled TSA_GUARDED_BY(mutex) = false;
-    size_t updates_count TSA_GUARDED_BY(mutex) = 0;
 
+    /// Local parts information.
+    std::map<std::string, Int64> safe_block_numbers TSA_GUARDED_BY(mutex);
+
+    /// Runtime information.
+    bool is_disabled TSA_GUARDED_BY(mutex) = false;
+    bool was_updated TSA_GUARDED_BY(mutex) = false;
+
+    /// Changes notification.
     WakeupFd wake;
 };
 
