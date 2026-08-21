@@ -65,7 +65,6 @@ extern const Event IcebergMetadataReturnedObjectInfos;
 extern const Event IcebergMinMaxNonPrunedDeleteFiles;
 extern const Event IcebergMinMaxPrunedDeleteFiles;
 extern const Event IcebergPartitionPrunedManifestFiles;
-extern const Event IcebergPartitionPrunedFiles;
 };
 
 
