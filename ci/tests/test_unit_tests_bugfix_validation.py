@@ -23,6 +23,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.unit_tests_bugfix_validation_job import (
     _UNIT_TEST_FILE_RE,
+    BEFORE_SRC,
+    attribute_compile_errors,
     before_run_started_a_test,
     build_gtest_filter,
     derive_test_suites,
@@ -547,6 +549,145 @@ def test_before_run_started_a_test_no_marker_is_inconclusive(tmp_path):
 def test_before_run_started_a_test_handles_no_files():
     assert before_run_started_a_test(_FakeResult(None)) is False
     assert before_run_started_a_test(_FakeResult([])) is False
+
+
+# --------------------------------------------------------------------------
+# attribute_compile_errors: which side of the before-build failure the compile
+# errors belong to. Only "every error is inside the PR's overlaid test files"
+# may become a green `XFAIL`; anything else (an error in the fix sources, a
+# linker error, a log with no parsable diagnostic) must fail close, so that a
+# regression in this parser cannot turn an unrelated build failure green.
+# --------------------------------------------------------------------------
+def _compile_result(tmp_path, *logs):
+    """Build a fake compile Result whose `files` hold the given log contents."""
+    paths = []
+    for i, content in enumerate(logs):
+        log = tmp_path / f"compile_{i}.log"
+        log.write_text(content)
+        paths.append(str(log))
+    return _FakeResult(paths)
+
+
+_OVERLAID = "src/Interpreters/tests/gtest_distributed_query.cpp"
+
+
+def test_attribute_compile_errors_all_inside_overlaid_files(tmp_path):
+    # The real shape this handles: the overlaid call site was adapted to the
+    # signature the fix introduces, so it cannot compile on the merge base.
+    result = _compile_result(
+        tmp_path,
+        f"[1/2] Building CXX object {_OVERLAID}.o\n"
+        f"{BEFORE_SRC}/{_OVERLAID}:42:5: error: no matching function for call to 'createExchangeLookup'\n"
+        f"{BEFORE_SRC}/{_OVERLAID}:99:11: error: too many arguments to function call\n"
+        "ninja: build stopped: subcommand failed.\n",
+    )
+    overlaid, other = attribute_compile_errors(result, [_OVERLAID])
+    assert overlaid == [_OVERLAID]
+    assert other == []
+
+
+def test_attribute_compile_errors_strips_ansi_colors(tmp_path):
+    # clang colorizes diagnostics when it thinks it writes to a terminal.
+    result = _compile_result(
+        tmp_path,
+        f"\x1b[1m{BEFORE_SRC}/{_OVERLAID}:42:5: \x1b[0m\x1b[0;1;31merror: \x1b[0mno matching function\n",
+    )
+    overlaid, other = attribute_compile_errors(result, [_OVERLAID])
+    assert overlaid == [_OVERLAID]
+    assert other == []
+
+
+def test_attribute_compile_errors_error_in_fix_sources_fails_close(tmp_path):
+    # An error outside the overlaid tests is not attributable to the test
+    # changes: the caller must report ERROR, never XFAIL.
+    result = _compile_result(
+        tmp_path,
+        f"{BEFORE_SRC}/src/Interpreters/ExchangeLookup.cpp:10:1: error: unknown type name 'Foo'\n",
+    )
+    overlaid, other = attribute_compile_errors(result, [_OVERLAID])
+    assert overlaid == []
+    assert other == ["src/Interpreters/ExchangeLookup.cpp"]
+
+
+def test_attribute_compile_errors_mixed_errors_fail_close(tmp_path):
+    result = _compile_result(
+        tmp_path,
+        f"{BEFORE_SRC}/{_OVERLAID}:42:5: error: no matching function\n"
+        f"{BEFORE_SRC}/src/Interpreters/ExchangeLookup.cpp:10:1: fatal error: broken\n",
+    )
+    overlaid, other = attribute_compile_errors(result, [_OVERLAID])
+    assert overlaid == [_OVERLAID]
+    assert other == ["src/Interpreters/ExchangeLookup.cpp"]
+
+
+def test_attribute_compile_errors_linker_error_only_is_unattributable(tmp_path):
+    # A link failure carries no `path:line: error:` diagnostic at all. Both
+    # lists empty means "not attributable" and the caller fails close.
+    result = _compile_result(
+        tmp_path,
+        "[2/2] Linking CXX executable src/unit_tests_dbms\n"
+        "ld.lld: error: undefined symbol: DB::createExchangeLookup(bool)\n"
+        "clang++: error: linker command failed with exit code 1\n",
+    )
+    assert attribute_compile_errors(result, [_OVERLAID]) == ([], [])
+
+
+def test_attribute_compile_errors_no_diagnostic_is_unattributable(tmp_path):
+    result = _compile_result(
+        tmp_path, "ninja: build stopped: subcommand failed.\nKilled\n"
+    )
+    assert attribute_compile_errors(result, [_OVERLAID]) == ([], [])
+
+
+def test_attribute_compile_errors_ignores_warnings_and_notes(tmp_path):
+    # Only hard errors attribute a failure; a warning or a note must not make
+    # an otherwise unattributable failure look like an expected one.
+    result = _compile_result(
+        tmp_path,
+        f"{BEFORE_SRC}/{_OVERLAID}:42:5: warning: unused variable 'x' [-Wunused-variable]\n"
+        f"{BEFORE_SRC}/src/Interpreters/ExchangeLookup.h:7:1: note: candidate function not viable\n",
+    )
+    assert attribute_compile_errors(result, [_OVERLAID]) == ([], [])
+
+
+def test_attribute_compile_errors_paths_outside_the_worktree_stay_verbatim(tmp_path):
+    # contrib/system headers are compiled through absolute paths that do not
+    # contain the before-worktree marker: they stay as-is and count as "other".
+    result = _compile_result(
+        tmp_path,
+        "/usr/include/c++/v1/vector:100:5: error: static assertion failed\n",
+    )
+    overlaid, other = attribute_compile_errors(result, [_OVERLAID])
+    assert overlaid == []
+    assert other == ["/usr/include/c++/v1/vector"]
+
+
+def test_attribute_compile_errors_reads_every_log_and_deduplicates(tmp_path):
+    result = _compile_result(
+        tmp_path,
+        f"{BEFORE_SRC}/{_OVERLAID}:42:5: error: no matching function\n",
+        f"{BEFORE_SRC}/{_OVERLAID}:77:9: error: no matching function\n"
+        f"{BEFORE_SRC}/src/Interpreters/ExchangeLookup.cpp:1:1: error: boom\n",
+    )
+    overlaid, other = attribute_compile_errors(result, [_OVERLAID])
+    assert overlaid == [_OVERLAID]
+    assert other == ["src/Interpreters/ExchangeLookup.cpp"]
+
+
+def test_attribute_compile_errors_survives_an_unreadable_log(tmp_path):
+    # A missing/unreadable log is skipped with a warning, not raised: the other
+    # logs still decide the attribution.
+    good = tmp_path / "good.log"
+    good.write_text(f"{BEFORE_SRC}/{_OVERLAID}:42:5: error: no matching function\n")
+    result = _FakeResult([str(tmp_path / "missing.log"), str(good)])
+    overlaid, other = attribute_compile_errors(result, [_OVERLAID])
+    assert overlaid == [_OVERLAID]
+    assert other == []
+
+
+def test_attribute_compile_errors_handles_no_files():
+    assert attribute_compile_errors(_FakeResult(None), [_OVERLAID]) == ([], [])
+    assert attribute_compile_errors(_FakeResult([]), [_OVERLAID]) == ([], [])
 
 
 if __name__ == "__main__":
