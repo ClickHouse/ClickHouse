@@ -25,15 +25,21 @@ Le Kafka Connector Sink est distribué sous licence [Apache 2.0](https://www.apa
   ### Prérequis de l&#39;environnement
 </div>
 
-Le framework [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) v2.7 ou une version ultérieure doit être installé dans l&#39;environnement.
+Le framework [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) v2.7 ou une version ultérieure doit être installé dans l&#39;environnement et s&#39;exécuter sur Java 11 ou une version ultérieure.
 
 <div id="version-compatibility-matrix">
   ### Matrice de compatibilité des versions
 </div>
 
-| Version de ClickHouse Kafka Connect | Version de ClickHouse | Kafka Connect | Confluent Platform |
-| ----------------------------------- | --------------------- | ------------- | ------------------ |
-| 1.0.0                               | &gt; 23.3             | &gt; 2.7      | &gt; 6.1           |
+| Version de ClickHouse Kafka Connect | Version de ClickHouse | Kafka Connect | Confluent Platform | ClickHouse Java Client |
+| ----------------------------------- | --------------------- | ------------- | ------------------ | ---------------------- |
+| 1.4.x (dernière version)            | 23.3+                 | 2.7+          | 6.1+               | 0.9.5                  |
+| 1.3.x                               | 23.3+                 | 2.7+          | 6.1+               | 0.8.0 à 0.9.5          |
+| 1.2.x                               | 23.3+                 | 2.7+          | 6.1+               | 0.6.3 à 0.8.0          |
+| 1.1.x                               | 23.3+                 | 2.7+          | 6.1+               | 0.6.0 à 0.6.1          |
+| 1.0.x                               | 23.3+                 | 2.7+          | 6.1+               | 0.4.6 à 0.6.0          |
+
+Le connecteur refuse de démarrer avec des serveurs ClickHouse antérieurs à la version 23.3. Utilisez toujours la [dernière version](https://github.com/ClickHouse/clickhouse-kafka-connect/releases/latest), sauf si vous devez utiliser une version antérieure.
 
 <div id="main-features">
   ### Principales fonctionnalités
@@ -136,6 +142,7 @@ Le tableau complet des options de configuration :
 | `bufferCount` (depuis la version v1.3.6)               | Nombre d’enregistrements à conserver en mémoire tampon avant leur écriture dans ClickHouse. `0` désactive la mise en mémoire tampon interne. La mise en mémoire tampon n’est pas prise en charge avec `exactlyOnce=true`.                                                                                                                                              | `"0"`                                                    |
 | `bufferFlushTime` (à partir de la v1.3.6)              | Temps maximal, en millisecondes, pendant lequel les enregistrements sont conservés en mémoire tampon avant leur écriture lorsque `exactlyOnce=false`. `0` désactive l&#39;écriture déclenchée par le temps. La valeur par défaut est `0`. Requis uniquement pour un seuil basé sur le temps. N&#39;a d&#39;effet que lorsque `bufferCount > 0`.                        | `"0"`                                                    |
 | `reportInsertedOffsets` (à partir de la v1.3.6)        | Permet à `preCommit` de ne renvoyer que les offsets insérés avec succès (au lieu de `currentOffsets`) lorsque `exactlyOnce=false`. Cela ne s&#39;applique pas lorsque `ignorePartitionsWhenBatching=true`, cas dans lequel `currentOffsets` est toujours renvoyé.                                                                                                      | `"false"`                                                |
+| `client_version` (depuis la version v1.2.0)            | Sélectionne le [client Java ClickHouse](/fr/integrations/language-clients/java/client) utilisé par le connecteur. Les valeurs valides sont `"V1"` et `"V2"`.                                                                                                                                                                                                              | `"V1"`                                                   |
 
 <div id="target-tables">
   ### Tables cibles
@@ -494,7 +501,7 @@ message TwoRecords {
 }
 ```
 
-À partir de la version 26.1 de CH, ce schéma est pris en charge si `allow_experimental_nullable_tuple_type=1` (voir [cette page de la documentation](/fr/reference/settings/session-settings#allow_experimental_nullable_tuple_type)).
+À partir de la version 26.1 de CH, ce schéma est pris en charge si `allow_experimental_nullable_tuple_type=1` (voir [cette page de la documentation](/fr/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
 
 <div id="json-schema-support">
   ### Prise en charge du schéma JSON
@@ -980,19 +987,37 @@ Pour les paramètres d’insertion au niveau du connecteur :
 ```
 
 <div id="connection-pooling">
-  #### Pool de connexions et délais d’expiration
+  #### Pool de connexions et dépassements de délai
 </div>
 
-Le connecteur maintient des connexions HTTP avec ClickHouse. Ajustez les délais d’expiration pour les réseaux à forte latence :
+Le connecteur maintient des connexions HTTP avec ClickHouse. Ajustez les dépassements de délai pour les réseaux à forte latence :
 
 ```json
-"clickhouseSettings": "socket_timeout=300000,connection_timeout=30000"
+"jdbcConnectionProperties": "?socket_timeout=300000,connection_timeout=30000"
 ```
 
 * **`socket_timeout`** (par défaut : 30000 ms) : Temps maximal pour les opérations de lecture
 * **`connection_timeout`** (par défaut : 10000 ms) : Temps maximal pour établir une connexion
 
-Augmentez ces valeurs si vous rencontrez des erreurs de délai d’attente avec des lots volumineux.
+Augmentez ces valeurs si vous rencontrez des erreurs de dépassement de délai avec des lots volumineux.
+
+<div id="client-network-buffer">
+  #### Tampon réseau du client
+</div>
+
+Lors de l’utilisation du client V2 (`"client_version": "V2"`), les données sont copiées entre le socket et la mémoire de l’application via un tampon contrôlé par `client_network_buffer_size` (en octets). Sa taille par défaut est de `300000` octets. Un tampon plus grand peut améliorer le débit sur des liaisons à forte latence ou à large bande passante, mais augmente l’utilisation de la mémoire par tâche de connexion.
+
+Toutes les options du client se configurent via `jdbcConnectionProperties` plutôt que via `clickhouseSettings`. Par exemple :
+
+```json
+"jdbcConnectionProperties": "?client_network_buffer_size=1000000"
+```
+
+Si vous devez configurer plusieurs propriétés client, séparez-les par `&` :
+
+```json
+"jdbcConnectionProperties": "?ssl=true&client_network_buffer_size=1000000"
+```
 
 <div id="monitoring-performance">
   #### Surveillance et dépannage des performances

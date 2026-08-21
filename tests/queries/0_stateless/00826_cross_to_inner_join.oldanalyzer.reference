@@ -49,148 +49,32 @@
 1	1	1	1
 2	2	2	\N
 --- cross ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON equals(a, t2_00826.a)
-WHERE equals(a, t2_00826.a)
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON equals(a, t2_00826.a)\nWHERE equals(a, t2_00826.a)\nORDER BY ALL ASC
 --- cross nullable ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON equals(a, t2_00826.a)
-WHERE equals(a, t2_00826.a)
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON equals(a, t2_00826.a)\nWHERE equals(a, t2_00826.a)\nORDER BY ALL ASC
 --- cross nullable vs not nullable ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON equals(a, t2_00826.b)
-WHERE equals(a, t2_00826.b)
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON equals(a, t2_00826.b)\nWHERE equals(a, t2_00826.b)\nORDER BY ALL ASC
 --- cross self ---
-SELECT
-    a,
-    b,
-    y.a,
-    y.b
-FROM t1_00826 AS x
-ALL INNER JOIN t1_00826 AS y ON and(equals(a, y.a), equals(b, y.b))
-WHERE and(equals(a, y.a), equals(b, y.b))
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    y.a,\n    y.b\nFROM t1_00826 AS x\nALL INNER JOIN t1_00826 AS y ON and(equals(a, y.a), equals(b, y.b))\nWHERE and(equals(a, y.a), equals(b, y.b))\nORDER BY ALL ASC
 --- cross one table expr ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-CROSS JOIN t2_00826
-WHERE equals(a, b)
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nCROSS JOIN t2_00826\nWHERE equals(a, b)\nORDER BY ALL ASC
 --- cross multiple ands ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(b, t2_00826.b))
-WHERE and(equals(a, t2_00826.a), equals(b, t2_00826.b))
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(b, t2_00826.b))\nWHERE and(equals(a, t2_00826.a), equals(b, t2_00826.b))\nORDER BY ALL ASC
 --- cross and inside and ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(a, t2_00826.a), equals(a, t2_00826.a), equals(b, t2_00826.b))
-WHERE and(equals(a, t2_00826.a), and(equals(a, t2_00826.a), and(equals(a, t2_00826.a), equals(b, t2_00826.b))))
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(a, t2_00826.a), equals(a, t2_00826.a), equals(b, t2_00826.b))\nWHERE and(equals(a, t2_00826.a), and(equals(a, t2_00826.a), and(equals(a, t2_00826.a), equals(b, t2_00826.b))))\nORDER BY ALL ASC
 --- cross split conjunction ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(b, t2_00826.b))
-WHERE and(equals(a, t2_00826.a), equals(b, t2_00826.b), greaterOrEquals(a, 1), greater(t2_00826.b, 0))
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(b, t2_00826.b))\nWHERE and(equals(a, t2_00826.a), equals(b, t2_00826.b), greaterOrEquals(a, 1), greater(t2_00826.b, 0))\nORDER BY ALL ASC
 --- and or ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(b, t2_00826.b))
-WHERE and(equals(a, t2_00826.a), equals(b, t2_00826.b), or(greaterOrEquals(a, 1), equals(t2_00826.b, 1)))
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(b, t2_00826.b))\nWHERE and(equals(a, t2_00826.a), equals(b, t2_00826.b), or(greaterOrEquals(a, 1), equals(t2_00826.b, 1)))\nORDER BY ALL ASC
 --- arithmetic expr ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON equals(plus(a, 1), plus(t2_00826.a, t2_00826.b))
-WHERE and(equals(plus(a, 1), plus(t2_00826.a, t2_00826.b)), greater(plus(plus(plus(a, b), t2_00826.a), t2_00826.b), 5))
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON equals(plus(a, 1), plus(t2_00826.a, t2_00826.b))\nWHERE and(equals(plus(a, 1), plus(t2_00826.a, t2_00826.b)), greater(plus(plus(plus(a, b), t2_00826.a), t2_00826.b), 5))\nORDER BY ALL ASC
 --- is null or ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON equals(b, t2_00826.a)
-WHERE and(equals(b, t2_00826.a), or(isNull(t2_00826.b), greater(t2_00826.b, t2_00826.a)))
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON equals(b, t2_00826.a)\nWHERE and(equals(b, t2_00826.a), or(isNull(t2_00826.b), greater(t2_00826.b, t2_00826.a)))\nORDER BY ALL ASC
 --- do not rewrite alias ---
-SELECT a AS b
-FROM t1_00826
-CROSS JOIN t2_00826
-WHERE and(equals(b, t2_00826.a), greater(a AS b, 0))
-ORDER BY ALL ASC
+SELECT a AS b\nFROM t1_00826\nCROSS JOIN t2_00826\nWHERE and(equals(b, t2_00826.a), greater(a AS b, 0))\nORDER BY ALL ASC
 --- comma ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON equals(a, t2_00826.a)
-WHERE equals(a, t2_00826.a)
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON equals(a, t2_00826.a)\nWHERE equals(a, t2_00826.a)\nORDER BY ALL ASC
 --- comma nullable ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON equals(b, t2_00826.b)
-WHERE equals(b, t2_00826.b)
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON equals(b, t2_00826.b)\nWHERE equals(b, t2_00826.b)\nORDER BY ALL ASC
 --- comma and or ---
-SELECT
-    a,
-    b,
-    t2_00826.a,
-    t2_00826.b
-FROM t1_00826
-ALL INNER JOIN t2_00826 ON equals(a, t2_00826.a)
-WHERE and(equals(a, t2_00826.a), or(isNull(t2_00826.b), less(t2_00826.b, 2)))
-ORDER BY ALL ASC
+SELECT\n    a,\n    b,\n    t2_00826.a,\n    t2_00826.b\nFROM t1_00826\nALL INNER JOIN t2_00826 ON equals(a, t2_00826.a)\nWHERE and(equals(a, t2_00826.a), or(isNull(t2_00826.b), less(t2_00826.b, 2)))\nORDER BY ALL ASC

@@ -719,11 +719,18 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
   ## arrayElement
 </div>
 
-قُدِّمت في: v1.1.0
+أُضيف في: v1.1.0
 
 تُرجِع عنصر المصفوفة المُعطاة عند الفهرس `n`، حيث يمكن أن يكون `n` أي نوع من الأعداد الصحيحة.
 إذا كان الفهرس خارج حدود المصفوفة، فستُرجِع قيمة افتراضية (0 للأرقام، وسلسلة فارغة للنصوص، وما إلى ذلك)،
 باستثناء وسيطات مصفوفة غير ثابتة وفهرس ثابت قيمته 0. في هذه الحالة سيظهر الخطأ `Array indices are 1-based`.
+
+عندما تكون `n` مصفوفة من الأعداد الصحيحة، تُرجِع مصفوفة بالعناصر الموجودة في المواضع المحددة (عملية تجميع).
+وهذا مكافئ لـ `arrayMap(i -> arr[i], n)`، ولكنه يتمتع بتنفيذ منفصل أكثر كفاءة.
+تُنتج المواضع خارج الحدود القيمة الافتراضية، كما في حالة الفهرس المفرد.
+يمكن أن تكون عناصر الفهرس قابلة لأن تكون `NULL`. يُنتج الفهرس `NULL` القيمة `NULL` (ويجعل نوع عنصر النتيجة قابلاً لأن يكون `NULL`) عندما يمكن
+تغليف نوع العنصر في `Nullable`؛ أما أنواع العناصر التي لا يمكن أن تكون داخل `Nullable` (مثل `Array` و`Map`)، فيُنتج الفهرس `NULL`
+القيمة الافتراضية بدلاً من ذلك. وهذا هو السلوك نفسه لفهرس `NULL` المفرد.
 
 <Note>
   المصفوفات في ClickHouse تبدأ فهارسها من 1.
@@ -733,19 +740,19 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 
 يوفّر العامل `[n]` الوظيفة نفسها.
 
-**الصياغة**
+**صيغة**
 
 ```sql
 arrayElement(arr, n)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
-* `arr` — المصفوفة المراد البحث فيها. [`Array(T)`](/ar/reference/data-types/array). - `n` — موضع العنصر المراد الحصول عليه. [`(U)Int*`](/ar/reference/data-types/int-uint).
+* `arr` — المصفوفة المراد البحث فيها. [`Array(T)`](/ar/reference/data-types/array). - `n` — موضع العنصر المراد الحصول عليه، أو مصفوفة من المواضع. يمكن أن تكون المواضع قابلة لأن تكون NULL. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Array((U)Int*)`](/ar/reference/data-types/array).
 
 **القيمة المُعادة**
 
-يعيد مصفوفةً واحدةً مدمجة من وسيطات المصفوفات المُقدَّمة [`Array(T)`](/ar/reference/data-types/array)
+عندما يكون `n` قيمة قياسية، يعيد عنصرًا من النوع `T`. وعندما يكون `n` مصفوفة، يعيد `Array(Nullable(T))` إذا كانت عناصر الفهرس قابلة لأن تكون NULL وكان يمكن تغليف `T` في `Nullable`، وإلا يعيد `Array(T)`. [`Any`](/ar/reference/data-types/index) أو [`Array(T)`](/ar/reference/data-types/array) أو [`Array(Nullable(T))`](/ar/reference/data-types/array)
 
 **أمثلة**
 
@@ -789,14 +796,30 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 0
 ```
 
+**مصفوفة من الفهارس**
+
+```sql title=Query
+SELECT [10, 20, 30, 40][[2, 4, 1]]
+```
+
+```response title=Response
+[20,40,10]
+```
+
 <div id="arrayElementOrNull">
   ## arrayElementOrNull
 </div>
 
-أُضيفت في: v1.1.0
+أُضيف في: v1.1.0
 
 تسترجع العنصر من المصفوفة المحددة عند الفهرس `n`، حيث يمكن أن يكون `n` من أي نوع عدد صحيح.
-إذا كان الفهرس خارج حدود المصفوفة، فستُعاد `NULL` بدلًا من القيمة الافتراضية.
+إذا كان الفهرس خارج حدود المصفوفة، فستُعاد `NULL` بدلًا من القيمة الافتراضية،
+ما دام نوع النتيجة قابلاً لأن يكون Nullable. بالنسبة إلى أنواع العناصر التي ليست قابلة لـ NULL أصلًا ولا يمكن
+وضعها داخل `Nullable` (مثل `Array` و`Map`)، تُعاد القيمة الافتراضية لنوع العنصر بدلًا من ذلك.
+
+عندما يكون `n` مصفوفة من الأعداد الصحيحة، تُرجِع مصفوفة من العناصر الموجودة في المواضع المحددة.
+وهذا مكافئ لـ `arrayMap(i -> arrayElementOrNull(arr, i), n)`، لكنه يمتلك تنفيذًا منفصلًا وأكثر كفاءة.
+تُنتج المواضع خارج الحدود وفهارس `NULL` قيم `NULL` في مصفوفة النتيجة، وفقًا للقاعدة نفسها المتبعة مع الفهرس القياسي.
 
 <Note>
   المصفوفات في ClickHouse تبدأ فهارسها من 1.
@@ -807,16 +830,16 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 **الصيغة**
 
 ```sql
-arrayElementOrNull(arrays)
+arrayElementOrNull(arr, n)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
-* `arrays` — عدد غير محدد من وسيطات المصفوفة. [`Array`](/ar/reference/data-types/array)
+* `arr` — المصفوفة المطلوب البحث فيها. [`Array(T)`](/ar/reference/data-types/array). - `n` — موضع العنصر المطلوب الحصول عليه، أو مصفوفة من المواضع. يمكن أن تقبل المواضع القيم الفارغة. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Array((U)Int*)`](/ar/reference/data-types/array).
 
 **القيمة المُعادة**
 
-تُرجِع مصفوفةً واحدةً مدمجة من وسيطات المصفوفة المُمرَّرة. [`Array(T)`](/ar/reference/data-types/array)
+عندما يكون `n` قيمةً قياسية، تُرجع `Nullable(T)` إذا أمكن تضمين `T` في `Nullable`، وإلا فتُرجع `T`. عندما يكون `n` مصفوفة، تُرجع `Array(Nullable(T))` إذا أمكن تضمين `T` في `Nullable`، وإلا فتُرجع `Array(T)`. [`Any`](/ar/reference/data-types/index) أو [`Nullable(T)`](/ar/reference/data-types/nullable) أو [`Array(T)`](/ar/reference/data-types/array) أو [`Array(Nullable(T))`](/ar/reference/data-types/array)
 
 **أمثلة**
 
@@ -848,6 +871,16 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 
 ```response title=Response
 NULL
+```
+
+**مصفوفة من الفهارس**
+
+```sql title=Query
+SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
+```
+
+```response title=Response
+[10,NULL,20]
 ```
 
 <div id="arrayEnumerate">
@@ -1732,19 +1765,24 @@ SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res
 تُنسخ جميع القيم في الأعمدة كما هي، باستثناء القيم الموجودة في العمود الذي تُطبَّق عليه هذه الدالة؛
 إذ تُستبدل هذه القيم بقيمة العنصر المقابل في المصفوفة.
 
+لا يمكن استخدام `arrayJoin`، بما في ذلك عبر اسمها المستعار `unnest`، في شرط `JOIN ON` يُقيَّم أثناء الربط، لأن مثل هذا الشرط يجب أن
+يحافظ على عدد الصفوف. ويُستخرج قبل الربط الشرط الذي ينطبق على جانب واحد فقط، وكذلك مفتاح المساواة المعتمد على `arrayJoin`، ولا يتأثر أيٌّ منهما بذلك. كما لا يتأثر شرط `ALL INNER JOIN` الذي لا يتضمن OR،
+لأن الشرط يُطبَّق هناك بعد الربط بدلًا من ذلك.
+عندما يعتمد التوسيع على جانب واحد فقط، انقله إلى `ARRAY JOIN` في استعلام فرعي قبل الربط؛ أما الشرط الذي تقرأ وسيطة `arrayJoin` فيه أعمدة من كلا الجانبين فيجب إعادة هيكلته.
+
 <Note>
   هذه الدالة غير حتمية: يمكن أن تُرجِع نتائج مختلفة للوسائط نفسها.
 </Note>
 
-**الصياغة**
+**بنية**
 
 ```sql
 arrayJoin(arr)
 ```
 
-**الأسماء المستعارة**: `unnest`
+**اسم بديل**: `unnest`
 
-**الوسائط**
+**الوسيطة**
 
 * `arr` — مصفوفة يُراد فردها. [`Array(T)`](/ar/reference/data-types/array)
 
@@ -4248,7 +4286,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 تُعد المصفوفة فارغة إذا كانت لا تحتوي على أي عناصر.
 
 <Note>
-  يمكن تحسين أداء هذه الدالة بتفعيل [إعداد `optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة فقط [العمود الفرعي size0](/ar/reference/data-types/array#array-size) بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT empty(arr) FROM TABLE;` إلى `SELECT arr.size0 = 0 FROM TABLE;`.
+  يمكن تحسين أداء هذه الدالة بتفعيل [إعداد `optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة فقط [العمود الفرعي size0](/ar/reference/data-types/array#array-size) بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT empty(arr) FROM TABLE;` إلى `SELECT arr.size0 = 0 FROM TABLE;`.
 </Note>
 
 تعمل هذه الدالة أيضًا مع Strings أو UUIDs.
@@ -5132,10 +5170,15 @@ Raises a `NO_COMMON_TYPE` exception
 
 أُضيف في: v1.1.0
 
-يعيد موضع أول عنصر ذي القيمة &#39;x&#39; (بدءًا من 1) إذا كان موجودًا في المصفوفة.
+يعيد فهرس أول عنصر ذي القيمة &#39;x&#39; (بدءًا من 1) إذا كان موجودًا في المصفوفة.
 إذا كانت المصفوفة لا تحتوي على القيمة المطلوب البحث عنها، فستُرجِع الدالة `0`.
 
 تُعامَل العناصر المعيّنة إلى `NULL` على أنها قيم عادية.
+
+لا تتبع عناصر `NaN` قاعدة `NULL` المذكورة أعلاه.
+تكون المقارنة العددية لقيمتَي `NaN` (`NaN = NaN`) هي `0`، لكن قد يُبلّغ `indexOf` مع ذلك عن العثور على عنصر `NaN`.
+يعتمد ذلك على تفاصيل التنفيذ. لا تعتمد على سلوك محدد.
+للعثور على أحدها، اختبره: تُرجع `arrayFirstIndex(x -> isNaN(x), arr)` موضعه، وتُرجع `arrayExists(x -> isNaN(x), arr)` راية.
 
 **البنية**
 
@@ -5335,7 +5378,7 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 تُعدّ المصفوفة غير فارغة إذا كانت تحتوي على عنصر واحد على الأقل.
 
 <Note>
-  يمكن تحسينها عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [size0](/ar/reference/data-types/array#array-size) فقط بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT notEmpty(arr) FROM table` إلى `SELECT arr.size0 != 0 FROM TABLE`.
+  يمكن تحسينها عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [size0](/ar/reference/data-types/array#array-size) فقط بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT notEmpty(arr) FROM table` إلى `SELECT arr.size0 != 0 FROM TABLE`.
 </Note>
 
 تعمل الدالة أيضًا مع السلاسل النصية أو معرّفات UUID.
@@ -5364,6 +5407,71 @@ SELECT notEmpty([1,2]);
 
 ```response title=Response
 1
+```
+
+<div id="notHas">
+  ## notHas
+</div>
+
+أُضيف: v26.8.0
+
+يعيد ما إذا كانت المصفوفة لا تحتوي على العنصر المحدد، أو ما إذا كانت الخريطة لا تحتوي على المفتاح المحدد، أو ما إذا كان كائن JSON لا يحتوي على المسار المحدد. وهو نقيض `has`.
+
+**الصيغة**
+
+```sql
+notHas(haystack, needle)
+```
+
+**وسيطات الدالة**
+
+* `haystack` — المصفوفة أو الخريطة أو كائن JSON المصدر. [`Array`](/ar/reference/data-types/array) أو [`Map`](/ar/reference/data-types/map) أو [`JSON`](/ar/reference/data-types/newjson)
+* `needle` — القيمة المراد البحث عنها (عنصر في مصفوفة، أو مفتاح في خريطة، أو سلسلة مسار في JSON).
+
+**القيمة المُعادة**
+
+يعيد `1` إذا لم تتضمن `haystack` قيمة `needle` المحددة، وإلا يعيد `0`. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**الاستخدام الأساسي لـ Array**
+
+```sql title=Query
+SELECT notHas([1, 2, 3], 2)
+```
+
+```response title=Response
+0
+```
+
+**Array غير موجود**
+
+```sql title=Query
+SELECT notHas([1, 2, 3], 4)
+```
+
+```response title=Response
+1
+```
+
+**الاستخدام الأساسي لـ Map**
+
+```sql title=Query
+SELECT notHas(map('a', 1, 'b', 2), 'c')
+```
+
+```response title=Response
+1
+```
+
+**الاستخدام الأساسي لـ JSON**
+
+```sql title=Query
+SELECT notHas('{"a" : 1, "b" : {"c" : 2}}'::JSON, 'b.c')
+```
+
+```response title=Response
+0
 ```
 
 <div id="randomHadamardTransform">
@@ -5396,7 +5504,8 @@ SELECT notEmpty([1,2]);
 يعيد متجهًا أطول بصمت. استخدم طولًا مدعومًا، أو مرّر `output_dims` لحساب
 إسقاط مقتطع لطول كيفي (انظر أدناه).
 
-تكون النتيجة من نوع العنصر نفسه في الإدخال؛ وتعطي مصفوفة إدخال فارغة مصفوفة فارغة.
+تكون النتيجة من نوع العنصر نفسه في الإدخال؛ وتعطي مصفوفة إدخال فارغة مصفوفة فارغة
+(لا ينطبق عليها `output_dims`).
 
 * `seed` (اختياري، والقيمة default `0`): يحدّد نمط الإشارات؛ وتعطي القيمة نفسها من `seed` دائمًا
   التحويل نفسه.
@@ -5482,7 +5591,7 @@ SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
 
 * يجب أن تكون جميع الوسائط `start` و`end` و`step` من أحد الأنواع المدعومة أعلاه. وستكون عناصر المصفوفة المُعادة من نوع أعم مشتق من أنواع الوسائط.
 
-* يُطرَح استثناء إذا أعادت الدالة مصفوفة يتجاوز طولها الإجمالي عدد العناصر المحدد في الإعداد [`function_range_max_elements_in_block`](/ar/reference/settings/session-settings#function_range_max_elements_in_block).
+* يُطرَح استثناء إذا أعادت الدالة مصفوفة يتجاوز طولها الإجمالي عدد العناصر المحدد في الإعداد [`function_range_max_elements_in_block`](/ar/reference/settings/session-settings/function#function_range_max_elements_in_block).
 
 * يعيد `NULL` إذا كان أي وسيط من النوع Nullable(nothing). ويُطرَح استثناء إذا كانت قيمة أي وسيط هي `NULL` (من النوع Nullable(T)).
 
