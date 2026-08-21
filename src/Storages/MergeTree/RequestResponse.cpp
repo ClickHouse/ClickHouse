@@ -50,7 +50,7 @@ String ParallelReadRequest::describe() const
 {
     String result
         = fmt::format("replica_num {}, stream {}, min_num_of_marks {}, ", replica_num, stream_id, min_marks_per_request);
-    result += description.describe();
+    result += description.describeShort();
     return result;
 }
 
@@ -148,7 +148,7 @@ void InitialAllRangesAnnouncement::serialize(
 
 String InitialAllRangesAnnouncement::describe()
 {
-    return fmt::format("replica {}, mode {}, {}", replica_num, mode, description.describe());
+    return fmt::format("replica {}, mode {}, {}", replica_num, mode, description.describeShort());
 }
 
 InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)

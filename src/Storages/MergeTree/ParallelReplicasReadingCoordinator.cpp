@@ -469,8 +469,16 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     if (mark_segment_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Zero value provided for `mark_segment_size`");
 
-    LOG_TRACE(log, "Reading state is fully initialized: {}, mark_segment_size: {}, min_marks_per_request: {}",
-              fmt::join(all_parts_to_read, "; "), mark_segment_size, announced_min_marks_per_request);
+    LOG_TRACE(log, "Reading state is fully initialized: {} parts, {} marks, mark_segment_size: {}, min_marks_per_request: {}",
+              all_parts_to_read.size(), total_marks, mark_segment_size, announced_min_marks_per_request);
+
+    static constexpr size_t max_parts_to_log = 100;
+    if (all_parts_to_read.size() <= max_parts_to_log)
+        LOG_TEST(log, "Reading state: {}", fmt::join(all_parts_to_read, "; "));
+    else
+        LOG_TEST(log, "Reading state: {} and {} more parts",
+                 fmt::join(all_parts_to_read.begin(), all_parts_to_read.begin() + max_parts_to_log, "; "),
+                 all_parts_to_read.size() - max_parts_to_log);
 }
 
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
@@ -516,6 +524,7 @@ void DefaultCoordinator::updateQueryProgress()
 void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     LOG_TRACE(log, "Initial request: {}", announcement.describe());
+    LOG_TEST(log, "Initial request ranges: {}", announcement.description.describe());
 
     const auto replica_num = announcement.replica_num;
 
@@ -1011,7 +1020,8 @@ void InOrderCoordinator::markReplicaAsUnavailable(size_t replica_number)
 
 void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    LOG_TRACE(log, "Received an announcement : {}", announcement.describe());
+    LOG_TRACE(log, "Received an announcement: {}", announcement.describe());
+    LOG_TEST(log, "Announcement ranges: {}", announcement.description.describe());
 
     ++stats[announcement.replica_num].number_of_requests;
 
