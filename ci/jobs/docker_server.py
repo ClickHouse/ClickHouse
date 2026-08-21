@@ -440,15 +440,20 @@ def buildx_args(
     version: str,
     sha: str,
     action_url: str,
+    attest: bool,
 ) -> List[str]:
     args = [
-        "--provenance=true",
-        "--sbom=true",
         f"--platform=linux/{arch}",
         f"--label=build-url={action_url}",
         f"--label=com.clickhouse.build.githash={sha}",
         f"--label=com.clickhouse.build.version={version}",
     ]
+    # Attestations survive only in pushed manifests (the local docker exporter
+    # drops them), while the SBOM scan of a multi-GB image OOMs smaller runners,
+    # so generate them only for pushed images.
+    if attest:
+        args.append("--provenance=true")
+        args.append("--sbom=true")
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
     elif urls:
@@ -522,6 +527,7 @@ def build_and_push_image(
                 version=version,
                 action_url=run_url,
                 sha=sha,
+                attest=push,
             )
         )
         if not push:
