@@ -163,6 +163,8 @@ SELECT * FROM mutation_progress(database = 'db', table = 't')
 
 Like the built-in `progress` column, the view reports `NULL` rather than a number whenever part of the remaining work has no known size. That happens when `parts_to_do` = 0 on a mutation that is not done, because it is waiting for an in-flight `INSERT` whose part is not committed yet, and when a part it still has to rewrite is queued on this replica but not yet on disk, because a part with no `system.parts` row has no size to weigh.
 
+On a non-replicated `MergeTree` the built-in column also stays `NULL` while an operation that took a lower block number has not published its parts yet — an `ATTACH`, `REPLACE` or `MOVE PARTITION` in flight, which holds its block number for the whole operation. Those parts fall inside the scope of every mutation submitted after them, so until they appear the remaining byte weight is a lower bound, and a mutation whose visible parts are all rewritten would otherwise report `1` and then go unfinished again.
+
 Note that `bytes_left` goes `NULL` in that second case while the built-in `bytes_to_do` column keeps reporting the parts it can size. The two answer different questions: `bytes_to_do` measures the bytes currently on disk that still need rewriting, so a part that is not on disk contributes nothing to it, whereas `bytes_left` is an estimate of the work remaining, and an estimate that quietly omits unknown work is worse than no estimate.
 
 <Note>

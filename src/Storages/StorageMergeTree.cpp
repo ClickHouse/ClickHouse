@@ -1434,6 +1434,18 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             mutating_part_progress[source_part_name.safeGet<String>()] = merge.progress;
     }
 
+    /// An INSERT that took a lower block number but has not published its part yet lands inside the
+    /// scope of every mutation above that number, so their remaining byte weight is not known yet.
+    Int64 lowest_uncommitted_insert_block = std::numeric_limits<Int64>::max();
+    for (const auto & block : getCommittingBlocks())
+    {
+        if (block.op == CommittingBlock::Op::NewPart)
+        {
+            lowest_uncommitted_insert_block = block.number;
+            break;
+        }
+    }
+
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
     {
@@ -1517,7 +1529,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.latest_fail_error_code_name,
             });
             result.back().bytes_to_do = bytes_to_do;
-            result.back().progress = progress;
+            if (lowest_uncommitted_insert_block >= mutation_version)
+                result.back().progress = progress;
         }
     }
 
