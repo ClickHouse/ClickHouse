@@ -188,6 +188,23 @@ CREATE MATERIALIZED VIEW time_decay_mv_nested_type_blocked
 ENGINE = Memory
 AS SELECT [value] FROM time_decay_mv_source; -- { serverError ILLEGAL_COLUMN }
 
+-- The focused view validation must preserve unrelated experimental type gates.
+SET enable_time_time64_type = 0;
+CREATE MATERIALIZED VIEW time_decay_mv_time64_blocked
+(
+    value Time64(3)
+)
+ENGINE = Memory
+AS SELECT now64(3); -- { serverError ILLEGAL_COLUMN }
+
+SET allow_experimental_nullable_tuple_type = 0;
+CREATE MATERIALIZED VIEW time_decay_mv_nullable_tuple_blocked
+(
+    value Nullable(Tuple(n UInt8))
+)
+ENGINE = Memory
+AS SELECT CAST(NULL, 'Nullable(Tuple(n UInt8))') AS value; -- { serverError ILLEGAL_COLUMN }
+
 -- Materialized views historically skip unrelated suspicious-type validation.
 -- Adding the time-decay gate must not change that behavior.
 CREATE MATERIALIZED VIEW time_decay_mv_unrelated_validation

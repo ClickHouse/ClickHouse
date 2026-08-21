@@ -53,11 +53,12 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
 
 DataTypeValidationSettings DataTypeValidationSettings::forExperimentalTimeDecay(const DB::Settings & settings)
 {
-    DataTypeValidationSettings result;
-    result.validate_nested_types
-        = settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types];
-    result.allow_experimental_time_decay_aggregate_functions
-        = settings[Setting::allow_experimental_time_decay_aggregate_functions];
+    DataTypeValidationSettings result(settings);
+    /// Materialized and parameterized views historically allow these suspicious types.
+    /// Preserve only those exemptions while keeping every other type gate from Settings.
+    result.allow_suspicious_low_cardinality_types = true;
+    result.allow_suspicious_fixed_string_types = true;
+    result.allow_suspicious_variant_types = true;
     return result;
 }
 
