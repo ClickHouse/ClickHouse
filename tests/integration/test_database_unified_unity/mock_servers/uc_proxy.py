@@ -23,6 +23,7 @@ ICEBERG_SECURABLE_KIND = "TABLE_DELTA_ICEBERG_EXTERNAL"
 # The lookahead makes this a no-op on an already-well-formed `file:///tmp/...`.
 SINGLE_SLASH_SCHEME = re.compile(r"file:/(?=tmp/marksheet_uniform)")
 
+
 def normalize_scheme(data):
     return SINGLE_SLASH_SCHEME.sub("file:///", data.decode()).encode()
 
