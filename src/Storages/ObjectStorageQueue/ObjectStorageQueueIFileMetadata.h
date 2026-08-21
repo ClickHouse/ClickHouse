@@ -26,18 +26,23 @@ public:
     /// statuses are held in a byte-accounted cache and their weight cannot grow after
     /// insertion. The registry follows the table's metadata-cache entry limit, where
     /// zero means unlimited.
+    /// An observation belongs to one foreign hold of the path, identified by the
+    /// generation of the shared `FileStatus`: an observation of an earlier hold must
+    /// never be reused for a later one (the file may have been released in between).
     class ForeignProcessingObservers
     {
     public:
         explicit ForeignProcessingObservers(size_t max_entries_) : max_entries(max_entries_) {}
 
-        void set(const String & path, time_t since);
-        time_t get(const String & path) const;
+        void set(const String & path, UInt64 generation, time_t since);
+        /// Zero if the path was not observed by this table in this generation.
+        time_t get(const String & path, UInt64 generation) const;
         void setMaxEntries(size_t max_entries_);
 
     private:
         struct Observation
         {
+            UInt64 generation;
             time_t since;
             std::list<String>::iterator lru_position;
         };
@@ -98,6 +103,8 @@ public:
         /// When the `processing` node of another processor was observed the last time.
         /// Zero means that the state, if it is `Processing`, belongs to this processor.
         std::atomic<time_t> processing_by_another_processor_since = 0;
+        /// Incremented on every transition into the foreign `Processing` state.
+        std::atomic<UInt64> foreign_processing_generation = 0;
         mutable std::mutex last_exception_mutex;
         std::string last_exception;
     };

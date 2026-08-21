@@ -101,11 +101,12 @@ void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
     state = state_;
 }
 
-void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::set(const String & file_path, time_t since)
+void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::set(const String & file_path, UInt64 generation, time_t since)
 {
     std::lock_guard lock(mutex);
     if (auto it = observations.find(file_path); it != observations.end())
     {
+        it->second.generation = generation;
         it->second.since = since;
         lru.splice(lru.begin(), lru, it->second.lru_position);
         return;
@@ -118,10 +119,10 @@ void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::set(const Stri
     }
 
     lru.push_front(file_path);
-    observations.emplace(file_path, Observation{since, lru.begin()});
+    observations.emplace(file_path, Observation{generation, since, lru.begin()});
 }
 
-time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const String & file_path) const
+time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const String & file_path, UInt64 generation) const
 {
     std::lock_guard lock(mutex);
     const auto it = observations.find(file_path);
@@ -129,6 +130,12 @@ time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const St
         return 0;
 
     lru.splice(lru.begin(), lru, it->second.lru_position);
+
+    /// The observation describes an earlier hold of this path: this table has not seen
+    /// the current one, so it must check keeper instead of reusing the old deadline.
+    if (it->second.generation != generation)
+        return 0;
+
     return it->second.since;
 }
 
@@ -148,8 +155,12 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor
     /// Publish the foreign marker before `Processing`: contenders which observe the
     /// state without acquiring `processing_lock` must not mistake it for our attempt.
     const auto processing_since = now();
-    processing_by_another_processor_since = processing_since;
-    observers.set(path, processing_since);
+    /// A file which was not foreign a moment ago is held by a new owner now: start a new
+    /// generation, so that an observation another table made of an earlier hold of the
+    /// same path is not reused for this one.
+    if (processing_by_another_processor_since.exchange(processing_since) == 0)
+        foreign_processing_generation.fetch_add(1);
+    observers.set(path, foreign_processing_generation.load(), processing_since);
     processing_start_time = processing_since;
     processing_end_time = {};
     processed_rows = 0;
@@ -177,7 +188,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onTerminalStateByAnotherProces
 
 time_t ObjectStorageQueueIFileMetadata::FileStatus::processingByAnotherProcessorSince(const ForeignProcessingObservers & observers) const
 {
-    return isProcessingByAnotherProcessor() ? observers.get(path) : 0;
+    return isProcessingByAnotherProcessor() ? observers.get(path, foreign_processing_generation.load()) : 0;
 }
 
 bool ObjectStorageQueueIFileMetadata::FileStatus::shouldRetryProcessing(const ForeignProcessingObservers & observers, time_t ttl_sec) const
