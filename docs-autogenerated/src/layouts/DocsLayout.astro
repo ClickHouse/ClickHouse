@@ -7,6 +7,7 @@ import { ClientRouter } from 'astro:transitions';
 import Header from '../components/Header.astro';
 import PageContext from '../components/PageContext.astro';
 import Sidebar from '../components/Sidebar.astro';
+import { entityKindLabels } from '../lib/entity-kinds';
 import '@fontsource-variable/inter/wght.css';
 import '@fontsource-variable/inter/wght-italic.css';
 import 'katex/dist/katex.min.css';
@@ -70,6 +71,7 @@ function activeGroupNames(entries: NavEntry[], currentRoute: string): string[] {
 const groupNames = activeGroupNames(sidebarEntries, document.route);
 const mobileSection = groupNames.at(-1) ?? breadcrumbs[0]?.label ?? 'Reference';
 const defaultTheme = docsConfig.appearance?.default ?? 'system';
+const entityKindLabel = entityKindLabels[document.entityKind];
 ---
 
 <!doctype html>
@@ -128,7 +130,14 @@ const defaultTheme = docsConfig.appearance?.default ?? 'system';
               ))}
             </nav>
 
-            <h1>{document.title}</h1>
+            <div class="document-title">
+              {entityKindLabel && (
+                <span class="document-kind-badge" data-entity-kind={document.entityKind}>
+                  {entityKindLabel}
+                </span>
+              )}
+              <h1>{document.title}</h1>
+            </div>
 
             <div class="prose">
               <slot />

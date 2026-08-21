@@ -23,6 +23,8 @@
 </dialog>
 
 <script>
+  import { entityKindLabels } from '../lib/entity-kinds';
+
   interface SearchRecord {
     id: string;
     title: string;
@@ -47,19 +49,6 @@
   const status = document.querySelector<HTMLElement>('.search-status');
   let records: SearchRecord[] | null = null;
   let activeIndex = -1;
-  const kindLabels: Record<string, string> = {
-    'aggregate-function': 'Aggregate function',
-    'asynchronous-metric': 'Asynchronous metric',
-    'current-metric': 'Current metric',
-    'data-type': 'Data type',
-    engine: 'Engine',
-    format: 'Format',
-    function: 'Function',
-    'profile-event': 'Profile event',
-    setting: 'Setting',
-    'system-table': 'System table',
-    'table-function': 'Table function',
-  };
 
   async function loadIndex() {
     if (records) return records;
@@ -120,7 +109,7 @@
       link.href = record.route;
       link.dataset.entityKind = record.entityKind;
       title.textContent = record.title;
-      kind.textContent = kindLabels[record.entityKind] ?? record.entityKind.replaceAll('-', ' ');
+      kind.textContent = entityKindLabels[record.entityKind] ?? record.entityKind.replaceAll('-', ' ');
       copy.append(title, kind);
       link.append(copy);
       item.append(link);
