@@ -973,13 +973,28 @@ void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const
 {
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
 
-    const auto storage_type = configuration->getType();
-    if ((storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure)
-        && configuration->partition_strategy_was_inferred
+    if (configuration->partition_strategy_was_inferred
         && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
         && !configuration->getRawPath().hasGlobsIgnorePlaceholders()
         && !hasPartitionStrategyArgument(args))
     {
+        /// An implicit strategy `none` on a non-globbed path (a `CREATE` under
+        /// `file_like_engine_default_partition_strategy = 'wildcard'`) is not recoverable from
+        /// the path shape on reload: `initPartitionStrategy` resolves such a path to `hive` when
+        /// loading from metadata. It must therefore be persisted as an explicit
+        /// `partition_strategy = 'none'` engine argument, which only the S3 and Azure parsers
+        /// accept. For any other backend, refuse the definition instead of creating a table
+        /// that silently switches to the `hive` strategy after a server restart.
+        const auto storage_type = configuration->getType();
+        if (storage_type != ObjectStorageType::S3 && storage_type != ObjectStorageType::Azure)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`PARTITION BY` without an explicit `partition_strategy` resolves to 'none' under "
+                "`file_like_engine_default_partition_strategy = 'wildcard'`, and this engine can not persist "
+                "`partition_strategy = 'none'` in the table metadata, so the table would change to the 'hive' "
+                "strategy after a server restart. Set `file_like_engine_default_partition_strategy = 'hive'` "
+                "or remove `PARTITION BY`");
+
         ASTs partition_strategy_args{
             make_intrusive<ASTIdentifier>("partition_strategy"),
             make_intrusive<ASTLiteral>("none")};

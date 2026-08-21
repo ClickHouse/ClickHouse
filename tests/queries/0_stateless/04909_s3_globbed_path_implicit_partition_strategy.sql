@@ -44,6 +44,12 @@ FROM system.tables
 WHERE database = currentDatabase()
     AND name = 'test_04909_plain_wildcard';
 
+-- An explicit `partition_strategy = 'none'` contradicts a `{_partition_id}` path:
+-- only `wildcard` substitutes the placeholder, so the definition must be rejected.
+CREATE TABLE test_04909_explicit_none (d Date, x UInt64)
+ENGINE = S3('s3://bucket/test_04909/{_partition_id}.parquet', format = 'Parquet', partition_strategy = 'none')
+PARTITION BY d; -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE test_04909_glob_hive;
 DROP TABLE test_04909_glob_wildcard;
 DROP TABLE test_04909_plain_wildcard;

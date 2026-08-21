@@ -197,6 +197,22 @@ void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
+    /// An explicit `partition_strategy = 'none'` contradicts a `{_partition_id}` placeholder in
+    /// the path: only the `wildcard` strategy substitutes the placeholder, so under `none` it
+    /// would be read and written literally. Reject the definition, but only on `CREATE`: loading
+    /// from existing metadata must not throw, since that would abort server startup.
+    if (is_create_query
+        && partition_by
+        && partition_strategy_was_set
+        && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && getRawPath().hasPartitionWildcard())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Partition strategy 'none' can not be used with a path containing a '{{_partition_id}}' placeholder; "
+            "use the 'wildcard' strategy or remove the placeholder from the path");
+    }
+
     /// Data lake engines (Iceberg, Delta Lake, etc.) implement their own partitioning and
     /// do not use the file-like `partition_strategy`. Skip applying a default strategy here.
     /// Also skip when there is no `PARTITION BY` - there is no strategy to apply, but we still
