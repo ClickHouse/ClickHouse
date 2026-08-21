@@ -69,6 +69,8 @@ struct MergeTreeReaderSettings
     bool use_prefixes_deserialization_thread_pool = false;
     bool prefetch_json_shared_data_substreams = true;
     bool secondary_indices_enable_bulk_filtering = true;
+    /// Minimum fraction of the marks of a part that must survive primary key analysis for the vector similarity index to be used.
+    float vector_search_min_surviving_pk_fraction = 0.5;
     UInt64 merge_tree_min_bytes_for_seek = 0;
     UInt64 merge_tree_min_rows_for_seek = 0;
     UInt64 merge_tree_coarse_index_granularity = 8;

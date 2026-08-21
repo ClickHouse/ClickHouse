@@ -169,6 +169,17 @@ FROM tab
 WHERE id > 3
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
+SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 0;
+
+-- The same query on the index path (the primary key leaves 4 of the 5 marks of the part, which is above
+-- 'vector_search_min_surviving_pk_fraction'): the index returns the nearest neighbours of the surviving marks and the
+-- exact `id > 3` predicate then removes those of them that live in the boundary mark, so fewer rows are returned.
+WITH [1.0, 0.0] AS reference_vec
+SELECT id, attr1
+FROM tab
+WHERE id > 3
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
 SELECT 'Test for filter that selects full part, optimization will take effect';

@@ -37,6 +37,8 @@ Test optimization in the presence of other predicates
 4	50
 5	50
 6	50
+4	50
+5	50
 Test for filter that selects full part, optimization will take effect
 -- Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.
 _distance Float32
