@@ -973,7 +973,8 @@ size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_contex
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    return std::min(num_streams, data_files[INDEX_WITH_REAL_ROW_COUNT].marks.size());
+    /// An empty table still produces one `NullSource` in `createReadingPipe`.
+    return std::min(num_streams, std::max(1uz, data_files[INDEX_WITH_REAL_ROW_COUNT].marks.size()));
 }
 
 void StorageLog::drop()
