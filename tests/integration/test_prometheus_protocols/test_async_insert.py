@@ -44,8 +44,6 @@ def get_async_insert_query_count():
     )
 
 
-# The remote-write handler acknowledges an asynchronous insert only after the data is flushed
-# to all inner tables of the TimeSeries table, so the data must be visible right after the ack.
 def test_async_insert_acknowledged_after_flush():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
@@ -72,7 +70,6 @@ def test_async_insert_acknowledged_after_flush():
         convert_metrics_metadata_to_protobuf(metrics_metadata),
     )
 
-    # No retries here: the acknowledgement means the data is already written.
     assert node.query("SELECT count() FROM timeSeriesData(prometheus)") == "2\n"
     assert (
         node.query(
@@ -89,12 +86,9 @@ def test_async_insert_acknowledged_after_flush():
         == "gauge\tTest metric\tseconds\n"
     )
 
-    # Both inserts must have gone through the asynchronous insert queue.
     assert get_async_insert_query_count() == async_insert_queries_before + 2
 
 
-# If the insertion into an inner table fails, the remote-write request must fail too,
-# so that the sender retries it later.
 def test_async_insert_no_acknowledgement_on_failure():
     node.query(
         "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
