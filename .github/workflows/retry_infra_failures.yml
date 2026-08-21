@@ -82,7 +82,7 @@ jobs:
             fi
 
             matches=$(echo "$page" | jq -r \
-              ".[] | select(.attempt <= 2 and .startedAt >= \"$cutoff\") | \"\(.databaseId):\(.attempt)\"")
+              ".[] | select(.attempt <= 2 and .startedAt >= \"$cutoff\") | \"\(.startedAt) \(.databaseId):\(.attempt)\"")
             if [ -n "$matches" ]; then
               run_entries=$(printf '%s\n%s' "$run_entries" "$matches")
             fi
@@ -90,8 +90,10 @@ jobs:
             hour=$((hour + PARTITION_HOURS))
           done
           # Both range endpoints are inclusive, so a run on a boundary is listed twice and
-          # would consume two of MAX_RERUNS.
-          run_entries=$(echo "$run_entries" | grep -v '^$' | sort -u || true)
+          # would consume two of MAX_RERUNS. Sorting on the leading startedAt (ISO-8601 sorts
+          # chronologically) spends MAX_RERUNS nearest the 6 hour edge, where this tick is a
+          # candidate's last; the key is dropped once the order is fixed.
+          run_entries=$(echo "$run_entries" | grep -v '^$' | sort -u | awk '{print $2}' || true)
 
           if [ -z "$run_entries" ]; then
             echo "No recent failed runs found."
@@ -115,7 +117,9 @@ jobs:
                 "repos/$GH_REPO/actions/runs/$run_id/attempts/1" --jq '.conclusion' \
                 2>/dev/null || echo "")
               if [ "$attempt1_conclusion" != "action_required" ]; then
-                echo "Skipping run $run_id: attempt 1 concluded '$attempt1_conclusion', already retried."
+                # An empty conclusion means the probe went unanswered, not that a retry was
+                # seen, and a fault skipping every fork candidate is invisible on a green run.
+                echo "::warning::Skipping run $run_id: attempt 1 conclusion '$attempt1_conclusion' is not the approval gate (empty = unreadable)."
                 continue
               fi
             fi

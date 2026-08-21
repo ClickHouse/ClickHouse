@@ -76,13 +76,14 @@ EXPECTED_DATA_PATH = [
     "exit 1",
     "fi",
     'matches=$(echo "$page" | jq -r ".[] | select(.attempt <= 2 and .startedAt >= '
-    '\\"$cutoff\\") | \\"\\(.databaseId):\\(.attempt)\\"")',
+    '\\"$cutoff\\") | \\"\\(.startedAt) \\(.databaseId):\\(.attempt)\\"")',
     'if [ -n "$matches" ]; then',
     "run_entries=$(printf '%s\\n%s' \"$run_entries\" \"$matches\")",
     "fi",
     "hour=$((hour + PARTITION_HOURS))",
     "done",
-    "run_entries=$(echo \"$run_entries\" | grep -v '^$' | sort -u || true)",
+    "run_entries=$(echo \"$run_entries\" | grep -v '^$' | sort -u | awk '{print $2}' "
+    "|| true)",
     'if [ -z "$run_entries" ]; then',
     "exit 0",
     "fi",
@@ -296,7 +297,7 @@ def test_selector_admits_gated_fork_runs():
     assert _jq_stages(listing_jq) == [
         ".[]",
         r"select(.attempt <= 2 and .startedAt >= \"$cutoff\")",
-        r"\"\(.databaseId):\(.attempt)\"",
+        r"\"\(.startedAt) \(.databaseId):\(.attempt)\"",
     ], f"the listing filter must be exactly these three stages: {_jq_stages(listing_jq)}"
     # `.attempt` steers the guard, so the field must be requested. Without it jq yields
     # null, `null <= 2` still admits the row, and run_attempt becomes the string "null":
@@ -356,8 +357,24 @@ def test_selector_admits_gated_fork_runs():
     )
     # Adjacent partitions share a date boundary, so one run can be listed twice and consume
     # two of MAX_RERUNS.
-    assert re.search(r"run_entries=\$\(echo \"\$run_entries\".*sort -u", step), (
-        "the accumulated candidates must be deduplicated"
+    dedup = re.search(r"^\s*run_entries=\$\(echo \"\$run_entries\".*$", step, re.M)
+    assert dedup and "sort -u" in dedup.group(0), (
+        "the accumulated candidates must be deduplicated",
+        dedup.group(0) if dedup else None,
+    )
+    # MAX_RERUNS bites this list, so its ORDER decides which candidates are reached. A run is
+    # admitted by a 6 hour startedAt window, so the one closest to leaving it must be reached
+    # first: it is retried on this tick or never, while a fresher one still has later ticks.
+    # Sorting must therefore key on startedAt, not the databaseId that leads the entry -- id
+    # order is only a 0.90 pairwise proxy for it, and either id direction loses more last-tick
+    # candidates (measured over 312 hourly clocks: 35% here, 56% ascending, 100% descending).
+    assert re.search(r"\\\"\\\(\.startedAt\) ", listing_jq), (
+        "each entry must lead with startedAt so the dedup sort orders by deadline",
+        listing_jq,
+    )
+    # And the key must be stripped again, or run_id parses out of the timestamp.
+    assert "awk '{print $2}'" in dedup.group(0), (
+        "the sort key must be dropped once the order is fixed", dedup.group(0)
     )
     # The `<LISTING>` sentinel intentionally does not pin the invocation's flag SPELLING, but
     # the three flags below are semantics, not spelling: `--status success`, another
@@ -525,6 +542,13 @@ def test_selector_admits_gated_fork_runs():
     ), "run_attempt must be assigned once"
 
 
+def _stamp(hours):
+    """An ISO-8601 stamp ``hours`` in the past, in the format the API returns."""
+    return (
+        datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _run_step(
     tmp_path,
     attempt,
@@ -546,12 +570,6 @@ def _run_step(
     ``started_age_hours`` models the approval gate: ``createdAt`` stays pinned to attempt 1
     while the attempt that actually ran started later.
     """
-    def _stamp(hours):
-        return (
-            datetime.datetime.now(datetime.timezone.utc)
-            - datetime.timedelta(hours=hours)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
-
     created_at = _stamp(age_hours)
     started_at = _stamp(age_hours if started_age_hours is None else started_age_hours)
     fixture = tmp_path / "runs.json"
@@ -672,6 +690,76 @@ def test_window_keys_on_the_attempt_that_ran(
     not shutil.which("jq"),
     reason="needs jq; absent from the CI Tests image, so CI relies on the static asserts",
 )
+def test_candidates_are_processed_closest_to_leaving_the_window_first(tmp_path):
+    """``MAX_RERUNS`` bites the candidate list, so its order decides who is reached.
+
+    A candidate is admitted by a 6 hour ``startedAt`` window, so the one nearest that edge
+    must come first: this tick is its last chance, while a fresher one is still admitted by
+    later ticks. Ordering by the leading ``databaseId`` instead only approximates that (a
+    0.90 pairwise agreement with ``startedAt`` order over 4711 runs) and reaches fewer
+    last-tick candidates in either direction.
+
+    Asserted on the OBSERVED processing order rather than the sort command's spelling --
+    pinning a literal shape is what let the previous ordering defect through.
+    """
+    # startedAt deliberately DISAGREES with databaseId order, so an id-keyed sort in either
+    # direction produces an order this assertion rejects: the oldest startedAt carries the
+    # HIGHEST id and the newest the middle one.
+    rows = [
+        (5_000_000_003, 5.5),  # closest to the 6h edge -> must be processed FIRST
+        (5_000_000_001, 3.0),
+        (5_000_000_002, 1.0),  # freshest -> LAST
+    ]
+    fixture = tmp_path / "runs.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "databaseId": rid,
+                    "attempt": 1,
+                    "createdAt": _stamp(started),
+                    "startedAt": _stamp(started),
+                }
+                for rid, started in rows
+            ]
+        )
+    )
+    gh = tmp_path / "gh"
+    gh.write_text(GH_STUB)
+    gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
+    rerun_log = tmp_path / "reruns.log"
+    rerun_log.write_text("")
+    proc = subprocess.run(
+        ["bash", "-c", _retry_step()],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "GH_REPO": "ClickHouse/ClickHouse",
+            "GH_TOKEN": "stub",
+            "FIXTURE": str(fixture),
+            "LISTED_MARKER": str(tmp_path / "listed.marker"),
+            "ATTEMPT1_JSON": json.dumps(
+                {"status": "completed", "conclusion": "failure", "run_attempt": 1}
+            ),
+            "ATTEMPT1_FAIL": "",
+            "JOBS_JSON": NO_JOBS,
+            "RERUN_LOG": str(rerun_log),
+        },
+    )
+    assert proc.returncode == 0, proc.stderr
+    seen = re.findall(r"actions/runs/(\d+) ", proc.stdout)
+    # All three must be reached, or the order assertion below could hold on a subset.
+    assert sorted(seen) == sorted(str(r) for r, _ in rows), (seen, proc.stdout)
+    want = [str(rid) for rid, _ in sorted(rows, key=lambda r: -r[1])]
+    assert seen == want, ("candidates must be processed oldest-startedAt first", seen, want)
+
+
+@pytest.mark.skipif(
+    not shutil.which("jq"),
+    reason="needs jq; absent from the CI Tests image, so CI relies on the static asserts",
+)
 @pytest.mark.parametrize(
     "attempt1_conclusion, rerun_expected",
     [
@@ -706,5 +794,10 @@ def test_attempt1_probe_fails_closed_on_api_error(tmp_path):
     # _run_step already asserts returncode 0, i.e. the step survived the API error.
     # The empty conclusion in the skip message is the fallback's own value, so this also
     # proves the probe was reached rather than the run being dropped earlier.
-    assert f"Skipping run {RUN_ID}: attempt 1 concluded ''" in proc.stdout, proc.stdout
+    assert f"Skipping run {RUN_ID}: attempt 1 conclusion ''" in proc.stdout, proc.stdout
+    # Annotated, so a token or endpoint fault that skips every fork candidate is visible on a
+    # run that still reports success, and worded so an unreadable probe is not reported as an
+    # observed retry.
+    assert "::warning::" in proc.stdout, proc.stdout
+    assert "already retried" not in proc.stdout, proc.stdout
     assert f"run rerun {RUN_ID}" not in rerun_log, rerun_log
