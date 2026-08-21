@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1064384",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1065866",
       "email": "support@clickhouse.com"
     }
   },
@@ -469,8 +469,8 @@
     },
     "/v1/organizations/{organizationId}/prometheus/discovery": {
       "get": {
-        "summary": "Discover Prometheus scrape targets for an organization",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns one Prometheus scrape target per service in the organization that the caller is authorized to view, in HTTP service discovery (http_sd) format. Services the caller lacks view access to, and services in a terminated, terminating, or (soft-)deleted state, are omitted — the response can have fewer groups than the organization has services. Point a Prometheus http_sd_configs job at this endpoint to discover and scrape all services automatically; targets are refreshed on every discovery poll, so created and deleted services are picked up without reconfiguration. Targets scrape with filtered_metrics=true by default; pass ?filtered_metrics=false to this endpoint to discover unfiltered targets.\n\nSample Prometheus scrape config:\n\n```yaml\nscrape_configs:\n  - job_name: clickhouse-cloud\n    http_sd_configs:\n      - url: https://api.clickhouse.cloud/v1/organizations/<organizationId>/prometheus/discovery\n        refresh_interval: 60s\n        basic_auth:\n          username: <key-id>\n          password: <key-secret>\n    basic_auth:\n      username: <key-id>\n      password: <key-secret>\n```\n\nThe `basic_auth` block must be set both under `http_sd_configs` (used to authenticate discovery polls against this endpoint) and on the scrape job itself (used to authenticate the actual per-service scrapes) — omitting either one is the most common misconfiguration.",
+        "summary": "List Prometheus scrape targets",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.",
         "operationId": "organizationPrometheusDiscoveryGet",
         "parameters": [
           {
@@ -486,7 +486,7 @@
           {
             "in": "query",
             "name": "filtered_metrics",
-            "description": "Whether discovered targets carry filtered_metrics=true or =false as a scrape param. Accepts true or false; defaults to true — the opposite default from the per-service prometheus endpoint.",
+            "description": "Whether discovered targets scrape a filtered list of metrics. Sets the filtered_metrics parameter on each discovered target. Defaults to true.",
             "schema": {
               "type": "string",
               "format": "boolean"
@@ -2399,7 +2399,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/state": {
       "patch": {
         "summary": "Update service state",
-        "description": "Starts or stop service",
+        "description": "Starts, stops, or wakes a service. The `start` and `stop` commands require the `control-plane:service:manage` permission on the service. The `awake` command requires only `control-plane:service:view` and applies to an idle service; it does not start a stopped service.",
         "operationId": "instanceStateUpdate",
         "parameters": [
           {
@@ -2515,7 +2515,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Starts or stop service"
+          "content": "Starts, stops, or wakes a service. The `start` and `stop` commands require the `control-plane:service:manage` permission on the service. The `awake` command requires only `control-plane:service:view` and applies to an idle service; it does not start a stopped service."
         }
       }
     },
@@ -31907,7 +31907,68 @@
           "r8gd.12xlarge",
           "r8gd.16xlarge",
           "r8gd.24xlarge",
-          "r8gd.48xlarge"
+          "r8gd.48xlarge",
+          "c4a-highmem-4",
+          "c4a-highmem-8",
+          "c4a-highmem-16",
+          "c4a-highmem-32",
+          "c4a-highmem-48",
+          "c4a-highmem-64",
+          "c4a-highmem-72",
+          "c4a-standard-4",
+          "c4a-standard-8",
+          "c4a-standard-16",
+          "c4a-standard-32",
+          "c4a-standard-48",
+          "c4a-standard-64",
+          "c4a-standard-72",
+          "c4-highmem-4",
+          "c4-highmem-8",
+          "c4-highmem-16",
+          "c4-highmem-24",
+          "c4-highmem-32",
+          "c4-highmem-48",
+          "c4-highmem-96",
+          "c4-highmem-144",
+          "c4-highmem-192",
+          "c4-highmem-288",
+          "c4-standard-4",
+          "c4-standard-8",
+          "c4-standard-16",
+          "c4-standard-24",
+          "c4-standard-32",
+          "c4-standard-48",
+          "c4-standard-96",
+          "c4-standard-144",
+          "c4-standard-192",
+          "c4-standard-288",
+          "c4d-highmem-8",
+          "c4d-highmem-16",
+          "c4d-highmem-32",
+          "c4d-highmem-48",
+          "c4d-highmem-64",
+          "c4d-highmem-96",
+          "c4d-highmem-192",
+          "c4d-highmem-384",
+          "c4d-standard-8",
+          "c4d-standard-16",
+          "c4d-standard-32",
+          "c4d-standard-48",
+          "c4d-standard-64",
+          "c4d-standard-96",
+          "c4d-standard-192",
+          "c4d-standard-384",
+          "z3-highlssd-8",
+          "z3-highlssd-16",
+          "z3-highlssd-22",
+          "z3-highlssd-32",
+          "z3-highlssd-44",
+          "z3-highlssd-88",
+          "z3-standardlssd-14",
+          "z3-standardlssd-22",
+          "z3-standardlssd-44",
+          "z3-standardlssd-88",
+          "z3-standardlssd-176"
         ]
       },
       "pgHaType": {
@@ -31922,7 +31983,8 @@
       "pgProvider": {
         "type": "string",
         "enum": [
-          "aws"
+          "aws",
+          "gcp"
         ],
         "title": "Cloud provider",
         "description": "The cloud provider for a Postgres service."
