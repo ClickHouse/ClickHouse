@@ -6,7 +6,7 @@ title: 'المجموعات المُسمّاة'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
@@ -88,7 +88,7 @@ url = 'https://connection.url/'
 فيمكنك استخدام `local_encrypted` أو `keeper_encrypted`/`zookeeper_encrypted`.
 
 لاستخدام ZooKeeper/Keeper، نحتاج أيضًا إلى إعداد `path` (المسار في ZooKeeper/Keeper الذي ستُخزَّن فيه المجموعات المُسمّاة) ضمن
-قسم `named_collections_storage` في ملف الإعدادات. يستخدم المثال التالي التشفير وZooKeeper/Keeper:
+قسم `named_collections_storage` في ملف التهيئة. يستخدم المثال التالي التشفير وZooKeeper/Keeper:
 
 ```xml
 <clickhouse>
@@ -103,6 +103,16 @@ url = 'https://connection.url/'
 ```
 
 القيمة الافتراضية لمَعلمة التهيئة الاختيارية `update_timeout_ms` هي `5000`.
+
+يمكنك فحص نوع التخزين النشط عبر `system.server_settings` و`getServerSetting`:
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+يتطلب تغيير نوع التخزين إعادة تشغيل الخادم؛ ولا يغيّر `SYSTEM RELOAD CONFIG` الواجهة الخلفية النشطة.
 
 <div id="storing-named-collections-in-configuration-files">
   ## تخزين المجموعات المسماة في ملفات التهيئة
@@ -374,6 +384,8 @@ SELECT dictGet('dict', 'B', 2);
 
 * `username` بدلًا من `user`
 * `db` بدلًا من `database`.
+
+يمكن أيضًا تخزين إعدادات تجمّع الاتصالات الخاصة بـ [PostgreSQL table engine](/ar/reference/engines/table-engines/integrations/postgresql) (`postgresql_connection_pool_size` وإعدادات `postgresql_*` الأخرى) في المجموعة أو تمريرها كتجاوزات بصيغة `key = value`. وهي تنطبق على محرك الجدول `PostgreSQL`، والدالة الجدولية `postgresql`، ومحرك قاعدة البيانات `PostgreSQL`؛ وتكون لعبارة `SETTINGS` الصريحة على الجدول أولوية على القيم الواردة من المجموعة.
 
 تُستخدم المعلمة `addresses_expr` في المجموعة بدلًا من `host:port`. وهذه المعلمة اختيارية، لأن هناك معلمات اختيارية أخرى، وهي: `host` و`hostname` و`port`. توضّح الشيفرة الزائفة التالية ترتيب الأولوية:
 

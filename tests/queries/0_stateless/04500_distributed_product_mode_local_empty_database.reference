@@ -1,0 +1,19 @@
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 3)
+   ExpressionList (children 1)
+    Function count (children 1)
+     ExpressionList
+   TablesInSelectQuery (children 2)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      TableIdentifier dist_larger (alias lt)
+    TablesInSelectQueryElement (children 2)
+     TableExpression (children 1)
+      TableIdentifier smaller_table (alias rt)
+     TableJoin (children 1)
+      Function equals (children 1)
+       ExpressionList (children 2)
+        Identifier key
+        Identifier rt.key
+   Set

@@ -60,17 +60,13 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
 * Имя S3 бакета и регион, куда Cloudflare записывает журналы
 
 <Steps>
-  <Step>
-    #### Настройте аутентификацию для S3
-
+  <Step title="Настройте аутентификацию для S3" id="configure-auth">
     ClickPipes требуется разрешение на чтение из вашего S3 бакета. Чтобы настроить доступ с использованием роли IAM или учетных данных, следуйте руководству [Безопасный доступ к данным S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
 
     Подробные сведения об аутентификации S3 и разрешениях для ClickPipes см. в [справочной документации по S3 ClickPipes](/ru/integrations/clickpipes/object-storage/amazon-s3/overview#access-control).
   </Step>
 
-  <Step>
-    #### Создание задачи ClickPipes
-
+  <Step title="Создание задачи ClickPipes" id="create-clickpipes">
     1. ClickHouse Cloud Console → **Источники данных** → **Create ClickPipe**
     2. **Источник**: Amazon S3
 
@@ -107,9 +103,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
     </Note>
   </Step>
 
-  <Step>
-    #### Настройка источника данных HyperDX
-
+  <Step title="Настройка источника данных HyperDX" id="configure-source">
     ClickPipes загружает журналы Cloudflare в плоскую таблицу, используя исходные имена полей Cloudflare. Чтобы просматривать эти журналы в HyperDX, настройте пользовательский источник данных, который сопоставляет столбцы Cloudflare с представлением логов HyperDX.
 
     1. Откройте HyperDX → **Team Settings** → **Sources**
@@ -142,9 +136,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
     Это позволяет напрямую сопоставить исходные столбцы Cloudflare с представлением логов HyperDX без какого-либо преобразования или дублирования данных. В поле **Body** будет отображаться сводка по запросу, например `GET /api/v1/users 200`, а все поля Cloudflare будут доступны как атрибуты для поиска.
   </Step>
 
-  <Step>
-    #### Проверьте данные в HyperDX
-
+  <Step title="Проверьте данные в HyperDX" id="verify-hyperdx">
     Перейдите в представление **Search** и выберите источник **Cloudflare Logs**. Установите временной диапазон так, чтобы он включал нужный период. Вы должны увидеть записи журнала со следующими характеристиками:
 
     * Сводки запросов в столбце Body (например, `GET /api/v1/users 200`)
@@ -161,12 +153,10 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
   ## Демо-набор данных
 </div>
 
-Для пользователей, которые хотят протестировать интеграцию перед настройкой рабочего Cloudflare Logpush, мы предоставляем демо-набор данных с реалистичными журналами HTTP-запросов.
+Для пользователей, которые хотят протестировать интеграцию перед настройкой продакшн Cloudflare Logpush, мы предоставляем демо-набор данных с реалистичными журналами HTTP-запросов.
 
 <Steps>
-  <Step>
-    #### Запустите ClickPipes с демо-набором данных
-
+  <Step title="Запустите ClickPipes с демо-набором данных" id="start-demo">
     1. консоль ClickHouse Cloud → **Источники данных** → **Создать ClickPipe**
     2. **Источник**: Amazon S3
     3. **Аутентификация**: Public
@@ -180,15 +170,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
     Набор данных включает 5 000 записей журнала HTTP-запросов за 24 часа с реалистичными паттернами: трафик из нескольких стран, попадания и промахи кэша, запросы к API и статическим ресурсам, ответы с ошибками и события безопасности.
   </Step>
 
-  <Step>
-    #### Настройте источник данных HyperDX
-
-    Следуйте [шагам настройки источника данных](#configure-source), чтобы создать источник HyperDX, указывающий на таблицу `cloudflare_http_logs`. Если вы уже настроили источник в разделе с рабочей интеграцией, этот шаг не нужен.
+  <Step title="Настройте источник данных HyperDX" id="configure-demo-source">
+    Следуйте [шагам настройки источника данных](#configure-source), чтобы создать источник HyperDX, указывающий на таблицу `cloudflare_http_logs`. Если вы уже настроили источник в разделе с продакшн интеграцией, этот шаг не нужен.
   </Step>
 
-  <Step>
-    #### Проверьте демо-данные
-
+  <Step title="Проверьте демо-данные" id="verify-demo">
     ```sql
     SELECT count() FROM cloudflare_http_logs;
     -- Должен вернуть 5000
@@ -215,13 +201,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
+  <Step title="Скачать конфигурацию панели мониторинга" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Импорт панели мониторинга
-
+  <Step title="Импорт панели мониторинга" id="import-dashboard">
     1. HyperDX → **Dashboards** → **Import Dashboard**
 
     <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="Импорт панели мониторинга" />
@@ -231,9 +215,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
     <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="Импорт панели мониторинга" />
   </Step>
 
-  <Step>
-    #### Просмотр панели мониторинга
-
+  <Step title="Просмотр панели мониторинга" id="view-dashboard">
     <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="Пример панели мониторинга" />
 
     <Note>
@@ -278,9 +260,9 @@ SELECT count() FROM cloudflare_http_logs;
 * Создайте дополнительные панели мониторинга для конкретных задач (производительность API, оптимизация кэша, географический анализ трафика)
 
 <div id="going-to-production">
-  ## Переход к промышленной эксплуатации
+  ## Переход в продакшн
 </div>
 
-В этом руководстве показано, как выполнять приём журналов Cloudflare с использованием общедоступного демо-набора данных. Для промышленных развертываний настройте Cloudflare Logpush на запись в собственный S3 бакет и настройте ClickPipes с [аутентификацией на основе ролей IAM](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely) для безопасного доступа. Чтобы сократить затраты на хранение и объём ингестии, выбирайте только нужные вам [поля Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/). Включите в Logpush ежедневные подпапки для более удобной организации файлов и используйте `**/*` в шаблоне пути ClickPipes, чтобы охватить все подкаталоги.
+В этом руководстве показано, как выполнять ингестию журналов Cloudflare с использованием общедоступного демо-набора данных. Для развертываний в продакшне настройте Cloudflare Logpush на запись в собственный S3 бакет и настройте ClickPipes с [аутентификацией на основе роли IAM](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely) для безопасного доступа. Выбирайте только нужные вам [поля Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/), чтобы сократить затраты на хранилище и объём ингестии. Включите в Logpush ежедневные подпапки для более удобной организации файлов и используйте `**/*` в шаблоне пути ClickPipes, чтобы охватывать вложенные подкаталоги.
 
-Дополнительные параметры конфигурации, включая [неупорядоченную ингестию на основе SQS](/ru/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order) для обработки дозагрузок и файлов, поступивших не по порядку, см. в [документации по S3 ClickPipes](/ru/integrations/clickpipes/object-storage/amazon-s3/overview).
+Дополнительные параметры конфигурации, включая [неупорядоченную ингестию на основе SQS](/ru/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order) для обработки дозагрузок и файлов, поступающих не по порядку, см. в [документации по S3 ClickPipes](/ru/integrations/clickpipes/object-storage/amazon-s3/overview).

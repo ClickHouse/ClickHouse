@@ -10,3 +10,4 @@ export const ScalePlanFeatureBadge = ({feature='Эта возможность', 
         </div>
     )
 }
+export default ScalePlanFeatureBadge;

@@ -55,13 +55,13 @@ Você pode [executar esta consulta no playground SQL do ClickHouse](https://sql.
 
 Como você pode ver na seção de estatísticas do diagrama acima, a consulta processou 100 milhões de linhas em 92 milissegundos, com uma taxa de transferência de aproximadamente 1 bilhão de linhas por segundo, ou pouco menos de 7 GB de dados transferidos por segundo.
 
-**SGBD orientado a linhas**
+**DBMS orientado a linhas**
 
 Em um banco de dados orientado a linhas, embora a consulta acima processe apenas algumas das colunas existentes, o sistema ainda precisa carregar do disco para a memória os dados de outras colunas. Isso acontece porque os dados são armazenados em disco em blocos chamados [blocks](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (geralmente de tamanho fixo, por exemplo, 4 KB ou 8 KB). Os blocos são as menores unidades de dados lidas do disco para a memória. Quando uma aplicação ou banco de dados solicita dados, o subsistema de E/S de disco do sistema operacional lê do disco os blocos necessários. Mesmo que apenas parte de um bloco seja necessária, o bloco inteiro é lido na memória (isso se deve ao design do disco e do sistema de arquivos):
 
 <Image img="/images/row-oriented.webp" alt="Estrutura de banco de dados orientado a linhas" size="lg" />
 
-**SGBD orientado a colunas**
+**DBMS orientado a colunas**
 
 Como os valores de cada coluna são armazenados em sequência no disco, nenhum dado desnecessário é carregado quando a consulta acima é executada.
 Como o armazenamento em blocos e a transferência do disco para a memória estão alinhados com o padrão de acesso aos dados das consultas analíticas, apenas as colunas necessárias para uma consulta são lidas do disco, evitando E/S desnecessária de dados não utilizados. Isso é [muito mais rápido](https://benchmark.clickhouse.com/) em comparação com o armazenamento baseado em linhas, no qual linhas inteiras (incluindo colunas irrelevantes) são lidas:

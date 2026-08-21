@@ -6,10 +6,6 @@ tags: ['오류 및 예외']
 keywords: ['OOM', 'memory limit exceeded']
 ---
 
-{frontMatter.description}
-
-{/* truncate */}
-
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <div id="troubleshooting-out-of-memory-issues">
@@ -24,8 +20,8 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </div>
 
 메모리 사용량이 큰 집계 또는 정렬 시나리오에서는
-[`max_bytes_before_external_group_by`](/ko/reference/settings/session-settings#max_bytes_before_external_group_by)
-및 [`max_bytes_before_external_sort`](/ko/reference/settings/session-settings#max_bytes_ratio_before_external_sort) 설정을 각각 사용할 수 있습니다.
+[`max_bytes_before_external_group_by`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)
+및 [`max_bytes_before_external_sort`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort) 설정을 각각 사용할 수 있습니다.
 전자에 대해서는 [여기](/ko/reference/statements/select/group-by#group-by-in-external-memory)에서 자세히 설명합니다.
 
 요약하면, 이 설정은 메모리 임계값을 초과할 경우 집계 작업 결과를 디스크로 spill할 수 있도록 합니다.
@@ -34,7 +30,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 문제를 해결하는 데 도움이 됩니다. 이는 특히 조정 노드가
 하위 세그먼트로부터 정렬된 응답을 받는 분산 환경에서
 중요할 수 있습니다. 이 경우 조정 서버는 사용 가능한 메모리보다 더 큰
-데이터셋을 정렬해야 할 수 있습니다. [`max_bytes_before_external_sort`](/ko/reference/settings/session-settings#max_bytes_ratio_before_external_sort)를 사용하면,
+데이터셋을 정렬해야 할 수 있습니다. [`max_bytes_before_external_sort`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)를 사용하면,
 정렬 작업도 디스크로 spill되도록 허용할 수 있습니다. 이 설정은 또한
 사용자가 `GROUP BY` 뒤에 `LIMIT`가 있는 `ORDER BY`를 사용하는 경우에도 유용하며,
 특히 쿼리가 분산되는 경우 더욱 그렇습니다.
@@ -47,7 +43,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 이 알고리즘은 `JOIN`의 오른쪽 테이블을 메모리 내 해시
 테이블에 로드한 뒤, 이를 기준으로 왼쪽 테이블을 평가합니다. 따라서 메모리 사용을 최소화하려면
 더 작은 테이블을 오른쪽에 배치해야 합니다. 다만 이 방식도
-메모리 제약이 있는 경우에는 한계가 있습니다. 이런 경우에는 [`join_algorithm`](/ko/reference/settings/session-settings#join_algorithm)
+메모리 제약이 있는 경우에는 한계가 있습니다. 이런 경우에는 [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)
 설정을 통해 `partial_merge` 조인을 활성화할 수 있습니다. [sort-merge 알고리즘](https://en.wikipedia.org/wiki/Sort-merge_join)의
 파생형인 이 방식은 먼저 오른쪽 테이블을 블록으로 정렬하고 각 블록에 대해 MinMax 인덱스를 생성합니다.
 그런 다음 왼쪽 테이블의 일부를 조인 키 기준으로 정렬한 후 오른쪽
@@ -58,7 +54,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 메모리에 맞지 않으면 디스크에서 정렬되므로, 큰 테이블도
 조인할 수 있습니다.
 
-<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Joins algorithms" />
+<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="조인 알고리즘" />
 
 20.3부터 ClickHouse는 `join_algorithm` 설정에서 auto 값을 지원합니다.
 이 값은 ClickHouse가 적응형 조인 방식을 적용하도록 하며, 메모리 제한에 도달하기 전까지는 해시 조인

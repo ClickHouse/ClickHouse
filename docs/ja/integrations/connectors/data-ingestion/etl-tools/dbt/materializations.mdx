@@ -7,7 +7,7 @@ title: 'マテリアライゼーション'
 doc_type: 'guide'
 ---
 
-import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -201,7 +201,16 @@ models:
   ### プロジェクション
 </div>
 
-`projections` 設定を使用すると、`table` および `distributed_table` マテリアライゼーションに[プロジェクション](/ja/concepts/features/projections/projections)を追加できます。
+`projections` 設定を使用すると、`table` および `distributed_table` マテリアライゼーションに[プロジェクション](/ja/concepts/features/projections/projections)を追加できます。各プロジェクションエントリには、`query` キーまたは `index` キーのいずれか一方 (両方ではない) が必要です。
+
+**注**: 分散テーブルでは、プロジェクションは分散プロキシテーブルではなく、`_local` テーブルに適用されます。
+**注**: 同じプロジェクションエントリで `query` と `index` の両方を指定すると、コンパイル時エラーが発生します。
+
+<div id="query-projections">
+  #### クエリプロジェクション
+</div>
+
+完全なプロジェクションクエリを定義するには、`query` を使用します。
 
 ```sql
 {{ config(
@@ -215,7 +224,42 @@ models:
 ) }}
 ```
 
-**注**: 分散テーブルでは、プロジェクションは分散プロキシテーブルではなく、`_local` テーブルに適用されます。
+<div id="index-projections">
+  #### 索引プロジェクション
+</div>
+
+`index` は、`_part_offset` 仮想カラムを使用する軽量な[索引プロジェクション](https://clickhouse.com/blog/clickhouse-release-25-06#index-projections)のシンタックスシュガーです。ソート順には、単一のカラム名またはカラムのリストを指定します。
+
+```sql
+{{ config(
+       materialized='table',
+       projections=[
+           {
+               'name': 'proj_by_age',
+               'index': 'age'
+           }
+       ]
+) }}
+```
+
+```sql
+{{ config(
+       materialized='table',
+       projections=[
+           {
+               'name': 'proj_by_dept_age',
+               'index': ['department', 'age']
+           }
+       ]
+) }}
+```
+
+dbt-clickhouse は、バージョンに適した DDL を自動的に生成します。
+
+| ClickHouse バージョン | 生成された SQL                                                       |
+| ---------------- | --------------------------------------------------------------- |
+| 26.1+            | `ADD PROJECTION proj_by_age INDEX age TYPE basic`               |
+| 25.8 – 26.0      | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
 
 <div id="materialization-incremental">
   ## マテリアライゼーション: インクリメンタル

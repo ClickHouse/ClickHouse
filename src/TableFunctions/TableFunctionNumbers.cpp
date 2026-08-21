@@ -1,7 +1,9 @@
 #include <optional>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/System/StorageSystemNumbers.h>
@@ -103,19 +105,21 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
 template <bool multithreaded>
 UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
-    const auto & [field, type] = evaluateConstantExpression(argument, context);
+    const auto constant = evaluateConstantExpressionAsColumn(argument, context);
+    const auto & column = constant.getColumn();
+    const auto & type = constant.getType();
 
     if (!isNativeNumber(type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());
 
-    Field converted = convertFieldToType(field, DataTypeUInt64());
-    if (converted.isNull())
+    ColumnPtr converted = convertColumnToTypeOrNull(*column, type, std::make_shared<DataTypeUInt64>());
+    if (!converted)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "The value {} is not representable as UInt64",
-            applyVisitor(FieldVisitorToString(), field));
+            applyVisitor(FieldVisitorToString(), (*column)[0]));
 
-    return converted.safeGet<UInt64>();
+    return converted->getUInt(0);
 }
 
 }

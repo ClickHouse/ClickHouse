@@ -42,6 +42,39 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
+namespace
+{
+    /// fsync `dir_path` and every subdirectory below it (children first), so that the directory
+    /// entries created by a freeze/hardlink clone become durable. Used only for local disks
+    /// (on remote/object disks getDirectorySyncGuard() returns nullptr and this is a no-op).
+    void syncDirectoryTree(IDisk & disk, const std::string & dir_path)
+    {
+        for (auto it = disk.iterateDirectory(dir_path); it->isValid(); it->next())
+        {
+            if (disk.existsDirectory(it->path()))
+                syncDirectoryTree(disk, it->path());
+        }
+        /// Children are synced first; this guard fsyncs `dir_path` itself on destruction.
+        SyncGuardPtr guard = disk.getDirectorySyncGuard(dir_path);
+    }
+}
+
+void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path)
+{
+    /// Subtree first (children before parents), then the ancestor chain up to the disk root ("").
+    syncDirectoryTree(disk, clone_dir_path);
+
+    fs::path dir = fs::path(clone_dir_path).parent_path();
+    while (true)
+    {
+        SyncGuardPtr guard = disk.getDirectorySyncGuard(dir.string());
+        guard.reset();
+        if (dir.empty())
+            break;
+        dir = dir.parent_path();
+    }
+}
+
 std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
     const std::string & name,
     const ReadSettings & settings,
@@ -541,6 +574,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
     else
     {
@@ -549,7 +583,15 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*disk, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
+
+    /// Make the hardlink clone durable (the Backup loop above fsyncs nothing). This runs
+    /// synchronously before freeze returns, so a caller that afterwards makes a destructive change
+    /// (e.g. DETACH commits a covering empty part and drops the source) sees the clone already on
+    /// disk. See the commit message / #111382 for the full rationale.
+    if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
+        fsyncFrozenCloneTree(*disk, fs::path(to) / dir_path);
 
     /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
     /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena, like the
@@ -559,7 +601,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
 
     /// Do not initialize storage in case of DETACH because part may be broken.
     bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
-    return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
+    auto frozen_storage = create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
+
+    return frozen_storage;
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
@@ -608,6 +652,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
     else
     {
@@ -616,6 +661,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
         dst_disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dst_disk, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
 
     /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
@@ -625,7 +671,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
 
     /// Do not initialize storage in case of DETACH because part may be broken.
     bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
-    return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
+    auto frozen_storage = create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
+
+    return frozen_storage;
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
@@ -716,9 +764,22 @@ void DataPartStorageOnDiskBase::rename(
         disk.moveDirectory(from, to);
 
         /// Only after moveDirectory() since before the directory does not exist.
-        SyncGuardPtr to_sync_guard;
         if (fsync_part_dir)
-            to_sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
+        {
+            /// Sync child before parent so a parent dentry never points at a not-yet-synced
+            /// child: the moved dir, then the parent(s) holding the renamed dentry.
+            { SyncGuardPtr to_sync_guard = volume->getDisk()->getDirectorySyncGuard(to); }
+
+            /// parent_path() twice: step past the trailing slash on `to`/`from`, then to the container.
+            const String to_parent = fs::path(to).parent_path().parent_path().string();
+            const String from_parent = fs::path(from).parent_path().parent_path().string();
+
+            if (!to_parent.empty())
+                { SyncGuardPtr to_parent_sync_guard = volume->getDisk()->getDirectorySyncGuard(to_parent); }
+
+            if (!from_parent.empty() && from_parent != to_parent)
+                { SyncGuardPtr from_parent_sync_guard = volume->getDisk()->getDirectorySyncGuard(from_parent); }
+        }
     });
 
     part_dir = new_part_dir;
@@ -970,6 +1031,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
+        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME, true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);

@@ -84,18 +84,14 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
 Si vous souhaitez configurer les options de déploiement de l&#39;opérateur, suivez les étapes ci-dessous.
 
 <Steps>
-  <Step>
-    ### Cloner le dépôt
-
+  <Step title="Cloner le dépôt" id="clone-the-repository">
     ```bash
     git clone https://github.com/ClickHouse/clickhouse-operator.git
     cd clickhouse-operator
     ```
   </Step>
 
-  <Step>
-    ### Configurer les options d&#39;installation
-
+  <Step title="Configurer les options d'installation" id="configure-installation-options">
     Modifiez `config/default/kustomization.yaml` pour activer ou désactiver les fonctionnalités selon vos besoins.
 
     * Pour désactiver les webhooks, mettez en commentaire les sections `[WEBHOOK]` et `[CERTMANAGER]`.
@@ -104,9 +100,7 @@ Si vous souhaitez configurer les options de déploiement de l&#39;opérateur, su
     * Pour activer les politiques réseau de l&#39;opérateur, décommentez la section `[NETWORK POLICY]`.
   </Step>
 
-  <Step>
-    ### Générer et déployer
-
+  <Step title="Générer et déployer" id="build-and-deploy">
     Générez les manifestes de l&#39;opérateur et appliquez-les :
 
     ```bash

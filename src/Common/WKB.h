@@ -16,6 +16,7 @@ enum class WKBGeometry : UInt32
     Point = 1,
     LineString = 2,
     Polygon = 3,
+    MultiPoint = 4,
     MultiLineString = 5,
     MultiPolygon = 6
 };
@@ -25,7 +26,8 @@ using GeometricObject = std::variant<
     LineString<CartesianPoint>,
     MultiLineString<CartesianPoint>,
     Polygon<CartesianPoint>,
-    MultiPolygon<CartesianPoint>>;
+    MultiPolygon<CartesianPoint>,
+    MultiPoint<CartesianPoint>>;
 
 /// Hard limit on WKB element counts that cannot be overridden by settings.
 static constexpr UInt32 MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT = 100'000'000;
@@ -63,6 +65,14 @@ struct WKBPolygonTransform : public IWKBTransform
 {
     static constexpr const char * name = "Polygon";
     static constexpr WKBGeometry geometry_type = WKBGeometry::Polygon;
+
+    String dumpObject(const Field & geo_object) override;
+};
+
+struct WKBMultiPointTransform : public IWKBTransform
+{
+    static constexpr const char * name = "MultiPoint";
+    static constexpr WKBGeometry geometry_type = WKBGeometry::MultiPoint;
 
     String dumpObject(const Field & geo_object) override;
 };

@@ -10,9 +10,10 @@ integration:
    - category: 'clickpipes'
 ---
 
-import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ar/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
@@ -67,11 +68,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 4. املأ تفاصيل الاتصال لقاعدة بيانات MongoDB المصدر التي أعددتها في خطوة المتطلبات الأساسية.
 
 <Info>
-  قبل البدء بإضافة تفاصيل الاتصال، تأكد من إدراج عناوين IP الخاصة بـ ClickPipes في قائمة السماح ضمن قواعد جدار الحماية لديك. في الصفحة التالية، يمكنك العثور على [قائمة بعناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips).
+  قبل البدء بإضافة تفاصيل الاتصال، تأكد من إدراج عناوين IP الخاصة بـ ClickPipes في قائمة السماح ضمن قواعد جدار الحماية لديك. في الصفحة التالية، يمكنك العثور على [قائمة بعناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips).
   لمزيد من المعلومات، راجع أدلة إعداد MongoDB المصدر المشار إليها في [أعلى هذه الصفحة](#prerequisites).
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
+
+<div id="optional-changing-tls-settings">
+  #### (اختياري) تعديل إعدادات TLS
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-set-up-ssh-tunneling">
   #### (اختياري) إعداد نفق SSH
@@ -90,7 +97,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 4. انقر على &quot;Verify Connection&quot; للتحقق من الاتصال.
 
 <Note>
-  تأكد من السماح لعناوين IP الخاصة بـ [عناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) في قواعد جدار الحماية الخاصة بمضيف SSH bastion حتى يتمكن ClickPipes من إنشاء نفق SSH.
+  تأكد من السماح لعناوين IP الخاصة بـ [عناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips) في قواعد جدار الحماية الخاصة بمضيف SSH bastion حتى يتمكن ClickPipes من إنشاء نفق SSH.
 </Note>
 
 بعد إدخال تفاصيل الاتصال، انقر على `Next`.
@@ -138,4 +145,3 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * نشترط استخدام MongoDB بالإصدار 5.1.0 أو أحدث.
 * نستخدم واجهة برمجة تطبيقات change stream الأصلية في MongoDB من أجل CDC، والتي تعتمد على oplog في MongoDB لالتقاط التغييرات في الوقت الفعلي.
 * تُنسخ المستندات من MongoDB إلى ClickHouse باستخدام JSON type افتراضيًا. يوفّر ذلك مرونة في إدارة الـ schema، ويتيح استخدام المجموعة الغنية من operators الخاصة بـ JSON في ClickHouse لأغراض الاستعلام والتحليلات. يمكنك معرفة المزيد عن الاستعلام عن بيانات JSON [هنا](/ar/reference/data-types/newjson).
-* لا يتوفر حاليًا إعداد PrivateLink بنمط self-serve. إذا كنت تستخدم AWS وتحتاج إلى PrivateLink، يُرجى التواصل عبر db-integrations-support@clickhouse.com أو إنشاء تذكرة دعم — وسنعمل معك على تفعيله.

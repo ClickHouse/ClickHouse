@@ -114,7 +114,7 @@ export const quickStartsData = [
   {
     "id": "tutorial",
     "title": "Tutoriel avancé",
-    "description": "Apprenez à ingérer et à interroger des données dans ClickHouse à l’aide d’un jeu de données d’exemple sur les taxis de New York.",
+    "description": "Découvrez comment ingérer et interroger des données dans ClickHouse à l’aide d’un jeu de données d’exemple sur les taxis de New York.",
     "href": "/fr/get-started/quickstarts/tutorial",
     "useCases": [
       "real-time-analytics",

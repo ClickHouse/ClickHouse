@@ -10,6 +10,8 @@
 #include <Common/SettingsChanges.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <map>
+
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -124,6 +126,7 @@ class WriteBuffer;
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
     M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
+    M(CLASS_NAME, UniqueKeyProbeImplementation) \
     M(CLASS_NAME, SkipUnavailableShardsMode)
 
 
@@ -153,6 +156,9 @@ struct Settings
     Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
+    /// Forcibly store `name` as a custom (string-valued) field, even when it collides with a
+    /// built-in setting. Used to transport query parameters (whose names may match a setting name).
+    void setCustom(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
     /// Whether any setting currently holds a value that was set by the `compatibility` setting.
@@ -168,6 +174,12 @@ struct Settings
 
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
+
+    /// Reject `SET name` with no value unless `name` is a Bool setting - `SET name` stands for
+    /// `SET name = true`. `applyChanges` does this itself; `Context` needs it separately because it
+    /// applies changes through `Context::setSetting`, which only sees a name and a value.
+    void checkShorthandChange(const SettingChange & change) const;
+    void checkShorthandChanges(const SettingsChanges & changes) const;
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     VectorWithMemoryTracking<std::string_view> getAllAliasNames() const;
     VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
@@ -175,6 +187,7 @@ struct Settings
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
+    std::map<String, String> changedToMap() const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);

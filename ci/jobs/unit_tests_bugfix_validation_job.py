@@ -8,9 +8,14 @@ does not contain the new tests.
 
 Instead, this job builds a "before" binary from the merge-base sources with ONLY the
 PR's unit-test file changes overlaid on top (the test, but not the fix), and then
-runs the touched test suites on it — at least one must FAIL or crash (or the "before"
-binary must fail to build, which is the strongest possible proof that the test depends
-on the fix).
+runs the touched test suites on it — at least one must FAIL or crash. When the
+"before" binary fails to compile and every compiler error lies inside the overlaid
+test files, the changed test code depends on the interface the fix introduces (the
+typical case is a call site adapted to a changed function signature); the unit side
+then has nothing it can judge at runtime, the PR author cannot avoid the adaptation,
+and the job reports the build failure as expected (XFAIL, nothing to validate)
+instead of staying red forever. Any other build failure is an infrastructure or
+attribution problem and stays an ERROR (inconclusive).
 
 Like the functional/integration validators, this job only checks the "before" side.
 The complementary "the touched tests PASS on the PR binary" side is delegated to the
@@ -53,7 +58,11 @@ BEFORE_BINARY = f"{BEFORE_SRC}/build/src/unit_tests_dbms"
 BUILD_TYPE = BuildTypes.AMD_ASAN_UBSAN
 
 # gtest test-registration macros whose first argument is the test-suite name.
+# `TEST`/`TEST_F` are `#define`d to `GTEST_TEST`/`GTEST_TEST_F`, so both spellings of
+# each register a suite and both must be listed here.
 _GTEST_MACROS = (
+    "GTEST_TEST",
+    "GTEST_TEST_F",
     "TEST",
     "TEST_F",
     "TEST_P",
@@ -209,6 +218,58 @@ def gitmodules_shape_violation():
     return None
 
 
+def get_submodule_state_changes(merge_base, checkout_sha):
+    """Paths whose submodule state differs between the merge-base and the checkout.
+
+    Returns the list of changed submodule gitlinks (mode 160000 entries in either tree)
+    plus `.gitmodules` itself if it changed. The before-worktree is populated by
+    hardlinking submodule working trees from the primary checkout, whose submodules are
+    checked out at `checkout_sha`'s recorded revisions — in this workflow that is `HEAD`,
+    normally GitHub's synthetic base+PR merge ref. That content is correct for the
+    merge-base build only while no submodule state differs between the two commits. A
+    difference can come from the PR itself (a gitlink or `.gitmodules` edit) or from the
+    base branch moving a submodule after the branch split — comparing against the PR
+    head instead of the checkout would miss the latter, and the "before" binary would
+    silently build merge-base sources against base-tip submodule content. Either way
+    the caller must fail close instead of validating against the wrong code.
+    """
+    # `--ignore-submodules=none` is essential: a `diff.ignoreSubmodules=all` config (set
+    # in some environments) would otherwise silently drop every gitlink change from the
+    # diff and this guard would never fire. `strict=True` is equally essential: a failed
+    # diff (missing object in the partial/shallow checkout, transient git error) must
+    # raise rather than yield an empty string — otherwise the guard would fail open and
+    # the validator would proceed against potentially wrong submodule content.
+    diff = Shell.get_output(
+        "git diff --raw --ignore-submodules=none "
+        f"{shlex.quote(merge_base)} {shlex.quote(checkout_sha)}",
+        strict=True,
+    )
+    changed = []
+    for line in diff.splitlines():
+        # raw format: ':<old_mode> <new_mode> <old_sha> <new_sha> <status>\t<path>'
+        if not line.startswith(":"):
+            continue
+        meta, _, path = line.partition("\t")
+        parts = meta.lstrip(":").split()
+        if len(parts) < 4 or not path:
+            continue
+        old_mode, new_mode = parts[0], parts[1]
+        if old_mode == "160000" or new_mode == "160000" or path == ".gitmodules":
+            changed.append(path)
+    return sorted(set(changed))
+
+
+def submodule_worktree_populated(path):
+    """True iff `path` contains real working-tree content, not just the bookkeeping
+    `.git` entry. After the working-tree files of a cached submodule are removed, git
+    can leave the directory holding exactly `['.git']` (a plain `git submodule update`
+    exits 0 in that state), so a bare `os.listdir` non-empty check would accept a
+    sourceless tree and the hardlink copy would propagate it into the before-worktree,
+    reintroducing the misleading cmake "cannot find source file" failure.
+    """
+    return any(entry != ".git" for entry in os.listdir(path))
+
+
 def ensure_primary_submodules():
     """Populate the primary checkout's submodule working trees.
 
@@ -223,8 +284,18 @@ def ensure_primary_submodules():
     ), "Failed to init submodules in the primary checkout"
     if os.path.isdir(".git/modules/contrib") and os.listdir(".git/modules/contrib"):
         print("Submodule cache detected — populating working trees from cache")
+        # `--force` is essential here (unlike build_clickhouse.py's checkout): the S3 cache
+        # restores each submodule's `.git/modules` data with `HEAD` already at the recorded
+        # gitlink, but the *working tree* is empty. Without `--force`, `git submodule update`
+        # sees `HEAD` == the recorded commit, considers the submodule up-to-date, and leaves
+        # the working tree empty. The hardlink step then finds nothing to copy and the
+        # before-binary fails to configure with a misleading "cannot find source file"
+        # error. `--force` runs `git checkout --force` unconditionally, repopulating the
+        # empty working tree from objects already present in the cache.
         ok = Shell.check(
-            "git submodule update --depth 1 --single-branch", retries=3, verbose=True
+            "git submodule update --force --depth 1 --single-branch",
+            retries=3,
+            verbose=True,
         )
     else:
         ok = Shell.check(
@@ -238,10 +309,18 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
 
     Submodule working trees are populated by hardlinking from the primary checkout
     (fast, no network) so the build sees contrib sources.  This is content-correct
-    whenever the PR did not bump submodule pointers, which is the normal case for a
-    unit-test bugfix.  Returns True iff the worktree ended up with its submodules
-    populated (checked via SUBMODULE_MARKER) — the caller must fail close otherwise.
+    whenever the checkout's submodule state equals the merge-base's, which is the
+    normal case for a unit-test bugfix — main() fails close (via
+    get_submodule_state_changes, merge-base vs the checkout `HEAD`) before calling
+    this when any gitlink or `.gitmodules` differs.  Returns True iff
+    every submodule the primary checkout has was hardlinked into the worktree
+    non-empty — the caller must fail close otherwise.
     """
+    # Populate the primary checkout's submodule working trees FIRST, before touching the
+    # worktree: the hardlink step below has nothing to copy otherwise, and doing it up
+    # front keeps the worktree machinery from racing with submodule checkout.
+    ensure_primary_submodules()
+
     Shell.check(f"git worktree remove --force {BEFORE_SRC} ||:", verbose=True)
     Shell.check(f"rm -rf {BEFORE_SRC}", verbose=True)
     assert Shell.check(
@@ -261,19 +340,25 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
         verbose=True,
     ), "Failed to overlay unit-test files onto the merge-base worktree"
 
-    # The primary checkout must have populated submodule working trees before we can
-    # hardlink them across (see ensure_primary_submodules).
-    ensure_primary_submodules()
-
     # Populate submodules by hardlinking from the primary checkout.
     sub_paths = Shell.get_output(
         "git config --file .gitmodules --get-regexp '^submodule\\..*\\.path$' "
         "| awk '{print $2}'"
     ).splitlines()
     before_src_real = os.path.realpath(BEFORE_SRC)
+    failures = []
     for path in sub_paths:
         path = path.strip()
-        if not path or not os.path.isdir(path) or not os.listdir(path):
+        if not path or not os.path.isdir(path):
+            continue
+        if not submodule_worktree_populated(path):
+            # The primary checkout left this submodule empty (possibly holding only the
+            # bookkeeping `.git` entry). There is nothing to hardlink, and the build
+            # needs its sources, so record it as a hard failure instead of silently
+            # skipping it: a silent skip previously surfaced as a misleading cmake
+            # "cannot find source file" error rather than the infrastructure error it
+            # really is (see ensure_primary_submodules).
+            failures.append(f"{path}: empty in the primary checkout, cannot hardlink it")
             continue
         dst = os.path.join(BEFORE_SRC, path)
         # SECURITY: defense in depth against a traversal path that somehow slipped past
@@ -297,10 +382,25 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
             shlex.quote(dst),
             shlex.quote(os.path.dirname(dst)),
         )
-        Shell.check(f"rm -rf -- {q_dst} && mkdir -p -- {q_dst_parent}", verbose=False)
-        # cp -al = recursive hardlink copy (instant, no data duplication).
-        Shell.check(f"cp -al -- {q_path} {q_dst}", verbose=False)
+        # cp -al = recursive hardlink copy (instant, no data duplication). Check the exit
+        # status AND that the destination ended up with real content (not just a stray
+        # `.git` entry): an unchecked failed copy (e.g. cross-device link, ENOSPC) would
+        # otherwise leave the submodule empty and only fail much later inside cmake.
+        ok = Shell.check(
+            f"rm -rf -- {q_dst} && mkdir -p -- {q_dst_parent} && cp -al -- {q_path} {q_dst}",
+            verbose=False,
+        )
+        if not ok or not (os.path.isdir(dst) and submodule_worktree_populated(dst)):
+            failures.append(f"{path}: hardlink copy into the before-worktree failed")
 
+    if failures:
+        print(
+            "Failed to populate before-worktree submodules:\n  " + "\n  ".join(failures)
+        )
+        return False
+
+    # Belt-and-suspenders on top of the per-submodule checks above: the marker file must
+    # exist in the worktree, confirming at least the reference submodule is really there.
     return os.path.isfile(os.path.join(BEFORE_SRC, SUBMODULE_MARKER))
 
 
@@ -355,6 +455,42 @@ def compile_before_binary():
     )
     Shell.check("sccache --show-stats", verbose=True)
     return compile_result
+
+
+# A clang/gcc diagnostic line: "path:line[:col]: [fatal] error: ...". Notes and
+# warnings deliberately do not match — only hard errors attribute the build failure.
+_COMPILE_ERROR_LINE_RE = re.compile(
+    r"^(?P<path>[^\s:]+):\d+(?::\d+)?:\s*(?:fatal\s+)?error:", re.MULTILINE
+)
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def attribute_compile_errors(compile_result, test_files):
+    """Split the before-build's compile-error paths into the PR's overlaid test files
+    vs everything else.
+
+    Returns `(overlaid, other)` — sorted lists of error-carrying paths, repo-relative
+    for paths under the before-worktree. Both empty means the ninja failure produced
+    no parsable compiler diagnostic (compiler killed, link failure, ninja internal
+    error) — not attributable either way, so the caller must fail close.
+    """
+    test_file_set = set(test_files)
+    marker = f"{BEFORE_SRC}/"
+    overlaid = set()
+    other = set()
+    for log in compile_result.files or []:
+        try:
+            with open(log, "r", errors="replace") as f:
+                content = _ANSI_ESCAPE_RE.sub("", f.read())
+        except OSError as e:
+            print(f"WARNING: could not read compile log {log}: {e}")
+            continue
+        for m in _COMPILE_ERROR_LINE_RE.finditer(content):
+            path = m.group("path")
+            idx = path.find(marker)
+            rel = path[idx + len(marker) :] if idx != -1 else path
+            (overlaid if rel in test_file_set else other).add(rel)
+    return sorted(overlaid), sorted(other)
 
 
 def run_gtests(binary_path, gtest_filter, name):
@@ -494,6 +630,44 @@ def main():
         )
         return
 
+    # Fail close if submodule state (any gitlink or `.gitmodules`) differs between the
+    # merge-base and the checkout `HEAD`: the before-worktree's submodules are
+    # hardlinked from the primary checkout, whose submodules are at HEAD's recorded
+    # revisions (normally the synthetic base+PR merge ref). Comparing against HEAD —
+    # not the PR head — also catches a base-only submodule bump after the branch split,
+    # which would otherwise leak base-tip contrib sources into the merge-base build.
+    # Either way the "before" binary would be built against the wrong submodule content
+    # (or miss a merge-base-only submodule entirely) and the validator could report a
+    # false reproduction or refutation. Inconclusive (ERROR), not a pass.
+    checkout_head = Shell.get_output("git rev-parse HEAD").strip()
+    assert (
+        checkout_head
+    ), "Failed to resolve the checkout HEAD; cannot verify submodule state"
+    submodule_changes = get_submodule_state_changes(merge_base, checkout_head)
+    if submodule_changes:
+        finalize(
+            [
+                Result(
+                    name="Bugfix validation (unit tests)",
+                    status=Result.Status.ERROR,
+                    info=(
+                        "Submodule state differs between the merge-base and the "
+                        "checkout (" + ", ".join(submodule_changes) + ") — either the "
+                        "PR changes submodule state, or the base branch moved a "
+                        "submodule after the branch split. The before-worktree can "
+                        "only be populated with the primary checkout's submodule "
+                        "content, not the merge-base's, so building the before-binary "
+                        "would validate against the wrong submodule code. This is "
+                        "inconclusive — NOT a reproduction or a refutation."
+                    ),
+                )
+            ],
+            "Bugfix validation inconclusive: submodule state differs between the "
+            "merge-base and the checkout, and the before-worktree cannot be populated "
+            "at the merge-base submodule revisions.",
+        )
+        return
+
     submodules_ok = prepare_before_worktree(merge_base, pr_sha, test_files)
 
     # Fail close: building unit_tests_dbms needs submodules. If they are missing, cmake
@@ -506,9 +680,10 @@ def main():
                     name="Bugfix validation (unit tests)",
                     status=Result.Status.ERROR,
                     info=(
-                        f"Submodules were not populated in the before-worktree (missing "
-                        f"'{SUBMODULE_MARKER}'); cannot build the before-binary. This is "
-                        "an infrastructure error — NOT a reproduction."
+                        "Submodules were not fully populated in the before-worktree "
+                        "(see the job log for the specific submodule that could not be "
+                        "hardlinked); cannot build the before-binary. This is an "
+                        "infrastructure error — NOT a reproduction."
                     ),
                 )
             ],
@@ -530,26 +705,60 @@ def main():
         return
 
     # 4b. Compile. A compile failure is NOT accepted as a reproduction: it only proves
-    # the overlaid test references *some* code the PR adds (a new header, helper, or
-    # symbol — even in a no-op test), not that it depends on the bug fix or reproduces
-    # the old behavior at runtime. We cannot attribute the failure to the touched
-    # regression case, so report it as inconclusive (fail close) rather than a pass. A
-    # genuine regression test should build against the merge-base and fail at runtime.
+    # the overlaid test references *some* code the PR adds, not that it catches the bug
+    # at runtime. Attribute the failure instead:
+    #  * every compiler error inside the overlaid test files → the changed test code
+    #    depends on the fix's interface (typically a call site adapted to a changed
+    #    signature). The PR author cannot avoid that adaptation and the unit side has
+    #    nothing left to judge, so report the step as an expected failure (XFAIL) with
+    #    nothing to validate — NOT as a reproduction. When the PR also carries
+    #    functional/integration tests, new_tests_check.py still demands a real
+    #    validation from those jobs; for a unit-only PR the merge gate already treats
+    #    inconclusive as non-blocking, so this changes report truthfulness, not gating.
+    #  * any error elsewhere (fix sources, contrib, the linker, no parsable diagnostic)
+    #    → cannot be attributed to the touched test changes; fail close (ERROR).
     compile_result = compile_before_binary()
     if not compile_result.is_ok():
+        overlaid_errors, other_errors = attribute_compile_errors(
+            compile_result, test_files
+        )
+        if overlaid_errors and not other_errors:
+            compile_result.set_label(Result.Label.XFAIL)
+            compile_result.set_status(Result.Status.XFAIL)
+            compile_result.set_info(
+                "The before-binary cannot compile the overlaid unit-test changes: every "
+                "compile error is inside the PR's changed test files ("
+                + ", ".join(overlaid_errors)
+                + "). The changed test code depends on the interface this PR introduces "
+                "(e.g. a call site adapted to a changed signature), so there is nothing "
+                "the unit side can validate on the merge base. This is expected, not an "
+                "error — and it is not counted as a reproduction either. "
+                + (compile_result.info or "")
+            )
+            results.append(compile_result)
+            finalize(
+                results,
+                "Nothing to validate on the unit side: the changed unit-test files do "
+                "not compile against the merge base because they depend on the fix's "
+                "interface. Regression coverage is judged by the functional/integration "
+                "Bugfix validation jobs (enforced by new_tests_check.py when such tests "
+                "exist).",
+            )
+            return
         compile_result.set_status(Result.Status.ERROR)
         compile_result.set_info(
-            "The before-binary FAILED TO COMPILE the overlaid test. This does not prove "
-            "the test reproduces the bug — it only shows the test depends on code this PR "
-            "adds (a new header/helper/symbol would fail to compile here too). Write a "
-            "regression test that builds against the merge-base and fails at runtime "
-            "without the fix. " + (compile_result.info or "")
+            "The before-binary FAILED TO COMPILE, and the errors cannot be attributed "
+            "to the overlaid test files alone"
+            + (f" (errors outside them: {', '.join(other_errors)})" if other_errors else "")
+            + ". This does not prove the test reproduces the bug. Write a regression "
+            "test that builds against the merge-base and fails at runtime without the "
+            "fix. " + (compile_result.info or "")
         )
         results.append(compile_result)
         finalize(
             results,
-            "Bugfix validation inconclusive: the before-binary failed to COMPILE the "
-            "overlaid test, which cannot be attributed to the touched regression case.",
+            "Bugfix validation inconclusive: the before-binary failed to COMPILE and "
+            "the failure cannot be attributed to the touched regression case.",
         )
         return
     build_result = compile_result

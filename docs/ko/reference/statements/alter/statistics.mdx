@@ -6,7 +6,7 @@ title: '컬럼 통계 조작'
 doc_type: '참고'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
@@ -33,7 +33,7 @@ import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBad
 두 개의 컬럼에 두 가지 통계 유형 추가:
 
 ```sql
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
 ```
 
 <Note>

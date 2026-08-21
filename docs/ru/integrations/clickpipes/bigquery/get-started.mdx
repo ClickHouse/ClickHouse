@@ -21,9 +21,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 * Для процесса первоначальной загрузки требуется бакет Google Cloud Storage (GCS), предоставляемый пользователем, в качестве промежуточного хранилища. Мы рекомендуем создать отдельный бакет для вашего ClickPipe, следуя [официальной документации](https://docs.cloud.google.com/storage/docs/creating-buckets). В будущем промежуточный бакет будет предоставляться и управляться ClickPipes.
 
 <Steps>
-  <Step>
-    ## Выберите источник данных
-
+  <Step title="Выберите источник данных" id="1-select-the-data-source">
     **1.** В ClickHouse Cloud выберите **Data sources** в главном меню навигации и нажмите **Create ClickPipe**.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импортов" size="lg" border />
@@ -33,10 +31,8 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Выбор плитки BigQuery" size="lg" border />
   </Step>
 
-  <Step>
-    ## Настройте подключение ClickPipe
-
-    Чтобы настроить новый ClickPipe, необходимо указать параметры подключения и аутентификации для вашего хранилища данных BigQuery, а также GCS-бакет для промежуточного хранилища.
+  <Step title="Настройте подключение ClickPipe" id="2-setup-your-clickpipe-connection">
+    Чтобы настроить новый ClickPipe, необходимо указать параметры подключения и аутентификации для вашего хранилища данных BigQuery, а также бакет Google Cloud Storage (GCS) для промежуточного хранилища.
 
     **1.** Загрузите ключ `.json` для сервисного аккаунта, который вы создали для ClickPipes. Убедитесь, что у сервисного аккаунта есть минимально необходимый набор [разрешений](/ru/integrations/clickpipes/bigquery/overview#permissions).
 
@@ -44,20 +40,16 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     **2.** Выберите **Replication method**. В закрытой предварительной версии поддерживается только вариант [**Initial load only**](/ru/integrations/clickpipes/bigquery/overview#initial-load).
 
-    **3.** Укажите путь к GCS-бакету для промежуточного хранения данных во время первоначальной загрузки.
+    **3.** Укажите путь к бакету Google Cloud Storage (GCS) для промежуточного хранения данных во время первоначальной загрузки.
 
     **4.** Нажмите **Next**, чтобы выполнить проверку.
   </Step>
 
-  <Step>
-    ## Настройте ClickPipe
-
+  <Step title="Настройте ClickPipe" id="3-configure-your-clickpipe">
     В зависимости от размера вашего набора данных BigQuery или общего объёма таблиц, которые вы хотите синхронизировать, может потребоваться изменить стандартные настройки ингестии для ClickPipe.
   </Step>
 
-  <Step>
-    ## Настройте таблицы
-
+  <Step title="Настройте таблицы" id="4-configure-tables">
     **1.** Выберите базу данных ClickHouse, в которую нужно реплицировать таблицы BigQuery. Вы можете выбрать существующую базу данных или создать новую.
 
     **2.** Выберите таблицы и, при необходимости, столбцы, которые вы хотите реплицировать. В списке будут показаны только те наборы данных, к которым у указанного сервисного аккаунта есть доступ.
@@ -73,9 +65,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="Разрешения" size="lg" border />
   </Step>
 
-  <Step>
-    ## Настройте разрешения
-
+  <Step title="Настройте разрешения" id="6-configure-permissions">
     Наконец, вы можете настроить разрешения для внутреннего пользователя ClickPipes.
 
     **Permissions:** ClickPipes создаст отдельного пользователя для записи данных в целевую таблицу. Вы можете назначить этому внутреннему пользователю пользовательскую роль или одну из предопределённых ролей:
@@ -84,9 +74,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     * `Only destination`: разрешения на вставку только в целевую таблицу.
   </Step>
 
-  <Step>
-    ## Завершите настройку
-
+  <Step title="Завершите настройку" id="7-complete-setup">
     Нажмите **Create ClickPipe**, чтобы завершить настройку. Вы будете перенаправлены на страницу обзора, где сможете отслеживать ход первоначальной загрузки и перейти к подробной информации о ваших ClickPipes для BigQuery.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Разрешения" size="lg" border />

@@ -81,7 +81,9 @@ size_t ChunkPartitioner::PartitionKeyHasher::operator()(const PartitionKey & key
 std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>>
 ChunkPartitioner::partitionChunk(const Chunk & chunk)
 {
-    if (chunk.empty())
+    /// Not `chunk.empty()`: a chunk whose rows were all position-deleted has columns but no rows,
+    /// and there is nothing to scatter in it either.
+    if (!chunk.hasRows())
         return {};
 
     std::unordered_map<String, ColumnWithTypeAndName> name_to_column;
@@ -169,6 +171,12 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
 
 void IcebergPartitionCalculator::transform(Chunk & chunk)
 {
+    /// Position deletes upstream may filter a chunk down to zero rows (`skip_empty_chunks` only
+    /// suppresses empty output, it does not shield `transform` from empty input). Skip it: the
+    /// partition value is latched from the first non-empty chunk instead.
+    if (!chunk.hasRows())
+        return;
+
     if (!partition_value.empty())
         return;
 

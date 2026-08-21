@@ -20,9 +20,7 @@ Usa este patrón cuando:
 * Quieres **lecturas consistentes en menos de un segundo** sin volver a escanear todas las filas sin procesar.
 
 <Steps>
-  <Step>
-    ## Crear la tabla de eventos sin procesar
-
+  <Step title="Crear la tabla de eventos sin procesar" id="create-raw-events-table">
     ```sql
     CREATE TABLE events_raw
     (
@@ -46,16 +44,14 @@ Usa este patrón cuando:
     * `TTL` elimina los datos brutos después de 90 días (ajústalo según tus requisitos de retención).
   </Step>
 
-  <Step>
-    ## Diseña la tabla de rollup (agregada)
-
+  <Step title="Diseña la tabla de rollup (agregada)" id="design-rollup">
     Preagregaremos con granularidad **horaria**.
     Elige la granularidad para ajustarla al intervalo de análisis más habitual.
 
     ```sql
     CREATE TABLE events_rollup_1h
     (
-        bucket_start  DateTime,            -- inicio de la hora
+        bucket_start  DateTime,            -- start of the hour
         country       LowCardinality(String),
         event_type    LowCardinality(String),
         users_uniq    AggregateFunction(uniqExact, UInt64),
@@ -71,9 +67,7 @@ Usa este patrón cuando:
     Almacenamos **estados de agregación** (p. ej., `AggregateFunction(sum, ...)`) que representan de forma compacta agregados parciales y que pueden fusionarse o finalizarse más adelante.
   </Step>
 
-  <Step>
-    ## Cree una vista materializada que rellene el rollup
-
+  <Step title="Cree una vista materializada que rellene el rollup" id="create-materialized-view-to-populate-rollup">
     Esta vista materializada se ejecuta automáticamente con las inserciones en `events_raw` y escribe **estados de agregación** en el rollup.
 
     ```sql
@@ -93,9 +87,7 @@ Usa este patrón cuando:
     ```
   </Step>
 
-  <Step>
-    ## Insertar algunos datos de ejemplo
-
+  <Step title="Insertar algunos datos de ejemplo" id="insert-some-sample-data">
     Inserta algunos datos de ejemplo:
 
     ```sql
@@ -107,9 +99,7 @@ Usa este patrón cuando:
     ```
   </Step>
 
-  <Step>
-    ## Consultar el rollup
-
+  <Step title="Consultar el rollup" id="querying-the-rollup">
     Puedes **combinar** los estados en tiempo de lectura o **finalizarlos**:
 
     <Tabs>
@@ -157,9 +147,7 @@ Usa este patrón cuando:
     </Tip>
   </Step>
 
-  <Step>
-    ## Filtra por campos de la clave primaria para obtener el máximo rendimiento
-
+  <Step title="Filtra por campos de la clave primaria para obtener el máximo rendimiento" id="filtering-performance">
     Puedes usar el comando `EXPLAIN` para ver cómo el índice descarta datos:
 
     ```sql title="Query"
@@ -204,9 +192,7 @@ Usa este patrón cuando:
     Para obtener el mejor rendimiento de filtrado, asegúrate de que tus consultas utilicen campos de la clave primaria para omitir datos.
   </Step>
 
-  <Step>
-    ## Variantes habituales
-
+  <Step title="Variantes habituales" id="common-variations">
     * **Granularidades diferentes**: añada un rollup diario:
 
     ```sql
@@ -248,16 +234,12 @@ Usa este patrón cuando:
     * **Carga de datos históricos**: al cargar datos históricos, inserta en `events_raw` y deja que la vista materializada genere los roll-ups automáticamente. Para las filas existentes, usa `POPULATE` al crear la vista materializada, si es adecuado, o `INSERT SELECT`.
   </Step>
 
-  <Step>
-    ## Limpieza y retención
-
+  <Step title="Limpieza y retención" id="clean-up-and-retention">
     * Aumente el TTL de los datos sin procesar (p. ej., 30/90 días), pero mantenga las agregaciones durante más tiempo (p. ej., 1 año).
     * También puede usar **TTL para mover** partes antiguas a un almacenamiento más económico si está habilitado el almacenamiento por niveles.
   </Step>
 
-  <Step>
-    ## Solución de problemas
-
+  <Step title="Solución de problemas" id="troubleshooting">
     * ¿La vista materializada no se actualiza? Compruebe que las inserciones vayan a **events&#95;raw** (no a la tabla de rollup) y que el destino de la vista materializada sea correcto (`TO events_rollup_1h`).
     * ¿Consultas lentas? Confirme que apunten al rollup (consulte directamente la tabla de rollup) y que los filtros de tiempo se ajusten a la granularidad del rollup.
     * ¿Desajustes en el backfill? Use `SYSTEM FLUSH LOGS` y compruebe `system.query_log` / `system.parts` para confirmar las inserciones y las fusiones.

@@ -768,7 +768,7 @@ SELECT lcm(6, 8)
 
 Добавленный в: v21.11.0
 
-Возвращает большее из двух чисел `x` и `y`.
+Возвращает большее из двух числовых значений `x` и `y`.
 
 **Синтаксис**
 
@@ -778,8 +778,8 @@ max2(x, y)
 
 **Аргументы**
 
-* `x` — Первое значение [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float), или [`Decimal`](/ru/reference/data-types/decimal)
-* `y` — Второе значение [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float), или [`Decimal`](/ru/reference/data-types/decimal)
+* `x` — Первое значение [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float), или [`BFloat16`](/ru/reference/data-types/float), или [`Decimal`](/ru/reference/data-types/decimal)
+* `y` — Второе значение [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float), или [`BFloat16`](/ru/reference/data-types/float), или [`Decimal`](/ru/reference/data-types/decimal)
 
 **Возвращаемое значение**
 
@@ -899,8 +899,8 @@ min2(x, y)
 
 **Аргументы**
 
-* `x` — Первое значение [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float), или [`Decimal`](/ru/reference/data-types/decimal)
-* `y` — Второе значение [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float), или [`Decimal`](/ru/reference/data-types/decimal)
+* `x` — Первое значение [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float), или [`BFloat16`](/ru/reference/data-types/float), или [`Decimal`](/ru/reference/data-types/decimal)
+* `y` — Второе значение [`(U)Int8/16/32/64`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float), или [`BFloat16`](/ru/reference/data-types/float), или [`Decimal`](/ru/reference/data-types/decimal)
 
 **Возвращаемое значение**
 
@@ -1050,8 +1050,10 @@ SELECT moduloLegacy(10, 3)
 
 Добавленный в: v25.5.0
 
-Вычисляет остаток при делении `a` на `b`. Аналогична функции `modulo`, но `moduloOrNull` возвращает NULL,
-если правый аргумент равен 0.
+Вычисляет остаток при делении `a` на `b`. Аналогична функции `modulo`, но `moduloOrNull` возвращает `NULL`,
+если операция в противном случае привела бы к исключению с плавающей запятой. Для аргументов с плавающей точкой это происходит только в случае,
+если делитель равен `0`; для целочисленных аргументов это также включает случай, когда минимальное отрицательное значение берется по модулю `-1`
+(например, `-128 % -1` для `Int8`).
 
 **Синтаксис**
 
@@ -1068,7 +1070,8 @@ moduloOrNull(x, y)
 
 **Возвращаемое значение**
 
-Возвращает остаток от деления `x` на `y` или `NULL`, если делитель равен нулю.
+Возвращает остаток от деления `x` на `y` или `NULL`, если операция привела бы к исключению с плавающей запятой:
+когда делитель равен нулю или, для целочисленных аргументов, при вычислении минимального отрицательного значения по модулю `-1`.
 
 **Примеры**
 
@@ -1076,6 +1079,16 @@ moduloOrNull(x, y)
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**moduloOrNull при делении минимального отрицательного целого числа на -1**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1198,7 +1211,8 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 **Отличие от обычного умножения**
 
 ```sql title=Query
-SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
+SELECT multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
+SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 ```
 
 ```response title=Response
@@ -1227,7 +1241,7 @@ SELECT
 ┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
 │ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
 └───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
-Получено исключение от сервера (версия 22.11.1):
+Received exception from server (version 22.11.1):
 Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow:
 While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
 ```
@@ -1371,8 +1385,10 @@ SELECT positiveModulo(-1, 10)
 
 Добавленный в: v25.5.0
 
-Вычисляет остаток от деления `a` на `b`. Аналогична функции `positiveModulo`, но `positiveModuloOrNull` возвращает NULL,
-если правый аргумент равен 0.
+Вычисляет остаток от деления `a` на `b`. Аналогична функции `positiveModulo`, но `positiveModuloOrNull` возвращает `NULL`,
+если операция в противном случае привела бы к исключению с плавающей запятой. Для аргументов с плавающей запятой это происходит только,
+когда делитель равен `0`; для целочисленных аргументов сюда также относится минимальное отрицательное значение по модулю `-1`
+(например, `-128 % -1` для `Int8`).
 
 **Синтаксис**
 
@@ -1389,11 +1405,11 @@ positiveModuloOrNull(x, y)
 **Возвращаемое значение**
 
 Возвращает разность между `x` и ближайшим целым числом, не превышающим
-`x` и кратным `y`; `null`, если делитель равен нулю.
+`x` и кратным `y`, или `NULL`, если операция привела бы к исключению с плавающей запятой: когда делитель равен нулю или, для целочисленных аргументов, при вычислении остатка от минимального отрицательного значения по модулю `-1`.
 
 **Примеры**
 
-**positiveModuloOrNull**
+**positiveModuloOrNull при делении на ноль**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
@@ -1401,6 +1417,50 @@ SELECT positiveModuloOrNull(5, 0)
 
 ```response title=Response
 \N
+```
+
+**positiveModuloOrNull для минимального отрицательного целого числа при делении на -1**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
+```
+
+```response title=Response
+\N
+```
+
+<div id="sqr">
+  ## sqr
+</div>
+
+Добавленный в: v26.7.0
+
+Вычисляет квадрат значения `x`.
+
+**Синтаксис**
+
+```sql
+sqr(x)
+```
+
+**Аргументы**
+
+* `x` — Значение, возводимое в квадрат. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float), или [`Decimal`](/ru/reference/data-types/decimal)
+
+**Возвращаемое значение**
+
+Возвращает произведение `x` на `x`.
+
+**Примеры**
+
+**Возведение числа в квадрат**
+
+```sql title=Query
+SELECT sqr(5)
+```
+
+```response title=Response
+25
 ```
 
 {/*AUTOGENERATED_END*/}
