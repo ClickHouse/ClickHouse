@@ -195,6 +195,25 @@ def main():
         lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
     )
 
+    # 3b. An incremental history search (Ctrl-T, the ClickHouse binding for the regular non-fuzzy
+    # reverse search) that accepts an entry is another whole-line display: it goes through a
+    # different `replxx` code path than the plain history recall, so it needs its own proof that
+    # Down keeps walking the history. Ctrl-T, then the search text, then Ctrl-E leaves the search
+    # keeping the found line ("SELECT 111 AS rand") and puts the cursor at its end, where the hints
+    # would render. The accepted entry is committed as the most recent recall, so the first Down
+    # re-displays it (`replxx` emulates the Windows down-arrow there) and the second one moves on
+    # to "SELECT 222 AS rand", which Enter then runs.
+    history = make_history_file(
+        "incremental_search", ["SELECT 111 AS rand", "SELECT 222 AS rand"]
+    )
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "incremental_search_down_navigates_history",
+        [b"\x14", b"111", b"\x05", b"\x1b[B", b"\x1b[B", b"\r"],
+        lambda o: re.search(r"(?:│\s*222\s*│|\x1b\[\?25h222\r?\n)", o) is not None,
+    )
+
     # 4. Editing a recalled entry shows the hints again: after Up, typing the "t" completes the
     #    prefix "concatAssumeInject" and the ghost "ive" appears.
     history = make_history_file("edit_after_recall", ["SELECT concatAssumeInjec"])

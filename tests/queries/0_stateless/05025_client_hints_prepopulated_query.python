@@ -1,0 +1,227 @@
+"""A query prepopulated into the next input line (the `??` AI SQL generation flow) is displayed
+programmatically, so - like a recalled or pasted line - it must not pop the as-you-type hints:
+with hints visible, the next Up/Down press would navigate the hints instead of the history.
+
+The AI provider is a local HTTP server speaking just enough of the OpenAI chat completion protocol
+to answer with a canned query, so the test needs no network and no API key.
+"""
+
+import http.server
+import json
+import multiprocessing
+import os
+import pty
+import select
+import shlex
+import threading
+import time
+
+TIMEOUT_SECONDS = 60
+
+# How long to keep reading after the last keystroke while waiting for the expected output.
+FINAL_WAIT_SECONDS = 30
+
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+)
+
+# The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;90").
+HINT_COLOR = "\x1b[0;90m"
+
+# The query the fake provider "generates". Its last word is a prefix of `concatAssumeInjective`,
+# so an unsuppressed hint would render the gray ghost suffix "ive" right after it.
+GENERATED_QUERY = "SELECT concatAssumeInject"
+
+# The prepopulated line is syntax-highlighted, so only its last word survives as a plain substring
+# of the terminal output.
+GENERATED_QUERY_LAST_WORD = "concatAssumeInject"
+
+
+class CompletionHandler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        self.rfile.read(length)
+        body = json.dumps(
+            {
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "test-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": f"<sql>{GENERATED_QUERY}</sql>",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args):
+        pass
+
+
+def write_config(port):
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).strip(".python") + ".config.xml",
+    )
+    with open(path, "w") as f:
+        f.write(
+            "<clickhouse>\n"
+            "    <ai>\n"
+            "        <provider>openai</provider>\n"
+            "        <api_key>test</api_key>\n"
+            f"        <base_url>http://127.0.0.1:{port}</base_url>\n"
+            "        <model>test-model</model>\n"
+            "        <enable_schema_access>false</enable_schema_access>\n"
+            "    </ai>\n"
+            "</clickhouse>\n"
+        )
+    return path
+
+
+def make_history_file():
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).strip(".python") + ".history",
+    )
+    with open(path, "w") as f:
+        pass
+    return path
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            if predicate(output):
+                return output
+            continue
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def drain(master, debug_log_fd, idle):
+    output = ""
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+    return output
+
+
+def run_case(program, argv, name, keystrokes, check, state=None):
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.environ["TERM"] = "xterm"
+        os.execv(program, argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        output = ""
+        for keys in keystrokes:
+            os.write(master, keys)
+            output += drain(master, debug_log_fd, 0.4)
+
+        # The prepopulated line only appears after the (faked) generation round trip, which can
+        # outlast the inter-keystroke drain on slow builds.
+        if not check(output):
+            output += read_until(
+                master,
+                debug_log_fd,
+                lambda extra: check(output + extra),
+                FINAL_WAIT_SECONDS,
+            )
+
+        ok = check(output)
+        print(f"{name}: {'OK' if ok else 'FAIL'}")
+        state.value = 0 if ok else 1
+    finally:
+        os.close(master)
+        debug_log_fd.close()
+
+
+def run_with_timeout(program, argv, name, keystrokes, check):
+    for attempt in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=run_case,
+            args=(program, argv, name, keystrokes, check),
+            kwargs={"state": state},
+        )
+        process.start()
+        process.join(TIMEOUT_SECONDS + FINAL_WAIT_SECONDS)
+        if process.is_alive():
+            process.terminate()
+        if state.value in (0, 1):
+            return
+        # transient timeout on a loaded machine - retry
+    print(f"{name}: FAIL")
+
+
+def main():
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), CompletionHandler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    config = write_config(server.server_address[1])
+    history = make_history_file()
+
+    program = os.environ["CLICKHOUSE_LOCAL"]
+    base = shlex.split(program)
+    args = base + [
+        "--wait_for_suggestions_to_load",
+        "--hints",
+        "1",
+        f"--config-file={config}",
+        f"--history_file={history}",
+    ]
+
+    try:
+        run_with_timeout(
+            base[0],
+            args,
+            "prepopulated_query_no_hints",
+            [b"?? show me a query\r"],
+            lambda o: GENERATED_QUERY_LAST_WORD in o and (HINT_COLOR + "ive") not in o,
+        )
+    finally:
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    # The check lambdas are not picklable, so the subprocesses must be forked (not spawned,
+    # which became the default on newer Python).
+    multiprocessing.set_start_method("fork")
+    main()
