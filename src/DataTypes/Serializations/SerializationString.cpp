@@ -16,6 +16,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
+#include <base/arithmeticOverflow.h>
 #include <base/unit.h>
 #include <Common/assert_cast.h>
 
@@ -114,6 +115,13 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
             "format_binary_max_string_size",
             size,
             settings.binary.max_binary_string_size);
+
+    if (size > SerializationString::MAX_STRING_SIZE)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}.",
+            size,
+            SerializationString::MAX_STRING_SIZE);
 
     size_t old_chars_size = data.size();
     size_t offset = old_chars_size + size;
@@ -656,7 +664,19 @@ void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const 
 
     for (size_t i = 0; i < rows; ++i)
     {
-        prev_offset += sizes[start + i];
+        /// The sizes come from a separate stream, so they are not implicitly bounded by the amount
+        /// of data that follows them, and their sum can overflow the offsets.
+        const UInt64 size = sizes[start + i];
+        if (unlikely(size > SerializationString::MAX_STRING_SIZE))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Too large string size: {}. The maximum is: {}.",
+                size,
+                SerializationString::MAX_STRING_SIZE);
+
+        if (unlikely(common::addOverflow(prev_offset, static_cast<IColumn::Offset>(size), prev_offset)))
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Deserialization of string sizes leads to an overflow of offsets");
+
         offsets.push_back(prev_offset);
     }
 }

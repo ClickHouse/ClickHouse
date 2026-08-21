@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
@@ -19,6 +20,7 @@
 #include <Formats/EscapingRuleUtils.h>
 
 #include <algorithm>
+#include <unordered_set>
 
 namespace DB
 {
@@ -412,6 +414,17 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 }
             }
 
+            /// Duplicates would map two different indexes onto the same variant discriminator,
+            /// which makes the offsets of that variant inconsistent with its size.
+            std::unordered_set<String> type_names;
+            type_names.reserve(structure_state->flattened_data_types.size());
+            for (const auto & data_type : structure_state->flattened_data_types)
+            {
+                if (!type_names.insert(data_type->getName()).second)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Duplicate type {} in the list of types of a flattened Dynamic column", data_type->getName());
+            }
+
             structure_state->flattened_indexes_type = getSmallestIndexesType(num_types + 1); /// +1 for NULL index.
         }
         else
@@ -720,6 +733,10 @@ void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & os
 
 void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// Dynamic and Object values nest into each other, and the type of every nested value comes
+    /// from the data, so the recursion is bounded only by the size of the input.
+    checkStackSize();
+
     auto field_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(field_type))
     {
