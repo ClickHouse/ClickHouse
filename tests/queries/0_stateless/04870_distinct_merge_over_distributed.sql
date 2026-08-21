@@ -10,6 +10,13 @@
 -- hash-dedups the whole stream and returns the right count even when the order is corrupt.
 -- The runner randomizes the setting, so it is pinned here.
 
+-- The stress profile sets `ast_fuzzer_runs = 5` and `ast_fuzzer_any_query = true`, so the
+-- server-side AST fuzzer re-runs mutated copies of every statement here, `CREATE` included. It can
+-- retype the `Merge` parent's column and substitute the retyped clone into a `SELECT`, and a `Merge`
+-- parent whose column type differs from its child's breaks the sort order the arms below assume.
+-- Pinning the baseline to 0 keeps the fixture at the types it declares.
+SET ast_fuzzer_runs = 0;
+
 DROP TABLE IF EXISTS t_distinct;
 DROP TABLE IF EXISTS dist_distinct;
 DROP TABLE IF EXISTS merge_distinct;
