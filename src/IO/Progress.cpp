@@ -83,7 +83,7 @@ void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
     }
 }
 
-void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
+void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values, bool write_accepted_fields) const
 {
     /// Numbers are written in double quotes (as strings) to avoid loss of precision
     ///  of 64-bit integers after interpretation by JavaScript.
@@ -109,9 +109,9 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
     write("\"written_rows\"", written_rows);
     write("\"written_bytes\"", written_bytes);
     /// Written only when set (asynchronous inserts) to keep the summary unchanged for other queries.
-    if (accepted_rows)
+    if (write_accepted_fields && accepted_rows)
         write("\"accepted_rows\"", accepted_rows);
-    if (accepted_bytes)
+    if (write_accepted_fields && accepted_bytes)
         write("\"accepted_bytes\"", accepted_bytes);
     write("\"total_rows_to_read\"", total_rows_to_read);
     write("\"result_rows\"", result_rows);
@@ -294,7 +294,8 @@ void Progress::write(WriteBuffer & out, UInt64 client_revision) const
 
 void Progress::writeJSON(WriteBuffer & out, DisplayMode mode) const
 {
-    getValues().writeJSON(out, mode == DisplayMode::Verbose);
+    /// Verbose mode is used only for the final X-ClickHouse-Summary header.
+    getValues().writeJSON(out, mode == DisplayMode::Verbose, mode == DisplayMode::Verbose);
 }
 
 void Progress::incrementElapsedNs(UInt64 elapsed_ns_)

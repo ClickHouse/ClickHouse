@@ -22,6 +22,11 @@ ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=
     | grep "X-ClickHouse-Summary" | grep -v "Access-Control-Expose-Headers" | sed 's/,\"elapsed_ns[^}]*//' | sed 's/,\"memory_usage[^}]*//' \
     | sed 's/\"accepted_bytes\":\"[1-9][0-9]*\"/\"accepted_bytes\":\"positive\"/'
 
+echo 'progress headers must not contain accepted fields:'
+${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&send_progress_in_http_headers=1&http_headers_progress_interval_ms=1" \
+    -d "INSERT INTO t_async_summary VALUES (9), (10)" 2>&1 \
+    | grep "X-ClickHouse-Progress" | grep -c "accepted" || true
+
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH ASYNC INSERT QUEUE t_async_summary"
 ${CLICKHOUSE_CLIENT} --query "SELECT 'total_rows', count() FROM t_async_summary"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_async_summary"
