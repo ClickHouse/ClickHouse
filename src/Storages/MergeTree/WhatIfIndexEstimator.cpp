@@ -68,11 +68,15 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     const auto * select = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
     if (!select)
         return nullptr;
-    return JoinedTables(context, *select).getLeftTableStorage();
+    JoinedTables joined_tables(context, *select);
+    if (joined_tables.tablesCount() != 1)
+        return nullptr;
+    return joined_tables.getLeftTableStorage();
 }
 
-/// Empty table, nothing to scan, just mark every candidate not-applicable
-WhatIfIndexEstimator::Result buildEmptyTableResult(const MergeTreeData & data, const HypotheticalIndexStore & store)
+/// Nothing was scanned, so mark every candidate not-applicable with the same reason
+WhatIfIndexEstimator::Result buildResultWithoutScan(
+    const MergeTreeData & data, const HypotheticalIndexStore & store, const String & reason)
 {
     WhatIfIndexEstimator::Result result;
     result.database = data.getStorageID().getDatabaseName();
@@ -83,7 +87,7 @@ WhatIfIndexEstimator::Result buildEmptyTableResult(const MergeTreeData & data, c
         r.index_name = index_desc.name;
         r.index_type = index_desc.type;
         r.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
-        r.not_applicable_reason = "Table is empty, so there is no data to estimate a benefit";
+        r.not_applicable_reason = reason;
         result.index_results.push_back(std::move(r));
     }
     if (result.index_results.empty())
@@ -272,7 +276,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     if (tryEstimateWithStatistics(result, index_helper, read_step, analysis, saved_parts, predicate, context))
         return result;
 
-    result.estimate_source = "applicability_only";
+    result.estimate_source = WhatIfIndexEstimator::IndexResult::ApplicabilityOnly;
     result.estimated_marks = analysis.selected_marks;
     result.skip_ratio = 0.0;
 
@@ -326,11 +330,37 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     if (read_steps.empty())
     {
-        /// Empty table -> ReadNothing, no read step, report a zero baseline
         auto storage = tryResolveSingleTable(select_query, local_context);
-        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get());
-            mt && mt->getActivePartsCount() == 0)
-            return buildEmptyTableResult(*mt, local_context->getHypotheticalIndexStore());
+        const auto & store = local_context->getHypotheticalIndexStore();
+        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get()))
+        {
+            /// Empty table -> ReadNothing, report a zero baseline
+            if (mt->getActivePartsCount() == 0)
+                return buildResultWithoutScan(*mt, store, "Table is empty, so there is no data to estimate a benefit");
+
+            /// The plan answers the query without reading the table's parts at all: a trivial
+            /// count, a minmax_count or exact-count projection, or a projection that selected no
+            /// ranges. No index on those parts would be read
+            /// a forced name can never be satisfied here, so throw like a real read would, but
+            /// only when skip indexes are on, matching the scanning path below. FINAL always keeps
+            /// its read step, so use_skip_indexes_if_final cannot apply on this path
+            const auto & effective_settings = plan_context->getSettingsRef();
+            if (effective_settings[Setting::use_skip_indexes])
+            {
+                for (const auto & forced_string : forced_strings)
+                {
+                    auto forced = parseIdentifiersOrStringLiteralsToSet(forced_string, effective_settings);
+                    if (!forced.empty())
+                        throw Exception(
+                            ErrorCodes::INDEX_NOT_USED,
+                            "Index {} is not used and setting 'force_data_skipping_indices' contains it",
+                            backQuoteIfNeed(*forced.begin()));
+                }
+            }
+
+            return buildResultWithoutScan(
+                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read");
+        }
 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "EXPLAIN WHATIF requires a query reading from a MergeTree family table");
@@ -370,11 +400,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN WHATIF: query analysis result is not available");
     const auto & analysis = *analysis_ptr;
 
-    /// Can't model a projection-served read, the hypothetical index isn't on projection parts
-    if (analysis.readFromProjection())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "EXPLAIN WHATIF is not supported when the query is served from a projection");
-
     const RangesInDataParts & baseline_parts = analysis.parts_with_ranges;
 
     Result result;
@@ -383,7 +408,9 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     result.baseline_parts = analysis.selected_parts;
     result.baseline_marks = analysis.selected_marks;
 
-    if (analysis.selected_rows > 0)
+    /// The average row size is the parent table's, so it says nothing about rows selected from a
+    /// projection. Leave it at 0 and the formatter omits the line rather than printing a wrong one
+    if (analysis.selected_rows > 0 && !analysis.readFromProjection())
     {
         auto total_bytes = data.getTotalActiveSizeInBytes();
         auto total_rows = data.getTotalActiveSizeInRows();
@@ -428,8 +455,16 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         return result;
     }
 
+    String blanket_not_applicable_reason;
+    if (query_with_final)
+        blanket_not_applicable_reason = "EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL "
+                                        "(PrimaryKeyExpand may re-include granules selected by skip indexes)";
+    else if (analysis.readFromProjection())
+        blanket_not_applicable_reason = "The query is served from projection '"
+            + baseline_parts.front().data_part->name + "', so an index on the base table's parts would not be read";
+
     /// Only track per-candidate surviving marks when a combined row could actually be produced
-    const bool want_combined = settings.empirical && !query_with_final
+    const bool want_combined = settings.empirical && blanket_not_applicable_reason.empty()
         && hypo_indexes.size() >= 2 && result.baseline_marks > 0;
 
     std::vector<UInt8> combined_surviving_marks;
@@ -440,14 +475,13 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     for (const auto & index_desc : hypo_indexes)
     {
-        if (query_with_final)
+        if (!blanket_not_applicable_reason.empty())
         {
             IndexResult r;
             r.index_name = index_desc.name;
             r.index_type = index_desc.type;
             r.status = IndexResult::NotApplicable;
-            r.not_applicable_reason = "EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL "
-                                      "(PrimaryKeyExpand may re-include granules selected by skip indexes)";
+            r.not_applicable_reason = blanket_not_applicable_reason;
             result.index_results.push_back(std::move(r));
             continue;
         }
@@ -459,7 +493,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             index_desc, read_step, analysis, baseline_parts, settings, want_combined ? &surviving_marks : nullptr, plan_context);
 
         /// push empirically-evaluated candidates in a per-mark survival set we can intersect
-        if (want_combined && index_result.status == IndexResult::Applicable && index_result.estimate_source == "empirical")
+        if (want_combined && index_result.status == IndexResult::Applicable && index_result.estimate_source == IndexResult::Empirical)
         {
             if (!combined_started)
             {
@@ -494,7 +528,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         combined.index_name = "(combined: " + joined + ")";
         combined.status = IndexResult::Applicable;
         combined.empirical_status = IndexResult::Ok;
-        combined.estimate_source = "empirical";
+        combined.estimate_source = IndexResult::Empirical;
         combined.estimated_marks = survivors;
         combined.skip_ratio = static_cast<double>(result.baseline_marks - survivors) / static_cast<double>(result.baseline_marks);
         combined.sampled_parts = analysis.selected_parts;

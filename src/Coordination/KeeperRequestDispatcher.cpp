@@ -3,6 +3,7 @@
 #if USE_NURAFT
 
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
@@ -96,69 +97,6 @@ static size_t getRequestBytesCost(const Coordination::ZooKeeperRequest & request
 static size_t getResponseBytesCost(const Coordination::ZooKeeperResponse & response)
 {
     return response.bytesSize() + sizeof(Coordination::ZooKeeperResponse);
-}
-
-static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
-{
-    if (request->getOpNum() == Coordination::OpNum::Create
-        || request->getOpNum() == Coordination::OpNum::Create2
-        || request->getOpNum() == Coordination::OpNum::CreateContainer
-        || request->getOpNum() == Coordination::OpNum::CreateTTL
-        || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
-        || request->getOpNum() == Coordination::OpNum::Set)
-    {
-        return true;
-    }
-    if (request->getOpNum() == Coordination::OpNum::Multi)
-    {
-        Coordination::ZooKeeperMultiRequest & multi_req = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request);
-        /// Add up sizes of create/set requests, subtract sizes of remove requests.
-        /// This doesn't really make sense because we're interested in memory usage of znodes, not requests.
-        /// But we don't know znode sizes at this point (is the Remove removing a small or big znode?),
-        /// so can't do much better here. Maybe it would make sense to move this check to preprocessRequest,
-        /// where we have access to the znode states.
-        Int64 memory_delta = 0;
-        for (const auto & sub_req : multi_req.requests)
-        {
-            auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_req);
-            switch (sub_zk_request->getOpNum())
-            {
-                case Coordination::OpNum::Create:
-                case Coordination::OpNum::Create2:
-                case Coordination::OpNum::CreateContainer:
-                case Coordination::OpNum::CreateTTL:
-                case Coordination::OpNum::CreateIfNotExists: {
-                    Coordination::ZooKeeperCreateRequest & create_req
-                        = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
-                    memory_delta += create_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::Set: {
-                    Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
-                    memory_delta += set_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::Remove:
-                case Coordination::OpNum::TryRemove: {
-                    Coordination::ZooKeeperRemoveRequest & remove_req
-                        = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::RemoveRecursive: {
-                    Coordination::ZooKeeperRemoveRecursiveRequest & remove_req
-                        = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
-                    break;
-                }
-                default:
-                    break;
-            }
-        }
-        return memory_delta > 0;
-    }
-
-    return false;
 }
 
 /// A helper for sleeping while there's no work to do. Sleep duration starts at short_sleep, then
