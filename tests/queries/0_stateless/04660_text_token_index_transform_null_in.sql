@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_normalized;
 DROP TABLE IF EXISTS t_preprocessed_wrapped;
 DROP TABLE IF EXISTS t_preprocessed_plain;
+DROP TABLE IF EXISTS t_preprocessed_map;
 
 CREATE TABLE t_text (x Nullable(String), INDEX i x TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 INSERT INTO t_text SELECT if(number % 100 = 7, NULL, 'word' || toString(number)) FROM numbers(1000);
@@ -182,6 +183,13 @@ INSERT INTO t_preprocessed_plain SELECT if(number = 5, 'word5', 'zz' || toString
 SELECT 'preprocessor wrapped key rows', (SELECT count() FROM t_preprocessed_wrapped WHERE x IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_wrapped WHERE x IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 SELECT 'preprocessor wrapped key count', count() FROM t_preprocessed_wrapped WHERE x IN ('word5') SETTINGS transform_null_in = 1;
 SELECT 'preprocessor wrapped key rows, transform_null_in = 0', (SELECT count() FROM t_preprocessed_wrapped WHERE x IN ('word5') SETTINGS transform_null_in = 0) = (SELECT count() FROM t_preprocessed_wrapped WHERE x IN ('word5') SETTINGS transform_null_in = 0, use_skip_indexes = 0);
+-- An `Array` carrier's preprocessor is rewritten through `arrayMap`, so it receives the element
+-- type and a `String` element keeps the two applications equal.
+CREATE TABLE t_preprocessed_map (m Map(String, String), INDEX i mapValues(m) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(mapValues(m)))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_preprocessed_map SELECT map('k', if(number = 5, 'word5', 'zz' || toString(number))) FROM numbers(1000);
+
+SELECT 'preprocessor map carrier still prunes', extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_preprocessed_map WHERE m['k'] IN ('word5') SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
+SELECT 'preprocessor map carrier rows', (SELECT count() FROM t_preprocessed_map WHERE m['k'] IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_map WHERE m['k'] IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 SELECT 'preprocessor plain key still prunes', extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_preprocessed_plain WHERE x IN ('word5') SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
 
 -- A JSON subcolumn carrier is indexed through `JSONAllValues(json)`, so its stored type comes from
@@ -235,3 +243,4 @@ DROP TABLE t_json;
 DROP TABLE t_normalized;
 DROP TABLE t_preprocessed_wrapped;
 DROP TABLE t_preprocessed_plain;
+DROP TABLE t_preprocessed_map;

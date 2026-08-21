@@ -26,6 +26,15 @@ bool isTextual(TypeIndex id)
     return id == TypeIndex::String || id == TypeIndex::FixedString;
 }
 
+/// A preprocessor over an `Array` carrier is rewritten as `arrayMap`, so it receives the element
+/// type rather than the array. See `MergeTreeIndexTextPreprocessor`.
+DataTypePtr preprocessorInputType(const DataTypePtr & index_type)
+{
+    if (const auto * array = typeid_cast<const DataTypeArray *>(index_type.get()))
+        return array->getNestedType();
+    return index_type;
+}
+
 }
 
 bool textIndexSetElementIsComparable(
@@ -34,10 +43,11 @@ bool textIndexSetElementIsComparable(
     auto set_unwrapped = unwrapTextIndexType(set_type);
     auto index_unwrapped = unwrapTextIndexType(index_type);
 
-    /// A preprocessor is applied to the index column under the index's own declared type but to a
-    /// set element under `String`, so a wrapper the two do not share can change the tokens it
-    /// produces. Only an index column already declared `String` keeps the two applications equal.
-    if (has_preprocessor && !index_type->equals(DataTypeString{}))
+    /// A preprocessor is applied to a set element under `String`, and to the index column under
+    /// the type it receives there: the element type for an `Array` carrier, which is rewritten
+    /// through `arrayMap`, and the declared type otherwise. A wrapper the two do not share can
+    /// change the tokens it produces, so the two applications must agree on `String`.
+    if (has_preprocessor && !preprocessorInputType(index_type)->equals(DataTypeString{}))
         return false;
 
     if (set_unwrapped->equals(*index_unwrapped))
