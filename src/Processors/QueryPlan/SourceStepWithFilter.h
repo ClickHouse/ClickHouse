@@ -8,6 +8,9 @@
 namespace DB
 {
 
+struct FormatTopKFilterInfo;
+using FormatTopKFilterInfoPtr = std::shared_ptr<const FormatTopKFilterInfo>;
+
 class SourceStepWithFilterBase : public ISourceStep
 {
 public:
@@ -64,6 +67,12 @@ public:
     virtual void applyFilters(ActionDAGNodes added_filter_nodes);
     virtual FilterDAGInfoPtr getRowLevelFilter() const { return nullptr; }
     virtual PrewhereInfoPtr getPrewhereInfo() const { return nullptr; }
+
+    /// TopN dynamic filtering (`tryOptimizeTopK`): a source that can filter rows and skip data
+    /// using the running threshold of the query's top-K heap (e.g. a Parquet reader) opts in by
+    /// overriding both. `column_name` in the info is in terms of this step's output header.
+    virtual bool supportsTopKDynamicFilter() const { return false; }
+    virtual void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> /*info*/) {}
 
     const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }

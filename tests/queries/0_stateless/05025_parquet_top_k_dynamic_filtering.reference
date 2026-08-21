@@ -1,0 +1,15 @@
+-- row-group pruning: part1 establishes the threshold before part2 starts, so every row
+-- group of part2 is skipped and at most the 100000 rows of part1 are read
+[[0], [1], [2]] all of part2 skipped: True
+-- without the optimization all 200000 rows are read
+[[0], [1], [2]] all of part2 skipped: False
+-- results identical with and without the optimization
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK

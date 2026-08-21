@@ -476,6 +476,13 @@ struct Reader
 
         Hyperrectangle hyperrectangle; // min/max for each column; parallel to extended_sample_block
 
+        /// TopN dynamic filtering: min/max of the sort column in this row group, set only when the
+        /// statistics are complete and prove the chunk has no nulls (see getTopKSortColumnRange).
+        /// Compared against the running top-K threshold right before column data is read, to skip
+        /// the row group when it provably contains no row that can enter the top-K
+        /// (see topKShouldSkipRowGroup).
+        std::optional<Range> top_k_sort_column_range;
+
         std::deque<RowSubgroup> subgroups;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> intersected_row_ranges_after_column_index;
@@ -562,6 +569,10 @@ struct Reader
 
     std::optional<KeyCondition> bloom_filter_condition;
 
+    /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
+    /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
+    std::optional<size_t> top_k_primitive_idx;
+
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
@@ -601,6 +612,15 @@ struct Reader
     /// group and several row groups pruning in parallel on other threads cannot collectively overshoot
     /// the reader's memory high watermark. See `ReadManager::pruningMemoryReservation`.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation);
+
+    /// TopN dynamic filtering: min/max of the sort column decoded from row-group statistics, or
+    /// nullopt when the statistics are missing, malformed, or don't prove the absence of nulls
+    /// (statistics describe only the non-null values, and null rows may belong to the top-K).
+    std::optional<Range> getTopKSortColumnRange(const parq::RowGroup & meta) const;
+    /// True if the running top-K threshold proves that no row of this row group can enter the
+    /// top-K heap, so the row group can be skipped without reading its column data. The threshold
+    /// only ever tightens, so a `false` result is safely revisited by the row filter later.
+    bool topKShouldSkipRowGroup(const RowGroup & row_group) const;
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);

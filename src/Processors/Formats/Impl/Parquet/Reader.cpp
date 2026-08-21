@@ -15,7 +15,9 @@
 #include <Common/checkStackSize.h>
 #include <Common/HashTable/HashSet.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/castColumn.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
@@ -360,6 +362,62 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
     }
 }
 
+std::optional<Range> Reader::getTopKSortColumnRange(const parq::RowGroup & meta) const
+{
+    if (!top_k_primitive_idx.has_value())
+        return std::nullopt;
+    const PrimitiveColumnInfo & column_info = primitive_columns[*top_k_primitive_idx];
+    try
+    {
+        const auto & column_meta = meta.columns.at(column_info.column_idx).meta_data;
+        if (!column_meta.__isset.statistics)
+            return std::nullopt;
+
+        /// The statistics describe only the non-null values. A chunk that may contain nulls
+        /// cannot be skipped by them: depending on NULLS FIRST/LAST, the current heap contents
+        /// and `input_format_null_as_default`, its null rows themselves may belong to the top-K.
+        bool nullable = column_info.levels.back().def > 0;
+        bool no_nulls = column_meta.statistics.__isset.null_count && column_meta.statistics.null_count == 0;
+        if (nullable && !no_nulls)
+            return std::nullopt;
+
+        if (!column_meta.statistics.__isset.min_value || !column_meta.statistics.__isset.max_value)
+            return std::nullopt;
+
+        /// Decode in terms of the output block type: that is the type of the column the sorting
+        /// transforms above see, so the type the threshold `Field`s are compared in.
+        const IDataType & output_block_type = *extended_sample_block_data_types.at(column_info.idx_in_output_block);
+        Range range = Range::createWholeUniverse();
+        column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
+        column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+        return range;
+    }
+    catch (...)
+    {
+        /// This pruning is dynamic and best-effort, and the same malformed statistics must have
+        /// already survived the static min/max pruning (which fails loudly with a hint to disable
+        /// `input_format_parquet_filter_push_down`) - here just don't skip.
+        return std::nullopt;
+    }
+}
+
+bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
+{
+    const auto & top_k = format_filter_info->top_k_filter;
+    if (!top_k || !row_group.top_k_sort_column_range.has_value())
+        return false;
+    const auto & tracker = *top_k->threshold_tracker;
+    if (!tracker.isSet())
+        return false;
+    /// For ascending order, a row group whose minimum is already beyond the threshold cannot
+    /// contain a row that improves the top-K heap; for descending, symmetrically the maximum.
+    /// The comparison is non-strict on the other side (a value equal to the threshold may still
+    /// tie-break into the heap on the remaining sort columns), matching `__topKFilter`.
+    const Range & range = *row_group.top_k_sort_column_range;
+    const Field & boundary = tracker.getDirection() == 1 ? range.left : range.right;
+    return !tracker.isValueInsideThreshold(boundary);
+}
+
 bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
 {
     for (size_t bbox_pc_idx : spatial_key_condition_bbox_col_indices.at(spatial_key_condition_idx))
@@ -696,6 +754,23 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
     }
 
+    /// TopN dynamic filtering: locate the sort column among the primitive columns, for skipping
+    /// row groups by its min/max statistics against the running threshold (see topKShouldSkipRowGroup).
+    if (format_filter_info->top_k_filter)
+    {
+        auto pos = extended_sample_block.findPositionByName(format_filter_info->top_k_filter->column_name);
+        if (pos.has_value())
+        {
+            const auto & output_idx = sample_block_to_output_columns_idx.at(*pos);
+            if (output_idx.has_value())
+            {
+                const OutputColumnInfo & output_info = output_columns[output_idx.value()];
+                if (output_info.is_primitive && primitive_columns[output_info.primitive_start].decoder.allow_stats)
+                    top_k_primitive_idx = output_info.primitive_start;
+            }
+        }
+    }
+
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
     size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
@@ -776,6 +851,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
         row_group.columns.resize(primitive_columns.size());
         row_group.hyperrectangle = std::move(hyperrectangle);
+        row_group.top_k_sort_column_range = getTopKSortColumnRange(*meta);
 
         for (size_t column_idx = 0; column_idx < primitive_columns.size(); ++column_idx)
         {
@@ -990,7 +1066,7 @@ void Reader::prepareBloomFilterCondition()
 void Reader::initializePrefetches()
 {
     bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
-        || format_filter_info->rows_to_read
+        || format_filter_info->rows_to_read || format_filter_info->top_k_filter
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
@@ -1302,6 +1378,27 @@ void Reader::preparePrewhere()
             add_single_step(dag, filter_column_name, needs_filter, 0);
         }
     };
+
+    /// TopN dynamic filtering: drop rows that cannot enter the query's top-K heap by comparing
+    /// the sort column against the running threshold (all-pass until the heap fills). Added as
+    /// the first step: the comparison is cheap, and once the threshold is set it is usually the
+    /// most selective of the filters, so the later steps' columns are then read only for the few
+    /// surviving rows (with whole pages skipped where possible).
+    if (format_filter_info->top_k_filter)
+    {
+        const auto & top_k = *format_filter_info->top_k_filter;
+        /// The sort column is one of the requested output columns (the sorting above consumes it);
+        /// if it is somehow missing, just skip the optimization - it only ever removes rows.
+        if (extended_sample_block.has(top_k.column_name))
+        {
+            const auto & col = extended_sample_block.getByName(top_k.column_name);
+            ActionsDAG dag({NameAndTypePair(col.name, col.type)});
+            const auto & filter_node = dag.addFunction(
+                createInternalFunctionTopKFilterResolver(top_k.threshold_tracker), {dag.getInputs().front()}, {});
+            dag.getOutputs().push_back(&filter_node);
+            add_single_step(dag, filter_node.result_name, /*needs_filter=*/ true, /*step_idx=*/ 0);
+        }
+    }
 
     if (row_level_filter)
         add_step(row_level_filter->actions, row_level_filter->column_name, true);
