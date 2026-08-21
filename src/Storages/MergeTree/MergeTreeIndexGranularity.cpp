@@ -135,7 +135,6 @@ size_t computeIndexGranularity(
         else if (index_granularity_bytes == 0)
         {
             /// Byte-based sizing is disabled while marks are still adaptive: use the fixed row granularity.
-            /// Dividing the zero byte budget by the row size below would collapse every granule to a single row.
             index_granularity_for_block = fixed_index_granularity_rows;
         }
         else if (bytes_uncompressed >= index_granularity_bytes)
