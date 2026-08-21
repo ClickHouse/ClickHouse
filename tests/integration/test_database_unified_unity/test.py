@@ -59,7 +59,7 @@ def start_unity_catalog(node):
         [
             "bash",
             "-c",
-            f"cd {UC_HOME} && nohup bin/start-uc-server > {UC_LOG} 2>&1 &",
+            f"cd {UC_HOME} && bin/start-uc-server > {UC_LOG} 2>&1 &",
         ]
     )
 
