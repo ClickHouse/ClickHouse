@@ -87,7 +87,7 @@ ALTER TABLE t_auto_lc_alter MODIFY COLUMN lc UInt64;
 SELECT 'alter: kind after (LowCardinality dropped, type is no longer String), correctness';
 SELECT DISTINCT serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_lc_alter' AND active AND column = 'lc';
-SELECT toTypeName(lc), count(), sum(lc) FROM t_auto_lc_alter;
+SELECT any(toTypeName(lc)), count(), sum(lc) FROM t_auto_lc_alter;
 
 DROP TABLE t_auto_lc_alter;
 

@@ -76,6 +76,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     max_uniq_number_for_low_cardinality = 1000,
+    ratio_of_defaults_for_sparse_serialization = 0.9,
     min_bytes_for_wide_part = 0;
 
 INSERT INTO t_auto_lc_v2 SELECT number, 'val_' || toString(number % 10), 'uniq_' || toString(number) FROM numbers(100000);

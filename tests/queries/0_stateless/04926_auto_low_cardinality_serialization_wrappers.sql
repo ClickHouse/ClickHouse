@@ -1,10 +1,8 @@
 SET allow_experimental_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 
-DROP DATABASE IF EXISTS auto_lc_wrappers;
-CREATE DATABASE auto_lc_wrappers;
-
-CREATE TABLE auto_lc_wrappers.source_default
+DROP TABLE IF EXISTS source_default;
+CREATE TABLE source_default
 (
     id UInt64,
     lc String STATISTICS(uniq)
@@ -15,9 +13,10 @@ SETTINGS
     ratio_of_defaults_for_sparse_serialization = 1,
     min_bytes_for_wide_part = 0;
 
-INSERT INTO auto_lc_wrappers.source_default SELECT number, if(number % 2 = 0, '', 'value') FROM numbers(2000);
+INSERT INTO source_default SELECT number, if(number % 2 = 0, '', 'value') FROM numbers(2000);
 
-CREATE TABLE auto_lc_wrappers.source_low_cardinality
+DROP TABLE IF EXISTS source_low_cardinality;
+CREATE TABLE source_low_cardinality
 (
     id UInt64,
     lc String STATISTICS(uniq)
@@ -29,15 +28,20 @@ SETTINGS
     ratio_of_defaults_for_sparse_serialization = 1,
     min_bytes_for_wide_part = 0;
 
-INSERT INTO auto_lc_wrappers.source_low_cardinality SELECT number, if(number % 2 = 0, '', 'value') FROM numbers(2000);
+INSERT INTO source_low_cardinality SELECT number, if(number % 2 = 0, '', 'value') FROM numbers(2000);
 
-CREATE TABLE auto_lc_wrappers.all_tables AS auto_lc_wrappers.source_low_cardinality
-ENGINE = Merge('auto_lc_wrappers', 'source_.*');
+DROP TABLE IF EXISTS all_tables;
+CREATE TABLE all_tables AS source_low_cardinality
+ENGINE = Merge(currentDatabase(), 'source_.*');
 
-CREATE TABLE auto_lc_wrappers.alias_all_tables
+DROP TABLE IF EXISTS alias_all_tables;
+CREATE TABLE alias_all_tables
 ENGINE = Alias('all_tables');
 
-SELECT count() FROM auto_lc_wrappers.all_tables WHERE empty(lc);
-SELECT count() FROM auto_lc_wrappers.alias_all_tables WHERE empty(lc);
+SELECT count() FROM all_tables WHERE empty(lc);
+SELECT count() FROM alias_all_tables WHERE empty(lc);
 
-DROP DATABASE auto_lc_wrappers;
+DROP TABLE alias_all_tables;
+DROP TABLE all_tables;
+DROP TABLE source_low_cardinality;
+DROP TABLE source_default;
