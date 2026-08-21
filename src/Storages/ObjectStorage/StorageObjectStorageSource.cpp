@@ -364,10 +364,14 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     /// An archive exposes `_path` and `_file` values for its entries, while this iterator usually
     /// sees only the outer archive object. A known, non-glob archive member is an exception: its
     /// virtual path is known before opening the archive, so filter it before probing a missing outer
-    /// archive. The outer archive path may still use a brace expansion because every expanded path
-    /// has the same known member. Other archive forms still need the regular filter step after
-    /// `ArchiveIterator` has created entry object infos.
-    const bool is_explicit_archive_member = is_archive && !configuration->isPathInArchiveWithGlobs();
+    /// archive. This only works when the outer archive paths are materialized locally - explicit keys
+    /// or a single brace expansion - so that the member name can be appended to each concrete path.
+    /// The outer path must not contain a general glob: that form goes through `GlobIterator`, which
+    /// builds filter values from the listed outer archive objects, not from the entry virtual paths,
+    /// so pushing an entry-level predicate there would wrongly discard every archive. Such archive
+    /// forms still need the regular filter step after `ArchiveIterator` has created entry object infos.
+    const bool is_explicit_archive_member = is_archive && !configuration->isPathInArchiveWithGlobs()
+        && (!reading_path.hasGlobs() || (!match_web_paths_only && hasExactlyOneBracketsExpansion(reading_path.path)));
     const auto * path_filter_predicate = is_archive && !is_explicit_archive_member ? nullptr : predicate;
     /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
     /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
