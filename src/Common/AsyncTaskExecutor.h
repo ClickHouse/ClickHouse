@@ -146,13 +146,10 @@ private:
     /// Spans created inside the task belong to the query trace.
     const OpenTelemetry::TracingContextOnThread parent_trace_context;
 
-    /// Guards span_attributes. A dedicated mutex, not fiber_lock: resume() holds fiber_lock across
-    /// the fiber execution, and addSpanAttribute can be called from inside the fiber, so taking
-    /// fiber_lock here would self-deadlock.
+    /// Guards span_attributes. A dedicated mutex, making sure addSpanAttribute can be called from inside the fiber
     std::mutex span_attributes_mutex;
-    /// Attributes for the span covering one execution of the task. Copied onto the span when the
-    /// routine exits (kept afterwards: restart() runs the task again under a new span that must
-    /// get them too).
+    /// Attributes for the span covering one execution of the task. Copied onto the span when the routine exits
+    /// restart() runs the task again under a new span that must get them too
     std::vector<OpenTelemetry::SpanAttribute> span_attributes;
 };
 

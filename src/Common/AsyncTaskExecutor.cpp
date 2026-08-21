@@ -26,18 +26,13 @@ void AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute)
 void AsyncTaskExecutor::flushSpanAttributes(OpenTelemetry::Span & span) noexcept
 {
     /// noexcept: called from a scope guard that can run during the forced unwind
-    /// of a cancelled fiber; attributes are best-effort there, like Span::addAttribute.
-    try
-    {
-        if (!span.isTraceEnabled())
-            return;
+    /// of a cancelled fiber. Span::addAttribute never throws, attributes are best-effort.
+    if (!span.isTraceEnabled())
+        return;
 
-        std::lock_guard guard(span_attributes_mutex);
-        span.attributes.insert(span.attributes.end(), span_attributes.begin(), span_attributes.end());
-    }
-    catch (...) /// Ok: noexcept, allocation failure
-    {
-    }
+    std::lock_guard guard(span_attributes_mutex);
+    for (const auto & attribute : span_attributes)
+        span.addAttribute(attribute);
 }
 
 void AsyncTaskExecutor::resume()
