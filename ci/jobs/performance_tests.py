@@ -1,5 +1,6 @@
 import argparse
 import csv
+import json
 import os
 import re
 import shutil
@@ -1102,25 +1103,68 @@ def find_base_release_build(info, build_type):
 
 
 # The number of distinct "slower" queries that fails the whole performance
-# check. This is the gate that actually decides the Praktika `Check Results`
-# status: `report.py` embeds a status into `report.html`, but `main` below
-# discards it ("always green mode") and recomputes the final status by
-# reparsing the "N slower" message, so the effective gate lives here. The value
-# must stay synchronized with the slower-queries threshold in
-# `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
-# "slower" queries is dominated by CI noise (a single bad shard run, frequency
-# scaling, or code-layout artifacts can push several unrelated micro benchmarks
-# over their per-query thresholds at once), while a genuine regression shows up
-# as a small cluster of related queries with large magnitudes that the
-# per-query thresholds catch on their own.
+# check in the commit-to-commit (`master_head`) mode. This is the gate that
+# actually decides the Praktika `Check Results` status: `report.py` embeds a
+# status into `report.html`, but `main` below discards it ("always green mode")
+# and recomputes the final status by reparsing the "N slower" message, so the
+# effective gate lives here. The value must stay synchronized with the
+# slower-queries threshold in `ci/jobs/scripts/perf/report.py`. It is
+# intentionally high: a handful of "slower" queries is dominated by CI noise (a
+# single bad shard run, frequency scaling, or code-layout artifacts can push
+# several unrelated micro benchmarks over their per-query thresholds at once),
+# while a genuine regression shows up as a small cluster of related queries
+# with large magnitudes that the per-query thresholds catch on their own.
 SLOWER_QUERIES_FAIL_THRESHOLD = 10
+
+# The gate for the cumulative `release_base` mode. That comparison accumulates
+# every performance change since the release branch point, so an absolute
+# slower-count gate inevitably drifts into permanent red: once master collects
+# more than SLOWER_QUERIES_FAIL_THRESHOLD slower queries in one shard, the
+# check fails on every commit until the next release resets the baseline, and
+# the status stops pointing at any specific commit. Instead, fail only when
+# the slower count grew by more than this delta compared to the previous
+# master run of the same job - red then blames the commit that introduced the
+# regression and recovers on the next commit by itself. Measured on 10 days of
+# master runs: run-to-run count-delta noise is p90 <= 3 per shard, while real
+# regression landings showed +8..+16 (e.g. the `direct_dictionary` regression,
+# https://github.com/ClickHouse/ClickHouse/issues/115803).
+SLOWER_QUERIES_DELTA_FAIL_THRESHOLD = 5
+
+
+def parse_slower_count(message):
+    match = re.search(r"(|.* )(\d+) slower.*", message)
+    return int(match.group(2).strip()) if match else 0
 
 
 def too_many_slow(message):
-    match = re.search(r"(|.* )(\d+) slower.*", message)
-    return (
-        int(match.group(2).strip()) > SLOWER_QUERIES_FAIL_THRESHOLD if match else False
-    )
+    return parse_slower_count(message) > SLOWER_QUERIES_FAIL_THRESHOLD
+
+
+def find_prev_master_slower_count(job_name, commits):
+    """Find the "slower" query count reported by the most recent valid run of
+    this job on a predecessor master commit. Returns (count, sha), or
+    (None, None) when no valid previous run is found. Runs that produced no
+    report or ended with errors are skipped: their counts would inflate the
+    delta of the current run."""
+    result_file_name = f"result_{Utils.normalize_string(job_name)}.json"
+    for sha in commits[:20]:
+        link = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{sha}/{result_file_name}"
+        out = Shell.get_output(f"curl -sf --compressed --max-time 60 {link}")
+        if not out:
+            continue
+        try:
+            prev_message = json.loads(out).get("info", "")
+        except Exception:
+            print(f"WARNING: failed to parse previous run result [{link}]")
+            continue
+        if (
+            not prev_message
+            or "error" in prev_message.lower()
+            or "failed" in prev_message.lower()
+        ):
+            continue
+        return parse_slower_count(prev_message.lower()), sha
+    return None, None
 
 
 def read_ci_checks_results(path):
@@ -1909,7 +1953,32 @@ def main():
                 message = message_match.group(1).strip()
             # TODO: Remove me, always green mode for the first time, unless errors
             status = Result.Status.OK
-            if "errors" in message.lower() or too_many_slow(message.lower()):
+            if "errors" in message.lower():
+                status = Result.Status.FAIL
+            elif compare_against_release and message:
+                # The release-base comparison is cumulative, so gate on the
+                # delta against the previous master run instead of the
+                # absolute count (see SLOWER_QUERIES_DELTA_FAIL_THRESHOLD).
+                cur_slower = parse_slower_count(message.lower())
+                prev_slower, prev_sha = find_prev_master_slower_count(
+                    info.job_name,
+                    info.get_kv_data("master_track_commits_sha") or [],
+                )
+                if prev_slower is None:
+                    print(
+                        "WARNING: no valid previous master run found, "
+                        "falling back to the absolute slower-count gate"
+                    )
+                    if too_many_slow(message.lower()):
+                        status = Result.Status.FAIL
+                else:
+                    delta = cur_slower - prev_slower
+                    message += (
+                        f"; delta vs prev master run ({prev_sha[:8]}): {delta:+d}"
+                    )
+                    if delta > SLOWER_QUERIES_DELTA_FAIL_THRESHOLD:
+                        status = Result.Status.FAIL
+            elif too_many_slow(message.lower()):
                 status = Result.Status.FAIL
             # TODO: Remove until here
         except Exception:
