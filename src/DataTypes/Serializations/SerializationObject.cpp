@@ -964,7 +964,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         /// cannot evict a path that is globally hot but locally cold (the counts stay chunk-order independent).
         const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
-        size_t start = shared_data_offsets[offset - 1];
+        size_t start = offset ? shared_data_offsets[offset - 1] : 0;
         size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
         if (object_state->shared_data_path_counts.capacity() == 0)
             object_state->shared_data_path_counts.resize(4 * ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE);
