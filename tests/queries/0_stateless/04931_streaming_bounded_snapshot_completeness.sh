@@ -2,6 +2,7 @@
 # Tags: no-parallel, no-parallel-replicas, no-fasttest
 # no-fasttest: the failpoints require a build with libfiu.
 # no-parallel: the failpoints are server-global, and another streaming test can consume a one-shot.
+# no-parallel-replicas: a streaming read is served locally, so it is not meaningful across replicas.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -42,6 +43,7 @@ INSERT INTO t_bounded_partial SELECT 0, number, number * 10 FROM numbers(5);
 INSERT INTO t_bounded_partial SELECT 1, number, number * 10 FROM numbers(5, 5);"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_MID"
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_OBSERVED"
 
 # The work serving this reader parks after publishing one partition of the data it is entitled to.
 # shellcheck disable=SC2086
@@ -52,6 +54,13 @@ READER=$!
 timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_MID PAUSE" \
     || echo "partial_round mid barrier timed out"
 
+# Both waits returning is the witness: the work is held after publishing part of what it owes, and
+# the reader has already read both of the things it stops on, so it read them inside that window.
+timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_OBSERVED PAUSE" \
+    || echo "partial_round reader barrier timed out"
+
+# Reader first, so it acts on that pair while the work is still held.
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_OBSERVED" 2>/dev/null || true
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_MID" 2>/dev/null || true
 
 wait $READER
