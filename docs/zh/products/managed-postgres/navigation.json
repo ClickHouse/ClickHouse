@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "开始使用",
       "pages": [
         "zh/products/managed-postgres/overview",
         "zh/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Features",
+      "group": "功能",
       "pages": [
         "zh/products/managed-postgres/connection",
         "zh/products/managed-postgres/settings",
@@ -19,6 +19,7 @@
         "zh/products/managed-postgres/high-availability",
         "zh/products/managed-postgres/read-replicas",
         "zh/products/managed-postgres/backup-and-restore",
+        "zh/products/managed-postgres/branching",
         "zh/products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
@@ -34,19 +35,19 @@
       ]
     },
     {
-      "group": "Pricing",
+      "group": "定价",
       "pages": [
         "zh/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "ClickHouse Integration",
+      "group": "ClickHouse 集成",
       "pages": [
         "zh/products/managed-postgres/clickhouse-integration"
       ]
     },
     {
-      "group": "Migrations",
+      "group": "迁移",
       "pages": [
         "zh/products/managed-postgres/migrations/overview",
         "zh/products/managed-postgres/migrations/pg_dump-pg_restore",
@@ -58,7 +59,7 @@
       ]
     },
     {
-      "group": "Monitoring",
+      "group": "监控",
       "pages": [
         "zh/products/managed-postgres/monitoring/overview",
         "zh/products/managed-postgres/monitoring/dashboard",
