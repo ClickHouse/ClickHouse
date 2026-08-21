@@ -281,7 +281,6 @@ public:
     bool isMovePartitionToDiskOrVolumeAlter() const;
 
     bool isCommentAlter() const;
-    
     bool isSettingsOrCommentAlter() const;
 
     bool isReplacePartition() const;
