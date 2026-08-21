@@ -6,16 +6,6 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 # Wire compiler-rt runtimes (builtins/sanitizers/XRay) into the link flags.
 include (cmake/compiler_rt_link.cmake)
 
-if (WITH_COVERAGE)
-    # The profile runtime must be linked after the object files (see the
-    # COMPILER_RT_PROFILE_LIB comment in compiler_rt_link.cmake). DEFAULT_LIBS
-    # becomes CMAKE_<LANG>_STANDARD_LIBRARIES below, which the link rule places
-    # at the very end of the link line; -lc and friends are appended to
-    # DEFAULT_LIBS after this point, so the runtime's libc references still
-    # resolve.
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${COMPILER_RT_PROFILE_LIB}")
-endif()
-
 # `libllvmlibc` supplies both the math functions and the SIMD memory functions
 # (`memcpy`/`memmove`/`memset`/`memcmp`/`bcmp`/`memmem`). Disabling it on
 # x86_64/aarch64 reverts all of them to the system libc, including `memcpy` —

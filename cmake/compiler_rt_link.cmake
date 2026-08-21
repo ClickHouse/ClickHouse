@@ -54,10 +54,37 @@ if (ENABLE_XRAY)
     )
 endif()
 if (WITH_COVERAGE)
-    # Tell clang not to inject its own (host-system) profile runtime — we
-    # provide ours (appended after the objects below).
+    # `-noprofilelib` tells clang not to inject its own (host-system) profile
+    # runtime. It also drops the `-u __llvm_profile_runtime` anchor the driver
+    # would add, so the anchor is restored here explicitly. Our own runtime is
+    # NOT named here: contrib/compiler-rt-cmake registers `clang_rt_profile`
+    # into global-libs, which places the archive in every link AFTER the object
+    # files, and the anchor makes the linker pull it from there.
+    #
+    # Both properties are load-bearing, and each was broken once:
+    #
+    #   * The runtime must come after the objects. It defines
+    #     `__llvm_profile_counter_bias` as a WEAK alias of its own default
+    #     variable to detect whether the compiler emitted the real bias variable
+    #     (`-mllvm -runtime-counter-relocation`, continuous mode `%c`); the
+    #     compiler's definition is weak too, and the linker keeps the first weak
+    #     definition. Linked before the objects (the old --whole-archive in
+    #     CMAKE_EXE_LINKER_FLAGS), the alias always won and every process failed
+    #     continuous-mode startup with "LLVM Profile Error: Neither
+    #     __llvm_profile_counter_bias nor __llvm_profile_bitmap_bias is defined".
+    #
+    #   * The anchor must exist. Without it, nothing references the runtime, the
+    #     lazy archive contributes no members, and every process silently writes
+    #     no profile at all — there is not even an error, because the code that
+    #     would print one is exactly what is missing.
+    #
+    #   * The runtime must not be linked twice. A --whole-archive copy placed
+    #     after the lazy global-libs copy force-loads every member on top of the
+    #     lazily selected ones and fails the link with duplicate `lprof*`
+    #     symbols.
     list (APPEND SANITIZER_RUNTIMES
         "-noprofilelib"
+        "-Wl,-u,__llvm_profile_runtime"
     )
 endif()
 string (REPLACE ";" " " SANITIZER_RUNTIMES "${SANITIZER_RUNTIMES}")
@@ -68,29 +95,3 @@ if (SANITIZER_RUNTIMES)
 endif()
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${BUILTINS_LIBRARY} ${SANITIZER_RUNTIMES} -Wl,--no-whole-archive")
-
-if (WITH_COVERAGE)
-    # The profile runtime must come AFTER the object files in the link line,
-    # unlike the runtimes above. It defines `__llvm_profile_counter_bias` as a
-    # WEAK alias of its own `__llvm_profile_counter_bias_default` in order to
-    # detect whether the compiler emitted the real bias variable (which happens
-    # under `-mllvm -runtime-counter-relocation`, used for continuous mode `%c`):
-    # the compiler's definition is weak too, so the linker keeps whichever
-    # definition it encounters first. Linked through CMAKE_EXE_LINKER_FLAGS
-    # (which the link rule places before the objects), the runtime's alias always
-    # won, the runtime concluded the compiler did not define the bias, and every
-    # instrumented process failed continuous-mode startup with "LLVM Profile
-    # Error: Neither __llvm_profile_counter_bias nor __llvm_profile_bitmap_bias
-    # is defined" and wrote no profile.
-    #
-    # This cannot be appended to CMAKE_<LANG>_STANDARD_LIBRARIES here: the
-    # including file (cmake/<os>/default_libs.cmake) OVERWRITES those variables
-    # with DEFAULT_LIBS after this include - the first CI round of this change
-    # did exactly that, the runtime silently vanished from the link (nothing
-    # references it strongly), and every process wrote no profile at all, with
-    # no error to show for it. The consumer splices this fragment into
-    # DEFAULT_LIBS instead, which ends up in CMAKE_<LANG>_STANDARD_LIBRARIES -
-    # after the objects and the target link libraries, where the normal clang
-    # driver would put the runtime, so the compiler-emitted bias wins.
-    set (COMPILER_RT_PROFILE_LIB "-Wl,--whole-archive ${COMPILER_RT_DIR}/libclang_rt_profile.a -Wl,--no-whole-archive")
-endif()
