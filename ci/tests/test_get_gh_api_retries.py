@@ -74,12 +74,17 @@ class FakeResponse:
 
 def _install_fake_transport(monkeypatch, statuses, body, transport_error, sleeps):
     """Patch `GH`'s requests/time so no test ever sleeps or reaches the network."""
-    calls = {"count": 0}
+    calls = {"count": 0, "requests": []}
     auth_seen = []
 
-    def fake_get(_url, **get_kwargs):
+    def fake_get(url, **get_kwargs):
         index = calls["count"]
         calls["count"] += 1
+        # A snapshot per attempt: the headers mapping is mutated in place by the failover,
+        # so a reference would report every attempt as carrying the final header.
+        calls["requests"].append(
+            (url, {k: dict(v) if k == "headers" else v for k, v in get_kwargs.items()})
+        )
         auth_seen.append("Authorization" in (get_kwargs.get("headers") or {}))
         if transport_error:
             raise transport_error("transport failure")
@@ -283,11 +288,11 @@ def test_budget_resets_are_bounded(monkeypatch):
     with pytest.raises(RuntimeError, match="Unable to request data from GH API"):
         GH.api_get(URL, on_http_error=lambda _e: True)
 
+    # Pinned as a literal, not derived from the constant: deriving both the expectation
+    # and the ceiling from `API_GET_MAX_BUDGET_RESETS` lets a change to it stay green.
+    assert gh_module.API_GET_MAX_BUDGET_RESETS == 1
     # One attempt is spent triggering the single allowed reset, then a fresh full budget.
-    assert (
-        calls["count"]
-        == gh_module.API_GET_MAX_BUDGET_RESETS + gh_module.API_GET_RETRIES_COUNT
-    )
+    assert calls["count"] == 1 + gh_module.API_GET_RETRIES_COUNT
     assert calls["count"] <= ceiling
     # Only the attempts after the allowance is spent reach the sleep block.
     assert sleeps == [3, 3, 3, 3]
@@ -414,3 +419,52 @@ def test_shim_returns_response_on_success(monkeypatch):
 
     assert response.status_code == 200
     assert sleeps == []
+
+
+# Row 14: every caller option must survive the shim's delegation to `GH.api_get`, which is
+# a second hop the pre-change single-function path did not have. The two live shapes are
+# `get_previous_release_tag.py:69` (params + timeout) and `pr_info.py:427` (Accept header);
+# dropping `**kwargs` from the delegation leaves both silently unsent.
+def test_caller_request_options_survive_delegation(monkeypatch):
+    sleeps: list = []
+    calls, _ = _install_fake_transport(monkeypatch, [200], b"", None, sleeps)
+    monkeypatch.setattr(
+        bdh, "grt", types.SimpleNamespace(ROBOT_TOKEN=None, get_best_robot_token=str)
+    )
+
+    bdh.get_gh_api(
+        URL,
+        params={"page": 1, "per_page": 100},
+        headers={"Accept": "application/vnd.github.v3.diff"},
+        timeout=10,
+    )
+
+    url, sent = calls["requests"][0]
+    assert url == URL
+    assert sent["params"] == {"page": 1, "per_page": 100}
+    assert sent["headers"]["Accept"] == "application/vnd.github.v3.diff"
+    assert sent["timeout"] == 10
+
+
+# Row 15: the failover must install a usable bearer, not merely an `Authorization` key.
+# The other failover rows assert only that the key appeared, so a wrong or empty token
+# would pass them.
+def test_failover_sends_the_fetched_token(monkeypatch):
+    sleeps: list = []
+    calls, auth_seen = _install_fake_transport(monkeypatch, [404], b"", None, sleeps)
+    monkeypatch.setattr(
+        bdh,
+        "grt",
+        types.SimpleNamespace(
+            ROBOT_TOKEN=None, get_best_robot_token=lambda: "fetched-token"
+        ),
+    )
+
+    with pytest.raises(bdh.APIException):
+        bdh.get_gh_api(URL)
+
+    assert auth_seen[0] is False and auth_seen[1] is True
+    _, before = calls["requests"][0]
+    _, after = calls["requests"][1]
+    assert "Authorization" not in (before.get("headers") or {})
+    assert after["headers"]["Authorization"] == "Bearer fetched-token"

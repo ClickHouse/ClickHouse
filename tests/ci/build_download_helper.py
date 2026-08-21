@@ -8,8 +8,6 @@ from typing import Any
 
 import requests
 
-# realpath, not abspath: this module is reached through a /usr/bin symlink, where abspath
-# derives "/" as the repository root and the import below fails.
 sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..")
 )
