@@ -10,6 +10,7 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -476,6 +477,66 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
     return global_total_bytes.load(std::memory_order_relaxed);
 }
 
+size_t ConcurrentHashJoin::getRightTableRowCount() const
+{
+    /// We don't check for two level map, because in case of two level in
+    /// the end of the build we add all the right table rows to 0th hash table
+    /// and zero the rows_to_join in other hash tables
+    size_t res = 0;
+    for (const auto & hash_join : hash_joins)
+        res += hash_join->data->getRightTableRowCount();
+    return res;
+}
+
+size_t ConcurrentHashJoin::getUniqueKeys() const
+{
+    /// A two-level map needs a special case: in the end of the build we move all buckets into
+    /// slot 0 and then hands that map back to every slot, so each one reports the full key count
+    /// and summing would multiply it by `slots`. One-level maps stay disjoint per slot.
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
+        return hash_joins[0]->data->getTotalRowCount();
+
+    size_t res = 0;
+    for (const auto & hash_join : hash_joins)
+        res += hash_join->data->getTotalRowCount();
+    return res;
+}
+
+JoinAnalysisCounters ConcurrentHashJoin::collectMatchedRowsCounters() const
+{
+    JoinAnalysisCounters counters;
+    counters.right_rows = getRightTableRowCount();
+
+    MatchedRowsAccumulator matched_left;
+    MatchedRowsAccumulator matched_right;
+    for (const auto & hash_join : hash_joins)
+    {
+        const auto * stats = hash_join->data->getMatchStats();
+
+        UInt64 right_table_rows = hash_join->data->getRightTableRowCount();
+        counters.left_rows += stats->getInputLeft();
+        matched_left.add(stats->getMatchedLeft());
+        matched_right.add(stats->getMatchedRight(right_table_rows));
+    }
+    counters.matched_left = matched_left.get();
+    counters.matched_right = matched_right.get();
+
+    return counters;
+}
+
+StepAnalysisReport ConcurrentHashJoin::getAnalysisReport() const
+{
+    auto counters = collectMatchedRowsCounters();
+    StepAnalysisReport report = buildMatchedRowsReport(counters);
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, getUniqueKeys());
+    hash_table_metrics.emplace_back(MetricKey::Memory, getPeakBuildBytes());
+    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
+
+    return report;
+}
+
 bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 {
     for (const auto & hash_join : hash_joins)
@@ -775,6 +836,10 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
+    /// Capture the build peak now, while each slot still holds only its own disjoint data
+    for (const auto & hash_join : hash_joins)
+        peak_build_bytes += hash_join->data->getPeakBuildBytes();
+
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
         // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.
@@ -853,27 +918,15 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     {
         auto common_used_flags = hash_joins[0]->data->getUsedFlags();
 
-        bool use_per_row_flags = std::ranges::any_of(
-            hash_joins,
-            [&](const auto & hash_join)
-            {
-                auto used_flags = hash_join->data->getUsedFlags();
-                return !used_flags->per_row_flags.empty();
-            });
+        /// Move every slot's pending per-row flags into one dense vector indexed by block_no.
+        const size_t num_blocks = getData(hash_joins[0])->stored_columns_index->size();
+        for (const auto & hash_join : hash_joins)
+            common_used_flags->finalizePerRowFlags(*hash_join->data->getUsedFlags(), num_blocks);
 
         //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
         for (size_t i = 1; i < slots; ++i)
         {
             getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
-
-            if (use_per_row_flags)
-            {
-                /// In case flag per row is used, we need to merge flags, rows in different slots can differ.
-                auto current_used_flags = hash_joins[i]->data->getUsedFlags();
-                common_used_flags->per_row_flags.merge(current_used_flags->per_row_flags);
-                if (!current_used_flags->per_row_flags.empty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "ConcurrentHashJoin: unexpected non-disjoint per_row_flags in slot {}", i);
-            }
             hash_joins[i]->data->setUsedFlags(common_used_flags);
         }
     }

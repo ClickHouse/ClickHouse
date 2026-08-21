@@ -62,14 +62,14 @@ static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr cont
     /// The wrapper's projection columns keep the ORIGINAL names so CTAS/VIEW and named
     /// output formats produce user-expected column names.
     auto new_root = std::make_shared<QueryNode>(Context::createCopy(context));
-    new_root->getJoinTree() = query_root;
+    new_root->getJoinTreeNode() = query_root;
 
     NamesAndTypes outer_projection_columns;
     outer_projection_columns.reserve(subquery_projection_columns.size());
     for (size_t i = 0; i < subquery_projection_columns.size(); ++i)
     {
         NameAndTypePair inner_ref{unique_column_names[i], subquery_projection_columns[i].type};
-        new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(inner_ref, query_root));
+        new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(inner_ref, static_pointer_cast<ITableExpressionNode>(query_root)));
         outer_projection_columns.emplace_back(subquery_projection_columns[i].name, subquery_projection_columns[i].type);
     }
     new_root->resolveProjectionColumns(std::move(outer_projection_columns));

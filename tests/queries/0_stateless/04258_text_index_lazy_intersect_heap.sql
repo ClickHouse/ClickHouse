@@ -118,14 +118,28 @@ SETTINGS text_index_posting_list_apply_mode = 'materialize';
 -- advance ~n times across iterations).
 SYSTEM FLUSH LOGS query_log;
 
+-- The counters are incremented on whichever replica reads the granule, so under
+-- parallel replicas they land on secondary rows whose `current_database` is `default`.
+-- Resolve the initiator rows by `current_database` (the style check also requires that
+-- filter in any test reading `system.query_log`), then aggregate over every row of
+-- those queries via `initial_query_id`.
+WITH initial_query_ids AS
+(
+    SELECT query_id
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND current_database = currentDatabase()
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+      AND log_comment IN ('04258_heap_9way', '04258_heap_9way_rows', '04258_heap_11way')
+)
 SELECT 'heap leapfrog telemetry:',
     sum(ProfileEvents['TextIndexLazyLeapfrogIntersections'])   > 0 AS leapfrog_fired,
     sum(ProfileEvents['TextIndexLazyBruteForceIntersections']) = 0 AS brute_force_not_fired,
     sum(ProfileEvents['TextIndexLazyAdvanceCount'])            > 9 AS advance_called_many_times
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
-  AND current_database = currentDatabase()
   AND type = 'QueryFinish'
-  AND log_comment IN ('04258_heap_9way', '04258_heap_9way_rows', '04258_heap_11way');
+  AND initial_query_id IN (SELECT query_id FROM initial_query_ids);
 
 DROP TABLE tab_heap;

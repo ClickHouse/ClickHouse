@@ -40,6 +40,8 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -991,9 +993,21 @@ BlockIO InterpreterSystemQuery::execute()
                 task->cancel();
             break;
         case Type::TEST_VIEW:
+        {
+            /// The parser keeps the literal text; resolving it needs the server timezone.
+            std::optional<Int64> fake_time;
+            if (query.fake_time_for_view)
+            {
+                ReadBufferFromString buf(*query.fake_time_for_view);
+                time_t time = 0;
+                readDateTimeText(time, buf);
+                assertEOF(buf);
+                fake_time = Int64(time);
+            }
             for (const auto & task : getRefreshTasks())
-                task->setFakeTime(query.fake_time_for_view);
+                task->setFakeTime(fake_time);
             break;
+        }
         case Type::STOP:
         case Type::START:
         case Type::PAUSE:
@@ -2746,45 +2760,105 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
+        /// Each cache command requires the same privilege as its non-ON CLUSTER counterpart above.
+        /// CLEAR INDEX MARK CACHE and CLEAR INDEX UNCOMPRESSED CACHE have no privilege of their own
+        /// and reuse the one of the cache they clear.
         case Type::CLEAR_DNS_CACHE:
-        case Type::CLEAR_CONNECTIONS_CACHE:
-        case Type::CLEAR_MARK_CACHE:
-        case Type::CLEAR_ICEBERG_METADATA_CACHE:
-        case Type::CLEAR_PAIMON_METADATA_CACHE:
-        case Type::CLEAR_AVRO_SCHEMA_CACHE:
-        case Type::CLEAR_PARQUET_METADATA_CACHE:
-        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
-        case Type::CLEAR_PRIMARY_INDEX_CACHE:
-        case Type::CLEAR_MMAP_CACHE:
-        case Type::CLEAR_QUERY_CONDITION_CACHE:
-        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
-        case Type::CLEAR_QUERY_CACHE:
-        case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
-        case Type::CLEAR_UNCOMPRESSED_CACHE:
-        case Type::CLEAR_INDEX_MARK_CACHE:
-        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
-        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
-        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
-        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
-        case Type::CLEAR_TEXT_INDEX_CACHES:
-        case Type::CLEAR_FILESYSTEM_CACHE:
-        case Type::SYNC_FILESYSTEM_CACHE:
-        case Type::CLEAR_PAGE_CACHE:
-        case Type::CLEAR_SCHEMA_CACHE:
-        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
-        case Type::CLEAR_S3_CLIENT_CACHE:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
+            required_access.emplace_back(AccessType::SYSTEM_DROP_DNS_CACHE);
             break;
-        }
+        case Type::CLEAR_CONNECTIONS_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
+            break;
+        case Type::CLEAR_MARK_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_MARK_CACHE);
+            break;
+        case Type::CLEAR_ICEBERG_METADATA_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
+            break;
+        case Type::CLEAR_PAIMON_METADATA_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_PAIMON_METADATA_CACHE);
+            break;
+        case Type::CLEAR_AVRO_SCHEMA_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE);
+            break;
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
+            break;
+        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE);
+            break;
+        case Type::CLEAR_PRIMARY_INDEX_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
+            break;
+        case Type::CLEAR_MMAP_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_MMAP_CACHE);
+            break;
+        case Type::CLEAR_QUERY_CONDITION_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
+            break;
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_ENCRYPTION_HEADERS_CACHE);
+            break;
+        case Type::CLEAR_QUERY_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_QUERY_CACHE);
+            break;
+        case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
+            break;
+        case Type::CLEAR_UNCOMPRESSED_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
+            break;
+        case Type::CLEAR_INDEX_MARK_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_MARK_CACHE);
+            break;
+        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
+            break;
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+            break;
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
+            break;
+        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
+            break;
+        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
+            break;
+        case Type::CLEAR_TEXT_INDEX_CACHES:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
+            break;
+        case Type::CLEAR_FILESYSTEM_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+            break;
+        case Type::SYNC_FILESYSTEM_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
+            break;
+        case Type::CLEAR_PAGE_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_PAGE_CACHE);
+            break;
+        case Type::CLEAR_SCHEMA_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
+            break;
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
+            break;
+        case Type::CLEAR_S3_CLIENT_CACHE:
+            required_access.emplace_back(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
+            break;
         case Type::CLEAR_DISTRIBUTED_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE);
             break;
         }
         case Type::CLEAR_DISK_METADATA_CACHE:
+#if CLICKHOUSE_CLOUD
+            required_access.emplace_back(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+            break;
+#else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+#endif
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
@@ -2872,9 +2946,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_CLEANUP:
         {
             if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
+                required_access.emplace_back(AccessType::SYSTEM_CLEANUP);
             else
-                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_CLEANUP, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_FETCHES:
@@ -2923,9 +2997,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_VIRTUAL_PARTS_UPDATE:
         {
             if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
+                required_access.emplace_back(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE);
             else
-                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_REDUCE_BLOCKING_PARTS:

@@ -2,6 +2,7 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseHTTPDate.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -799,18 +800,25 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     }
 
     if (response.has("Last-Modified"))
-    {
-        String date_str = response.get("Last-Modified");
-        struct tm info{};
-        char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
-        if (end == date_str.data() + date_str.size())
-            res.last_modified = timegm(&info);
-    }
+        res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
 
     return res;
 }
 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTPBasicCredentials & credentials_)
+{
+    return createWithBearerToken(/*bearer_token_=*/ "", credentials_);
+}
+
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const std::string & bearer_token_)
+{
+    /// The buffer keeps a reference to the credentials, hence the immutable static empty object.
+    static const Poco::Net::HTTPBasicCredentials no_credentials;
+    return createWithBearerToken(bearer_token_, no_credentials);
+}
+
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
+    const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
 {
     ProxyConfiguration proxy_configuration;
 
@@ -820,6 +828,17 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
     }
 
+    /// A non-empty bearer token takes precedence: it and the Basic credentials occupy the
+    /// same `Authorization` header. The buffer keeps a reference to the credentials, hence
+    /// the immutable static for the bearer case (the fallback is then unused).
+    static const Poco::Net::HTTPBasicCredentials no_credentials;
+
+    /// Append the bearer header to a local copy so this does not mutate the builder:
+    /// the same builder can be reused without carrying over a stale `Authorization` header.
+    HTTPHeaderEntries header_entries = http_header_entries;
+    if (!bearer_token_.empty())
+        header_entries.emplace_back("Authorization", "Bearer " + bearer_token_);
+
     // todo it could be a problem if ReadWriteBufferFromHTTP throws
     std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(
         connection_group,
@@ -828,7 +847,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         proxy_configuration,
         read_settings,
         timeouts,
-        credentials_,
+        bearer_token_.empty() ? fallback_credentials_ : no_credentials,
         remote_host_filter,
         buffer_size,
         max_redirects,
@@ -836,7 +855,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         out_stream_callback,
         use_external_buffer,
         http_skip_not_found_url,
-        http_header_entries,
+        header_entries,
         redirect_callback,
         delay_initialization,
         /*file_info_=*/ std::nullopt));
