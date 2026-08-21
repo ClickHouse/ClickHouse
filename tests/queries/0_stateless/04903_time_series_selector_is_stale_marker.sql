@@ -64,6 +64,19 @@ SELECT '-- the column can be aggregated without being selected';
 
 SELECT count(), sum(is_stale_marker) FROM timeSeriesSelector(ts, 'foo', 100, 300);
 
+SELECT '-- an instant selector treats any non-zero flag as a marker';
+
+-- The column is a plain UInt8 and an external samples table can hold other values in it. The range
+-- selectors and RemoteRead already test the flag for truth rather than for equality with 1, so the
+-- instant selector must not fall back to the older real sample here either.
+INSERT INTO ts_tags (id, metric_name, tags, min_time, max_time) VALUES
+    (102, 'bar', map(), toDateTime64(0, 3), toDateTime64(1000, 3));
+INSERT INTO ts_samples (id, timestamp, value, is_stale_marker) VALUES
+    (102, toDateTime64(100, 3), 1., 0),
+    (102, toDateTime64(200, 3), nan, 2);
+
+SELECT count() FROM prometheusQuery('ts', 'bar', 250);
+
 DROP TABLE ts;
 DROP TABLE ts_samples;
 DROP TABLE ts_tags;

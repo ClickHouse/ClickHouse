@@ -150,12 +150,16 @@ SQLQueryPiece fromSelector(const PrometheusQueryTree::InstantSelector * instant_
     const String combined_table = subqueries.back().name;
 
     /// SELECT group,
-    ///        arrayMap((x, y) -> if(coalesce(y, 0) = 1, NULL, x), values, winning_row_is_stale_marker) AS values
+    ///        arrayMap((x, y) -> if(coalesce(y, 0) != 0, NULL, x), values, winning_row_is_stale_marker) AS values
     /// FROM <combined_table>
     ///
     /// (`coalesce(y, 0)` treats "no row at all in the window" - a NULL from timeSeriesLastToGrid - the same
     /// as "not a marker": in that case `values` (x) is NULL anyway, since timeSeriesLastToGridIf can't have
     /// found anything either, so the choice doesn't change the result.)
+    ///
+    /// Any non-zero flag counts as a marker, matching `WHERE NOT is_stale_marker` in the range
+    /// selectors and `multiIf(is_stale_marker, ...)` in RemoteRead: the column is a plain UInt8 and
+    /// an external samples table can hold values other than 0 and 1 in it.
     SelectQueryBuilder outer_builder;
     outer_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
@@ -166,9 +170,9 @@ SQLQueryPiece fromSelector(const PrometheusQueryTree::InstantSelector * instant_
             makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
             makeASTFunction(
                 "if",
-                makeASTFunction("equals",
+                makeASTFunction("notEquals",
                     makeASTFunction("coalesce", make_intrusive<ASTIdentifier>("y"), make_intrusive<ASTLiteral>(0.0)),
-                    make_intrusive<ASTLiteral>(1.0)),
+                    make_intrusive<ASTLiteral>(0.0)),
                 make_intrusive<ASTLiteral>(Field{} /* NULL */),
                 make_intrusive<ASTIdentifier>("x"))),
         make_intrusive<ASTIdentifier>(ColumnNames::Values),

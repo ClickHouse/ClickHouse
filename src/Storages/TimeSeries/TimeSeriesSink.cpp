@@ -454,9 +454,12 @@ TimeSeriesSink::TimeSeriesSink(
         return (insert_columns_.empty() || std::find(insert_columns_.begin(), insert_columns_.end(), name) != insert_columns_.end());
     };
 
+    /// `is_stale_marker` is part of the outer schema too, so an INSERT naming only it must still take
+    /// this path - otherwise it is silently dropped instead of reaching the checks below.
     insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
         || is_insert_column(TimeSeriesColumnNames::Tags)
-        || is_insert_column(TimeSeriesColumnNames::TimeSeries);
+        || is_insert_column(TimeSeriesColumnNames::TimeSeries)
+        || is_insert_column(TimeSeriesColumnNames::IsStaleMarker);
 
     insert_metrics = is_insert_column(TimeSeriesColumnNames::MetricFamily)
         || is_insert_column(TimeSeriesColumnNames::Type)

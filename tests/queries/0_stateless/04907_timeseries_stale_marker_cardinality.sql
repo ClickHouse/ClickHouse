@@ -18,4 +18,8 @@ INSERT INTO ts_flags (metric_name, tags, time_series, is_stale_marker) VALUES ('
 INSERT INTO ts_flags (metric_name, tags, time_series) VALUES ('up', map('instance', 'h2'), [(toDateTime64(100, 3), 2)]);
 SELECT count() FROM timeSeriesData(ts_flags);
 
+-- An INSERT naming only `is_stale_marker` must reach the same checks, not be dropped as a no-op.
+INSERT INTO ts_flags (is_stale_marker) VALUES ([1]); -- { serverError INCORRECT_DATA }
+SELECT count() FROM timeSeriesData(ts_flags);
+
 DROP TABLE ts_flags;
