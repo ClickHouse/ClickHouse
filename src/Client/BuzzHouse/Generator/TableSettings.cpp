@@ -353,6 +353,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"merge_total_max_bytes_to_prewarm_cache", bytesRangeSetting},
     {"merge_tree_clear_old_parts_interval_seconds", highRangeSetting},
     {"merge_tree_clear_old_temporary_directories_interval_seconds", highRangeSetting},
+    {"merge_use_batch_sorting_queue", trueOrFalseSetting},
     {"merge_with_recompression_ttl_timeout", highRangeSetting},
     {"merge_with_ttl_timeout", highRangeSetting},
     {"min_absolute_delay_to_close", highRangeSetting},
