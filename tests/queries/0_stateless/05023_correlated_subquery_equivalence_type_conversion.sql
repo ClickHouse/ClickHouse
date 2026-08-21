@@ -1,5 +1,7 @@
 -- Correlated-subquery equivalent-expression substitution across compatible types:
 -- nullability-only differences and native-number pairs with a least supertype.
+-- Cross-base pairs require an integer correlated base: float equality does not pin the
+-- representation, so float-correlated pairs are guarded (case 12).
 -- Issue: https://github.com/ClickHouse/ClickHouse/issues/113407
 --
 -- Each case prints a header line, then a `plan:` line probing EXPLAIN PLAN actions = 1:
@@ -164,11 +166,11 @@ SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_10 AS o WHERE EXISTS (SELECT 1 FROM t_inner_10 AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_10 AS o WHERE EXISTS (SELECT 1 FROM t_inner_10 AS i WHERE i.x = o.x) ORDER BY x;
 
-SELECT '-- Case 11: outer Int32 vs inner Float64; 1.5 must not match 1 or 2 (no truncation), 3.0 must match 3';
+SELECT '-- Case 11: outer Int32 vs inner Float64; 1.5 must not match 1 or 2 (no truncation), 3.0 must match 3, and inner -0.0 canonicalizes to 0 through accurateCastOrNull and must match outer 0';
 CREATE TABLE t_outer_11 (x Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_inner_11 (x Float64) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_outer_11 VALUES (1), (2), (3);
-INSERT INTO t_inner_11 VALUES (1.5), (3.0);
+INSERT INTO t_outer_11 VALUES (0), (1), (2), (3);
+INSERT INTO t_inner_11 VALUES (1.5), (3.0), (-0.0);
 
 SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
               toString(countIf(explain ILIKE '%cross%')),
@@ -177,21 +179,19 @@ SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_11 AS o WHERE EXISTS (SELECT 1 FROM t_inner_11 AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_11 AS o WHERE EXISTS (SELECT 1 FROM t_inner_11 AS i WHERE i.x = o.x) ORDER BY x;
 
-SELECT '-- Case 12: lossless float direction, outer Float64 vs inner Int32; 1.5 and 100.25 must not match';
+SELECT '-- Case 12: guarded, outer Float64 vs inner Int32; a float correlated value cannot be reconstructed from an equivalent member (-0.0 = 0 is true but hash joins compare floats bitwise), so through the fallback -0.0 must match inner 0 (the -0 row appears) while 1.5 and 100.25 must not match';
 CREATE TABLE t_outer_12 (x Float64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_inner_12 (x Int32) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_outer_12 VALUES (1.5), (3), (100.25);
-INSERT INTO t_inner_12 VALUES (1), (3), (100);
+INSERT INTO t_outer_12 VALUES (1.5), (3), (100.25), (-0.0);
+INSERT INTO t_inner_12 VALUES (1), (3), (100), (0);
 
-SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
-              toString(countIf(explain ILIKE '%cross%')),
-              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
-              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+SELECT format('plan: substituted={}',
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_12 AS o WHERE EXISTS (SELECT 1 FROM t_inner_12 AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_12 AS o WHERE EXISTS (SELECT 1 FROM t_inner_12 AS i WHERE i.x = o.x) ORDER BY x;
 
--- The guarded pairs below have comparison semantics that are not consistent with CAST,
--- so they must NOT be substituted (the fallback plan shape itself is not pinned).
+-- Like case 12 above, the pairs below are guarded and must NOT be substituted; here the
+-- comparison semantics are not consistent with CAST (the fallback plan shape itself is not pinned).
 
 SELECT '-- Case 13: guarded, outer Float64 vs inner Int64; the comparison is exact, 9007199254740992.0 must not match 9007199254740993';
 CREATE TABLE t_outer_13 (x Float64) ENGINE = MergeTree ORDER BY tuple();
@@ -338,3 +338,15 @@ SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
               toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
 FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_23 AS i WHERE i.x = o.x) FROM t_outer_23 AS o);
 SELECT x, (SELECT count() FROM t_inner_23 AS i WHERE i.x = o.x) FROM t_outer_23 AS o ORDER BY x;
+
+SELECT '-- Case 24: guarded, outer Float64 vs inner Nullable(Float64); a float correlated value cannot be reconstructed exactly when the types differ: equals merges -0.0 and +0.0 (each outer zero counts both inner zeros, count 2) while a substituted plan would group bitwise (count 1); inner NULL never counts';
+CREATE TABLE t_outer_24 (x Float64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_24 (x Nullable(Float64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_24 VALUES (-0.), (0.), (7.);
+INSERT INTO t_inner_24 VALUES (NULL), (-0.), (0.), (7.);
+
+SELECT format('plan: substituted={}',
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_24 AS i WHERE i.x = o.x) FROM t_outer_24 AS o);
+-- Ordered by the string form: the relative order of -0.0 and 0.0 under a float ORDER BY is comparator-dependent.
+SELECT x, (SELECT count() FROM t_inner_24 AS i WHERE i.x = o.x) FROM t_outer_24 AS o ORDER BY toString(x);

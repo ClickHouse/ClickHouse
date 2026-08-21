@@ -199,6 +199,17 @@ std::optional<SubstitutionConversion> classifySubstitutionConversion(const DataT
 
     auto member_base = removeNullable(removeLowCardinality(member_type));
     auto correlated_base = removeNullable(removeLowCardinality(correlated_type));
+
+    /// Any non-exact substitution reconstructs the correlated column, and a floating-point
+    /// column cannot be reconstructed faithfully: `equals` merges `+0.0` and `-0.0`, while hash
+    /// joins and aggregation compare floats bitwise, so matches and aggregate counts would
+    /// diverge from the non-substituted plan. Only exact-type float substitution (above) is
+    /// consistent - there the fallback also compares bitwise. Integer and string bases have
+    /// unique value representations, so they are unaffected. Float member bases with an integer
+    /// correlated base stay allowed - accurateCastOrNull canonicalizes `-0.0` to `0`.
+    if (isFloat(correlated_base))
+        return std::nullopt;
+
     if (!member_base->equals(*correlated_base))
     {
         if (!isNativeNumber(member_base) || !isNativeNumber(correlated_base))
@@ -581,7 +592,8 @@ QueryPlan decorrelateQueryPlan(
                 /// exactness-checking. `LowCardinality` and `Nullable` are value-transparent wrappers,
                 /// so only the base types decide. Anything else (Decimal vs Float, String vs
                 /// FixedString, ...) has comparison semantics that are not consistent with CAST, so it
-                /// is not recorded.
+                /// is not recorded. Non-exact substitution is additionally restricted to non-float
+                /// correlated bases in `classifySubstitutionConversion` (signed zero).
                 auto lhs_base = removeNullable(removeLowCardinality(lhs_type));
                 auto rhs_base = removeNullable(removeLowCardinality(rhs_type));
                 bool equal_bases = lhs_base->equals(*rhs_base);

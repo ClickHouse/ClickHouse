@@ -33,11 +33,13 @@ plan: cross_joins=0 substituted=1 null_prefiltered=1
 -- Case 10: sideways, outer Int32 vs inner UInt32 (supertype Int64); 3000000000 must not match -1294967296 (its Int32 wrap)
 plan: cross_joins=0 substituted=1 null_prefiltered=1
 5
--- Case 11: outer Int32 vs inner Float64; 1.5 must not match 1 or 2 (no truncation), 3.0 must match 3
+-- Case 11: outer Int32 vs inner Float64; 1.5 must not match 1 or 2 (no truncation), 3.0 must match 3, and inner -0.0 canonicalizes to 0 through accurateCastOrNull and must match outer 0
 plan: cross_joins=0 substituted=1 null_prefiltered=1
+0
 3
--- Case 12: lossless float direction, outer Float64 vs inner Int32; 1.5 and 100.25 must not match
-plan: cross_joins=0 substituted=1 null_prefiltered=0
+-- Case 12: guarded, outer Float64 vs inner Int32; a float correlated value cannot be reconstructed from an equivalent member (-0.0 = 0 is true but hash joins compare floats bitwise), so through the fallback -0.0 must match inner 0 (the -0 row appears) while 1.5 and 100.25 must not match
+plan: substituted=0
+-0
 3
 -- Case 13: guarded, outer Float64 vs inner Int64; the comparison is exact, 9007199254740992.0 must not match 9007199254740993
 plan: substituted=0
@@ -84,3 +86,8 @@ plan: cross_joins=0 substituted=1 null_prefiltered=1
 0	1
 1	\N
 3	1
+-- Case 24: guarded, outer Float64 vs inner Nullable(Float64); a float correlated value cannot be reconstructed exactly when the types differ: equals merges -0.0 and +0.0 (each outer zero counts both inner zeros, count 2) while a substituted plan would group bitwise (count 1); inner NULL never counts
+plan: substituted=0
+-0	2
+0	2
+7	1
