@@ -115,9 +115,15 @@ def warn_on_low_sccache_hit_rate(info):
     stats = Shell.get_output("sccache --show-stats --stats-format json")
     if not stats:
         return
-    counts = json.loads(stats)["stats"]
-    hits = sum(counts.get("cache_hits", {}).get("counts", {}).values())
-    misses = sum(counts.get("cache_misses", {}).get("counts", {}).values())
+    # Best-effort observability: an unexpected stats blob (unparseable, or a
+    # future sccache renaming these fields) must never fail an already-green build.
+    try:
+        counts = json.loads(stats)["stats"]
+        hits = sum(counts["cache_hits"]["counts"].values())
+        misses = sum(counts["cache_misses"]["counts"].values())
+    except (json.JSONDecodeError, KeyError, AttributeError, TypeError) as e:
+        print(f"WARNING: could not parse sccache stats, skipping hit-rate check: {e}")
+        return
     total = hits + misses
     if total == 0:
         return
