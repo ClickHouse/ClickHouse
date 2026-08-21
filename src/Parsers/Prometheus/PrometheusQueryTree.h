@@ -253,6 +253,8 @@ public:
     /// If it isn't successful the function sets `error_pos` and `error_message` and returns false.
     bool tryParse(std::string_view promql_query_, UInt32 timestamp_scale_ = 3, String * error_message_ = nullptr, size_t * error_pos_ = nullptr);
 
+    void validate() const;
+
     bool empty() const { return node_list.empty(); }
     size_t size() const { return node_list.size(); }
 

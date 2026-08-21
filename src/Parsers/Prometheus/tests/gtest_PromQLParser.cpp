@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Common/Exception.h>
 #include <Core/DecimalFunctions.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
@@ -287,6 +288,38 @@ TEST(PromQLParser, PrometheusFormatting)
     expectPrometheusFormatting(R"("\a\v\000\001\037\177")", R"("\a\v\x00\x01\x1f\x7f")");
     expectPrometheusFormatting(R"("\u0085\u00a0\u2028\u00a1\U0001f600")", R"("\u0085\u00a0\u2028¡😀")");
     expectPrometheusFormatting(R"("\xff")", R"("\xff")");
+}
+
+
+TEST(PromQLParser, StaticValidation)
+{
+    for (const auto * const query : {
+             "time()",
+             "sum(foo)",
+             "rate(foo[5m])",
+             "topk(3, foo)",
+             "foo + on(job) group_left(instance) bar",
+             R"(label_replace(foo, "label", "value", "source", "regex"))",
+         })
+    {
+        PrometheusQueryTree query_tree{query};
+        EXPECT_NO_THROW(query_tree.validate()) << query;
+    }
+
+    for (const auto * const query : {
+             "time(1)",
+             "sum(foo, bar)",
+             "sum(1)",
+             "rate(foo)",
+             "foo + bar[5m]",
+             "foo and 1",
+             "1 == 2",
+             "topk(foo, bar)",
+         })
+    {
+        PrometheusQueryTree query_tree{query};
+        EXPECT_THROW(query_tree.validate(), Exception) << query;
+    }
 }
 
 

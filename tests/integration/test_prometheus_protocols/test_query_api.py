@@ -253,6 +253,52 @@ def test_format_query_rejects_invalid_query(query):
     assert data["errorType"] == "bad_data"
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "time(1)",
+        "sum(foo, bar)",
+        "sum(1)",
+        "rate(foo)",
+        "foo + bar[5m]",
+        "foo and 1",
+        "1 == 2",
+        "topk(foo, bar)",
+    ],
+)
+def test_format_query_rejects_semantically_invalid_query(query):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.bad_request, response.text
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["errorType"] == "bad_data"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "time()",
+        "sum(foo)",
+        "rate(foo[5m])",
+        "topk(3, foo)",
+        "foo + on(job) group_left(instance) bar",
+        'label_replace(foo, "label", "value", "source", "regex")',
+    ],
+)
+def test_format_query_accepts_semantically_valid_query(query):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]
+
+
 def test_format_query_does_not_require_a_time_series_table():
     response = requests.get(
         f"http://{node.ip_address}:9093/dynamic_table/api/v1/format_query",

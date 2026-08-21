@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <initializer_list>
 
 
 namespace DB
@@ -29,6 +30,325 @@ namespace ErrorCodes
 namespace
 {
     using Node = PrometheusQueryTree::Node;
+    using ResultType = PrometheusQueryTree::ResultType;
+
+    bool isOneOf(std::string_view value, std::initializer_list<std::string_view> values)
+    {
+        for (const auto candidate : values)
+        {
+            if (value == candidate)
+                return true;
+        }
+        return false;
+    }
+
+    void checkArgumentCount(std::string_view kind, std::string_view name, size_t actual, size_t expected)
+    {
+        if (actual != expected)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "{} '{}' expects {} arguments, but was called with {} arguments",
+                            kind, name, expected, actual);
+        }
+    }
+
+    void checkArgumentCountAtLeast(std::string_view kind, std::string_view name, size_t actual, size_t expected)
+    {
+        if (actual < expected)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "{} '{}' expects at least {} arguments, but was called with {} arguments",
+                            kind, name, expected, actual);
+        }
+    }
+
+    void checkArgumentType(
+        std::string_view kind,
+        std::string_view name,
+        const std::vector<const Node *> & arguments,
+        size_t argument_index,
+        ResultType expected)
+    {
+        const auto actual = arguments[argument_index]->result_type;
+        if (actual != expected)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "{} '{}' expects argument #{} of type {}, but got {}",
+                            kind, name, argument_index + 1, expected, actual);
+        }
+    }
+
+    void checkArgumentTypes(
+        std::string_view kind,
+        std::string_view name,
+        const std::vector<const Node *> & arguments,
+        std::initializer_list<ResultType> expected_types)
+    {
+        size_t argument_index = 0;
+        for (const auto expected : expected_types)
+        {
+            checkArgumentType(kind, name, arguments, argument_index, expected);
+            ++argument_index;
+        }
+    }
+
+    bool isScalarOrInstantVector(ResultType type)
+    {
+        return type == ResultType::SCALAR || type == ResultType::INSTANT_VECTOR;
+    }
+
+    void validateFunction(const PrometheusQueryTree::Function & function)
+    {
+        const auto & name = function.function_name;
+        const auto & arguments = function.getArguments();
+
+        if (isOneOf(name, {"time", "pi"}))
+        {
+            checkArgumentCount("Function", name, arguments.size(), 0);
+        }
+        else if (name == "scalar")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 1);
+            checkArgumentTypes("Function", name, arguments, {ResultType::INSTANT_VECTOR});
+        }
+        else if (name == "vector")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 1);
+            checkArgumentTypes("Function", name, arguments, {ResultType::SCALAR});
+        }
+        else if (isOneOf(name, {
+                     "abs", "absent", "ceil", "floor", "histogram_count", "histogram_sum", "sort", "sort_desc", "timestamp",
+                     "acos", "acosh", "asin", "asinh", "atan", "atanh", "cos", "cosh", "deg", "exp", "ln", "log2",
+                     "log10", "rad", "sgn", "sin", "sinh", "sqrt", "tan", "tanh"}))
+        {
+            checkArgumentCount("Function", name, arguments.size(), 1);
+            checkArgumentTypes("Function", name, arguments, {ResultType::INSTANT_VECTOR});
+        }
+        else if (isOneOf(name, {
+                     "absent_over_time", "avg_over_time", "changes", "count_over_time", "delta", "deriv", "idelta", "increase",
+                     "irate", "last_over_time", "max_over_time", "min_over_time", "present_over_time", "rate", "resets",
+                     "stddev_over_time", "stdvar_over_time", "sum_over_time"}))
+        {
+            checkArgumentCount("Function", name, arguments.size(), 1);
+            checkArgumentTypes("Function", name, arguments, {ResultType::RANGE_VECTOR});
+        }
+        else if (isOneOf(name, {"day_of_month", "day_of_week", "day_of_year", "days_in_month", "hour", "minute", "month", "year"}))
+        {
+            if (arguments.size() > 1)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Function '{}' expects 0 or 1 arguments, but was called with {} arguments",
+                                name, arguments.size());
+            }
+            if (!arguments.empty())
+                checkArgumentTypes("Function", name, arguments, {ResultType::INSTANT_VECTOR});
+        }
+        else if (name == "clamp")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 3);
+            checkArgumentTypes("Function", name, arguments, {ResultType::INSTANT_VECTOR, ResultType::SCALAR, ResultType::SCALAR});
+        }
+        else if (isOneOf(name, {"clamp_min", "clamp_max"}))
+        {
+            checkArgumentCount("Function", name, arguments.size(), 2);
+            checkArgumentTypes("Function", name, arguments, {ResultType::INSTANT_VECTOR, ResultType::SCALAR});
+        }
+        else if (name == "round")
+        {
+            if (arguments.size() != 1 && arguments.size() != 2)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Function '{}' expects 1 or 2 arguments, but was called with {} arguments",
+                                name, arguments.size());
+            }
+            checkArgumentType("Function", name, arguments, 0, ResultType::INSTANT_VECTOR);
+            if (arguments.size() == 2)
+                checkArgumentType("Function", name, arguments, 1, ResultType::SCALAR);
+        }
+        else if (name == "label_replace")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 5);
+            checkArgumentType("Function", name, arguments, 0, ResultType::INSTANT_VECTOR);
+            for (size_t i = 1; i < arguments.size(); ++i)
+                checkArgumentType("Function", name, arguments, i, ResultType::STRING);
+        }
+        else if (name == "label_join")
+        {
+            checkArgumentCountAtLeast("Function", name, arguments.size(), 3);
+            checkArgumentType("Function", name, arguments, 0, ResultType::INSTANT_VECTOR);
+            for (size_t i = 1; i < arguments.size(); ++i)
+                checkArgumentType("Function", name, arguments, i, ResultType::STRING);
+        }
+        else if (name == "histogram_quantile")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 2);
+            checkArgumentTypes("Function", name, arguments, {ResultType::SCALAR, ResultType::INSTANT_VECTOR});
+        }
+        else if (name == "histogram_fraction")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 3);
+            checkArgumentTypes("Function", name, arguments, {ResultType::SCALAR, ResultType::SCALAR, ResultType::INSTANT_VECTOR});
+        }
+        else if (name == "holt_winters")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 3);
+            checkArgumentTypes("Function", name, arguments, {ResultType::RANGE_VECTOR, ResultType::SCALAR, ResultType::SCALAR});
+        }
+        else if (name == "predict_linear")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 2);
+            checkArgumentTypes("Function", name, arguments, {ResultType::RANGE_VECTOR, ResultType::SCALAR});
+        }
+        else if (name == "quantile_over_time")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 2);
+            checkArgumentTypes("Function", name, arguments, {ResultType::SCALAR, ResultType::RANGE_VECTOR});
+        }
+    }
+
+    void validateAggregationOperator(const PrometheusQueryTree::AggregationOperator & aggregation)
+    {
+        const auto & name = aggregation.operator_name;
+        const auto & arguments = aggregation.getArguments();
+
+        if (isOneOf(name, {"sum", "min", "max", "avg", "count", "stddev", "stdvar", "group"}))
+        {
+            checkArgumentCount("Aggregation operator", name, arguments.size(), 1);
+            checkArgumentTypes("Aggregation operator", name, arguments, {ResultType::INSTANT_VECTOR});
+        }
+        else if (name == "count_values")
+        {
+            checkArgumentCount("Aggregation operator", name, arguments.size(), 2);
+            checkArgumentTypes("Aggregation operator", name, arguments, {ResultType::STRING, ResultType::INSTANT_VECTOR});
+        }
+        else if (isOneOf(name, {"bottomk", "limitk", "topk", "quantile"}))
+        {
+            checkArgumentCount("Aggregation operator", name, arguments.size(), 2);
+            checkArgumentTypes("Aggregation operator", name, arguments, {ResultType::SCALAR, ResultType::INSTANT_VECTOR});
+        }
+    }
+
+    void validateBinaryOperator(const PrometheusQueryTree::BinaryOperator & binary)
+    {
+        const auto left_type = binary.getLeftArgument()->result_type;
+        const auto right_type = binary.getRightArgument()->result_type;
+        const bool both_vectors = left_type == ResultType::INSTANT_VECTOR && right_type == ResultType::INSTANT_VECTOR;
+        const bool has_vector_matching = binary.on || binary.ignoring || binary.group_left || binary.group_right;
+
+        if (binary.operator_name == "and" || binary.operator_name == "or" || binary.operator_name == "unless")
+        {
+            if (!both_vectors)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Binary operator '{}' expects two arguments of type {}, but got {} and {}",
+                                binary.operator_name, ResultType::INSTANT_VECTOR, left_type, right_type);
+            }
+            if (binary.bool_modifier)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Binary operator '{}' doesn't allow the bool modifier", binary.operator_name);
+            }
+            if (binary.group_left || binary.group_right)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Binary operator '{}' doesn't allow group modifiers", binary.operator_name);
+            }
+            return;
+        }
+
+        if (!isScalarOrInstantVector(left_type) || !isScalarOrInstantVector(right_type))
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "Binary operator '{}' expects arguments of type {} or {}, but got {} and {}",
+                            binary.operator_name, ResultType::SCALAR, ResultType::INSTANT_VECTOR, left_type, right_type);
+        }
+
+        const bool is_comparison = isOneOf(binary.operator_name, {"==", "!=", ">", "<", ">=", "<="});
+        if (is_comparison)
+        {
+            if (left_type == ResultType::SCALAR && right_type == ResultType::SCALAR && !binary.bool_modifier)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Comparison operator '{}' on scalars requires the bool modifier", binary.operator_name);
+            }
+        }
+        else if (binary.bool_modifier)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "Binary operator '{}' doesn't allow the bool modifier", binary.operator_name);
+        }
+
+        if (has_vector_matching && !both_vectors)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "Vector matching for binary operator '{}' requires two instant-vector arguments, but got {} and {}",
+                            binary.operator_name, left_type, right_type);
+        }
+    }
+
+    void validateNode(const Node * node)
+    {
+        for (const auto * child : node->children)
+            validateNode(child);
+
+        switch (node->node_type)
+        {
+            case PrometheusQueryTree::NodeType::Subquery:
+            {
+                const auto * subquery = static_cast<const PrometheusQueryTree::Subquery *>(node);
+                if (subquery->getExpression()->result_type != ResultType::INSTANT_VECTOR)
+                {
+                    throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                    "Subquery expression must have type {}, but got {}",
+                                    ResultType::INSTANT_VECTOR, subquery->getExpression()->result_type);
+                }
+                break;
+            }
+            case PrometheusQueryTree::NodeType::Offset:
+            {
+                const auto * offset = static_cast<const PrometheusQueryTree::Offset *>(node);
+                if (offset->getExpression()->result_type != ResultType::INSTANT_VECTOR
+                    && offset->getExpression()->result_type != ResultType::RANGE_VECTOR)
+                {
+                    throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                    "Offset expression must have type {} or {}, but got {}",
+                                    ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR, offset->getExpression()->result_type);
+                }
+                break;
+            }
+            case PrometheusQueryTree::NodeType::Function:
+                validateFunction(static_cast<const PrometheusQueryTree::Function &>(*node));
+                break;
+            case PrometheusQueryTree::NodeType::UnaryOperator:
+            {
+                const auto * unary = static_cast<const PrometheusQueryTree::UnaryOperator *>(node);
+                if (unary->operator_name != "+" && unary->operator_name != "-")
+                {
+                    throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                    "Unknown unary operator '{}'", unary->operator_name);
+                }
+                if (!isScalarOrInstantVector(unary->getArgument()->result_type))
+                {
+                    throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                    "Unary operator '{}' expects an argument of type {} or {}, but got {}",
+                                    unary->operator_name, ResultType::SCALAR, ResultType::INSTANT_VECTOR,
+                                    unary->getArgument()->result_type);
+                }
+                break;
+            }
+            case PrometheusQueryTree::NodeType::BinaryOperator:
+                validateBinaryOperator(static_cast<const PrometheusQueryTree::BinaryOperator &>(*node));
+                break;
+            case PrometheusQueryTree::NodeType::AggregationOperator:
+                validateAggregationOperator(static_cast<const PrometheusQueryTree::AggregationOperator &>(*node));
+                break;
+            case PrometheusQueryTree::NodeType::Scalar:
+            case PrometheusQueryTree::NodeType::StringLiteral:
+            case PrometheusQueryTree::NodeType::InstantSelector:
+            case PrometheusQueryTree::NodeType::RangeSelector:
+                break;
+        }
+    }
 
     String quotePromQLString(std::string_view str)
     {
@@ -1023,6 +1343,12 @@ void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 timestamp
 bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 timestamp_scale_, String * error_message_, size_t * error_pos_)
 {
     return PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, error_message_, error_pos_);
+}
+
+void PrometheusQueryTree::validate() const
+{
+    if (root)
+        validateNode(root);
 }
 
 

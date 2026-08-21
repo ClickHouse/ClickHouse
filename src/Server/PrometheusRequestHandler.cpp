@@ -482,6 +482,7 @@ public:
             if (uri_path.ends_with("/format_query"))
             {
                 PrometheusQueryTree query_tree{params->get("query", ""), 9};
+                query_tree.validate();
                 String formatted_query = query_tree.toPrometheusString();
 
                 auto & output = getOutputStream(response);
