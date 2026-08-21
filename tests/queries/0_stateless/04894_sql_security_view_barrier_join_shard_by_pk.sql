@@ -11,8 +11,11 @@
 SET enable_analyzer = 1;
 
 -- Pin everything the optimization depends on: it fires for the sorting merge join, needs several
--- threads, and the legacy `EXPLAIN` format prints the `Sharding` line.
-SET query_plan_join_shard_by_pk_ranges = 1, join_algorithm = 'full_sorting_merge', max_threads = 4,
+-- threads, needs the reading to be in primary-key order, and the legacy `EXPLAIN` format prints the
+-- `Sharding` line. `optimize_read_in_order` is randomized by the test harness, and with it off the
+-- positive controls below stop sharding.
+SET optimize_read_in_order = 1,
+    query_plan_join_shard_by_pk_ranges = 1, join_algorithm = 'full_sorting_merge', max_threads = 4,
     query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0,
     use_statistics = 0, enable_join_runtime_filters = 0, enable_parallel_replicas = 0,
     make_distributed_plan = 0, explain_query_plan_default = 'legacy';

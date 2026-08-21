@@ -81,13 +81,13 @@ echo "===== lazy FINAL does not consume an outer limit through the barrier =====
 # The third part has a non-overlapping key range. Lazy FINAL may split it out only when the outer
 # LIMIT is not considered to apply to the read below the barrier. Before the fence this query kept
 # regular FINAL instead, because the invoker's LIMIT disabled the partial split.
-${CLICKHOUSE_CLIENT} --enable_analyzer 1 --user "$user" --query "
-    SELECT countIf(explain LIKE '%LazyFinal%') > 0
-    FROM (
-        EXPLAIN SELECT * FROM $db.lazy_final_owned_view LIMIT 1
-        SETTINGS query_plan_optimize_lazy_final = 1,
-                 max_rows_for_lazy_final = 10000000,
-                 min_filtered_ratio_for_lazy_final = 0
-    )"
+# The match is done in the shell rather than by wrapping the `EXPLAIN` into a subquery, because
+# the latter needs `CREATE TEMPORARY TABLE ON *.*`, which the invoker deliberately does not have.
+if ${CLICKHOUSE_CLIENT} --enable_analyzer 1 --user "$user" --query "
+    EXPLAIN SELECT * FROM $db.lazy_final_owned_view LIMIT 1
+    SETTINGS query_plan_optimize_lazy_final = 1,
+             max_rows_for_lazy_final = 10000000,
+             min_filtered_ratio_for_lazy_final = 0" | grep -q "LazyFinal"
+then echo 1; else echo 0; fi
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"
