@@ -1124,8 +1124,13 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
                 /// Validate the user-provided types of the inner columns the same way external targets are validated.
+                /// The `uuid_type_version` setting was already materialized into these column declarations above
+                /// (and into the types generated from `resolved_types`), so it must not be applied a second time
+                /// here - otherwise a bare `UUID` generated from a historical `UUID1` id would become `UUID2` and
+                /// fail the check against the resolved id type.
                 auto inner_columns_description = InterpreterCreateQuery::getColumnsDescription(
-                    *inner_columns->columns, context, mode);
+                    *inner_columns->columns, context, mode, /*is_restore_from_backup=*/ false,
+                    /*check_defaults_over_virtual_columns=*/ true, /*materialize_uuid_type_version=*/ false);
                 checkTargetTable(inner_columns_description, kind, settings, resolved_types, table_id);
 
                 if (!create_query.getTargetInnerEngine(kind))
