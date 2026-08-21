@@ -305,6 +305,13 @@ struct AggregationMethodKeysFixed
     {
     }
 
+    /// The precomputed-hash prefetch path is only usable by hash-addressed tables.
+    /// `keys16` is backed by a `FixedHashTable`, which is addressed by the key directly and has no
+    /// hash at all: opting it in would only grow the state and allocate a `PrefetchingHelper` for a
+    /// feature that is dead by construction. Derive the opt-in from the table kind, using the same
+    /// concept the hot path in `Aggregator` and `HashMethodBase` checks.
+    static constexpr bool enable_pre_computed_hashes = ColumnsHashing::columns_hashing_impl::HasPrefetchByHashMemberFunc<Data>;
+
     template <bool use_cache>
     using StateImpl = ColumnsHashing::HashMethodKeysFixed<
         typename Data::value_type,
@@ -315,7 +322,7 @@ struct AggregationMethodKeysFixed
         use_cache && consecutive_keys_optimization,
         false,
         true,
-        true>;
+        enable_pre_computed_hashes>;
 
     using State = StateImpl<true>;
     using StateNoCache = StateImpl<false>;
