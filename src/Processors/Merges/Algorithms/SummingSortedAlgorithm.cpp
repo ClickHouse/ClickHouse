@@ -594,6 +594,47 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     return def;
 }
 
+NameSet SummingSortedAlgorithm::getAggregatedColumnNames(
+    const Block & sample_header,
+    const SortDescription & sort_description,
+    const Names & column_names_to_sum,
+    const Names & partition_and_sorting_required_columns,
+    const String & sum_function_name,
+    const String & sum_function_map_name,
+    bool remove_default_values,
+    bool aggregate_all_columns,
+    bool allow_tuple_element_aggregation)
+{
+    auto def = defineColumns(
+        sample_header,
+        sort_description,
+        column_names_to_sum,
+        partition_and_sorting_required_columns,
+        sum_function_name,
+        sum_function_map_name,
+        remove_default_values,
+        aggregate_all_columns,
+        allow_tuple_element_aggregation);
+
+    NameSet result;
+    for (const auto & desc : def.columns_to_aggregate)
+        for (auto column_number : desc.column_numbers)
+            result.insert(def.column_names[column_number]);
+
+    /// A map with a composite key is merged by the legacy `mergeMap` path. Its columns are not
+    /// summed, but their presence makes the merge keep every row, so the read set must include
+    /// them as well: otherwise `FINAL` would remove a row that a real merge keeps.
+    for (const auto & map : def.maps_to_sum)
+    {
+        for (auto column_number : map.key_col_nums)
+            result.insert(def.column_names[column_number]);
+        for (auto column_number : map.val_col_nums)
+            result.insert(def.column_names[column_number]);
+    }
+
+    return result;
+}
+
 static void preprocessChunk(Chunk & chunk, const SummingSortedAlgorithm::ColumnsDefinition & def)
 {
     auto num_rows = chunk.getNumRows();

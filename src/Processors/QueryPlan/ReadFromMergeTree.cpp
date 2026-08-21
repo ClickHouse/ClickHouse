@@ -15,7 +15,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
@@ -41,6 +40,7 @@
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -71,7 +71,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -82,7 +81,6 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
 #include <Common/checkStackSize.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -2172,102 +2170,27 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 /// a subset. Otherwise `SummingSortedTransform` would decide the removal by the visible
 /// subset alone and drop rows that a real merge keeps (because some column that the query
 /// does not read sums to a non-zero value).
+///
+/// The set is computed by the merge algorithm itself, so that the read set stays exactly aligned
+/// with what a real merge aggregates. In particular, a `...Map` group that the algorithm rejects
+/// (a single column, a non-integer key or a non-summable value) is only copied by the merge and
+/// is not read here.
 static NameSet getColumnsAggregatedForSummingFinal(
     const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::MergingParams & merging_params)
 {
-    NameSet not_aggregated;
-    for (const auto & name : metadata_snapshot->getColumnsRequiredForSortingKey())
-        not_aggregated.insert(name);
-    for (const auto & name : metadata_snapshot->getColumnsRequiredForPartitionKey())
-        not_aggregated.insert(name);
+    SortDescription sort_description;
+    for (const auto & column_name : metadata_snapshot->getSortingKeyColumns())
+        sort_description.emplace_back(column_name);
 
-    const auto & columns_to_sum = merging_params.columns_to_sum;
+    auto partition_and_sorting_required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
+    partition_and_sorting_required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
 
-    /// `SummingSortedAlgorithm` flattens tuple columns before it chooses the columns to
-    /// aggregate. Do the same here: adding a whole Tuple would make FINAL read unrelated
-    /// leaves (for example, a String sibling of a numeric tuple element) that the merge
-    /// only copies and never consults when it decides whether to remove a row.
-    auto header = metadata_snapshot->getSampleBlock();
-    const NameSet original_column_names = header.getNameSet();
-    std::vector<Strings> flatten_ancestors;
-    if (merging_params.allow_tuple_element_aggregation)
-        header = Nested::flattenTupleRecursive(header, &flatten_ancestors);
-    else
-        flatten_ancestors.resize(header.columns());
-
-    const auto is_column_or_ancestor_in = [&header, &flatten_ancestors](size_t index, const Names & names)
-    {
-        const auto & column_name = header.safeGetByPosition(index).name;
-        if (std::ranges::find(names, column_name) != names.end())
-            return true;
-        return std::ranges::any_of(flatten_ancestors[index], [&names](const auto & ancestor)
-        {
-            return std::ranges::find(names, ancestor) != names.end();
-        });
-    };
-
-    NameSet aggregated_columns;
-    for (size_t index = 0; index < header.columns(); ++index)
-    {
-        const auto & column = header.safeGetByPosition(index);
-        if (not_aggregated.contains(column.name))
-            continue;
-        if (is_column_or_ancestor_in(index, metadata_snapshot->getColumnsRequiredForSortingKey())
-            || is_column_or_ancestor_in(index, metadata_snapshot->getColumnsRequiredForPartitionKey()))
-            continue;
-        if (column.name == BlockNumberColumn::name || column.name == BlockOffsetColumn::name)
-            continue;
-
-        if (!columns_to_sum.empty())
-        {
-            /// An entry of `columns_to_sum` may name the column itself, the Nested table the column
-            /// belongs to, or (with allow_tuple_element_aggregation) an element of a Tuple column.
-            const auto nested_table_name = merging_params.allow_tuple_element_aggregation
-                ? Nested::splitName(column.name, /*reverse=*/true).first
-                : Nested::extractTableName(column.name);
-            /// A real top-level Nested `...Map` column is always handled by `sumMap`, even when
-            /// `columns_to_sum` is explicit. This is the same special case as in
-            /// `SummingSortedAlgorithm::defineColumns`.
-            const bool is_real_tuple_map = !merging_params.allow_tuple_element_aggregation
-                || original_column_names.contains(column.name)
-                || std::ranges::find(flatten_ancestors[index], nested_table_name) != flatten_ancestors[index].end();
-            if (WhichDataType(column.type).isArray() && nested_table_name != column.name && endsWith(nested_table_name, "Map")
-                && is_real_tuple_map)
-            {
-                aggregated_columns.insert(column.name);
-                continue;
-            }
-
-            const bool is_simple_aggregate_function
-                = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()) != nullptr;
-            if ((column.type->isSummable() || WhichDataType(column.type).isAggregateFunction() || is_simple_aggregate_function)
-                && is_column_or_ancestor_in(index, columns_to_sum))
-            {
-                aggregated_columns.insert(column.name);
-            }
-            continue;
-        }
-
-        const bool is_simple_aggregate_function
-            = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()) != nullptr;
-        bool aggregated
-            = column.type->isSummable() || WhichDataType(column.type).isAggregateFunction() || is_simple_aggregate_function;
-        if (!aggregated && WhichDataType(column.type).isArray())
-        {
-            /// Arrays of a Nested table whose name ends with "Map" are merged with sumMap.
-            const auto nested_table_name = merging_params.allow_tuple_element_aggregation
-                ? Nested::splitName(column.name, /*reverse=*/true).first
-                : Nested::extractTableName(column.name);
-            const bool is_real_tuple_map = !merging_params.allow_tuple_element_aggregation
-                || original_column_names.contains(column.name)
-                || std::ranges::find(flatten_ancestors[index], nested_table_name) != flatten_ancestors[index].end();
-            aggregated = nested_table_name != column.name && endsWith(nested_table_name, "Map") && is_real_tuple_map;
-        }
-        if (aggregated)
-            aggregated_columns.insert(column.name);
-    }
-
-    return aggregated_columns;
+    return SummingSortedTransform::getAggregatedColumnNames(
+        metadata_snapshot->getSampleBlock(),
+        sort_description,
+        merging_params.columns_to_sum,
+        partition_and_sorting_required_columns,
+        merging_params.allow_tuple_element_aggregation);
 }
 
 NameSet getColumnsRequiredForMergingFinal(
