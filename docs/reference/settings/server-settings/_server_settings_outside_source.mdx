@@ -189,7 +189,7 @@ You can configure multiple `<case>` sections.
 - If a data part matches multiple condition sets, ClickHouse uses the last matched condition set (the `<case>` sections are checked in order, and each matching one overrides the previous choice).
 
 <Note>
-If no conditions are met for a data part, ClickHouse uses the size-aware built-in default: `LZ4` for parts smaller than 100 MB and `ZSTD(3)` for larger parts.
+If no conditions are met for a data part, ClickHouse uses the size-aware built-in default: `LZ4` below 100 MB and `ZSTD(3)` at or above it. As for the `min_part_size` conditions above, the size is the one known when the codec has to be chosen, before the data is written: `0` for a freshly inserted part, and the size of the source parts for a merge or a mutation. A rewrite that shrinks its input, such as a `TTL DELETE` or a collapsing merge, is therefore classified by the input size and can produce a part below the threshold that is still `ZSTD(3)`.
 </Note>
 
 **Example**

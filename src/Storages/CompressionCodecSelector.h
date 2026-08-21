@@ -38,16 +38,25 @@ namespace ErrorCodes
     </compression>
 
   * The built-in default (used when no `<case>` matched, including when there is no `<compression>`
-  * configuration at all) is size-aware: parts smaller than `min_part_size_for_default_codec` use the
-  * faster `LZ4`, while larger parts use the default codec (`ZSTD(3)`). Freshly inserted parts, whose
-  * final size is not yet known, are passed a size of `0` and therefore start as `LZ4`; the bigger parts
-  * produced by background merges cross the threshold and switch to `ZSTD(3)`. This keeps compression
-  * cheap for small, frequently rewritten data while getting the better ratio for the bulk of the data.
+  * configuration at all) is size-aware: below `min_part_size_for_default_codec` the faster `LZ4` is
+  * used, at or above it the default codec (`ZSTD(3)`). This keeps compression cheap for small,
+  * frequently rewritten data while getting the better ratio for the bulk of the data.
+  *
+  * The threshold is applied to the size `choose` is called with, which is the size known when the codec
+  * has to be picked - before the data is written - exactly like the `min_part_size` conditions above.
+  * A freshly inserted part has no size yet and is passed `0`, so it starts as `LZ4`; a merge or a
+  * mutation passes the size of its source parts, so the bigger parts produced by background merges
+  * cross the threshold and switch to `ZSTD(3)`. It is therefore an estimate, not the size of the
+  * resulting part: a rewrite that shrinks its input - a `TTL DELETE`, deduplicating or collapsing
+  * merge, or a full-rewrite mutation - is classified by the input size and can emit a part below the
+  * threshold that is still `ZSTD(3)`. Basing it on the output size is not possible here, because the
+  * codec has to be chosen before the first block is compressed.
   */
 class CompressionCodecSelector
 {
 private:
-    /// Parts smaller than this use `LZ4` by the built-in default; larger parts use the default codec (`ZSTD(3)`).
+    /// The built-in default uses `LZ4` below this size and the default codec (`ZSTD(3)`) at or above it.
+    /// Matched against the size known at write time (see above), not against the resulting part size.
     static constexpr size_t min_part_size_for_default_codec = 100 * 1024 * 1024;
 
     struct Element
