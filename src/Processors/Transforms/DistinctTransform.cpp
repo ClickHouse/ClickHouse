@@ -314,7 +314,10 @@ void DistinctTransform::transform(Chunk & chunk)
     {
         abandon_controller->update(num_rows, num_selected, data->getTotalByteCount());
         if (abandon_controller->isAbandoned())
+        {
             data.reset();
+            lc_dict_states.clear();
+        }
     }
 
     /// Just go to the next chunk if there isn't any new record in the current one.
