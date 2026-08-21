@@ -405,7 +405,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNIQUE_KEY_DENSE_INDEX_UNREADABLE;
     extern const int ILLEGAL_INDEX;
-    extern const int ILLEGAL_STATISTICS;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
@@ -6193,29 +6192,6 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                 throw Exception(ErrorCodes::ILLEGAL_INDEX,
                     "Index of type '{}' is no longer supported. Please drop the index",
                     indices.getByName(command.index_name).type);
-        }
-    }
-
-    /// Statistics of a non-physical column cannot be built. Reject an explicitly named one here,
-    /// synchronously, so it never reaches the background mutation, which can only retry.
-    /// `MATERIALIZE STATISTICS ALL` skips such a column instead.
-    {
-        const auto statistics_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-        const auto & columns = statistics_metadata_snapshot->getColumns();
-        for (const auto & command : commands)
-        {
-            if (command.type != MutationCommand::MATERIALIZE_STATISTICS)
-                continue;
-            for (const auto & column_name : command.statistics_columns)
-            {
-                if (!columns.has(column_name))
-                    continue;
-                if (!columns.get(column_name).statistics.empty() && !columns.hasPhysical(column_name))
-                    throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
-                        "Cannot materialize statistics of column '{}': it is not physically stored. "
-                        "Please drop the statistics",
-                        column_name);
-            }
         }
     }
 }
