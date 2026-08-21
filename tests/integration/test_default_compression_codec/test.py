@@ -459,6 +459,10 @@ def test_missing_codec_file_fails_closed_for_modern_part(start_cluster):
     # codec, so `IMergeTreeDataPart::detectDefaultCompressionCodec` cannot read it from a column
     # `.bin` and cannot recover it. `checksums.txt` records the built-in codec rather than the part
     # default, so a modern part that lost its mandatory codec file must fail closed.
+    # `min_bytes_for_wide_part = 0` keeps the part `Wide`, so the mutation below rewrites a single
+    # column and hardlinks the rest. A `Compact` part would take the full-rewrite path, whose codec
+    # is derived from the current metadata and is therefore exact, and the provenance marker
+    # asserted below would not be involved at all.
     node4.query(
         """
     CREATE TABLE no_codec_file (
@@ -466,6 +470,7 @@ def test_missing_codec_file_fails_closed_for_modern_part(start_cluster):
         data String CODEC(ZSTD(1))
     )
     ENGINE MergeTree ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0
     """
     )
 
@@ -507,8 +512,10 @@ def test_missing_codec_file_fails_closed_for_modern_part(start_cluster):
         settings={"mutations_sync": 2},
     )
 
+    # `DETACH PART` leaves an empty part covering the detached range, so every part lookup after it
+    # must skip the empty parts.
     mutated_part_name = node4.query(
-        "SELECT name FROM system.parts WHERE database='default' AND table='no_codec_file' AND active"
+        "SELECT name FROM system.parts WHERE database='default' AND table='no_codec_file' AND active AND rows > 0"
     ).strip()
     assert (
         node4.exec_in_container(
@@ -1070,6 +1077,18 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
     node5.query("ATTACH TABLE codec_provenance_mutation")
 
     assert node5.query("SELECT extra FROM codec_provenance_mutation").strip() == "2"
+
+    # `DETACH PART` above left an empty part covering the detached range, and the reload brought it
+    # back. It has no projections, so `OPTIMIZE ... FINAL` would refuse to merge it together with the
+    # real part. Wait for the background cleanup to drop it.
+    assert_eq_with_retry(
+        node5,
+        "SELECT count() FROM system.parts WHERE database='default' "
+        "AND table='codec_provenance_mutation' AND active AND rows = 0",
+        "0\n",
+        retry_count=60,
+        sleep_time=1,
+    )
 
     # The due TTL must still be considered after the reload. Its full rewrite materializes every
     # default-coded column with `ZSTD(1)`, after which that codec becomes exact part-wide metadata.
