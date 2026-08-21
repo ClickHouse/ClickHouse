@@ -556,24 +556,37 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         {
                             time_t absolute_delay = 0;
                             time_t relative_delay = 0;
-                            table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
+                            {
+                                /// The table can turn readonly between the `status.is_readonly` check
+                                /// above and this call, which then throws before doing any work. That
+                                /// race is not an error of this server, so it must not reach `system.errors`.
+                                Exception::SuppressErrorCodesScope suppress_error_codes;
+                                table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
+                            }
 
                             calculateMax(max_absolute_delay, absolute_delay);
                             calculateMax(max_relative_delay, relative_delay);
                         }
-                        catch (...)
+                        catch (Exception & e)
                         {
-                            /// The table can transition to readonly between the `status.is_readonly`
-                            /// check above and the call to `getReplicaDelays` (which calls
-                            /// `assertNotReadonly` internally). This is a benign race for a
-                            /// background metrics thread, so do not pollute the error log /
-                            /// stderr with `TABLE_IS_READ_ONLY` exceptions caused by it.
-                            auto level = getCurrentExceptionCode() == ErrorCodes::TABLE_IS_READ_ONLY
+                            /// The same call also talks to Keeper, and those failures are real
+                            /// operational errors that belong in `system.errors`.
+                            if (e.code() != ErrorCodes::TABLE_IS_READ_ONLY)
+                                e.recordToSystemErrors();
+
+                            /// The readonly race is benign for a background metrics thread, so do not
+                            /// pollute the error log / stderr with it.
+                            auto level = e.code() == ErrorCodes::TABLE_IS_READ_ONLY
                                 ? LogsLevel::debug
                                 : LogsLevel::error;
                             tryLogCurrentException(__PRETTY_FUNCTION__,
                                 "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()),
                                 level);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__,
+                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
                         }
                     }
                 }
