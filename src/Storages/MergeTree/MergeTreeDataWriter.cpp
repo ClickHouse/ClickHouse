@@ -1139,6 +1139,17 @@ static IdentifierNameSet collectValueCarryingIdentifierNames(const IAST & node)
     return names;
 }
 
+/// A lambda formal is used by the body when it appears bare (`x`) or through a member (`x.doc`):
+/// the member access still reads the formal, so the matching higher-order argument donates provenance.
+static bool lambdaParamIsUsedInBody(const String & param_name, const IdentifierNameSet & body_names)
+{
+    if (body_names.contains(param_name))
+        return true;
+    const String prefix = param_name + ".";
+    auto it = body_names.lower_bound(prefix);
+    return it != body_names.end() && it->starts_with(prefix);
+}
+
 /// If args[0] is `lambda((p1, ..., pn) -> body)` with n == args.size() - 1 params (the shape shared
 /// by arrayFold and the array-mapping higher-order functions), returns the params tuple and body.
 static std::pair<const ASTFunction *, const IAST *> extractLambdaParamsAndBody(const ASTs & args)
@@ -1283,7 +1294,7 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
                 for (size_t i = 1; i < params.size(); ++i)
                 {
                     const auto * param_identifier = params[i]->as<ASTIdentifier>();
-                    if (param_identifier && body_names.contains(param_identifier->name()))
+                    if (param_identifier && lambdaParamIsUsedInBody(param_identifier->name(), body_names))
                         collectValueCarryingIdentifierNames(*args[i], names, masked_names);
                 }
                 collectValueCarryingIdentifierNames(*args.back(), names, masked_names);
@@ -1303,7 +1314,7 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
                 for (size_t i = 0; i != params.size(); ++i)
                 {
                     const auto * param_identifier = params[i]->as<ASTIdentifier>();
-                    if (param_identifier && body_names.contains(param_identifier->name()))
+                    if (param_identifier && lambdaParamIsUsedInBody(param_identifier->name(), body_names))
                         collectValueCarryingIdentifierNames(*args[1 + i], names, masked_names);
                 }
                 return;
@@ -1490,6 +1501,35 @@ static DataTypePtr descendJSONPolicySourceIntoMember(DataTypePtr type, std::stri
     return nullptr;
 }
 
+/// Resolves a member-qualified candidate ("t.doc", "m.values", "t.2") against `try_get_column`: takes
+/// the longest prefix that is a physical column and descends the remaining members through its type,
+/// so only the member the projection actually read donates its policy.
+template <typename TryGetColumn>
+static DataTypePtr resolveMemberQualifiedPolicySource(const String & candidate_name, TryGetColumn && try_get_column)
+{
+    for (size_t pos = candidate_name.rfind('.'); pos != String::npos;
+         pos = (pos == 0 ? String::npos : candidate_name.rfind('.', pos - 1)))
+    {
+        auto base = try_get_column(candidate_name.substr(0, pos));
+        if (!base)
+            continue;
+
+        DataTypePtr current = base->type;
+        size_t member_begin = pos + 1;
+        while (current && member_begin <= candidate_name.size())
+        {
+            size_t member_end = candidate_name.find('.', member_begin);
+            if (member_end == String::npos)
+                member_end = candidate_name.size();
+            current = descendJSONPolicySourceIntoMember(
+                current, std::string_view(candidate_name).substr(member_begin, member_end - member_begin));
+            member_begin = member_end + 1;
+        }
+        return current;
+    }
+    return nullptr;
+}
+
 /// Mirrors applyJSONSharedDataPathPoliciesForMutation (MutateTask.cpp) for a projection's own declared
 /// columns: prefer each source's own projection part, else fall back to that source's main columns.
 /// `source_part_alter_conversions` is parallel to `source_parts`: a source part written before a
@@ -1540,28 +1580,7 @@ static DataTypePtr resolveJSONSharedDataPathPolicyForCandidates(
             }
             else if (candidate_name.contains('.'))
             {
-                /// A member-qualified candidate ("t.doc", "m.values"): find the longest prefix that is
-                /// a physical column and descend the remaining members through its type, so only the
-                /// member the projection actually read donates its policy.
-                for (size_t pos = candidate_name.rfind('.'); pos != String::npos;
-                     pos = (pos == 0 ? String::npos : candidate_name.rfind('.', pos - 1)))
-                {
-                    auto base = try_get_source_column(candidate_name.substr(0, pos));
-                    if (!base)
-                        continue;
-                    DataTypePtr current = base->type;
-                    size_t member_begin = pos + 1;
-                    while (current && member_begin <= candidate_name.size())
-                    {
-                        size_t member_end = candidate_name.find('.', member_begin);
-                        if (member_end == String::npos)
-                            member_end = candidate_name.size();
-                        current = descendJSONPolicySourceIntoMember(current, std::string_view(candidate_name).substr(member_begin, member_end - member_begin));
-                        member_begin = member_end + 1;
-                    }
-                    policy_source_type = current;
-                    break;
-                }
+                policy_source_type = resolveMemberQualifiedPolicySource(candidate_name, try_get_source_column);
             }
 
             if (policy_source_type)
@@ -1571,7 +1590,32 @@ static DataTypePtr resolveJSONSharedDataPathPolicyForCandidates(
 
     bool inputs_saturated = false;
     for (const auto & candidate_name : candidate_names)
+    {
         type = MutationHelpers::mergeJSONSharedDataPathRulesFromPatchParts(type, candidate_name, patch_parts, inputs_saturated);
+
+        /// That lookup only knows physical column names. A member-qualified candidate needs the same
+        /// base-column descent the source-part branch above does, or a patch part that is the only
+        /// remaining record of the retired policy contributes nothing.
+        if (!candidate_name.contains('.'))
+            continue;
+
+        for (const auto & patch : patch_parts)
+        {
+            const auto try_get_patch_column = [&](String name) -> std::optional<NameAndTypePair>
+            {
+                if (const auto & patch_conversions = patch.part->getAlterConversions();
+                    patch_conversions && patch_conversions->isColumnRenamed(name))
+                    name = patch_conversions->getColumnOldName(name);
+                return patch.part->tryGetColumn(name);
+            };
+
+            if (auto member_type = resolveMemberQualifiedPolicySource(candidate_name, try_get_patch_column))
+            {
+                inputs_saturated = inputs_saturated || hasSaturatedJSONSharedDataPathPolicy(*member_type);
+                type = mergeJSONSharedDataPathRules(type, member_type);
+            }
+        }
+    }
 
     return type;
 }

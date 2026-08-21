@@ -1404,6 +1404,9 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
         filtered_dynamic_paths[path] = column->filter(filt, result_size_hint);
 
     auto filtered_shared_data = shared_data->filter(filt, result_size_hint);
+    /// The statistics count rows, so they do not carry over to a different set of them: keeping the
+    /// source pointer would let a part written from here be serialized against the parent's totals.
+    /// The in-place overload below drops them for the same reason, as do permute/index/replicate/scatter.
     return ColumnObject::create(
         filtered_typed_paths,
         filtered_dynamic_paths,
@@ -1411,7 +1414,7 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
         max_dynamic_paths,
         global_max_dynamic_paths,
         max_dynamic_types,
-        statistics,
+        /* statistics= */ nullptr,
         shared_data_path_matcher,
         shared_data_path_prefix);
 }
@@ -1458,7 +1461,7 @@ ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
         max_dynamic_paths,
         global_max_dynamic_paths,
         max_dynamic_types,
-        statistics,
+        /* statistics= */ nullptr,
         shared_data_path_matcher,
         shared_data_path_prefix);
 }
@@ -1483,7 +1486,7 @@ ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
         max_dynamic_paths,
         global_max_dynamic_paths,
         max_dynamic_types,
-        statistics,
+        /* statistics= */ nullptr,
         shared_data_path_matcher,
         shared_data_path_prefix);
 }
@@ -1508,7 +1511,7 @@ ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
         max_dynamic_paths,
         global_max_dynamic_paths,
         max_dynamic_types,
-        statistics,
+        /* statistics= */ nullptr,
         shared_data_path_matcher,
         shared_data_path_prefix);
 }
@@ -1550,7 +1553,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_colu
                 max_dynamic_paths,
                 global_max_dynamic_paths,
                 max_dynamic_types,
-                statistics,
+                /* statistics= */ nullptr,
                 shared_data_path_matcher,
                 shared_data_path_prefix));
     }
