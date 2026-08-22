@@ -624,7 +624,7 @@ def test_attribution_covers_error_raised_inside_an_included_header(tmp_path):
     assert overlaid == []
     assert other == ["contrib/llvm-project/libcxx/include/__memory/unique_ptr.h"]
 
-    reason, _ = compile_failure_attribution(result, [_TEST_FILE])
+    reason, _, _ = compile_failure_attribution(result, [_TEST_FILE])
     assert reason
     assert _TEST_FILE in reason
 
@@ -638,7 +638,7 @@ def test_attribution_keeps_error_in_overlaid_test_wording(tmp_path):
         )
         + f"{_BEFORE}/{_TEST_FILE}:56:21: error: too many arguments to function call\n"
     )
-    reason, other = compile_failure_attribution(
+    reason, other, _ = compile_failure_attribution(
         _compile_log(tmp_path, log), [_TEST_FILE]
     )
     assert "every compile error is inside the PR's changed test files" in reason
@@ -660,7 +660,7 @@ def test_attribution_fails_close_when_a_fix_source_also_fails(tmp_path):
         + f"{_BEFORE}/src/Disks/IO/WriteBufferInlineOrBlob.cpp:12:9: error: "
         "use of undeclared identifier 'sync_metadata_callback'\n"
     )
-    reason, _ = compile_failure_attribution(_compile_log(tmp_path, log), [_TEST_FILE])
+    reason, _, _ = compile_failure_attribution(_compile_log(tmp_path, log), [_TEST_FILE])
     assert reason == ""
 
 
@@ -674,7 +674,7 @@ def test_attribution_fails_close_when_a_contrib_translation_unit_fails(tmp_path)
         )
         + f"{_BEFORE}/contrib/zstd/lib/zstd.c:99:1: error: expected identifier\n"
     )
-    reason, _ = compile_failure_attribution(_compile_log(tmp_path, log), [_TEST_FILE])
+    reason, _, _ = compile_failure_attribution(_compile_log(tmp_path, log), [_TEST_FILE])
     assert reason == ""
 
 
@@ -707,8 +707,9 @@ def test_attribution_fails_close_on_a_link_failure(tmp_path):
     assert sources == [_TEST_FILE]
     assert unattributable == ["src/unit_tests_dbms"]
 
-    reason, _ = compile_failure_attribution(result, [_TEST_FILE])
+    reason, _, refusal = compile_failure_attribution(result, [_TEST_FILE])
     assert reason == ""
+    assert "src/unit_tests_dbms" in refusal
 
 
 def test_attribution_fails_close_on_a_link_failure_with_an_overlaid_error(tmp_path):
@@ -727,8 +728,69 @@ def test_attribution_fails_close_on_a_link_failure_with_an_overlaid_error(tmp_pa
     assert attribute_compile_errors(result, [_TEST_FILE]) == ([_TEST_FILE], [])
     assert failed_compile_edge_sources(result) == ([_TEST_FILE], ["src/unit_tests_dbms"])
 
-    reason, _ = compile_failure_attribution(result, [_TEST_FILE])
+    reason, other, refusal = compile_failure_attribution(result, [_TEST_FILE])
     assert reason == ""
+    # `other_errors` names nothing here, so the refusal phrase is the only detail the
+    # ERROR message can offer.
+    assert other == []
+    assert refusal == (
+        "failed build steps that name no translation unit: src/unit_tests_dbms"
+    )
+
+
+def test_attribution_keeps_the_error_path_basis_without_any_failed_edge(tmp_path):
+    """A compile log carrying diagnostics but no ninja `FAILED:` line at all (ninja was
+    invoked with a different output mode, or the log was captured per-command). The
+    error-path basis stands on its own there, so an empty edge list must not withhold it."""
+    log = (
+        f"{_BEFORE}/{_TEST_FILE}:56:21: error: too many arguments to function call\n"
+        + "ninja: build stopped: subcommand failed.\n"
+    )
+    result = _compile_log(tmp_path, log)
+    assert attribute_compile_errors(result, [_TEST_FILE]) == ([_TEST_FILE], [])
+    assert failed_compile_edge_sources(result) == ([], [])
+
+    reason, _, refusal = compile_failure_attribution(result, [_TEST_FILE])
+    assert "every compile error is inside the PR's changed test files" in reason
+    assert refusal == ""
+
+
+def test_attribution_fails_close_when_a_fix_source_edge_fails_without_a_diagnostic(
+    tmp_path,
+):
+    """An `error:` inside the overlaid test satisfies the error-path basis, while a fix
+    source fails its own compile edge with no parsable diagnostic of its own (a killed
+    compiler). A translation unit outside the overlaid tests demonstrably failed, so
+    attribution must be refused on the edges before either basis is consulted."""
+    fix_source = "src/Disks/IO/WriteBufferInlineOrBlob.cpp"
+    log = (
+        _failed_compile_edge(
+            "src/CMakeFiles/x.dir/gtest_wb.cpp.o", f"{_BEFORE}/{_TEST_FILE}"
+        )
+        + f"{_BEFORE}/{_TEST_FILE}:56:21: error: too many arguments to function call\n"
+        + _failed_compile_edge(
+            "src/CMakeFiles/y.dir/WriteBufferInlineOrBlob.cpp.o",
+            f"{_BEFORE}/{fix_source}",
+        )
+        + "clang++-22: error\n"  # no `path:line:` prefix, so not a diagnostic
+        + "Killed\n"
+        + "ninja: build stopped: subcommand failed.\n"
+    )
+    result = _compile_log(tmp_path, log)
+    # Both bases would say "attributable" on their own: the only `error:` path is the
+    # overlaid test, and the fix source carries no diagnostic to place outside it.
+    assert attribute_compile_errors(result, [_TEST_FILE]) == ([_TEST_FILE], [])
+    assert failed_compile_edge_sources(result) == ([fix_source, _TEST_FILE], [])
+
+    reason, other, refusal = compile_failure_attribution(result, [_TEST_FILE])
+    assert reason == ""
+    assert other == []
+    assert refusal == (
+        "translation units outside the PR's changed test files failed to compile: "
+        + fix_source
+    )
+    # The overlaid test also failed its own edge, but it is not what defeated attribution.
+    assert _TEST_FILE not in refusal
 
 
 def test_attribution_fails_close_without_a_parsable_diagnostic(tmp_path):
@@ -747,8 +809,10 @@ def test_attribution_fails_close_without_a_parsable_diagnostic(tmp_path):
     # The edge itself is attributable; only the missing diagnostic holds it back.
     assert failed_compile_edge_sources(result) == ([_TEST_FILE], [])
 
-    reason, _ = compile_failure_attribution(result, [_TEST_FILE])
+    reason, other, refusal = compile_failure_attribution(result, [_TEST_FILE])
     assert reason == ""
+    assert other == []
+    assert refusal == "the build produced no parsable compiler diagnostic"
 
 
 def test_attribution_strips_ansi_colour_before_scanning_edges(tmp_path):
@@ -756,7 +820,7 @@ def test_attribution_strips_ansi_colour_before_scanning_edges(tmp_path):
     apply to the edge scan too, not only to the error scan."""
     plain = _template_instantiation_log()
     coloured = "".join(f"\x1b[1m{line}\x1b[0m\n" for line in plain.splitlines())
-    reason, _ = compile_failure_attribution(
+    reason, _, _ = compile_failure_attribution(
         _compile_log(tmp_path, coloured), [_TEST_FILE]
     )
     assert reason
@@ -777,7 +841,7 @@ def test_attribution_scans_every_log_and_deduplicates(tmp_path):
     result = _compile_log(tmp_path, log_a, log_b, log_a)
     assert failed_compile_edge_sources(result) == ([other_test, _TEST_FILE], [])
 
-    reason, _ = compile_failure_attribution(result, [_TEST_FILE, other_test])
+    reason, _, _ = compile_failure_attribution(result, [_TEST_FILE, other_test])
     assert reason
     assert _TEST_FILE in reason and other_test in reason
 
@@ -923,6 +987,33 @@ def test_main_reports_error_when_a_fix_source_also_fails(monkeypatch, tmp_path):
     assert job.Result.Label.XFAIL not in compile_result.get_labels()
     assert "cannot be attributed" in compile_result.info
     assert "src/Disks/IO/WriteBufferInlineOrBlob.cpp" in compile_result.info
+    assert (
+        "translation units outside the PR's changed test files failed to compile"
+        in compile_result.info
+    )
+    assert "inconclusive" in info_lines
+
+
+def test_main_error_message_names_an_unattributable_link_edge(monkeypatch, tmp_path):
+    """The refusal phrase reaches the reported info. Here `other_errors` is empty (the only
+    `error:` line is inside the overlaid test), so without the phrase the operator is told
+    the errors cannot be attributed without being told what failed."""
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    log = (
+        _failed_compile_edge(
+            "src/CMakeFiles/x.dir/gtest_wb.cpp.o", f"{_BEFORE}/{_TEST_FILE}"
+        )
+        + f"{_BEFORE}/{_TEST_FILE}:56:21: error: too many arguments to function call\n"
+        + _link_failure_edge()
+    )
+    results, info_lines = _drive_main_to_compile_step(monkeypatch, tmp_path, log)
+
+    compile_result = results[-1]
+    assert compile_result.status == job.Result.Status.ERROR
+    assert job.Result.Label.XFAIL not in compile_result.get_labels()
+    assert "errors outside them" not in compile_result.info
+    assert "src/unit_tests_dbms" in compile_result.info
     assert "inconclusive" in info_lines
 
 

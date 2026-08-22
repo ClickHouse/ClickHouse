@@ -538,11 +538,12 @@ def failed_compile_edge_sources(compile_result):
 def compile_failure_attribution(compile_result, test_files):
     """Decide whether the before-build failure belongs to the overlaid test files alone.
 
-    Returns `(reason, other_errors)`: `reason` is a non-empty sentence naming the
+    Returns `(reason, other_errors, refusal)`: `reason` is a non-empty sentence naming the
     attribution basis when the failure is fully attributable to the overlaid tests (the
     caller then reports XFAIL), and an empty string when it is not (the caller fails
     close with ERROR). `other_errors` is the error-carrying paths outside the overlaid
-    tests, for the ERROR message.
+    tests, and `refusal` names what defeated attribution when no such path did, both for
+    the ERROR message.
 
     Two attribution bases, tried in that order:
 
@@ -557,37 +558,49 @@ def compile_failure_attribution(compile_result, test_files):
       a broken fix source or contrib header is a different translation unit and fails
       its own edge.
 
-    A failed edge that is not a compile at all (a link step, an archive step, a custom
-    command) defeats BOTH bases: whatever the diagnostics say, the build also failed
-    somewhere no translation unit can be named, so nothing states the failure is confined
-    to the overlaid tests.
+    The failed edges are consulted before either basis and defeat both, whatever the
+    diagnostics say: an edge that is not a compile at all (a link step, an archive step, a
+    custom command) names no translation unit, and a failed compile edge on anything other
+    than an overlaid test file is a translation unit outside them that failed on its own.
 
-    The second basis additionally requires a parsable compiler error to exist somewhere (a
-    killed compiler or an internal ninja error is not attributable) and every failed
-    compile edge to be an overlaid test file.
+    The second basis additionally requires a parsable compiler error to exist somewhere: a
+    killed compiler or an internal ninja error is not attributable.
     """
     overlaid_errors, other_errors = attribute_compile_errors(compile_result, test_files)
     sources, unattributable = failed_compile_edge_sources(compile_result)
     if unattributable:
-        return "", other_errors
+        return (
+            "",
+            other_errors,
+            "failed build steps that name no translation unit: "
+            + ", ".join(unattributable),
+        )
+    non_test_sources = [source for source in sources if source not in set(test_files)]
+    if non_test_sources:
+        return (
+            "",
+            other_errors,
+            "translation units outside the PR's changed test files failed to compile: "
+            + ", ".join(non_test_sources),
+        )
     if overlaid_errors and not other_errors:
         return (
             "every compile error is inside the PR's changed test files ("
             + ", ".join(overlaid_errors)
             + ")",
             other_errors,
+            "",
         )
     if not (overlaid_errors or other_errors):
-        return "", other_errors
+        return "", other_errors, "the build produced no parsable compiler diagnostic"
     if not sources:
-        return "", other_errors
-    if any(source not in set(test_files) for source in sources):
-        return "", other_errors
+        return "", other_errors, ""
     return (
         "every translation unit that failed to compile is one of the PR's changed test "
         "files (" + ", ".join(sources) + "), and the compile error is raised inside a "
         "header they include",
         other_errors,
+        "",
     )
 
 
@@ -820,7 +833,7 @@ def main():
     #    close (ERROR).
     compile_result = compile_before_binary()
     if not compile_result.is_ok():
-        attributed_to, other_errors = compile_failure_attribution(
+        attributed_to, other_errors, refusal = compile_failure_attribution(
             compile_result, test_files
         )
         if attributed_to:
@@ -850,6 +863,7 @@ def main():
             "The before-binary FAILED TO COMPILE, and the errors cannot be attributed "
             "to the overlaid test files alone"
             + (f" (errors outside them: {', '.join(other_errors)})" if other_errors else "")
+            + (f" ({refusal})" if refusal else "")
             + ". This does not prove the test reproduces the bug. Write a regression "
             "test that builds against the merge-base and fails at runtime without the "
             "fix. " + (compile_result.info or "")
