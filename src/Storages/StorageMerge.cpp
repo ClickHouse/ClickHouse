@@ -18,9 +18,8 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -718,16 +717,6 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
-static bool containsAggregateStateColumn(const IColumn & column)
-{
-    if (typeid_cast<const ColumnAggregateFunction *>(&column))
-        return true;
-
-    bool found = false;
-    column.forEachSubcolumn([&](const auto & subcolumn) { found = found || containsAggregateStateColumn(*subcolumn); });
-    return found;
-}
-
 /// Equalizes top-level constness across the sibling pipelines `ReadFromMerge` is about to unite.
 static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<QueryPipelineBuilder>> pipelines)
 {
@@ -737,42 +726,13 @@ static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<Quer
     /// Children are converted to the common Merge header before being optimized, and are optimized
     /// independently afterwards, so constant folding can leave a column Const in one sibling and not
     /// in another. This is the only point at which every sibling's final header is known.
-    ColumnsWithTypeAndName common = pipelines.front()->getHeader().getColumnsWithTypeAndName();
-    for (size_t col = 0; col < common.size(); ++col)
-    {
-        if (!common[col].column || !isColumnConst(*common[col].column))
-            continue;
+    /// Siblings are matched by name, which is the rule the conversion below resolves columns with.
+    ColumnsWithTypeAndName common = reconcileConstness(
+        pipelines.front()->getHeader().getColumnsWithTypeAndName(),
+        pipelines.size(),
+        [&](size_t sibling, size_t, const String & name) { return pipelines[sibling]->getHeader().findByName(name); });
 
-        /// Aggregate-state values cannot be compared as `Field`: the comparison throws when the
-        /// aggregate function type names differ, and they may legitimately differ between siblings
-        /// when the functions share a state representation. Materialize instead of comparing.
-        if (containsAggregateStateColumn(assert_cast<const ColumnConst &>(*common[col].column).getDataColumn()))
-        {
-            common[col].column = common[col].column->convertToFullColumnIfConst();
-            continue;
-        }
-
-        /// A column may stay Const only when every sibling is Const with the same value: the
-        /// conversion below can turn a Const into a full column, but never into a different
-        /// sibling's Const value.
-        const Field value = assert_cast<const ColumnConst &>(*common[col].column).getField();
-        bool keep_const = true;
-        for (const auto & sibling : pipelines)
-        {
-            const auto * sibling_column = sibling->getHeader().findByName(common[col].name);
-            if (!sibling_column || !sibling_column->column || !isColumnConst(*sibling_column->column)
-                || assert_cast<const ColumnConst &>(*sibling_column->column).getField() != value)
-            {
-                keep_const = false;
-                break;
-            }
-        }
-
-        if (!keep_const)
-            common[col].column = common[col].column->convertToFullColumnIfConst();
-    }
-
-    /// Every sibling needs comparing even when the loop above materialized nothing: the target is the
+    /// Every sibling needs comparing even when nothing was materialized above: the target is the
     /// first sibling's header, and a later sibling may hold a Const exactly where the first holds a
     /// full column.
     auto target = std::make_shared<const Block>(std::move(common));
