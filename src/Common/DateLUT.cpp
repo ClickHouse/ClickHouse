@@ -61,6 +61,12 @@ std::string determineDefaultTimeZone()
         if (*tz_env_var == ':')
             ++tz_env_var;
 
+        /// An empty TZ value (including a bare ":") means UTC, the same as in glibc.
+        /// Without this, the empty path resolves to the time zone database directory itself,
+        /// and reading it as a file fails with "Is a directory". See #68920.
+        if (*tz_env_var == '\0')
+            return "UTC";
+
         tz_file_path = tz_env_var;
 
         /// If TZ points to a file path (e.g. TZ=:/etc/localtime per POSIX),

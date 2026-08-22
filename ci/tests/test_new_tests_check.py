@@ -7,13 +7,17 @@ job (`OK`/`XFAIL`) confirmed the bug reproduces on master HEAD and is fixed
 on the PR. Earlier iterations of this branch had two bypasses in `check`
 (`has_unit` shortcut, CI-report-link fallback) that let an unvalidated FT/IT
 regression test through - both were caught only by review. These tests pin
-the truth table so future changes cannot reintroduce a bypass.
+the truth table so future changes cannot reintroduce a bypass. The
+CI-report-link fallback has since been removed entirely (the `ci_links.py`
+pre-hook auto-injects such a link into every upstream PR body, so it can no
+longer serve as operator-supplied evidence), so a Bug-Fix PR that adds no
+tests is rejected regardless of the links in its body.
 
 Invariant under test: when a Bug-Fix PR adds new functional or integration
 regression tests (`has_ft or has_it`), `check()` returns True iff at least
-one per-arch Bugfix Validation job is strict-success (`OK` or `XFAIL`).
-Neither the unit-test presence shortcut nor the CI-report-link fallback may
-override this; only the per-arch jobs decide.
+one per-arch Bugfix Validation job is strict-success (`OK` or `XFAIL`). The
+unit-test presence shortcut may not override this; only the per-arch jobs
+decide.
 
 See ClickHouse/ClickHouse#103541 (bot review, 2026-06-06).
 """
@@ -33,6 +37,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from ci.defs.defs import JobNames
 from ci.jobs.scripts.workflow_hooks import new_tests_check
 from ci.praktika.result import Result
+
+# `_install_stubs` replaces `has_new_unit_tests` with a path-classification stub; keep
+# the real one so a test can opt back into the actual gtest-macro parsing.
+_REAL_HAS_NEW_UNIT_TESTS = new_tests_check.has_new_unit_tests
 
 
 # ---------------------------------------------------------------------------
@@ -325,12 +333,11 @@ def test_ft_plus_unit_does_not_let_unit_bypass_per_arch(monkeypatch):
 
 
 def test_ft_plus_ci_report_link_does_not_bypass_per_arch(monkeypatch):
-    """Concern #6 - the CI-report-link fallback cannot bypass FT validation.
+    """A CI-report link in the PR body cannot bypass per-arch FT validation.
 
     A Bug-Fix PR that adds an FT regression test AND links a CI report in
-    the PR body must still validate via per-arch Bugfix Validation. The
-    CI-report-link fallback applies ONLY to PRs that add NO new tests at
-    all (the operator-supplied-evidence path).
+    the PR body must still validate via per-arch Bugfix Validation; a report
+    link in the body has no effect on this branch.
     """
     pr_body = (
         "Fix something.\n\n"
@@ -361,9 +368,44 @@ def test_unit_only_passes_without_per_arch(monkeypatch):
     assert new_tests_check.check() is True
 
 
-def test_no_test_with_ci_report_link_passes(monkeypatch):
-    """No new tests + CI-report-link in PR body -> operator-supplied
-    evidence path passes.
+def test_unit_only_gtest_test_macro_takes_the_unit_branch(monkeypatch, tmp_path):
+    """A unit test registered with `GTEST_TEST` must enable the `has_unit` branch.
+
+    Unlike the cases above, this one does NOT stub `has_new_unit_tests`: the file is
+    written to disk and the real predicate (which parses the gtest macros) runs. With
+    no CI-report link in the body, `check()` can only return True through the
+    `has_unit` branch, so it is a witness that the suite was recognized.
+    """
+    src = tmp_path / "src" / "Functions" / "tests"
+    src.mkdir(parents=True)
+    (src / "gtest_my_unit.cpp").write_text(
+        "#include <gtest/gtest.h>\nGTEST_TEST(MySuite, my_case) { EXPECT_TRUE(false); }\n"
+    )
+    changed = ["src/Functions/tests/gtest_my_unit.cpp"]
+    _install_stubs(
+        monkeypatch,
+        pr_body="A change.\n\n- [x]  Bug Fix\n",
+        changed_files=changed,
+        workflow_subresults=[],
+    )
+    # Restore the real predicate that `_install_stubs` replaced, and resolve the
+    # relative changed path against the fixture tree.
+    monkeypatch.setattr(
+        new_tests_check, "has_new_unit_tests", _REAL_HAS_NEW_UNIT_TESTS
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert new_tests_check.has_new_unit_tests(changed) is True
+    assert new_tests_check.check() is True
+
+
+def test_no_test_fails_even_with_ci_report_link(monkeypatch):
+    """No new tests -> reject, even when the PR body links a CI report.
+
+    The `ci_links.py` pre-hook auto-injects an
+    `s3.amazonaws.com/clickhouse-test-reports` link into every upstream PR body,
+    so a CI-report link is no longer accepted as operator-supplied evidence in
+    lieu of a test.
     """
     pr_body = (
         "Fix something.\n\n"
@@ -374,17 +416,6 @@ def test_no_test_with_ci_report_link_passes(monkeypatch):
     _install_stubs(
         monkeypatch,
         pr_body=pr_body,
-        changed_files=["src/Functions/UnrelatedSourceFile.cpp"],
-        workflow_subresults=[],
-    )
-    assert new_tests_check.check() is True
-
-
-def test_no_test_without_ci_report_link_fails(monkeypatch):
-    """No new tests and no CI-report-link -> reject."""
-    _install_stubs(
-        monkeypatch,
-        pr_body="A change.\n\n- [x]  Bug Fix\n",
         changed_files=["src/Functions/UnrelatedSourceFile.cpp"],
         workflow_subresults=[],
     )

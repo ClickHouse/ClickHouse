@@ -147,7 +147,7 @@ void StorageSystemIcebergHistory::fillData(
     /// opens a connection, which a query filtering by database should not need to do.
     MutableColumnPtr database_name_column = ColumnString::create();
 
-    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
+    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
     for (const auto & [database_name, database] : databases)
         database_name_column->insert(database_name);
 

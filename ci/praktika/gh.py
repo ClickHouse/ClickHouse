@@ -14,6 +14,18 @@ from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import Shell
 
+# `out` and `err` are API- or user-controlled and unbounded, while the fields identifying the
+# failure (command, exit code, attempt count) are short. Cap the unbounded ones so a caller
+# that bounds the whole message, or a log reader, still sees the cause.
+_GH_DIAGNOSTIC_FIELD_LIMIT = 300
+
+
+def _elide(text, limit=_GH_DIAGNOSTIC_FIELD_LIMIT):
+    """`text` capped at `limit`, with an explicit marker so a reader can tell it was cut."""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(+{len(text) - limit} chars elided)"
+
 
 class GH:
 
@@ -91,9 +103,30 @@ class GH:
         # HEAD, same as deleted files, which were always included.
         jq_both_sides = ".filename, (.previous_filename // empty)"
 
-        if info.pr_number > 0:
+        # In a merge-queue run PR_NUMBER is 0, but the queue entry is built for
+        # exactly one PR (parsed from the merge group head ref). Use that PR's
+        # paginated files list: the merge group SHA is a merge commit, and the
+        # commits API caps a commit's file list at 300 entries.
+        pr_number = info.pr_number
+        if pr_number <= 0 and info.is_merge_queue_event:
+            pr_number = info.linked_pr_number
+            if pr_number <= 0 and strict:
+                # The linked PR number could not be parsed from the merge group
+                # head ref. Falling back to `repos/{repo}/commits/{sha}` would
+                # reintroduce the 300-entry cap this branch exists to avoid, so a
+                # large PR could silently lose changed test files and turn the
+                # merge-queue flaky check into a false green. Fail closed instead:
+                # a merge-queue run always corresponds to exactly one PR, so a
+                # missing linked PR number is a real fault, not a skip condition.
+                raise RuntimeError(
+                    "Merge-queue run has no linked PR number (could not parse it "
+                    "from the merge group head ref); refusing to fall back to the "
+                    "capped commits API for changed-file detection."
+                )
+
+        if pr_number > 0:
             command = (
-                f"gh api repos/{repo_name}/pulls/{info.pr_number}/files "
+                f"gh api repos/{repo_name}/pulls/{pr_number}/files "
                 f"--paginate --jq '.[] | {jq_both_sides}'"
             )
         else:
@@ -187,7 +220,7 @@ class GH:
         return res
 
     @classmethod
-    def get_output_with_retries(cls, command, verbose=False):
+    def get_output_with_retries(cls, command, verbose=False, strict=False):
         """Run a read-style ``gh`` command and return its stdout.
 
         Mirrors :meth:`do_command_with_retries` but returns the captured
@@ -199,10 +232,17 @@ class GH:
 
         Returns the trimmed stdout on success; an empty string if the
         command keeps failing after ``MAX_RETRIES_GH`` attempts.
+        ``strict=True`` raises instead, so a caller can report why the
+        read failed rather than be handed an empty string that is
+        indistinguishable from an empty result.
         """
         retry_count = 0
+        # Counted where the subprocess is invoked, so a non-retryable class that breaks out
+        # of the loop still reports the attempt it made. retry_count counts retries taken.
+        attempts = 0
         out, err, ret_code = "", "", -1
         while retry_count < Settings.MAX_RETRIES_GH:
+            attempts += 1
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
             if ret_code == 0:
                 return out
@@ -220,9 +260,15 @@ class GH:
             delay = min(2 ** (retry_count + 1), 60)
             time.sleep(delay)
 
-        print(
-            f"ERROR: Failed to execute gh command [{command}] out:[{out}] err:[{err}] after [{retry_count}] attempts"
+        # Field order matters: a caller may bound this message (it can reach a public report
+        # page), so the fields naming the cause come before the API-controlled output.
+        message = (
+            f"Failed to execute gh command [{command}] exit_code:[{ret_code}] "
+            f"after [{attempts}] attempts err:[{_elide(err)}] out:[{_elide(out)}]"
         )
+        print(f"ERROR: {message}")
+        if strict:
+            raise RuntimeError(message)
         return ""
 
     @classmethod
@@ -740,6 +786,86 @@ class GH:
         return res
 
     @classmethod
+    def _submit_team_review_requests(cls, team_slugs, pr, repo):
+        assert team_slugs
+
+        payload = {"reviewers": [], "team_reviewers": team_slugs}
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as temp_file:
+            json.dump(payload, temp_file)
+            temp_file_path = temp_file.name
+
+        try:
+            cmd = (
+                "gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+                f"--input {shlex.quote(temp_file_path)}"
+            )
+            if not cls.do_command_with_retries(cmd):
+                raise RuntimeError(
+                    f"Failed to request team reviews for pull request [{pr}]"
+                )
+        finally:
+            os.unlink(temp_file_path)
+
+    @classmethod
+    def _get_requested_team_reviews(cls, pr, repo):
+        cmd = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" '
+            f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+            "--jq '[.teams[].slug]'"
+        )
+        output = cls.get_output_with_retries(cmd)
+        if not output:
+            raise RuntimeError(
+                f"Failed to retrieve team review requests for pull request [{pr}]"
+            )
+
+        try:
+            requested_teams = json.loads(output)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"Failed to parse team review requests for pull request [{pr}]: {e}"
+            ) from e
+        if not isinstance(requested_teams, list) or not all(
+            isinstance(team, str) for team in requested_teams
+        ):
+            raise RuntimeError(
+                f"Unexpected team review request response for pull request [{pr}]"
+            )
+
+        return set(requested_teams)
+
+    @classmethod
+    def request_team_reviews(cls, team_slugs, pr=None, repo=None):
+        requested = set(team_slugs)
+        if not requested:
+            return True
+
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        teams_to_request = sorted(
+            requested - cls._get_requested_team_reviews(pr, repo)
+        )
+        if teams_to_request:
+            cls._submit_team_review_requests(teams_to_request, pr, repo)
+            missing_teams = set(teams_to_request) - cls._get_requested_team_reviews(
+                pr, repo
+            )
+            if missing_teams:
+                raise RuntimeError(
+                    "Failed to verify team review requests for pull request "
+                    f"[{pr}], missing teams [{', '.join(sorted(missing_teams))}]"
+                )
+
+        return True
+
+    @classmethod
     def get_pr_contributors(cls, pr=None, repo=None):
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -905,7 +1031,48 @@ class GH:
         return cls.do_command_with_retries(command)
 
     @classmethod
-    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False):
+    def get_commit_statuses(
+        cls, sha="", repo=""
+    ) -> Optional[Dict[str, "GH.CommitStatus"]]:
+        """
+        Fetch commit statuses for the given commit SHA and return the latest
+        status for each context. Returns `None` if the status list cannot be
+        retrieved or parsed.
+        """
+        repo = repo or _Environment.get().REPOSITORY
+        sha = sha or _Environment.get().SHA
+
+        output = cls.get_output_with_retries(
+            f"gh api repos/{repo}/commits/{sha}/statuses --paginate"
+        )
+        if not output:
+            print("ERROR: Failed to fetch commit statuses")
+            return None
+        try:
+            statuses_list = json.loads(output)
+        except json.JSONDecodeError as ex:
+            print(f"ERROR: Failed to parse commit statuses: {ex}")
+            return None
+        status_map: Dict[str, GH.CommitStatus] = {}
+
+        for status in statuses_list:
+            context = status["context"]
+            if context not in status_map:
+                status_map[context] = GH.CommitStatus(
+                    state=status["state"],
+                    description=status.get("description", ""),
+                    url=status.get("target_url", ""),
+                    context=context,
+                )
+
+        return status_map
+
+    @classmethod
+    def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False, admin=False):
+        """Merge PR #`pr`. With `admin`, merge right away with administrator
+        privileges: required checks are not awaited and the merge queue on the
+        base branch is bypassed. Only for automation that has already decided
+        the change must land immediately, such as reverting a broken merge."""
         if not repo:
             repo = _Environment.get().REPOSITORY
         if not pr:
@@ -918,6 +1085,8 @@ class GH:
             extra_args += " --squash"
         else:
             extra_args += " --merge"
+        if admin:
+            extra_args += " --admin"
 
         cmd = f"gh pr merge {pr} --repo {repo} {extra_args}"
         return cls.do_command_with_retries(cmd)
@@ -1021,6 +1190,74 @@ class GH:
             if temp_file_path and os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
         return None
+
+    @classmethod
+    def get_pr_url_by_branch(cls, branch, repo=None):
+        """URL of the PR whose head is `branch`, or '' if there genuinely is none.
+
+        On the rerun-safety path (changelog / version-bump PR reuse), a transient
+        `gh pr list` failure must NOT be mistaken for "no PR exists" — that would
+        create a duplicate PR or let merge_prs run with an empty URL after the
+        release is already published. So the lookup is retried and raises on a
+        persistent failure. A successful `gh pr list --json` always prints at
+        least `[]`, so an empty result from the retried read means the command
+        itself failed; genuinely no PR is an empty JSON array.
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        safe_repo = shlex.quote(repo)
+        safe_branch = shlex.quote(branch)
+        for state in ("open", "merged"):
+            cmd = (
+                f"gh pr list --repo {safe_repo} --head {safe_branch}"
+                f" --state {state} --json url"
+            )
+            raw = cls.get_output_with_retries(cmd)
+            if not raw:
+                raise RuntimeError(
+                    f"gh pr list failed for branch [{branch}] in repo [{repo}] "
+                    f"(state {state}) after retries; refusing to treat a failed "
+                    f"lookup as 'no PR'"
+                )
+            prs = json.loads(raw)
+            if prs:
+                return prs[0]["url"]
+            print(f"No {state} PR found for branch [{branch}]")
+        return ""
+
+    @classmethod
+    def get_pr_state_by_branch(cls, branch, repo=None):
+        """'MERGED' / 'OPEN' / '' for the PR whose head is `branch`.
+
+        Merged takes priority: an already-merged PR means the change is in master,
+        so the caller should stop even if a stray open PR also exists. (This is
+        the opposite order from `get_pr_url_by_branch`, which checks open first;
+        they agree unless one branch has both an open and a merged PR - which the
+        release flow's "never recreate once present" invariant prevents for the
+        `auto/<tag>` / `bump_version_<version>` branches this is used with.) Same
+        retry / fail-close semantics as `get_pr_url_by_branch` - a failed lookup
+        raises rather than being mistaken for 'no PR' (which would recreate a PR
+        or skip a needed merge after the release is already published).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        safe_repo = shlex.quote(repo)
+        safe_branch = shlex.quote(branch)
+        for state in ("merged", "open"):
+            cmd = (
+                f"gh pr list --repo {safe_repo} --head {safe_branch}"
+                f" --state {state} --json url"
+            )
+            raw = cls.get_output_with_retries(cmd)
+            if not raw:
+                raise RuntimeError(
+                    f"gh pr list failed for branch [{branch}] in repo [{repo}] "
+                    f"(state {state}) after retries; refusing to treat a failed "
+                    f"lookup as 'no PR'"
+                )
+            if json.loads(raw):
+                return state.upper()
+        return ""
 
     _STATUS_TO_GH = {
         Result.Status.OK: Result.GHStatus.SUCCESS,

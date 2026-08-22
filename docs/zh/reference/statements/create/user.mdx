@@ -1,0 +1,269 @@
+---
+description: 'USER 参考文档'
+sidebarTitle: 'USER'
+slug: /sql-reference/statements/create/user
+title: 'CREATE USER'
+doc_type: 'reference'
+---
+
+创建[用户账户](/zh/concepts/features/security/access-rights#user-account-management)。
+
+语法：
+
+```sql
+CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] 
+    [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
+    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [IN access_storage_type]
+    [ROLE role [,...]]
+    [DEFAULT ROLE role [,...]]
+    [DEFAULT DATABASE database | NONE]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+`ON CLUSTER` 子句支持在集群中创建用户，参见 [分布式 DDL](/zh/reference/statements/distributed-ddl)。
+
+<div id="identification">
+  ## 身份标识
+</div>
+
+用户身份标识有多种方式：
+
+* `IDENTIFIED WITH no_password`
+* `IDENTIFIED WITH plaintext_password BY 'qwerty'`
+* `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
+* `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`
+* `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
+* `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+* `IDENTIFIED WITH bcrypt_password BY 'qwerty'`
+* `IDENTIFIED WITH bcrypt_hash BY 'hash'`
+* `IDENTIFIED WITH ldap SERVER 'server_name'`
+* `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
+* `IDENTIFIED WITH ssl_certificate CN 'mysite.com:user'`
+* `IDENTIFIED WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa', KEY 'another_public_key' TYPE 'ssh-ed25519'`
+* `IDENTIFIED WITH http SERVER 'http_server'` or `IDENTIFIED WITH http SERVER 'http_server' SCHEME 'basic'`
+* `IDENTIFIED BY 'qwerty'`
+
+密码复杂度要求可在 [config.xml](/zh/concepts/features/configuration/server-config/configuration-files) 中修改。下面是一个配置示例，要求密码长度至少为 12 个字符，且包含 1 个数字。每条密码复杂度规则都需要一个用于匹配密码的正则表达式，以及对该规则的说明。
+
+```xml
+<clickhouse>
+    <password_complexity>
+        <rule>
+            <pattern>.{12}</pattern>
+            <message>be at least 12 characters long</message>
+        </rule>
+        <rule>
+            <pattern>\p{N}</pattern>
+            <message>contain at least 1 numeric character</message>
+        </rule>
+    </password_complexity>
+</clickhouse>
+```
+
+<Note>
+  在 ClickHouse Cloud 中，默认情况下，密码必须满足以下复杂度要求：
+
+  * 长度至少为 12 个字符
+  * 至少包含 1 个数字
+  * 至少包含 1 个大写字母
+  * 至少包含 1 个小写字母
+  * 至少包含 1 个特殊字符
+</Note>
+
+<div id="examples">
+  ## 示例
+</div>
+
+1. 以下用户名为 `name1`，且无需密码——显然，这样几乎没有什么安全性可言：
+
+   ```sql
+   CREATE USER name1 NOT IDENTIFIED
+   ```
+
+2. 要指定明文密码：
+
+   ```sql
+   CREATE USER name2 IDENTIFIED WITH plaintext_password BY 'my_password'
+   ```
+
+<Tip>
+  密码会以 SQL 文本文件的形式存储在 `/var/lib/clickhouse/access` 中，因此不建议使用 `plaintext_password`。请改用 `sha256_password`，如下一个示例所示...
+</Tip>
+
+3. 最常见的做法是使用经过 SHA-256 哈希处理的密码。当你指定 `IDENTIFIED WITH sha256_password` 时，ClickHouse 会自动为你计算密码哈希。例如：
+
+   ```sql
+   CREATE USER name3 IDENTIFIED WITH sha256_password BY 'my_password'
+   ```
+
+   现在，`name3` 用户可以使用 `my_password` 登录，但密码实际以上面的哈希值形式存储。系统会在 `/var/lib/clickhouse/access` 中创建以下 SQL 文件，并在服务器启动时执行：
+
+   ```bash
+   /var/lib/clickhouse/access $ cat 3843f510-6ebd-a52d-72ac-e021686d8a93.sql
+   ATTACH USER name3 IDENTIFIED WITH sha256_hash BY '0C268556C1680BEF0640AAC1E7187566704208398DA31F03D18C74F5C5BE5053' SALT '4FB16307F5E10048196966DD7E6876AE53DE6A1D1F625488482C75F14A5097C7';
+   ```
+
+<Tip>
+  如果你已经为某个用户名生成了哈希值及其对应的 salt 值，则可以使用 `IDENTIFIED WITH sha256_hash BY 'hash'` 或 `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`。对于使用 `SALT` 的 `sha256_hash` 身份验证，哈希必须基于 &#39;password&#39; 和 &#39;salt&#39; 拼接后的结果计算得出。
+</Tip>
+
+4. `double_sha1_password` 通常并不常用，但在配合需要它的客户端时会很有帮助 (例如 MySQL 接口) ：
+
+   ```sql
+   CREATE USER name4 IDENTIFIED WITH double_sha1_password BY 'my_password'
+   ```
+
+   ClickHouse 会生成并执行以下查询：
+
+   ```response
+   CREATE USER name4 IDENTIFIED WITH double_sha1_hash BY 'CCD3A959D6A004B9C3807B728BC2E55B67E10518'
+   ```
+
+5. `bcrypt_password` 是存储密码时最安全的选项。它使用 [bcrypt](https://en.wikipedia.org/wiki/Bcrypt) 算法，即使密码哈希泄露，也能有效抵御暴力破解攻击。
+
+   ```sql
+   CREATE USER name5 IDENTIFIED WITH bcrypt_password BY 'my_password'
+   ```
+
+   使用此方法时，密码长度限制为 72 个字符。
+   bcrypt work factor 参数用于定义计算哈希和验证密码所需的计算量与时间，可在服务器配置中修改：
+
+   ```xml
+   <bcrypt_workfactor>12</bcrypt_workfactor>
+   ```
+
+   work factor 必须介于 4 到 31 之间，默认值为 12。
+
+<Warning>
+  对于需要高频身份验证的应用，
+  请考虑使用其他身份验证方法，
+  因为在较高 work factor 下 bcrypt 的计算开销较大。
+</Warning>
+
+6. 也可以省略密码类型：
+
+   ```sql
+   CREATE USER name6 IDENTIFIED BY 'my_password'
+   ```
+
+   在这种情况下，ClickHouse 将使用服务器配置中指定的默认密码类型：
+
+   ```xml
+   <default_password_type>sha256_password</default_password_type>
+   ```
+
+   可用的密码类型有：`plaintext_password`、`sha256_password`、`double_sha1_password`。
+
+7. 可以指定多种身份验证方法：
+
+   ```sql
+   CREATE USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3''
+   ```
+
+注：
+
+1. 较旧版本的 ClickHouse 可能不支持多种身份验证方法的语法。因此，如果 ClickHouse 服务器 中存在此类用户，而又被降级到不支持该语法的版本，这些用户将无法使用，并且部分与用户相关的操作也会失效。为了平稳降级，必须在降级前将所有用户都设置为仅包含一种身份验证方法。或者，如果 server 未按正确流程就已降级，则应删除这些有问题的用户。
+2. 出于安全原因，`no_password` 不能与其他身份验证方法同时存在。因此，只有当它是查询中唯一的身份验证方法时，您才可以指定
+   `no_password`。
+
+<div id="user-host">
+  ## 用户主机
+</div>
+
+用户主机是指可用于建立与 ClickHouse 服务器 连接的主机。可以在查询的 `HOST` 部分中按以下方式指定主机：
+
+* `HOST IP 'ip_address_or_subnetwork'` — 用户只能从指定的 IP 地址或某个[子网](https://en.wikipedia.org/wiki/Subnetwork)连接到 ClickHouse 服务器。示例：`HOST IP '192.168.0.0/16'`、`HOST IP '2001:DB8::/32'`。在生产环境中，建议仅指定 `HOST IP` 元素 (IP 地址及其掩码) ，因为使用 `host` 和 `host_regexp` 可能会带来额外延迟。
+* `HOST ANY` — 用户可以从任何位置连接。这是默认选项。
+* `HOST LOCAL` — 用户只能在本地连接。
+* `HOST NAME 'fqdn'` — 用户主机可以指定为 FQDN。例如：`HOST NAME 'mysite.com'`。
+* `HOST REGEXP 'regexp'` — 指定用户主机时，可以使用 [pcre](http://www.pcre.org/) 正则表达式。例如：`HOST REGEXP '.*\.mysite\.com'`。
+* `HOST LIKE 'template'` — 允许使用 [LIKE](/zh/reference/functions/regular-functions/string-search-functions#like) 运算符来过滤用户主机。例如，`HOST LIKE '%'` 等同于 `HOST ANY`，`HOST LIKE '%.mysite.com'` 会过滤 `mysite.com` 域下的所有主机。
+
+指定主机的另一种方式是在用户名后使用 `@` 语法。示例：
+
+* `CREATE USER mira@'127.0.0.1'` — 等同于 `HOST IP` 语法。
+* `CREATE USER mira@'localhost'` — 等同于 `HOST LOCAL` 语法。
+* `CREATE USER mira@'192.168.%.%'` — 等同于 `HOST LIKE` 语法。
+
+<Tip>
+  ClickHouse 将 `user_name@'address'` 视为一个完整的用户名。因此，严格来说，你可以创建多个 `user_name` 相同、但 `@` 后部分不同的用户。不过，我们不建议这样做。
+</Tip>
+
+<div id="valid-until-clause">
+  ## VALID UNTIL 子句
+</div>
+
+允许你为某种身份验证方法指定失效日期，并可选择指定具体时间。它接受一个字符串参数。建议日期时间使用 `YYYY-MM-DD [hh:mm:ss] [timezone]` 格式，其中 `[timezone]` 必须是数值偏移量 (如 `+09:00`) ，或 `UTC`、`GMT`、`Z`、`MSK`、`MSD` 之一；像 `Asia/Tokyo` 这样的 IANA 具名时区无法识别 (见下方说明) 。默认情况下，该参数的值为 `'infinity'`。
+除非查询中未指定任何身份验证方法，否则 `VALID UNTIL` 子句只能与某种身份验证方法一起指定。在这种情况下，`VALID UNTIL` 子句将应用于所有现有的身份验证方法。
+
+示例：
+
+* `CREATE USER name1 VALID UNTIL '2025-01-01'`
+* `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+* `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 +09:00'`
+* `CREATE USER name1 VALID UNTIL 'infinity'`
+* `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'`
+
+<Note>
+  日期时间字符串由 `parseDateTimeBestEffort` 解析，它只识别时区标记 `UTC`、`GMT`、`Z`、`MSK`、`MSD` 以及 `+09:00` 或 `-05:00` 这类数值偏移量。不支持 `Asia/Tokyo` 或 `Europe/London` 这类 IANA 具名时区；此外，对于实行夏令时的区域，固定偏移量并不等同于 IANA 时区，因此你必须针对要编码的具体日期计算正确的偏移量。
+</Note>
+
+<div id="grantees-clause">
+  ## GRANTEES 子句
+</div>
+
+指定允许从该用户接收[权限](/zh/reference/statements/grant#privileges)的用户或角色，前提是该用户本身也已通过 [GRANT OPTION](/zh/reference/statements/grant#granting-privilege-syntax) 获得了所有必需的访问授权。`GRANTEES` 子句的选项包括：
+
+* `user` — 指定该用户可以向其授予权限的用户。
+* `role` — 指定该用户可以向其授予权限的角色。
+* `ANY` — 该用户可以向任何人授予权限。这是默认设置。
+* `NONE` — 该用户不能向任何人授予权限。
+
+你可以使用 `EXCEPT` 表达式来排除任意用户或角色。例如，`CREATE USER user1 GRANTEES ANY EXCEPT user2`。这表示如果 `user1` 拥有某些通过 `GRANT OPTION` 授予的权限，它就能够将这些权限授予除 `user2` 之外的任何人。
+
+<div id="examples">
+  ## 示例
+</div>
+
+创建用户账户 `mira`，并使用密码 `qwerty` 进行保护：
+
+```sql
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';
+```
+
+`mira` 应在运行 ClickHouse 服务器的主机上启动客户端应用程序。
+
+创建用户账户 `john` 并分配角色：
+
+```sql
+CREATE USER john ROLE role1, role2;
+```
+
+创建用户账户 `john`，分配角色，并将其中部分角色设为默认：
+
+```sql
+CREATE USER john ROLE role1, role2 DEFAULT ROLE role1;
+```
+
+或
+
+```sql
+CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
+```
+
+创建用户账户 `john`，并允许他将自己的权限授予 `jack` 用户账户：
+
+```sql
+CREATE USER john GRANTEES jack;
+```
+
+使用查询参数来创建用户账户 `john`：
+
+```sql
+SET param_user=john;
+CREATE USER {user:Identifier};
+```

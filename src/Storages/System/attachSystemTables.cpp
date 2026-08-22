@@ -91,6 +91,7 @@
 #include <Storages/System/StorageSystemSettingsProfiles.h>
 #include <Storages/System/StorageSystemSettingsProfileElements.h>
 #include <Storages/System/StorageSystemRowPolicies.h>
+#include <Storages/System/StorageSystemMaskingPolicies.h>
 #include <Storages/System/StorageSystemQuotas.h>
 #include <Storages/System/StorageSystemQuotaLimits.h>
 #include <Storages/System/StorageSystemQuotaUsage.h>
@@ -103,7 +104,9 @@
 #include <Storages/System/StorageSystemFilesystemCacheSettings.h>
 #include <Storages/System/StorageSystemQueryConditionCache.h>
 #include <Storages/System/StorageSystemQueryResultCache.h>
+#include <Storages/System/StorageSystemUserQueryLog.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
+#include <Storages/System/StorageSystemHandlers.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemTokenizers.h>
@@ -116,6 +119,7 @@
 #if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperChangelogs.h>
 #include <Storages/System/StorageSystemKeeperSnapshots.h>
+#include <Storages/System/StorageSystemKeeperStorage.h>
 #endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
@@ -124,12 +128,16 @@
 #include <Storages/System/StorageSystemKeeperCluster.h>
 #endif
 #include <Storages/System/StorageSystemScheduler.h>
+#include <Storages/System/StorageSystemObjectStorageQueueMetadata.h>
 #include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
 #include <Storages/System/StorageSystemIcebergFiles.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#include <DistributedCache/Utils.h>
+#endif
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
@@ -159,6 +167,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int TABLE_ALREADY_EXISTS;
+}
 
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
@@ -208,6 +222,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemSettingsProfiles>(context, system_database, "settings_profiles", "Contains properties of configured setting profiles.");
     attach<StorageSystemSettingsProfileElements>(context, system_database, "settings_profile_elements", "Describes the content of each settings profile configured on the server. Including settings constraints, roles and users for which the settings are applied, and parent settings profiles.");
     attach<StorageSystemRowPolicies>(context, system_database, "row_policies", "Contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.");
+    attach<StorageSystemMaskingPolicies>(context, system_database, "masking_policies", "Contains information about masking policies. Masking policies can only be created and applied in ClickHouse Cloud; in open-source builds this table is always empty.");
     attach<StorageSystemQuotas>(context, system_database, "quotas", "Contains information about quotas.");
     attach<StorageSystemQuotaLimits>(context, system_database, "quota_limits", "Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to specific quota.");
     attach<StorageSystemQuotaUsage>(context, system_database, "quota_usage", "Contains quota usage by the current user: how much is used and how much is left.");
@@ -271,6 +286,9 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attachNoDescription<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache", "Contains information about all entries inside filesystem cache for remote objects.");
     attachNoDescription<StorageSystemFilesystemCacheSettings>(context, system_database, "filesystem_cache_settings", "Contains information about all filesystem cache settings");
     attachNoDescription<StorageSystemQueryConditionCache>(context, system_database, "query_condition_cache", "Contains information about all entries inside query condition cache in server's memory.");
+#if ENABLE_DISTRIBUTED_CACHE
+    DistributedCache::attachSystemTablesDistributedCache(context, system_database);
+#endif
     attachNoDescription<StorageSystemQueryResultCache>(context, system_database, "query_cache", "Contains information about all entries inside query cache in server's memory.");
     attachNoDescription<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
     attachNoDescription<StorageSystemTokenizers>(context, system_database, "tokenizers", "Contains a list of the available tokenizers.");
@@ -279,6 +297,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 #endif
     attach<StorageSystemCertificates>(context, system_database, "certificates", "Contains information about available certificates and their sources.");
     attachNoDescription<StorageSystemNamedCollections>(context, system_database, "named_collections", "Contains a list of all named collections which were created via SQL query or parsed from configuration file.");
+    attachNoDescription<StorageSystemHandlers>(context, system_database, "handlers", "Contains a list of all SQL-defined HTTP handlers created via CREATE HANDLER.");
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
     attach<StorageSystemBackgroundSchedulePool>(context, system_database, "background_schedule_pool", "Contains information about tasks in all BackgroundSchedulePool instances. Each row represents a task.");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
@@ -287,6 +306,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemJemallocStats>(context, system_database, "jemalloc_stats", "Returns jemalloc statistics in a single row with a single column. Equivalent to SYSTEM JEMALLOC STATS command.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>>(context, system_database, "s3queue_metadata_cache", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata_cache", "Contains in-memory state of AzureQueue metadata and currently processed rows per file.");
+    attachNoDescription<StorageSystemObjectStorageQueueMetadata<ObjectStorageType::S3>>(context, system_database, "s3_queue_metadata", "Contains the current number of processed, processing and failed nodes in keeper for each S3Queue metadata object and, on demand, their contents. Unlike system.s3queue_metadata_cache, which shows the in-memory cache, this table reads the state directly from keeper.");
+    attachNoDescription<StorageSystemObjectStorageQueueMetadata<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata", "Contains the current number of processed, processing and failed nodes in keeper for each AzureQueue metadata object and, on demand, their contents. Unlike system.azure_queue_metadata_cache, which shows the in-memory cache, this table reads the state directly from keeper.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>>(context, system_database, "s3_queue_settings", "Contains a list of settings of S3Queue tables.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>>(context, system_database, "azure_queue_settings", "Contains a list of settings of AzureQueue tables.");
     attach<StorageSystemDashboards>(context, system_database, "dashboards", "Contains queries used by /dashboard page accessible though HTTP interface. This table can be useful for monitoring and troubleshooting. The table contains a row for every chart in a dashboard.");
@@ -313,12 +334,39 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attach<StorageSystemKeeperSnapshots>(context, system_database, "keeper_snapshots", "Contains information about Keeper snapshots stored on this Keeper node. The table includes finalized snapshots and at most one in-flight snapshot currently being received from the leader.");
         attach<StorageSystemKeeperCluster>(context, system_database, "keeper_cluster", "Contains one row per Raft cluster member as seen by this Keeper.");
         attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", "Contains information about changelogs stored on this Keeper node.");
+        attachNoDescription<StorageSystemKeeperStorage>(context, system_database, "keeper_storage", "Contains one row per node of the data tree stored on this Keeper node, read from a consistent lock-free view of the committed state.");
     }
 #endif
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
     {
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
+    }
+
+    if (context->getConfigRef().getBool("query_log.enable_user_query_log", true))
+    {
+        /// The query log table is always created in the `system` database: `SystemLog::createSystemLog` coerces any
+        /// other configured `query_log.database` back to `system`. So the collision with `system.user_query_log`
+        /// happens for `query_log.table = user_query_log` regardless of the configured `query_log.database`.
+        if (context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The `query_log.table` server setting cannot be set to `user_query_log`: "
+                "the query log table is always created in the `system` database, where `system.user_query_log` "
+                "shows the query log records of the current user. "
+                "Rename the query log table or set `query_log.enable_user_query_log` to 0");
+
+        /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
+        if (system_database.isTableExist("user_query_log", context))
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table `system.user_query_log` already exists, but this name is used for the query log records of the current user. "
+                "Rename or drop the existing table, or set `query_log.enable_user_query_log` to 0");
+
+        attach<StorageSystemUserQueryLog>(context, system_database, "user_query_log",
+            "Contains the query log records of the current user: rows of the query log table (`system.query_log` by default) "
+            "whose initiating user is the current user. Unlike the query log table itself, it can be read without any grants. "
+            "This is only supported when the query log is stored locally: if `query_log.engine` delegates reads to another "
+            "server (for example, `Distributed`), reading throws an exception, because the per-user access check cannot be "
+            "enforced across a ClickHouse-protocol server boundary; in that case set `query_log.enable_user_query_log` to 0.");
     }
 
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");

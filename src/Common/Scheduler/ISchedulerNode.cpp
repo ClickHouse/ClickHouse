@@ -25,13 +25,6 @@ SchedulerNodeInfo::SchedulerNodeInfo(const WorkloadSettings & settings)
     : SchedulerNodeInfo(settings.weight, settings.priority, settings.precedence)
 {}
 
-// TODO(serxa): this is legacy, get rid of it together with CustomResourceManager
-SchedulerNodeInfo::SchedulerNodeInfo(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    setWeight(config.getDouble(config_prefix + ".weight", weight));
-    setPriority(config.getInt64(config_prefix + ".priority", priority));
-}
-
 SchedulerNodeInfo & SchedulerNodeInfo::setWeight(double value)
 {
     if (value <= 0 || !isfinite(value))
@@ -74,17 +67,6 @@ void SchedulerNodeInfo::update(const WorkloadSettings & new_settings)
     setPrecedence(new_settings.precedence);
 }
 
-bool SchedulerNodeInfo::equals(const SchedulerNodeInfo & o) const
-{
-    // `parent` data is not compared intentionally (it is not part of configuration settings)
-    return weight == o.weight && priority == o.priority && precedence == o.precedence;
-}
-
-ISchedulerNode::ISchedulerNode(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-    : event_queue(event_queue_)
-    , info(config, config_prefix)
-{}
-
 ISchedulerNode::ISchedulerNode(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
     : event_queue(event_queue_)
     , info(info_)
@@ -94,11 +76,6 @@ ISchedulerNode::~ISchedulerNode()
 {
     chassert(!parent);
     chassert(activation_event_id == 0);
-}
-
-bool ISchedulerNode::equals(ISchedulerNode * other)
-{
-    return info.equals(other->info);
 }
 
 String ISchedulerNode::getPath() const

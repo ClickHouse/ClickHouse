@@ -1,0 +1,160 @@
+---
+sidebarTitle: 'Conformidade de faturamento no ClickHouse Cloud'
+slug: /manage/clickhouse-cloud-billing-compliance
+title: 'Conformidade de faturamento no ClickHouse Cloud'
+description: 'Página que descreve a conformidade de faturamento no ClickHouse Cloud'
+keywords: ['conformidade de faturamento', 'pagamento por uso']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="billing-compliance">
+  ## Conformidade de faturamento
+</div>
+
+O uso do ClickHouse Cloud exige que sua organização tenha um método de
+faturamento ativo e válido configurado. Após o fim do seu período de teste
+de 30 dias ou o esgotamento dos seus créditos de teste, o que ocorrer
+primeiro, você terá as seguintes opções de faturamento para continuar usando o ClickHouse Cloud:
+
+| Opção de faturamento                                          | Descrição                                                                                                 |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| [PAYG direto](#direct-payg)                                   | Adicione um cartão de crédito válido à sua organização para usar Pay-As-You-Go                            |
+| [Marketplace PAYG](#cloud-marketplace-payg)                   | Configure uma assinatura Pay-As-You-Go por meio de um marketplace em nuvem compatível                     |
+| [Contrato de consumo comprometido](#committed-spend-contract) | Celebre um contrato de consumo comprometido diretamente ou por meio de um marketplace em nuvem compatível |
+
+Se o seu período de teste terminar e nenhuma opção de faturamento tiver sido
+configurada para a sua organização, todos os seus serviços serão interrompidos.
+Se um método de faturamento ainda não tiver sido configurado após duas semanas,
+todos os seus dados serão excluídos.
+
+O ClickHouse cobra pelos serviços no nível da organização. Se, em algum momento,
+não conseguirmos processar um pagamento usando seu método de faturamento atual,
+você deverá atualizá-lo para uma das três opções listadas acima para evitar
+interrupções no serviço. Veja abaixo mais detalhes sobre a conformidade de
+pagamento com base no método de faturamento escolhido.
+
+<div id="direct-payg">
+  ### Cobrança por uso com cartão de crédito
+</div>
+
+Você pode pagar mensalmente pelo uso do ClickHouse Cloud, após o uso, com um cartão de crédito.
+Para adicionar um cartão de crédito, siga estas [instruções](#add-credit-card).
+
+Seu ciclo de faturamento mensal do ClickHouse começa no dia em que o nível da organização
+(Basic, Scale ou Enterprise) é selecionado e o primeiro serviço é criado dentro
+da organização.
+
+Normalmente, o cartão de crédito cadastrado será cobrado no fim do seu ciclo mensal
+de faturamento, mas as cobranças poderão ser antecipadas se o valor devido acumulado
+no ciclo atingir US$ 1.000 (mais informações sobre limites de pagamento [aqui](/pt-BR/products/cloud/reference/billing/payment-thresholds)).
+
+O cartão de crédito cadastrado deve ser válido, não estar vencido e ter crédito disponível
+suficiente para cobrir o valor total da sua fatura. Se, por qualquer motivo, não conseguirmos cobrar
+o valor total devido, as seguintes restrições para faturas não pagas passarão a valer imediatamente:
+
+* Você só pode aumentar a escala até 120 GiB por réplica
+* Você não pode iniciar seus serviços se eles estiverem parados
+* Você não pode iniciar nem criar novos serviços
+
+Tentaremos processar o pagamento usando o método de faturamento
+configurado da organização por até 30 dias. Se o pagamento não for processado com sucesso após 14 dias, todos os serviços
+dentro da organização serão interrompidos. Se o pagamento ainda não for recebido até o
+fim desse período de 30 dias e não tivermos concedido uma extensão, todos os dados e
+serviços associados à sua organização serão excluídos.
+
+<div id="cloud-marketplace-payg">
+  ### Faturamento Pay-As-You-Go do marketplace de nuvem
+</div>
+
+O faturamento Pay-As-You-Go também pode ser configurado para cobrar uma organização por meio de um dos marketplaces de nuvem compatíveis
+(AWS, GCP ou Azure). Para aderir ao faturamento Marketplace PAYG, siga estas
+[instruções](#marketplace-payg).
+
+Assim como no faturamento via Direct PAYG, seu ciclo mensal de faturamento com o ClickHouse
+no Marketplace PAYG começa no dia em que o nível da organização (Basic, Scale
+ou Enterprise) é selecionado e o primeiro serviço é criado na
+organização.
+
+No entanto, devido às exigências dos marketplaces, informamos as cobranças
+do seu uso Pay-As-You-Go hora a hora. A cobrança será feita
+de acordo com os termos do seu contrato com esse marketplace — normalmente
+em um ciclo de faturamento por mês-calendário.
+
+Por exemplo, se você criar o primeiro serviço da organização em 18 de janeiro, seu
+primeiro ciclo de uso para faturamento no ClickHouse Cloud irá de 18 de janeiro até o
+fim do dia 17 de fevereiro. No entanto, você poderá receber sua primeira fatura do
+marketplace de nuvem no início do mês de fevereiro.
+
+No entanto, se sua assinatura do marketplace PAYG for cancelada ou não for renovada
+automaticamente, o faturamento passará a usar o cartão de crédito cadastrado da
+organização, se houver. Para adicionar um cartão de crédito, [contate o suporte](/pt-BR/resources/about/support)
+para obter ajuda. Se um cartão de crédito válido não tiver sido fornecido, as mesmas restrições por fatura não paga
+descritas acima para [Direct PAYG](#direct-payg) serão aplicadas — isso
+inclui suspensão do serviço e eventual exclusão de dados.
+
+<div id="committed-spend-contract">
+  ### Faturamento por contrato com compromisso de consumo
+</div>
+
+Você pode comprar créditos para sua organização por meio de um contrato com compromisso de consumo das seguintes formas:
+
+1. Entrando em contato com a equipe de vendas para comprar créditos diretamente, com opções de pagamento que incluem ACH
+   ou transferência bancária. As condições de pagamento serão estabelecidas no formulário de pedido aplicável.
+2. Entrando em contato com a equipe de vendas para comprar créditos por meio de uma assinatura em um dos nossos
+   marketplaces de nuvem compatíveis (AWS, GCP ou Azure). As cobranças serão informadas ao marketplace aplicável após a aceitação
+   da oferta privada e, depois disso, de acordo com os termos da oferta, mas você será faturado de acordo com os termos do seu
+   contrato com esse marketplace. Para pagar por meio de um marketplace, siga estas
+   [instruções](#marketplace-payg).
+
+Os créditos aplicados a uma organização (por exemplo, por meio de contratos com compromisso de consumo ou reembolsos) ficam
+disponíveis para uso durante o prazo especificado no formulário de pedido ou na oferta privada aceita.
+Os créditos são consumidos a partir do dia em que foram concedidos, em períodos de faturamento
+com base na data em que o primeiro nível da organização (Basic, Scale ou Enterprise) é
+selecionado.
+
+Se uma organização **não** estiver em um contrato com compromisso de consumo em marketplace de nuvem e ficar
+sem créditos ou se os créditos expirarem, a organização mudará automaticamente
+para o faturamento Pay-As-You-Go (PAYG). Nesse caso, tentaremos processar o pagamento
+usando o cartão de crédito cadastrado para a organização, se houver.
+
+Se uma organização **estiver** em um contrato com compromisso de consumo em marketplace de nuvem e ficar sem
+créditos, ela também mudará automaticamente para o faturamento PAYG pelo mesmo
+marketplace durante o restante da assinatura. No entanto, se a assinatura
+não for renovada e expirar, tentaremos então processar o pagamento usando o
+cartão de crédito cadastrado para a organização, se houver.
+
+Em qualquer um dos cenários, se não conseguirmos cobrar o cartão de crédito configurado, as
+restrições para faturas em aberto descritas acima para o faturamento [Pay-as-you-go (PAYG)](#direct-payg)
+com cartão de crédito serão aplicadas — isso inclui a suspensão dos serviços.
+Para mais detalhes sobre a transição do seu contrato com compromisso de consumo para o faturamento PAYG, consulte a seção “Overconsumption” em nossos [Termos e Condições](https://clickhouse.com/legal/agreements/terms-of-service).
+No entanto, para clientes com contrato com compromisso de consumo, entraremos em contato com você sobre quaisquer
+faturas não pagas antes de iniciar a exclusão de dados. Os dados não são automaticamente
+excluídos após nenhum período de tempo.
+
+Se você quiser adicionar créditos antes que os atuais expirem ou se esgotem,
+[entre em contato conosco](https://clickhouse.com/company/contact).
+
+<div id="add-credit-card">
+  ### Como pagar com cartão de crédito
+</div>
+
+Acesse a seção Billing na UI do ClickHouse Cloud e clique no botão &#39;Add Credit Card&#39;
+(mostrado abaixo) para concluir a configuração. Se tiver alguma dúvida, [entre em contato com o suporte](/pt-BR/resources/about/support) para obter ajuda.
+
+<Image img="/images/cloud/manage/billing_compliance.webp" size="md" alt="Como adicionar um cartão de crédito" />
+
+<div id="marketplace-payg">
+  ## Como pagar via marketplaces
+</div>
+
+Se você quiser pagar por meio de um dos marketplaces compatíveis (AWS, GCP ou Azure),
+siga as etapas [aqui](/pt-BR/products/cloud/reference/billing/marketplace/overview).
+Para dúvidas especificamente relacionadas ao faturamento no marketplace de nuvem, entre em contato diretamente com o provedor de nuvem.
+
+Links úteis para resolver problemas de faturamento em marketplaces:
+
+* [Perguntas frequentes sobre faturamento da AWS](https://aws.amazon.com/aws-cost-management/aws-billing/faqs/)
+* [Perguntas frequentes sobre faturamento do GCP](https://cloud.google.com/compute/docs/billing-questions)
+* [Perguntas frequentes sobre faturamento do Azure](https://learn.microsoft.com/en-us/azure/cost-management-billing/cost-management-billing-faq)

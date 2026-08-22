@@ -1,5 +1,6 @@
 #include <Columns/ColumnString.h>
 
+#include <cstring>
 #include <Columns/Collator.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/ColumnsCommon.h>
@@ -364,6 +365,9 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     readBinaryLittleEndian<size_t>(string_size, in);
 
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    if (string_size < serialize_string_with_zero_byte)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Malformed serialized string in aggregation state: size {} is smaller than the zero-byte terminator", string_size);
     const size_t old_size = chars.size();
     const size_t new_size = old_size + string_size - serialize_string_with_zero_byte;
     chars.resize(new_size);
@@ -882,6 +886,50 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
     }
 
     return column_sizes;
+}
+
+/// Byte-comparable encoding: 0x00 → [0x00, 0x01]; terminated with [0x00, 0x00].
+/// Uses memchr+append fast path: no-NUL strings are copied in one append call.
+void ColumnString::serializeAsComparable(size_t n, String & out) const
+{
+    const size_t string_size = sizeAt(n);
+    const auto string_offset = offsetAt(n);
+    const char * src = reinterpret_cast<const char *>(&chars[string_offset]);
+    const char * const end = src + string_size;
+
+    out.reserve(out.size() + string_size + 2);
+
+    const char * p = static_cast<const char *>(std::memchr(src, '\0', string_size));
+    if (p == nullptr)
+    {
+        out.append(src, string_size);
+    }
+    else
+    {
+        const char * cursor = src;
+        do
+        {
+            out.append(cursor, p - cursor);
+            out.append("\0\x01", 2);
+            cursor = p + 1;
+            p = static_cast<const char *>(std::memchr(cursor, '\0', end - cursor));
+        }
+        while (p != nullptr);
+        out.append(cursor, end - cursor);
+    }
+
+    out.append("\0\x00", 2);
+}
+
+void ColumnString::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const IColumn::Permutation * permutation,
+    const UInt8 * null_map) const
+{
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, null_map,
+        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
 }

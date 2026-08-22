@@ -49,8 +49,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-
 // Class helping a thread to deal with acquired workload resources
 struct WorkloadResources
 {
@@ -111,9 +109,11 @@ struct WorkloadResources
 };
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
-    : process_list_element(std::move(elem))
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry_)
+    : step_wall_clock_registry(step_wall_clock_registry_)
+    , process_list_element(std::move(elem))
 {
+
     if (process_list_element)
     {
         profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles]
@@ -129,8 +129,11 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
     {
         /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
         /// It is logical error, and we need more information about pipeline.
+        /// Label the nodes with addresses so that they can be matched against the endpoints
+        /// named by the exception (e.g. from `ExecutingGraph::addEdge`) even when `getUniqID`
+        /// degrades to the `_0` suffix because `CurrentThread` is not initialized.
         WriteBufferFromOwnString buf;
-        printPipeline(*processors, buf);
+        printPipeline(*processors, buf, /* with_profile = */ false, /* with_addresses = */ true);
         buf.finalize();
         exception.addMessage("Query pipeline:\n" + buf.str());
 
@@ -226,7 +229,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
         span.addAttribute(DB::ExecutionStatus::fromCurrentException());
 
 #ifndef NDEBUG
-        LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
+        LOG_TRACE(log, "Exception while executing query. Current state:\n{}", graph->dump());
 #endif
         throw;
     }
@@ -344,7 +347,7 @@ void PipelineExecutor::finalizeExecution()
     }
 
     if (!all_processors_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", graph->dump(), tasks.dump());
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)
@@ -639,7 +642,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
-    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get());
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, step_wall_clock_registry, read_progress_callback.get());
     const size_t initial_parallel = tasks.fill(queue, async_queue);
 
     /// Initial queued parallelism never routes through `pushTasks`, so size setMax here to
@@ -736,42 +739,6 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 
         throw;
     }
-}
-
-String PipelineExecutor::dumpPipeline() const
-{
-    for (const auto & node : graph->nodes)
-    {
-        {
-            WriteBufferFromOwnString buffer;
-            buffer << "(" << node.num_executed_jobs << " jobs";
-
-#ifndef NDEBUG
-            buffer << ", execution time: " << static_cast<double>(node.execution_time_ns) / 1e9 << " sec.";
-            buffer << ", preparation time: " << static_cast<double>(node.preparation_time_ns) / 1e9 << " sec.";
-#endif
-
-            buffer << ")";
-            node.processor()->setDescription(buffer.str());
-        }
-    }
-
-    std::vector<std::optional<IProcessor::Status>> statuses;
-    std::vector<IProcessor *> proc_list;
-    statuses.reserve(graph->nodes.size());
-    proc_list.reserve(graph->nodes.size());
-
-    for (const auto & node : graph->nodes)
-    {
-        proc_list.emplace_back(node.processor());
-        statuses.emplace_back(node.last_processor_status);
-    }
-
-    WriteBufferFromOwnString out;
-    printPipeline(graph->getProcessors(), statuses, out);
-    out.finalize();
-
-    return out.str();
 }
 
 }

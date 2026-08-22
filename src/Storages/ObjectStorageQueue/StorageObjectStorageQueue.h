@@ -13,6 +13,7 @@
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/IStreamingStorage.h>
 #include <base/defines.h>
 
 
@@ -21,7 +22,7 @@ namespace DB
 class ObjectStorageQueueMetadata;
 struct ObjectStorageQueueSettings;
 
-class StorageObjectStorageQueue : public IStorage, WithContext
+class StorageObjectStorageQueue : public IStreamingStorage, WithContext
 {
 public:
     StorageObjectStorageQueue(
@@ -32,6 +33,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
+        bool allow_server_credentials_in_user_queries_,
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,
@@ -95,6 +97,13 @@ public:
         ContextPtr local_context,
         std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) const;
 
+    /// Rebuild the object-storage S3 client under `context`, re-resolving credentials, without detaching the
+    /// table. Used by the server-internal log-pipeline bootstrap to re-apply the server-credential opt-in after
+    /// a restart loaded the table with a restricted (anonymous) client. Safe to call while streaming: the client
+    /// is hot-swapped (MultiVersion) and the running streaming task picks it up on its next object-storage
+    /// operation, so this avoids the `DETACH ... SYNC` that would otherwise block on the live table.
+    void rebuildObjectStorageClient(ContextPtr rebuild_context);
+
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
 
@@ -156,13 +165,15 @@ private:
 
     UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
-    std::atomic<bool> shutdown_called = false;
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
+
+    void scheduleStreamingTasksImpl() override;
 
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
+    std::vector<UInt64> streaming_task_refresh_epochs;
     std::atomic<size_t> max_files_override{0};
 
     LoggerPtr log;
@@ -187,6 +198,7 @@ private:
         size_t max_block_size,
         ContextPtr local_context,
         bool commit_once_processed,
+        bool is_direct_select,
         size_t max_processed_files_override = 0);
 
     /// Get number of dependent materialized views.
@@ -196,7 +208,7 @@ private:
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
-    bool streamToViews(size_t streaming_tasks_index);
+    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.
     void postProcess(const StoredObjects & successful_objects) const;
     /// Commit processed files to keeper as either successful or unsuccessful.

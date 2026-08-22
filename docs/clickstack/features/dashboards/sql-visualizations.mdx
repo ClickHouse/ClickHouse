@@ -1,0 +1,248 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/sql-visualizations
+title: 'SQL-based visualizations'
+sidebarTitle: 'SQL-based visualizations'
+description: 'Creating visualizations using SQL queries in ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'visualization', 'sql', 'observability']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+ClickStack supports visualizations based on raw SQL queries. This gives you full control over the query logic while still integrating with dashboard-level time ranges, filters, and chart rendering.
+
+SQL-based visualizations are useful when you need to go beyond the built-in Chart Explorer — for example, to join tables or build complex aggregations that are not supported by the chart builder.
+
+## Creating a SQL-based visualization {#creating-a-raw-sql-chart}
+
+To create a SQL-based visualization, open a dashboard tile editor and select the **SQL** tab. 
+
+<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="SQL Editor Button" size="lg"/>
+
+From there:
+
+1. Select a **ClickHouse connection** to run the query against.
+2. Optionally select a **Source** — this enables dashboard-level filters to be applied to your chart via the `$__filters` macro.
+3. Write your SQL query in the editor, using query parameters and macros to integrate with the dashboard time range and filters.
+4. Click the **play** button to preview results, then **Save**.
+
+## Query parameters {#query-parameters}
+
+[Query parameters](/reference/syntax#defining-and-using-query-parameters) allow your SQL to reference the dashboard's current time range and granularity. They use the ClickHouse parameterized query syntax: `{paramName:Type}`.
+
+### Available parameters {#available-parameters}
+
+The parameters available depend on the chart type:
+
+**Line and Stacked Bar charts:**
+
+| Parameter                       | Type    | Description                                                      |
+|---------------------------------|---------|------------------------------------------------------------------|
+| `{startDateMilliseconds:Int64}` | Int64   | Start of the dashboard date range (milliseconds since epoch)     |
+| `{endDateMilliseconds:Int64}`   | Int64   | End of the dashboard date range (milliseconds since epoch)       |
+| `{intervalSeconds:Int64}`       | Int64   | Time bucket size in seconds (based on granularity)               |
+| `{intervalMilliseconds:Int64}`  | Int64   | Time bucket size in milliseconds (based on granularity)          |
+
+**Table, Pie, and Number charts:**
+
+| Parameter                       | Type    | Description                                                      |
+|---------------------------------|---------|------------------------------------------------------------------|
+| `{startDateMilliseconds:Int64}` | Int64   | Start of the dashboard date range (milliseconds since epoch)     |
+| `{endDateMilliseconds:Int64}`   | Int64   | End of the dashboard date range (milliseconds since epoch)       |
+
+## Macros {#macros}
+
+Macros are shortcuts that expand into common ClickHouse SQL expressions. They are prefixed with `$__` and are replaced before the query is sent to ClickHouse.
+
+### Time boundary macros {#time-boundary-macros}
+
+These macros return a ClickHouse expression representing the dashboard's start or end time. They take no arguments.
+
+| Macro            | Expands to                                                            | Column type |
+|------------------|-----------------------------------------------------------------------|-------------|
+| `$__fromTime`    | `toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))` | DateTime    |
+| `$__toTime`      | `toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))`   | DateTime    |
+| `$__fromTime_ms` | `fromUnixTimestamp64Milli({startDateMilliseconds:Int64})`             | DateTime64  |
+| `$__toTime_ms`   | `fromUnixTimestamp64Milli({endDateMilliseconds:Int64})`               | DateTime64  |
+| `$__interval_s`  | `{intervalSeconds:Int64}`                                             | Int64       |
+
+### Time filter macros {#time-filter-macros}
+
+These macros generate a `WHERE` clause fragment that filters a column to the dashboard time range.
+
+| Macro                                 | Description                                                        |
+|---------------------------------------|--------------------------------------------------------------------|
+| `$__timeFilter(column)`               | Filters a `DateTime` column to the dashboard range                 |
+| `$__timeFilter_ms(column)`            | Filters a `DateTime64` (millisecond) column to the dashboard range |
+| `$__dateFilter(column)`               | Filters a `Date` column to the dashboard range                     |
+| `$__dateTimeFilter(dateCol, timeCol)` | Filters using separate `Date` and `DateTime` columns               |
+| `$__dt(dateCol, timeCol)`             | Alias for `$__dateTimeFilter`                                      |
+
+**Example expansion** of `$__timeFilter(TimestampTime)`:
+
+```sql
+TimestampTime >= toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))
+AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))
+```
+
+### Time interval macros {#time-interval-macros}
+
+These macros bucket a timestamp column into intervals matching the dashboard granularity. They are typically used in `SELECT` and `GROUP BY` clauses for time series charts. These are only available for Line and Stacked-bar visualizations.
+
+| Macro                        | Description                                                            |
+|------------------------------|------------------------------------------------------------------------|
+| `$__timeInterval(column)`    | Buckets a `DateTime` column into intervals of `intervalSeconds`        |
+| `$__timeInterval_ms(column)` | Buckets a `DateTime64` column into intervals of `intervalMilliseconds` |
+
+**Example expansion** of `$__timeInterval(TimestampTime)`:
+
+```sql
+toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} second)
+```
+
+### Dashboard filter macro {#dashboard-filter-macro}
+
+| Macro         | Description                                                                            |
+|---------------|----------------------------------------------------------------------------------------|
+| `$__filters`  | Replaced with the dashboard-level filter conditions (requires a Source to be selected) |
+
+When a **Source** is selected on the chart and dashboard filters are active, `$__filters` expands to the corresponding SQL `WHERE` conditions. When no source is selected or no filters are applied, it expands to `(1=1)`, so it is always safe to include in a `WHERE` clause.
+
+## How query results are plotted {#how-results-are-plotted}
+
+ClickStack automatically maps result columns to chart elements based on column types. The mapping rules differ by chart type.
+
+### Line and Stacked Bar charts {#line-and-stacked-bar-charts}
+
+| Role               | Column type                        | Description                                                                                 |
+|--------------------|------------------------------------|---------------------------------------------------------------------------------------------|
+| **Timestamp**      | First `Date` or `DateTime` column  | Used as the x-axis.                                                                         |
+| **Series Value**   | All numeric columns                | Each numeric column is plotted as a separate series. These are typically aggregate values.   |
+| **Group Names**    | String, Map, or Array columns      | Optional. Rows with different group values are plotted as separate series.                   |
+
+### Pie chart {#pie-chart}
+
+| Role              | Column type                        | Description                                                      |
+|-------------------|------------------------------------|------------------------------------------------------------------|
+| **Slice Value**   | First numeric column               | Determines each slice's size.                                    |
+| **Slice Label**   | String, Map, or Array columns      | Optional. Each unique value becomes a slice label.               |
+
+### Number chart {#number-chart}
+
+| Role       | Column type          | Description                                                             |
+|------------|----------------------|-------------------------------------------------------------------------|
+| **Number** | First numeric column | The value from the first row of the first numeric column is displayed.  |
+
+### Table chart {#table-chart}
+
+All result columns are displayed directly as table columns.
+
+## Examples {#examples}
+
+<Info>
+**Required system table access**
+
+You will need to specify `otel_v2.otel_logs` or `otel_v2.otel_traces` if running the following examples on [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).
+</Info>
+
+### Line chart — log count over time by service {#example-line-chart}
+
+This query counts log events per service, bucketed into time intervals matching the dashboard granularity.
+
+```sql
+SELECT
+  toStartOfInterval(TimestampTime, INTERVAL {intervalSeconds:Int64} second) AS ts,
+  ServiceName,
+  count() AS count
+FROM otel_logs
+WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+  AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+  AND $__filters
+GROUP BY ServiceName, ts
+ORDER BY ts ASC
+```
+
+- `ts` (DateTime) is used as the x-axis timestamp.
+- `count` (numeric) is plotted as the series value.
+- `ServiceName` (string) creates a separate line per service.
+
+### Line chart — using macros {#example-line-chart-macros}
+
+The same query written using macros for brevity:
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  ServiceName,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filters
+GROUP BY ServiceName, ts
+ORDER BY ts ASC
+```
+
+### Stacked bar chart — error count by severity {#example-stacked-bar}
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  lower(SeverityText),
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND lower(SeverityText) IN ('error', 'warn')
+  AND $__filters
+GROUP BY SeverityText, ts
+ORDER BY ts ASC
+```
+
+### Table chart — top 10 slowest endpoints {#example-table}
+
+```sql
+SELECT
+  SpanName AS endpoint,
+  avg(Duration) / 1000 AS avg_duration_ms,
+  count() AS request_count
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND $__filters
+GROUP BY SpanName
+ORDER BY avg_duration_ms DESC
+LIMIT 10
+```
+
+### Pie chart — request distribution by service {#example-pie}
+
+```sql
+SELECT
+  ServiceName,
+  count() AS request_count
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND $__filters
+GROUP BY ServiceName
+```
+
+- `request_count` (numeric) determines each slice's size.
+- `ServiceName` (string) labels each slice.
+
+### Number chart — total error count {#example-number}
+
+```sql
+SELECT
+  count() AS total_errors
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND SeverityText = 'error'
+  AND $__filters
+```
+
+The single numeric value `total_errors` from the first row is displayed.
+
+## Notes {#notes}
+
+- SQL-based visualizations execute with `readonly` mode enabled — only `SELECT` queries are permitted.
+- SQL-based visualizations must be exactly one SQL query - multiple queries are not supported.
+- The SQL editor provides autocomplete suggestions for both query parameters and macros.
+- A source must be selected to apply dashboard filters to SQL-based visualizations. The source should match the table being queried, for accurate filtering.

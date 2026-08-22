@@ -9,6 +9,7 @@ import traceback
 from pathlib import Path
 from typing import Dict, List
 
+from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika import Secret
 from ci.praktika.info import Info
@@ -185,6 +186,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="allows binaries built on different branch if source digest matches current repo state",
     )
+    parser.add_argument(
+        "--apt-mirror-region",
+        type=str,
+        default="",
+        help="if set, point apt at the in-region AWS Ubuntu mirror for this region "
+        "(e.g. us-east-1) instead of Canonical's archive.ubuntu.com / "
+        "ports.ubuntu.com, which are frequently unreachable from the runners. "
+        "Empty means use the Dockerfile default (canonical mirror).",
+    )
 
     return parser.parse_args()
 
@@ -221,6 +231,80 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
     return tags
 
 
+# `docker buildx build` resolves base/SBOM-scanner images such as
+# `docker/buildkit-syft-scanner` (pulled by `--sbom=true`) from docker.io, which
+# intermittently returns transient HTTP errors while resolving and while pushing
+# image layers, and the build itself hits `apt-get` package mirrors that occasionally
+# refuse connections. Retry the buildx commands only on genuine
+# registry/network/mirror *failure* signatures. None of these strings appear in
+# normal `--progress=plain` output (unlike progress text such as "resolve image
+# config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
+# fast on the first attempt. The count is bounded by the job budget below.
+BUILDX_RETRIES = 2
+BUILDX_RETRY_ERRORS = [
+    # Docker registry (docker.io / registry-1.docker.io)
+    "failed to do request",
+    "unexpected status from HEAD request",
+    "500 Internal Server Error",
+    "502 Bad Gateway",
+    "503 Service Unavailable",
+    "504 Gateway Timeout",
+    "429 Too Many Requests",
+    # Network / TLS
+    "TLS handshake timeout",
+    "i/o timeout",
+    "connection reset by peer",
+    "connection refused",
+    "unexpected EOF",
+    # apt-get package mirrors
+    "Failed to fetch",
+    "Connection failed",
+    "Connection timed out",
+]
+
+# `Acquire::http::Timeout` is an inactivity timeout, so an apt mirror that keeps
+# trickling bytes is never bounded by it and the build runs until the job's own cap
+# kills it. Bound each invocation, above the slowest healthy attempt seen in 90 days.
+BUILDX_TIMEOUT = 2700
+BUILDX_TIMEOUT_MESSAGE = "ERROR: docker buildx timed out"
+# Logged by `timeout --verbose` under LC_ALL=C when it escalates to SIGKILL; a bare 137
+# is ambiguous (OOM, external kill), so only this proves the expiry. Same discrimination
+# as clickhouse_proc.py's _TIMEOUT_KILL_DIAG.
+BUILDX_TIMEOUT_KILL_DIAG = "sending signal KILL to command"
+# Both sentinels must go to stderr: Shell.run matches retry_errors against stderr only.
+BUILDX_RETRY_ERRORS += [BUILDX_TIMEOUT_MESSAGE, BUILDX_TIMEOUT_KILL_DIAG]
+BUILDX_TIMEOUT_KILL_AFTER = 120
+# A per-invocation bound does not bound the job: main() loops over os variants and tags,
+# so the invocation count is not fixed. Keep back this much of the cap for recording a
+# result, and give each invocation whatever is left.
+BUILDX_JOB_RESERVE = 3600
+# `timeout 0` runs unbounded (measured: rc 0 after the full command), so a deadline that
+# has passed must never reach `timeout` as 0. Clamp to a floor that still expires.
+BUILDX_TIMEOUT_FLOOR = 60
+
+
+def buildx_timeout(elapsed: float = 0.0, job_timeout: int = 0) -> int:
+    """Per-invocation bound, shrunk so the whole job stays inside its own cap."""
+    if not job_timeout:
+        return BUILDX_TIMEOUT
+    # One invocation may retry, so it costs up to BUILDX_RETRIES * (bound + kill-after).
+    attempts = max(BUILDX_RETRIES, 2)
+    budget = (job_timeout - BUILDX_JOB_RESERVE - elapsed) / attempts
+    return max(BUILDX_TIMEOUT_FLOOR, min(BUILDX_TIMEOUT, int(budget)))
+
+
+def with_timeout(cmd: str, seconds: int = BUILDX_TIMEOUT) -> str:
+    # A brace group, not `bash -c '...'`: cmd already contains single-quoted arguments,
+    # which a surrounding single-quoted string would break. LC_ALL=C pins timeout's
+    # diagnostic, which is a translated string.
+    return (
+        f"{{ LC_ALL=C timeout --verbose --signal=TERM "
+        f"--kill-after={BUILDX_TIMEOUT_KILL_AFTER} {seconds} {cmd}; "
+        f'rc=$?; if [ "$rc" = 124 ]; then '
+        f'echo "{BUILDX_TIMEOUT_MESSAGE} after {seconds}s" >&2; fi; exit $rc; }}'
+    )
+
+
 def buildx_args(
     urls: Dict[str, str],
     arch: str,
@@ -228,6 +312,7 @@ def buildx_args(
     version: str,
     sha: str,
     action_url: str,
+    apt_mirror_region: str,
 ) -> List[str]:
     args = [
         "--provenance=true",
@@ -243,6 +328,17 @@ def buildx_args(
         url = urls[arch]
         args.append(f"--build-arg=REPOSITORY='{url}'")
         args.append(f"--build-arg=deb_location_url='{url}'")
+    # Point apt at the in-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com
+    # (amd64) and ports.ubuntu.com (arm64) are frequently unreachable over IPv4
+    # from the runners; the in-region mirror is reachable and fast. The Dockerfile
+    # defaults stay canonical so images build normally outside CI.
+    if apt_mirror_region:
+        args.append(
+            f"--build-arg=apt_archive=http://{apt_mirror_region}.ec2.archive.ubuntu.com"
+        )
+        args.append(
+            f"--build-arg=apt_ports_archive=http://{apt_mirror_region}.ec2.ports.ubuntu.com"
+        )
     return args
 
 
@@ -256,6 +352,10 @@ def build_and_push_image(
     direct_urls: Dict[str, List[str]],
     run_url: str,
     sha: str,
+    apt_mirror_region: str,
+    # Required: a default here silently selects the fixed bound.
+    sw: Utils.Stopwatch,
+    job_timeout: int,
 ) -> List[Result]:
     result = []
     if os != "ubuntu":
@@ -306,6 +406,7 @@ def build_and_push_image(
                 version=version,
                 action_url=run_url,
                 sha=sha,
+                apt_mirror_region=apt_mirror_region,
             )
         )
         if not push:
@@ -331,7 +432,12 @@ def build_and_push_image(
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.name, tag, arch, cmd)
         result.append(
-            Result.from_commands_run(name=f"{image.name}:{tag}-{arch}", command=cmd)
+            Result.from_commands_run(
+                name=f"{image.name}:{tag}-{arch}",
+                command=with_timeout(cmd, buildx_timeout(sw.duration, job_timeout)),
+                retries=BUILDX_RETRIES,
+                retry_errors=BUILDX_RETRY_ERRORS,
+            )
         )
         if not result[-1].is_ok():
             return result
@@ -344,7 +450,14 @@ def build_and_push_image(
             f"--tag {image.name}:{tag} {' '.join(digests)}"
         )
         logging.info("Pushing merged %s:%s image: %s", image.name, tag, cmd)
-        result.append(Result.from_commands_run(name=f"{image.name}:{tag}", command=cmd))
+        result.append(
+            Result.from_commands_run(
+                name=f"{image.name}:{tag}",
+                command=with_timeout(cmd, buildx_timeout(sw.duration, job_timeout)),
+                retries=BUILDX_RETRIES,
+                retry_errors=BUILDX_RETRY_ERRORS,
+            )
+        )
         if not result[-1].is_ok():
             return result
     else:
@@ -436,11 +549,16 @@ def main():
     args = parse_args()
     info = Info()
 
-    version_dict = None
+    version = None
     if not info.is_local_run:
-        version_dict = info.get_kv_data("version")
-    if not version_dict:
-        version_dict = CHVersion.get_current_version_as_dict()
+        version = CHVersion.get_current_version_from_ci_pipeline()
+    if not version:
+        # Repo-read fallback: the merge-queue workflow runs no version_log hook,
+        # so KV storage is empty and this is the only path. The checkout is
+        # shallow there, so the tweak cannot be counted from git history -- read
+        # non-strict and let it degrade to the placeholder tweak instead of
+        # raising, matching the pre-refactor behavior.
+        version = CHVersion.get_current_version(no_strict=True)
         if not info.is_local_run:
             print(
                 "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
@@ -448,7 +566,7 @@ def main():
             info.add_workflow_warning(
                 "ClickHouse version has not been found in workflow kv storage"
             )
-    assert version_dict
+    assert version
 
     if not info.is_local_run:
         assert not args.image_path and not args.image_repo
@@ -456,16 +574,20 @@ def main():
     if "server image" in info.job_name:
         image_path = args.image_path or "docker/server"
         image_repo = args.image_repo or "clickhouse/clickhouse-server"
+        job_timeout = JobConfigs.docker_server.timeout
     elif "keeper image" in info.job_name:
         image_path = args.image_path or "docker/keeper"
         image_repo = args.image_repo or "clickhouse/clickhouse-keeper"
+        job_timeout = JobConfigs.docker_keeper.timeout
     else:
         assert False, f"Unexpected job name [{info.job_name}]"
 
     push = args.push
+    apt_mirror_region = args.apt_mirror_region
     del args.image_path
     del args.image_repo
     del args.push
+    del args.apt_mirror_region
 
     if (
         info.is_push_event
@@ -477,7 +599,7 @@ def main():
         push = True
 
     image = DockerImageData(image_repo, image_path)
-    tags = gen_tags(version_dict["string"], args.tag_type)
+    tags = gen_tags(version.string, args.tag_type)
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
 
@@ -533,10 +655,13 @@ def main():
                     repo_urls,
                     os_,
                     tag,
-                    version_dict["describe"],
+                    version.describe,
                     direct_urls,
                     run_url=info.run_url,
                     sha=info.sha,
+                    apt_mirror_region=apt_mirror_region,
+                    sw=sw,
+                    job_timeout=job_timeout,
                 )
             )
 

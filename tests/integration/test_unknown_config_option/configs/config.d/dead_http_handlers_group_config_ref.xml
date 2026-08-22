@@ -1,0 +1,27 @@
+<clickhouse>
+    <!--
+        Negative case: a top-level `<http_handlers_alt>` group is NOT the default `http_handlers`
+        group and is NOT referenced by any `<protocols>...<handlers>...</handlers>` endpoint, so the
+        server never consults it (`createHTTPHandlerFactory` reads only the default `http_handlers`
+        and the exact group named by an HTTP protocol). Its `config://secret_dead_handler_payload`
+        reference is therefore dead, and the unknown-key validator must NOT exempt the top-level
+        `<secret_dead_handler_payload>` on behalf of a handler group no server code reads — doing so
+        would be a false negative. The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+
+        `<http_handlers_alt>` itself is exempt as a top-level key (via the `http_handlers` prefix in
+        `known_prefixes`), so the only genuinely unknown top-level key here is the payload section.
+    -->
+    <secret_dead_handler_payload>never read by a dead handler group</secret_dead_handler_payload>
+
+    <http_handlers_alt>
+        <rule>
+            <methods>GET</methods>
+            <url>/dead_rule</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://secret_dead_handler_payload</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers_alt>
+</clickhouse>

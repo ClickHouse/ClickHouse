@@ -421,36 +421,6 @@ class GitHub(github.Github):
             repo, "get_issue", cache_file, number, obj_updated_at=obj_updated_at
         )
 
-    def upsert_issue_comment(
-        self,
-        repo: Repository,
-        issue_number: int,
-        marker: str,
-        body: str,
-        dry_run: bool = False,
-    ) -> Optional[str]:
-        """Create or update a single marker-identified comment on an issue.
-
-        Idempotent: scans the issue's comments for one containing ``marker``
-        (a bot-owned delimiter); if found, it is edited only when the body
-        actually changed; otherwise a new comment is created. Returns
-        ``"created"``, ``"updated"``, or ``None`` when nothing changed.
-
-        The issue is fetched live (not via the pickle cache) so the comment
-        list reflects the current state.
-        """
-        issue = repo.get_issue(issue_number)
-        for comment in issue.get_comments():
-            if marker in (comment.body or ""):
-                if (comment.body or "") == body:
-                    return None
-                if not dry_run:
-                    comment.edit(body)
-                return "updated"
-        if not dry_run:
-            issue.create_comment(body)
-        return "created"
-
     def _get_repo_obj_cached(
         self,
         repo: Repository,

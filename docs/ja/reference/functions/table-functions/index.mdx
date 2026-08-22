@@ -1,0 +1,91 @@
+---
+description: 'テーブル関数 に関するドキュメント'
+sidebarTitle: '概要'
+slug: /sql-reference/table-functions/
+title: 'テーブル関数'
+doc_type: 'reference'
+---
+
+テーブル関数 は、テーブルを構築するための機能です。
+
+<div id="usage">
+  ## 使用方法
+</div>
+
+テーブル関数は、`SELECT`クエリの[`FROM`](/ja/reference/statements/select/from)
+句で使用できます。たとえば、`file`テーブル関数を使って、ローカル
+マシン上のファイルからデータを`SELECT`できます。
+
+```bash title="Query"
+echo "1, 2, 3" > example.csv
+```
+
+```text title="Response"
+./clickhouse client
+:) SELECT * FROM file('example.csv')
+┌─c1─┬─c2─┬─c3─┐
+│  1 │  2 │  3 │
+└────┴────┴────┘
+```
+
+現在のクエリ内でのみ利用可能な一時テーブルを作成するために、テーブル関数 を使用することもできます。たとえば、次のとおりです。
+
+```sql title="Query"
+SELECT * FROM generateSeries(1,5);
+```
+
+```response title="Response"
+┌─generate_series─┐
+│               1 │
+│               2 │
+│               3 │
+│               4 │
+│               5 │
+└─────────────────┘
+```
+
+テーブルは、クエリの終了時に削除されます。
+
+テーブル関数は、次の構文を使用してテーブルを作成するための方法として利用できます。
+
+```sql title="Query"
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
+```
+
+例:
+
+```sql title="Query"
+CREATE TABLE series AS generateSeries(1, 5);
+SELECT * FROM series;
+```
+
+```response title="Response"
+┌─generate_series─┐
+│               1 │
+│               2 │
+│               3 │
+│               4 │
+│               5 │
+└─────────────────┘
+```
+
+最後に、テーブル関数を使ってテーブルにデータを `INSERT` することもできます。たとえば、
+前の例で作成したテーブルの内容を、
+再度 `file` テーブル関数を使ってディスク上のファイルに書き出せます:
+
+```sql title="Query"
+INSERT INTO FUNCTION file('numbers.csv', 'CSV') SELECT * FROM series;
+```
+
+```bash title="Query"
+cat numbers.csv
+1
+2
+3
+4
+5
+```
+
+<Note>
+  [allow&#95;ddl](/ja/reference/settings/session-settings/allow#allow_ddl) 設定が無効な場合、テーブル関数は使用できません。
+</Note>

@@ -1,0 +1,12 @@
+-- create + call
+created_result_42
+-- corrupt the .workdir sidecar with an invalid uuid and drop the working directory
+-- recovery recreates the function despite the corrupted sidecar
+recovered_result_15
+-- sidecar restored to a valid uuid pointing at an existing directory
+uuid_workdir_name
+uuid_workdir_present
+-- drop removes everything
+config_removed
+workdir_metadata_removed
+sql_removed

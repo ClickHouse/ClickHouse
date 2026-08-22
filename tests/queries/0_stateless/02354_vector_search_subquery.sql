@@ -1,4 +1,5 @@
 -- Tags: no-fasttest, no-ordinary-database
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different EXPLAIN
 SET query_plan_optimize_prewhere = 1;
