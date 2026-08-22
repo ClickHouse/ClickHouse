@@ -2468,13 +2468,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (database->isTableExist(create.getTable(), getContext()))
             return;
 
-        /// The registration is only ours to remove when it can be attributed to this statement, and when
-        /// this statement did not already publish the table to the other replicas: a CREATE carried by an
-        /// entry of a `Replicated` database's DDL log commits its metadata transaction before the table
-        /// reaches the database, and removing the replica after that diverges this replica from the ones
-        /// where the same entry succeeded.
-        bool registration_is_ours = replicated_storage->hasProvableCreationIdentity()
-            && !getContext()->getZooKeeperMetadataTransaction();
+        /// A `Replicated` database's DDL entry is executable on the other replicas only once its
+        /// metadata transaction's commit creates `/committed`, and a secondary query replays an entry
+        /// that is already published. Removing a published replica would diverge this replica from the
+        /// ones where the same entry succeeded, so only an unpublished registration is ours to remove.
+        auto txn = getContext()->getZooKeeperMetadataTransaction();
+        const bool published = txn && (txn->isExecuted() || !txn->isInitialQuery());
+        bool registration_is_ours = replicated_storage->hasProvableCreationIdentity() && !published;
 
         try
         {
