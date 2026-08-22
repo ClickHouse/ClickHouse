@@ -281,12 +281,17 @@ GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & s
 
 void checkGCSCredentialsAllowedInUserQuery(const GCSObjectStorageSettings & settings, const ContextPtr & context)
 {
+    /// Only the SQL surface (`gcs(...)` and the object storage table engine) reaches this check, and its only
+    /// credential carrier is `NOSIGN`: `StorageGCSConfiguration::createObjectStorage` rejects HMAC keys,
+    /// `role_arn`, the metadata-service OAuth settings and the `google_adc_*` triple before it gets here, and a
+    /// service-account key is a disk-only setting. Name only the fixes that surface actually has.
     if (chooseGCSCredentialSource(settings) == GCSCredentialSource::ApplicationDefault
         && context->shouldRestrictUserQueryS3Credentials())
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "Native GCS access from a user query may not use Application Default Credentials because they can "
-            "resolve the server's identity. Provide explicit native GCS credentials or `NOSIGN`, or enable "
+            "resolve the server's identity. Use `NOSIGN` for a public bucket, disable `use_native_gcs` to reach "
+            "the bucket through the S3-compatibility API with your own HMAC keys, or enable "
             "`s3_allow_server_credentials_in_user_queries`");
 }
 
