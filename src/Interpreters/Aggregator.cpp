@@ -801,8 +801,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
     cache_settings.enable_prefetch = params.enable_prefetch;
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
-    /// Both aggregation loops below call `commitKeyBatch` once they are done with a block.
-    cache_settings.commits_key_batch = true;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
@@ -1220,6 +1218,10 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 
     /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
     [[maybe_unused]] AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
+
+    /// Every row of the range goes through `emplaceKey` below and `commitKeyBatch` follows, so a
+    /// method that can prepare the whole block's keys at once may do so.
+    state.enableKeyBatch();
 
     auto emplace = [&](size_t row)
     {
@@ -4307,6 +4309,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
     if (!arena_for_keys)
         arena_for_keys = aggregates_pool;
+
+    state.enableKeyBatch();
 
     for (size_t i = row_begin; i < row_end; ++i)
         state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)

@@ -32,10 +32,6 @@ struct HashMethodContextSettings
     /// Threshold on the hash table's buffer size below which prefetching is skipped
     /// because the table fits into caches. Zero disables the threshold.
     size_t min_bytes_for_prefetch = 0;
-    /// Set by a caller that calls `commitKeyBatch` once it is done with a block. A method that
-    /// serializes the block's keys into the arena upfront needs that call to reclaim the bytes the
-    /// duplicate rows took, so without it it keeps serializing key by key.
-    bool commits_key_batch = false;
 };
 
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.
@@ -368,6 +364,12 @@ public:
             return false;
         }
     }
+
+    /// Called by a loop that emplaces every row of a block and calls `commitKeyBatch` when it is
+    /// done. A method that can serialize the block's keys ahead of the loop overrides this to turn
+    /// that on - it is off by default, because a caller that only probes with the keys would never
+    /// reclaim what they took.
+    void enableKeyBatch() {}
 
     /// Called for every row that goes through `emplaceKey`. A method that materialises the block's
     /// keys upfront overrides this to learn which row ended up owning which cell.

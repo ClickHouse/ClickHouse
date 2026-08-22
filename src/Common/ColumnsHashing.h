@@ -383,22 +383,24 @@ struct HashMethodSerialized
     PaddedPODArray<char> serialized_buffer;
     std::vector<std::string_view> serialized_keys;
 
-    /// Set when the block's keys are serialized straight into the arena, a chunk at a time, instead
-    /// of into `serialized_buffer` or into a per-row buffer. An inserted key then needs no second
-    /// write; the bytes of the duplicate rows are reclaimed by `commitKeyBatch`.
+    /// Whether the block's keys can be serialized straight into the arena, a chunk at a time,
+    /// instead of into `serialized_buffer` or into a per-row buffer. An inserted key then needs no
+    /// second write, and the bytes of the duplicate rows are reclaimed as the chunk is consumed.
+    /// Only a caller that emplaces every row and then calls `commitKeyBatch` may turn it on.
+    bool can_use_arena_batch = false;
     bool use_arena_batch = false;
-    /// A whole block would need one contiguous arena region per thread, and the arena holds on to
-    /// such a region for good, so the block is done in chunks of about this size.
-    static constexpr size_t arena_chunk_bytes = 512 * 1024;
+    /// The block is serialized in chunks of about this size: a whole block would need one large
+    /// contiguous arena region per thread, and a chunk this size is still written, hashed and probed
+    /// while it is in cache.
+    static constexpr size_t arena_chunk_bytes = 128 * 1024;
     bool arena_prepared = false;
     char * arena_base = nullptr;
     size_t arena_size = 0;
+    /// The first byte of the chunk that no inserted key owns yet.
+    char * arena_free = nullptr;
     Arena * arena_pool = nullptr;
     size_t chunk_begin = 0;
     size_t chunk_end = 0;
-    /// The cell every row of the chunk inserted, nullptr for a row that found its key already there.
-    PaddedPODArray<void *> emplaced_cells;
-    size_t table_cells_at_prepare = 0;
 
     /// Reused across the rows of a block, for the keys that are serialized one row at a time.
     PaddedPODArray<char> key_scratch;
@@ -412,6 +414,10 @@ struct HashMethodSerialized
     /// when we actually plan to precompute hashes (and is flipped back to `true` after the first call).
     bool precomputed_hashes_initialized = true;
     bool can_precompute_hashes = false;
+    bool prefetch_enabled = false;
+    /// The look-ahead is measured over the first rows of the block. The arena batch runs
+    /// `initPrecomputedHashes` once per chunk, but the measurement is only meaningful once.
+    bool prefetch_calibrated = false;
 
     /// Skip the precomputed-hash prefetch path when the hash table's buffer is below this size,
     /// matching the existing `min_bytes_for_prefetch` contract used by `Aggregator::executeImpl`.
@@ -468,9 +474,8 @@ struct HashMethodSerialized
             /// serialization it would win nothing: the same bytes are written either way, and the
             /// compaction that reclaims the duplicates' bytes comes on top. So it takes over exactly
             /// where batch serialization steps aside.
-            use_arena_batch = !Base::has_mapped && total_size != 0 && hash_serialized_context->settings.commits_key_batch
-                && !shouldUseBatchSerialize();
-            use_batch_serialize = !use_arena_batch && shouldUseBatchSerialize();
+            can_use_arena_batch = !Base::has_mapped && total_size != 0 && !shouldUseBatchSerialize();
+            use_batch_serialize = !can_use_arena_batch && shouldUseBatchSerialize();
             if (use_batch_serialize)
             {
                 serialized_buffer.resize(total_size);
@@ -506,11 +511,12 @@ struct HashMethodSerialized
         /// emplace/find call, once `Data` is known.
         if constexpr (has_pre_computed_hashes)
         {
-            if ((use_batch_serialize || use_arena_batch) && hash_serialized_context->settings.enable_prefetch)
+            prefetch_enabled = hash_serialized_context->settings.enable_prefetch;
+            min_bytes_for_prefetch = hash_serialized_context->settings.min_bytes_for_prefetch;
+            if (use_batch_serialize && prefetch_enabled)
             {
                 can_precompute_hashes = true;
                 precomputed_hashes_initialized = false;
-                min_bytes_for_prefetch = hash_serialized_context->settings.min_bytes_for_prefetch;
                 prefetching = std::make_unique<PrefetchingHelper>();
             }
         }
@@ -526,7 +532,11 @@ struct HashMethodSerialized
         requires prealloc
     {
         precomputed_hashes_initialized = true;
-        calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
+        if (!prefetch_calibrated)
+        {
+            prefetch_calibrated = true;
+            calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
+        }
 
         if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
         {
@@ -559,6 +569,22 @@ struct HashMethodSerialized
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
+    void enableKeyBatch()
+    {
+        if (!can_use_arena_batch)
+            return;
+
+        use_arena_batch = true;
+        /// With the keys materialised ahead of the loop their hashes can be too, which is what the
+        /// prefetch needs; without the batch this method has nothing to prefetch by.
+        if (prefetch_enabled && !prefetching)
+        {
+            can_precompute_hashes = true;
+            precomputed_hashes_initialized = false;
+            prefetching = std::make_unique<PrefetchingHelper>();
+        }
+    }
+
     /// Serialize the next chunk of rows straight into the arena, where their keys will stay.
     void NO_INLINE prepareArenaChunk(size_t first_row, Arena & pool)
     {
@@ -579,18 +605,15 @@ struct HashMethodSerialized
 
         arena_pool = &pool;
         arena_base = pool.alloc(bytes);
+        arena_free = arena_base;
         arena_size = bytes;
         arena_prepared = true;
-        table_cells_at_prepare = 0;
 
-        if (emplaced_cells.size() < rows)
-            emplaced_cells.resize_fill(rows, nullptr);
         serialized_keys.resize(rows);
 
         char * memory = arena_base;
         for (size_t i = chunk_begin; i < chunk_end; ++i)
         {
-            emplaced_cells[i] = nullptr;
             serialized_keys[i] = std::string_view(memory, row_sizes[i]);
             for (size_t j = 0; j < keys_size; ++j)
             {
@@ -606,6 +629,10 @@ struct HashMethodSerialized
             precomputed_hashes_initialized = false;
     }
 
+    /// Closes the hole a duplicate row left behind, right after the row that follows it was
+    /// inserted: its key moves down onto the hole and its cell - still hot, and safe from a resize
+    /// that has not happened yet - is repointed. A key keeps its bytes, so its hash and its slot do
+    /// not change.
     template <typename Data, typename LookupResult>
     void ALWAYS_INLINE onEmplaced(size_t row, Data & data, LookupResult cell, bool inserted)
     {
@@ -618,11 +645,13 @@ struct HashMethodSerialized
         {
             if (inserted)
             {
-                emplaced_cells[row] = cell;
-                /// Every recorded cell has to come from the same buffer, so that `commitKeyBatch`
-                /// can tell a resize - which reinserts them all - from a quiet chunk.
-                if (table_cells_at_prepare == 0)
-                    table_cells_at_prepare = data.getBufferSizeInCells();
+                const auto key = serialized_keys[row];
+                if (key.data() != arena_free)
+                {
+                    memmove(arena_free, key.data(), key.size());
+                    cell->relocateKey(typename Data::key_type(arena_free, key.size()));
+                }
+                arena_free += key.size();
             }
 
             if (row + 1 == chunk_end)
@@ -630,47 +659,14 @@ struct HashMethodSerialized
         }
     }
 
-    /// Close the holes the duplicate rows left in the chunk: move every key that a cell owns down to
-    /// the first free byte, repoint that cell, and give the tail back to the arena. A key keeps its
-    /// bytes, so its hash and its slot do not change.
+    /// Give back what the duplicate rows of the chunk took.
     template <typename Data>
-    void commitKeyBatch(Data & data)
+    void commitKeyBatch(Data &)
     {
         if (!arena_prepared)
             return;
         arena_prepared = false;
-
-        if constexpr (!std::is_pointer_v<typename Data::LookupResult>)
-            return;
-        else
-        {
-            /// A resize reallocated the table and reinserted every cell, so the recorded pointers are
-            /// dangling and the cell of a key has to be looked up again.
-            const bool cells_moved = table_cells_at_prepare != 0 && data.getBufferSizeInCells() != table_cells_at_prepare;
-
-            char * dst = arena_base;
-            for (size_t row = chunk_begin; row < chunk_end; ++row)
-            {
-                auto * cell = static_cast<typename Data::LookupResult>(emplaced_cells[row]);
-                if (!cell)
-                    continue;
-
-                const auto key = serialized_keys[row];
-                if (key.data() != dst)
-                {
-                    /// The key still sits where it was inserted from, so this finds the row's own cell.
-                    if (cells_moved)
-                        cell = data.find(typename Data::key_type(key.data(), key.size()));
-                    chassert(cell);
-
-                    memmove(dst, key.data(), key.size());
-                    cell->relocateKey(typename Data::key_type(dst, key.size()));
-                }
-                dst += key.size();
-            }
-
-            arena_pool->rollback(arena_base + arena_size - dst);
-        }
+        arena_pool->rollback(arena_base + arena_size - arena_free);
     }
 
     ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool)
@@ -686,8 +682,9 @@ struct HashMethodSerialized
         if (use_batch_serialize)
             return ArenaKeyHolder{serialized_keys[row], pool};
 
-        /// One buffer for the whole block: the key only has to stay alive until the hash table
-        /// copies it into the arena, which happens before the next row is serialized.
+        /// One buffer for the whole block instead of one allocation per row. The key stays valid
+        /// only until the next call for this state, which is all its callers need: they persist it
+        /// into the arena or discard it before asking for the next row.
         key_scratch.resize(row_sizes[row]);
         char * memory = key_scratch.data();
         std::string_view key(memory, row_sizes[row]);
