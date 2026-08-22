@@ -60,13 +60,22 @@ def test_introspection_port(started_cluster):
     introspection_client().query("SHOW PROCESSLIST")
 
     # Reaches the interpreter and fails on its argument instead of being refused.
+    describe_cache_query_id = "introspection_test_describe_filesystem_cache"
     assert "There is no cache by name" in introspection_client().query_and_get_error(
-        "DESCRIBE FILESYSTEM CACHE 'nonexistent'"
+        "DESCRIBE FILESYSTEM CACHE 'nonexistent'", query_id=describe_cache_query_id
     )
     # Impersonating another user is not a diagnostic query, so it stays refused.
     # On a regular port the same statement reports UNKNOWN_USER instead.
     assert "QUERY_IS_PROHIBITED" in introspection_client().query_and_get_error(
         "EXECUTE AS foo"
+    )
+    # It is admitted as a DESCRIBE, not as some other kind that the port also accepts.
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        "SELECT DISTINCT query_kind FROM system.query_log"
+        f" WHERE query_id = '{describe_cache_query_id}'",
+        "Describe",
     )
 
     node.query("SYSTEM STOP LISTEN CUSTOM 'introspection_native'")
