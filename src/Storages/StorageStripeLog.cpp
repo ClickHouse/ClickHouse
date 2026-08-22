@@ -127,6 +127,7 @@ public:
         , indices(indices_)
         , index_begin(index_begin_)
         , index_end(index_end_)
+        , next_index(index_begin_)
         , file_size(file_size_)
         , metadata_snapshot(std::move(metadata_snapshot_))
         , context(std::move(context_))
@@ -159,6 +160,7 @@ private:
     std::shared_ptr<const IndexForNativeFormat> indices;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
+    IndexForNativeFormat::Blocks::const_iterator next_index;
     size_t file_size;
     const StorageMetadataPtr metadata_snapshot;
     const ContextPtr context;
@@ -171,6 +173,16 @@ private:
     bool started = false;
     std::optional<CompressedReadBufferFromFile> data_in;
     std::optional<NativeReader> block_in;
+
+    void readNextBlock()
+    {
+        if (next_index == index_end)
+            return;
+
+        auto block_end = next_index;
+        ++block_end;
+        block_in.emplace(*data_in, 0, next_index, block_end);
+    }
 
     void start()
     {
@@ -186,7 +198,10 @@ private:
             /// but we must not read beyond the snapshotted range that the index covers.
             data_in->setReadUntilPosition(file_size);
 
-            block_in.emplace(*data_in, 0, index_begin, index_end);
+            if (read_all_columns)
+                readNextBlock();
+            else
+                block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
 
@@ -195,7 +210,11 @@ private:
         start();
 
         if (!block_in)
+        {
+            data_in.reset();
+            indices.reset();
             return;
+        }
 
         Block res = block_in->read();
 
@@ -206,6 +225,13 @@ private:
             data_in.reset();
             indices.reset();
             return;
+        }
+
+        if (read_all_columns)
+        {
+            ++next_index;
+            block_in.reset();
+            readNextBlock();
         }
 
         if (read_all_columns)
