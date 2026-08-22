@@ -158,6 +158,71 @@ def test_dynamic_handler_put_delete_still_readonly():
             assert 200 != res_modify.status_code, method
             assert "Cannot execute query in readonly mode" in res_modify.content.decode(), method
 
+        # A configured dynamic handler appends the request body to the query parameter. A body-less request
+        # without Content-Length or chunked framing must be rejected before query execution instead of waiting
+        # for EOF while the client waits for the response.
+        for method in ("PUT",):
+            with socket.create_connection((cluster.instance.ip_address, 8123), timeout=5) as sock:
+                sock.sendall(
+                    (
+                        f"{method} /test_dynamic_handler_put_delete?get_dynamic_handler_query=SELECT+1 HTTP/1.1\r\n"
+                        "Host: localhost\r\n"
+                        "Connection: close\r\n\r\n"
+                    ).encode()
+                )
+
+                response = b""
+                while b"\r\n\r\n" not in response:
+                    chunk = sock.recv(4096)
+                    assert chunk, "connection closed before receiving HTTP response"
+                    response += chunk
+
+            status = response.split(b" ", 2)[1].decode()
+            assert "411" == status, (method, status, response)
+
+        # An unframed DELETE is represented by an empty request stream. It must close the connection even
+        # when the handler does not read the body, otherwise bytes after the headers can become a new request.
+        with socket.create_connection((cluster.instance.ip_address, 8123), timeout=5) as sock:
+            sock.sendall(
+                b"DELETE /test_dynamic_handler_put_delete?get_dynamic_handler_query=SELECT+1 HTTP/1.1\r\n"
+                b"Host: localhost\r\n"
+                b"Connection: keep-alive\r\n\r\n"
+                b"GET /?query=SELECT+42424242 HTTP/1.1\r\n"
+                b"Host: localhost\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+
+            response = b""
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+
+        assert 1 == response.count(b"HTTP/1.1 "), response
+        assert b"HTTP/1.1 200" in response, response
+        assert b"Connection: close" in response, response
+        assert b"42424242" not in response, response
+
+        # The server-level path-request gate must run before decoding the final component. Otherwise a
+        # malformed percent escape is turned into a routing-time 500 even though path requests are disabled.
+        with socket.create_connection((cluster.instance.ip_address, 8123), timeout=5) as sock:
+            sock.sendall(
+                b"PUT /foo%ZZ.CSV HTTP/1.1\r\n"
+                b"Host: localhost\r\n"
+                b"Content-Length: 0\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+
+            response = b""
+            while b"\r\n\r\n" not in response:
+                chunk = sock.recv(4096)
+                assert chunk, "connection closed before receiving response headers"
+                response += chunk
+
+        status = response.split(b" ", 2)[1].decode()
+        assert "404" == status, (status, response)
+
         # The default query parameter name is also used by configured dynamic handlers. It must not
         # enable the built-in path-upload mutation exception for a handler-owned PUT route.
         res_default_modify = cluster.instance.http_request(
@@ -167,6 +232,16 @@ def test_dynamic_handler_put_delete_still_readonly():
         )
         assert 200 != res_default_modify.status_code
         assert "Cannot execute query in readonly mode" in res_default_modify.content.decode()
+
+        # A configured handler that owns a path with a format-looking suffix must also keep the
+        # request readonly; the built-in path-upload exception is only for its catch-all handler.
+        res_default_suffix_modify = cluster.instance.http_request(
+            "test_dynamic_handler_default_query_put.CSV",
+            method="PUT",
+            data=modifying_query_body,
+        )
+        assert 200 != res_default_suffix_modify.status_code
+        assert "Cannot execute query in readonly mode" in res_default_suffix_modify.content.decode()
 
 
 def test_predefined_query_handler():

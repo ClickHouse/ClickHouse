@@ -5,15 +5,52 @@
 1	one
 2	two
 3	three
+-- database-prefixed upload works with table-as-file disabled
+-- unqualified upload still requires table-as-file
+HTTP PUT table uploads require a table path with a known format
+-- unqualified upload works with table-as-file enabled
+-- database-prefixed upload requires the database-path setting
+HTTP PUT table uploads require a table path with a known format
+-- inserted rows after setting matrix
+1	one
+2	two
+3	three
+4	four
+5	five
+-- gzip compression suffix decompresses the request body
+-- matching Content-Encoding and path compression are accepted
+-- compression aliases are accepted
+-- conflicting Content-Encoding is rejected
+Conflicting compression: 'gz' in URL path vs 'deflate' in `Content-Encoding`
+-- inserted rows after compressed uploads
+1	one
+2	two
+3	three
+4	four
+5	five
+6	six
+7	seven
+8	eight
 -- a PUT path without a format suffix is not claimed
-HTTP 404
+HTTP 501
 -- a missing table is rejected
 which does not exist
 -- an unknown path format is rejected
 HTTP PUT table uploads require a known format
--- compressed path suffixes are rejected
-HTTP PUT table uploads do not support compression suffixes
+-- compression without a format is rejected
+Compression extension 'gz' specified without a format
 -- an empty body is rejected
 HTTP PUT table uploads require a non-empty request body
+-- an unframed PUT upload is rejected with 411
+unframed-status: 411
 -- an explicit INSERT query remains read-only on PUT
 Cannot execute query in readonly mode
+-- an explicit readonly setting remains enforced
+Cannot execute query in readonly mode
+-- a failed PUT drains its body so the connection can be reused
+first-status: 400
+first-connection-close: False
+second-status: 200
+delete-first-status: 500
+delete-first-connection-close: False
+delete-second-status: 200

@@ -126,7 +126,12 @@ String unquoteBackQuotedComponent(const String & component)
 }
 
 
-HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_table, bool allow_filters)
+HTTPPathInfo parseHTTPPath(
+    const String & path,
+    bool allow_database,
+    bool allow_table,
+    bool allow_filters,
+    bool allow_table_after_database)
 {
     HTTPPathInfo result;
     if (path.empty() || path == "/")
@@ -167,6 +172,12 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
     int table_index = -1;
     if (allow_table && last_non_filter_index >= 0)
     {
+        table_index = last_non_filter_index;
+    }
+    else if (allow_table_after_database && allow_database && non_filter_indices.size() >= 2)
+    {
+        /// PUT path uploads may opt into the final table component only after a database component.
+        /// Keep the ordinary table-as-file setting scoped to unqualified paths.
         table_index = last_non_filter_index;
     }
 

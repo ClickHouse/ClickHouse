@@ -353,7 +353,19 @@ printf '{"a":3,"b":"three"}\n' \
       'http://localhost:8123/my_db/hits.JSONEachRow'
 ```
 
-The table must already exist. Auto-creation, schema inference, multipart uploads, and compression suffixes for `PUT` uploads are not supported. Use the regular [`INSERT` over HTTP](#insert-queries) form when the query or upload behavior needs to be customized.
+The table must already exist. For a database-prefixed upload, `http_allow_database_as_path` enables the
+`/database/table.format` path. An unqualified `/table.format` upload still requires
+`http_allow_table_as_file`. The request body may use a compression suffix such as `.CSV.gz`; the server
+decompresses it before inserting the rows. Auto-creation, schema inference, and multipart uploads are not
+supported. Use the regular [`INSERT` over HTTP](#insert-queries) form when the query or upload behavior needs
+to be customized.
+
+```bash
+# The path suffix describes the compressed request body.
+gzip -c rows.csv \
+  | curl -X PUT --data-binary @- \
+      'http://localhost:8123/my_db/hits.CSV.gz'
+```
 
 ## Insert queries over HTTP/HTTPS {#insert-queries}
 

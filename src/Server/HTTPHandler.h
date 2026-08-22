@@ -90,8 +90,9 @@ protected:
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
     /// Set by SQL-defined handlers, whose query is fully known in advance, so it is known whether it can consume
-    /// the request body at all (see `SQLDefinedHandler`). The other handlers do not know it: for them the body may
-    /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
+    /// the request body at all (see `SQLDefinedHandler`). The built-in path-table upload route has its own
+    /// body-consuming PUT shape. The other handlers do not know it: for them the body may be the rest of the query
+    /// text or the data of an `INSERT`, so they have to assume that it is consumed.
     void setConsumesRequestBody(bool value)
     {
         body_contract_known = true;
@@ -104,11 +105,13 @@ private:
 
     /// Whether `consumes_request_body` carries a definitive answer. Only SQL-defined handlers set it: for them a
     /// `POST` request needs `Content-Length` up front only when the body is actually consumed. For the other
-    /// handlers `POST` requires the length unconditionally, as it did before SQL-defined handlers existed.
+    /// handlers `POST` requires the length unconditionally, as it did before SQL-defined handlers existed. The
+    /// path-table upload route additionally requires it for its PUT shape.
     bool body_contract_known = false;
 
     /// Whether a body-carrying method must come with a length up front. Defaults to `false`: for the handlers that
-    /// do not set it, only `POST` requires the length, as it did before SQL-defined handlers existed.
+    /// do not set it, only `POST` requires the length. The path-table upload route additionally requires it for its
+    /// PUT shape.
     bool consumes_request_body = false;
 
     /// Whether the request body is appended to the query text. Defaults to `true` - the historical behavior, where

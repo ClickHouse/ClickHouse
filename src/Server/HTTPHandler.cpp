@@ -495,9 +495,12 @@ void HTTPHandler::processQuery(
     /// has all path features off, we skip path parsing entirely — the rest of the request is treated
     /// exactly as it would be at the root URL.
     HTTPPathInfo path_info;
+    const bool allow_table_after_database
+        = is_path_table_upload && settings[Setting::http_allow_database_as_path];
     bool any_path_feature_enabled = settings[Setting::http_allow_database_as_path]
                                   || settings[Setting::http_allow_table_as_file]
-                                  || settings[Setting::http_allow_filters_as_path];
+                                  || settings[Setting::http_allow_filters_as_path]
+                                  || allow_table_after_database;
     if (parsesHTTPPath() && any_path_feature_enabled)
     {
         const String & raw_uri = request.getURI();
@@ -532,7 +535,8 @@ void HTTPHandler::processQuery(
                 path_only,
                 settings[Setting::http_allow_database_as_path],
                 settings[Setting::http_allow_table_as_file],
-                settings[Setting::http_allow_filters_as_path]);
+                settings[Setting::http_allow_filters_as_path],
+                allow_table_after_database);
     }
 
     if (is_path_table_upload && path_info.table.empty())
@@ -542,10 +546,6 @@ void HTTPHandler::processQuery(
     if (is_path_table_upload && path_info.format.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "HTTP PUT table uploads require a known format in the URL path, for example /database/table.CSV");
-
-    if (is_path_table_upload && !path_info.compression.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "HTTP PUT table uploads do not support compression suffixes in the URL path yet");
 
     /// Resolve the current database from the path and the `database` setting, in that order.
     /// If both are specified and differ, that's an error. We do this *before* `QueryScope::create`
@@ -646,7 +646,7 @@ void HTTPHandler::processQuery(
 
     /// Apply compression from path (if no `compression` setting was specified explicitly).
     SettingsChanges path_derived_changes;
-    if (!path_info.compression.empty())
+    if (!is_path_table_upload && !path_info.compression.empty())
     {
         /// Only a compression supplied by this request (URL parameter or header, collected into
         /// `settings_changes` above) counts as an explicit override that can conflict with the path.
@@ -827,6 +827,20 @@ void HTTPHandler::processQuery(
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
+    if (is_path_table_upload && !path_info.compression.empty())
+    {
+        const CompressionMethod path_compression_method = chooseCompressionMethod({}, path_info.compression);
+        if (!http_request_compression_method_str.empty()
+            && chooseCompressionMethod({}, http_request_compression_method_str) != path_compression_method)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Conflicting compression: '{}' in URL path vs '{}' in `Content-Encoding` header.",
+                path_info.compression, http_request_compression_method_str);
+
+        /// The path compression suffix describes the upload payload, not the response. Avoid wrapping the
+        /// response above and reuse the normal HTTP request decompression path for the body.
+        if (http_request_compression_method_str.empty())
+            http_request_compression_method_str = path_info.compression;
+    }
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
     /// TODO check
     /// input stream are hold inside in_post instance
@@ -1411,6 +1425,11 @@ try
     if (!used_output.out_holder && !used_output.exception_is_written)
     {
         /// If nothing was sent yet and we don't even know if we must compress the response.
+        /// Most successful requests set chunked transfer encoding while preparing the query output.
+        /// Exceptions raised before that point still need a bounded response so a drained HTTP/1.1
+        /// request can safely reuse its connection.
+        if (response.getKeepAlive() && request.getVersion() == HTTPServerRequest::HTTP_1_1 && !response.hasContentLength())
+            response.setChunkedTransferEncoding(true);
         auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
         return wb.cancelWithException(request, exception_code, message, nullptr);
     }
@@ -1580,13 +1599,15 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
         /// SQL-defined handlers (CREATE HANDLER) may run mutating queries over PUT and DELETE, in which case those
-        /// methods carry a request body just like POST. Without Content-Length a non-chunked PUT body is read until
-        /// EOF - so a dropped connection would be accepted as a partial INSERT - and a non-chunked DELETE is treated
-        /// as an empty body. Require the length up front for these methods too, matching the POST contract.
+        /// methods carry a request body just like POST. The built-in path-table upload route is another body-consuming
+        /// PUT shape. Without Content-Length a non-chunked PUT body is read until EOF - so a dropped connection would
+        /// be accepted as a partial INSERT - and a non-chunked DELETE is treated as an empty body. Require the length
+        /// up front for these methods too, matching the POST contract.
         ///
         /// But require it only when the body is actually consumed - either by the handler's query
-        /// (`consumes_request_body`) or by the form/multipart parsing that the handler layer itself performs. A
-        /// handler such as `CREATE HANDLER h URL '/x' METHODS (DELETE) AS SELECT 1` never looks at the body, and
+        /// (`consumes_request_body`), by the path-table upload route, or by the form/multipart parsing that the handler
+        /// layer itself performs.
+        /// A handler such as `CREATE HANDLER h URL '/x' METHODS (DELETE) AS SELECT 1` never looks at the body, and
         /// demanding `Content-Length: 0` from every ordinary HTTP client would make that class of handlers unusable.
         /// The same applies to `POST` when the handler's body contract is known (a SQL-defined handler): a plain
         /// `curl -X POST` sends neither a body nor `Content-Length`, and a handler that never reads the body must
@@ -1601,11 +1622,20 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         const auto & method = request.getMethod();
         const bool is_body_carrying_method
             = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+        const bool is_path_table_upload = allowMutatingIdempotentMethods(request, params);
         const bool body_may_be_consumed = body_contract_known
             ? (consumes_request_body || requestDeclaresFormBody(request))
-            : (method == HTTPRequest::HTTP_POST || requestDeclaresFormBody(request));
+            : (is_path_table_upload || method == HTTPRequest::HTTP_POST || requestDeclaresFormBody(request));
         const bool method_requires_content_length = is_body_carrying_method && body_may_be_consumed;
-        if (method_requires_content_length && !request.getChunkedTransferEncoding() && !request.hasContentLength())
+        const bool request_is_unframed = !request.getChunkedTransferEncoding() && !request.hasContentLength();
+
+        /// HTTPServerRequest represents an unframed DELETE as a bounded empty stream. If the client sent
+        /// bytes anyway, they would otherwise remain on the socket and be parsed as the next request while
+        /// canKeepAlive() still reports that this request was fully read.
+        if (method == HTTPRequest::HTTP_DELETE && request_is_unframed)
+            response.setKeepAlive(false);
+
+        if (method_requires_content_length && request_is_unframed)
         {
             throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
                             "The Transfer-Encoding is not chunked and there "
