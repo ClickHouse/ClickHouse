@@ -389,12 +389,16 @@ def strip_shell_comment(line):
 CLICKHOUSE_LOCAL_RE = re.compile(r"\$\{?CLICKHOUSE_LOCAL\}?|\bclickhouse(?:-|\s+)local\b")
 
 
-def unclosed_quote(text, quote=None):
+def command_end(text, quote=None):
     """
-    The quote character left open at the end of `text`, or `None` if it ends unquoted.
-    Used to follow a command whose quoted query continues on the following lines.
+    Where the command that `text` starts inside ends, as `(index, quote)`.
+
+    `index` is the position of the first separator that is not inside a quoted string, or
+    `None` when the command continues past the end of `text`; `quote` is then the quote
+    character left open, so the scan can resume on the following line.
     """
     i = 0
+    continued = False
     while i < len(text):
         c = text[i]
         if quote == "'":
@@ -406,11 +410,46 @@ def unclosed_quote(text, quote=None):
             elif c == '"':
                 quote = None
         elif c == "\\":
+            continued = i == len(text) - 1
             i += 1
         elif c in "'\"":
             quote = c
+        elif c in ";|&)`":
+            return i, None
         i += 1
-    return quote
+    if quote is None and not continued:
+        # A command ends with its line unless it is continued by a trailing backslash.
+        return len(text), None
+    return None, quote
+
+
+def strip_clickhouse_local(code, pending=None):
+    """
+    Remove every `clickhouse-local` invocation from `code`, as `(remainder, pending)`.
+
+    Only the invocation itself is removed, up to the end of its command - the text around it
+    stays, so a server-side query that precedes or follows it on the same line is still seen.
+    `pending` carries an invocation whose command continues on the following lines: `None`
+    when there is none, the quote character left open by its query, or an empty string when
+    it continues unquoted.
+    """
+    kept = []
+    while True:
+        if pending is not None:
+            end, quote = command_end(code, pending or None)
+            if end is None:
+                return " ".join(kept), quote or ""
+            pending = None
+            code = code[end:]
+
+        match = CLICKHOUSE_LOCAL_RE.search(code)
+        if match is None:
+            kept.append(code)
+            return " ".join(kept), None
+
+        kept.append(code[: match.start()])
+        code = code[match.end() :]
+        pending = ""
 
 
 def executable_shell_content(lines):
@@ -425,7 +464,7 @@ def executable_shell_content(lines):
     """
     result = []
     quoted_heredoc_end = None
-    clickhouse_local_quote = None
+    clickhouse_local_pending = None
     quoted_heredoc_re = re.compile(r"<<-?\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1")
     output_command_re = re.compile(r"^\s*(?:echo|printf)\b")
     command_substitution_re = re.compile(r"`([^`]*)`|\$\(([^()]*)\)")
@@ -441,17 +480,10 @@ def executable_shell_content(lines):
         if heredoc_match:
             quoted_heredoc_end = heredoc_match.group(2)
 
-        if clickhouse_local_quote is not None:
-            # The quoted query of a `clickhouse-local` invocation continues on this line.
-            clickhouse_local_quote = unclosed_quote(code, clickhouse_local_quote)
-            continue
-
-        clickhouse_local_match = CLICKHOUSE_LOCAL_RE.search(code)
-        if clickhouse_local_match:
-            # Keep whatever precedes the invocation - it can query the server - and drop the
-            # invocation itself together with the rest of its query.
-            clickhouse_local_quote = unclosed_quote(code[clickhouse_local_match.start() :])
-            code = code[: clickhouse_local_match.start()]
+        # Drop every `clickhouse-local` invocation, including one whose query started on an
+        # earlier line, but keep the text around it: a server-side query before or after the
+        # invocation - even on the line where its multiline query closes - still counts.
+        code, clickhouse_local_pending = strip_clickhouse_local(code, clickhouse_local_pending)
 
         if output_command_re.match(code):
             # An output command can still execute a query in command substitution, e.g.

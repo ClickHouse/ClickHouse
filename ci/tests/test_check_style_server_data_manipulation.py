@@ -497,3 +497,46 @@ def test_clickhouse_local_does_not_mask_a_server_path_fetch(tmp_path):
         '$CLICKHOUSE_LOCAL -q "SELECT 1"\n'
         'rm -f "$path/data.bin"\n',
     )
+
+
+def test_server_path_fetch_after_clickhouse_local_on_the_same_line_is_flagged(tmp_path):
+    # Regression case from the review of #114070: the exemption truncated the line at the
+    # invocation, so a server-side fetch that follows it on the same line was never seen.
+    assert _run(
+        tmp_path,
+        '$CLICKHOUSE_LOCAL -q "SELECT 1"; '
+        'path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts LIMIT 1")\n'
+        'rm -f "$path/data.bin"\n',
+    )
+
+
+def test_server_path_fetch_after_multiline_clickhouse_local_is_flagged(tmp_path):
+    # The same bypass on the line where a multiline `clickhouse-local` query closes.
+    assert _run(
+        tmp_path,
+        '$CLICKHOUSE_LOCAL --path "$data_path" -m -q "\n'
+        "SELECT 1\n"
+        '"; path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts LIMIT 1")\n'
+        'rm -f "$path/data.bin"\n',
+    )
+
+
+def test_clickhouse_local_in_command_substitution_ends_at_the_closing_paren(tmp_path):
+    # The invocation ends with its command substitution; the assignment that follows on the
+    # same line queries the server.
+    assert _run(
+        tmp_path,
+        'local_path=$($CLICKHOUSE_LOCAL -q "SELECT 1") '
+        'path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts LIMIT 1")\n'
+        'rm -f "$path/data.bin"\n',
+    )
+
+
+def test_clickhouse_local_continued_with_a_backslash_is_not_a_server_path(tmp_path):
+    # An invocation split over lines with a trailing backslash is still one command.
+    assert not _run(
+        tmp_path,
+        "$CLICKHOUSE_LOCAL --path \"$data_path\" \\\n"
+        '    -q "SELECT path FROM system.parts WHERE active"\n'
+        'rm -rf "${data_path:?}"\n',
+    )
