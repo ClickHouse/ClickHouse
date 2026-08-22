@@ -214,6 +214,10 @@ class JobConfigs:
                 # two files, so a change to either must run this job.
                 "./tests/clickhouse-test",
                 "./tests/queries/shell_config.sh",
+                # The CFI build-classification guards read these two, so a change to either
+                # must run this job instead of reusing a cached result.
+                "./tests/config/install.sh",
+                "./tests/integration/helpers/cluster.py",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
@@ -1140,6 +1144,10 @@ class JobConfigs:
                 "./tests/docker_scripts/",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
+                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
+                # not cover ./tests/ci.
+                "./tests/ci/get_previous_release_tag.py",
+                "./tests/ci/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
