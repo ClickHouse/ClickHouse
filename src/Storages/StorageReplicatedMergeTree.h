@@ -40,6 +40,8 @@
 #include <base/UUID.h>
 #include <base/defines.h>
 
+#include <unordered_set>
+
 #include <atomic>
 #include <expected>
 #include <pcg_random.hpp>
@@ -471,7 +473,16 @@ private:
     /// grown if more remaining work shows up: in-memory denominators for byte-weighted progress
     /// in `system.mutations` (see getMutationsStatus()).
     mutable std::mutex mutation_initial_bytes_mutex;
-    mutable std::unordered_map<String, UInt64> mutation_initial_bytes;
+    /// Byte-weighted progress denominator per mutation id: the byte weight of each remaining part
+    /// when this replica first saw it in the mutation's scope. Remaining work discovered later (a
+    /// part committed under an earlier block number, or one that only now reached this replica)
+    /// grows the denominator; `counted_parts` keeps each part counted once.
+    struct MutationInitialBytes
+    {
+        UInt64 bytes = 0;
+        std::unordered_set<String> counted_parts;
+    };
+    mutable std::unordered_map<String, MutationInitialBytes> mutation_initial_bytes;
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;
 

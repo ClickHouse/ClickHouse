@@ -983,7 +983,10 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         if (part->info.getDataVersion() < version)
+        {
             prepared.entry.initial_bytes_to_do += part->getBytesOnDisk();
+            prepared.entry.counted_parts_in_initial_bytes.insert(part->name);
+        }
     }
 
     String mutation_id = prepared.mutation_id;
@@ -1381,6 +1384,12 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
         }
     }
 
+    /// Every visible part is mutated, but an in-flight INSERT / ATTACH / MOVE PARTITION can still
+    /// commit a part under a lower block number, which this mutation must also rewrite; reporting
+    /// done here would let waiters return and see the mutation flip back to unfinished later.
+    if (getLowestUncommittedNewPartBlockNum() < mutation_version)
+        return result;
+
     result.is_done = true;
     return result;
 }
@@ -1397,6 +1406,7 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
 
     std::map<std::string, MutationCommands> result;
 
+    const Int64 lowest_uncommitted_insert_block = getLowestUncommittedNewPartBlockNum();
     for (const auto & [mutation_version, entry] : current_mutations_by_version)
     {
         const PartVersionWithName needle{static_cast<Int64>(mutation_version), ""};
@@ -1404,7 +1414,9 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
             part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
 
         size_t parts_to_do = versions_it - part_versions_with_names.begin();
-        if (parts_to_do > 0)
+        /// A mutation above the lowest uncommitted NewPart block is unfinished even with no
+        /// visible parts left: that block can still commit a part in its scope.
+        if (parts_to_do > 0 || static_cast<Int64>(mutation_version) > lowest_uncommitted_insert_block)
             result.emplace(entry.file_name, *entry.commands);
     }
     return result;
@@ -1437,15 +1449,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
     /// An INSERT that took a lower block number but has not published its part yet lands inside the
     /// scope of every mutation above that number, so their remaining byte weight is not known yet.
-    Int64 lowest_uncommitted_insert_block = std::numeric_limits<Int64>::max();
-    for (const auto & block : getCommittingBlocks())
-    {
-        if (block.op == CommittingBlock::Op::NewPart)
-        {
-            lowest_uncommitted_insert_block = block.number;
-            break;
-        }
-    }
+    const Int64 lowest_uncommitted_insert_block = getLowestUncommittedNewPartBlockNum();
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
@@ -1473,6 +1477,11 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             const auto & part_version = part_versions_with_names[i];
             parts_to_do_names.push_back(part_version.name);
             bytes_to_do += part_version.bytes_on_disk;
+            /// Scope discovered after the entry was created (e.g. a part committed under an
+            /// earlier block number) grows the denominator, so the work finished before the
+            /// discovery keeps its share of `progress`.
+            if (entry.counted_parts_in_initial_bytes.insert(part_version.name).second)
+                entry.initial_bytes_to_do += part_version.bytes_on_disk;
             /// A rewrite of this part may stop short of this mutation's version, in which case it
             /// advances an earlier mutation only. `parts_in_progress_names` holds the right cutoff.
             if (std::find(parts_in_progress_names.begin(), parts_in_progress_names.end(), part_version.name) == parts_in_progress_names.end())
@@ -1480,10 +1489,9 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             if (auto it = mutating_part_progress.find(part_version.name); it != mutating_part_progress.end())
                 bytes_in_flight_done += static_cast<Float64>(part_version.bytes_on_disk) * it->second;
         }
-        /// The denominator is the byte weight the remaining work had when the mutation was created
-        /// (re-measured from what remains after a restart), so finished parts keep their
-        /// pre-mutation weight whatever size the rewrite left behind. `max` covers scope
-        /// discovered only afterwards, e.g. an in-scope part attached later.
+        /// The denominator is the byte weight the mutation's scope had when each part entered
+        /// it (re-measured from what remains after a restart), so finished parts keep their
+        /// pre-mutation weight whatever size the rewrite left behind.
         UInt64 initial_bytes = std::max(entry.initial_bytes_to_do, bytes_to_do);
         Float64 progress = std::clamp(
             1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
@@ -1523,7 +1531,9 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 parts_in_progress_names,
                 parts_to_do_names,
                 parts_postpone_reasons_map,
-                /* is_done = */parts_to_do_names.empty(),
+                /// An uncommitted lower block can still add a part to this mutation's scope, so
+                /// nothing-visible-left does not mean done yet.
+                /* is_done = */parts_to_do_names.empty() && lowest_uncommitted_insert_block >= mutation_version,
                 entry.latest_failed_part,
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
@@ -1663,15 +1673,18 @@ void StorageMergeTree::loadMutations()
     {
         /// Re-snapshot the denominators for byte-weighted progress from what remains: the byte
         /// weight of the parts finished before the restart is not recoverable.
-        std::vector<std::pair<Int64, UInt64>> version_and_bytes;
+        std::vector<std::tuple<Int64, UInt64, String>> version_bytes_name;
         for (const auto & part : getDataPartsVectorForInternalUsage())
-            version_and_bytes.emplace_back(part->info.getDataVersion(), part->getBytesOnDisk());
+            version_bytes_name.emplace_back(part->info.getDataVersion(), part->getBytesOnDisk(), part->name);
         for (auto & mutation : current_mutations_by_version)
         {
-            for (const auto & [data_version, bytes] : version_and_bytes)
+            for (const auto & [data_version, bytes, name] : version_bytes_name)
             {
                 if (data_version < static_cast<Int64>(mutation.first))
+                {
                     mutation.second.initial_bytes_to_do += bytes;
+                    mutation.second.counted_parts_in_initial_bytes.insert(name);
+                }
             }
         }
     }
@@ -2326,9 +2339,16 @@ UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique
 
 size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_version)
 {
-    auto end_it = current_mutations_by_version.end();
+    /// A mutation is finished only when every part below its version is mutated - including
+    /// parts an in-flight INSERT / ATTACH / MOVE PARTITION can still commit under a lower block;
+    /// otherwise `clearOldMutations()` could drop the entry before that part is published.
+    Int64 done_below = getLowestUncommittedNewPartBlockNum();
     if (std::optional<Int64> min_version = getMinPartDataVersion())
-        end_it = current_mutations_by_version.upper_bound(*min_version);
+        done_below = std::min(done_below, *min_version);
+
+    auto end_it = current_mutations_by_version.end();
+    if (done_below != std::numeric_limits<Int64>::max())
+        end_it = current_mutations_by_version.upper_bound(done_below);
 
     const time_t now = time(nullptr);
 
@@ -3884,5 +3904,14 @@ CommittingBlocksSet StorageMergeTree::getCommittingBlocks() const
 {
     std::lock_guard lock(committing_blocks_mutex);
     return committing_blocks;
+}
+
+Int64 StorageMergeTree::getLowestUncommittedNewPartBlockNum() const
+{
+    /// Committing blocks are ordered by number, so the first NewPart entry is the lowest one.
+    for (const auto & block : getCommittingBlocks())
+        if (block.op == CommittingBlock::Op::NewPart)
+            return block.number;
+    return std::numeric_limits<Int64>::max();
 }
 }

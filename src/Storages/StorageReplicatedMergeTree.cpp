@@ -8644,6 +8644,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
         UInt64 bytes_to_do = 0;
         Float64 bytes_in_flight_done = 0;
         bool remaining_size_known = true;
+        std::vector<std::pair<String, UInt64>> sized_parts_to_do;
         for (const auto & part_name : status.parts_to_do_names)
         {
             auto it = part_bytes_on_disk.find(part_name);
@@ -8655,6 +8656,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
                 continue;
             }
             bytes_to_do += it->second;
+            sized_parts_to_do.emplace_back(part_name, it->second);
             if (std::find(in_progress.begin(), in_progress.end(), part_name) == in_progress.end())
                 continue;
             if (auto progress_it = mutating_part_progress.find(part_name); progress_it != mutating_part_progress.end())
@@ -8666,16 +8668,19 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
         if (!remaining_size_known)
             continue;
 
-        /// The denominator is the byte weight the remaining work had when this replica first
-        /// sized it (a lower bound if some parts were already rewritten by then), and it only
-        /// grows if more remaining work is discovered later, so finished parts keep their
-        /// pre-mutation weight whatever size the rewrite left behind.
+        /// The denominator is the byte weight each remaining part had when this replica first
+        /// saw it in the mutation's scope (a lower bound if some parts were already rewritten by
+        /// then), so finished parts keep their pre-mutation weight whatever size the rewrite left
+        /// behind, and remaining work discovered later grows the denominator instead of clamping
+        /// it to the current remainder.
         UInt64 initial_bytes = 0;
         {
             std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-            UInt64 & stored = mutation_initial_bytes[status.id];
-            stored = std::max(stored, bytes_to_do);
-            initial_bytes = stored;
+            auto & stored = mutation_initial_bytes[status.id];
+            for (const auto & [part_name, part_bytes] : sized_parts_to_do)
+                if (stored.counted_parts.insert(part_name).second)
+                    stored.bytes += part_bytes;
+            initial_bytes = stored.bytes;
         }
 
         status.progress = std::clamp(
