@@ -15,7 +15,6 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int INCORRECT_DATA;
 }
 
 namespace DB::Parquet

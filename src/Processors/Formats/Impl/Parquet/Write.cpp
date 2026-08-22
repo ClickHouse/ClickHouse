@@ -921,7 +921,11 @@ void writeColumnImpl(
     constexpr bool is_float_type = std::is_same_v<ParquetDType, parquet::FloatType>
                                 || std::is_same_v<ParquetDType, parquet::DoubleType>;
     const bool use_alp = options.output_float_as_alp && is_float_type;
-    if (use_alp) { encoding = static_cast<parq::Encoding::type>(10); }   // ALP = 10
+    if (use_alp)
+    {
+        /// ALP = 10 in the Parquet spec; the vendored Thrift enum has no named member for it yet.
+        encoding = static_cast<parq::Encoding::type>(10); // NOLINT(clang-analyzer-optin.core.EnumCastOutOfRange)
+    }
 
     typename Converter::Statistics page_statistics;
     typename Converter::Statistics total_statistics;

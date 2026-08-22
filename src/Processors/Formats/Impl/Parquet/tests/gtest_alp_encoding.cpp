@@ -134,7 +134,7 @@ TEST(AlpEncoding, RejectsMalformedPages)
     auto rejects = [](std::vector<UInt8> page)
     {
         try { std::vector<double> out; Codec<double>::decodePage(page.data(), page.size(), out); return false; }
-        catch (...) { return true; }
+        catch (...) { return true; /* Ok: a malformed page is expected to throw */ }
     };
 
     EXPECT_TRUE(rejects({good.begin(), good.begin() + 3}));                                   // truncated header

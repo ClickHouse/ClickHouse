@@ -165,8 +165,8 @@ struct Codec
 
     static void encodeVector(const T * values, size_t count, std::vector<UInt8> & out, int forced_exponent = -1, int forced_factor = -1)
     {
-        UInt8 exponent;
-        UInt8 factor;
+        UInt8 exponent = 0;
+        UInt8 factor = 0;
         if (forced_exponent >= 0)
         {
             exponent = static_cast<UInt8>(forced_exponent);
@@ -351,8 +351,8 @@ struct Codec
             throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ALP page: more exceptions than values");
 
         const UInt8 * cursor = vp + 4;
-        StorageInt frame_of_reference;
-        UInt8 bit_width;
+        StorageInt frame_of_reference = 0;
+        UInt8 bit_width = 0;
         if constexpr (std::is_same_v<T, Float64>)
         {
             UInt64 bits = 0;
