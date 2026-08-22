@@ -26,6 +26,22 @@ def verify_puffin_deletion_vector_exists(table_name: str, error_message: str):
     assert any(table_path.rglob("*.puffin")), error_message
 
 
+def create_spark_v3_table_without_deletion_vectors(started_cluster_iceberg_with_spark, table_name: str):
+    spark = started_cluster_iceberg_with_spark.spark_session
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint, data string) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {table_name} select id, char(id + ascii('a')) from range(0, 100)")
+
+
 def create_spark_v3_deletion_vector_table(started_cluster_iceberg_with_spark, table_name: str):
     spark = started_cluster_iceberg_with_spark.spark_session
 
@@ -367,6 +383,38 @@ def test_v3_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg
         assert "Iceberg DELETE and UPDATE are not supported for snapshots containing deletion vectors" in error
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings=settings)) == 80
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_v3_tables_without_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg_with_spark):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_v3_tables_without_deletion_vectors_mutations_" + get_uuid_str()
+    create_spark_v3_table_without_deletion_vectors(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        format_version=3)
+
+    settings = {"allow_insert_into_iceberg": 1}
+    for mutation in [
+        f"ALTER TABLE {TABLE_NAME} DELETE WHERE id = 10",
+        f"ALTER TABLE {TABLE_NAME} UPDATE data = 'updated' WHERE id = 10",
+    ]:
+        error = instance.query_and_get_error(mutation, settings=settings)
+        assert "Iceberg DELETE and UPDATE are not supported for format-version 3 tables" in error
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
