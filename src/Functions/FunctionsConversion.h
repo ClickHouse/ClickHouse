@@ -526,6 +526,20 @@ struct ToDate32TransformFromTime64
     }
 };
 
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ToDateTimeTransformFromTime
+{
+    static constexpr auto name = "toDateTime";
+
+    /// `Time` is a timezone-unaware count of seconds of a clock reading. Reinterpret the value as
+    /// seconds since the epoch - the same convention as the `Time64` path - instead of letting the
+    /// `Int32` overload of `ToDateTimeImpl` read it as a day number.
+    static UInt32 execute(Int32 seconds, const DateLUTImpl &)
+    {
+        return ToDateTimeImpl<date_time_overflow_behavior>::execute(static_cast<Int64>(seconds), DateLUT::instance("UTC"));
+    }
+};
+
 
 struct ToDateTime64TransformFromTime
 {
@@ -2306,6 +2320,14 @@ struct ConvertImpl
             const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
             return DateTimeTransformImpl<FromDataType, ToDataType, DateTimeTransform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, DateTimeTransform(from_scale));
+        }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime>
+            && std::is_same_v<ToDataType, DataTypeDateTime>)
+        {
+            /// Keep `Time` consistent with the scale-zero `Time64` path: the whole-second value is
+            /// reinterpreted as seconds since the epoch, honoring `date_time_overflow_behavior`.
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformFromTime<date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime>
             && std::is_same_v<ToDataType, DataTypeDate>)

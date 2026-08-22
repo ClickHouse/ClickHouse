@@ -255,6 +255,36 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         return seconds;
     };
 
+    /// A `Time` value is a signed count of seconds, so it can arrive either as `Int64` or as `UInt64`
+    /// depending on how the literal was produced.
+    const auto time_to_seconds = [&]() -> Int64
+    {
+        if (src.getType() == Field::Types::Int64)
+            return src.safeGet<Int64>();
+        return static_cast<Int64>(src.safeGet<UInt64>());
+    };
+
+    /// `Time` and `Time64` are timezone-unaware, so the whole-second value is interpreted in UTC, the
+    /// same way as the column path (`ToDateTransformFromTime64` / `ToDate32TransformFromTime64`).
+    /// Route through `ToDateImpl` so that a `VALUES` constant and the runtime conversion of the same
+    /// value agree under every `date_time_overflow_behavior`.
+    const auto seconds_to_date = [&](Int64 seconds) -> Field
+    {
+        const auto & utc = DateLUT::instance("UTC");
+        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            return static_cast<UInt64>(ToDateImpl<FormatSettings::DateTimeOverflowBehavior::Throw>::execute(seconds, utc));
+        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+            return static_cast<UInt64>(ToDateImpl<FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(seconds, utc));
+        return static_cast<UInt64>(ToDateImpl<FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(seconds, utc));
+    };
+
+    /// `ToDate32Impl` is not parameterized by the overflow behavior - `Date32` covers the whole
+    /// representable day-number range - so the column path applies no range handling either.
+    const auto seconds_to_date32 = [&](Int64 seconds) -> Field
+    {
+        return static_cast<Int64>(ToDate32Impl::execute(seconds, DateLUT::instance("UTC")));
+    };
+
     /// Conversion between Date and DateTime, Time and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
@@ -301,19 +331,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isDate() && which_from_type.isTime())
     {
-        return static_cast<UInt16>(DateLUT::instance("UTC").toDayNum(src.safeGet<UInt64>()).toUnderType());
+        return seconds_to_date(time_to_seconds());
     }
     if (which_type.isDate32() && which_from_type.isTime())
     {
-        return static_cast<Int32>(DateLUT::instance("UTC").toDayNum(src.safeGet<UInt64>()).toUnderType());
+        return seconds_to_date32(time_to_seconds());
     }
     if (which_type.isDate() && which_from_type.isTime64())
     {
-        return static_cast<UInt16>(DateLUT::instance("UTC").toDayNum(time64_to_seconds()).toUnderType());
+        return seconds_to_date(time64_to_seconds());
     }
     if (which_type.isDate32() && which_from_type.isTime64())
     {
-        return static_cast<Int32>(DateLUT::instance("UTC").toDayNum(time64_to_seconds()).toUnderType());
+        return seconds_to_date32(time64_to_seconds());
     }
     if (which_type.isDateTime() && which_from_type.isTime64())
     {
