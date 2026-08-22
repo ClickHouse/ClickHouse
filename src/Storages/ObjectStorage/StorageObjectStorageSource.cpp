@@ -1307,10 +1307,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
             /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
             Names needed_names = read_from_format_info.requested_columns.getNames();
-            auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
+            auto add_filter_required_names = [&](const ActionsDAG & dag)
             {
                 for (const auto & required : dag.getRequiredColumns())
+                {
                     needed_names.push_back(required.name);
+                    /// A subcolumn is read through its parent (see `appendDeferredFilterInputs`), so
+                    /// the transform must keep the parent as well, not only the subcolumn name.
+                    needed_names.push_back(
+                        storageColumnNameForDefaults(read_from_format_info.columns_description, required.name));
+                }
             };
             if (stripped_row_level_filter)
                 add_filter_required_names(stripped_row_level_filter->actions);

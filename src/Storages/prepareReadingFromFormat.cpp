@@ -92,10 +92,15 @@ void appendDeferredFilterInputs(
         if (blockHasColumnOrAncestor(reader_header, required.name))
             continue;
 
-        /// A file that omits `t` cannot produce `t.x` either, so read the parent and let
-        /// `tryCreateFilterSubcolumnExtractionActions` extract the subcolumn after the defaults.
+        /// Read any subcolumn through its parent. A dynamic subcolumn (`j.a`) is never readable on
+        /// its own - `filterTupleColumnsToRead` requests the whole column for it - and a tuple
+        /// element only is when the reader was set up for tuple elements, which a deferred filter
+        /// cannot count on: for object storage `supports_tuple_elements` follows the file format's
+        /// PREWHERE support, and that is exactly what made the filter deferred. A file that omits
+        /// `t` cannot produce `t.x` either. `tryCreateFilterSubcolumnExtractionActions` rebuilds the
+        /// subcolumn from the parent after `AddingDefaultsTransform`.
         const auto storage_name = storageColumnNameForDefaults(columns_description, required.name);
-        if (storage_name != required.name && columns_description.hasDefault(storage_name))
+        if (storage_name != required.name)
         {
             reader_header.insert({columns_description.get(storage_name).type, storage_name});
             continue;
