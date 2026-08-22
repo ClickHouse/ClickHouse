@@ -201,7 +201,13 @@ private:
     /// miss ranges and populate them. A range another thread is already downloading is fetched
     /// through from source. Precondition: `!cache_chain.empty()`.
     ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve, WindowSizes sizes);
-    void dropLongConnection();
+    /// Sample the memory-pressure level and store the sizes it implies in `window_sizes`. This is the
+    /// only place the level is read: sampling advances the sticky cooldown, so it happens once per
+    /// `readNextWindow` and nowhere else. Paths outside a window reuse `window_sizes`.
+    WindowSizes sampleWindowSizes();
+    /// `sizes.block_bytes` bounds the scratch buffer the discarded tail is drained through, so a
+    /// drop under pressure holds no more than a read under the same pressure.
+    void dropLongConnection(WindowSizes sizes);
 
     /// The only logical<->physical converters: physical = header-inclusive file coords; logical =
     /// payload coords. A raw `+/- data_start_offset` anywhere else is a bug.
@@ -219,6 +225,9 @@ private:
     String log_file_path;
     size_t window_size;
     size_t block_size;
+    /// Sizes of the window being served, refreshed by `sampleWindowSizes`; the base sizes until the
+    /// first read. Lets a path with no window in flight stay at the current level without sampling.
+    WindowSizes window_sizes;
     size_t position = 0;
     bool reached_eof = false;
     /// Hard upper bound on the logical read position; `nullopt` = read to end.

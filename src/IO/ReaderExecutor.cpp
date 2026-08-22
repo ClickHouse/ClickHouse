@@ -143,6 +143,7 @@ ReaderExecutor::ReaderExecutor(
     : source(std::move(source_))
     , window_size(options.window_size)
     , block_size(options.block_size)
+    , window_sizes{options.window_size, options.block_size}
     , fetch_tracker(ReadContinuityTracker::Options{.bridgeable_gap = options.min_bytes_for_seek})
     , long_connection_limit(std::move(options.long_connection_limit))
     , encryption_header_cache(std::move(options.encryption_header_cache))
@@ -171,7 +172,9 @@ ReaderExecutor::~ReaderExecutor()
     /// the destructor.
     try
     {
-        dropLongConnection();
+        /// No window is in flight here, so drain at the level the last one was served at rather
+        /// than sampling again.
+        dropLongConnection(window_sizes);
     }
     catch (...)
     {
@@ -349,7 +352,7 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
     else
     {
         if (long_conn)
-            dropLongConnection();
+            dropLongConnection(sizes);
         if (shouldOpenLongConnection(sizes.window_bytes) && tryOpenLongConnection(object, object_offset))
         {
             fill(want, from_long_conn);
@@ -510,7 +513,13 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     return fetched.slice(ByteRange{window_offset, serve_len(fetched_end)});
 }
 
-void ReaderExecutor::dropLongConnection()
+ReaderExecutor::WindowSizes ReaderExecutor::sampleWindowSizes()
+{
+    window_sizes = sizesAtPressure(CurrentThread::getMemoryPressureMonitor().currentLevel(), window_size, block_size);
+    return window_sizes;
+}
+
+void ReaderExecutor::dropLongConnection(WindowSizes sizes)
 {
     if (!long_conn)
         return;
@@ -520,7 +529,7 @@ void ReaderExecutor::dropLongConnection()
     bool drain_failed = false;
     if (!long_conn->atBound())
     {
-        const auto drain = long_conn->drainTail(max_tail_for_drain, block_size, log);
+        const auto drain = long_conn->drainTail(max_tail_for_drain, sizes.block_bytes, log);
         if (drain.bytes)
         {
             stats.add(Stats::BytesFromSource, drain.bytes);
@@ -650,8 +659,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     const size_t position_physical = toPhysical(position);
 
     /// Sample the pressure level once per window; `Normal` keeps the base sizes.
-    const MemoryPressureLevel pressure = CurrentThread::getMemoryPressureMonitor().currentLevel();
-    const WindowSizes sizes = sizesAtPressure(pressure, window_size, block_size);
+    const WindowSizes sizes = sampleWindowSizes();
 
     /// The most this window may serve: the pressure-adjusted window, clamped to the file end (when the
     /// size is known) and to the `read_until` bound. The cache path serves at most one block of it; the
