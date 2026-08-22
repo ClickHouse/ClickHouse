@@ -4,7 +4,7 @@
 2	val_2
 3	val_3
 Lazily read columns: s
--- PREWHERE on missing DEFAULT; lazily read s
+-- WHERE on missing DEFAULT; lazily read s
 2	val_2
 3	val_3
 4	val_4
@@ -17,7 +17,7 @@ Lazily read columns: s
 1	val_1
 2	val_2
 3	val_3
--- PREWHERE on missing DEFAULT; lazily read s
+-- WHERE on missing DEFAULT; lazily read s
 2	val_2
 3	val_3
 4	val_4

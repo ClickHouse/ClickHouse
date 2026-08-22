@@ -29,6 +29,9 @@ mkdir -p "$DATA_DIR"
 "
 
 QUERIES="
+DROP TABLE IF EXISTS t_lazy_default_filter;
+DROP ROW POLICY IF EXISTS pol_d ON t_lazy_default_filter;
+
 CREATE TABLE t_lazy_default_filter
 (
     k UInt64,
@@ -44,8 +47,10 @@ SELECT '-- row policy on missing DEFAULT; lazily read s after filtering';
 SELECT k, s FROM t_lazy_default_filter ORDER BY k LIMIT 3;
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT k, s FROM t_lazy_default_filter ORDER BY k LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
 
-SELECT '-- PREWHERE on missing DEFAULT; lazily read s';
-SELECT k, s FROM t_lazy_default_filter PREWHERE d > 2 ORDER BY k LIMIT 3;
+-- File rejects PREWHERE on a DEFAULT column missing from the file (ILLEGAL_PREWHERE).
+-- WHERE still filters on the computed default after AddingDefaultsTransform.
+SELECT '-- WHERE on missing DEFAULT; lazily read s';
+SELECT k, s FROM t_lazy_default_filter WHERE d > 2 ORDER BY k LIMIT 3;
 
 SELECT '-- values of the defaulted filter column after deferred filter';
 SELECT k, d FROM t_lazy_default_filter ORDER BY k LIMIT 3;
