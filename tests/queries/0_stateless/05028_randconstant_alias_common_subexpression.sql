@@ -44,3 +44,13 @@ SELECT rand() = rand(), c FROM (SELECT rand() AS a, rand() AS b, a = b AS c);
 -- passed through this function, so the numbers themselves are not stable.
 SELECT '-- stateful functions do not share instances across scopes';
 SELECT (SELECT blockNumber() AS a FROM numbers(1)) = (SELECT blockNumber() AS b FROM numbers(1));
+
+-- A function that is not deterministic in the scope of a query reads its value from the scope it is
+-- evaluated in, so two scopes must never share one instance. `getSetting` and `getSettingOrDefault` see
+-- the `SETTINGS` of their own subquery; with a shared `FunctionBase` the second subquery would report the
+-- first one's setting value.
+SELECT '-- getSetting does not share an instance across scopes';
+SELECT (SELECT getSetting('max_threads') AS a SETTINGS max_threads = 1) != (SELECT getSetting('max_threads') AS b SETTINGS max_threads = 2);
+
+SELECT '-- getSettingOrDefault does not share an instance across scopes';
+SELECT (SELECT getSettingOrDefault('max_threads', 0) AS a SETTINGS max_threads = 1) != (SELECT getSettingOrDefault('max_threads', 0) AS b SETTINGS max_threads = 2);

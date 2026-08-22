@@ -2123,8 +2123,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `getTreeHash` walks the whole argument subtree, dominating analysis of deeply nested expressions.
         /// So the hash and the cache are computed only for non-deterministic functions.
         ///
-        /// Stateful functions, `getSetting`, and `rowNumberInAllBlocks` must NOT be shared: the cache is
-        /// global across scopes, and e.g. `SETTINGS` can change `getSetting`'s result for every scope.
+        /// The cache is global across the whole query, so only a function that is stable inside a query
+        /// may be shared. A function that is not deterministic in the scope of a query (`getSetting`,
+        /// `getSettingOrDefault`, `blockNumber`, `rowNumberInAllBlocks`, ...) must NOT be shared: its
+        /// result depends on the scope it is evaluated in - e.g. `SETTINGS` can change what `getSetting`
+        /// returns for every scope - and a stateful function keeps counting inside the single instance
+        /// the cache hands out.
         ///
         /// The hash ignores aliases. An alias renames an expression and never changes the value the
         /// `FunctionBase` captures, so `randConstant() AS x, randConstant() AS y` must share what
@@ -2132,7 +2136,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// the hash still covers: `randConstant(1)` and `randConstant(2)` keep their own values, and that
         /// is the documented way to ask for two different constants in one query.
         if (function && !function->isDeterministic() && !function->isStateful()
-            && function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
+            && function->isDeterministicInScopeOfQuery())
         {
             auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
             function_base_cache = &functions_cache[hash];
