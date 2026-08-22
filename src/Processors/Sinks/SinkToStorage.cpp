@@ -1,7 +1,5 @@
 #include <Processors/Sinks/SinkToStorage.h>
 
-#include <mutex>
-
 namespace DB
 {
 
@@ -16,9 +14,10 @@ void SinkToStorage::runOnceBeforeFirstWrite(const std::function<void()> & check)
         return;
     }
 
-    /// If `check` throws, the flag stays unset and the next sink runs the check again. It observes the same
-    /// state and throws the same error, which is what the query gets in either case.
-    std::call_once(*insert_start_gate, check);
+    /// The gate runs the check for the first sink that gets here and makes every other sink of the query
+    /// observe its outcome - including a failure, which every one of them rethrows - instead of running
+    /// the check again against the state as it is a moment later.
+    insert_start_gate->run(check);
 }
 
 void SinkToStorage::onConsume(Chunk chunk)
