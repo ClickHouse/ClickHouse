@@ -1356,6 +1356,65 @@ def test_nats_jet_stream_streaming_drains_local_backlog_after_in_source_recovery
     _publish_and_expect("test_subject", range(0, 25), 25)
 
 
+def test_nats_jet_stream_keeps_buffered_backlog_across_broker_restart(nats_cluster):
+    # Reconnect recovery re-subscribes the consumer, and the local queue of messages the broker had
+    # already delivered used to go with the stale subscription. Those rows are in this server's
+    # hands: dropping them leaves the view short until JetStream redelivers them, a whole ACK
+    # deadline later. The deadline here is far beyond every wait below, so redelivery cannot cover
+    # for a dropped backlog - the final count holds only if the buffered messages survived the
+    # recovery.
+    total_expected = 3000
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    # Published before the table exists, so the whole backlog is waiting when it subscribes: the
+    # client pulls it into the local queue far faster than the streaming cycles insert it, which is
+    # what leaves a large buffered backlog for the restart below to land on.
+    messages = [json.dumps({"key": key, "value": key}) for key in range(total_expected)]
+    asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
+
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n',
+                     nats_max_block_size = 5;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """
+    )
+
+    # Blocks of five rows make every streaming cycle insert a handful at a time, so the view
+    # crossing this mark means consuming is well under way while most of the backlog is still
+    # buffered locally.
+    consumed = instance.query_with_retry(
+        "SELECT count() FROM test.view",
+        retry_count = 600,
+        sleep_time = 0.1,
+        check_callback = lambda num_rows: int(num_rows) >= 50)
+    assert int(consumed) >= 50, "streaming did not start, the view holds {} rows".format(consumed)
+    assert int(consumed) < total_expected, "the whole backlog was consumed before the restart"
+
+    nats_helpers.hard_kill_nats(nats_cluster)
+    time.sleep(4)
+    nats_helpers.revive_nats(nats_cluster)
+
+    result = instance.query_with_retry(
+        "SELECT count(DISTINCT key) FROM test.view",
+        retry_count = 120,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) == total_expected)
+    assert int(result) == total_expected, "the buffered backlog was dropped, view holds {} of {} keys".format(
+        result, total_expected)
+
+
 def test_nats_jet_stream_resumes_consuming_after_two_broker_restarts(nats_cluster):
     # A one-shot recovery would pass the single-restart test above, so require it to work twice.
     _setup_restart_table("test_subject", "test_consumer")

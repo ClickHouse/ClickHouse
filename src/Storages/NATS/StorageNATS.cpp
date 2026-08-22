@@ -377,7 +377,20 @@ bool StorageNATS::subscribeConsumers()
 bool StorageNATS::consumersNeedResubscribe()
 {
     std::lock_guard lock(consumers_mutex);
-    return std::ranges::any_of(consumers, [](const auto & consumer) { return consumer->needsResubscribe(); });
+    if (std::ranges::none_of(consumers, [](const auto & consumer) { return consumer->needsResubscribe(); }))
+        return false;
+
+    /// Re-subscribing drops every consumer's local queue, and the messages waiting in it have
+    /// already been delivered to this server: throwing them away would keep the views short until
+    /// JetStream redelivers them, a whole ACK deadline later. The streaming cycle below drains
+    /// them first, and the reconnect this keys on is still reported once they are gone.
+    if (std::ranges::any_of(consumers, [](const auto & consumer) { return !consumer->queueEmpty(); }))
+    {
+        LOG_DEBUG(log, "A subscription stopped consuming from the NATS server, resubscribing once the buffered messages are drained");
+        return false;
+    }
+
+    return true;
 }
 
 void StorageNATS::unsubscribeConsumers()

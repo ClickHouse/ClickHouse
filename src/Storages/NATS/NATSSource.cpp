@@ -176,16 +176,22 @@ Chunk NATSSource::generateImpl()
         /// Once rows have been appended to the current output block, their JetStream ACK handles
         /// must stay in `consumed_messages` until `StorageNATS` inserts that block and acknowledges
         /// them. The next source cycle will re-subscribe before consuming anything instead.
+        /// Messages still waiting in the local queue are held back for the same reason: they have
+        /// already been delivered to this server, so recovery must never throw them away and wait
+        /// for JetStream to redeliver them after the ACK deadline. The recovery is deferred until
+        /// they are drained - the reconnect this keys on does not go away meanwhile.
         /// `unsubscribe_on_destroy` keeps its previous value: a background streaming consumer must
         /// stay subscribed when this source is destroyed, so the next streaming cycle drains the
         /// backlog already delivered to the local queue instead of dropping it and waiting for the
         /// server to redeliver it. Only a consumer this source subscribed from an unsubscribed
         /// state (the direct `SELECT` case above) is unsubscribed on destroy.
-        if (total_rows == 0 && consumer->needsResubscribe())
+        if (total_rows == 0 && consumer->queueEmpty() && consumer->needsResubscribe())
         {
             LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing within a running query");
             consumer->unsubscribe(/*finish_queue=*/false);
-            consumer->dropBuffered();
+            /// Only the stale subscription's ACK handles are released - `dropBuffered` would also
+            /// discard a message the old subscription delivered in the meantime.
+            consumer->dropConsumed();
             consumer->subscribe();
         }
 
