@@ -1,5 +1,6 @@
 #include <sys/types.h>
 
+#include <algorithm>
 #include <optional>
 
 #include <Common/Exception.h>
@@ -25,8 +26,12 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/addMissingDefaults.h>
 
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageLogSettings.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -73,6 +78,20 @@ namespace FailPoints
     extern const char stripe_log_sink_write_fallpoint[];
 }
 
+static bool indexContainsColumns(const IndexForNativeFormat & index, const Names & column_names)
+{
+    return std::all_of(index.blocks.begin(), index.blocks.end(), [&](const auto & block)
+    {
+        return std::all_of(column_names.begin(), column_names.end(), [&](const auto & name)
+        {
+            return std::any_of(block.columns.begin(), block.columns.end(), [&](const auto & column)
+            {
+                return column.name == name;
+            });
+        });
+    });
+}
+
 /// NOTE: The lock `StorageStripeLog::rwlock` is NOT kept locked while reading,
 /// because we read ranges of data that do not change.
 class StripeLogSource final : public ISource
@@ -96,7 +115,10 @@ public:
         std::shared_ptr<const IndexForNativeFormat> indices_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_,
-        size_t file_size_)
+        size_t file_size_,
+        StorageMetadataPtr metadata_snapshot_,
+        ContextPtr context_,
+        bool read_all_columns_)
         : ISource(std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
         , physical_columns(std::move(physical_columns_))
         , virtual_columns(std::move(virtual_columns_))
@@ -106,6 +128,9 @@ public:
         , index_begin(index_begin_)
         , index_end(index_end_)
         , file_size(file_size_)
+        , metadata_snapshot(std::move(metadata_snapshot_))
+        , context(std::move(context_))
+        , read_all_columns(read_all_columns_)
     {
     }
 
@@ -135,6 +160,9 @@ private:
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
     size_t file_size;
+    const StorageMetadataPtr metadata_snapshot;
+    const ContextPtr context;
+    const bool read_all_columns;
 
     /** optional - to create objects only on first reading
       *  and delete objects (release buffers) after the source is exhausted
@@ -178,6 +206,27 @@ private:
             data_in.reset();
             indices.reset();
             return;
+        }
+
+        if (read_all_columns)
+        {
+            bool has_missing_columns = std::any_of(physical_columns.begin(), physical_columns.end(), [&](const auto & column)
+            {
+                return !res.has(column.name);
+            });
+
+            if (has_missing_columns)
+            {
+                auto actions_dag = addMissingDefaults(
+                    res,
+                    physical_columns,
+                    metadata_snapshot->getColumns(),
+                    context);
+                auto actions = std::make_shared<ExpressionActions>(
+                    std::move(actions_dag),
+                    ExpressionActionsSettings(context->getSettingsRef()));
+                actions->execute(res);
+            }
         }
 
         for (const auto & col : physical_columns)
@@ -364,6 +413,17 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 }
 
 
+void StorageStripeLog::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && !command.isCommentAlter())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
+    }
+}
+
+
 static std::chrono::seconds getLockTimeout(ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
@@ -417,7 +477,11 @@ Pipe StorageStripeLog::read(
 
     /// Filter out virtual columns - they are not stored on disk and not in the index.
     auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
-    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
+    bool read_all_columns = !indexContainsColumns(indices, physical_column_names);
+    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(
+        read_all_columns
+            ? indices
+            : indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
     auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
     auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
@@ -439,7 +503,13 @@ Pipe StorageStripeLog::read(
             physical_columns, virtual_columns,
             std::static_pointer_cast<const StorageStripeLog>(shared_from_this()),
             read_settings,
-            indices_for_selected_columns, begin, end, data_file_size));
+            indices_for_selected_columns,
+            begin,
+            end,
+            data_file_size,
+            storage_snapshot->metadata,
+            local_context,
+            read_all_columns));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -822,7 +892,8 @@ For each table ClickHouse writes the files:
 - `data.bin` — Data file.
 - `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
 
-The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
+The `StripeLog` engine supports `ALTER TABLE ... ADD COLUMN`. Existing data blocks are read with default values for the new column.
+The engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 
 ## Reading the data {#table_engines-stripelog-reading-the-data}
 
