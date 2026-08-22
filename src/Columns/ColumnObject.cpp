@@ -1321,15 +1321,23 @@ void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
 
         const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
         const auto & shared_offsets = getSharedDataOffsets();
-        ColumnDynamic::SharedValueTypeCache type_cache;
-        for (size_t i = 0; i < n; ++i)
+        const size_t entries_begin = shared_offsets[static_cast<ssize_t>(row_begin) - 1];
+        const size_t num_entries = shared_offsets[static_cast<ssize_t>(row_end) - 1] - entries_begin;
+        if (num_entries)
         {
-            for (size_t j = shared_offsets[row_begin + i - 1]; j < shared_offsets[row_begin + i]; ++j)
+            /// The whole range is hashed in one call so the deserialization can be batched by type.
+            PODArray<UInt32> entry_hash(num_entries);
+            ColumnDynamic::hashSharedValues(*shared_values, entries_begin, num_entries, entry_hash.data());
+
+            for (size_t i = 0; i < n; ++i)
             {
-                const auto path = shared_paths->getDataAt(j);
-                const UInt32 path_hash = updateWeakHash32(
-                    reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
-                object_hash[i] += combineWeakHash32(ColumnDynamic::hashSharedValue(shared_values->getDataAt(j), type_cache), path_hash);
+                for (size_t j = shared_offsets[static_cast<ssize_t>(row_begin + i) - 1]; j < shared_offsets[row_begin + i]; ++j)
+                {
+                    const auto path = shared_paths->getDataAt(j);
+                    const UInt32 path_hash = updateWeakHash32(
+                        reinterpret_cast<const UInt8 *>(path.data()), path.size(), WEAK_HASH32_INITIAL_VALUE);
+                    object_hash[i] += combineWeakHash32(entry_hash[j - entries_begin], path_hash);
+                }
             }
         }
     }

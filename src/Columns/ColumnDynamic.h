@@ -201,33 +201,17 @@ public:
     /// or the shared variant), so it is safe to scatter join/aggregation keys by.
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
-    /// Per-call cache of types decoded from shared values, keyed by the value's encoded type prefix.
-    /// Decoding is deterministic in those bytes, so an equal prefix means the same type and length.
-    /// A hit skips both the decode and resolving the serialization, which dominates the cost here.
-    class SharedValueTypeCache
-    {
-    public:
-        struct Entry
-        {
-            std::string_view prefix;
-            DataTypePtr type;
-            /// Null for `Nothing`, which carries no value bytes to deserialize.
-            SerializationPtr serialization;
-        };
-
-        /// Advances `buf` past the type prefix of `value`, decoding it only on a miss.
-        const Entry & getOrDecode(std::string_view value, ReadBuffer & buf);
-
-    private:
-        /// Types repeat across the rows of one call, so a linear scan beats hashing; bounded
-        /// because a `Dynamic` may hold arbitrarily many types.
-        static constexpr size_t MAX_ENTRIES = 8;
-
-        std::vector<Entry> entries;
-    };
-
-    /// Leaf hash of a value in the Dynamic binary form; reused by `ColumnObject` for `shared_data`.
-    static UInt32 hashSharedValue(std::string_view value, SharedValueTypeCache & type_cache);
+    /// Leaf hashes of `count` values of `values`, a column of values in the Dynamic binary form
+    /// (`[binary encoded type][value]`), written to `hash_out[0 .. count)`. Value `i` of the batch is
+    /// `values[first + i]`, or `values[value_indices[i]]` for the scattered overload. Each hash is the
+    /// one the value would have when stored in a typed variant, which is what makes the shared variant
+    /// invisible to the scatter hash. Reused by `ColumnObject` for `shared_data`.
+    ///
+    /// The batch is grouped by type and deserialized one column per type rather than one per value:
+    /// this runs over whole blocks on the scatter path, so a per-value temporary column would put an
+    /// allocation on every row.
+    static void hashSharedValues(const ColumnString & values, size_t first, size_t count, UInt32 * hash_out);
+    static void hashSharedValues(const ColumnString & values, const UInt64 * value_indices, size_t count, UInt32 * hash_out);
 
     void updateHashFast(SipHash & hash) const override
     {
