@@ -427,6 +427,14 @@ static bool isProxyBypassedForHost(const std::string & host, const Poco::Net::HT
             Poco::RegularExpression::RE_CASELESS | Poco::RegularExpression::RE_ANCHORED);
 }
 
+/// An IPv6 literal needs brackets around the host part, the way `SocketAddress::toString()` prints it.
+static String formatHostAndPort(const String & host, UInt16 port)
+{
+    if (host.contains(':'))
+        return fmt::format("[{}]:{}", host, port);
+    return fmt::format("{}:{}", host, port);
+}
+
 template <class Session>
 class EndpointConnectionPool : public std::enable_shared_from_this<EndpointConnectionPool<Session>>, public IExtendedPool
 {
@@ -658,11 +666,12 @@ private:
         {
             const auto & proxy_config = Session::getProxyConfig();
             if (!proxy_config.host.empty() && !isProxyBypassedForHost(Session::getHost(), proxy_config))
-                return fmt::format("{}:{}", proxy_config.host, proxy_config.port);
+                return formatHostAndPort(proxy_config.host, proxy_config.port);
 
-            /// Already "<address>:<port>", where the address is the one `setResolvedHost` picked and
-            /// falls back to the request host when Poco resolves it itself.
-            return Session::getResolvedAddress();
+            /// The address `setResolvedHost` picked, falling back to the request host when Poco
+            /// resolves it itself (`getResolvedAddress()` concatenates, which breaks IPv6 literals).
+            const String resolved_host = Session::getResolvedHost();
+            return formatHostAndPort(resolved_host.empty() ? Session::getHost() : resolved_host, Session::getPort());
         }
 
         void doConnect(UInt64 * connect_time)
@@ -694,7 +703,7 @@ private:
                 /// untouched, and so does an immediate failure, whose text already names the peer.
                 if (typeid(e) == typeid(Poco::Net::NetException)
                     && (e.code() == ENETUNREACH || e.code() == EHOSTUNREACH || e.code() == EHOSTDOWN)
-                    && e.message().find(": ") == String::npos)
+                    && !e.message().contains(": "))
                     throw Poco::Net::NetException(e.message(), connectEndpoint(), e.code());
 
                 throw;
