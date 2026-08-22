@@ -56,10 +56,17 @@ env -u CLICKHOUSE_TEST_UNSET_AGENT_SOCKET HOME="${SSH_HOME}" ${CLICKHOUSE_CLIENT
     --query "SELECT currentUser() = '${USER_NAME}'" 2>&1 | sed "s|${SSH_HOME}|\$HOME|g"
 rm "${SSH_HOME}/.ssh/config"
 
-echo '--- The ed25519 key in the ssh-agent'
 eval "$(ssh-agent -s)" > /dev/null
 trap 'ssh-agent -k > /dev/null 2>&1' EXIT
 ssh-add -q "${SSH_HOME}/.ssh/id_ed25519" 2>/dev/null
+
+echo '--- A malformed public key file does not prevent the private key from being used'
+mv "${SSH_HOME}/.ssh/id_ed25519.pub" "${SSH_HOME}/.ssh/id_ed25519.pub.saved"
+echo 'ssh-ed25519 this-is-not-base64!' > "${SSH_HOME}/.ssh/id_ed25519.pub"
+run_client
+mv "${SSH_HOME}/.ssh/id_ed25519.pub.saved" "${SSH_HOME}/.ssh/id_ed25519.pub"
+
+echo '--- The ed25519 key in the ssh-agent'
 # Only the agent has the private key now, but the public key file still tells which one it is.
 rm "${SSH_HOME}/.ssh/id_ed25519"
 run_client

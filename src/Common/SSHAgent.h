@@ -34,6 +34,9 @@ public:
     /// The keys held by the agent.
     static std::vector<Identity> listIdentities(const String & socket_path = getSocketPath());
 
+    /// The type of the key, such as `ssh-ed25519`: the first field of the wire format of `key_blob`.
+    static String getKeyType(const String & key_blob);
+
     /// Asks the agent to sign `data` with the key `key_blob` and returns the signature
     /// in the `SSHSIG` format, the same as `SSHKey::signString` does for a local key.
     static String signString(const String & key_blob, std::string_view data, std::string_view sig_namespace, const String & socket_path = getSocketPath());

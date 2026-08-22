@@ -166,12 +166,6 @@ String talkToAgent(std::string_view request, const String & socket_path)
     }
 }
 
-/// The type of the key, such as `ssh-ed25519`, is the first field of its wire format.
-String getKeyType(const String & key_blob)
-{
-    return String(MessageReader(key_blob).readString());
-}
-
 /// Encodes the signature the way the `SSHSIG` format prescribes: base64 in a PEM-like envelope.
 String armor(const String & blob)
 {
@@ -189,6 +183,11 @@ String armor(const String & blob)
     return result;
 }
 
+}
+
+String SSHAgent::getKeyType(const String & key_blob)
+{
+    return String(MessageReader(key_blob).readString());
 }
 
 String SSHAgent::getSocketPath()

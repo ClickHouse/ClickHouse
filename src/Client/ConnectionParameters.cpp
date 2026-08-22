@@ -19,6 +19,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <unistd.h>
 
 namespace DB
 {
@@ -56,11 +57,13 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
 namespace fs = std::filesystem;
 
 /// The public key that `ssh-keygen` writes next to a private key, in the SSH wire format.
-/// Empty if there is no such file.
+/// It is only used to recognize the key among the ones the ssh-agent holds, so a `.pub` file that is
+/// missing, unreadable, or malformed simply means "this key cannot be matched against the agent":
+/// it must not prevent the private key itself from being used.
 String readPublicKeyBlob(const String & private_key_filename)
 {
     String filename = private_key_filename + ".pub";
-    if (!fs::is_regular_file(filename))
+    if (!fs::is_regular_file(filename) || ::access(filename.c_str(), R_OK) != 0)
         return {};
 
     String contents;
@@ -73,10 +76,18 @@ String readPublicKeyBlob(const String & private_key_filename)
     if (key_begin != String::npos)
         key_begin = contents.find_first_not_of(whitespace, key_begin);
     if (key_begin == String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The SSH public key file {} is malformed", filename);
+        return {};
     size_t key_end = contents.find_first_of(whitespace, key_begin);
 
-    return base64Decode(contents.substr(key_begin, key_end - key_begin));
+    String key = contents.substr(key_begin, key_end - key_begin);
+
+    /// `base64Decode` throws on anything outside the alphabet, and a malformed key is not an error here.
+    static constexpr std::string_view base64_alphabet
+        = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    if (key.empty() || key.size() % 4 != 0 || key.find_first_not_of(base64_alphabet) != String::npos)
+        return {};
+
+    return base64Decode(key);
 }
 
 String askPassphrase(const String & key_name)
@@ -126,6 +137,10 @@ std::optional<SSHAgent::Identity> findIdentityInSSHAgent(const std::vector<Strin
 
     return {};
 }
+
+/// musl defines `stderr` as `(stderr)`, which triggers `-Wdisabled-macro-expansion` when passed to `fmt::print`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 /// Finds the key to authenticate with: the one that `ssh` would use for this host,
 /// either from the ssh-agent, or from a file in `~/.ssh`, unless the file name is given explicitly.
@@ -190,6 +205,8 @@ SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const St
         "Specify the key file with --ssh-key-file <path>, or add a key to the ssh-agent",
         fmt::join(configuration.identity_files, ", "));
 }
+
+#pragma clang diagnostic pop
 
 #endif
 

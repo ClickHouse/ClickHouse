@@ -9,7 +9,6 @@
 
 #    include <cstdlib>
 #    include <cctype>
-#    include <climits>
 #    include <cstring>
 #    include <memory>
 #    include <string>
@@ -84,10 +83,13 @@ String getHomeDirectory()
     return entry.pw_dir;
 }
 
+/// `HOST_NAME_MAX` is not defined on macOS and FreeBSD, and POSIX only guarantees `_POSIX_HOST_NAME_MAX` (255).
+constexpr size_t MAX_HOST_NAME_LENGTH = 256;
+
 /// The host name of this machine, the way `ssh` reports it in `%l`.
 String getLocalHostName()
 {
-    char buffer[HOST_NAME_MAX + 1] = {};
+    char buffer[MAX_HOST_NAME_LENGTH + 1] = {};
     if (gethostname(buffer, sizeof(buffer) - 1) != 0)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot determine the host name of this machine");
     return buffer;
@@ -290,6 +292,11 @@ SSHKey SSHKeyFactory::makePublicKeyFromBase64(String base64_key, String type_nam
 
 SSHKey SSHKeyFactory::makeKeyFromSSHAgent(String key_blob, String agent_socket_path)
 {
+    /// The agent signs with a key we never import into OpenSSL, so apply the same FIPS restriction here.
+    if (OpenSSLInitializer::instance().isFIPSEnabled()
+        && isEd25519KeyType(ssh_key_type_from_name(SSHAgent::getKeyType(key_blob).c_str())))
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Ed25519 SSH keys are not supported in FIPS mode");
+
     SSHKey key;
     key.agent_key_blob = std::move(key_blob);
     key.agent_socket_path = std::move(agent_socket_path);
