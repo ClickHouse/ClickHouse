@@ -128,9 +128,12 @@ SELECT 'H1 cross-signedness has declines', count() > 0 FROM (EXPLAIN indexes = 1
 SELECT 'H1 same-type has result',
     (SELECT count() FROM h1 WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) = (SELECT count() FROM h1o WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b)));
 SELECT 'H1 same-type has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1 WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) WHERE explain ILIKE '%Granules: 1/2%';
--- boundary: width-only pair is correct at runtime (Field collapses widths); it loses pruning here
+-- boundary: a width-only pair renders to the same `Field`, so the runtime compares it identically and
+-- the atom stays exact. Asserting the granule reduction, not the atom, because a relaxed atom is still
+-- printed while `can_be_false` is forced true before the negation.
 SELECT 'H1 width-only has result',
     (SELECT count() FROM h1 WHERE NOT has([tuple(toUInt8(1), toUInt8(1))], (a, b))) = (SELECT count() FROM h1o WHERE NOT has([tuple(toUInt8(1), toUInt8(1))], (a, b)));
+SELECT 'H1 width-only has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1 WHERE NOT has([tuple(toUInt8(1), toUInt8(1))], (a, b))) WHERE explain ILIKE '%Granules: 1/2%';
 -- boundary: composite NOT IN over the same pair stays exact, because runtime `IN` casts the key
 SELECT 'H1 composite IN result',
     (SELECT count() FROM h1 WHERE (a, b) NOT IN (SELECT (toInt32(1), toInt32(1)))) = (SELECT count() FROM h1o WHERE (a, b) NOT IN (SELECT (toInt32(1), toInt32(1))));

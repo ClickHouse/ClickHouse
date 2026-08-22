@@ -27,6 +27,7 @@ H1 cross-signedness has declines	0
 H1 same-type has result	1
 H1 same-type has prunes	1
 H1 width-only has result	1
+H1 width-only has prunes	1
 H1 composite IN result	1
 H1 composite IN prunes	1
 H1 scalar has result	1	1
