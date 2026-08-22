@@ -3,8 +3,9 @@
 -- `DROP` / `RENAME` of that table would be allowed under `check_referential_table_dependencies = 1` even
 -- though the persisted table then fails at read time. The address pattern cannot be attributed to this
 -- server in full generality (an arbitrary host name would need a DNS lookup, which the dependency
--- analysis cannot afford at server startup), but the spellings that need no resolution - an IP literal or
--- `localhost` on the server's own port - are recognized by `DDLDependencyVisitor`.
+-- analysis cannot afford at server startup), but the spellings that need no resolution - an IP literal,
+-- `localhost`, or this server's own host name, on the server's own port - are recognized by
+-- `DDLDependencyVisitor`. The host-name spelling is covered by `05029_remote_host_name_dependencies`.
 CREATE TABLE dep_src (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO dep_src VALUES (1), (2), (3);
 

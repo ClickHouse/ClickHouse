@@ -20,6 +20,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Common/parseAddress.h>
@@ -481,8 +482,9 @@ namespace
             {
                 /// For remote() / remoteSecure() the addresses are given inline. Whether such an address is
                 /// this server cannot be decided in full generality here (see
-                /// remoteFunctionAddressesContainLocalHost), but the decidable spellings - an IP literal or
-                /// `localhost` on the server's own port, e.g. the loop-back form `remote('127.0.0.1', ...)` -
+                /// remoteFunctionAddressesContainLocalHost), but the decidable spellings - an IP literal,
+                /// `localhost`, or this server's own host name, on the server's own port, e.g. the loop-back
+                /// form `remote('127.0.0.1', ...)` or `remote(hostName(), ...)` -
                 /// are recognized, so a persisted target that reads a local table through them records a
                 /// referential dependency on it. Any other pattern keeps the long-standing assumption that
                 /// it does not contain the local host.
@@ -907,14 +909,37 @@ namespace
             }
         }
 
+        /// Whether a host name names this server, decided without resolving it. `getFQDNOrHostName` is the
+        /// name this server reports for itself - the `hostName` function returns it as well - and it is
+        /// determined once and cached, unlike the resolution of an arbitrary remote host name. Both that name
+        /// and its leading label are accepted, because a server whose own name is a fully qualified domain
+        /// name is commonly addressed by the short form too. Host names are case-insensitive and may carry a
+        /// trailing root dot.
+        static bool hostNameIsThisServer(const String & host)
+        {
+            auto normalize = [](std::string_view name)
+            {
+                if (name.ends_with('.'))
+                    name.remove_suffix(1);
+                return Poco::toLower(String{name});
+            };
+
+            const String normalized_host = normalize(host);
+            if (normalized_host.empty())
+                return false;
+
+            const String this_server = normalize(getFQDNOrHostName());
+            return normalized_host == this_server || normalized_host == this_server.substr(0, this_server.find('.'));
+        }
+
         /// Best-effort check whether the address pattern of a `remote()` / `remoteSecure()` call names this
         /// server. At read time the function builds its cluster from the pattern and marks an address local
         /// exactly when `isLocalAddress` accepts its IP and its port is the server's own TCP port. Resolving
         /// an arbitrary host name the same way would require a DNS lookup, which this analysis cannot afford:
         /// it is re-run from metadata at server startup, where a slow or unavailable resolver would block
-        /// loading the tables. So only the spellings that need no resolution are recognized - an IP literal
-        /// and `localhost` - and any other host is assumed non-local, as this analysis has always assumed
-        /// for the whole pattern.
+        /// loading the tables. So only the spellings that need no resolution are recognized - an IP literal,
+        /// `localhost`, and this server's own host name - and any other host is assumed non-local, as this
+        /// analysis has always assumed for the whole pattern.
         bool remoteFunctionAddressesContainLocalHost(const ASTFunction & function, bool secure) const
         {
             auto addresses_expr = tryGetStringFromArgument(function, 0);
@@ -994,6 +1019,10 @@ namespace
 
                         Poco::Net::IPAddress ip;
                         if (Poco::Net::IPAddress::tryParse(host, ip) && isLocalAddress(ip))
+                            return true;
+
+                        /// The server addressed by its own name, e.g. `remote(hostName(), ...)`.
+                        if (hostNameIsThisServer(host))
                             return true;
                     }
                 }
