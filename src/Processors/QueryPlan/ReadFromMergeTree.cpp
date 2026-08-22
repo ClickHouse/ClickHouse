@@ -3147,22 +3147,22 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
-/// A filter over this column is defined by the query-wide part numbering which is not constant
-static bool filterDependsOnPartNumbering(const SelectQueryInfo & query_info)
+bool ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_)
 {
-    auto dag_has_input = [](const ActionsDAG & dag)
+    auto dag_has_input = [&](const ActionsDAG & dag)
     {
         for (const auto * input : dag.getInputs())
         {
-            if (input->result_name == "_part_starting_offset")
+            const auto * column = virtuals.tryGetDescription(input->result_name, VirtualsKind::All, VirtualsMaterializationPlace::All);
+            if (column && !column->deterministic)
                 return true;
         }
         return false;
     };
 
-    if (query_info.filter_actions_dag && dag_has_input(*query_info.filter_actions_dag))
+    if (query_info_.filter_actions_dag && dag_has_input(*query_info_.filter_actions_dag))
         return true;
-    if (query_info.prewhere_info && dag_has_input(query_info.prewhere_info->prewhere_actions))
+    if (query_info_.prewhere_info && dag_has_input(query_info_.prewhere_info->prewhere_actions))
         return true;
     return false;
 }
@@ -3377,8 +3377,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (table_has_unique_key)
         reader_settings.use_query_condition_cache = false;
 
-    const bool filter_depends_on_part_numbering = filterDependsOnPartNumbering(query_info_);
-    if (filter_depends_on_part_numbering)
+    const bool filter_depends_on_non_deterministic_virtuals = filterDependsOnNonDeterministicVirtuals(metadata_snapshot->virtuals, query_info_);
+    if (filter_depends_on_non_deterministic_virtuals)
         reader_settings.use_query_condition_cache = false;
 
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
@@ -3414,11 +3414,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         ///
         /// Disabled for:
         /// - Unique key reads (see above)
-        /// - Filtering by _part_starting_offset
+        /// - Filtering by non-deterministic virtual columns (see above)
         /// - And for a read whose step turned the cache off (`allow_query_condition_cache`),
         ///   that flag means this read neither consults nor populates the cache, so it must also not
         ///   skip granules based on entries written by other queries.
-        if (!table_has_unique_key && !filter_depends_on_part_numbering && allow_query_condition_cache_)
+        if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && allow_query_condition_cache_)
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, *indexes, context_, log);
 
         auto get_indexes_size = [&]() -> size_t
@@ -4781,7 +4781,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (result.sampling.use_sampling)
         reader_settings.use_query_condition_cache = false;
 
-    if (filterDependsOnPartNumbering(query_info))
+    if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
