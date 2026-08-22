@@ -25,4 +25,13 @@ SELECT id, data, _size, _file, _path FROM table_tar2star ORDER BY (id, _file, _p
 CREATE table table_tarstarglobs Engine S3(s3_conn, filename='03036_archive*.tar* :: example{2..3}.csv');
 SELECT id, data, _size, _file, _path FROM table_tarstarglobs ORDER BY (id, _file, _path);
 CREATE table table_noexist Engine s3(s3_conn, filename='03036_archive2.zip :: nonexistent.csv'); -- { serverError UNKNOWN_STORAGE }
-SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_compressed_file_archive.zip :: example7.csv', format='CSV', structure='auto', compression_method='gz') ORDER BY (id, _file, _path)
+SELECT id, data, _size, _file, _path FROM s3(s3_conn, filename='03036_compressed_file_archive.zip :: example7.csv', format='CSV', structure='auto', compression_method='gz') ORDER BY (id, _file, _path);
+
+-- Hive partition columns are inferred from a sample path built during analysis. For an explicit archive
+-- member the path string itself carries them (`<archive path>::<path in archive>`), so a missing archive
+-- excluded by the `_path` / `_file` predicate must return no rows instead of losing the `date` column and
+-- throwing UNKNOWN_IDENTIFIER. The cluster variant infers the columns on a remote node, which is a
+-- separate code path, and a pure brace expansion of the archive paths must work the same way.
+SELECT id, date FROM s3(s3_conn, filename='date=2026-08-21/03036_missing_archive.zip :: entry.csv', format='CSV', structure='id UInt64') WHERE _file GLOBAL IN (SELECT 'not_entry.csv') SETTINGS use_hive_partitioning = 1;
+SELECT id, date FROM s3Cluster('test_shard_localhost', s3_conn, filename='date=2026-08-21/03036_missing_archive.zip :: entry.csv', format='CSV', structure='id UInt64') WHERE _file GLOBAL IN (SELECT 'not_entry.csv') SETTINGS use_hive_partitioning = 1;
+SELECT id, date FROM s3Cluster('test_shard_localhost', s3_conn, filename='{date=2026-08-21/03036_missing_archive.zip,date=2026-08-22/03036_missing_archive2.zip} :: entry.csv', format='CSV', structure='id UInt64') WHERE _file GLOBAL IN (SELECT 'not_entry.csv') SETTINGS use_hive_partitioning = 1;

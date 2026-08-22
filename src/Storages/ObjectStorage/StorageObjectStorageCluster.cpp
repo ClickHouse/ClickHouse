@@ -46,21 +46,28 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
 {
     const auto path = configuration->getRawPath();
 
+    /// An archive entry is exposed as `<archive path>::<path in archive>` (see `ObjectInfoInArchive::getPath`),
+    /// so the sample path can be synthesized the same way as for a plain object as long as the member name is
+    /// known. A glob in the member name requires opening the archive to enumerate its entries.
+    const bool is_archive = configuration->isArchive();
+    const bool member_name_is_known = !is_archive || !configuration->isPathInArchiveWithGlobs();
+    const String archive_suffix = is_archive ? "::" + configuration->getPathInArchive() : "";
+
     /// For non-glob paths, return directly without any object storage API calls.
     /// Besides saving a request, this keeps hive partition inference working for an explicitly
     /// specified key that does not exist (or is filtered out before reading): the path string
     /// itself carries the partition columns, so it must not depend on the object being present.
-    if (!configuration->isArchive() && !path.hasGlobs())
-        return path.path;
+    if (member_name_is_known && !path.hasGlobs())
+        return path.path + archive_suffix;
 
     /// For pure brace expansions, one of the expanded path strings is sufficient to infer
     /// hive partition columns. Avoid probing object metadata, because all explicit keys may
     /// be absent or later filtered out.
-    if (!configuration->isArchive() && containsOnlyEnumGlobs(path.path))
+    if (member_name_is_known && containsOnlyEnumGlobs(path.path))
     {
         auto expanded = expandSelectionGlob(path.path);
         if (!expanded.empty())
-            return expanded.front();
+            return expanded.front() + archive_suffix;
     }
 
     auto query_settings = configuration->getQuerySettings(context);
