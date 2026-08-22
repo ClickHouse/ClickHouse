@@ -102,6 +102,7 @@ void optimizeTreeFirstPass(
         optimization_settings.parallel_replicas_filter_pushdown,
         query_plan.getMaxThreads(),
         query_plan.getConcurrencyControl(),
+        optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
     };
 
@@ -229,6 +230,7 @@ void optimizeTreeSecondPass(
         optimization_settings.parallel_replicas_filter_pushdown,
         query_plan.getMaxThreads(),
         query_plan.getConcurrencyControl(),
+        optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
     };
 
