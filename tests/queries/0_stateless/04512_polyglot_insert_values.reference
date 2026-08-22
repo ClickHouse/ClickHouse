@@ -30,6 +30,8 @@ NOT_IMPLEMENTED
 NOT_IMPLEMENTED
 --- no insert when an HTTP body accompanies a CTE-wrapped polyglot INSERT (expect: 107 6) ---
 107	6
+--- the request body continues a URL query that only mentions the identifier insert ---
+{"insert":2}
 --- implicit_select is honoured by the client-side classifier (expect: 2) ---
 2
 --- polyglot INSERT SELECT FROM input() streams stdin (expect: 112 7) ---
@@ -49,6 +51,8 @@ SYNTAX_ERROR
 42
 --- deferred HTTP 100 Continue without a body still inserts (expect: 139 9) ---
 139	9
+--- deferred chunked HTTP 100 Continue without a body still inserts (expect: 154 10) ---
+154	10
 NOT_IMPLEMENTED
---- deferred HTTP 100 Continue with a body is still rejected (expect: 139 9) ---
-139	9
+--- deferred HTTP 100 Continue with a body is still rejected (expect: 154 10) ---
+154	10

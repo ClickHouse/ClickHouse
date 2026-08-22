@@ -1345,13 +1345,13 @@ void HTTPHandler::processQuery(
     /// behavior of splitting SQL text between the `query` parameter and the request body. A CTE
     /// before the `INSERT` is part of the same statement and has to use the streaming-safe path too.
     /// Leading whitespace and SQL comments are skipped so that forms like `/*trace*/ INSERT ...`
-    /// also take the streaming-safe parse path.
+    /// also take the streaming-safe parse path. The bareword `INSERT` alone is not enough: it is
+    /// also a legal identifier (a function or alias name), so an actual `INSERT INTO` statement is
+    /// required - otherwise a query such as `WITH cte AS (SELECT 1) SELECT 1 AS insert` would stop
+    /// concatenating the request body to the URL query.
     auto url_query_starts_with_insert = [&query]()
     {
         Lexer lexer(query.data(), query.data() + query.size());
-        Token token = lexer.nextToken();
-        while (!token.isSignificant() && !token.isEnd() && !token.isError())
-            token = lexer.nextToken();
         const auto is_keyword = [](const Token & candidate, std::string_view keyword)
         {
             if (candidate.type != TokenType::BareWord || static_cast<size_t>(candidate.end - candidate.begin) != keyword.size())
@@ -1364,15 +1364,11 @@ void HTTPHandler::processQuery(
             return true;
         };
 
-        if (is_keyword(token, "INSERT"))
-            return true;
-        if (!is_keyword(token, "WITH"))
-            return false;
-
         size_t parentheses_depth = 0;
-        while (!token.isEnd() && !token.isError())
+        bool is_first_token = true;
+        bool previous_token_is_top_level_insert = false;
+        for (Token token = lexer.nextToken(); !token.isEnd() && !token.isError(); token = lexer.nextToken())
         {
-            token = lexer.nextToken();
             if (!token.isSignificant())
                 continue;
 
@@ -1380,8 +1376,19 @@ void HTTPHandler::processQuery(
                 ++parentheses_depth;
             else if (token.type == TokenType::ClosingRoundBracket && parentheses_depth)
                 --parentheses_depth;
-            else if (parentheses_depth == 0 && is_keyword(token, "INSERT"))
+
+            if (previous_token_is_top_level_insert && is_keyword(token, "INTO"))
                 return true;
+
+            previous_token_is_top_level_insert = parentheses_depth == 0 && is_keyword(token, "INSERT");
+
+            if (is_first_token)
+            {
+                is_first_token = false;
+                /// Only an `INSERT` statement, optionally preceded by a CTE, is of interest here.
+                if (!previous_token_is_top_level_insert && !is_keyword(token, "WITH"))
+                    return false;
+            }
         }
 
         return false;

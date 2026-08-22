@@ -116,6 +116,12 @@ ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=WITH%20cte%20AS%20(SELECT%201)
 echo "--- no insert when an HTTP body accompanies a CTE-wrapped polyglot INSERT (expect: 107 6) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# The bareword `INSERT` on its own does not make a query an `INSERT` statement - it is also a legal
+# identifier. Such a query must keep the legacy behavior of continuing the URL query with the
+# request body instead of taking the streaming-safe path meant for inline data.
+echo "--- the request body continues a URL query that only mentions the identifier insert ---"
+${CLICKHOUSE_CURL} -sS -X POST "${CLICKHOUSE_URL}&input_format_max_block_wait_ms=1000&query=WITH%20cte%20AS%20(SELECT%201)%20SELECT%20instr('abcd'%2C'b')%20AS%20insert" -d ' FORMAT JSONEachRow'
+
 # The client parses the transpiled SQL only to classify the query, but it must do so with the same
 # parser flags the server uses to execute it (see `executeQuery`). Otherwise a query the server
 # accepts is rejected locally before it is ever sent: with `implicit_select`, a bare expression is
