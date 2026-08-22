@@ -1,5 +1,6 @@
 #include <Storages/StoragePrometheusQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
@@ -103,6 +104,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);

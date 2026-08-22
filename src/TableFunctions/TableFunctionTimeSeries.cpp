@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -76,6 +77,9 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const ContextPtr & context) const
 {
+    /// The TimeSeries table is the public access boundary. The target tables are implementation
+    /// details and may be inner tables without grants of their own.
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     return time_series_storage->getTargetTable(target_kind, context);
 }
@@ -135,7 +139,9 @@ SELECT * FROM timeSeriesSamples('db_name', 'time_series_table');
 <Note>
 The function `timeSeriesSamples` has an alias `timeSeriesData` which is kept for backwards compatibility.
 </Note>
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
+The outer `TimeSeries` table is the access-control boundary. `SELECT` on the inner target table alone is not sufficient; callers need `SELECT` on the outer `TimeSeries` table.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 
     factory.registerAlias("timeSeriesData", "timeSeriesSamples");
 
@@ -161,7 +167,9 @@ SELECT * FROM timeSeriesTags(db_name.time_series_table);
 SELECT * FROM timeSeriesTags('db_name.time_series_table');
 SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
+The outer `TimeSeries` table is the access-control boundary. `SELECT` on the inner target table alone is not sufficient; callers need `SELECT` on the outer `TimeSeries` table.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Metrics>>(
         {.description = R"DOCS_MD(
@@ -185,7 +193,9 @@ SELECT * FROM timeSeriesMetrics(db_name.time_series_table);
 SELECT * FROM timeSeriesMetrics('db_name.time_series_table');
 SELECT * FROM timeSeriesMetrics('db_name', 'time_series_table');
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
+The outer `TimeSeries` table is the access-control boundary. `SELECT` on the inner target table alone is not sufficient; callers need `SELECT` on the outer `TimeSeries` table.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
@@ -222,7 +232,7 @@ There is no specific order for returned data.
 ```sql
 SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
         {.description = R"DOCS_MD(
