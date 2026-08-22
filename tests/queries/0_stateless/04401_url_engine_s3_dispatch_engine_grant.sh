@@ -32,6 +32,12 @@ attach_uuid() { ${CLICKHOUSE_CLIENT} -q "SELECT reinterpretAsUUID(MD5('${CLICKHO
 # test's own name), so a looser pattern would match a query that was never denied at all.
 denied_on() { grep -qiF "necessary to have the grant TABLE ENGINE ON $1"; }
 
+# The absence of a denial is not success. A parse error, a UUID collision or any other failure leaves
+# the same empty match, so every arm asserting a statement was permitted also asserts that it created
+# the table. Queried as the admin, so a missing `SELECT` grant cannot hide the row, and after the
+# statement rather than before, since a detached table has no row here either.
+attached() { [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name = '$1'")" = "1" ]; }
+
 USER="url_only_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER} IDENTIFIED WITH no_password"
@@ -61,8 +67,14 @@ ${CLICKHOUSE_CLIENT} --user "${USER}" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.${
     | denied_on AzureBlobStorage && echo "attach-azure-engine-denied" || echo "NOT DENIED"
 
 echo "--- ATTACH carrying a full definition: URL('http://...') is still allowed (URL engine) ---"
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_a_http UUID '$(attach_uuid a_http)' (a UInt32) ENGINE = URL('http://example.com/data.csv', 'CSV')" 2>&1 \
-    | grep -qiE "Not enough privileges|ACCESS_DENIED" && echo "attach-http-DENIED (unexpected)" || echo "attach-http-allowed"
+out=$(${CLICKHOUSE_CLIENT} --user "${USER}" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_a_http UUID '$(attach_uuid a_http)' (a UInt32) ENGINE = URL('http://example.com/data.csv', 'CSV')" 2>&1)
+if echo "$out" | grep -qiE "Not enough privileges|ACCESS_DENIED"; then
+    echo "attach-http-DENIED (unexpected)"
+elif attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_a_http"; then
+    echo "attach-http-allowed"
+else
+    echo "attach-http-FAILED (unexpected): $out"
+fi
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_a_http"
 
 # A short `ATTACH TABLE t` replays the definition already stored on this server, so it is not
@@ -72,8 +84,39 @@ ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON File TO ${USER}"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach (s String) ENGINE = URL('file://${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}_r.csv', 'LineAsString')"
 ${CLICKHOUSE_CLIENT} -q "REVOKE TABLE ENGINE ON File FROM ${USER}"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach"
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach" 2>&1 \
-    | grep -qiE "Not enough privileges|ACCESS_DENIED" && echo "short-attach-DENIED (unexpected)" || echo "short-attach-allowed"
+out=$(${CLICKHOUSE_CLIENT} --user "${USER}" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach" 2>&1)
+if echo "$out" | grep -qiE "Not enough privileges|ACCESS_DENIED"; then
+    echo "short-attach-DENIED (unexpected)"
+elif attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach"; then
+    echo "short-attach-allowed"
+else
+    echo "short-attach-FAILED (unexpected): $out"
+fi
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach"
+
+# A `RESTORE` introduces a definition under whoever is restoring, who need not be the user the backup
+# was taken from, so it is checked like a `CREATE` rather than treated as replayed metadata. The
+# destination carries the shell's pid because a backup may not be written twice to the same one and
+# the unique name alone is stable across repeated runs of one test.
+BACKUP="Disk('backups', '04401_${CLICKHOUSE_TEST_UNIQUE_NAME}_$$')"
+echo "--- RESTORE carries a fresh definition and is checked like CREATE: URL('file://...') needs the File grant ---"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore (s String) ENGINE = URL('file://${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}_b.csv', 'LineAsString')"
+${CLICKHOUSE_CLIENT} -q "BACKUP TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore TO ${BACKUP} FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore SYNC"
+
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "RESTORE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore FROM ${BACKUP} FORMAT Null" 2>&1 \
+    | denied_on File && echo "restore-file-engine-denied" || echo "NOT DENIED"
+attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_restore" && echo "RESTORED ANYWAY (unexpected)" || echo "restore-rejected-not-created"
+
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON File TO ${USER}"
+out=$(${CLICKHOUSE_CLIENT} --user "${USER}" -q "RESTORE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore FROM ${BACKUP} FORMAT Null" 2>&1)
+if echo "$out" | grep -qiE "Not enough privileges|ACCESS_DENIED"; then
+    echo "restore-with-grant-DENIED (unexpected)"
+elif attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_restore"; then
+    echo "restore-with-grant-allowed"
+else
+    echo "restore-with-grant-FAILED (unexpected): $out"
+fi
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore SYNC"
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
