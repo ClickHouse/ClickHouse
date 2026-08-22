@@ -234,7 +234,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
     if (interface == Interface::TCP)
     {
         writeBinary(os_user, out);
-        writeBinary(client_hostname, out);
+        writeBinary(getClientHostName(), out);
         writeBinary(client_name, out);
         writeVarUInt(client_version_major, out);
         writeVarUInt(client_version_minor, out);
@@ -351,6 +351,8 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
     query_kind = QueryKind(read_query_kind);
     if (empty())
         return;
+
+    resolve_client_hostname_on_demand = false;
 
     readBinary(initial_user, in);
     readBinary(initial_query_id, in);
@@ -518,6 +520,13 @@ bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patc
            client_tcp_protocol_version == other.client_tcp_protocol_version;
 }
 
+const String & ClientInfo::getClientHostName() const
+{
+    if (resolve_client_hostname_on_demand)
+        return getFQDNOrHostName();
+    return client_hostname;
+}
+
 String ClientInfo::getVersionStr() const
 {
     return fmt::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
@@ -531,7 +540,8 @@ void ClientInfo::fillOSUserHostNameAndVersionInfo()
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.
 
-    client_hostname = getFQDNOrHostName();
+    resolve_client_hostname_on_demand = true;
+    client_hostname.clear();
 
     client_agent = detectClientAgent();
 

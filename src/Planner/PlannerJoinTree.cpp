@@ -483,8 +483,16 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     if (!columns_with_sizes.empty())
         result = std::min_element(columns_with_sizes.begin(), columns_with_sizes.end())->column;
     else
+    {
+        /// A table expression can resolve to no columns at all, for example a table function over a
+        /// table whose schema is unavailable. `getSmallestColumn` treats an empty list as a logical error.
+        if (column_names_and_types.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Cannot read from table expression with no columns");
+
         /// If we have no information about columns sizes, choose a column of minimum size of its data type
         result = ExpressionActions::getSmallestColumn(column_names_and_types);
+    }
 
     return result;
 }

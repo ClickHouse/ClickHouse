@@ -634,6 +634,20 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         out.push_back(std::move(miss));
     };
 
+    /// A writer-less miss clamped to the ask: read from source, cache nothing. The clamp keeps a
+    /// detached edge cell's grid overhang from being fetched uncached, as the bypass path above does.
+    auto emit_uncacheable_miss = [&](size_t seg_left, size_t seg_end)
+    {
+        const size_t lo = std::max(seg_left, ask_lo_obj);
+        const size_t hi = std::min(seg_end, ask_hi_obj);
+        if (hi <= lo)
+            return;
+        ICacheProvider::CacheResolution miss;
+        miss.kind = ICacheProvider::CacheResolution::Kind::Miss;
+        miss.range = ByteRange{lo + object_file_offset, hi - lo};
+        out.push_back(std::move(miss));
+    };
+
     while (!got_holder->empty())
     {
         /// One holder per segment; a partial segment's hit reader and miss writer SHARE it, so the
@@ -643,6 +657,14 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         const auto & seg_range = segment.range();
         const size_t seg_left = seg_range.left;
         const size_t seg_end = seg_range.right + 1;
+
+        /// A DETACHED placeholder holds no bytes and cannot take a downloader; serve it from source.
+        if (segment.isDetached())
+        {
+            emit_uncacheable_miss(seg_left, seg_end);
+            continue;
+        }
+
         const size_t committed_end = segmentCommittedEnd(segment);
 
         if (committed_end > seg_left)

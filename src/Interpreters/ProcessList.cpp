@@ -18,6 +18,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <array>
 #include <chrono>
 #include <memory>
@@ -175,7 +176,7 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             if (queue_max_wait_ms)
                 LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
-            if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
+            if (!queue_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
                     [&]{ return non_internal_processes < max_size; }))
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                 "Too many simultaneous queries. Maximum: {}",
@@ -261,7 +262,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
 
                     const auto replace_running_query_max_wait_ms = settings[Setting::replace_running_query_max_wait_ms].totalMilliseconds();
-                    if (!replace_running_query_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(replace_running_query_max_wait_ms),
+                    if (!replace_running_query_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(replace_running_query_max_wait_ms),
                         [&]
                         {
                             running_query = user_process_list->second.queries.find(client_info.current_query_id);
@@ -358,7 +359,7 @@ ProcessList::EntryPtr ProcessList::insert(
             client_info,
             priorities.insert(
                 settings[Setting::priority],
-                std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
+                saturatedMilliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
             std::move(query_slot),
             std::move(memory_reservation),
             std::move(thread_group),

@@ -129,7 +129,8 @@ public:
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());
 
-            dst_data.reserve(dst_data.size() + vec_size);
+            /// Go through PODArray::reserve: it grows capacity geometrically, IColumn::reserve sizes it exactly.
+            dst_data.getData().reserve(dst_data.size() + vec_size);
             for (auto hindex : hindex_vec)
             {
                 if (hindex != 0)

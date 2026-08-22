@@ -410,6 +410,47 @@ namespace
         addTimeStrictly(0, kind, num_units, time_zone);
     }
 
+    /// A non-throwing counterpart of `checkIntervalAdvancesTime` used when loading legacy
+    /// metadata. Such metadata may contain an interval that no longer fits `DateTime32`.
+    bool intervalAdvancesTime(IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
+    {
+        constexpr UInt32 max_datetime32 = std::numeric_limits<UInt32>::max();
+        constexpr UInt32 max_day_num = max_datetime32 / 86400;
+
+        switch (kind)
+        {
+            case IntervalKind::Kind::Second:
+                if (num_units > max_datetime32)
+                    return false;
+                break;
+            case IntervalKind::Kind::Minute:
+                if (num_units > max_datetime32 / 60)
+                    return false;
+                break;
+            case IntervalKind::Kind::Hour:
+                if (num_units > max_datetime32 / 3600)
+                    return false;
+                break;
+            case IntervalKind::Kind::Day:
+                if (num_units > max_day_num)
+                    return false;
+                break;
+            case IntervalKind::Kind::Week:
+            case IntervalKind::Kind::Month:
+            case IntervalKind::Kind::Quarter:
+            case IntervalKind::Kind::Year:
+                if (addTime(0, kind, num_units, time_zone) > max_day_num)
+                    return false;
+                break;
+            case IntervalKind::Kind::Nanosecond:
+            case IntervalKind::Kind::Microsecond:
+            case IntervalKind::Kind::Millisecond:
+                return false;
+        }
+
+        return addTime(0, kind, num_units, time_zone) > 0;
+    }
+
     class AddingAggregatedChunkInfoTransform final : public ISimpleTransform
     {
     public:
@@ -1196,7 +1237,19 @@ void StorageWindowView::threadFuncFireProc()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         max_fired_watermark = next_fire_signal;
-        auto slide_interval = addTimeStrictly(0, slide_kind, slide_num_units, *time_zone);
+        UInt32 slide_interval = 0;
+        try
+        {
+            slide_interval = addTimeStrictly(0, slide_kind, slide_num_units, *time_zone);
+        }
+        catch (...)
+        {
+            /// A slide interval loaded from old metadata may not advance `DateTime32` at all, so
+            /// this view can never fire again. An exception escaping into the
+            /// `BackgroundSchedulePool` aborts the server, so log it and stop rescheduling.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            return;
+        }
         /// Convert DayNum into seconds when the slide interval is larger than Day
         if (slide_kind > IntervalKind::Kind::Day)
             slide_interval *= 86400;
@@ -1371,7 +1424,11 @@ StorageWindowView::StorageWindowView(
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
 
-    const bool validate_intervals = mode < LoadingStrictnessLevel::ATTACH;
+    /// A full-definition `ATTACH WINDOW VIEW` is fresh user input and must be validated like
+    /// `CREATE WINDOW VIEW`. The short form loads stored metadata and must remain compatible
+    /// with views created before interval validation was added.
+    const bool validate_intervals = mode < LoadingStrictnessLevel::ATTACH
+        || (mode == LoadingStrictnessLevel::ATTACH && !query.attach_short_syntax);
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_, validate_intervals);
 
     /// Window, slide, and slice intervals from old metadata remain attach-compatible: their
@@ -1392,7 +1449,14 @@ StorageWindowView::StorageWindowView(
     target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : to_table_id;
 
     if (is_proctime)
-        next_fire_signal = getWindowUpperBound(now());
+    {
+        /// Old metadata can contain an interval that no longer advances `DateTime32`.
+        /// Keep it attach-compatible; the first runtime advancement fails closed in
+        /// `threadFuncFireProc`.
+        next_fire_signal = !validate_intervals && !intervalAdvancesTime(slide_kind, slide_num_units, *time_zone)
+            ? now()
+            : getWindowUpperBound(now());
+    }
 
     std::exchange(has_inner_table, true);
     if (mode < LoadingStrictnessLevel::ATTACH)

@@ -56,7 +56,7 @@ namespace
                             float_value, getTypeName<T>());
         }
         Float64 scaled_value = float_value * static_cast<Float64>(DecimalUtils::scaleMultiplier<T>(scale));
-        if ((scaled_value > static_cast<Float64>(std::numeric_limits<typename T::NativeType>::max())) ||
+        if ((scaled_value >= static_cast<Float64>(std::numeric_limits<typename T::NativeType>::max())) ||
             (scaled_value < static_cast<Float64>(std::numeric_limits<typename T::NativeType>::min())))
         {
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW,

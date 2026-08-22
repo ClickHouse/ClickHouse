@@ -1,0 +1,8 @@
+SELECT arm: queries finished, distinct threads, distinct read_rows values, rows per query
+4	1	1	4
+INSERT arm: queries finished, distinct threads, distinct written_rows values, rows per query
+4	1	1	4
+SELECT arm: read_rows vs ProfileEvents, and vs query_log
+0	0	0
+INSERT arm: written_rows and written_bytes vs ProfileEvents, and vs query_log
+0	0	0

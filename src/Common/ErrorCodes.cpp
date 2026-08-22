@@ -660,6 +660,8 @@
     M(778, MEMORY_RESERVATION_FAILED) \
     M(779, UNSUPPORTED_MEDIA_TYPE) \
     M(780, SW_SERVER_NO_WORKERS_AVAILABLE) \
+    M(781, AI_PROVIDER_RESPONSE_TRUNCATED) \
+    M(782, AI_PROVIDER_RESPONSE_INCOMPLETE) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -682,6 +684,7 @@
     M(1011, HANDLER_ALREADY_EXISTS) \
     M(1012, HANDLER_DOESNT_EXIST) \
     M(1013, AMBIGUOUS_HANDLER) \
+    M(1014, FILE_CHANGED_DURING_READ) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -698,7 +701,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1013;
+    constexpr ErrorCode END = 1014;
 
 #if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     /** One `ErrorPairHolder` per error code, each holding two `Error` structs - the last message,

@@ -1128,6 +1128,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                                 break;
                             }
 
+                            /// A tuple already in the index is a no-op to visit, so its children may still be unnamed.
+                            visit(child, data);
+
                             auto name_and_type = getNameAndTypeFromAST(child, data);
                             if (name_and_type && isTupleType(name_and_type->type))
                             {

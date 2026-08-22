@@ -1,15 +1,15 @@
 {
-  "group": "Bring Your Own Cloud",
+  "group": "استخدم سحابتك الخاصة",
   "pages": [
     {
-      "group": "Overview",
+      "group": "نظرة عامة",
       "pages": [
         "ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "ar/products/bring-your-own-cloud/overview/architecture"
       ]
     },
     {
-      "group": "Configuration",
+      "group": "التهيئة",
       "pages": [
         "ar/products/bring-your-own-cloud/configuration/configurations",
         "ar/products/bring-your-own-cloud/configuration/connect",
@@ -17,11 +17,11 @@
       ]
     },
     {
-      "group": "Onboarding",
+      "group": "الإعداد",
       "pages": [
         "ar/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "Customization",
+          "group": "التخصيص",
           "pages": [
             "ar/products/bring-your-own-cloud/onboarding/customization-aws",
             "ar/products/bring-your-own-cloud/onboarding/customization-gcp"
@@ -40,7 +40,7 @@
       ]
     },
     {
-      "group": "Reference",
+      "group": "المرجع",
       "pages": [
         "ar/products/bring-your-own-cloud/reference/network-security",
         "ar/products/bring-your-own-cloud/reference/privilege",

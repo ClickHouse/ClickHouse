@@ -5,14 +5,14 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/WhatIfIndexEstimator.h>
+#include <Storages/MergeTree/WhatIfResult.h>
 
 namespace DB
 {
 
 /// Estimate skip ratio from column statistics (row-level selectivity as upper bound)
 bool tryEstimateWithStatistics(
-    WhatIfIndexEstimator::IndexResult & result,
+    WhatIfCandidateResult & result,
     const MergeTreeIndexPtr & index_helper,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,

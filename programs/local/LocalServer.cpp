@@ -842,6 +842,13 @@ void LocalServer::startServers(const ServerType & server_type)
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Failed to start HTTP listener — check listen_host and http_port configuration");
 
+        /// While serving connections this process must log and continue like `clickhouse-server`: a
+        /// handler throws on client behavior it does not control, and terminating would let one client
+        /// end the process. Set before any accept thread starts, and never restored, since a handler
+        /// can still be draining after `stop`.
+        static ServerErrorHandler listener_error_handler;
+        Poco::ErrorHandler::set(&listener_error_handler);
+
         /// Phase 2: the whole requested set is bound and verified. Only now start the accept threads,
         /// so no listener admits a connection until the entire set is known-good. `createServer` no
         /// longer logs (it does not start the server), so emit the "Listening for ..." line here.

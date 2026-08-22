@@ -61,7 +61,9 @@ def unique_query_id(prefix):
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
-def get_profile_events(query_id):
+def get_profile_events(query_id, query_type="QueryFinish"):
+    """AI counters from `system.query_log`. A query that threw logs `ExceptionWhileProcessing`
+    rather than `QueryFinish`, so the throwing paths pass that type explicitly."""
     instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(
         f"""
@@ -73,12 +75,14 @@ def get_profile_events(query_id):
             ProfileEvents['AIRowsSkipped'] AS rows_skipped,
             peak_threads_usage AS peak_threads
         FROM system.query_log
-        WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        WHERE query_id = '{query_id}' AND type = '{query_type}'
         LIMIT 1
         FORMAT JSONEachRow
         """
     ).strip()
-    assert result, f"no system.query_log row found for query_id={query_id}"
+    assert (
+        result
+    ), f"no system.query_log row found for query_id={query_id} type={query_type}"
     return json.loads(result)
 
 
@@ -125,6 +129,79 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_error_nonjson AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/error_nonjson', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        # Endpoints returning a valid HTTP 200 body but a non-completion `finish_reason`, used to test
+        # that incomplete generations are rejected (and benign non-"stop" reasons are not).
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_truncated AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/truncated', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_content_filter AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/content_filter', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_unknown_reason AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/unknown_reason', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_tool_calls AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/tool_calls', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_anthropic_pause_turn AS "
+            f"provider = 'anthropic', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/pause_turn', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_refusal AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/refusal', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        # Anthropic-provider collections, used to test the Anthropic `stop_reason` normalization.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_anthropic_stop_sequence AS "
+            f"provider = 'anthropic', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/stop_sequence', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_anthropic_max_tokens AS "
+            f"provider = 'anthropic', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/max_tokens', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_anthropic_context_window AS "
+            f"provider = 'anthropic', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/context_window', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_anthropic_tool_use AS "
+            f"provider = 'anthropic', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/tool_use', "
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
@@ -305,6 +382,223 @@ def test_generate_content_error_graceful(started_cluster):
         settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
+
+
+def test_generate_truncated_response_throw(started_cluster):
+    """A well-formed response with `finish_reason="length"` (model hit max_tokens) must be
+    rejected as truncated rather than silently returning the partial content."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_truncated'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+
+
+def test_generate_truncated_response_graceful(started_cluster):
+    """With `ai_function_throw_on_error = 0`, a truncated response yields the column default ("")."""
+    result = instance.query(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_truncated'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
+
+
+def test_generate_truncated_response_counts_tokens(started_cluster):
+    """A truncated response still consumed provider tokens, so it must be recorded before the
+    rejection: otherwise a query full of truncated rows sees a zero token count and keeps
+    dispatching requests past `ai_function_max_output_tokens_per_query`."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input SELECT 'row_' || toString(number) FROM numbers(3)"
+    )
+    qid = unique_query_id("gen_truncated_quota")
+    # The mock reports 10 input / 5 output tokens per call. The first row is rejected as
+    # truncated but exhausts the 5-token output cap, so the remaining two rows are skipped
+    # without an API call.
+    result = instance.query(
+        "SELECT aiGenerate(x, map('credentials', 'ai_truncated')) FROM test_input",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_throw_on_error": 0,
+            "ai_function_max_output_tokens_per_query": 5,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 10
+    assert int(events["output_tokens"]) == 5
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 3
+
+
+def test_generate_truncated_response_records_tokens_when_throwing(started_cluster):
+    """Rejecting an incomplete response throws out of `executeImpl`, but the provider already
+    charged for the call, so the AI counters must still reach `system.query_log`. Without the RAII
+    flush the throwing path reported zero for every counter."""
+    qid = unique_query_id("gen_truncated_throw_events")
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_truncated'))",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+    # The query threw, so its log row is an exception row rather than QueryFinish.
+    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 10
+    assert int(events["output_tokens"]) == 5
+
+
+def test_generate_content_filter_response_throw(started_cluster):
+    """`finish_reason="content_filter"` means the answer was withheld/filtered; reject as incomplete."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_content_filter'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
+
+
+def test_generate_content_filter_response_graceful(started_cluster):
+    result = instance.query(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_content_filter'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
+
+
+def test_generate_tool_calls_response_throw(started_cluster):
+    """OpenAI's `finish_reason="tool_calls"` means the model wants the caller to run a tool, so the
+    HTTP 200 carries no final answer. It must be rejected, not returned as empty output."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_tool_calls'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
+    assert "tool_calls" in error
+    # ContentFilter raises the same error code with the same reason string, so pin the arm's wording.
+    assert "further caller action" in error
+
+
+def test_generate_tool_calls_response_graceful(started_cluster):
+    result = instance.query(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_tool_calls'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
+
+
+def test_generate_anthropic_pause_turn_throw(started_cluster):
+    """Anthropic's `stop_reason="pause_turn"` is a paused multi-turn generation, the same
+    "HTTP 200 but not a final answer" case as OpenAI's `tool_calls`."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_pause_turn'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
+    assert "pause_turn" in error
+    assert "further caller action" in error
+
+
+def test_generate_refusal_response_throw(started_cluster):
+    """A structured-output safety refusal keeps `finish_reason="stop"` and carries the explanation in
+    `message.refusal` with a null `content`. Checking `finish_reason` alone would accept it as a
+    complete empty answer, so the refusal field must be rejected on its own."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_refusal'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
+
+
+def test_generate_refusal_response_graceful(started_cluster):
+    result = instance.query(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_refusal'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
+
+
+def test_generate_unknown_finish_reason_accepted(started_cluster):
+    """An unrecognized `finish_reason` must be accepted as a complete answer, not misclassified as
+    truncation (regression guard against rejecting any non-"stop" value)."""
+    result = instance.query(
+        "SELECT aiGenerate('hello unknown', map('credentials', 'ai_unknown_reason'))",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "hello unknown"
+
+
+def test_generate_anthropic_stop_sequence_accepted(started_cluster):
+    """Anthropic's `stop_reason="stop_sequence"` is a complete answer and must NOT be rejected as
+    truncated (this is the exact case the string-comparison catch-all got wrong)."""
+    result = instance.query(
+        "SELECT aiGenerate('hello anthropic', map('credentials', 'ai_anthropic_stop_sequence'))",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "hello anthropic"
+
+
+def test_generate_anthropic_max_tokens_throw(started_cluster):
+    """Anthropic's `stop_reason="max_tokens"` is truncation and must be rejected."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_max_tokens'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+
+
+def test_generate_anthropic_context_window_hint(started_cluster):
+    """`model_context_window_exceeded` is truncation too, but raising max_tokens reserves more output
+    space and makes it worse, so the hint must point at reducing the input instead."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_context_window'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+    assert "model_context_window_exceeded" in error
+    assert "ran out of context window" in error
+    assert "larger context window" in error
+    # The diagnosis must not name the output token limit either, since that is the wrong limit here.
+    assert "Increase max_tokens" not in error
+    assert "output token limit" not in error
+
+
+def test_generate_anthropic_max_tokens_hint(started_cluster):
+    """The output-cap case keeps the max_tokens advice, which is correct only for that case."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_max_tokens'))",
+        settings=AI_SETTINGS,
+    )
+    assert "output token limit" in error
+    assert "Increase max_tokens" in error
+    assert "context window" not in error
+
+
+def test_classify_anthropic_structured_output(started_cluster):
+    """Anthropic structured output is a forced tool call, returned with `stop_reason="tool_use"`.
+    That is a completed response and must NOT be rejected as incomplete (regression guard: rejecting
+    `tool_use` broke every Anthropic `aiClassify`/`aiExtract` call)."""
+    result = instance.query(
+        "SELECT aiClassify('I love it', ['positive', 'negative', 'neutral'], "
+        "map('credentials', 'ai_anthropic_tool_use'))",
+        settings=AI_SETTINGS,
+    )
+    assert result.strip() == "positive"
+
+
+def test_generate_anthropic_tool_use_rejected(started_cluster):
+    """A plain `aiGenerate` request sends no tools, so an Anthropic-compatible endpoint returning
+    `stop_reason="tool_use"` is signalling a tool-call turn, not a final answer, and must be rejected.
+    `tool_use` is only a completed answer for the forced structured-output path
+    (test_classify_anthropic_structured_output)."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_tool_use'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
 
 
 def last_request():
@@ -504,6 +798,31 @@ def test_filter_where(started_cluster):
     )
     lines = result.strip().split("\n")
     assert lines == ["also good", "great product"]
+
+
+def test_filter_truncated_response_throw(started_cluster):
+    """aiFilter shares the FunctionBaseAI rejection path. A provider-signalled incomplete reply
+    (here `finish_reason="length"`) is an error under the default `ai_function_throw_on_error=1`,
+    aborting the query rather than silently dropping the row on a non-answer."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('some text')")
+    error = instance.query_and_get_error(
+        "SELECT aiFilter(x, 'is positive', map('credentials', 'ai_truncated')) FROM test_input",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+
+
+def test_filter_truncated_response_graceful(started_cluster):
+    """With `ai_function_throw_on_error=0`, a truncated reply maps to `0` and the row is filtered
+    out, preserving aiFilter's fail-closed contract."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('some text')")
+    result = instance.query(
+        "SELECT x FROM test_input WHERE aiFilter(x, 'is positive', map('credentials', 'ai_truncated'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
 
 
 def test_filter_no_response_format(started_cluster):
@@ -872,6 +1191,27 @@ def test_redact_error_throw(started_cluster):
         settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_redact_truncated_response_throw(started_cluster):
+    """A truncated redaction reply (`finish_reason="length"`) must be rejected, not returned as
+    partially redacted text: for a PII-redaction function, silently returning a truncated answer
+    would leak unredacted content."""
+    error = instance.query_and_get_error(
+        "SELECT aiRedact('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_truncated'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+
+
+def test_redact_truncated_response_graceful(started_cluster):
+    """With `ai_function_throw_on_error = 0`, a truncated redaction reply yields the column default
+    ("") instead of partially redacted text."""
+    result = instance.query(
+        "SELECT aiRedact('customer John Doe, john@doe.org', ['email', 'name'], map('credentials', 'ai_truncated'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
 
 
 # ---------------------------------------------------------------------------

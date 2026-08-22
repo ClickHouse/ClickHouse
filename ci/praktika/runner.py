@@ -36,6 +36,9 @@ _IMAGE_PULL_RETRY_ERRORS = [
     "TLS handshake timeout",
     "i/o timeout",
     "unexpected EOF",
+    # A nameserver answered badly (SERVFAIL), so the name can resolve next attempt.
+    # Its NXDOMAIN sibling `no such host` is permanent and is deliberately absent.
+    "server misbehaving",
     # What `timeout --verbose` writes when it kills a stalled attempt. Plain `timeout`
     # writes nothing, so without this entry a stall is not retried.
     "sending signal TERM to command",
@@ -622,6 +625,20 @@ class Runner:
         return result
 
     @staticmethod
+    def _pipeline_status(result) -> str:
+        """The GH Actions `pipeline_status` output for a finished job.
+
+        These are GH Actions output values matched by workflow YAML conditions,
+        not Result.Status values - they must stay lowercase "success"/"failure".
+        A "failure" skips the job's whole transitive downstream closure.
+        `hook_html` decides whether to mark dependees `DROPPED` from the same
+        flag and must reach the same verdict as this function.
+        """
+        if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
+            return "failure"
+        return "success"
+
+    @staticmethod
     def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
         """Whether a providing artifact that matched no file may be skipped.
 
@@ -941,15 +958,7 @@ class Runner:
                 traceback.print_exc()
 
         # finally, set the status flag for GH Actions
-        # These are GH Actions output values matched by workflow YAML conditions,
-        # not Result.Status values — must stay lowercase "success"/"failure".
-        pipeline_status = "success"
-        if not result.is_ok():
-            if result.is_failure() and result.do_not_block_pipeline_on_failure():
-                # job explicitly says to not block ci even though result is failure
-                pass
-            else:
-                pipeline_status = "failure"
+        pipeline_status = self._pipeline_status(result)
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
                 f"pipeline_status={pipeline_status}",

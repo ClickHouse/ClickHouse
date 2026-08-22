@@ -1,0 +1,33 @@
+-- query_plan_optimize_lazy_materialization_for_file = 1
+-- a subcolumn of a defaulted parent is pinned when the expression input is a sort key
+u999	val_0
+u998	val_1
+u997	val_2
+1
+Lazily read columns: s
+-- a subcolumn of a defaulted parent is deferred together with the expression input
+999	u999
+998	u998
+997	u997
+1
+Lazily read columns: a, j.user.name
+-- sorting by a subcolumn of a defaulted parent pins the expression input
+999	val_0
+998	val_1
+997	val_2
+Lazily read columns: s
+-- query_plan_optimize_lazy_materialization_for_file = 0
+-- a subcolumn of a defaulted parent is pinned when the expression input is a sort key
+u999	val_0
+u998	val_1
+u997	val_2
+0
+-- a subcolumn of a defaulted parent is deferred together with the expression input
+999	u999
+998	u998
+997	u997
+0
+-- sorting by a subcolumn of a defaulted parent pins the expression input
+999	val_0
+998	val_1
+997	val_2

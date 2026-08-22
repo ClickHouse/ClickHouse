@@ -60,7 +60,7 @@ public:
         /// Store ptr to dictionary to be sure it won't be deleted.
         ColumnPtr dictionary_holder;
         /// Hashes for dictionary keys.
-        const UInt64 * saved_hash = nullptr;
+        std::span<const UInt64> saved_hash;
     };
 
     using CachedValuesPtr = std::shared_ptr<CachedValues>;
@@ -107,8 +107,9 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     const IColumn * positions = nullptr;
     size_t size_of_index_type = 0;
 
-    /// saved hash is from current column or from cache.
-    const UInt64 * saved_hash = nullptr;
+    /// saved hash is from current column or from cache. Dictionary positions outside it have no
+    /// saved hash and are hashed from the key.
+    std::span<const UInt64> saved_hash;
     /// Hold dictionary in case saved_hash is from cache to be sure it won't be deleted.
     ColumnPtr dictionary_holder;
 
@@ -244,7 +245,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         bool inserted = false;
         typename Data::LookupResult it;
-        if (saved_hash)
+        if (row < saved_hash.size())
             data.emplace(key_holder, it, inserted, saved_hash[row]);
         else
             data.emplace(key_holder, it, inserted);
@@ -297,7 +298,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         auto key_holder = getKeyHolder(row_, pool);
 
         typename Data::LookupResult it;
-        if (saved_hash)
+        if (row < saved_hash.size())
             it = data.find(keyHolderGetKey(key_holder), saved_hash[row]);
         else
             it = data.find(keyHolderGetKey(key_holder));
@@ -326,7 +327,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
     {
         row = getIndexAt(row);
-        if (saved_hash)
+        if (row < saved_hash.size())
             return saved_hash[row];
 
         return Base::getHash(data, row, pool);

@@ -3,6 +3,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <base/scope_guard.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <algorithm>
@@ -53,6 +54,8 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
+    extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
 }
 
 namespace
@@ -508,6 +511,15 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 rows_processed = 0;
     UInt64 rows_skipped = 0;
 
+    /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
+        ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
+        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
+        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
+    });
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         if (prompt_nullable && prompt_nullable->getNullMapData()[i])
@@ -554,6 +566,41 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
 
+                /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
+                /// interpolating it into an exception message that reaches the logs and `system.query_log`.
+                const String safe_finish_reason = sanitizeForLog(ai_response.raw_finish_reason);
+
+                /// Reject incomplete responses, throw plain DB::Exception so it is classified as non-retriable
+                switch (ai_response.finish_reason)
+                {
+                    case FinishReason::Complete:
+                    case FinishReason::Unknown: /// Don't throw on Unknown, could be new valid reason in new API version
+                        break;
+                    case FinishReason::Truncated:
+                        /// Differentiate between model hitting our output cap and exhausting its context window
+                        throw Exception(
+                            ErrorCodes::AI_PROVIDER_RESPONSE_TRUNCATED,
+                            "AI provider returned a truncated response (finish_reason='{}'): {}",
+                            safe_finish_reason,
+                            ai_response.raw_finish_reason == "model_context_window_exceeded"
+                                ? "the model ran out of context window before completing its answer. "
+                                  "Reduce the input or use a model with a larger context window."
+                                : "the model hit the output token limit before completing its answer. "
+                                  "Increase max_tokens or reduce the input.");
+                    case FinishReason::ContentFilter:
+                        throw Exception(
+                            ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
+                            "AI provider withheld or filtered the response (finish_reason='{}'): the returned answer "
+                            "is incomplete.",
+                            safe_finish_reason);
+                    case FinishReason::RequiresAction:
+                        throw Exception(
+                            ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
+                            "AI provider stopped expecting further caller action (finish_reason='{}') instead of "
+                            "returning a completed answer.",
+                            safe_finish_reason);
+                }
+
                 result = postProcessResponse(ai_response.result);
                 success = true;
                 break;
@@ -584,12 +631,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             ++rows_skipped;
         }
     }
-
-    ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
-    ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
-    ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
-    ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
-    ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
 
     if (result_type->isNullable())
     {

@@ -114,7 +114,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(UInt64(process.client_info.interface));
 
         res_columns[i++]->insert(process.client_info.os_user);
-        res_columns[i++]->insert(process.client_info.client_hostname);
+        res_columns[i++]->insert(process.client_info.getClientHostName());
         res_columns[i++]->insert(process.client_info.client_name);
         res_columns[i++]->insert(process.client_info.client_agent);
         res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);

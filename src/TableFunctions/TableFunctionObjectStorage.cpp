@@ -1614,7 +1614,7 @@ Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` p
 
 ### Example scenarios {#example-scenarios}
 
-All scenarios are written in Spark because CH doesn't support writing to Iceberg tables yet.
+These scenarios use Spark to illustrate schema changes made by an external Iceberg writer.
 
 #### Scenario 1: Schema Changes Without New Snapshots {#scenario-1}
 
@@ -1795,9 +1795,9 @@ Table function `iceberg` is an alias to `icebergS3` now.
 
 ## Writes into iceberg table {#writes-into-iceberg-table}
 
-Starting from version 25.7, ClickHouse supports modifications of user’s Iceberg tables.
+Starting from version 25.7, ClickHouse supports modifications of Iceberg tables on writable storage backends.
 
-Currently, this is an experimental feature, so you first need to enable it:
+Before modifying or maintaining an Iceberg table, enable the [`allow_insert_into_iceberg` setting](/reference/settings/session-settings/allow#allow_insert_into_iceberg). Some operations require additional settings, as noted below:
 
 ```sql
 SET allow_insert_into_iceberg = 1;
@@ -1805,7 +1805,7 @@ SET allow_insert_into_iceberg = 1;
 
 ### Creating table {#create-iceberg-table}
 
-To create your own empty Iceberg table, use the same commands as for reading, but specify the schema explicitly.
+To create a new standalone Iceberg table on a writable backend, use an Iceberg table engine and specify the schema explicitly.
 Writes supports all data formats from iceberg specification, such as Parquet, Avro, ORC.
 
 ### Example {#example-iceberg-writes-create}
@@ -1823,6 +1823,8 @@ Note: To create a version hint file, enable the `iceberg_use_version_hint` setti
 If you want to compress the metadata.json file, specify the codec name in the `iceberg_metadata_compression_method` setting.
 
 ### INSERT {#writes-inserts}
+
+<BetaBadge/>
 
 After creating a new table, you can insert data using the usual ClickHouse syntax.
 
@@ -2186,7 +2188,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = false});
     factory.registerFunction<TableFunctionIcebergS3>(
-         {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store.)",
+         {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored on S3 object storage.)",
             .examples{{IcebergS3Definition::name, "SELECT * FROM icebergS3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = false});
@@ -2194,7 +2196,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 #endif
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionIcebergAzure>(
-         {.description = R"(The table function can be used to read the Iceberg table stored on Azure object store.)",
+         {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored on Azure object storage.)",
             .examples{{IcebergAzureDefinition::name, "SELECT * FROM icebergAzure(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
@@ -2207,7 +2209,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
          {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionIcebergLocal>(
-         {.description = R"(The table function can be used to read the Iceberg table stored locally.)",
+         {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored locally.)",
             .examples{{IcebergLocalDefinition::name, "SELECT * FROM icebergLocal(filename)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});

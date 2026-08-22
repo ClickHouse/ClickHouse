@@ -15,8 +15,8 @@ set read_in_order_two_level_merge_threshold = 100;
 -- The pipeline shape depends on the exact thread count;
 -- disable the free-memory limiter to keep `max_threads` as set in the queries.
 -- Without this, on `per_test_coverage` and other memory-constrained builds
--- `max_threads=32` is clamped to fewer threads and `Resize 16 → 32` becomes
--- e.g. `Resize 16 → 24`. See PR #100383.
+-- `max_threads` is clamped to fewer threads and e.g. `Resize 16 → 4` becomes
+-- `Resize 16 → 3`. See PR #100383.
 set max_threads_min_free_memory_per_thread = 0;
 set max_insert_threads_min_free_memory_per_thread = 0;
 
@@ -34,7 +34,7 @@ select * from (explain pipeline select sum(x) from t settings max_threads=4, max
 select sum(x) from t settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1;
 select * from (explain pipeline select sum(x) from t settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1) where explain like '%Resize%' or explain like '%MergeTreeSelect%';
 
--- With asynchronous_read, read using max_streams * max_streams_to_max_threads_ratio async streams, resize to max_streams_for_merge_tree_reading outp[ut streams, resize to max_threads after aggregation
+-- With asynchronous_read, read using max_streams * max_streams_to_max_threads_ratio async streams, resize to max_streams_for_merge_tree_reading output streams; the aggregation without keys then collapses the output to a single stream
 select sum(x) from t settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, max_streams_to_max_threads_ratio=8;
 select * from (explain pipeline select sum(x) from t settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, max_streams_to_max_threads_ratio=8) where explain like '%Resize%' or explain like '%MergeTreeSelect%';
 
