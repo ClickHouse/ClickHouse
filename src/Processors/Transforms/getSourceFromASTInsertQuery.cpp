@@ -206,7 +206,7 @@ bool sampledStringValueIsNumericText(const Field & value, const std::vector<Samp
     {
         if (value.getType() != Field::Types::String)
             return true;
-        Float64 number;
+        Float64 number = 0;
         return tryParse<Float64>(number, value.safeGet<String>());
     }
 

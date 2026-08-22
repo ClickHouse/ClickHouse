@@ -318,7 +318,7 @@ private:
         const InsertQuery & key,
         const InsertDataPtr & data,
         const Block & header,
-        const ContextMutablePtr & insert_context,
+        const ContextPtr & insert_context,
         LoggerPtr logger,
         LogFunc && add_to_async_insert_log);
 

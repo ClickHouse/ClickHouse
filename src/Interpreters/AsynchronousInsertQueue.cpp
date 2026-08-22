@@ -1078,11 +1078,6 @@ try
 
     insert_context->setSettings(*key.settings);
 
-    /// The asynchronous flush creates its own query context from the settings captured when the
-    /// entry was enqueued. Apply the INSERT's settings clause as well, as the synchronous path
-    /// does, before resolving the input format and creating the parser.
-    InterpreterSetQuery::applySettingsFromQuery(key.query, insert_context);
-
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
     insert_context->setCurrentQueryId(""); // "" means generate a new query id
 
@@ -1364,7 +1359,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     const InsertQuery & key,
     const InsertDataPtr & data,
     const Block & header,
-    const ContextMutablePtr & insert_context,
+    const ContextPtr & insert_context,
     LoggerPtr logger,
     LogFunc && add_to_async_insert_log)
 {
@@ -1372,29 +1367,34 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
-    /// `InterpreterInsertQuery` can adjust the query context while preparing the pipeline. Restore
-    /// the INSERT settings before resolving the parser for queued data.
-    InterpreterSetQuery::applySettingsFromQuery(key.query, insert_context);
+    /// The settings captured when the entry was enqueued do not necessarily carry the `INSERT`'s own
+    /// `SETTINGS` clause, and `InterpreterInsertQuery` can adjust the query context while preparing
+    /// the pipeline. Resolve the format against a private copy of the context with that clause
+    /// applied: mutating `insert_context` itself would leak the settings of the query being flushed
+    /// into the insert pipeline, changing, for example, the settings of the `INSERT` queries issued
+    /// by materialized views.
+    auto format_context = Context::createCopy(insert_context);
+    InterpreterSetQuery::applySettingsFromQuery(key.query, format_context);
 
-    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
+    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, format_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
     /// For diagnostics only: if parsing an entry fails, explain a possible structure mismatch between
     /// the data being inserted and the destination. The data is fed per entry below, so the provider
     /// looks at the entry currently being parsed.
-    const String insert_format = getInputFormatNameFromASTInsertQuery(key.query, insert_context);
+    const String insert_format = getInputFormatNameFromASTInsertQuery(key.query, format_context);
     std::string_view current_entry_data;
     format->setParseErrorDiagnosticProvider(
-        [&current_entry_data, insert_format, &header, insert_context](std::optional<size_t> rows_reached_by_parser) -> String
+        [&current_entry_data, insert_format, &header, format_context](std::optional<size_t> rows_reached_by_parser) -> String
         {
-            return getInsertDataSchemaMismatchDescription(current_entry_data, insert_format, header, insert_context, rows_reached_by_parser);
+            return getInsertDataSchemaMismatchDescription(current_entry_data, insert_format, header, format_context, rows_reached_by_parser);
         });
 
-    if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
+    if (format_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && format_context->hasInsertionTableColumnsDescription())
     {
-        const auto & columns = *insert_context->getInsertionTableColumnsDescription();
+        const auto & columns = *format_context->getInsertionTableColumnsDescription();
         if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
+            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, format_context);
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
