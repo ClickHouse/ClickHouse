@@ -21,6 +21,14 @@ COMPACT_PATH="${USER_FILES_PATH}/${COMPACT}/"
 
 GEO_REFUSED="allow_experimental_geo_types_in_iceberg"
 
+# Setup statements go through one client session per group, carrying the union of the settings the
+# group needs. Only statements that must all succeed may be grouped: an exception skips the rest of
+# its session. Every arm that asserts stays its own session, so that it carries exactly the settings
+# it is about.
+setup() {
+    ${CLICKHOUSE_CLIENT} "$@"
+}
+
 # An arm whose passing answer is "not refused" needs the query's exit status as well as the error
 # token: a token-presence test alone reports an unrelated failure as a permitted read.
 run_allowed() {
@@ -32,13 +40,12 @@ run_allowed() {
     else echo "QUERY_FAILED: $out"; fi
 }
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
-${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "
+setup --allow_experimental_geo_types_in_iceberg=1 --allow_insert_into_iceberg=1 --query "
+    DROP TABLE IF EXISTS ${TABLE};
     CREATE TABLE ${TABLE} (id Int64, g Geometry)
-    ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
+    ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet');
+    INSERT INTO ${TABLE} SELECT 1, readWKT('POINT(1 2)');
 "
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_experimental_geo_types_in_iceberg=1 \
-    --query "INSERT INTO ${TABLE} SELECT 1, readWKT('POINT(1 2)')"
 
 # A query that enables the flag reads the geometry column.
 ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT id, wkt(g) FROM ${TABLE}"
@@ -48,10 +55,8 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT
 ${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM ${TABLE}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
 
 # DETACH + ATTACH without the flag simulates a server restart, which reloads the table with the
-# server default settings. Both statements must succeed.
-${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${TABLE}"
-${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${TABLE}"
-${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${TABLE}"
+# server default settings. All three statements must succeed.
+setup --query "DETACH TABLE ${TABLE}; ATTACH TABLE ${TABLE}; EXISTS TABLE ${TABLE};"
 
 # The reloaded table is still readable by a query that enables the flag.
 ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT id, wkt(g) FROM ${TABLE}"
@@ -86,10 +91,10 @@ run_allowed --query "SHOW COLUMNS FROM ${TABLE}"
 run_allowed --query "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = '${TABLE}'"
 
 # A geometry nested inside a Tuple is gated the same way.
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${NESTED}"
-${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "
+setup --allow_experimental_geo_types_in_iceberg=1 --query "
+    DROP TABLE IF EXISTS ${NESTED};
     CREATE TABLE ${NESTED} (id Int64, t Tuple(a Int64, g Geometry))
-    ENGINE = IcebergLocal('${NESTED_PATH}', 'Parquet')
+    ENGINE = IcebergLocal('${NESTED_PATH}', 'Parquet');
 "
 ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT count() FROM ${NESTED}"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${NESTED}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
@@ -97,14 +102,17 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${NESTED}" 2>&1 | grep -qF "${
 # Reading through Merge is gated too. Merge does not resolve its children's dynamic metadata, so
 # these arms cover the read paths that never see the per-query check applied on a direct read: the
 # trivial count() optimization, and a scan of a snapshot that an earlier query already pinned.
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_GEO}"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${MERGE_GEO} ENGINE = Merge(currentDatabase(), '^${TABLE}\$')"
-
-# Cold: no query has read this table since it was attached. The count() arms pin
-# optimize_trivial_count_query: with it off the count runs as an ordinary scan and is answered by the
-# other gated path, so the arm would no longer be about the trivial-count path it is here to cover.
-${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${TABLE}"
-${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${TABLE}"
+#
+# The DETACH + ATTACH leaves the table cold: no query has read it since it was attached, and no
+# statement in this session reads it either. The count() arms pin optimize_trivial_count_query: with
+# it off the count runs as an ordinary scan and is answered by the other gated path, so the arm
+# would no longer be about the trivial-count path it is here to cover.
+setup --query "
+    DROP TABLE IF EXISTS ${MERGE_GEO};
+    CREATE TABLE ${MERGE_GEO} ENGINE = Merge(currentDatabase(), '^${TABLE}\$');
+    DETACH TABLE ${TABLE};
+    ATTACH TABLE ${TABLE};
+"
 ${CLICKHOUSE_CLIENT} --optimize_trivial_count_query=1 --query "SELECT count() FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
 ${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
 
@@ -113,8 +121,10 @@ ${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM ${MERGE_GEO}" 2>&1 | grep -
 # through Merge races with snapshot visibility and returns 0 instead of 1 in about 6 runs in 100,
 # equally on master. What this test is about is who is allowed to read, so it asserts exactly that.
 run_allowed --optimize_trivial_count_query=1 --allow_experimental_geo_types_in_iceberg=1 --query "SELECT count() FROM ${MERGE_GEO}"
-${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT id, wkt(g) FROM ${MERGE_GEO}"
-${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT id, wkt(g) FROM ${TABLE}"
+${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "
+    SELECT id, wkt(g) FROM ${MERGE_GEO};
+    SELECT id, wkt(g) FROM ${TABLE};
+"
 
 # Warm: the same two flag-less reads must still be refused. Enforcement that depends on whether an
 # earlier query happened to warm the state is the defect this test guards against.
@@ -129,17 +139,19 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "SELECT total_rows IS NULL 
 
 # A table without a geometry column is unaffected on each of the three paths gated above: the
 # trivial count() through Merge, a direct read, and a scan through Merge of a pinned snapshot.
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PLAIN}"
-${CLICKHOUSE_CLIENT} --query "
+setup --allow_insert_into_iceberg=1 --query "
+    DROP TABLE IF EXISTS ${PLAIN};
     CREATE TABLE ${PLAIN} (id Int64, s String)
-    ENGINE = IcebergLocal('${PLAIN_PATH}', 'Parquet')
+    ENGINE = IcebergLocal('${PLAIN_PATH}', 'Parquet');
+    INSERT INTO ${PLAIN} SELECT 7, 'x';
+    DROP TABLE IF EXISTS ${MERGE_PLAIN};
+    CREATE TABLE ${MERGE_PLAIN} ENGINE = Merge(currentDatabase(), '^${PLAIN}\$');
 "
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${PLAIN} SELECT 7, 'x'"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_PLAIN}"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${MERGE_PLAIN} ENGINE = Merge(currentDatabase(), '^${PLAIN}\$')"
 run_allowed --optimize_trivial_count_query=1 --query "SELECT count() FROM ${MERGE_PLAIN}"
-${CLICKHOUSE_CLIENT} --query "SELECT id, s FROM ${PLAIN}"
-${CLICKHOUSE_CLIENT} --query "SELECT id, s FROM ${MERGE_PLAIN}"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT id, s FROM ${PLAIN};
+    SELECT id, s FROM ${MERGE_PLAIN};
+"
 
 # And its total_rows is a number, so the NULL asserted above is this table being unreadable by that
 # query rather than how system.tables always answers for Iceberg.
@@ -150,18 +162,17 @@ ${CLICKHOUSE_CLIENT} --query "SELECT total_rows IS NULL FROM system.tables WHERE
 # measured is the geo gate rather than the refusal that guards compaction itself. The row delete is
 # what makes the rewrite happen at all: compaction only rewrites data files when the table has a
 # position delete file, so without it these arms would run the planner and rewrite nothing.
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${COMPACT}"
-${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "
+setup --allow_experimental_geo_types_in_iceberg=1 --allow_insert_into_iceberg=1 --mutations_sync=2 --query "
+    DROP TABLE IF EXISTS ${COMPACT};
     CREATE TABLE ${COMPACT} (id Int64, g Geometry)
-    ENGINE = IcebergLocal('${COMPACT_PATH}', 'Parquet')
+    ENGINE = IcebergLocal('${COMPACT_PATH}', 'Parquet');
+    INSERT INTO ${COMPACT} SELECT number, readWKT(concat('POINT(', toString(number), ' ', toString(number * 2), ')')) FROM numbers(10, 40);
+    ALTER TABLE ${COMPACT} DELETE WHERE id = 11;
 "
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_experimental_geo_types_in_iceberg=1 --query \
-    "INSERT INTO ${COMPACT} SELECT number, readWKT(concat('POINT(', toString(number), ' ', toString(number * 2), ')')) FROM numbers(10, 40)"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_experimental_geo_types_in_iceberg=1 --mutations_sync=2 \
-    --query "ALTER TABLE ${COMPACT} DELETE WHERE id = 11"
-# DETACH + ATTACH without the flag: the table is reloaded as a restart would reload it.
-${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${COMPACT}"
-${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${COMPACT}"
+# DETACH + ATTACH without the flag: the table is reloaded as a restart would reload it. Kept in a
+# session of its own so that the reload carries the server default, which is what the arms below are
+# about: a reload that saw the flag would latch the opposite answer.
+setup --query "DETACH TABLE ${COMPACT}; ATTACH TABLE ${COMPACT};"
 # The rewrite is armed: a table with no position delete file would report 0 here and the arms below
 # would be about the planner rather than about reading the data.
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_experimental_geo_types_in_iceberg=1 --query "
@@ -199,11 +210,13 @@ fi
 # And the geometry values survived that rewrite.
 ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT count(), min(id), max(id) FROM ${COMPACT}"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${COMPACT}"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_GEO}"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_PLAIN}"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${NESTED}"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PLAIN}"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${INFERRED}"
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE IF EXISTS ${COMPACT};
+    DROP TABLE IF EXISTS ${MERGE_GEO};
+    DROP TABLE IF EXISTS ${MERGE_PLAIN};
+    DROP TABLE IF EXISTS ${TABLE};
+    DROP TABLE IF EXISTS ${NESTED};
+    DROP TABLE IF EXISTS ${PLAIN};
+    DROP TABLE IF EXISTS ${INFERRED};
+"
 rm -rf "${TABLE_PATH}" "${NESTED_PATH}" "${PLAIN_PATH}" "${COMPACT_PATH}"
