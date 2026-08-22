@@ -176,6 +176,10 @@ public:
     /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(StringRef value) const override
     {
+        /// The reserved prefix slots are not in the reverse index, so match the default value here.
+        if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == value)
+            return index;
+
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
