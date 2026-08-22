@@ -45,6 +45,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/saturatedDuration.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
@@ -65,7 +66,6 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #if USE_SSL
@@ -95,12 +95,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool async_insert;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
-    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsBool discard_query_data;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
@@ -1490,8 +1487,9 @@ void TCPHandler::processInsertQuery(QueryState & state)
             state.io.resetPipeline(/*cancel=*/true);
             if (settings[Setting::wait_for_async_insert])
             {
-                size_t timeout_ms = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
-                auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
+                auto timeout = saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds());
+                size_t timeout_ms = timeout.count();
+                auto wait_status = result.future.wait_for(timeout);
 
                 if (wait_status == std::future_status::deferred)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
@@ -2983,11 +2981,7 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 
     if (compression == Protocol::Compression::Enable)
     {
-        CompressionCodecFactory::instance().validateCodec(
-            method,
-            level,
-            !query_settings[Setting::allow_suspicious_codecs],
-            query_settings[Setting::allow_experimental_codecs]);
+        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(query_settings));
 
         return CompressionCodecFactory::instance().get(method, level);
     }
