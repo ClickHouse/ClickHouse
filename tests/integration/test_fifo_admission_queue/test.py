@@ -500,11 +500,19 @@ def check_client_disconnect_while_replacing_query(target):
     sock.connect((target.ip_address, 8123))
     sock.sendall(request.encode())
 
-    # Wait for an observable state instead of sleeping: the replacement marks the
-    # victim as cancelled before it parks on `query_finished`, so `is_cancelled = 1`
-    # on the still-running victim means the replacement is inside that wait.
+    # Half-close right away instead of resetting the connection later. A `SHUT_WR`
+    # delivers the request bytes and then a FIN, so the server still runs the request
+    # but every liveness check on it reports the peer as closed from the very first
+    # one. Waiting for an observable state and only then resetting the connection is
+    # racy: the victim leaves the process list within a second of being cancelled, so
+    # on a slow build the replacement can wake up, see the victim gone and pass its
+    # post-wakeup liveness check before the reset is even sent.
+    sock.shutdown(socket.SHUT_WR)
+
+    # The replacement marks the victim as cancelled before it parks on `query_finished`,
+    # so `is_cancelled = 1` on the still-running victim means the replacement has reached
+    # that wait with an already-disconnected client.
     wait_for_query_cancelled(target, query_id)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b'\x01\x00\x00\x00\x00\x00\x00\x00')
     sock.close()
 
     try:
