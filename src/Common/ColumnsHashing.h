@@ -95,6 +95,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 {
     using Base = SingleColumnMethod;
     static constexpr bool use_raw_positions = IsWideOneNumberHashMethod<Base>::value;
+    static constexpr size_t max_dense_dictionary_cache_size_in_bytes = 32ULL << 20;
     using Positions = std::conditional_t<use_raw_positions, const char *, const IColumn *>;
 
     enum class VisitValue : uint8_t
@@ -142,6 +143,9 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     /// If initialized column is nullable.
     bool is_nullable = false;
+    /// Wide dictionaries whose per-position caches exceed the limit use the
+    /// ordinary per-row hash-table path instead.
+    bool use_dictionary_cache = true;
 
     static const ColumnLowCardinality & getLowCardinalityColumn(const IColumn * column)
     {
@@ -176,45 +180,59 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
         is_nullable = column->getDictionary().nestedColumnIsNullable();
         key_columns = {dict};
-        const bool is_shared_dict = column->isSharedDictionary();
+
+        if constexpr (use_raw_positions && has_mapped)
+        {
+            constexpr size_t cache_entry_size = sizeof(Mapped) + sizeof(VisitValue);
+            use_dictionary_cache
+                = dict->size() <= max_dense_dictionary_cache_size_in_bytes / cache_entry_size;
+        }
+
+        const bool is_shared_dict = use_dictionary_cache && column->isSharedDictionary();
 
         typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key{};
         typename LowCardinalityDictionaryCache::CachedValuesPtr cached_values;
 
-        if (is_shared_dict)
+        if (use_dictionary_cache && is_shared_dict)
         {
             dictionary_key = {column->getDictionary().getHash(), dict->size()};
             if constexpr (use_cache)
                 cached_values = lcd_cache->get(dictionary_key);
         }
 
-        if (cached_values)
+        if (use_dictionary_cache)
         {
-            saved_hash = cached_values->saved_hash;
-            dictionary_holder = cached_values->dictionary_holder;
-        }
-        else
-        {
-            saved_hash = column->getDictionary().tryGetSavedHash();
-            dictionary_holder = column->getDictionaryPtr();
-
-            if constexpr (use_cache)
+            if (cached_values)
             {
-                if (is_shared_dict)
-                {
-                    cached_values = std::make_shared<typename LowCardinalityDictionaryCache::CachedValues>();
-                    cached_values->saved_hash = saved_hash;
-                    cached_values->dictionary_holder = dictionary_holder;
+                saved_hash = cached_values->saved_hash;
+                dictionary_holder = cached_values->dictionary_holder;
+            }
+            else
+            {
+                saved_hash = column->getDictionary().tryGetSavedHash();
+                dictionary_holder = column->getDictionaryPtr();
 
-                    lcd_cache->set(dictionary_key, cached_values);
+                if constexpr (use_cache)
+                {
+                    if (is_shared_dict)
+                    {
+                        cached_values = std::make_shared<typename LowCardinalityDictionaryCache::CachedValues>();
+                        cached_values->saved_hash = saved_hash;
+                        cached_values->dictionary_holder = dictionary_holder;
+
+                        lcd_cache->set(dictionary_key, cached_values);
+                    }
                 }
             }
         }
 
-        if constexpr (has_mapped)
-            mapped_cache.resize(key_columns[0]->size());
+        if (use_dictionary_cache)
+        {
+            if constexpr (has_mapped)
+                mapped_cache.resize(key_columns[0]->size());
 
-        visit_cache.assign(key_columns[0]->size(), VisitValue::Empty);
+            visit_cache.assign(key_columns[0]->size(), VisitValue::Empty);
+        }
 
         size_of_index_type = column->getSizeOfIndexType();
         if constexpr (use_raw_positions)
@@ -235,6 +253,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         filled_visit_cache_indexes.clear();
     }
+
+    bool isUsingDictionaryCache() const { return use_dictionary_cache; }
 
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
     {
@@ -271,10 +291,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     template <typename Data>
-    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row_, Arena & pool)
+    ALWAYS_INLINE EmplaceResult emplaceKeyWithDictionaryCache(Data & data, size_t row, Arena & pool)
     {
-        size_t row = getIndexAt(row_);
-
         if (is_nullable && row == 0)
         {
             setVisited(row, VisitValue::Found);
@@ -321,6 +339,52 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             return EmplaceResult(inserted);
     }
 
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKeyWithoutDictionaryCache(Data & data, size_t row, Arena & pool)
+    {
+        if (is_nullable && row == 0)
+        {
+            bool has_null_key = data.hasNullKeyData();
+            data.hasNullKeyData() = true;
+
+            if constexpr (has_mapped)
+                return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+            else
+                return EmplaceResult(!has_null_key);
+        }
+
+        auto key_holder = Base::getKeyHolder(row, pool);
+        auto key = keyHolderGetKey(key_holder);
+
+        bool inserted = false;
+        typename Data::LookupResult it;
+        data.emplace(key_holder, it, inserted);
+
+        if constexpr (has_mapped)
+        {
+            auto & mapped = it->getMapped();
+            if (inserted)
+                new (&mapped) Mapped();
+            return EmplaceResult(mapped, mapped, inserted, std::move(key));
+        }
+        else
+            return EmplaceResult(inserted);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row_, Arena & pool)
+    {
+        size_t row = getIndexAt(row_);
+
+        if constexpr (use_raw_positions && has_mapped)
+        {
+            if (unlikely(!use_dictionary_cache))
+                return emplaceKeyWithoutDictionaryCache(data, row, pool);
+        }
+
+        return emplaceKeyWithDictionaryCache(data, row, pool);
+    }
+
     ALWAYS_INLINE bool isNullAt(size_t i)
     {
         if (!is_nullable)
@@ -330,10 +394,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     template <typename Data>
-    ALWAYS_INLINE FindResult findKey(Data & data, size_t row_, Arena & pool)
+    ALWAYS_INLINE FindResult findKeyWithDictionaryCache(Data & data, size_t row, Arena & pool)
     {
-        size_t row = getIndexAt(row_);
-
         if (is_nullable && row == 0)
         {
             if constexpr (has_mapped)
@@ -379,6 +441,45 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     template <typename Data>
+    ALWAYS_INLINE FindResult findKeyWithoutDictionaryCache(Data & data, size_t row, Arena & pool)
+    {
+        if (is_nullable && row == 0)
+        {
+            if constexpr (has_mapped)
+                return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData(), 0);
+            else
+                return FindResult(data.hasNullKeyData(), 0);
+        }
+
+        auto key_holder = Base::getKeyHolder(row, pool);
+        auto it = data.find(keyHolderGetKey(key_holder));
+        bool found = it;
+
+        size_t offset = 0;
+        if constexpr (FindResult::has_offset)
+            offset = found ? data.offsetInternal(it) : 0;
+
+        if constexpr (has_mapped)
+            return FindResult(found ? &it->getMapped() : nullptr, found, offset);
+        else
+            return FindResult(found, offset);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE FindResult findKey(Data & data, size_t row_, Arena & pool)
+    {
+        size_t row = getIndexAt(row_);
+
+        if constexpr (use_raw_positions && has_mapped)
+        {
+            if (unlikely(!use_dictionary_cache))
+                return findKeyWithoutDictionaryCache(data, row, pool);
+        }
+
+        return findKeyWithDictionaryCache(data, row, pool);
+    }
+
+    template <typename Data>
     ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
     {
         row = getIndexAt(row);
@@ -387,7 +488,86 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         return Base::getHash(data, row, pool);
     }
+
+    /// The dictionary-cache decision depends on the current dictionary size, while the aggregation
+    /// loops are templated on the hashing state. Expose two compile-time views so callers can make
+    /// the runtime decision once per state instead of branching for every row.
+    template <bool use_dictionary_cache_>
+    struct DictionaryCacheState
+    {
+        static constexpr bool has_mapped = HashMethodSingleLowCardinalityColumn::has_mapped;
+        static constexpr bool has_cheap_key_calculation = HashMethodSingleLowCardinalityColumn::has_cheap_key_calculation;
+        static constexpr bool has_cheap_key_holder = HashMethodSingleLowCardinalityColumn::has_cheap_key_holder;
+        static constexpr bool has_pre_computed_hashes = HashMethodSingleLowCardinalityColumn::has_pre_computed_hashes;
+
+        HashMethodSingleLowCardinalityColumn & state;
+
+        ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
+        {
+            return state.getKeyHolder(row, pool);
+        }
+
+        template <typename Data>
+        ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+        {
+            row = state.getIndexAt(row);
+            if constexpr (use_dictionary_cache_)
+                return state.emplaceKeyWithDictionaryCache(data, row, pool);
+            else
+                return state.emplaceKeyWithoutDictionaryCache(data, row, pool);
+        }
+
+        template <typename Data>
+        ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
+        {
+            row = state.getIndexAt(row);
+            if constexpr (use_dictionary_cache_)
+                return state.findKeyWithDictionaryCache(data, row, pool);
+            else
+                return state.findKeyWithoutDictionaryCache(data, row, pool);
+        }
+
+        template <typename Data>
+        ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
+        {
+            return state.getHash(data, row, pool);
+        }
+
+        ALWAYS_INLINE bool isNullAt(size_t row) { return state.isNullAt(row); }
+        ALWAYS_INLINE void resetCache() { state.resetCache(); }
+        ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const { return state.hasOnlyOneValueSinceLastReset(); }
+        ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const { return state.getCacheMissesSinceLastReset(); }
+    };
+
+    template <typename Callback>
+    decltype(auto) dispatchDictionaryCache(Callback & callback)
+    {
+        if constexpr (use_raw_positions && has_mapped)
+        {
+            if (use_dictionary_cache)
+            {
+                DictionaryCacheState<true> state{*this};
+                return callback(state);
+            }
+
+            DictionaryCacheState<false> state{*this};
+            return callback(state);
+        }
+        else
+            return callback(*this);
+    }
 };
+
+/// HashMethodSingleLowCardinalityColumn performs a per-state runtime dispatch. All other hashing
+/// states pass through unchanged, keeping call sites generic.
+template <typename State, typename Callback>
+decltype(auto) dispatchLowCardinalityDictionaryCache(State & state, Callback && callback)
+{
+    if constexpr (requires { state.dispatchDictionaryCache(callback); })
+        return state.dispatchDictionaryCache(callback);
+    else
+        return callback(state);
+}
 
 class HashMethodSerializedContext : public HashMethodContext
 {

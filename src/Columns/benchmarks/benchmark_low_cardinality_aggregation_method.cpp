@@ -101,22 +101,30 @@ void AggregateSharedDictionaryBlock(benchmark::State & state)
     /// method caches them by dictionary position.
     PaddedPODArray<UInt64> aggregate_states;
     aggregate_states.assign(active_dictionary_size, UInt64{0});
+    bool used_dictionary_cache = false;
 
     for (auto _ : state)
     {
         BenchmarkData<Key> data;
         Arena pool;
         Method method(key_columns, key_sizes, context);
+        if constexpr (use_single_low_cardinality_method)
+            used_dictionary_cache = method.isUsingDictionaryCache();
+
         size_t next_aggregate_state = 0;
 
-        for (size_t row = 0; row < rows; ++row)
+        auto aggregate = [&](auto & dispatched_method)
         {
-            auto result = method.emplaceKey(data, row, pool);
-            if (result.isInserted())
-                result.setMapped(reinterpret_cast<AggregateDataPtr>(&aggregate_states[next_aggregate_state++]));
+            for (size_t row = 0; row < rows; ++row)
+            {
+                auto result = dispatched_method.emplaceKey(data, row, pool);
+                if (result.isInserted())
+                    result.setMapped(reinterpret_cast<AggregateDataPtr>(&aggregate_states[next_aggregate_state++]));
 
-            ++*reinterpret_cast<UInt64 *>(result.getMapped());
-        }
+                ++*reinterpret_cast<UInt64 *>(result.getMapped());
+            }
+        };
+        ColumnsHashing::dispatchLowCardinalityDictionaryCache(method, aggregate);
 
         benchmark::DoNotOptimize(data.size());
         benchmark::ClobberMemory();
@@ -127,8 +135,9 @@ void AggregateSharedDictionaryBlock(benchmark::State & state)
     state.SetItemsProcessed(iterations * processed_rows);
     state.SetBytesProcessed(iterations * processed_rows * static_cast<int64_t>(sizeof(UInt32)));
     state.counters["active_entries"] = static_cast<double>(active_dictionary_size);
+    state.counters["dictionary_cache"] = used_dictionary_cache ? 1.0 : 0.0;
     state.counters["dictionary_entries"] = static_cast<double>(dictionary_size);
-    if constexpr (use_single_low_cardinality_method)
+    if (used_dictionary_cache)
     {
         state.counters["single_lc_cache_bytes"]
             = static_cast<double>(dictionary_size * (sizeof(UInt64 *) + sizeof(UInt8)));
