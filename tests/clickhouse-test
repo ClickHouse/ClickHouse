@@ -4929,9 +4929,9 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
-                    # Claim before collecting: the collection below blocks up to
-                    # 30s per server process, and a cause claimed after it loses
-                    # to any cause claimed during it.
+                    # Claim before collecting: the sweep below blocks up to 30s per
+                    # server process, and a cause claimed after it loses to any
+                    # cause claimed during it.
                     try_claim_stop_cause(stop_exit_code, STOP_TESTING_EXIT_CODE)
                     print_sql_stacktraces(args)
                     print_c_stacktraces(args)
@@ -4942,8 +4942,6 @@ def run_tests_array(
                     )
                 if test_result.reason == FailureReason.LIVENESS_CHECK_FAILED:
                     try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
-                    # A failed HTTP probe does not establish the server is gone,
-                    # so the TCP dump can still name the stuck queries.
                     print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     if not is_concurrent:
@@ -5509,11 +5507,9 @@ def do_run_tests(
             if args.hung_check and not stop_testing.is_set():
                 if not check_server_liveness(args):
                     print("Hung check failed: server liveness check failed")
-                    # Claim before collecting: the collection below can block
-                    # ~30s per server process.
+                    # Claim before collecting: the sweep below can block ~30s per
+                    # server process.
                     try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
-                    # SQL before C: this dump is the only source of query_id per
-                    # stuck thread, and the probe that just failed was HTTP.
                     print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     stop_testing.set()
