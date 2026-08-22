@@ -35,16 +35,16 @@ SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x LIMIT 1
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x LIMIT 10) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
 
 SELECT '-- LEFT ARRAY JOIN';
-SELECT x, e FROM (SELECT x, arr AS e FROM t_aj LEFT ARRAY JOIN arr ORDER BY x LIMIT 10) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 0;
-SELECT x, e FROM (SELECT x, arr AS e FROM t_aj LEFT ARRAY JOIN arr ORDER BY x LIMIT 10) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
+SELECT x FROM (SELECT x FROM t_aj LEFT ARRAY JOIN arr ORDER BY x LIMIT 10) ORDER BY x SETTINGS query_plan_top_k_through_array_join = 0;
+SELECT x FROM (SELECT x FROM t_aj LEFT ARRAY JOIN arr ORDER BY x LIMIT 10) ORDER BY x SETTINGS query_plan_top_k_through_array_join = 1;
 
 SELECT '-- descending order';
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x DESC LIMIT 10) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 0;
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x DESC LIMIT 10) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
 
 SELECT '-- LIMIT with OFFSET';
-SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x LIMIT 6 OFFSET 4) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 0;
-SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x LIMIT 6 OFFSET 4) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
+SELECT x FROM (SELECT x FROM t_aj ARRAY JOIN arr ORDER BY x LIMIT 6 OFFSET 4) ORDER BY x SETTINGS query_plan_top_k_through_array_join = 0;
+SELECT x FROM (SELECT x FROM t_aj ARRAY JOIN arr ORDER BY x LIMIT 6 OFFSET 4) ORDER BY x SETTINGS query_plan_top_k_through_array_join = 1;
 
 SELECT '-- several aligned joined arrays';
 SELECT x, e, e2 FROM (SELECT x, arr AS e, arr2 AS e2 FROM t_aj ARRAY JOIN arr, arr2 ORDER BY x LIMIT 10) ORDER BY x, e, e2 SETTINGS query_plan_top_k_through_array_join = 0;

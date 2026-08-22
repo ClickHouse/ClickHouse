@@ -6550,8 +6550,26 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_top_k_through_array_join, false, R"(
-Toggles a query-plan-level optimization which pushes `ORDER BY ... LIMIT n` down through an `ARRAY JOIN` when the sort key does not reference any joined column. An extra `ORDER BY ... LIMIT n` is applied to the input of the `ARRAY JOIN`, so the expansion only has to run for the rows the `LIMIT` can keep. For an inner `ARRAY JOIN` a filter that discards rows whose arrays are all empty is inserted below the added sort, because such rows produce no output.
+    DECLARE(Bool, query_plan_top_k_through_array_join, true, R"(
+Toggles a query-plan-level optimization which moves `ORDER BY ... LIMIT n` below an `ARRAY JOIN` when the sort key does not reference any joined column. For an inner `ARRAY JOIN` a filter that discards rows whose arrays are all empty is inserted below the moved sort, because such rows produce no output.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_push_down_limit_through_array_join, true, R"(
+Toggles a query-plan-level optimization which applies `LIMIT n` to the input of an `ARRAY JOIN`, while keeping the original `LIMIT` above the expansion. For an inner `ARRAY JOIN` a filter that discards rows whose arrays are all empty is inserted before the added limit.
+Only takes effect if settings [query_plan_enable_optimizations](#query_plan_enable_optimizations) and [query_plan_push_down_limit](#query_plan_push_down_limit) are 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_preserve_order_through_array_join, true, R"(
+Toggles propagation of sorting properties through an `ARRAY JOIN`. The sorting prefix before the first joined column is preserved because `ARRAY JOIN` emits a contiguous run for each input row.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 Possible values:

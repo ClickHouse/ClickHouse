@@ -66,7 +66,9 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool query_plan_push_down_limit;
+    extern const SettingsBool query_plan_push_down_limit_through_array_join;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
+    extern const SettingsBool query_plan_preserve_order_through_array_join;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_top_k_through_array_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
@@ -164,6 +166,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     lift_up_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_up_array_join];
     push_down_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_limit];
+    push_down_limit_through_array_join
+        = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_limit_through_array_join];
     /// Always on under the master toggle: the result is bit-exact, so there is no behavior to preserve.
     aggregation_bucket_top_k = from[Setting::query_plan_enable_optimizations];
     split_filter = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_split_filter];
@@ -186,6 +190,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
     top_k_through_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_array_join];
+    preserve_order_through_array_join
+        = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_preserve_order_through_array_join];
 
     query_plan_optimize_join_order_limit = from[Setting::query_plan_optimize_join_order_limit];
     if (query_plan_optimize_join_order_limit > 64)

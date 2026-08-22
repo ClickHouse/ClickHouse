@@ -107,6 +107,23 @@ enum class FilterResult
 /// have been partially advanced and must not be used.
 [[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
 
+/// Add a filter that removes rows for which all columns expanded by an inner `ARRAY JOIN` are empty.
+/// The condition is `length(c1) > 0 OR ... OR length(cn) > 0`, so rows with unequal non-zero array
+/// sizes still reach an aligned `ARRAY JOIN` and raise `SIZES_OF_ARRAYS_DONT_MATCH`.
+/// `source_columns` contains names from `input_node` before analyzer aliases. The step header and
+/// internal column names are used only to recover constant ARRAY JOIN expressions that do not need
+/// to be read from `input_node`.
+///
+/// `input_node` is updated to point to the inserted filter. If the condition is constant, no node
+/// is added because limiting the input cannot change whether a constant `ARRAY JOIN` emits rows.
+/// Returns false only if the condition cannot be constructed.
+[[nodiscard]] bool addArrayJoinEmptinessFilter(
+    QueryPlan::Node *& input_node,
+    const Names & array_join_columns,
+    const Names & source_columns,
+    const Block & array_join_input_header,
+    QueryPlan::Nodes & nodes);
+
 struct NoOp
 {
 };

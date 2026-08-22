@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -14,6 +15,7 @@
 
 #include <Functions/IFunction.h>
 
+#include <algorithm>
 
 namespace DB
 {
@@ -145,6 +147,30 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             negative_limit_by_step->applyOrder(prefix);
 
         return std::move(*properties);
+    }
+
+    if (optimization_settings.preserve_order_through_array_join)
+    {
+        if (const auto * array_join_step = typeid_cast<const ArrayJoinStep *>(parent->step.get()))
+        {
+            /// `ARRAY JOIN` emits a contiguous run for every input row and preserves the order of
+            /// those runs. It therefore preserves the input sorting prefix up to (but excluding) the
+            /// first expanded column. Expanded columns keep their names while their types and values
+            /// change, so checking only that a key is present in the input header would be unsound.
+            const auto & array_join_columns = array_join_step->getColumns();
+            NameSet array_join_column_names(array_join_columns.begin(), array_join_columns.end());
+
+            auto & sort_description = properties->sort_description;
+            auto first_array_join_column = std::find_if(
+                sort_description.begin(),
+                sort_description.end(),
+                [&](const auto & column) { return array_join_column_names.contains(column.column_name); });
+            sort_description.erase(first_array_join_column, sort_description.end());
+
+            if (!sort_description.empty())
+                return std::move(*properties);
+            return {};
+        }
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))

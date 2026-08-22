@@ -77,6 +77,8 @@ struct Optimization
         /// Neither can survive serialization to remote workers, so we suppress the
         /// optimization when the plan is going to be distributed.
         bool make_distributed_plan = false;
+
+        bool push_down_limit_through_array_join = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);

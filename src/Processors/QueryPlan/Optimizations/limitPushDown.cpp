@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
@@ -39,7 +41,38 @@ static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
     return updated;
 }
 
-size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+static bool hasEquivalentLimitBelow(QueryPlan::Node * node, size_t limit)
+{
+    while (node)
+    {
+        if (const auto * existing_limit = typeid_cast<const LimitStep *>(node->step.get()))
+            return existing_limit->getOffset() == 0 && existing_limit->getLimit() <= limit;
+
+        const auto * transforming = dynamic_cast<const ITransformingStep *>(node->step.get());
+        if (!transforming || !transforming->getTransformTraits().preserves_number_of_rows || node->children.size() != 1)
+            return false;
+
+        node = node->children.front();
+    }
+
+    return false;
+}
+
+static bool hasSortingBelow(QueryPlan::Node * node)
+{
+    while (node)
+    {
+        if (typeid_cast<const SortingStep *>(node->step.get()))
+            return true;
+        if (node->children.size() != 1)
+            return false;
+        node = node->children.front();
+    }
+
+    return false;
+}
+
+size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -56,6 +89,60 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     /// Skip LIMIT WITH TIES by now.
     if (limit->withTies())
         return 0;
+
+    if (settings.push_down_limit_through_array_join)
+    {
+        if (auto * array_join = typeid_cast<ArrayJoinStep *>(child.get()))
+        {
+            if (limit->alwaysReadTillEnd() || child_node->children.size() != 1)
+                return 0;
+
+            const size_t limit_for_array_join = limit->getLimitForSorting();
+            if (limit_for_array_join == 0)
+                return 0;
+
+            QueryPlan::Node * array_join_input_node = child_node->children.front();
+
+            /// A sort in this unary subtree may have been moved below one or several
+            /// `ARRAY JOIN` steps by `tryTopKThroughArrayJoin`. Its own limit already restricts
+            /// the input, and inserting another limit above its emptiness guards would be both
+            /// redundant and incorrect.
+            if (hasSortingBelow(array_join_input_node))
+                return 0;
+
+            if (hasEquivalentLimitBelow(array_join_input_node, limit_for_array_join))
+                return 0;
+
+            if (!array_join->isLeft())
+            {
+                Names source_columns;
+                source_columns.reserve(array_join->getColumns().size());
+                for (const auto & column_name : array_join->getColumns())
+                    source_columns.push_back(array_join->getSourceColumnName(column_name));
+
+                if (!addArrayJoinEmptinessFilter(
+                        array_join_input_node,
+                        array_join->getColumns(),
+                        source_columns,
+                        *array_join->getInputHeaders().front(),
+                        nodes))
+                    return 0;
+            }
+
+            auto & inner_limit_node = nodes.emplace_back();
+            inner_limit_node.children.push_back(array_join_input_node);
+            inner_limit_node.step = std::make_unique<LimitStep>(
+                array_join_input_node->step->getOutputHeader(),
+                limit_for_array_join,
+                /*offset_=*/ 0);
+
+            child_node->children[0] = &inner_limit_node;
+            array_join->updateInputHeader(inner_limit_node.step->getOutputHeader());
+
+            /// Keep the outer limit to apply the original offset after expansion.
+            return 3;
+        }
+    }
 
     /// Push LIMIT into each branch of UNION ALL.
     /// Each branch only needs to produce at most (limit + offset) rows,

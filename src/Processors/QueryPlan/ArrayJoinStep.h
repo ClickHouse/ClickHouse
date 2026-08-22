@@ -21,6 +21,11 @@ public:
 
     const Names & getColumns() const { return array_join.columns; }
     bool isLeft() const { return array_join.is_left; }
+    String getSourceColumnName(const String & column_name) const
+    {
+        auto it = array_join.source_columns.find(column_name);
+        return it == array_join.source_columns.end() ? column_name : it->second;
+    }
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
