@@ -1,3 +1,10 @@
+-- The `PREWHERE` fold happens while `ReadFromMergeTree` prunes the outputs of the `PREWHERE`
+-- expression, which is part of the `removeUnusedColumns` query plan optimization, so pin it
+-- (the test runner randomizes it).
+SET query_plan_remove_unused_columns = 1;
+-- Only the pretty plan renders the folded constant; the legacy one keeps the original expression name.
+SET explain_query_plan_default = 'pretty';
+
 CREATE TABLE prewhere_materialize_fold (id UInt64)
 ENGINE = MergeTree
 ORDER BY id;

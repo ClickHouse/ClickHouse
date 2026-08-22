@@ -979,6 +979,11 @@ struct FoldResult
     bool masked_secret;
 };
 
+/// The DAG is deduplicated before folding (`tryMergeExpressions` calls `deduplicateSubtrees`), so a
+/// node can be shared by many parents. Without memoization the walk would cost one visit per
+/// incoming edge, which is exponential for a chain such as `x1 = and(x0, x0)`, `x2 = and(x1, x1)`, ...
+using FoldCache = std::unordered_map<const ActionsDAG::Node *, std::optional<FoldResult>>;
+
 /// These operators depend only on their argument values, rather than whether an argument is a
 /// `ColumnConst` or a full column. Keep this list deliberately narrow: the generic constant-folding
 /// contract does not cover functions that impose their own const-only requirement in `executeImpl`.
@@ -996,7 +1001,9 @@ const std::unordered_set<std::string> & foldablePredicateFunctions()
 /// contract applies: the function must be deterministic and `isSuitableForConstantFolding`.
 /// If the evaluation throws, the predicate is left unfolded and runtime keeps its exact behavior,
 /// including `short_circuit_function_evaluation` semantics for `and` / `or` arguments.
-std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
+std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node, FoldCache & cache);
+
+std::optional<FoldResult> tryFoldPredicateImpl(const ActionsDAG::Node * node, FoldCache & cache)
 {
     bool through_materialize = false;
     while (node)
@@ -1042,7 +1049,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         for (size_t i = 0; i != node->children.size(); ++i)
         {
             const auto * child = node->children[i];
-            auto folded = tryFoldPredicate(child);
+            auto folded = tryFoldPredicate(child, cache);
             if (!folded)
                 return std::nullopt;
             if (folded->through_materialize && std::ranges::find(constant_arguments, i) != constant_arguments.end())
@@ -1078,6 +1085,16 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         /// exactly as the query dictates
         return std::nullopt;
     }
+}
+
+std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node, FoldCache & cache)
+{
+    if (auto it = cache.find(node); it != cache.end())
+        return it->second;
+
+    auto result = tryFoldPredicateImpl(node, cache);
+    cache.emplace(node, result);
+    return result;
 }
 
 /// same scalar can show up as different ColumnConst objects after merge
@@ -1313,7 +1330,8 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
     if (filter_node->type == ActionType::COLUMN && filter_node->column && isColumnConst(*filter_node->column))
         return;
 
-    auto folded = tryFoldPredicate(filter_node);
+    FoldCache fold_cache;
+    auto folded = tryFoldPredicate(filter_node, fold_cache);
     if (!folded || !folded->column)
         return;
 
