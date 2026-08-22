@@ -21,7 +21,6 @@ namespace ErrorCodes
 class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
     friend class PeekableReadBufferCheckpoint;
-
 public:
     explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = 0);
 
@@ -52,13 +51,8 @@ public:
         checkpoint.emplace(pos);
     }
 
-    ALWAYS_INLINE inline size_t offsetFromLastCheckpoint() const
-    {
-        if (recursive_checkpoints_offsets.empty())
-            return offsetFromCheckpoint();
-
-        return offsetFromCheckpoint() - recursive_checkpoints_offsets.top();
-    }
+    /// Number of bytes read since the checkpoint was set.
+    size_t offsetFromCheckpoint() const;
 
     /// Forget checkpoint and all data between checkpoint and position
     ALWAYS_INLINE inline void dropCheckpoint()
@@ -115,7 +109,6 @@ private:
     const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
 
     size_t offsetFromCheckpointInOwnMemory() const;
-    size_t offsetFromCheckpoint() const;
 
 
     ReadBuffer * sub_buf;
@@ -138,12 +131,9 @@ class PeekableReadBufferCheckpoint : boost::noncopyable
 {
     PeekableReadBuffer & buf;
     bool auto_rollback;
-
 public:
-    explicit PeekableReadBufferCheckpoint(PeekableReadBuffer & buf_, bool auto_rollback_ = false) : buf(buf_), auto_rollback(auto_rollback_)
-    {
-        buf.setCheckpoint();
-    }
+    explicit PeekableReadBufferCheckpoint(PeekableReadBuffer & buf_, bool auto_rollback_ = false)
+                : buf(buf_), auto_rollback(auto_rollback_) { buf.setCheckpoint(); }
     ~PeekableReadBufferCheckpoint()
     {
         if (!buf.checkpoint)
@@ -152,6 +142,7 @@ public:
             buf.rollbackToCheckpoint();
         buf.dropCheckpoint();
     }
+
 };
 
 }

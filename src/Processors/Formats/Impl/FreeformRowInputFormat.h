@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <IO/PeekableReadBuffer.h>
 #include "Core/NamesAndTypes.h"
 #include "DataTypes/IDataType.h"
 #include "DataTypes/Serializations/SerializationInfo.h"
@@ -20,6 +21,10 @@ public:
     explicit FieldMatcher(const FormatSettings::EscapingRule & rule_, const FormatSettings & settings_) : rule(rule_), settings(settings_)
     {
         settings.try_infer_integers = true;
+        /// A freeform row has no fixed shape, so a JSON object is represented as a `Map` rather than
+        /// as a named `Tuple` or as a `String`: consecutive rows are free to carry a different set of keys.
+        settings.json.try_infer_objects_as_tuples = false;
+        settings.json.read_objects_as_strings = false;
     }
 
     struct Result
@@ -28,6 +33,7 @@ public:
         const std::vector<String> fields;
         const size_t score = 0;
         const size_t type_score = 0;
+        /// Offset of the end of the parsed fields from the beginning of the row.
         const size_t offset;
         const bool ok = true;
         const bool parse_till_newline_as_one_string = false;
@@ -146,17 +152,19 @@ private:
     size_t max_rows_to_check;
     std::unique_ptr<PeekableReadBuffer> in;
 
-    void buildSolutions(Solution current_solution, std::vector<Solution> & solutions, bool one_string) const;
+    /// Rewinds the buffer to the checkpoint set at the beginning of the row and skips `offset` bytes.
+    void seekInRow(size_t offset) const;
+    void buildSolutions(Solution current_solution, std::vector<Solution> & solutions, bool one_string, size_t offset) const;
     // validateSolution iterates over the current row and try to parse and infer the types of the parsed fields. A solution is valid when the parsed types are valid.
     bool validateSolution(Solution solution) const;
     // readNextFields iterates over the list of matchers and try to parse all the possible fields.
-    std::vector<Fields> readNextFields(bool one_string, unsigned index) const;
+    std::vector<Fields> readNextFields(bool one_string, unsigned index, size_t offset) const;
 };
 
 class FreeformRowInputFormat final : public IRowInputFormat
 {
 public:
-    FreeformRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+    FreeformRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "FreeformRowInputFormat"; }
 
@@ -178,7 +186,7 @@ public:
 
 private:
     FreeformFieldMatcher matcher;
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 };
 
 }

@@ -2,7 +2,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include "Common/Exception.h"
-#include "Common/StringUtils/StringUtils.h"
+#include <Common/StringUtils.h>
+#include <Common/assert_cast.h>
+#include <base/sort.h>
 #include <Common/logger_useful.h>
 #include "Core/NamesAndTypes.h"
 #include "DataTypes/DataTypeNullable.h"
@@ -85,6 +87,19 @@ static unsigned scoreForField(FormatSettings::EscapingRule rule, const DataTypeP
     return scoreForRule(rule) * scoreForType(type);
 }
 
+static FieldMatcher::Result makeFailedResult()
+{
+    return {
+        .names_and_types = {},
+        .fields = {},
+        .score = 0,
+        .type_score = 0,
+        .offset = 0,
+        .ok = false,
+        .parse_till_newline_as_one_string = false,
+    };
+}
+
 FieldMatcher::Result FieldMatcher::generateResult(NamesAndFields & fields, size_t offset)
 {
     NamesAndTypesList names_and_types;
@@ -93,11 +108,11 @@ FieldMatcher::Result FieldMatcher::generateResult(NamesAndFields & fields, size_
     for (auto & [col, field] : fields)
     {
         if (field.size() <= 1 && isPunctuationASCII(field[0]))
-            return {.ok = false};
+            return makeFailedResult();
 
         auto type = getDataTypeFromField(field);
         if (!type)
-            return {.ok = false};
+            return makeFailedResult();
 
         names_and_types.emplace_back(col, type);
         values.emplace_back(field);
@@ -122,15 +137,22 @@ FieldMatcher::Result FieldMatcher::parseField(PeekableReadBuffer & in, unsigned 
     try
     {
         auto fields = readFieldsByEscapingRule(in, index);
+
+        /// A matcher has to consume the whole field: if it stopped in the middle of a token
+        /// (as a JSON matcher does on `2022.11.17`, reading it as the number `2022.11`),
+        /// the rest of the row would be parsed at a shifted position.
+        if (!in.eof() && !isWhitespaceASCII(*in.position()) && *in.position() != ',' && *in.position() != ':')
+            return makeFailedResult();
+
         if constexpr (with_offset)
-            return generateResult(fields, in.offsetFromLastCheckpoint()); // offset is not needed if this is called in parseRow()
+            return generateResult(fields, in.offsetFromCheckpoint()); // offset is not needed if this is called in parseRow()
 
         return generateResult(fields, 0);
     }
     catch (Exception & e)
     {
         LOG_DEBUG(&Poco::Logger::get("FreeformFieldMatcher"), "Error while parsing: {}", e.message());
-        return {.ok = false};
+        return makeFailedResult();
     }
 }
 
@@ -140,7 +162,7 @@ FieldMatcher::NamesAndFields JSONFieldMatcher::readFieldsByEscapingRule(Peekable
     if (*in.position() != '{')
     {
         String field;
-        readJSONField(field, in);
+        readJSONField(field, in, settings.json);
         return {{fmt::format("c{}", index), field}};
     }
 
@@ -152,13 +174,13 @@ FieldMatcher::NamesAndFields JSONFieldMatcher::readFieldsByEscapingRule(Peekable
     NamesAndFields cols_and_fields;
     while (*in.position() != '}')
     {
-        String col = JSONUtils::readFieldName(in);
+        String col = JSONUtils::readFieldName(in, settings.json);
         String field;
 
         if (*in.position() == '{')
             readJSONObjectPossiblyInvalid(field, in);
         else
-            readJSONField(field, in);
+            readJSONField(field, in, settings.json);
 
         cols_and_fields.emplace_back(col, field);
         skipWhitespacesAndDelimiters(in);
@@ -209,7 +231,17 @@ FreeformFieldMatcher::FreeformFieldMatcher(ReadBuffer & in_, const FormatSetting
     matchers.emplace_back(std::make_unique<EscapedFieldMatcher>(FormatSettings::EscapingRule::Escaped, settings_));
 }
 
-std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsigned index) const
+void FreeformFieldMatcher::seekInRow(size_t offset) const
+{
+    /// A single checkpoint is kept at the beginning of the row, and every position inside the row is
+    /// addressed by its offset from it. Nested checkpoints are deliberately not used here: the search
+    /// rewinds the buffer over and over, and a single checkpoint keeps the bookkeeping trivial.
+    in->rollbackToCheckpoint();
+    in->ignore(offset);
+}
+
+std::vector<FreeformFieldMatcher::Fields>
+FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsigned index, size_t offset) const
 {
     std::vector<Fields> next_fields;
     if (parse_till_newline_as_one_string)
@@ -218,7 +250,6 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
         if (result.ok)
             next_fields.emplace_back(result, matchers.size() - 1);
 
-        in->rollbackToCheckpoint();
         return next_fields;
     }
 
@@ -237,15 +268,16 @@ std::vector<FreeformFieldMatcher::Fields> FreeformFieldMatcher::readNextFields(b
         }
 
         ++i;
-        in->rollbackToCheckpoint();
+        seekInRow(offset);
     }
 
     return next_fields;
 }
 
 void FreeformFieldMatcher::buildSolutions(
-    Solution current_solution, std::vector<Solution> & solutions, bool parse_till_newline_as_one_string) const
+    Solution current_solution, std::vector<Solution> & solutions, bool parse_till_newline_as_one_string, size_t offset) const
 {
+    seekInRow(offset);
     if (in->eof() || *in->position() == '\n')
     {
         solutions.push_back(current_solution);
@@ -253,8 +285,9 @@ void FreeformFieldMatcher::buildSolutions(
     }
 
     skipWhitespacesAndDelimiters(*in);
-    in->setCheckpoint();
-    const auto next_fields = readNextFields(parse_till_newline_as_one_string, current_solution.size);
+    const size_t offset_after_delimiters = in->offsetFromCheckpoint();
+
+    const auto next_fields = readNextFields(parse_till_newline_as_one_string, current_solution.size, offset_after_delimiters);
     for (const auto & fields : next_fields)
     {
         auto next = current_solution;
@@ -265,12 +298,8 @@ void FreeformFieldMatcher::buildSolutions(
         next.score += fields.parse_result.score;
         next.size += fields.parse_result.names_and_types.size();
 
-        in->ignore(fields.parse_result.offset);
-        buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string);
-        in->rollbackToCheckpoint();
+        buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset);
     }
-
-    in->dropCheckpoint();
 }
 
 bool FreeformFieldMatcher::validateSolution(Solution solution) const
@@ -350,10 +379,16 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
     if (in->eof())
         return false;
 
+    in->setCheckpoint();
+
     std::vector<Solution> solutions;
-    buildSolutions(Solution{.score = 0}, solutions, false);
+    buildSolutions(Solution{.columns = {}, .matchers_order = {}, .score = 0, .size = 0}, solutions, false, 0);
+    in->rollbackToCheckpoint();
     if (solutions.empty())
+    {
+        in->rollbackToCheckpoint(true);
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty solutions set");
+    }
 
     ::sort(
         solutions.begin(),
@@ -362,7 +397,6 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
         { return std::tie(first.score, first.matchers_order) > std::tie(second.score, second.matchers_order); });
 
     // after finding and ranking the solutions, we now run them through the max_rows_to_check rows and pick the first one that works for all of them
-    in->setCheckpoint();
     for (const auto & solution : solutions)
         if (validateSolution(solution))
         {
@@ -414,7 +448,7 @@ bool FreeformFieldMatcher::parseRow()
 }
 
 FreeformRowInputFormat::FreeformRowInputFormat(
-    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_), format_settings(format_settings_), matcher(in_, format_settings_)
 {
 }
@@ -470,19 +504,21 @@ NamesAndTypesList FreeformSchemaReader::readSchema()
     return ret;
 }
 
-DataTypes FreeformSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> FreeformSchemaReader::readRowAndGetDataTypes()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "This method is not used and unimplemented for Freeform schema inference");
 }
 
+void registerInputFormatFreeform(FormatFactory & factory);
 void registerInputFormatFreeform(FormatFactory & factory)
 {
     factory.registerInputFormat(
         "Freeform",
         [](ReadBuffer & buf, const Block & header, const RowInputFormatParams & params, const FormatSettings & settings)
-        { return std::make_shared<FreeformRowInputFormat>(buf, header, params, settings); });
+        { return std::make_shared<FreeformRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings); });
 }
 
+void registerFreeformSchemaReader(FormatFactory & factory);
 void registerFreeformSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
