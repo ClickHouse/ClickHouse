@@ -548,9 +548,10 @@ String MergeTask::buildTempPartBasename(const String & prefix, const String & pa
         return prefix + part_name + suffix;
 
     /// `OPTIMIZE ... DRY RUN` leaves the result part name out: the name must not collide with the
-    /// merge of those parts, and its length must not follow the part name, which is not capped. Keeps
-    /// `prefix`, which the temporary directory cleaner and the startup skip logic select by, and is
-    /// never parsed back into a part name.
+    /// merge of those parts, and its length must not follow the part name, which is not capped. What
+    /// is left is a fixed-size name, kept short so that a dry run never runs out of filename budget
+    /// before the corresponding real merge does. Keeps `prefix`, which the temporary directory
+    /// cleaner and the startup skip logic select by, and is never parsed back into a part name.
     return prefix + suffix;
 }
 
@@ -601,6 +602,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// interrupted merge. Projection merges write nested inside the parent's directory, which has no claim.
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
+
+    LOG_TRACE(ctx->log, "Reserved temporary directory {} for the merge", local_tmp_part_basename);
 
     /// Test-only: widen the window between reserving the temporary merge directory and the rest
     /// of the merge, to deterministically race two `OPTIMIZE ... DRY RUN` over the same parts.

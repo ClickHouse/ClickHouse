@@ -9,12 +9,19 @@
 # Run with short part names and with a part name long enough that appending the unique token to it
 # would push the temporary directory past the filename limit, even though the corresponding real
 # merge still fits. Both must keep the temporary directories distinct AND stay within the limit.
+#
+# The length of the temporary directory a dry run reserves is pinned as well, in both directions: it
+# must not grow with the part name, and it must not claim a larger fixed budget than a merge of
+# ordinary parts already takes.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 FP="merge_task_pause_after_reserving_tmp_dir"
+
+# `IMergeTreeDataPart::remove` renames a temporary directory to `delete_tmp_<dir>` before deleting it.
+DELETE_TMP_PREFIX="delete_tmp_"
 
 function cleanup()
 {
@@ -111,6 +118,34 @@ $CLICKHOUSE_CLIENT --query "
 race_two_dry_runs t_dry_run_race all_1_1_0 all_2_2_0
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_dry_run_race"
+
+# The temporary directory of a dry run does not follow the part name, so its length is fixed. Pin it:
+# it must not claim more of the filename limit than a merge of ordinary parts already takes, or a
+# `DRY RUN` would be the first thing to hit `ENAMETOOLONG` on a filesystem with a small `NAME_MAX`,
+# where the corresponding real merge still fits. `IMergeTreeDataPart::remove` renames the directory
+# to `delete_tmp_<dir>` on removal, so that longer name is what actually has to fit.
+echo "-- temporary directory budget"
+
+$CLICKHOUSE_CLIENT --query "
+    DROP TABLE IF EXISTS t_dry_run_budget;
+    CREATE TABLE t_dry_run_budget (key UInt64)
+    ENGINE = MergeTree ORDER BY key
+    SETTINGS min_bytes_for_wide_part = 0;
+
+    SYSTEM STOP MERGES t_dry_run_budget;
+
+    INSERT INTO t_dry_run_budget SELECT number FROM numbers(3);   -- all_1_1_0
+    INSERT INTO t_dry_run_budget SELECT number FROM numbers(3);   -- all_2_2_0
+"
+
+TMP_DIR=$($CLICKHOUSE_CLIENT --send_logs_level=trace \
+    --query "OPTIMIZE TABLE t_dry_run_budget DRY RUN PARTS 'all_1_1_0', 'all_2_2_0'" 2>&1 \
+    | grep -o 'tmp_merge_dry_run_[0-9a-f]*' | head -n 1)
+
+echo "temporary directory length ${#TMP_DIR}"
+echo "length after the delete_tmp_ rename $(( ${#TMP_DIR} + ${#DELETE_TMP_PREFIX} ))"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE t_dry_run_budget"
 
 # Same race, but with a part name long enough that a unique token no longer fits after it: a part name
 # is not length-capped, and `MergeTree` also prepends `delete_tmp_` when removing the directory, so

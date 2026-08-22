@@ -147,6 +147,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 
+#include <base/hex.h>
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
@@ -9658,10 +9659,18 @@ void MergeTreeData::optimizeDryRun(
         task_context);
 
     /// `DRY RUN` takes no merge guard, so a concurrent real merge on the same parts would otherwise
-    /// reserve the same temporary directory. See `MergeTask::buildTempPartBasename`. A UUID rather than
+    /// reserve the same temporary directory. See `MergeTask::buildTempPartBasename`. Random rather than
     /// a counter, because the directory can live on storage shared with other servers, where a
     /// process-local counter restarts and repeats itself.
-    const String dry_run_suffix = String(MergeTask::DRY_RUN_TEMP_INFIX) + toString(UUIDHelpers::generateV4());
+    ///
+    /// Only the low half of the UUID (62 random bits) is kept, written as 16 hexadecimal digits: the
+    /// whole basename is a fixed `tmp_merge_dry_run_<16 hex>`, so a dry run costs 34 bytes of the
+    /// filename limit - 45 once `IMergeTreeDataPart::remove` prepends `delete_tmp_` - and the token
+    /// stays short enough not to claim a larger budget than merges of realistic parts already take.
+    /// The temporary directory of a dry run lives only for that one query, and there are at most a
+    /// handful of them at a time, so 62 bits leave the collision probability at nothing.
+    const String dry_run_suffix
+        = String(MergeTask::DRY_RUN_TEMP_INFIX) + getHexUIntLowercase(UUIDHelpers::getLowBytes(UUIDHelpers::generateV4()));
 
     auto merge_task = merger_mutator.mergePartsToTemporaryPart(
         future_part,
