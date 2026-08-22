@@ -1,11 +1,10 @@
 #pragma once
 
+#include <string>
+
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <DataTypes/Serializations/ISerialization.h>
-
-#include <map>
-#include <string>
 
 
 namespace DB
@@ -13,7 +12,7 @@ namespace DB
 
 class WriteBuffer;
 
-class PrometheusTextOutputFormat final : public IRowOutputFormat
+class PrometheusTextOutputFormat : public IRowOutputFormat
 {
 public:
     PrometheusTextOutputFormat(
@@ -27,8 +26,8 @@ protected:
 
     struct ColumnPositions
     {
-        size_t name{};
-        size_t value{};
+        size_t name;
+        size_t value;
         std::optional<size_t> help;
         std::optional<size_t> type;
         std::optional<size_t> labels;

@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
-# no-parallel-replicas - because explain produced different plan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-
 [ ! -z "$CLICKHOUSE_CLIENT_REDEFINED" ] && CLICKHOUSE_CLIENT=$CLICKHOUSE_CLIENT_REDEFINED
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 
 DISABLE_OPTIMIZATION="set optimize_distinct_in_order=0"
 ENABLE_OPTIMIZATION="set optimize_distinct_in_order=1"
-GREP_DISTINCT="grep 'DistinctSortedStreamTransform\|DistinctTransform'"
+GREP_DISTINCT="grep 'DistinctSortedStreamTransform\|DistinctSortedTransform\|DistinctTransform'"
 TRIM_LEADING_SPACES="sed -e 's/^[ \t]*//'"
 REMOVE_NON_LETTERS="sed 's/[^a-zA-Z]//g'"
 FIND_DISTINCT="$GREP_DISTINCT | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
@@ -60,7 +56,7 @@ $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct b, 
 $CLICKHOUSE_CLIENT -q "select '-- distinct with non-primary key prefix and order by column _not_ in distinct -> ordinary distinct'"
 $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct b, c from distinct_in_order_explain order by a" | eval $FIND_DISTINCT
 
-$CLICKHOUSE_CLIENT -q "select '-- distinct with non-primary key prefix and order by _const_ column in distinct -> final sorted-stream distinct (const prefix forms a single range), ordinary pre-distinct'"
+$CLICKHOUSE_CLIENT -q "select '-- distinct with non-primary key prefix and order by _const_ column in distinct -> ordinary distinct'"
 $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct b, 1 as x from distinct_in_order_explain order by x" | eval $FIND_DISTINCT
 
 echo "-- Check reading in order for distinct"
@@ -81,7 +77,7 @@ echo "-- enabled, only part of distinct columns form prefix of sorting key"
 
 $CLICKHOUSE_CLIENT --max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER | tail -n 1
 
-echo "=== disable analyzer ==="
+echo "=== disable new analyzer ==="
 DISABLE_ANALYZER="set enable_analyzer=0"
 
 echo "-- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct"
@@ -103,7 +99,7 @@ $CLICKHOUSE_CLIENT -q "$DISABLE_ANALYZER;$ENABLE_OPTIMIZATION;$ENABLE_READ_IN_OR
 echo "-- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization"
 $CLICKHOUSE_CLIENT -q "$DISABLE_ANALYZER;$ENABLE_OPTIMIZATION;set optimize_read_in_order=0;set optimize_aggregation_in_order=0;set optimize_read_in_window_order=0;explain plan sorting=1 select distinct a,b from distinct_in_order_explain" | eval $FIND_SORTING_PROPERTIES
 
-echo "=== enable analyzer ==="
+echo "=== enable new analyzer ==="
 ENABLE_ANALYZER="set enable_analyzer=1"
 
 echo "-- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct"

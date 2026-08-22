@@ -15,12 +15,6 @@
 namespace DB
 {
 
-OpenSSLInitializer & OpenSSLInitializer::instance()
-{
-    static OpenSSLInitializer instance;
-    return instance;
-}
-
 #if USE_SSL
 std::atomic<bool> DB::OpenSSLInitializer::initialize_done{false};
 std::atomic<bool> DB::OpenSSLInitializer::cleanup_done{false};
@@ -38,8 +32,8 @@ void OpenSSLInitializer::initialize()
 #if USE_SSL
 
 #ifndef NDEBUG
-    chassert(!initialize_done);
-    chassert(!cleanup_done);
+    assert(!initialize_done);
+    assert(!cleanup_done);
 #endif
 
     if (!initialize_done)
@@ -83,8 +77,8 @@ void OpenSSLInitializer::cleanup()
 #if USE_SSL
 
 #ifndef NDEBUG
-    chassert(initialize_done);
-    chassert(!cleanup_done);
+    assert(initialize_done);
+    assert(!cleanup_done);
 #endif
 
     if (!cleanup_done)
@@ -93,15 +87,13 @@ void OpenSSLInitializer::cleanup()
 
         if (legacy_provider)
         {
-            [[maybe_unused]] int ok = OSSL_PROVIDER_unload(legacy_provider);
-            chassert(ok);
+            chassert(OSSL_PROVIDER_unload(legacy_provider));
             legacy_provider = nullptr;
         }
 
         if (default_provider)
         {
-            [[maybe_unused]] int ok = OSSL_PROVIDER_unload(default_provider);
-            chassert(ok);
+            chassert(OSSL_PROVIDER_unload(default_provider));
             default_provider = nullptr;
         }
 

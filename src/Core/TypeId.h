@@ -41,7 +41,6 @@ enum class TypeIndex : uint8_t
     UUID,
     Array,
     Tuple,
-    QBit,
     Set,
     Interval,
     Nullable,
@@ -49,6 +48,7 @@ enum class TypeIndex : uint8_t
     AggregateFunction,
     LowCardinality,
     Map,
+    ObjectDeprecated,
     Object,
     IPv4,
     IPv6,
@@ -115,12 +115,6 @@ TYPEID_MAP(String)
 
 struct Array;
 TYPEID_MAP(Array)
-
-struct Map;
-TYPEID_MAP(Map)
-
-struct Object;
-TYPEID_MAP(Object)
 
 #undef TYPEID_MAP
 

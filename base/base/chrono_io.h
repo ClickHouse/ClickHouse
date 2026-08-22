@@ -1,12 +1,9 @@
 #pragma once
 
 #include <chrono>
-#include <ostream>
 #include <string>
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
+#include <sstream>
 #include <cctz/time_zone.h>
-#pragma clang diagnostic pop
 #include <fmt/core.h>
 
 

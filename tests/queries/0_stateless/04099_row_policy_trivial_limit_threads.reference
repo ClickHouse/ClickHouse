@@ -18,5 +18,5 @@ row_policy_always_true
 additional_filter
   (Limit)
   Limit 4 → 4
-      (ReadFromMergeTree)
-      MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1
+    (ReadFromMergeTree)
+    MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1

@@ -1,15 +1,12 @@
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Common/FunctionDocumentation.h>
 #include <Common/typeid_cast.h>
 
 
 #include <Common/PODArray.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -17,16 +14,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-}
-
-namespace
-{
-
-bool isAggregateFunctionState(const IDataType & type)
-{
-    return typeid_cast<const DataTypeAggregateFunction *>(&type) != nullptr;
-}
-
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -35,13 +23,13 @@ namespace
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
 * Takes state of aggregate function. Returns result of aggregation (finalized state).
 */
-class FunctionEvalMLMethod final : public IFunction
+class FunctionEvalMLMethod : public IFunction
 {
 public:
     static constexpr auto name = "evalMLMethod";
-    static FunctionPtr create(ContextPtr context_)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionEvalMLMethod>(context_);
+        return std::make_shared<FunctionEvalMLMethod>(context);
     }
     explicit FunctionEvalMLMethod(ContextPtr context_) : context(context_)
     {}
@@ -66,19 +54,18 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"model", &isAggregateFunctionState, nullptr, "AggregateFunctionState"}
-        };
-        FunctionArgumentDescriptor optional_args{
-            "xi", &isNumber, nullptr, "Float* or (U)Int*"
-        };
+        if (arguments.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires at least one argument", getName());
 
-        validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, optional_args);
+        const auto * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
+        if (!type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument for function {} must have type AggregateFunction - state "
+                            "of aggregate function.", getName());
 
-        const auto* agg_function = static_cast<const DataTypeAggregateFunction *>(arguments[0].type.get());
-        return agg_function->getReturnTypeToPredict();
+        return type->getReturnTypeToPredict();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -100,7 +87,6 @@ public:
         return agg_function->predictValues(arguments, context);
     }
 
-private:
     ContextPtr context;
 };
 
@@ -108,40 +94,7 @@ private:
 
 REGISTER_FUNCTION(EvalMLMethod)
 {
-    FunctionDocumentation::Description description = R"(
-Applies a trained machine learning model to input features to generate predictions.
-)";
-    FunctionDocumentation::Syntax syntax = "evalMLMethod(model, x1[, x2, ...])";
-    FunctionDocumentation::Arguments arguments = {
-        {"model", "The trained machine learning model.", {"AggregateFunctionState"}},
-        {"x1, x2, ...", "Feature values for prediction.", {"Float*", "(U)Int*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the predicted value based on the trained model.", {"Float64"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Example usage",
-        R"(
-SELECT
-evalMLMethod(model, trip_distance),
-total_amount
-FROM trips
-LEFT JOIN models ON year = toYear(pickup_datetime)
-LIMIT 5
-        )",
-        R"(
-┌─evalMLMethod(model, trip_distance)─┬─total_amount─┐
-│ 8.087692004204174                  │ 5.4          │
-│ 7.861181608305352                  │ 4.6          │
-│ 26.661544467907536                 │ 23.4         │
-│ 8.767223191900637                  │ 5.8          │
-│ 10.80581675499003                  │ 9            │
-└────────────────────────────────────┴──────────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::MachineLearning;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionEvalMLMethod>(documentation);
+    factory.registerFunction<FunctionEvalMLMethod>();
 }
 
 }

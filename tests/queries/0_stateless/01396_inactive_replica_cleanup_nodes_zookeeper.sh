@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-debug, no-shared-merge-tree, long, no-msan, no-asan, no-tsan, no-replicated-database
+# Tags: replica, no-debug, no-shared-merge-tree, long, no-msan, no-asan, no-tsan
 # no-shared-merge-tree: depends on zookeeper, specific logs of rmt and so on
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -12,7 +12,7 @@ REPLICA=$($CLICKHOUSE_CLIENT --query "Select getMacro('replica')")
 # Check that if we have one inactive replica and a huge number of INSERTs to active replicas,
 # the number of nodes in ZooKeeper does not grow unbounded.
 
-SCALE=200
+SCALE=500
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS r1;
@@ -28,24 +28,15 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --max_execution_time 600 --insert_keeper_fault_injection_probability=0 --max_block_size 1 --min_insert_block_size_rows 1 --min_insert_block_size_bytes 1 --max_insert_threads 16 --query "INSERT INTO r1 SELECT * FROM numbers_mt(${SCALE})"
 
 
-# Now wait for cleanup thread to reduce ZK log entries. Inserts and merges keep appending, so the
-# observation that ends the wait is the verdict, and only a read that completed successfully
-# counts: the client can flush a data block and then fail, and [[ "" -lt N ]] is true in bash.
-poll_err="${CLICKHOUSE_TMP}/01396_poll_err_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-trimmed=0
-for _ in {1..120}; do
-    count=$($CLICKHOUSE_CLIENT --query "SELECT numChildren FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD' AND name = 'log'" 2>"$poll_err")
-    rc=$?
-    [[ $rc -eq 0 ]] && [[ $count =~ ^[0-9]+$ ]] && [[ $count -lt $((SCALE / 4)) ]] && { trimmed=1; break; }
+# Now wait for cleanup thread
+for _ in {1..60}; do
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+    [[ $($CLICKHOUSE_CLIENT --query "SELECT sum(toUInt32(extract(message, 'Removed (\d+) old log entries'))) FROM system.text_log WHERE event_date >= yesterday() AND logger_name LIKE '%' || '$CLICKHOUSE_DATABASE' || '%r1%(ReplicatedMergeTreeCleanupThread)%' AND message LIKE '%Removed % old log entries%' SETTINGS max_rows_to_read = 0") -gt $((SCALE - 10)) ]] && break;
     sleep 1
 done
 
-echo "$trimmed"
-if [[ $trimmed != 1 ]]; then
-    echo "cleanup wait did not converge: last count='$count', last poll error:" >&2
-    cat "$poll_err" >&2
-fi
-rm -f "$poll_err"
+
+$CLICKHOUSE_CLIENT --query "SELECT numChildren < $((SCALE / 4)) FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD' AND name = 'log'";
 echo -e '\n---\n';
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD/replicas/1$REPLICA' AND name = 'is_lost'";
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD/replicas/2$REPLICA' AND name = 'is_lost'";

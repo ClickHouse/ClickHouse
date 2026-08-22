@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, long, no-fasttest, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage
+# Tags: no-parallel, long, no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

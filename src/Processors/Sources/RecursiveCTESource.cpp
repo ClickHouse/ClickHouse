@@ -182,6 +182,7 @@ private:
         ++recursive_step;
 
         SelectQueryOptions select_query_options;
+        select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization = false;
 
         const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
@@ -197,8 +198,7 @@ private:
         auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
             pipeline_builder.getHeader().getColumnsWithTypeAndName(),
             header->getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            interpreter->getContext());
+            ActionsDAG::MatchColumnsMode::Position);
         auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));
         pipeline_builder.addSimpleTransform([&](const SharedHeader & input_header)
         {
@@ -207,10 +207,9 @@ private:
 
         /// TODO: Support squashing transform
 
-        const auto metadata_snapshot = intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false);
         auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
             {},
-            metadata_snapshot,
+            intermediate_temporary_table_storage->getInMemoryMetadataPtr(),
             recursive_query_context,
             false /*async_insert*/);
 
@@ -227,9 +226,8 @@ private:
     {
         /// TODO: Support proper locking
         TableExclusiveLockHolder table_exclusive_lock;
-        const auto metadata_snapshot = temporary_table->getInMemoryMetadataPtr(recursive_query_context, false);
         temporary_table->truncate({},
-            metadata_snapshot,
+            temporary_table->getInMemoryMetadataPtr(),
             recursive_query_context,
             table_exclusive_lock);
     }

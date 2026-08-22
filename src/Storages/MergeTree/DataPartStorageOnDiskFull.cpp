@@ -2,13 +2,10 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
-#include <IO/PackedFilesReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -38,9 +35,6 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    /// Not arena-scoped: most callers use this only as a short-lived filesystem handle (CHECK TABLE,
-    /// mutation hardlink/copy, existence probes). The part-lifetime projection storage is created via
-    /// `getProjectionPartBuilder`, which scopes the arena itself.
     return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
 }
 
@@ -54,7 +48,7 @@ bool DataPartStorageOnDiskFull::exists() const
     return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir);
 }
 
-bool DataPartStorageOnDiskFull::existsFileImpl(const std::string & name) const
+bool DataPartStorageOnDiskFull::existsFile(const std::string & name) const
 {
     return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
 }
@@ -95,17 +89,9 @@ Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & fi
     return volume->getDisk()->getLastModified(fs::path(root_path) / part_dir / file_name);
 }
 
-size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) const
+size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
 {
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
-}
-
-std::optional<UInt64> DataPartStorageOnDiskFull::getPackedFileUncompressedSize(const std::string & file_name) const
-{
-    if (looksLikePackedSkipIndexFile(file_name))
-        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
-            return reader->getFileUncompressedSize(file_name);
-    return {};
 }
 
 UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const
@@ -136,21 +122,22 @@ String DataPartStorageOnDiskFull::getUniqueId() const
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
-void DataPartStorageOnDiskFull::prepareReadImpl(
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFile(
     const std::string & name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
-    ReadPipeline & pipeline) const
+    std::optional<size_t> file_size) const
 {
-    volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
+    return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExistsImpl(
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
     const std::string & name,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
-    return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint);
+    return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
@@ -160,7 +147,7 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
     const WriteSettings & settings)
 {
     if (transaction)
-        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings, /* autocommit = */ false);
     return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
 }
 

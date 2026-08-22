@@ -1,7 +1,5 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 
-#include <string_view>
-
 #include <IO/S3/Credentials.h>
 #include <Server/CloudPlacementInfo.h>
 #include <base/find_symbols.h>
@@ -50,25 +48,12 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
     /// init get_priority_load_balancing
     get_priority_load_balancing.hostname_prefix_distance.resize(hosts.size());
     get_priority_load_balancing.hostname_levenshtein_distance.resize(hosts.size());
-    get_priority_load_balancing.hostname_longest_common_prefix.resize(hosts.size());
-    get_priority_load_balancing.hostname_longest_common_suffix.resize(hosts.size());
     const String & local_hostname = getFQDNOrHostName();
-    constexpr std::string_view secure_scheme = "secure://";
     for (size_t i = 0; i < hosts.size(); ++i)
     {
-        /// `hosts[i]` is `[secure://]host:port` (see `initFromKeeperSection` / `initFromKeeperServerSection`).
-        /// Strip the optional `secure://` scheme together with the `:port` suffix, so the host name similarity
-        /// is computed on the bare host name. Otherwise the scheme contaminates the comparison; for the
-        /// longest-common-prefix strategy it dominates entirely (a local host name never starts with
-        /// `secure://`), so all priorities tie at 0 and selection silently degenerates to random.
-        std::string_view host_view = hosts[i];
-        if (host_view.starts_with(secure_scheme))
-            host_view.remove_prefix(secure_scheme.size());
-        const String node_host(host_view.substr(0, host_view.find_last_of(':')));
+        const String & node_host = hosts[i].substr(0, hosts[i].find_last_of(':'));
         get_priority_load_balancing.hostname_prefix_distance[i] = DB::getHostNamePrefixDistance(local_hostname, node_host);
         get_priority_load_balancing.hostname_levenshtein_distance[i] = DB::getHostNameLevenshteinDistance(local_hostname, node_host);
-        get_priority_load_balancing.hostname_longest_common_prefix[i] = DB::getHostNameLongestCommonPrefix(local_hostname, node_host);
-        get_priority_load_balancing.hostname_longest_common_suffix[i] = DB::getHostNameLongestCommonSuffix(local_hostname, node_host);
     }
 }
 
@@ -123,10 +108,6 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
             config.has(use_xid_64_key))
             use_xid_64 = config.getBool(use_xid_64_key);
 
-        /// Co-located client: mirror the server's own limit from `coordination_settings`.
-        if (auto max_request_size_key = coordination_key + ".max_request_size";
-            config.has(max_request_size_key))
-            max_request_size = config.getUInt64(max_request_size_key);
     }
 
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -194,10 +175,6 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         else if (key == "operation_timeout_ms")
         {
             operation_timeout_ms = config.getInt(config_name + "." + key);
-        }
-        else if (key == "max_request_size")
-        {
-            max_request_size = config.getUInt64(config_name + "." + key);
         }
         else if (key == "connection_timeout_ms")
         {
@@ -280,10 +257,6 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         else if (key == "use_xid_64")
         {
             use_xid_64 = config.getBool(config_name + "." + key);
-        }
-        else if (key == "pass_opentelemetry_tracing_context")
-        {
-            pass_opentelemetry_tracing_context = config.getBool(config_name + "." + key);
         }
         else if (key == "availability_zone_autodetect")
         {
