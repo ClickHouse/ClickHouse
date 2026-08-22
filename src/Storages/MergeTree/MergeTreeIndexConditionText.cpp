@@ -232,6 +232,8 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
     }
 }
 
+/// When adding a function here, decide whether it also belongs to
+/// `isSupportedArrayExistsElementFunction` below.
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
 {
     return function_name == "hasToken"
@@ -255,6 +257,34 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiSearchAny"
         || function_name == "multiSearchAnyUTF8"
         || function_name == "multiMatchAny";
+}
+
+/// Functions allowed as `f` in `arrayExists(x -> f(x, const), arr)` (see
+/// `traverseArrayExistsNode`). To enable a function here:
+///  - its granule condition must be necessary for an element match, i.e. a matching element
+///    implies the derived tokens are present in the granule (`MergeTreeIndexAggregatorText`
+///    adds the tokens of every array element to the granule);
+///  - if its row-level result depends on the tokenizer or pre/postprocessor of the index,
+///    add it to `depends_on_index_transforms` in `traverseArrayExistsNode`.
+/// Functions over whole arrays and maps (`has`, `hasAny`, `hasAll`, `mapContains*`) must stay
+/// excluded: the lambda argument is a single `String` element (a type error for them), and
+/// `traverseFunctionNode` would misinterpret them as applied to the outer column.
+bool MergeTreeIndexConditionText::isSupportedArrayExistsElementFunction(const String & function_name)
+{
+    return function_name == "equals"
+        || function_name == "like"
+        || function_name == "ilike"
+        || function_name == "startsWith"
+        || function_name == "endsWith"
+        || function_name == "match"
+        || function_name == "multiSearchAny"
+        || function_name == "multiSearchAnyUTF8"
+        || function_name == "multiMatchAny"
+        || function_name == "hasToken"
+        || function_name == "hasTokenOrNull"
+        || function_name == "hasAnyTokens"
+        || function_name == "hasAllTokens"
+        || function_name == "hasPhrase";
 }
 
 TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
@@ -640,6 +670,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
 
+        if (function_name == "arrayExists" && traverseArrayExistsNode(function, out))
+            return true;
+
         if (function_arguments_size != 2)
             return false;
 
@@ -671,6 +704,76 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     }
 
     return false;
+}
+
+bool MergeTreeIndexConditionText::traverseArrayExistsNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    auto element_predicate = tryExtractArrayExistsElementPredicate(function_node);
+    if (!element_predicate)
+        return false;
+
+    const auto index_column_argument = function_node.getArgumentAt(1);
+    const auto & body_function = element_predicate->body_function;
+    const auto function_name = body_function.getFunctionName();
+
+    auto finish = [&]
+    {
+        /// The virtual column answers the token query derived from the lambda, which is only a
+        /// necessary condition for `arrayExists`: tokens can come from different elements, and
+        /// `LIKE`/`match` can have false positives. Use at most hint mode, so the virtual column
+        /// can prefilter rows while `arrayExists` is still evaluated for each row. Keep `None`
+        /// where the inner function would not use direct read for a plain column either.
+        for (auto & query : out.text_search_queries)
+        {
+            if (query->direct_read_mode != TextIndexDirectReadMode::None)
+                query->direct_read_mode = getHintOrNoneMode();
+        }
+
+        return true;
+    };
+
+    /// `elem IN (constant set)`: a matching element carries all tokens of some set element,
+    /// so a granule with a matching row contains all tokens of at least one set element.
+    /// That is the same condition `tryPrepareSetForTextSearch` derives for `column IN (set)`.
+    if (function_name == "in" || function_name == "globalIn")
+    {
+        if (!tryPrepareSetForTextSearch(index_column_argument, element_predicate->search_argument, function_name, out))
+            return false;
+
+        out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
+        return finish();
+    }
+
+    if (!isSupportedArrayExistsElementFunction(function_name))
+        return false;
+
+    /// These functions' row-level result depends on the tokenizer and pre/postprocessor of the
+    /// index. For plain predicates `optimizeDirectReadFromTextIndex` injects them into the call
+    /// so that evaluation on rows agrees with the index analysis, but that rewrite does not
+    /// reach inside a lambda. Allow them only when the index tokenizes exactly as the functions
+    /// do by default: `splitByNonAlpha`, no processors. The remaining supported functions
+    /// (`equals`, `like`, `startsWith`, ...) derive only a necessary token condition from the
+    /// constant, which holds for any matching element.
+    const bool depends_on_index_transforms = function_name == "hasToken"
+        || function_name == "hasTokenOrNull"
+        || function_name == "hasAnyTokens"
+        || function_name == "hasAllTokens"
+        || function_name == "hasPhrase";
+
+    if (depends_on_index_transforms
+        && (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha || has_preprocessor || has_postprocessor))
+        return false;
+
+    Field const_value;
+    DataTypePtr const_type;
+
+    if (!element_predicate->search_argument.tryGetConstant(const_value, const_type))
+        return false;
+
+    if (!traverseFunctionNode(body_function, index_column_argument, const_type, const_value, out))
+        return false;
+
+    return finish();
 }
 
 VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const

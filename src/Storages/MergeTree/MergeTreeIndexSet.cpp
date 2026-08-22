@@ -17,6 +17,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 
 namespace DB
 {
@@ -639,9 +640,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
 {
     /// Function, literal or column
 
-    const auto * node_to_check = &node;
-    while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
-        node_to_check = node_to_check->children[0];
+    const auto * node_to_check = getNodeWithoutAlias(&node);
 
     if (node_to_check->column)
     {
@@ -735,9 +734,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
 {
     /// Functions AND, OR, NOT. Replace with bit*.
 
-    const auto * node_to_check = &node;
-    while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
-        node_to_check = node_to_check->children[0];
+    const auto * node_to_check = getNodeWithoutAlias(&node);
 
     if (node_to_check->column)
         return nullptr;
@@ -797,9 +794,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
 
 bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic) const
 {
-    const auto * node_to_check = &node;
-    while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
-        node_to_check = node_to_check->children[0];
+    const auto * node_to_check = getNodeWithoutAlias(&node);
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);

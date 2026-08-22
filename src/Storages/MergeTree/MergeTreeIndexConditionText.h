@@ -101,6 +101,7 @@ public:
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
+    static bool isSupportedArrayExistsElementFunction(const String & function_name);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
@@ -160,6 +161,7 @@ private:
     using RPN = std::vector<RPNElement>;
 
     bool traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const;
+    bool traverseArrayExistsNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,

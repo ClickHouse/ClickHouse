@@ -377,6 +377,9 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
             }
         }
 
+        if (function_name == "arrayExists" && traverseArrayExistsNode(function_node, out))
+            return true;
+
         if (arguments_size != 2)
             return false;
 
@@ -399,6 +402,8 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                 }
             }
         }
+        /// When adding a function here (and to `traverseTreeEquals`), decide whether it also
+        /// belongs to `isSupportedArrayExistsElementFunction` below.
         else if (function_name == "equals" ||
                  function_name == "notEquals" ||
                  function_name == "has" ||
@@ -435,6 +440,66 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
     }
 
     return false;
+}
+
+/// Functions allowed as `f` in `arrayExists(x -> f(x, const), arr)` (see
+/// `traverseArrayExistsNode`). Must stay a subset of what `traverseTreeEquals` handles
+/// (see also the allowlist in `extractAtomFromTree`), restricted to positive functions of a
+/// single string whose token condition is necessary: a matching element implies its derived
+/// tokens are in the granule bloom filter, because `MergeTreeIndexAggregatorBloomFilterText`
+/// adds the tokens of every array element to it. Excluded:
+///  - negative functions (`notEquals`, `notLike`): their granule condition claims that absent
+///    tokens make `arrayExists` true for every row, which fails for empty arrays;
+///  - functions over whole arrays and maps (`has`, `hasAny`, `hasAll`, `mapContains*`):
+///    `traverseTreeEquals` would misinterpret them as applied to the outer column (and they
+///    are a type error on a `String` element anyway);
+///  - `hasTokenCaseInsensitive*`: they require an index on `lower(column)`, which cannot
+///    exist for an array column.
+bool MergeTreeConditionBloomFilterText::isSupportedArrayExistsElementFunction(const String & function_name)
+{
+    return function_name == "equals"
+        || function_name == "like"
+        || function_name == "startsWith"
+        || function_name == "endsWith"
+        || function_name == "multiSearchAny"
+        || function_name == "match"
+        || function_name == "hasToken"
+        || function_name == "hasTokenOrNull";
+}
+
+bool MergeTreeConditionBloomFilterText::traverseArrayExistsNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out)
+{
+    auto element_predicate = tryExtractArrayExistsElementPredicate(function_node);
+    if (!element_predicate)
+        return false;
+
+    const auto index_column_argument = function_node.getArgumentAt(1);
+    const auto function_name = element_predicate->body_function.getFunctionName();
+
+    /// `elem IN (constant set)`: a matching element carries all tokens of some set element,
+    /// so a granule with a matching row contains all tokens of at least one set element.
+    /// That is the same condition `tryPrepareSetBloomFilter` derives for `column IN (set)`.
+    /// `notIn` is excluded like the other negative functions: its granule condition is wrong
+    /// for empty arrays.
+    if (function_name == "in" || function_name == "globalIn")
+    {
+        if (!tryPrepareSetBloomFilter(index_column_argument, element_predicate->search_argument, out))
+            return false;
+
+        out.function = RPNElement::FUNCTION_IN;
+        return true;
+    }
+
+    if (!isSupportedArrayExistsElementFunction(function_name))
+        return false;
+
+    Field const_value;
+    DataTypePtr const_type;
+
+    if (!element_predicate->search_argument.tryGetConstant(const_value, const_type))
+        return false;
+
+    return traverseTreeEquals(function_name, index_column_argument, const_type, const_value, out);
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
