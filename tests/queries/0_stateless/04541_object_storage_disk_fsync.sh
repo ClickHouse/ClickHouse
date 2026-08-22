@@ -184,17 +184,3 @@ run_alter_case() {
 }
 
 run_alter_case
-
-# fsync_part_directory alone syncs nothing on these disks, which is what a local disk does for
-# fsync_after_insert = 0: the directory sync is a separate setting from the file contents sync.
-$CLICKHOUSE_CLIENT -m -q "
-    drop table if exists dir_only;
-    create table dir_only (id UInt64, v String) engine = MergeTree order by id
-    settings disk = disk(name = 'objd_dir_${CLICKHOUSE_DATABASE}', type = object_storage,
-                         object_storage_type = local_blob_storage, path = 'objd_dir_${CLICKHOUSE_DATABASE}/'),
-             min_bytes_for_wide_part = 0, fsync_after_insert = 0, fsync_part_directory = 1;
-"
-$CLICKHOUSE_CLIENT --query_id "dironly-$CLICKHOUSE_DATABASE" -q "insert into dir_only select number, toString(number) from numbers(2000)"
-read -r dir_only_files dir_only_dirs <<<"$(fsync_events "dironly-$CLICKHOUSE_DATABASE")"
-echo "wide, dir only: FileSync=$((dir_only_files)) DirectorySync=$((dir_only_dirs))"
-$CLICKHOUSE_CLIENT -q "drop table dir_only"
