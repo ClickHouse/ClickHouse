@@ -316,14 +316,18 @@ Pipe StorageSQLite::read(
         /// tables of the query, because a disjunction with a branch over such a column has to stay local as
         /// a whole (pushing down the remaining branches would narrow the remote filter and drop rows the
         /// local re-filtering never sees), and `external_table_strict_query = 1` has to reject the query.
-        NamesAndTypesList pushdown_columns;
+        /// Every physical column is passed as an available column of this table - the ineligible ones are
+        /// named in `local_only_columns` and subtracted from the pushdown-eligible set by
+        /// `transformQueryForExternalDatabase` itself. Removing them here as well would hide them from the
+        /// set of columns known to belong to this table, and a predicate over such a column would then look
+        /// like a predicate of another table of the query: it would be dropped as foreign instead of being
+        /// kept local, and `external_table_strict_query = 1` would silently accept the query.
+        NamesAndTypesList available_columns = storage_snapshot->metadata->getColumns().getAllPhysical();
         NameSet local_only_columns;
-        for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+        for (const auto & column : available_columns)
         {
-            if (SQLiteFormatImpl::isPushdownSafeColumn(
+            if (!SQLiteFormatImpl::isPushdownSafeColumn(
                     metadata_connection.get(), remote_table_or_query.getTableName(), column.name, column.type))
-                pushdown_columns.push_back(column);
-            else
                 local_only_columns.insert(column.name);
         }
 
@@ -345,7 +349,7 @@ Pipe StorageSQLite::read(
         query = transformQueryForExternalDatabase(
             query_info,
             column_names,
-            pushdown_columns,
+            available_columns,
             /// SQLite has no escape sequences inside quoted identifiers or string literals: an embedded quote
             /// is doubled and every other byte - a backslash or a control character such as `\n`/`\t` - stays
             /// literal. The ClickHouse-style backslash escaping of `DoubleQuotes`/`Regular` (and even the
@@ -706,7 +710,7 @@ When you explicitly specify ClickHouse column types in the table definition, the
 
 See [SQLite database engine](/reference/engines/database-engines/sqlite#data_types-support) for the default type mapping.
 
-A SQLite `NULL` read into an explicitly non-`Nullable` ClickHouse column raises the `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` exception. Declare the column [Nullable](/reference/data-types/nullable) to read `NULL` values; inferred schemas map SQLite columns to `Nullable` types.
+A SQLite `NULL` read into an explicitly non-`Nullable` ClickHouse column raises the `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` exception. Declare the column [Nullable](/reference/data-types/nullable) to read `NULL` values. An inferred schema follows the SQLite metadata: a column is `Nullable` unless it is declared `NOT NULL`.
 
 ## Usage example {#usage-example}
 
@@ -719,7 +723,7 @@ SHOW CREATE TABLE sqlite_db.table2;
 ```text
 CREATE TABLE SQLite.table2
 (
-    `col1` Nullable(Int32),
+    `col1` Nullable(Int64),
     `col2` Nullable(String)
 )
 ENGINE = SQLite('sqlite.db','table2');
