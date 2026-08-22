@@ -19,6 +19,7 @@
 #include <boost/qvm/vec_traits.hpp>
 #include <fmt/ranges.h>
 #include <Common/TargetSpecific.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
 #include <Columns/ColumnSparse.h>
@@ -96,10 +97,8 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
         }
     }
 
-    ColumnPtr col = column_->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-    FilterDescription desc(*col);
-    column = desc.data_holder ? desc.data_holder : col;
-    data = desc.data;
+    column = FilterDescription::preprocessFilterColumn(column_);
+    data = &assert_cast<const ColumnUInt8 &>(*column).getData();
 }
 
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)

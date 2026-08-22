@@ -510,12 +510,23 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
-            if (indexes && !res_is_constant)
+            /// Every dictionary key mapped to the same value, so every row has that value: return a
+            /// constant instead of one index per row. Never on an empty block or a dry run - headers
+            /// and plan time constants are evaluated that way, and a constant there is taken for a
+            /// real one (`FilterTransform` reads `ConstantFilterDescription` off its header, so a
+            /// fabricated one makes the whole `WHERE` always-false). A LowCardinality(Nullable)
+            /// dictionary also holds NULL, so it needs the function to map NULL and the default alike.
+            bool res_is_same_for_all_rows = res_is_constant
+                || (indexes && !dry_run && input_rows_count != 0 && indexesHaveSingleValue(*res_indexes));
+
+            if (res_is_same_for_all_rows)
+                result = ColumnLowCardinality::create(res_dictionary, res_indexes->cut(0, 1), /*is_shared=*/false);
+            else if (indexes)
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0), /*is_shared=*/false);
             else
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes, /*is_shared=*/false);
 
-            if (res_is_constant)
+            if (res_is_same_for_all_rows)
                 result = ColumnConst::create(std::move(result), input_rows_count);
         }
         else
