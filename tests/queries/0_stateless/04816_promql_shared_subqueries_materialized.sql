@@ -132,7 +132,7 @@ SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_tabl
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))', 100, 130, 10));
 
-SELECT '-- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again';
+SELECT '-- explicitly disabling the setting restores the inlined plan: every shared grid of `or` is read again';
 SET enable_materialized_cte = 0;
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
        countIf(explain LIKE '%MaterializingCTEs%') > 0 AS uses_materialized_cte

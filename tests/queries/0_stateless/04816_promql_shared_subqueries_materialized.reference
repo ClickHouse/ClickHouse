@@ -46,5 +46,5 @@
 2	0
 -- topk: the operand grid is read by two steps, so it is materialized; one samples read
 1	1
--- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again
-3	0
+-- explicitly disabling the setting restores the inlined plan: every shared grid of `or` is read again
+5	0

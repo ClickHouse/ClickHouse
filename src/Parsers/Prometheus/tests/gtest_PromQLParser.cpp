@@ -453,12 +453,12 @@ PrometheusQueryTree(INSTANT_VECTOR):
         )"), DB::Exception);
 
     /// Round-trip: a valid selector with more than one in-brace `__name__` matcher keeps the metric name
-    /// inside the braces. Hoisting it (`foo{__name__!="bar"}`) would set the metric name twice and fail to
-    /// reparse, which breaks lowering of such selectors into a `timeSeriesSelector` call.
+    /// inside the braces (as a quoted metric name). Hoisting it (`foo{__name__!="bar"}`) would set the metric
+    /// name twice and fail to reparse, which breaks lowering of such selectors into a `timeSeriesSelector` call.
     EXPECT_EQ(parse(R"(
         {__name__="foo", __name__!="bar"}
         )"), R"(
-{__name__="foo",__name__!="bar"}
+{"foo",__name__!="bar"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
     InstantSelector:
@@ -1591,14 +1591,14 @@ TEST(PromQLParser, ErrorPosition)
 
 /// Selector-validation errors must report the position as a UTF-8 byte offset, like all other
 /// parser errors. `метрика` takes 7 code points but 14 bytes, so the invalid selector below
-/// starts at code point 24 and byte offset 31.
+/// starts at code point 24 and byte offset 31, and its first in-brace matcher at byte offset 35.
 TEST(PromQLParser, SelectorValidationErrorPositionIsByteOffset)
 {
     for (const auto & [query, expected_error_pos, expected_error_message] :
          std::initializer_list<std::tuple<std::string_view, size_t, std::string_view>>{
              {R"({__name__="метрика"} or {job=~".*"})", 31, "vector selector must contain at least one non-empty matcher"},
              {R"({__name__="метрика"} or {job=~"(.*"})", 31, "invalid regular expression in label matcher: missing ): (.*"},
-             {R"({__name__="метрика"} or foo{__name__="foo"})", 31, "metric name must not be set twice"},
+             {R"({__name__="метрика"} or foo{__name__="foo"})", 35, "metric name must not be set twice"},
          })
     {
         PrometheusQueryTree query_tree;
