@@ -1,24 +1,29 @@
 """
-Tests that a timeout is only relabelled as infrastructure when it is a docker compose
-lifecycle command timing out.
+Tests that a timeout is only relabelled as infrastructure when the wait that expired was
+docker's or the registry's, not the server's.
 
 `_mark_infrastructure_errors` rewrites a matching result's status to SKIPPED, and a
 SKIPPED result does not fail the job, so anything relabelled here stops being reported.
 
 The discriminator is an argv, not a word. Checking for the word "docker" alone cannot
-discriminate: `str(subprocess.TimeoutExpired)` for a `docker exec` contains it too.
+discriminate: `str(subprocess.TimeoutExpired)` for a `docker exec` contains it too. Nor
+is "is this an orchestration command?" sufficient: `docker compose stop` waits for the
+server to exit, so its timeout means the server ignored SIGTERM. Hence the subcommand.
 
 The match is scoped to the raising `E   <ExcType>: <msg>` lines because an embedded
 server stack trace can carry a timeout substring tens of kilobytes away from anything
 that timed out.
 
-Fixtures are generated through the real `ResultTranslator.from_pytest_jsonl` rather than
-hand-written, because `raise ... from ex` serializes as a two-element chain and the
-translator renders both exceptions; text derived by reading the raise site is unfaithful.
+Fixtures are generated through the real `ResultTranslator.from_pytest_jsonl`, and
+`_translate` emits `longrepr.chain` for a `raise ... from ex`, because pytest gives the
+inner exception its own `E ` line: a fixture without the chain cannot exhibit the shape
+every `run_and_check` failure actually has. `test_translate_reproduces_real_pytest_output`
+pins the rendering against a report-log produced by pytest itself.
 """
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -31,7 +36,9 @@ from ci.jobs.integration_test_job import (
     TIMEOUT_ERROR_PATTERNS,
     _is_docker_compose_timeout,
     _is_infrastructure_error,
+    _is_orchestration_lifecycle_timeout,
     _mark_infrastructure_errors,
+    _raising_exception_lines,
 )
 from ci.praktika.result import Result, ResultTranslator
 
@@ -43,14 +50,16 @@ NON_TIMEOUT_PATTERNS = [
 # --- fixture construction: real translator, never a hand-written info blob -----------
 
 
-def _translate(node_id, frames, exc_line, when="call", outcome="failed"):
-    """Render `frames` + `exc_line` into a Result the way the CI job sees it.
+CAUSE_SEPARATOR = "The above exception was the direct cause of the following exception:"
 
-    `frames` is a list of (path, lineno, source_line). The serialization shape mirrors
-    pytest's `longrepr`: reprtraceback.reprentries[].data.{reprfileloc,lines}.
-    """
+
+def _reprtraceback(frames, exc_line):
     reprentries = []
-    for path, lineno, src in frames:
+    for frame in frames:
+        path, lineno, src = frame[:3]
+        # pytest puts `in <funcname>` here; the translator renders it into the frame
+        # header. Optional because only the `E ` lines decide anything.
+        func = frame[3] if len(frame) > 3 else ""
         reprentries.append(
             {
                 "type": "ReprEntry",
@@ -59,7 +68,7 @@ def _translate(node_id, frames, exc_line, when="call", outcome="failed"):
                     "reprfileloc": {
                         "path": path,
                         "lineno": lineno,
-                        "message": "",
+                        "message": f"in {func}" if func else "",
                     },
                 },
             }
@@ -67,19 +76,55 @@ def _translate(node_id, frames, exc_line, when="call", outcome="failed"):
     reprentries.append(
         {"type": "ReprEntry", "data": {"lines": [exc_line], "reprfileloc": None}}
     )
+    return {"reprentries": reprentries}
+
+
+def _translate(
+    node_id,
+    frames,
+    exc_line,
+    when="call",
+    outcome="failed",
+    cause_frames=None,
+    cause_exc_line=None,
+):
+    """Render `frames` + `exc_line` into a Result the way the CI job sees it.
+
+    `frames` is a list of (path, lineno, source_line). The serialization shape mirrors
+    pytest's `longrepr`: reprtraceback.reprentries[].data.{reprfileloc,lines}.
+
+    When a cause is given, `longrepr.chain` carries both exceptions oldest-first, as
+    pytest serializes `raise ... from ex`, and `reprtraceback`/`reprcrash` mirror the
+    last entry. `ResultTranslator._chain_of` only treats the chain as authoritative when
+    it has more than one entry, so a single exception must not emit one.
+    """
+    reprtraceback = _reprtraceback(frames, exc_line)
+    reprcrash = {
+        "path": frames[-1][0] if frames else node_id,
+        "lineno": frames[-1][1] if frames else 1,
+        "message": exc_line,
+    }
+    longrepr = {"reprtraceback": reprtraceback, "reprcrash": reprcrash}
+    if cause_exc_line is not None:
+        cause_frames = cause_frames or frames
+        longrepr["chain"] = [
+            [
+                _reprtraceback(cause_frames, cause_exc_line),
+                {
+                    "path": cause_frames[-1][0],
+                    "lineno": cause_frames[-1][1],
+                    "message": cause_exc_line,
+                },
+                CAUSE_SEPARATOR,
+            ],
+            [reprtraceback, reprcrash, None],
+        ]
     entry = {
         "$report_type": "TestReport",
         "nodeid": node_id,
         "when": when,
         "outcome": outcome,
-        "longrepr": {
-            "reprtraceback": {"reprentries": reprentries},
-            "reprcrash": {
-                "path": frames[-1][0] if frames else node_id,
-                "lineno": frames[-1][1] if frames else 1,
-                "message": exc_line,
-            },
-        },
+        "longrepr": longrepr,
     }
     with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
         f.write(json.dumps(entry) + "\n")
@@ -107,6 +152,105 @@ def _translate(node_id, frames, exc_line, when="call", outcome="failed"):
     leaf = next((l for l in leaves if l.name == node_id), leaves[0])
     assert leaf.info, f"fixture produced an empty info for {node_id}"
     return leaf
+
+
+# A `run_and_check` timeout as pytest itself serializes it: `raise Exception(...) from ex`
+# with the argv space-joined in the outer message and repr'd in the inner one.
+REAL_CHAIN_SOURCE = '''
+import subprocess
+
+ARGV = ["docker", "compose", "--env-file", "/w/.env", "--project-name", "roottestx-gw2",
+        "stop"]
+
+
+def run_and_check_like():
+    try:
+        raise subprocess.TimeoutExpired(cmd=ARGV, timeout=300)
+    except subprocess.TimeoutExpired as ex:
+        raise Exception(
+            "Command [%s] timed out after 300s\\nstdout:\\n\\nstderr:\\n"
+            % " ".join(ARGV)
+        ) from ex
+
+
+def test_teardown():
+    run_and_check_like()
+'''
+
+
+def test_translate_reproduces_real_pytest_output():
+    """`_translate` must render what pytest renders, or every arm below is measured
+    against a shape production cannot produce.
+
+    Asserted by running pytest on a chained failure and comparing the translated `info`
+    byte for byte, so this cannot drift with the fixture helper.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "test_real_chain.py")
+        with open(src, "w") as f:
+            f.write(REAL_CHAIN_SOURCE)
+        report = os.path.join(d, "rl.jsonl")
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", src, "--tb=short", "-q", "-p", "no:cacheprovider",
+             f"--report-log={report}"],
+            cwd=d,
+            capture_output=True,
+        )
+        assert os.path.isfile(report), (
+            f"pytest produced no report-log (rc={proc.returncode}): "
+            f"{proc.stdout.decode()[-2000:]}{proc.stderr.decode()[-2000:]}"
+        )
+        real = ResultTranslator.from_pytest_jsonl(report)
+
+    candidates = real if isinstance(real, list) else [real]
+    stack, leaves = list(candidates), []
+    while stack:
+        node = stack.pop()
+        children = getattr(node, "results", None) or []
+        stack.extend(children) if children else leaves.append(node)
+    real_leaf = next(l for l in leaves if l.info)
+    # the whole point: pytest gives the inner exception its own `E ` line
+    assert len(_raising_exception_lines(real_leaf.info)) == 5
+
+    # derived from the source, not hardcoded: a hardcoded lineno makes this arm fail for
+    # a reason that has nothing to do with the rendering it exists to pin
+    def lineno_of(needle):
+        for i, line in enumerate(REAL_CHAIN_SOURCE.splitlines(), 1):
+            if needle in line:
+                return i
+        raise AssertionError(f"{needle!r} not in the fixture source")
+
+    mine = _translate(
+        "test_real_chain.py::test_teardown",
+        [
+            (
+                "test_real_chain.py",
+                lineno_of("    run_and_check_like()"),
+                "    run_and_check_like()",
+                "test_teardown",
+            ),
+            (
+                "test_real_chain.py",
+                lineno_of("        raise Exception("),
+                "    raise Exception(",
+                "run_and_check_like",
+            ),
+        ],
+        "E   Exception: Command [docker compose --env-file /w/.env --project-name "
+        "roottestx-gw2 stop] timed out after 300s\nE   stdout:\nE   \nE   stderr:",
+        cause_frames=[
+            (
+                "test_real_chain.py",
+                lineno_of("        raise subprocess.TimeoutExpired("),
+                "    raise subprocess.TimeoutExpired(cmd=ARGV, timeout=300)",
+                "run_and_check_like",
+            )
+        ],
+        cause_exc_line="E   subprocess.TimeoutExpired: Command '['docker', 'compose', "
+        "'--env-file', '/w/.env', '--project-name', 'roottestx-gw2', 'stop']' "
+        "timed out after 300 seconds",
+    )
+    assert mine.info == real_leaf.info
 
 
 # The predicate as it stood before this change, inlined verbatim rather than read out of
@@ -212,6 +356,66 @@ def test_compose_up_timeout_stays_infrastructure():
     )
 
 
+COMPOSE_UP_ARGV = [
+    "docker",
+    "compose",
+    "--env-file",
+    "/w/.env",
+    "--project-name",
+    "roottestx-gw2",
+    "up",
+    "-d",
+    "--no-recreate",
+]
+COMPOSE_STOP_ARGV = [
+    "docker",
+    "compose",
+    "--env-file",
+    "/w/.env",
+    "--project-name",
+    "roottestx-gw2",
+    "stop",
+]
+
+
+def _run_and_check_chain(node_id, frames, argv, seconds=300, cause_frames=None):
+    """A `run_and_check` timeout as pytest renders it.
+
+    `run_and_check` catches `subprocess.TimeoutExpired` and re-raises
+    `Exception(f"Command [{' '.join(args)}] timed out after {timeout}s ...") from ex`, so
+    both exceptions reach the report: the repr'd argv on the cause's `E ` line and the
+    space-joined argv on the outer one.
+    """
+    return _translate(
+        node_id,
+        frames,
+        f"E   Exception: Command [{' '.join(argv)}] timed out after {seconds}s"
+        "\nE   stdout:\nE   \nE   stderr:",
+        cause_frames=cause_frames
+        or [("helpers/cluster.py", 222, "    raise Exception(")],
+        cause_exc_line=f"E   subprocess.TimeoutExpired: Command '{argv!r}' "
+        f"timed out after {seconds} seconds",
+    )
+
+
+def test_chained_compose_up_timeout_stays_infrastructure():
+    """The negative control for the subcommand split, on the faithful two-exception shape
+    a real `run_and_check` failure has. Without it the split could relabel every
+    orchestration timeout as a failure and still look green."""
+    r = _run_and_check_chain(
+        "test_keeper_profiler/test.py::test_profiler",
+        [
+            ("test_keeper_profiler/test.py", 31, "    cluster.start()"),
+            ("helpers/cluster.py", 4289, "    run_and_check(clickhouse_start_cmd)"),
+        ],
+        COMPOSE_UP_ARGV,
+    )
+    r.status = Result.Status.FAIL
+    assert _is_infrastructure_error(r)
+    assert _mark_infrastructure_errors([r]) == 1
+    assert r.status == Result.Status.SKIPPED
+
+
 SPACE_JOINED_STOP_E_LINE = (
     "E   Exception: Command [docker compose --env-file /w/.env --project-name "
     "roottestx-gw2 stop] timed out after 300s"
@@ -265,23 +469,138 @@ def test_product_shutdown_hang_is_a_failure():
     `shutdown()` runs `run_and_check(self.base_cmd + ["stop"])` with no `--timeout`
     (cluster.py:4394-4395), so the wait is bounded by the generated compose template's
     `stop_grace_period: 10m` (cluster.py:4880), which is longer than `run_and_check`'s
-    300 s default. The row therefore renders exactly like an orchestration timeout, and
-    only the absence of a docker context separates the two.
+    300 s default.
+
+    Asserted on the faithful two-exception shape: the cause's `E ` line carries the
+    repr'd argv, which supplies the quoted `'docker'` the FAIL branch looks for, so a
+    docker-context test cannot separate this from a `compose up`. The subcommand is what
+    separates them.
     """
-    r = _translate(
+    r = _run_and_check_chain(
         "test_parallel_replicas_custom_key/test.py::test_custom_key",
         [
             ("test_parallel_replicas_custom_key/test.py", 24, "    cluster.shutdown()"),
             ("helpers/cluster.py", 4395, "    run_and_check(self.base_cmd + ['stop'])"),
         ],
-        SPACE_JOINED_STOP_E_LINE
-        + "\nE   stderr:\nE    Container roottestx-gw2-node-1  Stopping",
+        COMPOSE_STOP_ARGV,
     )
     r.status = Result.Status.FAIL
+    # the shape's own precondition: the docker gate is satisfied, so it decides nothing
+    assert "'docker'" in r.info
     assert not _is_infrastructure_error(r), (
         "a container that will not stop is the product hanging, so the result must "
         "stay a failure"
     )
+    assert _mark_infrastructure_errors([r]) == 0
+    assert r.status == Result.Status.FAIL
+
+
+def test_product_kill_hang_is_a_failure():
+    """`shutdown()` falls back to `run_and_check(base_cmd + ["kill"])` when `stop` fails
+    (cluster.py:4401), and `kill` waits on the container dying too. One real corpus row
+    carries this shape."""
+    r = _run_and_check_chain(
+        "test_parallel_replicas_custom_key/test.py::test_custom_key",
+        [
+            ("test_parallel_replicas_custom_key/test.py", 24, "    cluster.shutdown()"),
+            ("helpers/cluster.py", 4401, "    run_and_check(self.base_cmd + ['kill'])"),
+        ],
+        ["docker", "compose", "--project-name", "roottestx-gw2", "kill"],
+    )
+    r.status = Result.Status.FAIL
+    assert not _is_infrastructure_error(r)
+
+
+def test_mixed_lifecycle_and_product_verbs_is_a_failure():
+    """A teardown reports more than one command: `shutdown()` tries `stop`, and on
+    failure `kill`, then `down --volumes`. `test_huge_concurrent_restore` rows carry
+    exactly this mix. A product-sensitive subcommand anywhere in the row means the server
+    is what did not respond, so the presence of a lifecycle verb must not outvote it."""
+    r = _translate(
+        "test_backup_restore_on_cluster/test_huge_concurrent_restore.py::test_huge",
+        [
+            ("test_backup_restore_on_cluster/test_huge_concurrent_restore.py", 71, "    cluster.shutdown()"),
+            ("helpers/cluster.py", 4443, "    subprocess_check_call(self.base_cmd + ['down', '--volumes'])"),
+        ],
+        "E   Exception: Command [docker compose --project-name roottestx-gw2 down "
+        "--volumes] timed out after 300s",
+        cause_frames=[("helpers/cluster.py", 4395, "    run_and_check(self.base_cmd + ['stop'])")],
+        cause_exc_line="E   subprocess.TimeoutExpired: Command '['docker', 'compose', "
+        "'--project-name', 'roottestx-gw2', 'stop']' timed out after 300 seconds",
+    )
+    r.status = Result.Status.FAIL
+    assert _is_docker_compose_timeout(r.info), "both commands are orchestration"
+    assert not _is_infrastructure_error(r), (
+        "a `stop` that timed out is the server hanging, whatever else the row reports"
+    )
+
+
+def test_unclassified_subcommand_is_not_relabelled():
+    """A compose subcommand nobody has classified must not be assumed harmless: the
+    default has to be reporting the failure, not suppressing it."""
+    r = _run_and_check_chain(
+        "test_x/test.py::test_y",
+        [("test_x/test.py", 10, "    cluster.do_something()")],
+        ["docker", "compose", "--project-name", "roottestx-gw2", "wait"],
+    )
+    r.status = Result.Status.FAIL
+    assert _is_docker_compose_timeout(r.info), "it is still an orchestration command"
+    assert not _is_infrastructure_error(r)
+
+
+def test_docker_login_timeout_stays_infrastructure():
+    """`login_to_ecr` runs `run_and_check(["docker", "login", ...])` with no timeout
+    (cluster.py:3659-3682) from `start()`, which rethrows, so a registry stall surfaces
+    as a per-test result. A registry not answering is what this mechanism exists for:
+    `toomanyrequests` and `pull access denied` are its neighbours in the pattern list."""
+    r = _run_and_check_chain(
+        "test_keeper_profiler/test.py::test_profiler",
+        [
+            ("test_keeper_profiler/test.py", 31, "    cluster.start()"),
+            ("helpers/cluster.py", 3679, "    run_and_check(["),
+        ],
+        [
+            "docker",
+            "login",
+            "123.dkr.ecr.us-east-1.amazonaws.com",
+            "-u",
+            "AWS",
+            "--password-stdin",
+        ],
+    )
+    r.status = Result.Status.FAIL
+    assert _is_infrastructure_error(r)
+    r.status = Result.Status.ERROR
+    assert _is_infrastructure_error(r)
+
+
+def test_compose_start_timeout_stays_infrastructure():
+    """`process_integration_nodes` passes the subcommand in as a variable
+    (cluster.py:4835), so `start`/`kill` reach compose from the same call site;
+    `start_zookeeper_nodes` uses `start`, which only waits for docker."""
+    r = _run_and_check_chain(
+        "test_keeper_multinode_simple/test.py::test_simple_replicated_table",
+        [
+            ("test_keeper_multinode_simple/test.py", 90, "    cluster.start_zookeeper_nodes(nodes)"),
+            ("helpers/cluster.py", 4835, "    subprocess_check_call(base_cmd + [action] + list(nodes))"),
+        ],
+        ["docker", "compose", "--project-name", "roottestx-gw2", "start", "zoo1", "zoo2"],
+    )
+    r.status = Result.Status.FAIL
+    assert _is_infrastructure_error(r)
+
+
+def test_project_name_that_looks_like_a_subcommand_is_not_the_subcommand():
+    """`--project-name` consumes the token after it, so the subcommand is the first token
+    no option has claimed. A project literally named `up` must not make a `stop` timeout
+    look like a lifecycle one."""
+    r = _run_and_check_chain(
+        "test_x/test.py::test_y",
+        [("test_x/test.py", 10, "    cluster.shutdown()")],
+        ["docker", "compose", "--project-name", "up", "stop"],
+    )
+    r.status = Result.Status.FAIL
+    assert not _is_infrastructure_error(r)
 
 
 # --- (c) an incidental substring inside an embedded stack trace is not a timeout ------
@@ -311,6 +630,49 @@ def test_timeout_token_only_in_embedded_stack_is_not_infrastructure():
     r.status = Result.Status.FAIL
     assert not _is_infrastructure_error(r), (
         "a timeout substring inside an embedded stack trace is not a timeout"
+    )
+
+
+def test_compose_timeout_only_in_embedded_traceback_is_not_infrastructure():
+    """Pins the `E `-line scoping itself.
+
+    Shape taken from `test_huge_concurrent_restore`, where a compose-argv
+    `TimeoutExpired` from an earlier teardown attempt sits ~7 kB away from the raising
+    exception, rendered as `|`-prefixed continuation lines inside one entry rather than
+    as a chain. Those real rows embed `stop`/`kill`, which the subcommand split rejects
+    anyway; this one embeds `up` so that only the scoping can reject it.
+    """
+    embedded = "\n".join(
+        [
+            "    | Traceback (most recent call last):",
+            "    |   File helpers/cluster.py:4289, in start",
+            "    | subprocess.TimeoutExpired: Command '['docker', 'compose', "
+            "'--project-name', 'roottestx-gw2', 'up', '-d']' timed out after 300 seconds",
+            "    | During handling of the above exception, another exception occurred:",
+        ]
+    )
+    r = _translate(
+        "test_backup_restore_on_cluster/test_huge_concurrent_restore.py::test_huge",
+        [
+            (
+                "test_backup_restore_on_cluster/test_huge_concurrent_restore.py",
+                71,
+                "    node0.query('BACKUP TABLE tbl ...')",
+            ),
+            ("helpers/client.py", 269, f"    raise QueryRuntimeException\n{embedded}"),
+        ],
+        "E   helpers.client.QueryRuntimeException: Client failed! Return code: 32, "
+        "stderr: Code: 32. DB::Exception: Attempt to read after eof "
+        "(ATTEMPT_TO_READ_AFTER_EOF)",
+    )
+    r.status = Result.Status.FAIL
+    # the embedded text is present and would match if the scoping were dropped
+    assert "docker', 'compose'" in r.info and "timed out after" in r.info
+    assert not _is_docker_compose_timeout(r.info)
+    assert not _is_orchestration_lifecycle_timeout(r.info)
+    assert not _is_infrastructure_error(r), (
+        "a compose timeout from an earlier attempt, embedded in the traceback of an "
+        "unrelated product exception, is not what failed here"
     )
 
 

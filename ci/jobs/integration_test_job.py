@@ -54,8 +54,8 @@ MAX_MEM_PER_WORKER_DIST_EACH = 20
 
 # A timeout says nothing about its own origin: a container orchestration command and
 # the process under test both raise `subprocess.TimeoutExpired`, rendering the same two
-# substrings. These two are therefore matched by `_is_docker_compose_timeout` rather
-# than by a plain substring search.
+# substrings. These two are therefore matched by the argv that timed out rather than by
+# a plain substring search.
 TIMEOUT_ERROR_PATTERNS = [
     "timed out after",
     "TimeoutExpired",
@@ -76,16 +76,43 @@ INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Got exception pulling images:",  # docker pull failure during cluster.start()
 ]
 
-# Every orchestration command the suite runs begins with these two argv entries:
-# `ClickHouseCluster.base_cmd` is `["docker", "compose", ...]` and `compose_cmd()`
-# returns `["docker", "compose", "--project-name", ...]`. Image pulls are included,
-# `images_pull_cmd` being `base_cmd + ["pull"]`. Nothing a test body runs matches.
-# Both renderings occur: `subprocess.TimeoutExpired` repr's the argv list, while
-# `run_and_check` re-raises with the argv space-joined.
-DOCKER_COMPOSE_ARGV_RENDERINGS = [
-    "'docker', 'compose'",
-    "docker compose",
-]
+# compose options that consume the token after them, so the subcommand is not the
+# first non-option token but the first one no option has claimed.
+COMPOSE_VALUED_OPTIONS = {
+    "--ansi",
+    "--env-file",
+    "--file",
+    "--parallel",
+    "--profile",
+    "--progress",
+    "--project-directory",
+    "--project-name",
+    "-f",
+    "-p",
+}
+
+# Subcommands whose wait is bounded by docker and the registry alone, so exceeding the
+# python-side budget says nothing about the server under test.
+ORCHESTRATION_LIFECYCLE_VERBS = {
+    "config",
+    "create",
+    "down",
+    "images",
+    "login",
+    "logs",
+    "ps",
+    "pull",
+    "rm",
+    "start",
+    "unpause",
+    "up",
+}
+
+# Subcommands that wait on the server exiting: `shutdown()` runs
+# `run_and_check(base_cmd + ["stop"])` with no `--timeout`, so the wait is bounded by
+# the generated template's `stop_grace_period: 10m`, which outlives the python-side
+# budget. A server ignoring SIGTERM for that long is a product defect.
+ORCHESTRATION_PRODUCT_VERBS = {"kill", "pause", "restart", "stop"}
 
 
 def _raising_exception_lines(info: str) -> list:
@@ -97,14 +124,74 @@ def _raising_exception_lines(info: str) -> list:
     return [line for line in info.splitlines() if line.startswith("E ")]
 
 
-def _is_docker_compose_timeout(info: str) -> bool:
-    """Whether a raised exception is a docker compose lifecycle command timing out."""
+def _argv_lists(line: str) -> list:
+    """Every bracketed argv on `line`, in either rendering."""
+    argvs = []
+    for match in re.finditer(r"\[((?:'[^']*'(?:,\s*)?)+)\]", line):
+        argvs.append(re.findall(r"'([^']*)'", match.group(1)))
+    for match in re.finditer(r"\[([^\[\]']+)\]", line):
+        argvs.append(match.group(1).split())
+    return argvs
+
+
+def _orchestration_verb(argv: list):
+    """The docker subcommand `argv` invokes, or None if it is not orchestration."""
+    if len(argv) < 2 or argv[0] != "docker":
+        return None
+    if argv[1] == "login":
+        return "login"
+    if argv[1] != "compose":
+        return None
+    i = 2
+    while i < len(argv):
+        if argv[i] in COMPOSE_VALUED_OPTIONS:
+            i += 2
+        elif argv[i].startswith("-"):
+            i += 1
+        else:
+            return argv[i]
+    return None
+
+
+def _timed_out_orchestration_verbs(info: str) -> set:
+    """The docker subcommands that a raised exception reports as timing out."""
+    verbs = set()
     for line in _raising_exception_lines(info):
         if not any(p in line for p in TIMEOUT_ERROR_PATTERNS):
             continue
-        if any(r in line for r in DOCKER_COMPOSE_ARGV_RENDERINGS):
-            return True
-    return False
+        for argv in _argv_lists(line):
+            verb = _orchestration_verb(argv)
+            if verb is not None:
+                verbs.add(verb)
+    return verbs
+
+
+def _is_docker_compose_timeout(info: str) -> bool:
+    """Whether a raised exception is a docker orchestration command timing out.
+
+    Answers only "was it orchestration?", not "should it be relabelled?": the two are
+    separate questions and only this one is about how the argv was rendered.
+    """
+    return bool(_timed_out_orchestration_verbs(info))
+
+
+def _is_orchestration_lifecycle_timeout(info: str) -> bool:
+    """Whether the timeout is docker's or the registry's rather than the server's.
+
+    `raise ... from ex` makes pytest render both exceptions, each with its own `E `
+    prefix, and a teardown can report several commands, so a row can name more than one
+    subcommand. A product-sensitive one anywhere among them means the server is the one
+    that did not respond.
+
+    An unrecognised subcommand is not a lifecycle one: a new compose verb must be
+    classified deliberately rather than default to suppressing the result.
+    """
+    verbs = _timed_out_orchestration_verbs(info)
+    if not verbs:
+        return False
+    if verbs & ORCHESTRATION_PRODUCT_VERBS:
+        return False
+    return bool(verbs & ORCHESTRATION_LIFECYCLE_VERBS)
 
 
 def _non_timeout_patterns_match(info: str) -> bool:
@@ -119,9 +206,9 @@ def _is_infrastructure_error(result: Result) -> bool:
     if not result.info:
         return False
     if result.status == Result.Status.ERROR:
-        return _non_timeout_patterns_match(result.info) or _is_docker_compose_timeout(
+        return _non_timeout_patterns_match(
             result.info
-        )
+        ) or _is_orchestration_lifecycle_timeout(result.info)
     # Docker compose/pull infrastructure failures may appear with FAIL status
     # when pytest reports fixture (setup phase) errors as test failures.
     # Require both docker context and an infrastructure pattern to avoid
@@ -132,7 +219,7 @@ def _is_infrastructure_error(result: Result) -> bool:
         )
         return has_docker_context and (
             _non_timeout_patterns_match(result.info)
-            or _is_docker_compose_timeout(result.info)
+            or _is_orchestration_lifecycle_timeout(result.info)
         )
     return False
 
