@@ -30,6 +30,8 @@
 #include <Common/Arena.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <fmt/format.h>
+
 using namespace DB;
 
 namespace
@@ -72,6 +74,35 @@ ColumnAggregateFunction::MutablePtr createSkewedGroupArrayColumn(
         if (row == giant_state_row)
             for (size_t i = 0; i < elements_in_giant_state; ++i)
                 function->add(column->getData()[row], arguments, i, states_arena ? states_arena : &column->createOrGetArena());
+    }
+    return column;
+}
+
+/// A `groupArray(String)` column whose states really live in the arena the column owns: unlike the numeric
+/// `groupArray`, the generic implementation allocates its nodes in an arena, so `byteSize` counts the whole
+/// state payload. Every row is an empty state except `filled_state_row`, which holds `elements_in_state`
+/// short strings. Short values make the arena bookkeeping per element - a node header and a pointer -
+/// several times the element's wire size, which is what the carrier accounting must not count twice.
+ColumnAggregateFunction::MutablePtr
+createGroupArrayStringColumn(size_t rows, size_t filled_state_row, size_t elements_in_state, AggregateFunctionPtr & function)
+{
+    AggregateFunctionProperties properties;
+    function = AggregateFunctionFactory::instance().get(
+        "groupArray", NullsAction::EMPTY, DataTypes{std::make_shared<DataTypeString>()}, Array{}, properties);
+
+    auto column = ColumnAggregateFunction::create(function);
+
+    auto values = ColumnString::create();
+    for (size_t i = 0; i < elements_in_state; ++i)
+        values->insert(fmt::format("{:02x}", (i * 0x9E) & 0xFF));
+    const IColumn * arguments[1] = {values.get()};
+
+    for (size_t row = 0; row < rows; ++row)
+    {
+        column->insertDefault();
+        if (row == filled_state_row)
+            for (size_t i = 0; i < elements_in_state; ++i)
+                function->add(column->getData()[row], arguments, i, &column->createOrGetArena());
     }
     return column;
 }
@@ -441,14 +472,16 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseStateArenaIsNotCountedAsPlain
     tryRegisterAggregateFunctions();
 
     constexpr size_t rows = 200;
+    /// Small enough that a copy of the serialized state fits the codec's match window, so the repeated
+    /// payload compresses well and the arena bytes the pre-fix accounting left in `plain_bytes` dominate.
     constexpr size_t elements_in_state = 4000;
 
     AggregateFunctionPtr function;
     /// Row zero is the sparse implicit default, row one the stored value; unlike a column assembled with
     /// `insertFrom`, this one builds its states in its own arena, which `byteSize` counts.
-    auto values = createSkewedGroupArrayColumn(/*rows=*/2, /*giant_state_row=*/1, elements_in_state, function);
-    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
-    ASSERT_GT(values->byteSize(), elements_in_state * sizeof(UInt64));
+    auto values = createGroupArrayStringColumn(/*rows=*/2, /*filled_state_row=*/1, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeString>()}, Array{});
+    ASSERT_GT(values->byteSize(), elements_in_state * 8);
 
     auto offsets = ColumnUInt64::create();
     offsets->insert(0);
@@ -457,7 +490,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseStateArenaIsNotCountedAsPlain
 
     /// As in `ConstantSparseStateSamplesRepeatedPayload`, the wire ground truth is the equivalent
     /// materialized column: `NativeWriter` cannot serialize a constant over a sparse column.
-    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    auto source_state = createGroupArrayStringColumn(/*rows=*/1, /*filled_state_row=*/0, elements_in_state, function);
     auto materialized = ColumnAggregateFunction::create(function);
     for (size_t row = 0; row < rows; ++row)
         materialized->insertFrom(*source_state, 0);
