@@ -193,6 +193,30 @@ SELECT 'a step that wraps before the next data row is rejected';
 -- at INT64_MAX - 1, while its first step wraps to INT64_MIN before it can reach the next data row.
 SELECT x FROM (SELECT toInt64(9223372036854775807) AS x ORDER BY x ASC WITH FILL FROM toInt64(9223372036854775806) STEP 2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
+SELECT 'a generated value out of range of the column type is rejected at runtime';
+
+-- Without FROM the sequence is anchored at a data value, so whether it ever generates a value the column cannot
+-- hold is known only at execution time: `TO 257 STEP 3` over a UInt8 column stops at 254 when the data ends at 11,
+-- but reaches 256 - which the column stores as 0 - when it ends at 13.
+SELECT x FROM (SELECT toUInt8(13) AS x ORDER BY x ASC WITH FILL TO 257 STEP 3) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT groupArray(x) FROM (SELECT toUInt8(11) AS x ORDER BY x ASC WITH FILL TO 257 STEP 3);
+-- The same for a signed column type.
+SELECT x FROM (SELECT toInt8(126) AS x ORDER BY x ASC WITH FILL TO 130 STEP 3) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT groupArray(x) FROM (SELECT toInt8(127) AS x ORDER BY x ASC WITH FILL TO 130 STEP 3);
+
+SELECT 'a STALENESS border out of range of the column type is rejected';
+
+-- STALENESS moves the effective bound to a fixed distance past the last data row, so the bound is known only at
+-- execution time as well. Its own range is checked exactly like that of a bound known up front - including the
+-- calendar window of Date32 and DateTime64, where the values between the calendar and the storage boundary all
+-- serialize as the clamped boundary date (without the check the query below returns 9999-12-31 23:59:59 nine
+-- times in a row).
+SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL STALENESS 10) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT d FROM (SELECT toDate32(2932896) AS d ORDER BY d ASC WITH FILL STALENESS 10) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- A border that lands exactly on the last representable time point is fine.
+SELECT count(), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:49', 0, 'UTC') AS t ORDER BY t ASC WITH FILL STALENESS 10);
+SELECT count(), max(t) FROM (SELECT toDateTime64('2020-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL STALENESS 10);
+
 SELECT 'in-range filling is unchanged';
 
 SELECT groupArray(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL FROM 1 TO 10);

@@ -1,10 +1,13 @@
 #include <cstddef>
 
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/Operators.h>
 #include <Interpreters/FillingRow.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
@@ -41,6 +44,54 @@ bool equals(const Field & lhs, const Field & rhs)
         return lhs == rhs;
 
     return accurateEquals(lhs, rhs);
+}
+
+bool fillValueWithinCalendarRange(const Field & value, const IDataType & type)
+{
+    /// For Date32 and DateTime64 the boundaries of the representable calendar lie strictly inside the range of
+    /// the storage type, and the values between the two are invalid: nothing else produces them (conversions
+    /// clamp at the calendar boundary), the serializers render them as the clamped boundary date, and the
+    /// calendar arithmetic of an INTERVAL step clamps back into the calendar from them. (For Date and DateTime
+    /// the whole storage range maps into the calendar, so there is nothing to check there.)
+    WhichDataType which(type);
+
+    if (which.isDate32() && value.getType() == Field::Types::Int64)
+    {
+        const Int64 day_num = value.safeGet<Int64>();
+        return day_num >= DATE_LUT_MIN_EXTEND_DAY_NUM && day_num <= DATE_LUT_MAX_EXTEND_DAY_NUM;
+    }
+
+    if (which.isDateTime64() && value.getType() == Field::Types::Decimal64)
+    {
+        /// The calendar clamps in the local civil calendar of the column's time zone (the local year is clamped
+        /// to [0000, 9999], see e.g. DateLUTImpl::addYearsOutOfRange), so the boundary expressed in raw ticks is
+        /// shifted by the UTC offset of the time zone: the last representable second is the raw value of local
+        /// 9999-12-31 23:59:59, not of the same instant in UTC.
+        const auto & time_zone = static_cast<const DataTypeDateTime64 &>(type).getTimeZone();
+        const Int64 max_seconds = time_zone.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59);
+        const Int64 min_seconds = time_zone.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0);
+        const auto & decimal = value.safeGet<DecimalField<Decimal64>>();
+        const Int128 scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(decimal.getScale());
+        /// The last representable time point of the calendar has all its sub-second digits set.
+        const Int128 max_ticks = static_cast<Int128>(max_seconds) * scale_multiplier + (scale_multiplier - 1);
+        const Int128 min_ticks = static_cast<Int128>(min_seconds) * scale_multiplier;
+        const Int128 ticks = decimal.getValue().value;
+        return ticks >= min_ticks && ticks <= max_ticks;
+    }
+
+    return true;
+}
+
+bool fillValueFitsColumnType(const Field & value, const IDataType & type)
+{
+    /// Only integers wrap around. Float values saturate, and they are inexact for a narrower column type anyway,
+    /// so an exact-representability check would reject ordinary queries. Decimal conversion throws on overflow.
+    WhichDataType which(type);
+    if (!isInteger(type) && !which.isDate() && !which.isDate32() && !which.isDateTime() && !which.isDateTime64())
+        return true;
+
+    /// `convertFieldToType` returns Null for a value that is out of range of the target storage type.
+    return !convertFieldToType(value, type).isNull() && fillValueWithinCalendarRange(value, type);
 }
 
 
@@ -146,6 +197,25 @@ static const Field & findBorder(const Field & constraint, const Field & next_ori
     return next_original; /// NOLINT(bugprone-return-const-ref-from-parameter)
 }
 
+/** The arithmetic of filling is performed in a carrier type wide enough for it - Int64 for every integer column
+  * type - while the generated values are written into a column of the column's own type, which silently truncates
+  * whatever does not fit. Bounds known up front are checked when the transform is constructed, but a fill anchored
+  * at a data value only becomes known here: `WITH FILL TO 257 STEP 3` over a UInt8 column stops at 254 when the
+  * data ends at 11 and reaches 256 - which the column would store as 0 - when it ends at 13. Check every value
+  * that is about to be generated, so that no value the column cannot hold ever reaches it.
+  */
+void FillingRow::checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const
+{
+    const auto & descr = getFillDescription(column_ind);
+
+    if (descr.fill_column_type && !fillValueFitsColumnType(value, *descr.fill_column_type))
+        throw Exception(
+            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+            "WITH FILL generates the value {} which is out of range of the ORDER BY column type {}",
+            applyVisitor(FieldVisitorToString(), value),
+            descr.fill_column_type->getName());
+}
+
 bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 {
 
@@ -205,6 +275,8 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (!less(next_value, constraints[i], getDirection(i)))
             continue;
 
+        checkGeneratedValueFitsColumnType(next_value, i);
+
         row[i] = next_value;
         initUsingFrom(i + 1);
 
@@ -225,6 +297,8 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
     if (!constraints[pos].isNull() && !less(next_value, constraints[pos], getDirection(pos)))
         return false;
+
+    checkGeneratedValueFitsColumnType(next_value, pos);
 
     row[pos] = next_value;
     if (equals(row[pos], next_original_row[pos]))
@@ -349,7 +423,7 @@ void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size
             Field staleness_border = (*base_row[i])[row_ind];
             descr.staleness_step_func(staleness_border, 1);
 
-            if (convertFieldToType(staleness_border, *descr.fill_column_type).isNull())
+            if (!fillValueFitsColumnType(staleness_border, *descr.fill_column_type))
                 throw Exception(
                     ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                     "WITH FILL STALENESS bound does not fit the column type");

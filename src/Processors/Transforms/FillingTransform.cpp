@@ -357,45 +357,14 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
 {
     WhichDataType which(type);
 
-    /// For Date32 and DateTime64 the boundaries of the representable calendar ([0000-01-01, 9999-12-31] in the
-    /// local civil calendar of the column's time zone, see DateLUTImpl) lie strictly inside the range of the
-    /// storage type, and values between the two are invalid: nothing else produces them (conversions clamp at
-    /// the calendar boundary), the serializers render them as the clamped boundary date, and the calendar
-    /// arithmetic of an INTERVAL step clamps back into the calendar from them. A bound in that gap fits the
-    /// storage type but is out of range of the *column type*, so the representability check below has to test
-    /// the calendar window, not just the storage range. (For Date and DateTime the whole storage range maps
-    /// into the calendar, so the storage check is enough there. For Date32 `convertFieldToType` rejects the
-    /// gap as well, but the window is needed here in its own right: the INTERVAL-step check below reports it
-    /// with a dedicated message, and DateTime64 is not covered there.)
-    /// Returns whether the value lies within the calendar window, or true when the check does not apply.
-    auto within_calendar = [&](const Field & value)
-    {
-        if (which.isDate32() && value.getType() == Field::Types::Int64)
-        {
-            const Int64 day_num = value.safeGet<Int64>();
-            return day_num >= DATE_LUT_MIN_EXTEND_DAY_NUM && day_num <= DATE_LUT_MAX_EXTEND_DAY_NUM;
-        }
-
-        if (which.isDateTime64() && value.getType() == Field::Types::Decimal64)
-        {
-            /// The calendar clamps in the local civil calendar of the column's time zone (the local year is
-            /// clamped to [0000, 9999], see e.g. DateLUTImpl::addYearsOutOfRange), so the boundary expressed
-            /// in raw ticks is shifted by the UTC offset of the time zone: the last representable second is
-            /// the raw value of local 9999-12-31 23:59:59, not of the same instant in UTC.
-            const auto & time_zone = static_cast<const DataTypeDateTime64 &>(*type).getTimeZone();
-            const Int64 max_seconds = time_zone.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59);
-            const Int64 min_seconds = time_zone.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0);
-            const auto & decimal = value.safeGet<DecimalField<Decimal64>>();
-            const Int128 scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(decimal.getScale());
-            /// The last representable time point of the calendar has all its sub-second digits set.
-            const Int128 max_ticks = static_cast<Int128>(max_seconds) * scale_multiplier + (scale_multiplier - 1);
-            const Int128 min_ticks = static_cast<Int128>(min_seconds) * scale_multiplier;
-            const Int128 ticks = decimal.getValue().value;
-            return ticks >= min_ticks && ticks <= max_ticks;
-        }
-
-        return true;
-    };
+    /// For Date32 and DateTime64 the boundaries of the representable calendar lie strictly inside the range of
+    /// the storage type, and the values between the two are invalid: nothing else produces them (conversions
+    /// clamp at the calendar boundary), the serializers render them as the clamped boundary date, and the
+    /// calendar arithmetic of an INTERVAL step clamps back into the calendar from them. A bound in that gap
+    /// fits the storage type but is out of range of the *column type*, so the representability check below
+    /// tests the calendar window as well - `fillValueFitsColumnType` does both. The window is also needed on
+    /// its own right here: the INTERVAL-step check just below reports it with a dedicated message.
+    auto within_calendar = [&](const Field & value) { return fillValueWithinCalendarRange(value, *type); };
 
     /// A TO bound beyond the calendar boundary in the fill direction can never be reached by an INTERVAL step
     /// even when it fits the storage type - the calendar arithmetic clamps at the boundary - and the filling
@@ -419,14 +388,9 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
                 type->getName());
     }
 
-    /// Only integers wrap around. Float bounds saturate, and they are inexact for a narrower column type anyway,
-    /// so an exact-representability check would reject ordinary queries. Decimal conversion throws on overflow.
-    if (!isInteger(type) && !which.isDate() && !which.isDate32() && !which.isDateTime() && !which.isDateTime64())
-        return;
-
-    /// `convertFieldToType` returns Null for a value that is out of range of the target storage type.
-    auto is_representable
-        = [&](const Field & value) { return !convertFieldToType(value, *type).isNull() && within_calendar(value); };
+    /// `fillValueFitsColumnType` tests the range of the storage type and the calendar window above; types that
+    /// saturate instead of wrapping around (Float, Decimal) are not checked by it at all.
+    auto is_representable = [&](const Field & value) { return fillValueFitsColumnType(value, *type); };
 
     if (!descr.fill_from.isNull() && !is_representable(descr.fill_from))
         throw Exception(
