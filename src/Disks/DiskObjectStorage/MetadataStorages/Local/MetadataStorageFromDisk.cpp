@@ -49,7 +49,7 @@ void MetadataStorageFromDisk::syncMetadataFile(const std::string & path)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't fsync metadata file {}, it does not exist", path);
 
     /// WriteMode::Append neither truncates the file nor writes to it, so the buffer only serves to
-    /// carry the descriptor its sync() fdatasyncs. Nothing is ever buffered, hence the 1-byte size.
+    /// carry the descriptor its sync fdatasyncs. Nothing is ever buffered, hence the 1-byte size.
     auto buf = disk->writeFile(path, 1, WriteMode::Append);
     buf->sync();
     buf->finalize();

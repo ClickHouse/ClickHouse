@@ -50,12 +50,12 @@ protected:
     void addOperation(std::function<void(MetadataTransactionPtr tx)> op);
 
 public:
-    /// Ask for the metadata files this transaction writes to be fsync'ed. Consumed by commit(),
+    /// Ask for the metadata files this transaction writes to be fsync'ed. Consumed by commit,
     /// where the queued operations that write them are constructed.
     void requestMetadataFileSync();
 
     /// fsync the metadata file for `path`, which must already be committed. For writers that commit
-    /// inside their own finalize callback, where the intent can no longer reach commit().
+    /// inside their own finalize callback, where the intent can no longer reach commit.
     void syncCommittedMetadataFile(const std::string & path);
 
     /// Record locations still missing the blob, for blobs without a per-file metadata node.

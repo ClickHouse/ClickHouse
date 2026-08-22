@@ -138,7 +138,7 @@ run_merge_case 1 "merge, fsync on"
 run_merge_case 0 "merge, fsync off"
 
 # A mutation entry is written straight through the disk rather than through a part transaction, so it
-# commits its own metadata file instead of having commit() do it, and needs its own case. The entry
+# commits its own metadata file instead of having commit do it, and needs its own case. The entry
 # is always synced, so there is no setting that turns this off and no negative arm to pair with it.
 run_alter_case() {
     local suffix="alter"

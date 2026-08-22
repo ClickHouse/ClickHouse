@@ -122,7 +122,7 @@ void WriteFileOperation::execute()
     auto buf = disk.writeFile(path);
     writeString(data, *buf);
     buf->finalize();
-    /// sync() after finalize() is a documented WriteBuffer contract, and the descriptor of a
+    /// sync after finalize is a documented WriteBuffer contract, and the descriptor of a
     /// finalized WriteBufferFromFile is still open.
     if (sync)
         buf->sync();

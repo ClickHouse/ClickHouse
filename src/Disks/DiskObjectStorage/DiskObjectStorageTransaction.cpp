@@ -415,7 +415,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     /// A synced write buffer also needs the metadata file committing this path to its blobs synced.
     /// An autocommit write has already committed that file when the buffer reports the intent;
-    /// every other write records it later, in commit(), so the two take different routes.
+    /// every other write records it later, in commit, so the two take different routes.
     auto sync_metadata_callback = [disk_tx = shared_from_this(), path, autocommit]()
     {
         if (autocommit)
