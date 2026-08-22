@@ -92,9 +92,17 @@ def test_interserver_secret_does_not_apply_authentication_method_grants(started_
         "sha256_password BY 'limited_password' GRANTS (SELECT ON system.users)"
     )
     node1.query("GRANT SELECT ON *.* TO u_interserver ON CLUSTER cluster")
+    # The `cluster` table function reads from a remote source, which is a separate privilege from
+    # `SELECT`: without it the query is denied on the initiator before the interserver hop is made.
+    node1.query("GRANT READ ON REMOTE TO u_interserver ON CLUSTER cluster")
 
+    # `cluster` is a single shard with two replicas, so `clusterAllReplicas` is what actually makes the
+    # interserver hop to the second node: one row comes from the initiator, the other from the remote
+    # node, which re-authenticates the user with the interserver secret. That node must not apply the
+    # `GRANTS` clause of the *other* authentication method (the query would then be denied there,
+    # because `system.one` is not listed in it).
     assert node1.query(
-        "SELECT count() FROM cluster('cluster', system.one)",
+        "SELECT count() FROM clusterAllReplicas('cluster', system.one)",
         user="u_interserver",
         password="full_password",
     ) == "2\n"
