@@ -10,8 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-Database backups provide a safety net by ensuring that if data is lost for any unforeseen reason, the service can be restored to a previous state from the last successful backup.
-This minimizes downtime and prevents business critical data from being permanently lost.
+Database backups are designed to let you restore a service to a previous state from the last successful backup.
 
 ## Backups {#backups}
 
@@ -28,8 +27,7 @@ On Day 1, a full backup is taken to start the backup chain. On Day 2, an increme
 ### Default backup policy {#default-backup-policy}
 
 Backups are metered and billed separately from storage in the Basic, Scale, and Enterprise tiers.
-All services will default to one daily backup with the ability to configure more, starting with the Scale tier, via the Settings tab of the Cloud console.
-Each backup will be retained for at least 24 hours.
+Currently services are defaulted to one daily backup with a 24 hour retention. Backup configuration may vary by service and agreement.
 
 See ["Review and restore backups"](/products/cloud/guides/backups/review-and-restore-backups) for further details.
 
@@ -54,8 +52,8 @@ See ["Configure backup schedules"](/products/cloud/guides/backups/configurable-b
 ## Bring Your Own Bucket (BYOB) Backups {#byob}
 
 ClickHouse Cloud allows exporting backups to your own cloud service provider (CSP) account storage (AWS S3, Google Cloud Storage, or Azure Blob Storage).
-If you configure backups to your own bucket, ClickHouse Cloud will still take daily backups to its own bucket.
-This is to ensure that we have at least one copy of the data to restore from in case the backups in your bucket get corrupted.
+If you configure backups to your own bucket, ClickHouse Cloud also continues to take its own backups by default.
+
 For details of how ClickHouse Cloud backups work, see the [backups](/products/cloud/guides/backups/review-and-restore-backups) docs.
 
 In this guide, we walk through how you can export backups to your AWS, GCP, Azure object storage, as well as how to restore these backups in your account to a new ClickHouse Cloud service.
