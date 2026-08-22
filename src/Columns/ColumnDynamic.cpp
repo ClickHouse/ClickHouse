@@ -22,6 +22,7 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -954,7 +955,7 @@ struct SharedValueTypeGroup
 
 /// Index of the group `value` belongs to, or `groups.size()` if it starts a new one. Runs of one
 /// type are the common case, so `hint` (the previous match) is tried before the scan.
-size_t findSharedValueTypeGroup(const std::vector<SharedValueTypeGroup> & groups, std::string_view value, size_t hint)
+size_t findSharedValueTypeGroup(const VectorWithMemoryTracking<SharedValueTypeGroup> & groups, std::string_view value, size_t hint)
 {
     if (hint < groups.size() && value.starts_with(groups[hint].prefix))
         return hint;
@@ -985,7 +986,7 @@ void hashSharedValuesImpl(GetValue && get_value, size_t count, UInt32 * hash_out
     if (count == 0)
         return;
 
-    std::vector<SharedValueTypeGroup> groups;
+    VectorWithMemoryTracking<SharedValueTypeGroup> groups;
     size_t hint = 0;
     for (size_t i = 0; i < count; ++i)
     {
