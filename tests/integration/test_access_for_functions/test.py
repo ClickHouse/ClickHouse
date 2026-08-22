@@ -1,5 +1,7 @@
-import pytest
 import uuid
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -22,7 +24,7 @@ def test_access_rights_for_function():
     instance.query("CREATE USER A")
     instance.query("CREATE USER B")
     assert (
-        "it's necessary to have grant CREATE FUNCTION ON *.*"
+        "it's necessary to have the grant CREATE FUNCTION ON *.*"
         in instance.query_and_get_error(create_function_query, user="A")
     )
 
@@ -32,19 +34,22 @@ def test_access_rights_for_function():
     assert instance.query("SELECT MySum(1, 2)") == "3\n"
 
     assert (
-        "it's necessary to have grant DROP FUNCTION ON *.*"
+        "it's necessary to have the grant DROP FUNCTION ON *.*"
         in instance.query_and_get_error("DROP FUNCTION MySum", user="B")
     )
 
     instance.query("GRANT DROP FUNCTION ON *.* TO B")
     instance.query("DROP FUNCTION MySum", user="B")
-    assert "Unknown function MySum" in instance.query_and_get_error(
-        "SELECT MySum(1, 2)"
+
+    function_resolution_error = instance.query_and_get_error("SELECT MySum(1, 2)")
+    assert (
+        "Unknown function MySum" in function_resolution_error
+        or "Function with name `MySum` does not exist." in function_resolution_error
     )
 
     instance.query("REVOKE CREATE FUNCTION ON *.* FROM A")
     assert (
-        "it's necessary to have grant CREATE FUNCTION ON *.*"
+        "it's necessary to have the grant CREATE FUNCTION ON *.*"
         in instance.query_and_get_error(create_function_query, user="A")
     )
 
@@ -61,9 +66,9 @@ def test_ignore_obsolete_grant_on_database():
             "bash",
             "-c",
             f"""
-        cat > /var/lib/clickhouse/access/{user_id}.sql << EOF
-ATTACH USER X;
-ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO X;
+        cat > /var/lib/clickhouse/access/{user_id}.sql << 'EOF'
+ATTACH USER `{user_id}`;
+ATTACH GRANT CREATE FUNCTION, SELECT ON mydb.* TO `{user_id}`;
 EOF""",
         ]
     )
@@ -73,4 +78,7 @@ EOF""",
     )
     instance.start_clickhouse()
 
-    assert instance.query("SHOW GRANTS FOR X") == "GRANT SELECT ON mydb.* TO X\n"
+    assert (
+        instance.query(f"SHOW GRANTS FOR `{user_id}`")
+        == f"GRANT SELECT ON mydb.* TO `{user_id}`\n"
+    )

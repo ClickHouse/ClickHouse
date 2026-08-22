@@ -1,0 +1,4 @@
+<clickhouse>
+    <mysql_port>9001</mysql_port>
+    <mysql_require_secure_transport>true</mysql_require_secure_transport>
+</clickhouse>

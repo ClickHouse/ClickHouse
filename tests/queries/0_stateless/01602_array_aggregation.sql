@@ -3,6 +3,12 @@ SELECT 'Array max ', (arrayMax(array(1,2,3,4,5,6)));
 SELECT 'Array sum ', (arraySum(array(1,2,3,4,5,6)));
 SELECT 'Array avg ', (arrayAvg(array(1,2,3,4,5,6)));
 
+SELECT 'Array min :';
+SELECT arrayMin([[3], [1], [2]]);
+
+SELECT 'Array max :';
+SELECT arrayMax([[3], [1], [2]]);
+
 DROP TABLE IF EXISTS test_aggregation;
 CREATE TABLE test_aggregation (x Array(Int)) ENGINE=TinyLog;
 

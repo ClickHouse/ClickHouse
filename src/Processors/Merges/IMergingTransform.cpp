@@ -1,4 +1,6 @@
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -11,8 +13,8 @@ namespace ErrorCodes
 
 IMergingTransformBase::IMergingTransformBase(
     size_t num_inputs,
-    const Block & input_header,
-    const Block & output_header,
+    SharedHeader & input_header,
+    SharedHeader & output_header,
     bool have_all_inputs_,
     UInt64 limit_hint_,
     bool always_read_till_end_)
@@ -23,7 +25,12 @@ IMergingTransformBase::IMergingTransformBase(
 {
 }
 
-static InputPorts createPorts(const Blocks & blocks)
+OutputPort & IMergingTransformBase::getOutputPort()
+{
+    return outputs.front();
+}
+
+static InputPorts createPorts(const SharedHeaders & blocks)
 {
     InputPorts ports;
     for (const auto & block : blocks)
@@ -32,8 +39,8 @@ static InputPorts createPorts(const Blocks & blocks)
 }
 
 IMergingTransformBase::IMergingTransformBase(
-    const Blocks & input_headers,
-    const Block & output_header,
+    SharedHeaders & input_headers,
+    SharedHeader & output_header,
     bool have_all_inputs_,
     UInt64 limit_hint_,
     bool always_read_till_end_)
@@ -101,11 +108,27 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         /// setNotNeeded after reading first chunk, because in optimismtic case
         /// (e.g. with optimized 'ORDER BY primary_key LIMIT n' and small 'n')
         /// we won't have to read any chunks anymore;
-        auto chunk = input.pull(limit_hint != 0);
-        if ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end)
+        /// If virtual row exists, let it pass through, so don't read more chunks.
+        auto chunk = input.pull(true);
+        bool virtual_row = isVirtualRow(chunk);
+        if (limit_hint == 0 && !virtual_row)
             input.setNeeded();
 
-        if (!chunk.hasRows())
+        if (!virtual_row && limit_hint && chunk.getNumRows() < limit_hint)
+            input.setNeeded();
+
+        /// With `always_read_till_end` every source is read in full regardless of where the
+        /// merge stops, so deferring a source behind its virtual row cannot save any reads.
+        /// It would only serialize them: a source left NotNeeded here does not start reading,
+        /// and once the merge finishes, the drain in `prepare` wakes the leftover sources one
+        /// at a time. Keep them producing concurrently from the start instead. (Currently the
+        /// planner sets this flag only on merges over remote streams, which carry no virtual
+        /// rows — see `addMergeSortingStep` — so this is enforcing the invariant locally
+        /// rather than fixing a reachable case.)
+        if (always_read_till_end)
+            input.setNeeded();
+
+        if (!virtual_row && !chunk.hasRows())
         {
             if (!input.isFinished())
             {
@@ -157,11 +180,33 @@ IProcessor::Status IMergingTransformBase::prepare()
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
-    if ((state.output_chunk || state.output_chunk.hasChunkInfo()) && !is_port_full)
+    if ((state.output_chunk || !state.output_chunk.getChunkInfos().empty()) && !is_port_full)
         output.push(std::move(state.output_chunk));
 
     if (!is_initialized)
         return prepareInitializeInputs();
+
+    if (!state.inputs_to_prefetch.empty())
+    {
+        if (state.is_finished)
+        {
+            /// The merge finished before the read-ahead could start: the data would
+            /// never be consumed.
+            state.inputs_to_prefetch.clear();
+        }
+        else
+        {
+            /// Ask the inputs deferred behind virtual rows to start producing data without
+            /// waiting for it, so that they read in parallel with the merge.
+            for (size_t input_num : state.inputs_to_prefetch)
+            {
+                auto & input = input_states[input_num].port;
+                if (!input.isFinished())
+                    input.setNeeded();
+            }
+            state.inputs_to_prefetch.clear();
+        }
+    }
 
     if (state.is_finished)
     {
@@ -202,9 +247,19 @@ IProcessor::Status IMergingTransformBase::prepare()
             if (!input.hasData())
                 return Status::NeedData;
 
-            state.input_chunk.set(input.pull());
-            if (!state.input_chunk.chunk.hasRows() && !input.isFinished())
+            state.input_chunk.set(input.pull(/* set_not_needed */ true));
+            const auto & input_chunk = state.input_chunk.chunk;
+
+            bool virtual_row = isVirtualRow(input_chunk);
+            if (!virtual_row && (!limit_hint || input_chunk.getNumRows() < limit_hint || always_read_till_end))
+            {
+                input.setNeeded();
+            }
+            if (!input_chunk.hasRows() && !virtual_row && !input.isFinished())
+            {
+                input.setNeeded();
                 return Status::NeedData;
+            }
 
             state.has_input = true;
         }

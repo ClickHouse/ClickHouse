@@ -1,14 +1,17 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/ClientCertificateInfo.h>
 #include <Interpreters/ClientInfo.h>
 #include <Access/Common/AuthenticationType.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
+
+struct Settings;
 
 enum SessionLogElementType : int8_t
 {
@@ -20,6 +23,8 @@ enum SessionLogElementType : int8_t
 class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
+using ContextAccessPtr = std::shared_ptr<const ContextAccess>;
+class AuthenticationData;
 
 /** A struct which will be inserted as row into session_log table.
   *
@@ -30,13 +35,6 @@ using UserPtr = std::shared_ptr<const User>;
 struct SessionLogElement
 {
     using Type = SessionLogElementType;
-
-    SessionLogElement() = default;
-    SessionLogElement(const UUID & auth_id_, Type type_);
-    SessionLogElement(const SessionLogElement &) = default;
-    SessionLogElement & operator=(const SessionLogElement &) = default;
-    SessionLogElement(SessionLogElement &&) = default;
-    SessionLogElement & operator=(SessionLogElement &&) = default;
 
     UUID auth_id;
 
@@ -56,13 +54,20 @@ struct SessionLogElement
     ClientInfo client_info;
     String auth_failure_reason;
 
+    /// TLS client certificate presented on this connection (empty if none was presented).
+    bool has_certificate = false;
+    Strings certificate_subjects;
+    String certificate_serial;
+    String certificate_issuer;
+    time_t certificate_not_before{};
+    time_t certificate_not_after{};
+
     static std::string name() { return "SessionLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 
@@ -70,11 +75,28 @@ struct SessionLogElement
 class SessionLog : public SystemLog<SessionLogElement>
 {
     using SystemLog<SessionLogElement>::SystemLog;
-
 public:
-    void addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context, const UserPtr & login_user);
-    void addLoginFailure(const UUID & auth_id, const ClientInfo & info, const std::optional<String> & user, const Exception & reason);
-    void addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info);
+    void addLoginSuccess(const UUID & auth_id,
+                         const String & session_id,
+                         const Settings & settings,
+                         const ContextAccessPtr & access,
+                         const ClientInfo & client_info,
+                         const UserPtr & login_user,
+                         const AuthenticationData & user_authenticated_with,
+                         const std::optional<ClientCertificateInfo> & certificate_info = {});
+
+    void addLoginFailure(
+        const UUID & auth_id,
+        const ClientInfo & info,
+        const std::optional<String> & user,
+        const Exception & reason,
+        const std::optional<ClientCertificateInfo> & certificate_info = {});
+    void addLogOut(
+        const UUID & auth_id,
+        const UserPtr & login_user,
+        const AuthenticationData & user_authenticated_with,
+        const ClientInfo & client_info,
+        const std::optional<ClientCertificateInfo> & certificate_info = {});
 };
 
 }

@@ -1,0 +1,294 @@
+
+#  no_password - User with profile from XML 
+TCP endpoint
+TCP 'wrong password' case is skipped for no_password.
+HTTP endpoint
+HTTP 'wrong password' case is skipped for no_password.
+HTTP endpoint with named session
+HTTP 'wrong password' case is skipped for no_password.
+MySQL endpoint no_password
+Wrong username
+Wrong password
+MySQL 'wrong password' case is skipped for no_password.
+PostrgreSQL endpoint
+PostgreSQL 'wrong password' case is skipped for no_password.
+
+#  no_password - No profiles no roles 
+TCP endpoint
+TCP 'wrong password' case is skipped for no_password.
+HTTP endpoint
+HTTP 'wrong password' case is skipped for no_password.
+HTTP endpoint with named session
+HTTP 'wrong password' case is skipped for no_password.
+MySQL endpoint no_password
+Wrong username
+Wrong password
+MySQL 'wrong password' case is skipped for no_password.
+PostrgreSQL endpoint
+PostgreSQL 'wrong password' case is skipped for no_password.
+
+#  no_password - Two profiles, no roles 
+TCP endpoint
+TCP 'wrong password' case is skipped for no_password.
+HTTP endpoint
+HTTP 'wrong password' case is skipped for no_password.
+HTTP endpoint with named session
+HTTP 'wrong password' case is skipped for no_password.
+MySQL endpoint no_password
+Wrong username
+Wrong password
+MySQL 'wrong password' case is skipped for no_password.
+PostrgreSQL endpoint
+PostgreSQL 'wrong password' case is skipped for no_password.
+
+#  no_password - Two profiles and two simple roles 
+TCP endpoint
+TCP 'wrong password' case is skipped for no_password.
+HTTP endpoint
+HTTP 'wrong password' case is skipped for no_password.
+HTTP endpoint with named session
+HTTP 'wrong password' case is skipped for no_password.
+MySQL endpoint no_password
+Wrong username
+Wrong password
+MySQL 'wrong password' case is skipped for no_password.
+PostrgreSQL endpoint
+PostgreSQL 'wrong password' case is skipped for no_password.
+
+#  plaintext_password - No profiles no roles 
+TCP endpoint
+HTTP endpoint
+HTTP endpoint with named session
+MySQL endpoint plaintext_password
+Wrong username
+Wrong password
+PostrgreSQL endpoint
+
+#  plaintext_password - Two profiles, no roles 
+TCP endpoint
+HTTP endpoint
+HTTP endpoint with named session
+MySQL endpoint plaintext_password
+Wrong username
+Wrong password
+PostrgreSQL endpoint
+
+#  plaintext_password - Two profiles and two simple roles 
+TCP endpoint
+HTTP endpoint
+HTTP endpoint with named session
+MySQL endpoint plaintext_password
+Wrong username
+Wrong password
+PostrgreSQL endpoint
+
+#  sha256_password - No profiles no roles 
+TCP endpoint
+HTTP endpoint
+HTTP endpoint with named session
+MySQL endpoint sha256_password
+MySQL 'successful login' case is skipped for sha256_password.
+Wrong username
+Wrong password
+PostrgreSQL endpoint
+PostgreSQL tests are skipped for sha256_password
+
+#  sha256_password - Two profiles, no roles 
+TCP endpoint
+HTTP endpoint
+HTTP endpoint with named session
+MySQL endpoint sha256_password
+MySQL 'successful login' case is skipped for sha256_password.
+Wrong username
+Wrong password
+PostrgreSQL endpoint
+PostgreSQL tests are skipped for sha256_password
+
+#  sha256_password - Two profiles and two simple roles 
+TCP endpoint
+HTTP endpoint
+HTTP endpoint with named session
+MySQL endpoint sha256_password
+MySQL 'successful login' case is skipped for sha256_password.
+Wrong username
+Wrong password
+PostrgreSQL endpoint
+PostgreSQL tests are skipped for sha256_password
+
+#  double_sha1_password - No profiles no roles 
+TCP endpoint
+HTTP endpoint
+HTTP endpoint with named session
+MySQL endpoint double_sha1_password
+Wrong username
+Wrong password
+PostrgreSQL endpoint
+PostgreSQL tests are skipped for double_sha1_password
+
+#  double_sha1_password - Two profiles, no roles 
+TCP endpoint
+HTTP endpoint
+HTTP endpoint with named session
+MySQL endpoint double_sha1_password
+Wrong username
+Wrong password
+PostrgreSQL endpoint
+PostgreSQL tests are skipped for double_sha1_password
+
+#  double_sha1_password - Two profiles and two simple roles 
+TCP endpoint
+HTTP endpoint
+HTTP endpoint with named session
+MySQL endpoint double_sha1_password
+Wrong username
+Wrong password
+PostrgreSQL endpoint
+PostgreSQL tests are skipped for double_sha1_password
+${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	TCP	LoginFailure	1
+${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	TCP	Logout	1
+${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	HTTP	LoginFailure	many
+${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	HTTP	Logout	many
+${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	MySQL	LoginFailure	many
+${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	MySQL	LoginSuccess	1
+${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	MySQL	Logout	1
+${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	TCP	LoginFailure	1
+${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	TCP	Logout	1
+${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	HTTP	LoginFailure	many
+${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	HTTP	Logout	many
+${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	MySQL	LoginFailure	many
+${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	MySQL	LoginSuccess	1
+${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	MySQL	Logout	1
+${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	TCP	LoginFailure	1
+${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	TCP	Logout	1
+${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	HTTP	LoginFailure	many
+${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	HTTP	Logout	many
+${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	MySQL	LoginFailure	many
+${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	MySQL	LoginSuccess	1
+${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	MySQL	Logout	1
+${BASE_USERNAME}_no_password_no_profiles_no_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_no_password_no_profiles_no_roles	TCP	Logout	1
+${BASE_USERNAME}_no_password_no_profiles_no_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_no_password_no_profiles_no_roles	HTTP	Logout	many
+${BASE_USERNAME}_no_password_no_profiles_no_roles	MySQL	LoginSuccess	1
+${BASE_USERNAME}_no_password_no_profiles_no_roles	MySQL	Logout	1
+${BASE_USERNAME}_no_password_two_profiles_no_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_no_password_two_profiles_no_roles	TCP	Logout	1
+${BASE_USERNAME}_no_password_two_profiles_no_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_no_password_two_profiles_no_roles	HTTP	Logout	many
+${BASE_USERNAME}_no_password_two_profiles_no_roles	MySQL	LoginSuccess	1
+${BASE_USERNAME}_no_password_two_profiles_no_roles	MySQL	Logout	1
+${BASE_USERNAME}_no_password_two_profiles_two_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_no_password_two_profiles_two_roles	TCP	Logout	1
+${BASE_USERNAME}_no_password_two_profiles_two_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_no_password_two_profiles_two_roles	HTTP	Logout	many
+${BASE_USERNAME}_no_password_two_profiles_two_roles	MySQL	LoginSuccess	1
+${BASE_USERNAME}_no_password_two_profiles_two_roles	MySQL	Logout	1
+${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	TCP	LoginFailure	1
+${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	TCP	Logout	1
+${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	HTTP	LoginFailure	many
+${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	HTTP	Logout	many
+${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	MySQL	LoginFailure	many
+${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	MySQL	LoginSuccess	1
+${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	MySQL	Logout	1
+${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	PostgreSQL	LoginFailure	many
+${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	TCP	LoginFailure	1
+${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	TCP	Logout	1
+${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	HTTP	LoginFailure	many
+${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	HTTP	Logout	many
+${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	MySQL	LoginFailure	many
+${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	MySQL	LoginSuccess	1
+${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	MySQL	Logout	1
+${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	PostgreSQL	LoginFailure	many
+${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	TCP	LoginFailure	1
+${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	TCP	Logout	1
+${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	HTTP	LoginFailure	many
+${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	HTTP	Logout	many
+${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	MySQL	LoginFailure	many
+${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	MySQL	LoginSuccess	1
+${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	MySQL	Logout	1
+${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	PostgreSQL	LoginFailure	many
+${BASE_USERNAME}_sha256_password_no_profiles_no_roles	TCP	LoginFailure	1
+${BASE_USERNAME}_sha256_password_no_profiles_no_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_sha256_password_no_profiles_no_roles	TCP	Logout	1
+${BASE_USERNAME}_sha256_password_no_profiles_no_roles	HTTP	LoginFailure	many
+${BASE_USERNAME}_sha256_password_no_profiles_no_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_sha256_password_no_profiles_no_roles	HTTP	Logout	many
+${BASE_USERNAME}_sha256_password_no_profiles_no_roles	MySQL	LoginFailure	many
+${BASE_USERNAME}_sha256_password_two_profiles_no_roles	TCP	LoginFailure	1
+${BASE_USERNAME}_sha256_password_two_profiles_no_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_sha256_password_two_profiles_no_roles	TCP	Logout	1
+${BASE_USERNAME}_sha256_password_two_profiles_no_roles	HTTP	LoginFailure	many
+${BASE_USERNAME}_sha256_password_two_profiles_no_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_sha256_password_two_profiles_no_roles	HTTP	Logout	many
+${BASE_USERNAME}_sha256_password_two_profiles_no_roles	MySQL	LoginFailure	many
+${BASE_USERNAME}_sha256_password_two_profiles_two_roles	TCP	LoginFailure	1
+${BASE_USERNAME}_sha256_password_two_profiles_two_roles	TCP	LoginSuccess	1
+${BASE_USERNAME}_sha256_password_two_profiles_two_roles	TCP	Logout	1
+${BASE_USERNAME}_sha256_password_two_profiles_two_roles	HTTP	LoginFailure	many
+${BASE_USERNAME}_sha256_password_two_profiles_two_roles	HTTP	LoginSuccess	many
+${BASE_USERNAME}_sha256_password_two_profiles_two_roles	HTTP	Logout	many
+${BASE_USERNAME}_sha256_password_two_profiles_two_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_double_sha1_password_no_profiles_no_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_double_sha1_password_two_profiles_no_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_double_sha1_password_two_profiles_two_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_no_password_no_profiles_no_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_no_password_no_profiles_no_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_no_password_no_profiles_no_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_no_password_no_profiles_no_roles	PostgreSQL	LoginFailure	many
+invalid_${BASE_USERNAME}_no_password_two_profiles_no_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_no_password_two_profiles_no_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_no_password_two_profiles_no_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_no_password_two_profiles_no_roles	PostgreSQL	LoginFailure	many
+invalid_${BASE_USERNAME}_no_password_two_profiles_two_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_no_password_two_profiles_two_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_no_password_two_profiles_two_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_no_password_two_profiles_two_roles	PostgreSQL	LoginFailure	many
+invalid_${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_plaintext_password_no_profiles_no_roles	PostgreSQL	LoginFailure	many
+invalid_${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_plaintext_password_two_profiles_no_roles	PostgreSQL	LoginFailure	many
+invalid_${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_plaintext_password_two_profiles_two_roles	PostgreSQL	LoginFailure	many
+invalid_${BASE_USERNAME}_sha256_password_no_profiles_no_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_sha256_password_no_profiles_no_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_sha256_password_no_profiles_no_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_sha256_password_two_profiles_no_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_sha256_password_two_profiles_no_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_sha256_password_two_profiles_no_roles	MySQL	LoginFailure	many
+invalid_${BASE_USERNAME}_sha256_password_two_profiles_two_roles	TCP	LoginFailure	1
+invalid_${BASE_USERNAME}_sha256_password_two_profiles_two_roles	HTTP	LoginFailure	many
+invalid_${BASE_USERNAME}_sha256_password_two_profiles_two_roles	MySQL	LoginFailure	many
+invalid_session_log_test_xml_user	TCP	LoginFailure	1
+invalid_session_log_test_xml_user	HTTP	LoginFailure	many
+invalid_session_log_test_xml_user	MySQL	LoginFailure	many
+invalid_session_log_test_xml_user	PostgreSQL	LoginFailure	many
+session_log_test_xml_user	TCP	LoginSuccess	1
+session_log_test_xml_user	TCP	Logout	1
+session_log_test_xml_user	HTTP	LoginSuccess	many
+session_log_test_xml_user	HTTP	Logout	many
+session_log_test_xml_user	MySQL	LoginSuccess	1
+session_log_test_xml_user	MySQL	Logout	1

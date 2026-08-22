@@ -10,19 +10,19 @@ namespace DB
 struct RabbitMQConfiguration
 {
     String host;
-    UInt16 port;
+    UInt16 port{};
     String username;
     String password;
     String vhost;
 
-    bool secure;
+    bool secure{};
     String connection_string;
 };
 
 class RabbitMQConnection
 {
 public:
-    RabbitMQConnection(const RabbitMQConfiguration & configuration_, Poco::Logger * log_);
+    RabbitMQConnection(const RabbitMQConfiguration & configuration_, LoggerPtr log_);
 
     bool isConnected();
 
@@ -51,7 +51,7 @@ private:
     void disconnectImpl(bool immediately = false);
 
     RabbitMQConfiguration configuration;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     UVLoop loop;
     /// Preserve order of destruction here:

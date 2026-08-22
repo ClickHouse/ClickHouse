@@ -8,10 +8,10 @@ namespace DB
 {
 
 /// The big brother of SourceFromSingleChunk.
-class SourceFromChunks : public ISource
+class SourceFromChunks final : public ISource
 {
 public:
-    SourceFromChunks(Block header, Chunks chunks_);
+    SourceFromChunks(SharedHeader header, Chunks chunks_);
 
     String getName() const override;
 

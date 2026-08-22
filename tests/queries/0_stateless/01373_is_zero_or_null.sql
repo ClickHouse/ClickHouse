@@ -27,3 +27,7 @@ SELECT count() FROM
     UNION ALL
     SELECT * FROM test WHERE isZeroOrNull(x != 'xyz')
 );
+
+SELECT '---';
+
+select isZeroOrNull(Null);

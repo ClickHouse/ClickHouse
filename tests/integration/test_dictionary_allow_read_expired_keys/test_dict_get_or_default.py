@@ -1,8 +1,8 @@
 import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.cluster import ClickHouseKiller
+
+from helpers.cluster import ClickHouseCluster, ClickHouseKiller
 from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
@@ -38,7 +38,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-# @pytest.mark.skip(reason="debugging")
 def test_simple_dict_get_or_default(started_cluster):
     assert None != dictionary_node.get_process_pid(
         "clickhouse"

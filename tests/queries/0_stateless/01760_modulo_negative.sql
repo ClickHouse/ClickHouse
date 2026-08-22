@@ -1,1 +1,1 @@
-SELECT -number % -9223372036854775808 FROM system.numbers; -- { serverError 153 }
+SELECT -number % -9223372036854775808 FROM system.numbers; -- { serverError ILLEGAL_DIVISION }

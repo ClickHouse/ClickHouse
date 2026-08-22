@@ -36,15 +36,14 @@ def gen_data(q):
 
     pattern = ''' or toString(number) = '{}'\n'''
 
-    for i in range(1, 4 * 1024):
+    for i in range(0, 1024 * 2):
         yield pattern.format(str(i).zfill(1024 - len(pattern) + 2)).encode()
 
 s = requests.Session()
-resp = s.post(url + '&max_query_size={}'.format(1 << 21), timeout=1, data=gen_data(q), stream=True,
+resp = s.post(url + '&max_query_size={}'.format(1 << 21), timeout=60, data=gen_data(q), stream=True,
               headers = {'Connection': 'close'})
 
 for line in resp.iter_lines():
     print(line)
 " | python3 | grep -o "Max query size exceeded"
 echo -
-

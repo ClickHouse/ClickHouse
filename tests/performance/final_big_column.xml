@@ -1,0 +1,21 @@
+<test>
+    <settings>
+        <max_insert_threads>1</max_insert_threads>
+        <max_memory_usage>20G</max_memory_usage>
+    </settings>
+
+    <create_query>
+        CREATE TABLE optimized_select_final (d Date, key UInt64, value String)
+        ENGINE = ReplacingMergeTree()
+        PARTITION BY toYYYYMM(d) ORDER BY key
+    </create_query>
+
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2000-01-01'), 2*number, randomPrintableASCII(1000) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2020-01-01'), 2*number+1, randomPrintableASCII(1000) FROM numbers(1000000)</fill_query>
+
+    <query>SELECT * FROM optimized_select_final FINAL FORMAT Null SETTINGS max_threads = 8</query>
+    <query>SELECT * FROM optimized_select_final FINAL WHERE key % 10 = 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS optimized_select_final</drop_query>
+
+</test>

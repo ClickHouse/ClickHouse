@@ -8,4 +8,6 @@ namespace DB
 ///                                   for clickhouse-disks)
 void registerDisks(bool global_skip_access_check);
 
+void clearDiskRegistry();
+
 }

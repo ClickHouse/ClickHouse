@@ -13,7 +13,7 @@ namespace MySQLParser
 
 bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"SUBPARTITION"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::SUBPARTITION}.ignore(pos, expected))
         return false;
 
     ASTPtr options;
@@ -39,7 +39,7 @@ bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     /// Optional options
     options_p.parse(pos, options, expected);
 
-    auto subpartition_declare = std::make_shared<ASTDeclareSubPartition>();
+    auto subpartition_declare = make_intrusive<ASTDeclareSubPartition>();
     subpartition_declare->options = options;
     subpartition_declare->logical_name = logical_name->as<ASTIdentifier>()->name();
 
@@ -55,7 +55,7 @@ bool ParserDeclareSubPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
 ASTPtr ASTDeclareSubPartition::clone() const
 {
-    auto res = std::make_shared<ASTDeclareSubPartition>(*this);
+    auto res = make_intrusive<ASTDeclareSubPartition>(*this);
     res->children.clear();
 
     if (options)

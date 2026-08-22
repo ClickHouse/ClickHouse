@@ -1,0 +1,11 @@
+1	Str1
+2	Str2
+3	Str3
+4	Str4
+DEFAULT	03036_archive1.zip::example1.csv	id Nullable(Int64), data Nullable(String)
+21	Str21
+22	Str22
+23	Str23
+24	Str24
+UNION	03036_json_archive.zip::example11.jsonl	id Nullable(Int64), data Nullable(String)
+UNION	03036_json_archive.zip::example12.jsonl	id Nullable(Int64), data Nullable(String)

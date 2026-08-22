@@ -16,7 +16,7 @@ LIFETIME(0);
 
 SELECT 'FlatDictionary';
 
-SELECT dictGet('02183_flat_dictionary', 'value', 0); -- {serverError 36}
+SELECT dictGet('02183_flat_dictionary', 'value', 0); -- {serverError BAD_ARGUMENTS}
 SELECT dictHas('02183_flat_dictionary', 0);
 SELECT dictHas('02183_flat_dictionary', 1);
 SELECT dictHas('02183_flat_dictionary', 2);

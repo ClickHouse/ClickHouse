@@ -1,5 +1,5 @@
-#include "DictionaryFactory.h"
-#include "DictionarySourceFactory.h"
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceFactory.h>
 
 namespace DB
 {
@@ -11,6 +11,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & source_factory);
 void registerDictionarySourceMysql(DictionarySourceFactory & source_factory);
 void registerDictionarySourceClickHouse(DictionarySourceFactory & source_factory);
 void registerDictionarySourceMongoDB(DictionarySourceFactory & source_factory);
+void registerDictionarySourceMongoDBPocoLegacy(DictionarySourceFactory & source_factory);
 void registerDictionarySourceCassandra(DictionarySourceFactory & source_factory);
 void registerDictionarySourceRedis(DictionarySourceFactory & source_factory);
 void registerDictionarySourceXDBC(DictionarySourceFactory & source_factory);
@@ -19,8 +20,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & source_factory
 void registerDictionarySourceExecutable(DictionarySourceFactory & source_factory);
 void registerDictionarySourceExecutablePool(DictionarySourceFactory & source_factory);
 void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
-void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & source_factory);
+void registerDictionarySourceYTsaurus(DictionarySourceFactory & source_factory);
 
 class DictionaryFactory;
 void registerDictionaryRangeHashed(DictionaryFactory & factory);
@@ -33,8 +34,10 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory);
 void registerDictionaryCache(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory);
+void registerDictionaryNaiveBayes(DictionaryFactory & factory);
 
 
+void registerDictionaries();
 void registerDictionaries()
 {
     {
@@ -52,8 +55,8 @@ void registerDictionaries()
         registerDictionarySourceExecutable(source_factory);
         registerDictionarySourceExecutablePool(source_factory);
         registerDictionarySourceHTTP(source_factory);
-        registerDictionarySourceLibrary(source_factory);
         registerDictionarySourceYAMLRegExpTree(source_factory);
+        registerDictionarySourceYTsaurus(source_factory);
     }
 
     {
@@ -67,6 +70,7 @@ void registerDictionaries()
         registerDictionaryCache(factory);
         registerDictionaryPolygon(factory);
         registerDictionaryDirect(factory);
+        registerDictionaryNaiveBayes(factory);
     }
 }
 

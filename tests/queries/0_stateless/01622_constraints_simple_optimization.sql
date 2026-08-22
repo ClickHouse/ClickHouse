@@ -1,6 +1,9 @@
 DROP TABLE IF EXISTS constraint_test_assumption;
 DROP TABLE IF EXISTS constraint_test_transitivity;
 DROP TABLE IF EXISTS constraint_test_transitivity2;
+DROP TABLE IF EXISTS constraint_test_transitivity3;
+DROP TABLE IF EXISTS constraint_test_constants_repl;
+DROP TABLE IF EXISTS constraint_test_constants;
 
 SET convert_query_to_cnf = 1;
 SET optimize_using_constraints = 1;
@@ -37,7 +40,6 @@ SELECT count() FROM constraint_test_transitivity WHERE a = d; ---> assumption ->
 
 DROP TABLE constraint_test_transitivity;
 
-
 CREATE TABLE constraint_test_strong_connectivity (a String, b String, c String, d String, CONSTRAINT c1 ASSUME a <= b AND b <= c AND c <= d AND d <= a) ENGINE = TinyLog;
 
 INSERT INTO constraint_test_strong_connectivity (a, b, c, d) VALUES ('1', '2', '3', '4');
@@ -71,7 +73,6 @@ SELECT count() FROM constraint_test_transitivity3 WHERE b >= a; ---> assumption 
 
 DROP TABLE constraint_test_transitivity3;
 
-
 CREATE TABLE constraint_test_constants_repl (a Int64, b Int64, c Int64, d Int64, CONSTRAINT c1 ASSUME a - b = 10 AND c + d = 20) ENGINE = TinyLog;
 
 INSERT INTO constraint_test_constants_repl (a, b, c, d) VALUES (1, 2, 3, 4);
@@ -100,10 +101,10 @@ SELECT count() FROM constraint_test_constants WHERE 11 <= a; ---> assumption -> 
 EXPLAIN SYNTAX SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100);
 -- EXPLAIN QUERY TREE SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100); ---> the order of the generated checks is not consistent
 EXPLAIN SYNTAX SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100) AND (NOT b > 100 OR c > 100);
-EXPLAIN QUERY TREE SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100) AND (NOT b > 100 OR c > 100) SETTINGS allow_experimental_analyzer = 1;
+EXPLAIN QUERY TREE SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100) AND (NOT b > 100 OR c > 100) SETTINGS enable_analyzer = 1;
 EXPLAIN SYNTAX SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100) AND (NOT b > 100 OR c > 100) AND (c > 100);
-EXPLAIN QUERY TREE SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100) AND (NOT b > 100 OR c > 100) AND (c > 100) SETTINGS allow_experimental_analyzer = 1;
+EXPLAIN QUERY TREE SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100) AND (NOT b > 100 OR c > 100) AND (c > 100) SETTINGS enable_analyzer = 1;
 EXPLAIN SYNTAX SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100) AND (NOT b > 100 OR c > 100) AND (c <= 100);
-EXPLAIN QUERY TREE SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100) AND (NOT b > 100 OR c > 100) AND (c <= 100) SETTINGS allow_experimental_analyzer = 1;
+EXPLAIN QUERY TREE SELECT count() FROM constraint_test_constants WHERE (a > 100 OR b > 100 OR c > 100) AND (a <= 100 OR b > 100 OR c > 100) AND (NOT b > 100 OR c > 100) AND (c <= 100) SETTINGS enable_analyzer = 1;
 
 DROP TABLE constraint_test_constants;

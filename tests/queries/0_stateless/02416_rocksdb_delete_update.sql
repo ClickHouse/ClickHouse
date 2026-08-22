@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-fasttest
+-- Tags: no-ordinary-database, no-fasttest, use-rocksdb
 
 DROP TABLE IF EXISTS 02416_rocksdb;
 
@@ -31,7 +31,7 @@ ALTER TABLE 02416_rocksdb UPDATE value = 'Another' WHERE key > 2;
 SELECT * FROM 02416_rocksdb ORDER BY key;
 SELECT '-----------';
 
-ALTER TABLE 02416_rocksdb UPDATE key = key * 10 WHERE 1 = 1; -- { serverError 36 }
+ALTER TABLE 02416_rocksdb UPDATE key = key * 10 WHERE 1 = 1; -- { serverError BAD_ARGUMENTS }
 SELECT * FROM 02416_rocksdb ORDER BY key;
 SELECT '-----------';
 

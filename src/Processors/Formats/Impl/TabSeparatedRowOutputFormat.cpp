@@ -1,14 +1,18 @@
 #include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>
+
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Port.h>
 
 
 namespace DB
 {
 TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
     WriteBuffer & out_,
-    const Block & header_,
+    SharedHeader header_,
     bool with_names_,
     bool with_types_,
     bool is_raw_,
@@ -75,6 +79,7 @@ void TabSeparatedRowOutputFormat::writeBeforeExtremes()
     writeChar('\n', out);
 }
 
+void registerOutputFormatTabSeparated(FormatFactory & factory);
 void registerOutputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
@@ -84,18 +89,46 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             factory.registerOutputFormat(format_name, [is_raw, with_names, with_types](
                 WriteBuffer & buf,
                 const Block & sample,
-                const FormatSettings & settings)
+                const FormatSettings & settings,
+                FormatFilterInfoPtr /*format_filter_info*/)
             {
-                return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, with_names, with_types, is_raw, settings);
+                return std::make_shared<TabSeparatedRowOutputFormat>(buf, std::make_shared<const Block>(sample), with_names, with_types, is_raw, settings);
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);
+            /// https://www.iana.org/assignments/media-types/text/tab-separated-values
+            factory.setContentType(format_name, "text/tab-separated-values; charset=UTF-8");
+
+            /// The raw variants write the column values verbatim (`serializeTextRaw`, no escaping),
+            /// so the output is not guaranteed to be valid UTF-8 text despite the textual content type.
+            if (is_raw)
+                factory.markOutputFormatMayProduceRawBytes(format_name);
+            /// The `*WithNames*` variants write the column names (and data type names) into the header
+            /// through `writeEscapedString`, which escapes control characters but does not validate
+            /// UTF-8, so a name that is not valid UTF-8 (a quoted identifier or an `Enum` element with
+            /// arbitrary bytes) makes the output non-textual. The row values are written through the
+            /// `Escaped` serializations, which write the `TSV` `NULL` representation and the `Bool`
+            /// representations verbatim (see `settingsLiteralsMayProduceRawBytes`). All of this is
+            /// knowable from the header and the settings, so the text framings reject or base64-encode
+            /// the output accordingly. The `*Raw` variants are already covered by the unconditional
+            /// mark above.
+            else
+                factory.registerOutputFormatMayProduceRawBytesChecker(
+                    format_name,
+                    [with_names, with_types](const FormatSettings & settings, const Block & header)
+                    {
+                        return ((with_names || with_types) && headerNamesMayProduceRawBytes(header, with_names, with_types))
+                            || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::Escaped);
+                    });
         };
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
         if (is_raw)
+        {
             registerWithNamesAndTypes("LineAsString", register_func);
+            registerWithNamesAndTypes("Raw", register_func);
+        }
     }
 }
 

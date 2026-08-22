@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Server/HTTP/HTTPRequestHandler.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -9,7 +10,10 @@ namespace DB
 class NotFoundHandler : public HTTPRequestHandler
 {
 public:
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    explicit NotFoundHandler(VectorWithMemoryTracking<std::string> hints_) : hints(std::move(hints_)) {}
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+private:
+    VectorWithMemoryTracking<std::string> hints;
 };
 
 }

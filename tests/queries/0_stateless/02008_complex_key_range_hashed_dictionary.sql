@@ -53,8 +53,8 @@ SELECT CountryID, StartDate, Tax FROM range_dictionary ORDER BY CountryID, Start
 SELECT 'onlySpecificColumn';
 SELECT Tax FROM range_dictionary ORDER BY CountryID, StartDate, EndDate;
 
-DROP TABLE date_table;
 DROP DICTIONARY range_dictionary;
+DROP TABLE date_table;
 
 CREATE TABLE date_table
 (
@@ -107,5 +107,5 @@ SELECT CountryID, StartDate, Tax FROM range_dictionary_nullable ORDER BY Country
 SELECT 'onlySpecificColumn';
 SELECT Tax FROM range_dictionary_nullable ORDER BY CountryID, StartDate, EndDate;
 
-DROP TABLE date_table;
 DROP DICTIONARY range_dictionary_nullable;
+DROP TABLE date_table;

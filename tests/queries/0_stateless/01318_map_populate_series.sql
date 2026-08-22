@@ -31,6 +31,6 @@ select mapPopulateSeries([toInt64(-10), 2], [toInt64(1), 1], toInt64(-5)) as res
 -- empty
 select mapPopulateSeries(cast([], 'Array(UInt8)'), cast([], 'Array(UInt8)'), 5);
 
-select mapPopulateSeries(['1', '2'], [1, 1]) as res, toTypeName(res); -- { serverError 43 }
-select mapPopulateSeries([1, 2, 3], [1, 1]) as res, toTypeName(res); -- { serverError 36 }
-select mapPopulateSeries([1, 2], [1, 1, 1]) as res, toTypeName(res); -- { serverError 36 }
+select mapPopulateSeries(['1', '2'], [1, 1]) as res, toTypeName(res); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select mapPopulateSeries([1, 2, 3], [1, 1]) as res, toTypeName(res); -- { serverError BAD_ARGUMENTS }
+select mapPopulateSeries([1, 2], [1, 1, 1]) as res, toTypeName(res); -- { serverError BAD_ARGUMENTS }

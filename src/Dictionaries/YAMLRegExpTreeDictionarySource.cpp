@@ -1,15 +1,14 @@
-#include "YAMLRegExpTreeDictionarySource.h"
+#include <Dictionaries/YAMLRegExpTreeDictionarySource.h>
 
 #include <cstdlib>
 #include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Poco/Logger.h>
-#include "Core/ColumnWithTypeAndName.h"
-#include "DataTypes/DataTypeArray.h"
+#include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
 
 #if USE_YAML_CPP
 
@@ -43,6 +42,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 
@@ -54,7 +54,6 @@ inline const String kYAMLRegExpTree = "yamlregexptree";
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_DICTIONARY_DEFINITION;
     extern const int CANNOT_OPEN_FILE;
@@ -63,9 +62,11 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
+void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory);
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=]([[maybe_unused]] const String & name,
+                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const String & config_prefix,
                                    Block & ,
@@ -77,7 +78,7 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
         if (dict_struct.has_expressions)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `{}` does not support attribute expressions", kYAMLRegExpTree);
+                ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `{}` does not support attribute expressions", kYAMLRegExpTree);
         }
 
         if (!dict_struct.key.has_value() || dict_struct.key.value().size() != 1 || (*dict_struct.key)[0].type->getName() != "String")
@@ -100,7 +101,84 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource(kYAMLRegExpTree, create_table_source);
+    factory.registerSource(kYAMLRegExpTree, create_table_source, Documentation{
+        .description = R"DOCS_MD(
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+# YAMLRegExpTree dictionary source
+
+<CloudNotSupportedBadge/>
+
+The `YAMLRegExpTree` source loads a regular expression tree from a YAML file on the local filesystem.
+It is designed exclusively for use with the [`regexp_tree`](/reference/statements/create/dictionary/layouts/regexp-tree) dictionary layout
+and provides hierarchical regex-to-attribute mappings for pattern-based lookups such as user agent parsing.
+
+<Note>
+The `YAMLRegExpTree` source is only available in ClickHouse Open Source.
+For ClickHouse Cloud, export the dictionary to CSV and load it via a [ClickHouse table source](/reference/statements/create/dictionary/sources/clickhouse) instead.
+See [Using regexp_tree dictionaries in ClickHouse Cloud](/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-cloud) for details.
+</Note>
+
+## Configuration {#configuration}
+
+```sql
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    name String,
+    version String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
+LAYOUT(regexp_tree)
+LIFETIME(0);
+```
+
+Setting fields:
+
+| Setting | Description |
+|---------|-------------|
+| `PATH`  | The absolute path to the YAML file containing the regular expression tree. When created via DDL, the file must be in the `user_files` directory. |
+
+## YAML file structure {#yaml-file-structure}
+
+The YAML file contains a list of regular expression tree nodes. Each node can have attributes and child nodes, forming a hierarchy:
+
+```yaml
+- regexp: 'Linux/(\d+[\.\d]*).+tlinux'
+  name: 'TencentOS'
+  version: '\1'
+
+- regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
+  name: 'Android'
+  versions:
+    - regexp: '33/tclwebkit'
+      version: '13'
+    - regexp: '3[12]/tclwebkit'
+      version: '12'
+    - regexp: '30/tclwebkit'
+      version: '11'
+    - regexp: '29/tclwebkit'
+      version: '10'
+```
+
+Each node has the following structure:
+
+- **`regexp`**: The regular expression for this node.
+- **attributes**: User-defined dictionary attributes (e.g. `name`, `version`). Attribute values may contain **back references** to capture groups in the regular expression, written as `\1` or `$1` (numbers 1-9). These are replaced with the matched capture group at query time.
+- **child nodes**: A list of children, each with its own attributes and optionally more children. The name of the child list is arbitrary (e.g. `versions` above). String matching proceeds depth-first: if a string matches a node, its children are also checked. Attributes of the deepest matching node take precedence, overriding equally named parent attributes.
+
+## Related pages {#related-pages}
+
+- [regexp_tree dictionary layout](/reference/statements/create/dictionary/layouts/regexp-tree) — layout configuration, query examples, and matching modes
+- [dictGet](/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictGetAll](/reference/functions/regular-functions/ext-dict-functions#dictGetAll) — functions for querying regexp tree dictionaries
+)DOCS_MD"
+#if !USE_YAML_CPP
+            "\n\nCurrently unavailable, because this ClickHouse build does not include YAML support."
+#endif
+        ,
+        .syntax = "SOURCE(YAMLRegExpTree(PATH '/path/to/file.yaml'))",
+        .related = {}});
 }
 
 }
@@ -148,11 +226,11 @@ const std::string kValues = "values";
 
 struct MatchNode
 {
-    UInt64 id;
-    UInt64 parent_id;
+    UInt64 id{};
+    UInt64 parent_id{};
     String reg_exp;
-    std::vector<Field> keys;
-    std::vector<Field> values;
+    VectorWithMemoryTracking<Field> keys;
+    VectorWithMemoryTracking<Field> values;
 };
 
 struct ResultColumns
@@ -165,9 +243,9 @@ struct ResultColumns
     ResultColumns() = default;
 };
 
-using StringToNode = std::unordered_map<String, YAML::Node>;
+using StringToNode = UnorderedMapWithMemoryTracking<String, YAML::Node>;
 
-YAML::Node loadYAML(const String & filepath)
+static YAML::Node loadYAML(const String & filepath)
 {
     try
     {
@@ -196,7 +274,7 @@ static StringToNode parseYAMLMap(const YAML::Node & node)
     return result;
 }
 
-void insertValues(const MatchNode & node, ResultColumns & result_columns)
+static void insertValues(const MatchNode & node, ResultColumns & result_columns)
 {
     result_columns.ids->insert(node.id);
     result_columns.parent_ids->insert(node.parent_id);
@@ -211,7 +289,7 @@ void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
 /// 1. regex, indicating a regular expression
 /// 2. attribute_name, indicating the attributes to set
 /// 3. match (optional), indicating the nested match logic under this node
-void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, ResultColumns & result, const String & key_name, const DictionaryStructure & structure)
+static void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, ResultColumns & result, const String & key_name, const DictionaryStructure & structure)
 {
     if (!node.IsMap())
     {
@@ -227,7 +305,7 @@ void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
 
     if (!match.contains(key_name))
     {
-        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Yaml match rule must contain key {}", key_name);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "YAML match rule must contain key {}", key_name);
     }
     for (const auto & [key, node_] : match)
     {
@@ -265,7 +343,7 @@ void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
     }
 }
 
-Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_name, const DictionaryStructure & structure)
+static Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_name, const DictionaryStructure & structure)
 {
     ResultColumns result_cols;
     UInt64 id = 0;
@@ -284,7 +362,7 @@ Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_name, co
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
     const String & filepath_, const DictionaryStructure & dict_struct, ContextPtr context_, bool created_from_ddl)
-    : filepath(filepath_), structure(dict_struct), context(context_), logger(&Poco::Logger::get(kYAMLRegExpTreeDictionarySource))
+    : filepath(filepath_), structure(dict_struct), context(context_), logger(getLogger(kYAMLRegExpTreeDictionarySource))
 {
     key_name = (*structure.key)[0].name;
 
@@ -306,14 +384,16 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
 {
 }
 
-QueryPipeline YAMLRegExpTreeDictionarySource::loadAll()
+BlockIO YAMLRegExpTreeDictionarySource::loadAll()
 {
     LOG_INFO(logger, "Loading regexp tree from yaml '{}'", filepath);
     last_modification = getLastModification();
 
     const auto node = loadYAML(filepath);
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(parseYAMLAsRegExpTree(node, key_name, structure)));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(parseYAMLAsRegExpTree(node, key_name, structure))));
+    return io;
 }
 
 bool YAMLRegExpTreeDictionarySource::isModified() const

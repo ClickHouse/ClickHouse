@@ -6,8 +6,8 @@
 namespace DB
 {
 
-GroupByModifierTransform::GroupByModifierTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_)
-    : IAccumulatingTransform(std::move(header), generateOutputHeader(params_->getHeader(), params_->params.keys, use_nulls_))
+GroupByModifierTransform::GroupByModifierTransform(SharedHeader header, AggregatingTransformParamsPtr params_, bool use_nulls_)
+    : IAccumulatingTransform(std::move(header), std::make_shared<const Block>(generateOutputHeader(params_->getHeader(), params_->params.keys, use_nulls_)))
     , params(std::move(params_))
     , use_nulls(use_nulls_)
 {
@@ -42,7 +42,7 @@ void GroupByModifierTransform::mergeConsumed()
     if (use_nulls)
     {
         for (auto key : keys)
-            columns[key] = makeNullableSafe(columns[key]);
+            columns[key] = makeNullableOrLowCardinalityNullableSafe(columns[key]);
     }
     current_chunk = Chunk{ columns, rows };
 
@@ -53,13 +53,13 @@ Chunk GroupByModifierTransform::merge(Chunks && chunks, bool is_input, bool fina
 {
     auto header = is_input ? getInputPort().getHeader() : intermediate_header;
 
-    BlocksList blocks;
+    Aggregator::AggregatedChunks agg_chunks;
     for (auto & chunk : chunks)
-        blocks.emplace_back(header.cloneWithColumns(chunk.detachColumns()));
+        agg_chunks.emplace_back(std::move(chunk));
 
-    auto current_block = is_input ? params->aggregator.mergeBlocks(blocks, final) : output_aggregator->mergeBlocks(blocks, final);
-    auto num_rows = current_block.rows();
-    return Chunk(current_block.getColumns(), num_rows);
+    auto & aggregator = is_input ? params->aggregator : *output_aggregator;
+    auto result = aggregator.mergeBlocks(agg_chunks, final, is_cancelled, /* dataflow_cache_updater= */ nullptr);
+    return std::move(result.chunk);
 }
 
 MutableColumnPtr GroupByModifierTransform::getColumnWithDefaults(size_t key, size_t n) const
@@ -70,18 +70,10 @@ MutableColumnPtr GroupByModifierTransform::getColumnWithDefaults(size_t key, siz
     return result_column;
 }
 
-RollupTransform::RollupTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_)
+RollupTransform::RollupTransform(SharedHeader header, AggregatingTransformParamsPtr params_, bool use_nulls_)
     : GroupByModifierTransform(std::move(header), params_, use_nulls_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {}
-
-MutableColumnPtr getColumnWithDefaults(Block const & header, size_t key, size_t n)
-{
-    auto const & col = header.getByPosition(key);
-    auto result_column = col.column->cloneEmpty();
-    col.type->insertManyDefaultsInto(*result_column, n);
-    return result_column;
-}
 
 Chunk RollupTransform::generate()
 {

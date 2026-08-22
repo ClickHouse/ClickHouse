@@ -1,14 +1,13 @@
 #pragma once
 
 #include <deque>
-#include <type_traits>
-#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
 
 #include <base/MoveOrCopyIfThrow.h>
-
+#include <base/defines.h>
+#include <Common/saturatedDuration.h>
 
 /** A very simple thread-safe queue of limited size.
   * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty or queue is finished.
@@ -39,7 +38,7 @@ private:
 
             if (timeout_milliseconds.has_value())
             {
-                bool wait_result = push_condition.wait_for(queue_lock, std::chrono::milliseconds(timeout_milliseconds.value()), predicate);
+                bool wait_result = push_condition.wait_for(queue_lock, DB::saturatedMilliseconds(timeout_milliseconds.value()), predicate);
 
                 if (!wait_result)
                     return false;
@@ -72,7 +71,7 @@ private:
 
             if (timeout_milliseconds.has_value())
             {
-                bool wait_result = pop_condition.wait_for(queue_lock, std::chrono::milliseconds(timeout_milliseconds.value()), predicate);
+                bool wait_result = pop_condition.wait_for(queue_lock, DB::saturatedMilliseconds(timeout_milliseconds.value()), predicate);
 
                 if (!wait_result)
                     return false;
@@ -105,12 +104,14 @@ public:
 
     explicit ConcurrentBoundedQueue(size_t max_fill_)
         : max_fill(max_fill_)
-    {}
+    {
+    }
+
 
     /// Returns false if queue is finished
     [[nodiscard]] bool pushFront(const T & x)
     {
-        return emplaceImpl</* back= */ false>(/* timeout_milliseconds= */ std::nullopt , x);
+        return emplaceImpl</* back= */ false>(/* timeout_milliseconds= */ std::nullopt, x);
     }
 
     /// Returns false if queue is finished
@@ -200,22 +201,18 @@ public:
       */
     bool finish()
     {
-        bool was_finished_before = false;
-
         {
             std::lock_guard lock(queue_mutex);
 
             if (is_finished)
                 return true;
 
-            was_finished_before = is_finished;
             is_finished = true;
         }
 
         pop_condition.notify_all();
         push_condition.notify_all();
-
-        return was_finished_before;
+        return false;
     }
 
     /// Returns if queue is finished
@@ -249,7 +246,7 @@ public:
     }
 
     /// Clear and finish queue
-    void clearAndFinish()
+    void clearAndFinish() noexcept
     {
         {
             std::lock_guard lock(queue_mutex);

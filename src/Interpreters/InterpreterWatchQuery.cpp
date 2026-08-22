@@ -12,8 +12,10 @@ limitations under the License. */
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWatchQuery.h>
-#include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterWatchQuery.h>
 #include <Access/Common/AccessFlags.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -22,6 +24,13 @@ limitations under the License. */
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_window_view;
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_columns_to_read;
+}
+
 
 namespace ErrorCodes
 {
@@ -40,12 +49,9 @@ BlockIO InterpreterWatchQuery::execute()
     {
         const Settings & settings = getContext()->getSettingsRef();
 
-        StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT;
-        limits.size_limits.max_rows = settings.max_result_rows;
-        limits.size_limits.max_bytes = settings.max_result_bytes;
-        limits.size_limits.overflow_mode = settings.result_overflow_mode;
+        StreamLocalLimits limits = StreamLocalLimits::forQueryResult(settings);
 
+        res.pipeline.setNormalizedQueryHash(getContext()->getNormalizedQueryHash());
         res.pipeline.setLimitsAndQuota(limits, getContext()->getQuota());
     }
 
@@ -61,31 +67,31 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
 
     if (!storage)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist.", table_id.getNameForLogs());
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist.", table_id.getNameForLogs());
 
     auto storage_name = storage->getName();
-    if (storage_name == "LiveView"
-        && !getContext()->getSettingsRef().allow_experimental_live_view)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
-    else if (storage_name == "WindowView"
-        && !getContext()->getSettingsRef().allow_experimental_window_view)
+    if (storage_name == "WindowView" && !getContext()->getSettingsRef()[Setting::allow_experimental_window_view])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')");
 
     /// List of columns to read to execute the query.
-    Names required_columns = storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), false);
+    Names required_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     getContext()->checkAccess(AccessType::SELECT, table_id, required_columns);
 
     /// Get context settings for this query
     const Settings & settings = getContext()->getSettingsRef();
 
     /// Limitation on the number of columns to read.
-    if (settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
-        throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Limit for number of columns to read exceeded. "
-            "Requested: {}, maximum: {}", required_columns.size(), settings.max_columns_to_read.toString());
+    if (settings[Setting::max_columns_to_read] && required_columns.size() > settings[Setting::max_columns_to_read])
+        throw Exception(
+            ErrorCodes::TOO_MANY_COLUMNS,
+            "Limit for number of columns to read exceeded. "
+            "Requested: {}, maximum: {}",
+            required_columns.size(),
+            settings[Setting::max_columns_to_read].toString());
 
-    size_t max_block_size = settings.max_block_size;
+    size_t max_block_size = settings[Setting::max_block_size];
     size_t max_streams = 1;
 
     /// Define query info
@@ -101,6 +107,16 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     QueryPipelineBuilder pipeline;
     pipeline.init(std::move(pipe));
     return pipeline;
+}
+
+void registerInterpreterWatchQuery(InterpreterFactory & factory);
+void registerInterpreterWatchQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterWatchQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterWatchQuery", create_fn);
 }
 
 }

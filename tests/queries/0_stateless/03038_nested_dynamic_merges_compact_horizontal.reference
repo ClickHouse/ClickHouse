@@ -1,0 +1,63 @@
+6667	Tuple(a Dynamic(max_types=2)):DateTime	false
+13333	Tuple(a Dynamic(max_types=2)):IPv4	false
+16667	Tuple(a Dynamic(max_types=2)):Date	false
+33333	Tuple(a Dynamic(max_types=2)):Array(UInt8)	false
+33334	Tuple(a Dynamic(max_types=2)):UInt64	false
+40000	String:None	false
+66666	Tuple(a Dynamic(max_types=2)):String	false
+140000	UInt64:None	false
+---------------------
+6667	Tuple(a Dynamic(max_types=2)):DateTime	true
+13333	Tuple(a Dynamic(max_types=2)):IPv4	true
+16667	Tuple(a Dynamic(max_types=2)):Date	true
+33333	Tuple(a Dynamic(max_types=2)):Array(UInt8)	true
+33334	Tuple(a Dynamic(max_types=2)):UInt64	false
+40000	String:None	false
+66666	Tuple(a Dynamic(max_types=2)):String	false
+140000	UInt64:None	false
+---------------------
+6667	Tuple(a Dynamic(max_types=2)):DateTime	true
+13333	Tuple(a Dynamic(max_types=2)):IPv4	true
+16667	Tuple(a Dynamic(max_types=2)):Date	true
+16667	Tuple(a Dynamic(max_types=2)):DateTime	false
+33333	Tuple(a Dynamic(max_types=2)):Array(UInt8)	true
+33334	Tuple(a Dynamic(max_types=2)):UInt64	false
+40000	String:None	false
+66666	Tuple(a Dynamic(max_types=2)):String	false
+100000	Tuple(a Dynamic(max_types=2)):Tuple(UInt64)	false
+133333	Tuple(a Dynamic(max_types=2)):None	false
+140000	UInt64:None	false
+---------------------
+13333	Tuple(a Dynamic(max_types=2)):IPv4	true
+16667	Tuple(a Dynamic(max_types=2)):Date	true
+23334	Tuple(a Dynamic(max_types=2)):DateTime	true
+33333	Tuple(a Dynamic(max_types=2)):Array(UInt8)	true
+33334	Tuple(a Dynamic(max_types=2)):UInt64	true
+40000	String:None	false
+66666	Tuple(a Dynamic(max_types=2)):String	false
+100000	Tuple(a Dynamic(max_types=2)):Tuple(UInt64)	false
+133333	Tuple(a Dynamic(max_types=2)):None	false
+140000	UInt64:None	false
+---------------------
+13333	Tuple(a Dynamic(max_types=2)):IPv4	true
+16667	Tuple(a Dynamic(max_types=2)):Date	true
+23334	Tuple(a Dynamic(max_types=2)):DateTime	true
+33333	Tuple(a Dynamic(max_types=2)):Array(UInt8)	true
+33334	Tuple(a Dynamic(max_types=2)):UInt64	true
+40000	String:None	false
+40000	Tuple(a Dynamic(max_types=2)):DateTime	false
+66666	Tuple(a Dynamic(max_types=2)):String	false
+100000	Tuple(a Dynamic(max_types=2)):Tuple(UInt64)	false
+133333	Tuple(a Dynamic(max_types=2)):None	false
+140000	UInt64:None	false
+---------------------
+13333	Tuple(a Dynamic(max_types=2)):IPv4	true
+16667	Tuple(a Dynamic(max_types=2)):Date	true
+33333	Tuple(a Dynamic(max_types=2)):Array(UInt8)	true
+33334	Tuple(a Dynamic(max_types=2)):UInt64	true
+40000	String:None	false
+63334	Tuple(a Dynamic(max_types=2)):DateTime	true
+66666	Tuple(a Dynamic(max_types=2)):String	false
+100000	Tuple(a Dynamic(max_types=2)):Tuple(UInt64)	false
+133333	Tuple(a Dynamic(max_types=2)):None	false
+140000	UInt64:None	false

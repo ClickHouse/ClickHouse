@@ -1,14 +1,17 @@
 #pragma once
 
+#include <Core/StreamingHandleErrorMode.h>
 #include <Processors/ISource.h>
-#include <Storages/NATS/NATSConsumer.h>
+#include <Storages/NATS/INATSConsumer.h>
 #include <Storages/NATS/StorageNATS.h>
+
+#include <optional>
 
 
 namespace DB
 {
 
-class NATSSource : public ISource
+class NATSSource final : public ISource
 {
 public:
     NATSSource(
@@ -16,12 +19,14 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
         const Names & columns,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        StreamingHandleErrorMode handle_error_mode_,
+        std::optional<UInt64> cancel_epoch_ = {});
 
     ~NATSSource() override;
 
     String getName() const override { return storage.getName(); }
-    NATSConsumerPtr getConsumer() { return consumer; }
+    INATSConsumerPtr getConsumer() { return consumer; }
 
     Chunk generate() override;
 
@@ -29,7 +34,14 @@ public:
 
     void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
 
+    void setWaitForFlushInterval(bool value) { wait_for_flush_interval = value; }
+
+    void setCommitOnSelect(bool value) { commit_on_select = value; }
+
+    bool wasConsumptionAborted() const { return consumption_aborted; }
+
 private:
+    Chunk generateImpl();
     bool checkTimeLimit() const;
 
     StorageNATS & storage;
@@ -37,14 +49,22 @@ private:
     ContextPtr context;
     Names column_names;
     const size_t max_block_size;
+    StreamingHandleErrorMode handle_error_mode;
 
     bool is_finished = false;
+    bool consumption_aborted = false;
     const Block non_virtual_header;
     const Block virtual_header;
+    /// Epoch snapshot taken when this source starts; a SYSTEM STOP/CANCEL that advances the storage's
+    /// cancel epoch past this value aborts this source's in-flight block (see StreamingBackgroundControl).
+    const UInt64 cancel_epoch;
 
-    NATSConsumerPtr consumer;
+    INATSConsumerPtr consumer;
+    bool unsubscribe_on_destroy = false;
 
     Poco::Timespan max_execution_time = 0;
+    bool wait_for_flush_interval = false;
+    bool commit_on_select = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     NATSSource(
@@ -53,7 +73,9 @@ private:
         std::pair<Block, Block> headers,
         ContextPtr context_,
         const Names & columns,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        StreamingHandleErrorMode handle_error_mode_,
+        std::optional<UInt64> cancel_epoch_ = {});
 };
 
 }

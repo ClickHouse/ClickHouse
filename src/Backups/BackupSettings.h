@@ -1,7 +1,12 @@
 #pragma once
 
-#include <Backups/BackupInfo.h>
+#include "config.h"
+
+#include <map>
 #include <optional>
+#include <Backups/BackupDataFileNameGeneratorType.h>
+#include <Backups/BackupInfo.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -25,6 +30,9 @@ struct BackupSettings
     /// Password used to encrypt the backup.
     String password;
 
+    /// S3 storage class.
+    String s3_storage_class;
+
     /// If this is set to true then only create queries will be written to backup,
     /// without the data of tables.
     bool structure_only = false;
@@ -41,6 +49,22 @@ struct BackupSettings
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 
+    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
+    bool allow_azure_native_copy = true;
+
+    /// Whether base backup to S3 should inherit credentials from the BACKUP query.
+    bool use_same_s3_credentials_for_base_backup = false;
+
+    /// Whether base backup archive should be unlocked using the same password as the incremental archive
+    bool use_same_password_for_base_backup = false;
+
+    /// Whether a new Azure container should be created if it does not exist (requires permissions at storage account level)
+    bool azure_attempt_to_create_container = true;
+
+    /// Allow to use the filesystem cache in passive mode - benefit from the existing cache entries,
+    /// but don't put more entries into the cache.
+    bool read_from_filesystem_cache = true;
+
     /// 1-based shard index to store in the backup. 0 means all shards.
     /// Can only be used with BACKUP ON CLUSTER.
     size_t shard_num = 0;
@@ -48,6 +72,59 @@ struct BackupSettings
     /// 1-based replica index to store in the backup. 0 means all replicas (see also allow_storing_multiple_replicas).
     /// Can only be used with BACKUP ON CLUSTER.
     size_t replica_num = 0;
+
+    /// Check checksums of the data parts before writing them to a backup.
+    bool check_parts = true;
+
+    /// Check checksums of the projection data parts before writing them to a backup.
+    bool check_projection_parts = true;
+
+    /// Allow to create backup with broken projections.
+    bool allow_backup_broken_projections = false;
+
+    /// Whether dependents of access entities should be written along with the access entities.
+    /// For example, if a role is granted to a user and we're making a backup of system.roles (but not system.users)
+    /// this is whether the backup will contain information to grant the role to the corresponding user again.
+    bool write_access_entities_dependents = true;
+
+    /// Only use in SharedMergeTree. Lightweight backup will only copy the meta and object keys of the files from parts.
+    /// This will avoid repeated data copy from original object storage to backup files. Instead of that, data will copy to destinated storage directly.
+    bool experimental_lightweight_snapshot = false;
+
+    /// Is it allowed to use blob paths to calculate checksums of backup entries?
+    bool allow_checksums_from_remote_paths = true;
+
+    /// Defines how backup data file names are generated.
+    /// - `FirstFileName`: use the original file name from BackupFileInfo.
+    /// - `Checksum`: derive the name from the file checksum.
+    /// Example: for a 128-bit checksum = `abcd1234ef567890abcd1234ef567890`
+    /// and `data_file_name_prefix_length = 3`, the resulting path will be: `abc/d1234ef567890abcd1234ef567890`.
+    BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
+
+    /// Optional length of the checksum prefix used as a directory path segment
+    /// when `data_file_name_generator` is `Checksum`.
+    std::optional<size_t> data_file_name_prefix_length;
+
+    /// Should we back up data from refreshable materialized view targets?
+    ///
+    /// Data is skipped only for targets of refreshable views that fully
+    /// replace the table on each refresh (without APPEND), as they contain
+    /// transient data that can be recomputed. Targets with APPEND or regular
+    /// materialized views are always backed up because they may store history.
+    bool backup_data_from_refreshable_materialized_view_targets = false;
+
+#if CLICKHOUSE_CLOUD
+    /// Maximum number of logical backup files processed between Keeper checkpoints. Each checkpoint is a
+    /// barrier: the writer pool drains and waits for the slowest file of the batch before the batch is
+    /// recorded, so a small value costs parallelism, not just Keeper round-trips. Backups of tens of
+    /// millions of files are ordinary for this feature, which is why the default is not in the thousands.
+    /// The replayed work after a failure stays bounded by `resumable_backup_batch_size_bytes` below.
+    UInt64 resumable_backup_batch_size = 50000;
+
+    /// Target number of unique new data bytes written between Keeper checkpoints. This is what bounds the
+    /// data a retry has to copy again; the file count above bounds per-file overhead for small files.
+    UInt64 resumable_backup_batch_size_bytes = 10ULL * 1024 * 1024 * 1024;
+#endif
 
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
@@ -65,8 +142,24 @@ struct BackupSettings
     /// UUID of the backup. If it's not set it will be generated randomly.
     std::optional<UUID> backup_uuid;
 
+    /// Core settings specified in the query.
+    SettingsChanges core_settings;
+
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
+
+    /// Returns the backup-specific settings as a string map for observability (see `system.backups`).
+    std::map<String, String> getSerializedSettings() const;
+
+    static bool isAsync(const ASTBackupQuery & query);
+
+    /// Returns only the non-backup-specific settings from a `BACKUP` query.
+    /// In contrast to `fromBackupQuery`, this helper does not touch the
+    /// `base_backup_name` AST node, so it is safe to call before
+    /// `ReplaceQueryParameterVisitor` has substituted query parameters.
+    /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
+    /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
+    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 
     struct Util
     {

@@ -34,14 +34,13 @@ void RewriteOrderBy::visit(ASTPtr & ast, Data &)
 
     if (const auto * inner_list = func->children.front()->as<ASTExpressionList>())
     {
-        auto new_order_by = std::make_shared<ASTExpressionList>();
+        auto new_order_by = make_intrusive<ASTExpressionList>();
         for (const auto & identifier : inner_list->children)
         {
             // clone w/o children
-            auto clone = std::make_shared<ASTOrderByElement>(*order_by_elem);
-            clone->children.clear();
+            auto clone = make_intrusive<ASTOrderByElement>(*order_by_elem);
 
-            clone->children.emplace_back(identifier);
+            clone->children[0] = identifier;
             new_order_by->children.emplace_back(clone);
         }
         if (!new_order_by->children.empty())

@@ -1,0 +1,62 @@
+---
+title: 'ClickHouse Government'
+slug: /cloud/infrastructure/clickhouse-government
+keywords: ['government', 'fips', 'fedramp', 'cloud gouvernemental']
+description: "Vue d’ensemble de l’offre ClickHouse Government"
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+ClickHouse Government est un paquet auto-déployé composé de la même version propriétaire de ClickHouse que celle exécutée sur ClickHouse Cloud, ainsi que de notre ClickHouse Operator, configuré pour la séparation du calcul et du stockage et renforcé pour répondre aux exigences strictes des administrations et des organisations du secteur public.
+
+<Info>
+  **Remarque**
+
+  ClickHouse Government est conçu pour les administrations, les organisations du secteur public et les éditeurs de logiciels cloud qui commercialisent leurs solutions auprès de ces organismes, en leur offrant un contrôle et une gestion complets de leur infrastructure dédiée. La taille minimale de déploiement est de 2 TB. Cette option est disponible uniquement en [nous contactant](https://clickhouse.com/government).
+</Info>
+
+<div id="benefits-over-os">
+  ## Avantages par rapport à l’open source
+</div>
+
+Les fonctionnalités suivantes distinguent ClickHouse Government des déploiements open source autogérés :
+
+* Séparation native du calcul et du stockage
+* Fonctionnalités cloud propriétaires, comme [shared merge tree](/fr/products/cloud/features/infrastructure/shared-merge-tree) et [warehouse](/fr/products/cloud/features/infrastructure/warehouses)
+* Versions de ClickHouse et de l’operator entièrement testées et validées dans ClickHouse Cloud
+* Documentation sur le [NIST Risk Management Framework (RMF)](https://csrc.nist.gov/projects/risk-management/about-rmf) pour accélérer votre obtention de l’Authorization to Operate (ATO)
+* API pour les opérations par programmation, y compris les sauvegardes et la mise à l’échelle
+
+<div id="architecture">
+  ## Architecture
+</div>
+
+ClickHouse Government est entièrement autonome au sein de votre environnement de déploiement et offre notre architecture cloud native avec séparation du calcul et du stockage.
+
+<br />
+
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="Architecture de ClickHouse Government" background="black" />
+
+<br />
+
+<div id="supported-configurations">
+  ## Configurations prises en charge
+</div>
+
+ClickHouse Government est actuellement disponible dans les configurations suivantes :
+
+| Environnement | Orchestration                    | Stockage                    | Statut     |
+| :------------ | :------------------------------- | :-------------------------- | :--------- |
+| AWS           | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | Disponible |
+| GCP           | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | Aperçu     |
+
+<div id="onboarding-process">
+  ## Processus d’intégration
+</div>
+
+Les clients peuvent [nous contacter](https://clickhouse.com/company/contact?loc=nav) pour demander un appel afin d’évaluer ClickHouse Government pour leur cas d’usage. Les cas d’usage qui répondent aux exigences minimales de taille et sont déployés dans des configurations prises en charge seront examinés. Les capacités d’intégration sont limitées. L’installation consiste à suivre le guide d’installation correspondant à l’environnement spécifique dans lequel ClickHouse sera déployé, à l’aide d’images de conteneur et de packages Helm téléchargés depuis AWS ECR.

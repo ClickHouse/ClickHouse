@@ -1,22 +1,30 @@
 #!/usr/bin/env python3
+import os
+
 import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 from minio.deleteobjects import DeleteObject
 
-import os
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
+import time
+
+import logging
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    "node",
+node_logs = cluster.add_instance(
+    "node_logs",
     main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
     with_minio=True,
-    with_hdfs=True,
 )
 
-from kazoo.client import KazooClient, KazooState
+node_snapshot = cluster.add_instance(
+    "node_snapshot",
+    main_configs=["configs/enable_keeper_snapshot.xml"],
+    stay_alive=True,
+    with_minio=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -30,11 +38,7 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def stop_zk(zk):
@@ -46,7 +50,7 @@ def stop_zk(zk):
         pass
 
 
-def stop_clickhouse(cluster, cleanup_disks):
+def stop_clickhouse(cluster, node, cleanup_disks):
     node.stop_clickhouse()
 
     if not cleanup_disks:
@@ -54,8 +58,10 @@ def stop_clickhouse(cluster, cleanup_disks):
 
     node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/logs"])
     node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/snapshots"])
+    node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/data"])
 
-    s3_objects = list_s3_objects(cluster, prefix="")
+    # Wipe everything, including any leftover "tmp_" markers, so the bucket is clean.
+    s3_objects = list_s3_objects(cluster, prefix="", exclude_tmp=False)
     if len(s3_objects) == 0:
         return
 
@@ -72,8 +78,8 @@ def stop_clickhouse(cluster, cleanup_disks):
     )
 
 
-def setup_storage(cluster, storage_config, cleanup_disks):
-    stop_clickhouse(cluster, cleanup_disks)
+def setup_storage(cluster, node, storage_config, cleanup_disks):
+    stop_clickhouse(cluster, node, cleanup_disks)
     node.copy_file_to_container(
         os.path.join(CURRENT_TEST_DIR, "configs/enable_keeper.xml"),
         "/etc/clickhouse-server/config.d/enable_keeper.xml",
@@ -83,20 +89,34 @@ def setup_storage(cluster, storage_config, cleanup_disks):
         "<!-- DISK DEFINITION PLACEHOLDER -->",
         storage_config,
     )
+
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
+    # complete readiness checks that the sessions can be established,
+    # but it creates sesssion for this, which will create one more record in log,
+    # but this test is very strict on number of entries in the log,
+    # so let's avoid this extra check and rely on retry policy
+    keeper_utils.wait_until_connected(cluster, node, wait_complete_readiness=False)
 
 
-def setup_local_storage(cluster):
+def setup_local_storage(cluster, node):
     setup_storage(
         cluster,
+        node,
         "<log_storage_disk>log_local<\\/log_storage_disk>"
         "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
         cleanup_disks=True,
     )
 
 
-def list_s3_objects(cluster, prefix=""):
+# Keeper writes an empty "tmp_<name>" marker on the target disk while moving a snapshot/log
+# file between disks and removes it once the copy completes (moveFileBetweenDisks in
+# KeeperCommon.cpp). Such markers are never real snapshots/logs: the server skips
+# "tmp_"-prefixed entries when scanning disks. A listing taken while a move is in flight can
+# transiently observe a marker, so exclude it instead of counting it as a snapshot/log file.
+tmp_keeper_file_prefix = "tmp_"
+
+
+def list_s3_objects(cluster, prefix="", exclude_tmp=True):
     minio = cluster.minio_client
     prefix_len = len(prefix)
     return [
@@ -104,33 +124,32 @@ def list_s3_objects(cluster, prefix=""):
         for obj in minio.list_objects(
             cluster.minio_bucket, prefix=prefix, recursive=True
         )
+        if not (
+            exclude_tmp
+            and os.path.basename(obj.object_name).startswith(tmp_keeper_file_prefix)
+        )
     ]
 
 
-def get_local_files(path):
+def get_local_files(path, node):
     files = node.exec_in_container(["ls", path]).strip().split("\n")
+    files = [f for f in files if not f.startswith(tmp_keeper_file_prefix)]
     files.sort()
     return files
 
 
-def get_local_logs():
-    return get_local_files("/var/lib/clickhouse/coordination/logs")
+def get_local_logs(node):
+    return get_local_files("/var/lib/clickhouse/coordination/logs", node)
 
 
-def get_local_snapshots():
-    return get_local_files("/var/lib/clickhouse/coordination/snapshots")
-
-
-def test_supported_disk_types(started_cluster):
-    node.stop_clickhouse()
-    node.start_clickhouse()
-    node.contains_in_log("Disk type 'hdfs' is not supported for Keeper")
+def get_local_snapshots(node):
+    return get_local_files("/var/lib/clickhouse/coordination/snapshots", node)
 
 
 def test_logs_with_disks(started_cluster):
-    setup_local_storage(started_cluster)
+    setup_local_storage(started_cluster, node_logs)
 
-    node_zk = get_fake_zk("node")
+    node_zk = get_fake_zk("node_logs")
     try:
         node_zk.create("/test")
         for _ in range(30):
@@ -138,10 +157,11 @@ def test_logs_with_disks(started_cluster):
 
         stop_zk(node_zk)
 
-        previous_log_files = get_local_logs()
+        assert len(get_local_logs(node_logs)) > 1
 
         setup_storage(
             started_cluster,
+            node_logs,
             "<log_storage_disk>log_s3_plain<\\/log_storage_disk>"
             "<latest_log_storage_disk>log_local<\\/latest_log_storage_disk>"
             "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
@@ -149,42 +169,50 @@ def test_logs_with_disks(started_cluster):
         )
 
         # all but the latest log should be on S3
-        s3_log_files = list_s3_objects(started_cluster, "logs/")
-        assert set(s3_log_files) == set(previous_log_files[:-1])
-        local_log_files = get_local_logs()
-        assert len(local_log_files) == 1
-        assert local_log_files[0] == previous_log_files[-1]
+        def assert_single_local_log():
+            local_log_files = get_local_logs(node_logs)
+            start_time = time.time()
+            while len(local_log_files) != 1:
+                logging.debug(f"Local log files: {local_log_files}")
+                assert (
+                    time.time() - start_time < 60
+                ), "local_log_files size is not equal to 1 after 60s"
+                time.sleep(1)
+                local_log_files = get_local_logs(node_logs)
 
-        previous_log_files = s3_log_files + local_log_files
+        assert_single_local_log()
+        assert len(list_s3_objects(started_cluster, "logs/")) > 1
 
-        node_zk = get_fake_zk("node")
+        node_zk = get_fake_zk("node_logs")
 
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
 
+        assert_single_local_log()
         stop_zk(node_zk)
-
-        log_files = list_s3_objects(started_cluster, "logs/")
-        local_log_files = get_local_logs()
-        assert len(local_log_files) == 1
-
-        log_files.extend(local_log_files)
-        assert set(log_files) != previous_log_files
-
-        previous_log_files = log_files
 
         setup_storage(
             started_cluster,
+            node_logs,
             "<old_log_storage_disk>log_s3_plain<\\/old_log_storage_disk>"
             "<log_storage_disk>log_local<\\/log_storage_disk>"
             "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
             cleanup_disks=False,
         )
 
-        local_log_files = get_local_logs()
-        assert set(local_log_files) == set(previous_log_files)
+        s3_files = list_s3_objects(started_cluster, "logs/")
+        start_time = time.time()
+        while len(s3_files) != 0:
+            logging.debug(f"S3 log files: {s3_files}")
+            assert (
+                time.time() - start_time < 60
+            ), "s3_files size is not equal to 0 after 60s"
+            time.sleep(1)
+            s3_files = list_s3_objects(started_cluster, "logs/")
 
-        node_zk = get_fake_zk("node")
+        assert len(get_local_logs(node_logs)) > 1
+
+        node_zk = get_fake_zk("node_logs")
 
         for child in node_zk.get_children("/test"):
             assert node_zk.get(f"/test/{child}")[0] == b"somedata"
@@ -194,9 +222,9 @@ def test_logs_with_disks(started_cluster):
 
 
 def test_snapshots_with_disks(started_cluster):
-    setup_local_storage(started_cluster)
+    setup_local_storage(started_cluster, node_snapshot)
 
-    node_zk = get_fake_zk("node")
+    node_zk = get_fake_zk("node_snapshot")
     try:
         node_zk.create("/test2")
         for _ in range(30):
@@ -204,45 +232,56 @@ def test_snapshots_with_disks(started_cluster):
 
         stop_zk(node_zk)
 
-        snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node, "csnp")
-        node.wait_for_log_line(
-            f"Created persistent snapshot {snapshot_idx}", look_behind_lines=1000
-        )
+        snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node_snapshot, "csnp")
+        node_snapshot.wait_for_log_line(f"Created persistent snapshot {snapshot_idx}")
 
-        previous_snapshot_files = get_local_snapshots()
+        previous_snapshot_files = get_local_snapshots(node_snapshot)
 
         setup_storage(
             started_cluster,
+            node_snapshot,
             "<snapshot_storage_disk>snapshot_s3_plain<\\/snapshot_storage_disk>"
             "<latest_snapshot_storage_disk>snapshot_local<\\/latest_snapshot_storage_disk>"
             "<log_storage_disk>log_local<\\/log_storage_disk>",
             cleanup_disks=False,
         )
 
-        ## all but the latest log should be on S3
+        # Relocating non-latest snapshots to the configured disk runs after the
+        # "Created persistent snapshot" log line, so poll for the count to settle
+        # instead of checking once (mirrors assert_single_local_log above).
+        def assert_single_local_snapshot():
+            local_snapshot_files = get_local_snapshots(node_snapshot)
+            start_time = time.time()
+            while len(local_snapshot_files) != 1:
+                logging.debug(f"Local snapshot files: {local_snapshot_files}")
+                assert (
+                    time.time() - start_time < 60
+                ), "local_snapshot_files size is not equal to 1 after 60s"
+                time.sleep(1)
+                local_snapshot_files = get_local_snapshots(node_snapshot)
+
+        ## all but the latest snapshot should be on S3
+        assert_single_local_snapshot()
+        local_snapshot_files = get_local_snapshots(node_snapshot)
         s3_snapshot_files = list_s3_objects(started_cluster, "snapshots/")
         assert set(s3_snapshot_files) == set(previous_snapshot_files[:-1])
-        local_snapshot_files = get_local_snapshots()
-        assert len(local_snapshot_files) == 1
         assert local_snapshot_files[0] == previous_snapshot_files[-1]
 
         previous_snapshot_files = s3_snapshot_files + local_snapshot_files
 
-        node_zk = get_fake_zk("node")
+        node_zk = get_fake_zk("node_snapshot")
 
         for _ in range(30):
             node_zk.create("/test2/somenode", b"somedata", sequence=True)
 
         stop_zk(node_zk)
 
-        snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node, "csnp")
-        node.wait_for_log_line(
-            f"Created persistent snapshot {snapshot_idx}", look_behind_lines=1000
-        )
+        snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node_snapshot, "csnp")
+        node_snapshot.wait_for_log_line(f"Created persistent snapshot {snapshot_idx}")
 
+        assert_single_local_snapshot()
+        local_snapshot_files = get_local_snapshots(node_snapshot)
         snapshot_files = list_s3_objects(started_cluster, "snapshots/")
-        local_snapshot_files = get_local_snapshots()
-        assert len(local_snapshot_files) == 1
 
         snapshot_files.extend(local_snapshot_files)
 
@@ -250,16 +289,17 @@ def test_snapshots_with_disks(started_cluster):
 
         setup_storage(
             started_cluster,
+            node_snapshot,
             "<old_snapshot_storage_disk>snapshot_s3_plain<\\/old_snapshot_storage_disk>"
             "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>"
             "<log_storage_disk>log_local<\\/log_storage_disk>",
             cleanup_disks=False,
         )
 
-        local_snapshot_files = get_local_snapshots()
+        local_snapshot_files = get_local_snapshots(node_snapshot)
         assert set(local_snapshot_files) == set(previous_snapshot_files)
 
-        node_zk = get_fake_zk("node")
+        node_zk = get_fake_zk("node_snapshot")
 
         for child in node_zk.get_children("/test2"):
             assert node_zk.get(f"/test2/{child}")[0] == b"somedata"

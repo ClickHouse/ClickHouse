@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <fcntl.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>

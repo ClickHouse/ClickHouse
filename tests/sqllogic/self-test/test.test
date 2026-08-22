@@ -142,4 +142,13 @@ SELECT number+1 from system.numbers LIMIT 20
 ----
 20 values hashing to 52c46dff81346ead02fcf6245c762b1a
 
+# Debug how incorrect result type parses
+statement ok
+CREATE TABLE tab0(pk INTEGER PRIMARY KEY, col0 INTEGER, col1 FLOAT, col2 TEXT, col3 INTEGER, col4 FLOAT, col5 TEXT)
 
+statement ok
+INSERT INTO tab0 VALUES(0,535,860.48,'uxbns',253,640.58,'jvqkl')
+
+skipif ClickHouse
+query I rowsort label-20
+SELECT + col2 AS col5 FROM tab0 WHERE NOT ( col0 ) * - - col4 IS NULL

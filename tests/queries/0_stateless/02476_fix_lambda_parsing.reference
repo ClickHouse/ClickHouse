@@ -1,4 +1,4 @@
-SELECT f(x, y -> z)
+SELECT f(x, (y -> z))
 SELECT f((x, y) -> z)
 SELECT f((x, y) -> z)
-SELECT f(x, (x, y) -> z)
+SELECT f(x, ((x, y) -> z))

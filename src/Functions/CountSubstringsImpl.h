@@ -1,7 +1,9 @@
 #pragma once
 
-#include "PositionImpl.h"
+#include <Functions/CancellationBudget.h>
+#include <Functions/PositionImpl.h>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -22,7 +24,7 @@ namespace ErrorCodes
 template <typename Name, typename Impl>
 struct CountSubstringsImpl
 {
-    static constexpr bool use_default_implementation_for_constants = false;
+    static constexpr bool use_default_implementation_for_constants = true;
     static constexpr bool supports_start_pos = true;
     static constexpr auto name = Name::name;
 
@@ -37,109 +39,97 @@ struct CountSubstringsImpl
         const std::string & needle,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant, and it's irrelevant for this function.
+        chassert(!res_null);
+
+        /// Checked once on entry so that a deadline already passed is observed even by a call that
+        /// does no charged work, e.g. an empty needle returning all zeros.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        if (check_cancellation)
+            check_cancellation();
+        CancellationBudget budget(check_cancellation);
 
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
-        /// FIXME: suboptimal
-        memset(&res[0], 0, res.size() * sizeof(res[0]));
+        memset(res.data(), 0, res.size() * sizeof(res[0]));
 
         if (needle.empty())
-            return; // Return all zeros
+            return; /// Return all zeros; the entry checkpoint above already observed the deadline.
 
-        /// Current index in the array of strings.
+        /// Current index in the column of strings.
         size_t i = 0;
 
+        /// `Impl::countChars` is O(n) for UTF-8 policies, so counting from the row start on every match
+        /// would make the loop quadratic in the row size. Instead keep a cursor inside the current row and
+        /// count only the bytes newly traversed since the previous match, visiting every byte at most once.
+        /// `counted_row_begin` identifies the row the cursor belongs to: only a row containing a match sets
+        /// the cursor, and such a row is non-empty (the index scan below leaves
+        /// `haystack_offsets[i - 1] <= pos < haystack_offsets[i]`), so two of them always differ in start offset.
+        const UInt8 * counted_row_begin = nullptr;
+        const UInt8 * counted_up_to = nullptr;
+        size_t chars_before = 0;
+
         typename Impl::SearcherInBigHaystack searcher = Impl::createSearcherInBigHaystack(needle.data(), needle.size(), end - pos);
+
+        /// Bytes already accounted for, so each iteration is charged only for what it newly traversed.
+        const UInt8 * charged_up_to = pos;
 
         /// We will search for the next occurrence in all strings at once.
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
+            budget.charge(pos - charged_up_to);
+            charged_up_to = pos;
+
             /// Determine which index it refers to.
-            while (begin + haystack_offsets[i] <= pos)
+            while (i < input_rows_count && begin + haystack_offsets[i] <= pos)
                 ++i;
 
-            auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
+            if (i == input_rows_count)
+                break;
+
+            size_t start = 0;
+            if (start_pos)
+            {
+                start = start_pos->getUInt(i);
+                if (start)  /// Positions are 1-based.
+                    --start;
+            }
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
+            if (pos + needle.size() <= begin + haystack_offsets[i])
             {
-                auto res_pos = needle.size() + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
-                if (res_pos >= start)
+                const UInt8 * const row_begin = begin + haystack_offsets[i - 1];
+                if (counted_row_begin != row_begin)
                 {
-                    ++res[i];
+                    /// The cursor belongs to an earlier row: restart it at the beginning of this one.
+                    counted_row_begin = row_begin;
+                    counted_up_to = row_begin;
+                    chars_before = 0;
                 }
+                chars_before += Impl::countChars(reinterpret_cast<const char *>(counted_up_to), reinterpret_cast<const char *>(pos));
+                counted_up_to = pos;
+
+                auto found_offset = chars_before;
+                if (found_offset >= start)
+                    ++res[i];
+
                 /// Intersecting substrings in haystack accounted only once
                 pos += needle.size();
-                continue;
             }
-            pos = begin + haystack_offsets[i];
-            ++i;
-        }
-    }
-
-    /// Count number of occurrences of substring in string.
-    static void constantConstantScalar(
-        std::string haystack,
-        std::string needle,
-        UInt64 start_pos,
-        UInt64 & res)
-    {
-        res = 0;
-
-        if (needle.empty())
-            return;
-
-        auto start = std::max(start_pos, UInt64(1));
-        size_t start_byte = Impl::advancePos(haystack.data(), haystack.data() + haystack.size(), start - 1) - haystack.data();
-        size_t new_start_byte;
-        while ((new_start_byte = haystack.find(needle, start_byte)) != std::string::npos)
-        {
-            ++res;
-            /// Intersecting substrings in haystack accounted only once
-            start_byte = new_start_byte + needle.size();
-        }
-    }
-
-    /// Count number of occurrences of substring in string starting from different positions.
-    static void constantConstant(
-        std::string haystack,
-        std::string needle,
-        const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
-    {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
-
-        Impl::toLowerIfNeed(haystack);
-        Impl::toLowerIfNeed(needle);
-
-        if (start_pos == nullptr)
-        {
-            constantConstantScalar(haystack, needle, 0, res[0]);
-            return;
-        }
-
-        size_t haystack_size = Impl::countChars(haystack.data(), haystack.data() + haystack.size());
-
-        size_t size = start_pos != nullptr ? start_pos->size() : 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            auto start = start_pos->getUInt(i);
-
-            if (start > haystack_size + 1)
+            else
             {
-                res[i] = 0;
-                continue;
+                pos = begin + haystack_offsets[i];
+                ++i;
             }
-            constantConstantScalar(haystack, needle, start, res[i]);
         }
+
+        /// A block with no match at all never enters the loop above, so charge its bytes on the way out.
+        budget.charge(end - charged_up_to);
     }
 
     /// Count number of occurrences of substring each time for a different inside each time different string.
@@ -150,25 +140,40 @@ struct CountSubstringsImpl
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
+        chassert(input_rows_count == haystack_offsets.size());
+
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
+
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        if (check_cancellation)
+            check_cancellation();
+        CancellationBudget budget(check_cancellation);
 
         ColumnString::Offset prev_haystack_offset = 0;
         ColumnString::Offset prev_needle_offset = 0;
 
-        size_t size = haystack_offsets.size();
-
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
-            size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
+            size_t needle_size = needle_offsets[i] - prev_needle_offset;
+            size_t haystack_size = haystack_offsets[i] - prev_haystack_offset;
 
-            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
+            /// A row without a match never reaches the inner charge below, yet still scans its bytes.
+            budget.charge(haystack_size);
+
+            size_t start = 0;
+            if (start_pos)
+            {
+                start = start_pos->getUInt(i);
+                if (start)  /// Positions are 1-based.
+                    --start;
+            }
 
             res[i] = 0;
-            if (start > haystack_size + 1)
+            if (start > haystack_size)
             {
                 /// 0 already
             }
@@ -176,20 +181,24 @@ struct CountSubstringsImpl
             {
                 /// 0 already
             }
+            else if (haystack_size == 0)
+            {
+                /// A non-empty needle is never found in an empty haystack; do not pay the searcher initialization.
+            }
             else
             {
                 /// It is assumed that the StringSearcher is not very difficult to initialize.
                 typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
-                    reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
-                    needle_offsets[i] - prev_needle_offset - 1); /// zero byte at the end
+                    reinterpret_cast<const char *>(&needle_data[prev_needle_offset]), needle_size);
 
-                const UInt8 * end = reinterpret_cast<const UInt8 *>(&haystack_data[haystack_offsets[i] - 1]);
-                const UInt8 * beg = reinterpret_cast<const UInt8 *>(Impl::advancePos(reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]), reinterpret_cast<const char *>(end), start - 1));
+                const UInt8 * end = reinterpret_cast<const UInt8 *>(&haystack_data[haystack_offsets[i]]);
+                const UInt8 * beg = reinterpret_cast<const UInt8 *>(Impl::advancePos(reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]), reinterpret_cast<const char *>(end), start));
 
-                const UInt8 * pos;
+                const UInt8 * pos = nullptr;
                 /// searcher returns a pointer to the found substring or to the end of `haystack`.
                 while ((pos = searcher.search(beg, end)) < end)
                 {
+                    budget.charge(pos - beg);
                     ++res[i];
                     beg = pos + needle_size;
                 }
@@ -207,35 +216,51 @@ struct CountSubstringsImpl
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
+        chassert(input_rows_count == needle_offsets.size());
+
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
+
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        if (check_cancellation)
+            check_cancellation();
+        CancellationBudget budget(check_cancellation);
 
         /// NOTE You could use haystack indexing. But this is a rare case.
         ColumnString::Offset prev_needle_offset = 0;
 
-        size_t size = needle_offsets.size();
-
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
+            /// A row whose needle is never found scans the whole haystack without reaching the charge below.
+            budget.charge(haystack.size());
+
             res[i] = 0;
-            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
-            if (start <= haystack.size() + 1)
+            size_t start = 0;
+            if (start_pos)
+            {
+                start = start_pos->getUInt(i);
+                if (start)  /// Positions are 1-based.
+                    --start;
+            }
+            if (start <= haystack.size())
             {
                 const char * needle_beg = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
-                size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
+                size_t needle_size = needle_offsets[i] - prev_needle_offset;
 
-                if (needle_size > 0)
+                if (needle_size > 0 && !haystack.empty())
                 {
                     typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(needle_beg, needle_size);
 
                     const UInt8 * end = reinterpret_cast<const UInt8 *>(haystack.data() + haystack.size());
-                    const UInt8 * beg = reinterpret_cast<const UInt8 *>(Impl::advancePos(haystack.data(), reinterpret_cast<const char *>(end), start - 1));
+                    const UInt8 * beg = reinterpret_cast<const UInt8 *>(Impl::advancePos(haystack.data(), reinterpret_cast<const char *>(end), start));
 
-                    const UInt8 * pos;
+                    const UInt8 * pos = nullptr;
                     while ((pos = searcher.search(beg, end)) < end)
                     {
+                        budget.charge(pos - beg);
                         ++res[i];
                         beg = pos + needle_size;
                     }

@@ -1,6 +1,5 @@
 #pragma once
-/// defines.h should be included before fiber.hpp
-/// BOOST_USE_ASAN, BOOST_USE_TSAN and BOOST_USE_UCONTEXT should be correctly defined for sanitizers.
+/// BOOST_USE_ASAN, BOOST_USE_MSAN, BOOST_USE_TSAN and BOOST_USE_UCONTEXT are defined via CMake for sanitizer builds.
 #include <base/defines.h>
 #include <boost/context/fiber.hpp>
 #include <map>
@@ -17,15 +16,30 @@ private:
     template <typename T> friend class FiberLocal;
 
 public:
-    template< typename StackAlloc, typename Fn>
-    Fiber(StackAlloc && salloc, Fn && fn) : impl(std::allocator_arg_t(), std::forward<StackAlloc>(salloc), RoutineImpl(std::forward<Fn>(fn)))
+    template <typename StackAlloc, typename Fn>
+    Fiber(StackAlloc && salloc, Fn && fn) : impl(std::allocator_arg_t(), std::forward<StackAlloc>(salloc), RoutineImpl<Fn>(std::forward<Fn>(fn)))
     {
     }
 
     Fiber() = default;
 
+    ~Fiber()
+    {
+        unwind();
+    }
+
     Fiber(Fiber && other) = default;
-    Fiber & operator=(Fiber && other) = default;
+
+    Fiber & operator=(Fiber && other) noexcept
+    {
+        if (this != &other)
+        {
+            unwind();
+            impl = std::move(other.impl);
+            local_data = std::move(other.local_data);
+        }
+        return *this;
+    }
 
     Fiber(const Fiber &) = delete;
     Fiber & operator =(const Fiber &) = delete;
@@ -45,6 +59,10 @@ public:
         /// Restore parent fiber.
         current_fiber = parent_fiber;
     }
+
+    /// Defined in `Fiber.cpp`: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static FiberPtr & getCurrentFiber();
 
 private:
     template <typename Fn>
@@ -74,12 +92,6 @@ private:
         Fn fn;
     };
 
-    static FiberPtr & getCurrentFiber()
-    {
-        thread_local static FiberPtr current_fiber;
-        return current_fiber;
-    }
-
     /// Special wrapper to store data in uniquer_ptr.
     struct DataWrapper
     {
@@ -88,9 +100,8 @@ private:
 
     using DataPtr = std::unique_ptr<DataWrapper>;
 
-    /// Get reference to fiber-specific data by key
-    /// (the pointer to the structure that uses this data).
-    DataPtr & getLocalData(void * key)
+    /// Get reference to fiber-specific data by key.
+    DataPtr & getLocalData(const void * key)
     {
         return local_data[key];
     }
@@ -100,20 +111,44 @@ private:
         return std::move(impl);
     }
 
+    /// Destroying a fiber that is suspended unwinds its stack: Called from the destructor body, while local_data is still alive.
+    void unwind() noexcept
+    {
+        if (!impl)
+            return;
+
+        FiberPtr & current_fiber = getCurrentFiber();
+        FiberPtr parent_fiber = current_fiber;
+        current_fiber = this;
+        {
+            Impl to_destroy = std::move(impl);
+        }
+        current_fiber = parent_fiber;
+    }
+
     Impl impl;
-    std::map<void *, DataPtr> local_data;
+    std::map<const void *, DataPtr> local_data;
 };
 
 /// Implementation for fiber local variable.
 /// If we are in fiber, it returns fiber local data,
-/// otherwise it returns it's single field.
+/// otherwise it returns a thread local fallback.
 /// Fiber local data is destroyed in Fiber destructor.
 /// Implementation is similar to boost::fiber::fiber_specific_ptr
 /// (we cannot use it because we don't use boost::fiber API.
+///
+/// There is exactly one `FiberLocal` object per `T`, obtained via `instance` (the constructor is
+/// private, so a second one cannot be created).
 template <typename T>
 class FiberLocal
 {
 public:
+    static FiberLocal & instance()
+    {
+        static FiberLocal fiber_local;
+        return fiber_local;
+    }
+
     T & operator*()
     {
         return get();
@@ -125,6 +160,8 @@ public:
     }
 
 private:
+    FiberLocal() = default;
+
     struct DataWrapperImpl : public Fiber::DataWrapper
     {
         T impl;
@@ -144,6 +181,5 @@ private:
         return dynamic_cast<DataWrapperImpl *>(ptr.get())->impl;
     }
 
-    T main_instance;
+    static inline thread_local T main_instance;
 };
-

@@ -27,7 +27,7 @@ namespace TypeListUtils /// In some contexts it's more handy to use functions in
     constexpr Root<Args...> changeRoot(TypeList<Args...>) { return {}; }
 
     template <typename F, typename ...Args>
-    constexpr void forEach(TypeList<Args...>, F && f) { (std::forward<F>(f)(TypeList<Args>{}), ...); }
+    constexpr void forEach(TypeList<Args...>, F && f) { (f(TypeList<Args>{}), ...); }
 }
 
 template <typename TypeListLeft, typename TypeListRight>

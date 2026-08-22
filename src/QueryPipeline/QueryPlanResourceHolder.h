@@ -1,5 +1,7 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/TableLockHolder.h>
+#include <memory>
 
 namespace DB
 {
@@ -11,8 +13,16 @@ using StoragePtr = std::shared_ptr<IStorage>;
 
 class QueryPlan;
 class Context;
-
 struct QueryIdHolder;
+class InsertDependenciesBuilder;
+using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
+
+/// Base class for holding any other resources up till the end of query execution.
+class ICustomResourceHolder
+{
+public:
+    virtual ~ICustomResourceHolder() = default;
+};
 
 struct QueryPlanResourceHolder
 {
@@ -20,16 +30,23 @@ struct QueryPlanResourceHolder
     QueryPlanResourceHolder(QueryPlanResourceHolder &&) noexcept;
     ~QueryPlanResourceHolder();
 
+    QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &) = delete;
+
     /// Custom move assignment does not destroy data from lhs. It appends data from rhs to lhs.
-    QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &&) noexcept;
+    /// append (and thus this assignment) allocates, so it can throw (`std::bad_alloc`, or
+    /// `MEMORY_LIMIT_EXCEEDED` from the memory-tracking containers) and must not be noexcept.
+    QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    QueryPlanResourceHolder & append(const QueryPlanResourceHolder & rhs);
 
     /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
     /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
     /// because QueryPipeline is alive until query is finished.
-    std::vector<std::shared_ptr<const Context>> interpreter_context;
-    std::vector<StoragePtr> storage_holders;
-    std::vector<TableLockHolder> table_locks;
-    std::vector<std::shared_ptr<QueryIdHolder>> query_id_holders;
+    VectorWithMemoryTracking<std::shared_ptr<const Context>> interpreter_context;
+    VectorWithMemoryTracking<StoragePtr> storage_holders;
+    VectorWithMemoryTracking<TableLockHolder> table_locks;
+    VectorWithMemoryTracking<std::shared_ptr<QueryIdHolder>> query_id_holders;
+    VectorWithMemoryTracking<InsertDependenciesBuilderConstPtr> insert_dependencies_holders;
+    VectorWithMemoryTracking<std::shared_ptr<ICustomResourceHolder>> custom_resources;
 };
 
 }

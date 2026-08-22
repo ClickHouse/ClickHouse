@@ -2,18 +2,21 @@
 
 #include <Parsers/ASTLiteral.h>
 
+#include <Access/Common/AccessFlags.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 
 #include <Storages/StorageDictionary.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
+
 
 namespace DB
 {
@@ -43,7 +46,7 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
     dictionary_name = checkAndGetLiteralArgument<String>(args[0], "dictionary_name");
 }
 
-ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
     std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context->getCurrentDatabase());
@@ -71,15 +74,14 @@ ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr c
 
     /// otherwise, we get table structure by dictionary structure.
     auto dictionary_structure = external_loader.getDictionaryStructure(dictionary_name, context);
-    return ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure));
-
+    return ColumnsDescription(StorageDictionary::getNamesAndTypes(dictionary_structure, false));
 }
 
 StoragePtr TableFunctionDictionary::executeImpl(
-    const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription) const
+    const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription, bool is_insert_query) const
 {
     StorageID dict_id(getDatabaseName(), table_name);
-    auto dictionary_table_structure = getActualTableStructure(context);
+    auto dictionary_table_structure = getActualTableStructure(context, is_insert_query);
 
     auto result = std::make_shared<StorageDictionary>(
         dict_id, dictionary_name, std::move(dictionary_table_structure), String{}, StorageDictionary::Location::Custom, context);
@@ -87,9 +89,60 @@ StoragePtr TableFunctionDictionary::executeImpl(
     return result;
 }
 
+
+void registerTableFunctionDictionary(TableFunctionFactory & factory);
 void registerTableFunctionDictionary(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDictionary>();
+    factory.registerFunction<TableFunctionDictionary>({.description = R"DOCS_MD(
+Displays the [dictionary](/reference/statements/create/dictionary) data as a ClickHouse table. Works the same way as [Dictionary](/reference/engines/table-engines/special/dictionary) engine.
+
+## Syntax {#syntax}
+
+```sql
+dictionary('dict')
+```
+
+## Arguments {#arguments}
+
+- `dict` — A dictionary name. [String](/reference/data-types/string).
+
+## Returned value {#returned-value}
+
+A ClickHouse table.
+
+## Examples {#examples}
+
+Input table `dictionary_source_table`:
+
+```text
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+Create a dictionary:
+
+```sql title="Query"
+CREATE DICTIONARY new_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dictionary_source_table')) LAYOUT(DIRECT());
+```
+
+```sql title="Query"
+SELECT * FROM dictionary('new_dictionary');
+```
+
+```text title="Response"
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+## Related {#related}
+
+- [Dictionary engine](/reference/engines/table-engines/special/dictionary)
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 
 }

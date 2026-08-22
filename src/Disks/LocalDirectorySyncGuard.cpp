@@ -1,6 +1,7 @@
 #include <Disks/LocalDirectorySyncGuard.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Disks/IDisk.h>
 #include <Common/Stopwatch.h>
 #include <fcntl.h> // O_RDWR
@@ -31,8 +32,8 @@ LocalDirectorySyncGuard::LocalDirectorySyncGuard(const String & full_path)
     : fd(::open(full_path.c_str(), O_DIRECTORY))
 {
     if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + full_path, full_path,
-            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, full_path, "Cannot open file {}", full_path);
 }
 
 LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
@@ -44,8 +45,11 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
         Stopwatch watch;
 
 #if defined(OS_DARWIN)
-        if (fcntl(fd, F_FULLFSYNC, 0))
-            throwFromErrno("Cannot fcntl(F_FULLFSYNC)", ErrorCodes::CANNOT_FSYNC);
+        /// macOS does not declare fdatasync in this build, so use fsync. Unlike
+        /// F_FULLFSYNC it does not force a drive-cache flush, matching the
+        /// fdatasync semantics used on Linux.
+        if (-1 == ::fsync(fd))
+            throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fsync");
 #else
         if (-1 == ::fdatasync(fd))
             throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fdatasync");

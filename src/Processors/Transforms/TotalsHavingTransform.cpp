@@ -6,6 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 
 #include <Common/typeid_cast.h>
+#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -49,7 +50,7 @@ Block TotalsHavingTransform::transformHeader(
 
     if (expression)
     {
-        block = expression->updateHeader(std::move(block));
+        block = expression->updateHeader(block);
         if (remove_filter)
             block.erase(filter_column_name);
     }
@@ -81,11 +82,15 @@ TotalsHavingTransform::TotalsHavingTransform(
     finalizeBlock(finalized_header, aggregates_mask);
 
     /// Port for Totals.
+    /// Use updateHeader (same method as transformHeader for the main output) to ensure
+    /// the totals port header has the same column constness as the main output port.
+    /// Previously this used ExpressionActions::execute which can produce different constness
+    /// via a different code path in defaultImplementationForNulls at 0 rows.
     if (expression)
     {
-        auto totals_header = finalized_header;
-        size_t num_rows = totals_header.rows();
-        expression->execute(totals_header, num_rows);
+        /// Use updateHeader (dry-run evaluation) instead of expression->execute(),
+        /// because sets from subqueries may not be ready yet at this point.
+        auto totals_header = expression->getActionsDAG().updateHeader(finalized_header);
         filter_column_pos = totals_header.getPositionByName(filter_column_name);
         if (remove_filter)
             totals_header.erase(filter_column_name);
@@ -150,11 +155,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
     if (overflow_row)
     {
-        const auto & info = chunk.getChunkInfo();
-        if (!info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in TotalsHavingTransform.");
-
-        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        const auto & agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
         if (!agg_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in TotalsHavingTransform.");
 
@@ -252,7 +253,7 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
         if (const auto * column = typeid_cast<const ColumnAggregateFunction *>(current.get()))
         {
             auto & totals_column = typeid_cast<ColumnAggregateFunction &>(*current_totals[col]);
-            assert(totals_column.size() == 1);
+            chassert(totals_column.size() == 1);
 
             /// Accumulate all aggregate states from a column of a source chunk into
             /// the corresponding totals column.
@@ -286,7 +287,7 @@ void TotalsHavingTransform::prepareTotals()
         if (totals_mode == TotalsMode::BEFORE_HAVING
             || totals_mode == TotalsMode::AFTER_HAVING_INCLUSIVE
             || (totals_mode == TotalsMode::AFTER_HAVING_AUTO
-                && static_cast<double>(passed_keys) / total_keys >= auto_include_threshold))
+                && static_cast<double>(passed_keys) / static_cast<double>(total_keys) >= auto_include_threshold))
             addToTotals(overflow_aggregates, nullptr);
     }
 

@@ -1,0 +1,11 @@
+-- check which tables exist in 02961_db1
+-- check which tables exist in 02961_db2
+02961_tb4
+02961_tb5
+Test when deletion of existing table fails
+-- check which tables exist in 02961_db1
+-- check which tables exist in 02961_db2
+02961_tb5
+Test when deletion of not empty table fails
+tab2
+tab3

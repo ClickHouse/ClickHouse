@@ -1,0 +1,50 @@
+name: Build issue
+description: Report failed ClickHouse build from master
+labels: ["build"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > Make sure that `git diff` result is empty and you've just pulled fresh master. Try cleaning up cmake cache. Just in case, official build instructions are published here: https://clickhouse.com/docs/en/development/build/
+  - type: textarea
+    attributes:
+      label: Company or project name
+      description: Put your company name or project description here.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Describe the problem
+      description: A clear and concise description of what doesn't work as it is supposed to.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Operating system
+      description: OS kind or distribution, specific version/release, non-standard kernel if any. If you are trying to build inside virtual machine, please mention it too.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: CMake version
+      description: The output of `cmake --version`.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Ninja version
+      description: The output of `ninja --version`.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Compiler name and version
+      description: We recommend to use clang. The version can be obtained via `clang --version`.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Full cmake and/or ninja output with the error
+      description: Please include everything (use https://pastila.nl/ for large output)!
+    validations:
+      required: true

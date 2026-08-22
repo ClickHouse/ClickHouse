@@ -1,0 +1,28 @@
+-- Uppercase tests
+Binary(N)	foo	FixedString(3)
+Char	44	String
+Date	2021-02-03	Date
+DateTime	2021-02-03 12:01:02	DateTime
+Decimal	45	Decimal(10, 0)
+Decimal(M)	46	Decimal(4, 0)
+Decimal(M, D)	47.21	Decimal(4, 2)
+Double	48.11	Float64
+JSON	{"foo":"bar"}	JSON
+Real	49.22	Float32
+Signed	50	Int64
+Unsigned	52	UInt64
+Year	2007	UInt16
+-- Lowercase tests
+Binary(N)	foo	FixedString(3)
+Char	44	String
+Date	2021-02-03	Date
+DateTime	2021-02-03 12:01:02	DateTime
+Decimal	45	Decimal(10, 0)
+Decimal(M)	46	Decimal(4, 0)
+Decimal(M, D)	47.21	Decimal(4, 2)
+Double	48.11	Float64
+JSON	{"foo":"bar"}	JSON
+Real	49.22	Float32
+Signed	50	Int64
+Unsigned	52	UInt64
+Year	2007	UInt16

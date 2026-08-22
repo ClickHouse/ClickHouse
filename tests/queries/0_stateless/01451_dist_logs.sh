@@ -10,4 +10,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # triggered not for the first query
 for _ in {1..20}; do
     echo "select * from remote('127.{2,3}', system.numbers) where number = 10 limit 1;"
-done | ${CLICKHOUSE_CLIENT} -n 2>/dev/null
+done | ${CLICKHOUSE_CLIENT} 2>/dev/null

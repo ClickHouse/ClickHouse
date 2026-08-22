@@ -10,6 +10,7 @@ set(uv_sources
     src/random.c
     src/strscpy.c
     src/strtok.c
+    src/thread-common.c
     src/threadpool.c
     src/timer.c
     src/uv-common.c
@@ -68,12 +69,12 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   list(APPEND uv_defines _GNU_SOURCE _POSIX_C_SOURCE=200112)
-  list(APPEND uv_libraries rt)
+  # musl provides the rt functions in libc.
+  if(NOT USE_MUSL)
+    list(APPEND uv_libraries rt)
+  endif()
   list(APPEND uv_sources
-       src/unix/epoll.c
-       src/unix/linux-core.c
-       src/unix/linux-inotify.c
-       src/unix/linux-syscalls.c
+       src/unix/linux.c
        src/unix/procfs-exepath.c
        src/unix/random-getrandom.c
        src/unix/random-sysctl-linux.c)

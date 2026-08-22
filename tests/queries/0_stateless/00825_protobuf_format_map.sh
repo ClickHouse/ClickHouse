@@ -9,15 +9,14 @@ SCHEMADIR=$CURDIR/format_schemas
 set -eo pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<EOF
-SET allow_experimental_map_type = 1;
-
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS map_protobuf_00825;
 
 CREATE TABLE map_protobuf_00825
 (
   a Map(String, UInt32)
-) ENGINE = MergeTree ORDER BY tuple();
+) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version_for_zero_level_parts='basic', map_serialization_version='basic';
 
 INSERT INTO map_protobuf_00825 VALUES ({'x':5, 'y':7}), ({'z':11}), ({'temp':0}), ({'':0});
 

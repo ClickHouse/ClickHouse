@@ -1,0 +1,53 @@
+EXPLAIN skip-index Nullable(UInt32): should be empty
+Nullable(UInt32) ASC dynamic filter
+2
+3
+4
+5
+6
+Nullable(UInt32) ASC NULLS FIRST dynamic filter
+\N
+\N
+\N
+\N
+\N
+Nullable(UInt32) DESC dynamic filter
+10000
+9999
+9998
+9997
+9996
+Nullable(UInt32) DESC NULLS FIRST dynamic filter
+\N
+\N
+\N
+\N
+\N
+EXPLAIN skip-index String COLLATE: should be empty
+String ASC COLLATE en dynamic filter
+Apple
+banana
+cherry
+Date
+elderberry
+String DESC COLLATE en dynamic filter
+Jackfruit
+icaco
+Honeydew
+grape
+Fig
+EXPLAIN skip-index Nullable(String) COLLATE: should be empty
+Nullable(String) ASC COLLATE en dynamic filter
+Apple
+banana
+cherry
+Date
+Fig
+Nullable(String) ASC NULLS FIRST COLLATE en dynamic filter
+\N
+\N
+Apple
+banana
+cherry
+EXPLAIN skip-index UInt32: should show TopK
+Description: Filter TopK Granules

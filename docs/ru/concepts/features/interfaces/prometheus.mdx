@@ -1,0 +1,273 @@
+---
+description: 'Поддержка HTTP API Prometheus в ClickHouse: удалённая запись, удалённое чтение, запросы PromQL и метрики сервера.'
+sidebarTitle: 'Prometheus и PromQL'
+slug: /interfaces/prometheus
+title: 'Протоколы Prometheus и PromQL'
+doc_type: 'reference'
+---
+
+import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="expose">
+  ## Экспорт метрик сервера ClickHouse
+</div>
+
+<Note>
+  Если вы используете ClickHouse Cloud, вы можете экспортировать метрики в Prometheus с помощью [интеграции Prometheus](/ru/products/cloud/features/monitoring/prometheus).
+</Note>
+
+Настройте выделенный порт, если серверу Prometheus требуется собирать собственные метрики ClickHouse:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+```
+
+Раздел `<prometheus.handlers>` можно использовать для создания более расширенных обработчиков на том же порту.
+Этот раздел похож на [`<http_handlers>`](/ru/concepts/features/interfaces/http), но работает для протоколов prometheus:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+                <labels>
+                    <environment>production</environment>
+                    <shard from_env="SHARD_NAME"></shard>
+                </labels>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+Настройки:
+
+| Name                         | Default    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `port`                       | none       | Порт, на котором доступны метрики ClickHouse.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `endpoint`                   | `/metrics` | HTTP-конечная точка для сбора метрик. Начинается с `/`. Не следует использовать вместе с разделом `<handlers>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `url` / `headers` / `method` | none       | Фильтры, используемые для поиска обработчика, соответствующего запросу. Аналогичны полям с теми же именами в разделе [`<http_handlers>`](/ru/concepts/features/interfaces/http).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `info`                       | true       | Публикует Gauge `ClickHouse_Info` с метками идентификации сервера (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `metrics`                    | true       | Публикует метрики из [`system.metrics`](/ru/reference/system-tables/metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `asynchronous_metrics`       | true       | Публикует метрики из [`system.asynchronous_metrics`](/ru/reference/system-tables/asynchronous_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `events`                     | true       | Публикует метрики из [`system.events`](/ru/reference/system-tables/events).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `errors`                     | true       | Публикует количество ошибок из [`system.errors`](/ru/reference/system-tables/errors).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `histograms`                 | true       | Публикует метрики из [`system.histogram_metrics`](/ru/reference/system-tables/histogram_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `dimensional_metrics`        | true       | Публикует метрики из [`system.dimensional_metrics`](/ru/reference/system-tables/dimensional_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `labels`                     | none       | Постоянные метки, добавляемые к каждой публикуемой метрике. Каждый дочерний элемент определяет одну метку: имя элемента является именем метки (которое должно соответствовать `[a-zA-Z_][a-zA-Z0-9_]*`), а значение элемента — значением метки. Значения меток поддерживают стандартные подстановки конфигурации, такие как атрибут `from_env`. Имя метки отклоняется, если оно начинается с `__` (зарезервировано Prometheus) или конфликтует с меткой, которую эта конечная точка уже записывает для одного из включенных разделов. Таким образом, набор зарезервированных имен определяется активным набором экспортируемых данных конечной точки: `le`, когда включен `histograms`; метки `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`), когда включен `info`; а также любая метка, используемая публикуемым семейством метрик-гистограмм или размерных метрик (например, `group`, `direction` или `operation_type`), когда включены `histograms` или `dimensional_metrics`. Поскольку это зависит от того, что фактически публикует конечная точка, имя может быть допустимым для одной конечной точки, но отклоняться для другой. |
+
+Проверьте конечную точку:
+
+```bash
+curl http://127.0.0.1:9363/metrics
+```
+
+<CloudNotSupportedBadge />
+
+<div id="prometheus-http-api-and-promql">
+  ## HTTP API Prometheus и PromQL
+</div>
+
+ClickHouse реализует HTTP API Prometheus поверх таблицы [`TimeSeries`](/ru/reference/engines/table-engines/integrations/time-series). Один обработчик поддерживает удалённую запись, удалённое чтение, мгновенные запросы PromQL и запросы PromQL по диапазону.
+
+<div id="prerequisites">
+  ### Предварительные требования
+</div>
+
+Включите настройку [`allow_experimental_time_series_table`](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) для пользователя, создающего таблицу и работающего с ней:
+
+```sql
+SET allow_experimental_time_series_table = 1;
+```
+
+Создайте базу данных и таблицу `TimeSeries`:
+
+```sql
+CREATE DATABASE prometheus;
+CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
+```
+
+Для HTTP-запросов к API включите `allow_experimental_time_series_table` в профиле пользователя API.
+
+<div id="configure-prometheus-api">
+  ### Настройка API Prometheus
+</div>
+
+Настройте один обработчик с маршрутизацией по префиксу на основном HTTP-порту ClickHouse:
+
+```xml
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url_prefix>/prometheus/api/v1</url_prefix>
+        <handler>
+            <type>prometheus_api_v1</type>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+`<defaults/>` сохраняет встроенные обработчики для таких конечных точек, как `/ping`, а также для SQL-запросов. Указанный выше префикс предоставляет доступ к этим конечным точкам через один обработчик:
+
+| Конечная точка                   | Назначение                  |
+| -------------------------------- | --------------------------- |
+| `/prometheus/api/v1/write`       | удалённая запись Prometheus |
+| `/prometheus/api/v1/read`        | удалённое чтение Prometheus |
+| `/prometheus/api/v1/query`       | мгновенные запросы PromQL   |
+| `/prometheus/api/v1/query_range` | запросы PromQL по диапазону |
+
+В примере в обработчике не указаны `database` и `table`. В каждом запросе необходимо передавать параметр запроса `table`. Также можно передать `database`, использовать полное имя таблицы, например `prometheus.metrics`, или не указывать базу данных, чтобы использовать `default`. Это позволяет одному обработчику обслуживать несколько таблиц `TimeSeries`.
+
+Чтобы использовать одну фиксированную таблицу для всех запросов, настройте её в обработчике:
+
+```xml
+<handler>
+    <type>prometheus_api_v1</type>
+    <database>prometheus</database>
+    <table>metrics</table>
+</handler>
+```
+
+Таблицу, заданную в обработчике, нельзя переопределить параметрами запроса.
+
+Настройки маршрутизации и обработчика:
+
+| Имя          | По умолчанию | Описание                                                                                                                                                                              |
+| ------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url_prefix` | none         | Фильтр правила, соответствующий всем путям запросов, начинающимся с заданного префикса.                                                                                               |
+| `table`      | none         | Имя таблицы `TimeSeries`. Если не указано, запрос должен содержать параметр запроса `table`. Указанное имя может включать имя базы данных.                                            |
+| `database`   | none         | База данных, содержащая таблицу. Запрос может передать её в параметре запроса. Если не указано, ClickHouse использует базу данных из полного имени `table` или базу данных `default`. |
+
+<div id="remote-write">
+  ### Приём метрик через удалённую запись
+</div>
+
+ClickHouse поддерживает [протокол удалённой записи Prometheus](https://prometheus.io/docs/specs/remote_write_spec/). Настройте Prometheus на запись в обработчик:
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```
+
+Prometheus отправляет образцы в таблицу `prometheus.metrics`.
+
+<div id="promql-query-support">
+  ### Запрос с PromQL
+</div>
+
+Используйте конечную точку мгновенного запроса, чтобы вычислить выражение PromQL на определённый момент времени:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Используйте конечную точку range-запроса, чтобы вычислить выражение за указанный период:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+Список функций и операторов агрегации, поддерживаемых HTTP API, диалектом `promql` и табличными функциями, см. в разделе [Поддерживаемые возможности PromQL](/ru/reference/functions/table-functions/prometheusQueryRange#supported-promql-features).
+
+<div id="grafana">
+  #### Grafana
+</div>
+
+Настройте источник данных Prometheus, указав базовый URL без `/api/v1` в конце:
+
+```yaml
+apiVersion: 1
+datasources:
+  - name: ClickHouse Prometheus
+    type: prometheus
+    access: proxy
+    url: https://clickhouse.example.com:8443/prometheus
+    basicAuth: true
+    basicAuthUser: default
+    jsonData:
+      httpMethod: GET
+      customQueryParameters: database=prometheus&table=metrics
+    secureJsonData:
+      basicAuthPassword: <password>
+```
+
+Grafana добавляет `/api/v1/query` или `/api/v1/query_range` к этому базовому URL, а также `customQueryParameters` к каждому запросу.
+
+<Note>
+  Реализованы только конечные точки запросов `/api/v1/query` и `/api/v1/query_range`. Конечные точки метаданных, используемые источником данных Prometheus в Grafana для просмотра меток, переменных шаблона и автодополнения в конструкторе запросов (`/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`), не реализованы и возвращают ошибку. Вводите выражения PromQL в режиме кода, а не в конструкторе запросов.
+</Note>
+
+<div id="sql-entry-points">
+  #### Точки входа SQL
+</div>
+
+ClickHouse использует один и тот же конвертер PromQL для HTTP API, диалекта `promql`, а также табличных функций [`prometheusQuery`](/ru/reference/functions/table-functions/prometheusQuery) и [`prometheusQueryRange`](/ru/reference/functions/table-functions/prometheusQueryRange).
+
+Выполните PromQL напрямую с помощью `clickhouse-client`:
+
+```bash
+clickhouse-client \
+  --dialect promql \
+  --promql_database prometheus \
+  --promql_table metrics \
+  --query 'rate(http_requests_total[5m])'
+```
+
+Используйте табличные функции для встраивания PromQL в SQL-запрос:
+
+```sql
+SELECT *
+FROM prometheusQuery(
+    prometheus.metrics,
+    'rate(http_requests_total[5m])',
+    now()
+);
+```
+
+<div id="remote-read">
+  ### Чтение метрик через удалённое чтение
+</div>
+
+ClickHouse поддерживает [протокол Prometheus удалённого чтения](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) по адресу `/prometheus/api/v1/read`.
+
+Настройте сервер Prometheus для чтения из той же таблицы `TimeSeries`:
+
+```yaml
+remote_read:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/read?database=prometheus&table=metrics
+    basic_auth:
+      username: default
+      password: <password>
+```

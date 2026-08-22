@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/deployment
+title: 'Deployment options'
+description: 'Deploying ClickStack - The ClickHouse Observability Stack'
+doc_type: 'reference'
+keywords: ['ClickStack', 'observability']
+---
+
+ClickStack provides multiple deployment options to suit various use cases.
+
+Each of the deployment options are summarized below. The [Getting Started Guide](/clickstack/getting-started/index) specifically demonstrates options 1 and 2. They're included here for completeness.
+
+| Name             | Description                                                                                                          | Suitable For                                                                                         | Limitations                                                                                                 | Example Link                                                                                                                                      |
+|------------------|----------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| Managed ClickStack       | ClickHouse and ClickStack UI (HyperDX) hosted in ClickHouse Cloud.                                                      | Production deployments, demos, proof-of-concepts                                                                        | None                                                                               | [Managed](/clickstack/deployment/managed)                               |
+| All-in-One       | Single Docker container with all ClickStack components bundled.                                                      | Non-production deployments, demos, proof of concepts                                                                        | Not recommended for production                                                                               | [All-in-One](/clickstack/deployment/all-in-one)                               |
+| Helm             | Official Helm chart for Kubernetes-based deployments. Supports ClickHouse Cloud and production scaling.             | Production deployments on Kubernetes                                                                   | Kubernetes knowledge required, customization via Helm                                                        | [Helm](/clickstack/deployment/helm)                                          |
+| Docker Compose   | Deploy each ClickStack component individually via Docker Compose.                                                    | Local testing, proof of concepts, production on single server, BYO ClickHouse                                       | No fault tolerance, requires managing multiple containers                                                    | [Docker Compose](/clickstack/deployment/docker-compose)                       |
+| HyperDX Only     | Use HyperDX independently with your own ClickHouse and schema.                                                       | Existing ClickHouse users, custom event pipelines                                                       | No ClickHouse included, user must manage ingestion and schema                                                | [HyperDX Only](/clickstack/deployment/hyperdx-only)                           |
+| Local Mode Only  | Runs entirely in the browser with local storage. No backend or persistence.                                          | Demos, debugging, dev with HyperDX                                                                     | No auth, no persistence, no alerting, single-user only                                                      | [Local Mode Only](/clickstack/deployment/local-mode-only)                     |

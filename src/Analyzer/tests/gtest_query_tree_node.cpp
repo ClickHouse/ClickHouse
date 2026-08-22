@@ -8,10 +8,10 @@
 
 using namespace DB;
 
-class SourceNode final : public IQueryTreeNode
+class SourceNode final : public ITableExpressionNode
 {
 public:
-    SourceNode() : IQueryTreeNode(0 /*children_size*/) {}
+    SourceNode() : ITableExpressionNode(0 /*children_size*/) {}
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -22,12 +22,12 @@ public:
     {
     }
 
-    bool isEqualImpl(const IQueryTreeNode &) const override
+    bool isEqualImpl(const IQueryTreeNode &, CompareOptions) const override
     {
         return true;
     }
 
-    void updateTreeHashImpl(HashState &) const override
+    void updateTreeHashImpl(HashState &, CompareOptions) const override
     {
     }
 

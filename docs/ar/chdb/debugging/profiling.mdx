@@ -1,0 +1,433 @@
+---
+title: 'تنميط DataStore'
+sidebarTitle: 'التنميط'
+slug: /chdb/debugging/profiling
+description: 'قِس أداء DataStore باستخدام أداة Profiler المدمجة'
+keywords: ['chdb', 'DataStore', 'التنميط', 'الأداء', 'التوقيت', 'اختبار الأداء']
+doc_type: 'guide'
+---
+
+تساعدك أداة Profiler في DataStore على قياس زمن التنفيذ وتحديد مواضع اختناق الأداء.
+
+<div id="quick-start">
+  ## البدء السريع
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config, get_profiler
+
+# Enable profiling
+config.enable_profiling()
+
+# Run your operations
+ds = pd.read_csv("large_data.csv")
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# View report
+profiler = get_profiler()
+print(profiler.report())
+```
+
+<div id="enabling">
+  ## تمكين التنميط
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Enable profiling
+config.enable_profiling()
+
+# Disable profiling
+config.disable_profiling()
+
+# Check if profiling is enabled
+print(config.profiling_enabled)  # True or False
+```
+
+***
+
+<div id="api">
+  ## واجهة برمجة التطبيقات لـ Profiler
+</div>
+
+<div id="get-profiler">
+  ### استرجاع Profiler
+</div>
+
+```python
+from chdb.datastore.config import get_profiler
+
+profiler = get_profiler()
+```
+
+<div id="report">
+  ### report()
+</div>
+
+يعرض تقريرًا عن الأداء.
+
+```python
+profiler.report(min_duration_ms=0.1)
+```
+
+**المعلمات:**
+
+| المعلمة           | النوع    | الافتراضي | الوصف                                        |
+| ----------------- | -------- | --------- | -------------------------------------------- |
+| `min_duration_ms` | عدد عشري | `0.1`     | اعرض فقط الخطوات التي مدتها &gt;= هذه القيمة |
+
+**ناتج المثال:**
+
+```text
+======================================================================
+EXECUTION PROFILE
+======================================================================
+   45.79ms (100.0%) Total Execution
+     23.25ms ( 50.8%) Query Planning [ops_count=2]
+     22.29ms ( 48.7%) SQL Segment 1 [ops=2]
+       20.48ms ( 91.9%) SQL Execution
+        1.74ms (  7.8%) Result to DataFrame
+----------------------------------------------------------------------
+      TOTAL:    45.79ms
+======================================================================
+```
+
+يعرض التقرير ما يلي:
+
+* المدة بالمللي ثانية لكل خطوة
+* النسبة المئوية من وقت الخطوة الأب/إجمالي الوقت
+* التداخل الهرمي للعمليات
+* البيانات الوصفية لكل خطوة (مثلًا، `ops_count` و`ops`)
+
+<div id="step">
+  ### step()
+</div>
+
+قِس مدة تنفيذ كتلة تعليمات برمجية يدويًا.
+
+```python
+with profiler.step("custom_operation"):
+    # Your code here
+    expensive_operation()
+```
+
+<div id="clear">
+  ### clear()
+</div>
+
+امسح جميع بيانات تحليل الأداء.
+
+```python
+profiler.clear()
+```
+
+<div id="summary">
+  ### summary()
+</div>
+
+يعيد قاموسًا يربط أسماء الخطوات بالمدد (مللي ثانية).
+
+```python
+summary = profiler.summary()
+for name, duration in summary.items():
+    print(f"{name}: {duration:.2f}ms")
+```
+
+ناتج المثال:
+
+```text
+Total Execution: 45.79ms
+Total Execution.Cache Check: 0.00ms
+Total Execution.Query Planning: 23.25ms
+Total Execution.SQL Segment 1: 22.29ms
+Total Execution.SQL Segment 1.SQL Execution: 20.48ms
+Total Execution.SQL Segment 1.Result to DataFrame: 1.74ms
+```
+
+***
+
+<div id="understanding">
+  ## فهم التقرير
+</div>
+
+<div id="step-names">
+  ### أسماء الخطوات
+</div>
+
+| اسم الخطوة            | الوصف                                     |
+| --------------------- | ----------------------------------------- |
+| `Total Execution`     | إجمالي وقت التنفيذ                        |
+| `Query Planning`      | الوقت المستغرَق في تخطيط الاستعلام        |
+| `SQL Segment N`       | تنفيذ مقطع SQL رقم N                      |
+| `SQL Execution`       | التنفيذ الفعلي لاستعلام SQL               |
+| `Result to DataFrame` | تحويل النتائج إلى pandas                  |
+| `Cache Check`         | التحقق من ذاكرة تخزين الاستعلامات المؤقتة |
+| `Cache Write`         | كتابة النتائج إلى ذاكرة التخزين المؤقت    |
+
+<div id="duration">
+  ### المدة
+</div>
+
+* **خطوات التخطيط** (تخطيط الاستعلام): تكون عادةً سريعة
+* **خطوات التنفيذ** (تنفيذ SQL): حيث يتم العمل الفعلي
+* **خطوات النقل** (من النتيجة إلى DataFrame): تحويل البيانات إلى pandas
+
+<div id="bottlenecks">
+  ### تحديد مواطن الاختناق
+</div>
+
+```text
+======================================================================
+EXECUTION PROFILE
+======================================================================
+  200.50ms (100.0%) Total Execution
+    10.25ms (  5.1%) Query Planning [ops_count=4]
+   190.00ms ( 94.8%) SQL Segment 1 [ops=4]
+     185.00ms ( 97.4%) SQL Execution    <- Main bottleneck
+       5.00ms (  2.6%) Result to DataFrame
+----------------------------------------------------------------------
+      TOTAL:   200.50ms
+======================================================================
+```
+
+***
+
+<div id="patterns">
+  ## أنماط التنميط
+</div>
+
+<div id="single-query">
+  ### حلّل استعلامًا واحدًا
+</div>
+
+```python
+config.enable_profiling()
+profiler = get_profiler()
+profiler.clear()  # Clear previous data
+
+# Run query
+result = ds.filter(...).groupby(...).agg(...).to_df()
+
+# View this query's profile
+print(profiler.report())
+```
+
+<div id="multiple-queries">
+  ### حلّل عدة استعلامات
+</div>
+
+```python
+config.enable_profiling()
+profiler = get_profiler()
+profiler.clear()
+
+# Query 1
+with profiler.step("Query 1"):
+    result1 = query1.to_df()
+
+# Query 2
+with profiler.step("Query 2"):
+    result2 = query2.to_df()
+
+print(profiler.report())
+```
+
+<div id="compare">
+  ### مقارنة بين الأساليب
+</div>
+
+```python
+profiler = get_profiler()
+
+# Approach 1: Filter then groupby
+profiler.clear()
+with profiler.step("filter_then_groupby"):
+    result1 = ds.filter(ds['x'] > 10).groupby('y').sum().to_df()
+summary1 = profiler.summary()
+time1 = summary1.get('filter_then_groupby', 0)
+
+# Approach 2: Groupby then filter
+profiler.clear()
+with profiler.step("groupby_then_filter"):
+    result2 = ds.groupby('y').sum().filter(ds['x'] > 10).to_df()
+summary2 = profiler.summary()
+time2 = summary2.get('groupby_then_filter', 0)
+
+print(f"Approach 1: {time1:.2f}ms")
+print(f"Approach 2: {time2:.2f}ms")
+print(f"Winner: {'Approach 1' if time1 < time2 else 'Approach 2'}")
+```
+
+***
+
+<div id="optimization">
+  ## نصائح لتحسين الأداء
+</div>
+
+<div id="check-sql">
+  ### 1. تحقّق من وقت تنفيذ SQL
+</div>
+
+إذا كان `SQL execution` هو موضع الاختناق:
+
+* أضف المزيد من عوامل التصفية لتقليل حجم البيانات
+* استخدم Parquet بدلًا من CSV
+* تحقّق من وجود فهارس مناسبة (لمصادر البيانات المعتمدة على قواعد البيانات)
+
+<div id="check-io">
+  ### 2. تحقّق من زمن I/O
+</div>
+
+إذا كان `read_csv` أو `read_parquet` هو موضع الاختناق:
+
+* استخدم Parquet (تنسيق عمودي ومضغوط)
+* اقرأ الأعمدة المطلوبة فقط
+* طبّق التصفية عند المصدر إن أمكن
+
+<div id="check-transfer">
+  ### 3. تحقّق من نقل البيانات
+</div>
+
+إذا كان `to_df` بطيئًا:
+
+* قد تكون مجموعة النتائج كبيرة جدًا
+* أضف المزيد من عوامل التصفية أو ضع حدًا
+* استخدم `head()` للمعاينة
+
+<div id="compare-engines">
+  ### 4. مقارنة المحركات
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Profile with chdb
+config.use_chdb()
+profiler.clear()
+result_chdb = query.to_df()
+time_chdb = profiler.total_duration_ms
+
+# Profile with pandas
+config.use_pandas()
+profiler.clear()
+result_pandas = query.to_df()
+time_pandas = profiler.total_duration_ms
+
+print(f"chdb: {time_chdb:.2f}ms")
+print(f"pandas: {time_pandas:.2f}ms")
+```
+
+***
+
+<div id="best-practices">
+  ## أفضل الممارسات
+</div>
+
+<div id="best-practice-1">
+  ### 1. حلّل الأداء قبل التحسين
+</div>
+
+```python
+# Don't guess - measure!
+config.enable_profiling()
+result = your_query.to_df()
+print(get_profiler().report())
+```
+
+<div id="best-practice-2">
+  ### 2. نظِّف بين الاختبارات
+</div>
+
+```python
+profiler.clear()  # Clear previous data
+# Run test
+print(profiler.report())
+```
+
+<div id="best-practice-3">
+  ### 3. استخدم `min_duration_ms` للتركيز
+</div>
+
+```python
+# Only show operations >= 100ms
+profiler.report(min_duration_ms=100)
+```
+
+<div id="best-practice-4">
+  ### 4. حلّل البيانات النموذجية
+</div>
+
+```python
+# Profile with real-world data sizes
+# Small test data may not show real bottlenecks
+```
+
+<div id="best-practice-5">
+  ### 5. التعطيل في بيئة الإنتاج
+</div>
+
+```python
+# Development
+config.enable_profiling()
+
+# Production
+config.set_profiling_enabled(False)  # Avoid overhead
+```
+
+***
+
+<div id="example">
+  ## مثال: جلسة التنميط الكاملة
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config, get_profiler
+
+# Setup
+config.enable_profiling()
+config.enable_debug()  # Also see what's happening
+profiler = get_profiler()
+
+# Load data
+profiler.clear()
+print("=== Loading Data ===")
+ds = pd.read_csv("sales_2024.csv")  # 10M rows
+print(profiler.report())
+
+# Query 1: Simple filter
+profiler.clear()
+print("\n=== Query 1: Simple Filter ===")
+result1 = ds.filter(ds['amount'] > 1000).to_df()
+print(profiler.report())
+
+# Query 2: Complex aggregation
+profiler.clear()
+print("\n=== Query 2: Complex Aggregation ===")
+result2 = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region', 'category')
+    .agg({
+        'amount': ['sum', 'mean', 'count'],
+        'quantity': 'sum'
+    })
+    .sort('sum', ascending=False)
+    .head(20)
+    .to_df()
+)
+print(profiler.report())
+
+# Summary
+print("\n=== Summary ===")
+print(f"Query 1: {len(result1)} rows")
+print(f"Query 2: {len(result2)} rows")
+```

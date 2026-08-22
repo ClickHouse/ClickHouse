@@ -30,8 +30,8 @@ void cassandraWaitAndCheck(CassFuturePtr & future)
         return;
 
     /// `future` owns `message` and will free it on destruction
-    const char * message;
-    size_t message_len;
+    const char * message = nullptr;
+    size_t message_len = 0;
     cass_future_error_message(future, &message, & message_len);
 
     throw Exception(ErrorCodes::CASSANDRA_INTERNAL_ERROR,
@@ -47,7 +47,7 @@ void setupCassandraDriverLibraryLogging(CassLogLevel level)
 {
     std::call_once(setup_logging_flag, [level]()
     {
-        Poco::Logger * logger = &Poco::Logger::get("CassandraDriverLibrary");
+        Poco::Logger * logger = getRawLogger("CassandraDriverLibrary");
         cass_log_set_level(level);
         if (level != CASS_LOG_DISABLED)
             cass_log_set_callback(cassandraLogCallback, logger);

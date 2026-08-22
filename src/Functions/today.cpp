@@ -1,11 +1,10 @@
-#include <Common/DateLUT.h>
-
 #include <Core/Field.h>
-
 #include <DataTypes/DataTypeDate.h>
-
-#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
@@ -13,10 +12,10 @@ namespace DB
 namespace
 {
 
-class ExecutableFunctionToday : public IExecutableFunction
+class ExecutableFunctionToday final : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionToday(time_t time_) : day_value(time_) {}
+    explicit ExecutableFunctionToday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
 
     String getName() const override { return "today"; }
 
@@ -29,7 +28,7 @@ private:
     DayNum day_value;
 };
 
-class FunctionBaseToday : public IFunctionBase
+class FunctionBaseToday final : public IFunctionBase
 {
 public:
     explicit FunctionBaseToday(DayNum day_value_) : day_value(day_value_), return_type(std::make_shared<DataTypeDate>()) {}
@@ -60,7 +59,7 @@ private:
     DataTypePtr return_type;
 };
 
-class TodayOverloadResolver : public IFunctionOverloadResolver
+class TodayOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "today";
@@ -68,6 +67,8 @@ public:
     String getName() const override { return name; }
 
     bool isDeterministic() const override { return false; }
+
+    bool allowsOmittingParentheses() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -77,7 +78,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_unique<FunctionBaseToday>(DayNum(DateLUT::instance().toDayNum(time(nullptr)).toUnderType()));
+        return std::make_unique<FunctionBaseToday>(DayNum(static_cast<UInt16>(DateLUT::instance().toDayNum(time(nullptr)))));
     }
 };
 
@@ -85,9 +86,40 @@ public:
 
 REGISTER_FUNCTION(Today)
 {
-    factory.registerFunction<TodayOverloadResolver>();
-    factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description = "Returns the current date at moment of query analysis. Same as `toDate(now())`.";
+    FunctionDocumentation::Syntax syntax = "today()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date", {"Date"}};
+    FunctionDocumentation::Examples example = {
+        {
+            "Usage example",
+            "SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FORMAT Pretty",
+R"(
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃      today ┃    curdate ┃ current_date ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
+└────────────┴────────────┴──────────────┘
+)"
+        },
+        {"SQL standard syntax without parentheses", R"(
+SELECT TODAY, CURDATE,CURRENT_DATE
+        )",
+        R"(
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ 2025-03-04 │ 2025-03-04 │   2025-03-04 │
+└────────────┴────────────┴──────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
+
+    factory.registerFunction<TodayOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 
 }

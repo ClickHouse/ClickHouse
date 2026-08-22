@@ -931,7 +931,7 @@ if (cd->workspace_size >= COMPILE_WORK_SIZE_MAX ||
     newsize - cd->workspace_size < WORK_SIZE_SAFETY_MARGIN)
  return ERR72;
 
-newspace = (PUBL(malloc))(IN_UCHARS(newsize));
+newspace = (pcre_uchar *)(PUBL(malloc))(IN_UCHARS(newsize));
 if (newspace == NULL) return ERR21;
 memcpy(newspace, cd->start_workspace, cd->workspace_size * sizeof(pcre_uchar));
 cd->hwm = (pcre_uchar *)newspace + (cd->hwm - cd->start_workspace);
@@ -4835,7 +4835,7 @@ for (;; ptr++)
 
     If the class contains characters outside the 0-255 range, a different
     opcode is compiled. It may optionally have a bit map for characters < 256,
-    but those above are are explicitly listed afterwards. A flag byte tells
+    but those above are explicitly listed afterwards. A flag byte tells
     whether the bitmap is present, and whether this is a negated class or not.
 
     In JavaScript compatibility mode, an isolated ']' causes an error. In
@@ -7251,7 +7251,7 @@ for (;; ptr++)
             if (cd->names_found >= cd->named_group_list_size)
               {
               int newsize = cd->named_group_list_size * 2;
-              named_group *newspace = (PUBL(malloc))
+              named_group *newspace = (named_group *)(PUBL(malloc))
                 (newsize * sizeof(named_group));
 
               if (newspace == NULL)

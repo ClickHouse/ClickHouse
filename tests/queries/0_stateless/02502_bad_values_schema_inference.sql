@@ -1,2 +1,2 @@
-desc format(Values, '(\'abc)'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+desc format(Values, '(\'abc)'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
 

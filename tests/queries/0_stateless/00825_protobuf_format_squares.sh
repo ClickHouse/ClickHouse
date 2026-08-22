@@ -9,7 +9,7 @@ SCHEMADIR=$CURDIR/format_schemas
 set -eo pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS squares_protobuf_00825;
 
 CREATE TABLE squares_protobuf_00825 (number UInt32, square UInt64) ENGINE = MergeTree ORDER BY tuple();

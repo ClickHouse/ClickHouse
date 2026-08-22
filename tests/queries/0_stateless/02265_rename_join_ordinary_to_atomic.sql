@@ -1,4 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
+
+SET send_logs_level = 'fatal';
 
 set allow_deprecated_database_ordinary=1;
 DROP DATABASE IF EXISTS 02265_atomic_db;

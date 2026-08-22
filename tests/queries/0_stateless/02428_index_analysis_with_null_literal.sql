@@ -1,7 +1,7 @@
 -- From https://github.com/ClickHouse/ClickHouse/issues/41814
 drop table if exists test;
 
-create table test(a UInt64, m UInt64, d DateTime) engine MergeTree partition by toYYYYMM(d) order by (a, m, d);
+create table test(a UInt64, m UInt64, d DateTime) engine MergeTree partition by toYYYYMM(d) order by (a, m, d) SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into test select number, number, '2022-01-01 00:00:00' from numbers(1000000);
 
@@ -12,7 +12,7 @@ drop table test;
 -- From https://github.com/ClickHouse/ClickHouse/issues/34063
 drop table if exists test_null_filter;
 
-create table test_null_filter(key UInt64, value UInt32) engine MergeTree order by key;
+create table test_null_filter(key UInt64, value UInt32) engine MergeTree order by key SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into test_null_filter select number, number from numbers(10000000);
 

@@ -1,10 +1,11 @@
 #!/bin/sh
 ### BEGIN INIT INFO
 # Provides:          clickhouse-server
+# Required-Start:    $network
+# Required-Stop:     $network
+# Should-Start:      $time
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Should-Start:      $time $network
-# Should-Stop:       $network
 # Short-Description: clickhouse-server daemon
 ### END INIT INFO
 #
@@ -100,11 +101,19 @@ forcestop()
 
 service_or_func()
 {
-    if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
-        systemctl $1 $PROGRAM
-    else
+    if [ -n "${SYSTEMCTL_SKIP_REDIRECT+x}" ]; then
         $1
+        return
     fi
+
+    if [ -x "/bin/systemctl" ] && [ -d /run/systemd/system ]; then
+        if [ -f /etc/systemd/system/clickhouse-server.service ] || [ -f /lib/systemd/system/clickhouse-server.service ]; then
+            systemctl $1 $PROGRAM
+            return
+        fi
+    fi
+
+    $1
 }
 
 forcerestart()

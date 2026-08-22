@@ -37,7 +37,7 @@ SELECT count(v), sum(v) FROM t_full_pk WHERE k = 0 OR k = 3 OR k = 7 OR k = 8;
 SET force_primary_key = 0;
 
 SELECT (k = NULL) OR (k = 1000) FROM t_sparse_pk LIMIT 3;
-SELECT range(k) FROM t_sparse_pk LIMIT 3;
+SELECT range(k) FROM t_sparse_pk ORDER BY k LIMIT 3;
 
 DROP TABLE IF EXISTS t_sparse_pk;
 DROP TABLE IF EXISTS t_full_pk;

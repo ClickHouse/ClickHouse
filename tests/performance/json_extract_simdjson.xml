@@ -33,4 +33,8 @@
     <query>SELECT 'simdjson-12', count() FROM zeros(5000000) WHERE NOT ignore(JSONExtractFloat(materialize({long_json}), 'fparam', 'nested_2', -2))</query>
     <query>SELECT 'simdjson-13', count() FROM zeros(5000000) WHERE NOT ignore(JSONExtractBool(materialize({long_json}), 'bparam'))</query>
 
+    <query>SELECT 'simdjson-14', count() FROM zeros(5000000) WHERE NOT ignore(JSON_VALUE(materialize({long_json}), '$.nparam'))</query>
+    <query>SELECT 'simdjson-15', count() FROM zeros(5000000) WHERE NOT ignore(JSON_QUERY(materialize({long_json}), '$.nparam'))</query>
+    <query>SELECT 'simdjson-16', count() FROM zeros(5000000) WHERE NOT ignore(JSON_VALUE(materialize({json}), '$.nparam'))</query>
+    <query>SELECT 'simdjson-17', count() FROM zeros(5000000) WHERE NOT ignore(JSON_QUERY(materialize({json}), '$.nparam'))</query>
 </test>

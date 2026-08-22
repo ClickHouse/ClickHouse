@@ -3,12 +3,12 @@ set -e
 # set -x
 
 PROGRAM=clickhouse-keeper
-KEEPER_USER=${KEEPER_USER:=clickhouse}
-KEEPER_GROUP=${KEEPER_GROUP:=clickhouse}
+KEEPER_USER=${KEEPER_USER:-clickhouse}
+KEEPER_GROUP=${KEEPER_GROUP:-clickhouse}
 # Please note that we don't support paths with whitespaces. This is rather ignorant.
-KEEPER_CONFDIR=${KEEPER_CONFDIR:=/etc/$PROGRAM}
-KEEPER_DATADIR=${KEEPER_DATADIR:=/var/lib/clickhouse}
-KEEPER_LOGDIR=${KEEPER_LOGDIR:=/var/log/$PROGRAM}
+KEEPER_CONFDIR=${KEEPER_CONFDIR:-/etc/$PROGRAM}
+KEEPER_DATADIR=${KEEPER_DATADIR:-/var/lib/clickhouse}
+KEEPER_LOGDIR=${KEEPER_LOGDIR:-/var/log/$PROGRAM}
 
 [ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule
 [ -f /etc/default/clickhouse-keeper ] && . /etc/default/clickhouse-keeper
@@ -26,6 +26,25 @@ if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
         adduser --system --home /dev/null --no-create-home \
             --gid "${GID}" --shell /bin/false \
             "${KEEPER_USER}"
+    fi
+
+    if [ -x "/bin/systemctl" ] && [ -f /lib/systemd/system/clickhouse-keeper.service ] && [ -d /run/systemd/system ]; then
+        # if old rc.d service present - remove it
+        if [ -x "/etc/init.d/clickhouse-keeper" ] && [ -x "/usr/sbin/update-rc.d" ]; then
+            /usr/sbin/update-rc.d clickhouse-keeper remove
+        fi
+
+        /bin/systemctl daemon-reload
+        /bin/systemctl enable clickhouse-keeper
+    else
+        # If you downgrading to version older than 1.1.54336 run: systemctl disable clickhouse-keeper
+        if [ -x "/etc/init.d/clickhouse-keeper" ]; then
+            if [ -x "/usr/sbin/update-rc.d" ]; then
+                /usr/sbin/update-rc.d clickhouse-keeper defaults 19 19 >/dev/null || exit $?
+            else
+                echo # Other OS
+            fi
+        fi
     fi
 
     chown -R "${KEEPER_USER}:${KEEPER_GROUP}" "${KEEPER_CONFDIR}"

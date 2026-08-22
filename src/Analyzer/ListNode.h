@@ -51,9 +51,9 @@ public:
     const_iterator end() const { return children.end(); }
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState &) const override;
+    void updateTreeHashImpl(HashState &, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

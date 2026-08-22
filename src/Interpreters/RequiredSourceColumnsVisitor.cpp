@@ -8,6 +8,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -71,11 +72,6 @@ void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
     }
     if (auto * t = ast->as<ASTFunction>())
     {
-        /// "indexHint" is a special function for index analysis.
-        /// Everything that is inside it is not calculated. See KeyCondition
-        if (!data.visit_index_hint && t->name == "indexHint")
-            return;
-
         data.addColumnAliasIfAny(*ast);
         visit(*t, ast, data);
         return;
@@ -126,7 +122,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
 
         if (const auto * identifier = node->as<ASTIdentifier>())
             data.addColumnIdentifier(*identifier);
-        else
+        else if (!node->as<ASTLiteral>())
             data.addColumnAliasIfAny(*node);
     }
 

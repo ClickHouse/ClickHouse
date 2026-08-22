@@ -1,0 +1,13 @@
+Single non-intersecting part: lazy FINAL must still read directly from the text index
+1
+1
+1
+1
+1
+0
+Mixed intersecting and non-intersecting parts: lazy FINAL falls back to a regular FINAL read
+1
+1
+0
+1
+1

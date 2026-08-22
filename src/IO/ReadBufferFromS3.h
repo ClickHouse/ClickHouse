@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageS3Settings.h>
+#include <IO/S3Settings.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -8,59 +8,67 @@
 #include <memory>
 
 #include <IO/HTTPCommon.h>
-#include <IO/ParallelReadBuffer.h>
-#include <IO/ReadBuffer.h>
+#include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/WithFileName.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 #include <aws/s3/model/GetObjectResult.h>
 
-namespace Aws::S3
-{
-class Client;
-}
-
 namespace DB
 {
+
+class BlobStorageLogWriter;
+using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
+
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
 class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
-    std::shared_ptr<const S3::Client> client_ptr;
+    mutable std::shared_ptr<const S3::Client> client_ptr;
     String bucket;
     String key;
     String version_id;
-    const S3Settings::RequestSettings request_settings;
+    /// ETag observed at read setup; each GET response ETag is checked against it to catch an
+    /// in-place overwrite mid-read (instead of stitching two object generations). Empty means skip.
+    String expected_etag;
+    const S3::S3RequestSettings request_settings;
 
     /// These variables are atomic because they can be used for `logging only`
     /// (where it is not important to get consistent result)
     /// from separate thread other than the one which uses the buffer for s3 reading.
     std::atomic<off_t> offset = 0;
     std::atomic<off_t> read_until_position = 0;
+    std::string stop_reason;
+    std::string release_reason;
 
-    std::optional<Aws::S3::Model::GetObjectResult> read_result;
-    std::unique_ptr<ReadBuffer> impl;
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
-    Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
+    LoggerPtr log = getLogger("ReadBufferFromS3");
 
 public:
+    using S3CredentialsRefreshCallback = std::function<std::unique_ptr<const S3::Client>()>;
+
     ReadBufferFromS3(
         std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
-        const S3Settings::RequestSettings & request_settings_,
+        const S3::S3RequestSettings & request_settings_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false,
-        std::optional<size_t> file_size = std::nullopt);
+        std::optional<size_t> file_size = std::nullopt,
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;},
+        BlobStorageLogWriterPtr blob_storage_log_ = {},
+        const String & expected_etag_ = {}
+        );
 
-    ~ReadBufferFromS3() override;
+    ~ReadBufferFromS3() override = default;
 
     bool nextImpl() override;
 
@@ -68,7 +76,7 @@ public:
 
     off_t getPosition() override;
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
@@ -79,23 +87,36 @@ public:
 
     String getFileName() const override { return bucket + "/" + key; }
 
-    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) override;
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     bool supportsReadAt() override { return true; }
 
+    /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
+    bool supportsExternalBufferMode() const override { return use_external_buffer; }
+
+    /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
+    /// This method returns metadata from the last request. If there were no requests, it will throw exception.
+    ObjectMetadata getObjectMetadataFromTheLastRequest() const;
+
+    size_t getReadUntilPosition() const { return read_until_position; }
+
+    std::string getStopReason() const { return stop_reason; }
+
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
+
 private:
-    std::unique_ptr<ReadBuffer> initialize();
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
 
     /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
     /// Returns true if the error looks retriable.
-    bool processException(Poco::Exception & e, size_t read_offset, size_t attempt) const;
+    bool processException(size_t read_offset, size_t attempt) const;
 
-    Aws::S3::Model::GetObjectResult sendRequest(size_t range_begin, std::optional<size_t> range_end_incl) const;
+    size_t getObjectSizeFromS3() const;
 
-    bool readAllRangeSuccessfully() const;
+    Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
 
     ReadSettings read_settings;
 
@@ -106,6 +127,10 @@ private:
     bool restricted_seek;
 
     bool read_all_range_successfully = false;
+
+    const S3CredentialsRefreshCallback credentials_refresh_callback;
+
+    mutable BlobStorageLogWriterPtr blob_storage_log;
 };
 
 }

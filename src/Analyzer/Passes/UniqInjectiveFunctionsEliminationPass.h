@@ -17,7 +17,7 @@ public:
 
     String getDescription() override { return "Remove injective functions from uniq functions arguments."; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

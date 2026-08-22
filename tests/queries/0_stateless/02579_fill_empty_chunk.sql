@@ -1,6 +1,7 @@
 -- this SELECT produces empty chunk in FillingTransform
 
 SET enable_positional_arguments = 0;
+SET enable_analyzer = 0;
 
 SELECT
     2 AS x,

@@ -9,9 +9,9 @@ class [[nodiscard]] BasicScopeGuard
 {
 public:
     constexpr BasicScopeGuard() = default;
-    constexpr BasicScopeGuard(BasicScopeGuard && src) : function{src.release()} {} // NOLINT(hicpp-noexcept-move, performance-noexcept-move-constructor)
+    constexpr BasicScopeGuard(BasicScopeGuard && src) : function{src.release()} {} // NOLINT(hicpp-noexcept-move, performance-noexcept-move-constructor, cppcoreguidelines-noexcept-move-operations)
 
-    constexpr BasicScopeGuard & operator=(BasicScopeGuard && src) // NOLINT(hicpp-noexcept-move, performance-noexcept-move-constructor)
+    constexpr BasicScopeGuard & operator=(BasicScopeGuard && src) // NOLINT(hicpp-noexcept-move, performance-noexcept-move-constructor, cppcoreguidelines-noexcept-move-operations)
     {
         if (this != &src)
         {
@@ -23,17 +23,19 @@ public:
 
     template <typename G>
     requires std::is_convertible_v<G, F>
-    constexpr BasicScopeGuard(BasicScopeGuard<G> && src) : function{src.release()} {} // NOLINT(google-explicit-constructor)
+    constexpr BasicScopeGuard(BasicScopeGuard<G> && src) : function{src.release()} {} // NOLINT(google-explicit-constructor, cppcoreguidelines-rvalue-reference-param-not-moved, cppcoreguidelines-noexcept-move-operations)
 
     template <typename G>
     requires std::is_convertible_v<G, F>
-    constexpr BasicScopeGuard & operator=(BasicScopeGuard<G> && src)
+    constexpr BasicScopeGuard & operator=(BasicScopeGuard<G> && src) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved, cppcoreguidelines-noexcept-move-operations)
     {
-        if (this != &src)
+        if constexpr (std::is_same_v<G, F>)
         {
-            invoke();
-            function = src.release();
+            if (this == &src)
+                return *this;
         }
+        invoke();
+        function = src.release();
         return *this;
     }
 
@@ -43,7 +45,7 @@ public:
 
     template <typename G>
     requires std::is_convertible_v<G, F>
-    constexpr BasicScopeGuard(G && function_) : function{std::move(function_)} {} // NOLINT(google-explicit-constructor, bugprone-forwarding-reference-overload, bugprone-move-forwarding-reference)
+    constexpr BasicScopeGuard(G && function_) : function{std::move(function_)} {} // NOLINT(google-explicit-constructor, bugprone-forwarding-reference-overload, bugprone-move-forwarding-reference, cppcoreguidelines-missing-std-forward)
 
     ~BasicScopeGuard() { invoke(); }
 
@@ -70,7 +72,7 @@ public:
 
     template <typename G>
     requires std::is_convertible_v<G, F>
-    BasicScopeGuard<F> & join(BasicScopeGuard<G> && other)
+    BasicScopeGuard<F> & join(BasicScopeGuard<G> && other) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
     {
         if (other.function)
         {

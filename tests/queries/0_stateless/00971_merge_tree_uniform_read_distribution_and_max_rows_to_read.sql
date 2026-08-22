@@ -1,3 +1,8 @@
+-- Tags: no-parallel-replicas
+-- ^ With parallel replicas, `max_rows_to_read` is enforced per replica, so a
+-- 1M-row scan distributed across replicas can stay under the 900K limit on
+-- each replica and the expected `TOO_MANY_ROWS` error is never raised.
+
 DROP TABLE IF EXISTS merge_tree;
 CREATE TABLE merge_tree (x UInt8) ENGINE = MergeTree ORDER BY x;
 INSERT INTO merge_tree SELECT 0 FROM numbers(1000000);
@@ -11,7 +16,7 @@ SELECT count() FROM merge_tree;
 SET max_rows_to_read = 900000;
 
 -- constant ignore will be pruned by part pruner. ignore(*) is used.
-SELECT count() FROM merge_tree WHERE not ignore(*); -- { serverError 158 }
-SELECT count() FROM merge_tree WHERE not ignore(*); -- { serverError 158 }
+SELECT count() FROM merge_tree WHERE not ignore(*); -- { serverError TOO_MANY_ROWS }
+SELECT count() FROM merge_tree WHERE not ignore(*); -- { serverError TOO_MANY_ROWS }
 
 DROP TABLE merge_tree;

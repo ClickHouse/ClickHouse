@@ -7,23 +7,23 @@ namespace DB
 
 class StorageWindowView;
 
-class WatermarkTransform : public ISimpleTransform
+class WatermarkTransform final : public ISimpleTransform
 {
 public:
     WatermarkTransform(
-        const Block & header_,
+        SharedHeader header_,
         StorageWindowView & storage_,
         const String & window_column_name_,
         UInt32 lateness_upper_bound_);
 
     String getName() const override { return "WatermarkTransform"; }
 
-    ~WatermarkTransform() override;
+    void onFinish() override;
 
 protected:
     void transform(Chunk & chunk) override;
 
-    Block block_header;
+    SharedHeader block_header;
 
     StorageWindowView & storage;
     String window_column_name;

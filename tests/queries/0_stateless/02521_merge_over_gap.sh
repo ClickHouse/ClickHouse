@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS table_with_gap;"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE table_with_gap (v UInt8) ENGINE = MergeTree() ORDER BY tuple() settings old_parts_lifetime = 10000;"
 $CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES table_with_gap;"
 
-$CLICKHOUSE_CLIENT --multiquery --query "
+$CLICKHOUSE_CLIENT --query "
     INSERT INTO table_with_gap VALUES (1);
     INSERT INTO table_with_gap VALUES (2);
     INSERT INTO table_with_gap VALUES (3);
@@ -46,4 +46,4 @@ $CLICKHOUSE_CLIENT --query "ATTACH TABLE table_with_gap;"
 
 $CLICKHOUSE_CLIENT --query "SELECT 'parts after detach/attach';"
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT LOADING PARTS table_with_gap;"
-$CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE table = 'table_with_gap' AND database = currentDatabase();"
+$CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE table = 'table_with_gap' AND database = currentDatabase() AND rows > 0;"

@@ -1,9 +1,0 @@
-fn main() {
-    let mut build = cxx_build::bridge("src/lib.rs");
-    for flag in "@RUST_CXXFLAGS@".split(' ') {
-        build.flag(flag);
-    }
-    build.compile("skim");
-    println!("cargo:rerun-if-changed=src/lib.rs");
-    println!("cargo:rerun-if-changed=.cargo/config.toml");
-}

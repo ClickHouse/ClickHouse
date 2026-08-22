@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
+#include <Common/assert_cast.h>
 
 #include <Core/NamesAndTypes.h>
-#include <Core/Field.h>
 
-#include <Analyzer/Identifier.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
@@ -60,7 +60,10 @@ namespace DB
 class QueryNode;
 using QueryNodePtr = std::shared_ptr<QueryNode>;
 
-class QueryNode final : public IQueryTreeNode
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+
+class QueryNode final : public ITableExpressionNode
 {
 public:
     /// Construct query node with context and changed settings
@@ -99,6 +102,11 @@ public:
         return settings_changes;
     }
 
+    void clearSettingsChanges()
+    {
+        settings_changes.clear();
+    }
+
     /// Returns true if query node is subquery, false otherwise
     bool isSubquery() const
     {
@@ -135,6 +143,30 @@ public:
         cte_name = std::move(cte_name_value);
     }
 
+    /// Returns true if query node is a MATERIALIZED CTE, false otherwise
+    bool isMaterialized() const noexcept
+    {
+        return is_materialized;
+    }
+
+    /// Set query node is MATERIALIZED CTE value
+    void setIsMaterialized(bool is_materialized_value) noexcept
+    {
+        is_materialized = is_materialized_value;
+    }
+
+    /// Returns true if query node has RECURSIVE WITH, false otherwise
+    bool isRecursiveWith() const
+    {
+        return is_recursive_with;
+    }
+
+    /// Set query node RECURSIVE WITH value
+    void setIsRecursiveWith(bool is_recursive_with_value)
+    {
+        is_recursive_with = is_recursive_with_value;
+    }
+
     /// Returns true if query node has DISTINCT, false otherwise
     bool isDistinct() const
     {
@@ -145,6 +177,16 @@ public:
     void setIsDistinct(bool is_distinct_value)
     {
         is_distinct = is_distinct_value;
+    }
+
+    bool isLimitByAll() const
+    {
+        return is_limit_by_all;
+    }
+
+    void setIsLimitByAll(bool is_limit_by_all_value)
+    {
+        is_limit_by_all = is_limit_by_all_value;
     }
 
     /// Returns true if query node has LIMIT WITH TIES, false otherwise
@@ -219,6 +261,18 @@ public:
         is_group_by_all = is_group_by_all_value;
     }
 
+    /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
+    bool isOrderByAll() const
+    {
+        return is_order_by_all;
+    }
+
+    /// Set query node ORDER BY ALL modifier value
+    void setIsOrderByAll(bool is_order_by_all_value)
+    {
+        is_order_by_all = is_order_by_all_value;
+    }
+
     /// Returns true if query node WITH section is not empty, false otherwise
     bool hasWith() const
     {
@@ -274,15 +328,28 @@ public:
     }
 
     /// Get JOIN TREE section node
-    const QueryTreeNodePtr & getJoinTree() const
+    const ITableExpressionNode & getJoinTree() const
+    {
+        return children[join_tree_child_index]->assertTableExpression();
+    }
+
+    /// Get JOIN TREE section node
+    QueryTreeNodePtr & getJoinTreeNode()
     {
         return children[join_tree_child_index];
     }
 
     /// Get JOIN TREE section node
-    QueryTreeNodePtr & getJoinTree()
+    const QueryTreeNodePtr & getJoinTreeNode() const
     {
         return children[join_tree_child_index];
+    }
+
+    /// Get JOIN TREE section node
+    TableExpressionNodePtr getJoinTreeNodeTyped() const
+    {
+        children[join_tree_child_index]->assertTableExpression();
+        return static_pointer_cast<ITableExpressionNode>(children[join_tree_child_index]);
     }
 
     /// Returns true if query node PREWHERE section is not empty, false otherwise
@@ -397,6 +464,24 @@ public:
     QueryTreeNodePtr & getWindowNode()
     {
         return children[window_child_index];
+    }
+
+    /// Returns true if query node QUALIFY section is not empty, false otherwise
+    bool hasQualify() const
+    {
+        return getQualify() != nullptr;
+    }
+
+    /// Get QUALIFY section node
+    const QueryTreeNodePtr & getQualify() const
+    {
+        return children[qualify_child_index];
+    }
+
+    /// Get QUALIFY section node
+    QueryTreeNodePtr & getQualify()
+    {
+        return children[qualify_child_index];
     }
 
     /// Returns true if query node ORDER BY section is not empty, false otherwise
@@ -555,11 +640,51 @@ public:
         return projection_columns;
     }
 
-    /// Resolve query node projection columns
-    void resolveProjectionColumns(NamesAndTypes projection_columns_value)
+    /// Returns true if query node is resolved, false otherwise
+    bool isResolved() const
     {
-        projection_columns = std::move(projection_columns_value);
+        return !projection_columns.empty();
     }
+
+    /// Resolve query node projection columns
+    void resolveProjectionColumns(NamesAndTypes projection_columns_value);
+
+    /// Clear query node projection columns
+    void clearProjectionColumns()
+    {
+        projection_columns.clear();
+    }
+
+    /// Remove unused projection columns
+    void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
+
+    bool isCorrelated() const
+    {
+        return !children[correlated_columns_list_index]->as<ListNode>()->getNodes().empty();
+    }
+
+    QueryTreeNodePtr & getCorrelatedColumnsNode()
+    {
+        return children[correlated_columns_list_index];
+    }
+
+    ListNode & getCorrelatedColumns()
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    const ListNode & getCorrelatedColumns() const
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    ColumnNodePtrWithHashSet getCorrelatedColumnsSet() const;
+
+    void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
+
+    /// Returns result type of projection expression if query is correlated
+    /// or throws an exception otherwise.
+    DataTypePtr getResultType() const override;
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -568,10 +693,20 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    void setProjectionAliasesToOverride(Names pr_aliases)
+    {
+        projection_aliases_to_override = std::move(pr_aliases);
+    }
 
-    void updateTreeHashImpl(HashState &) const override;
+    const Names & getProjectionAliasesToOverride() const
+    {
+        return projection_aliases_to_override;
+    }
+
+protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
+
+    void updateTreeHashImpl(HashState &, CompareOptions options) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -580,6 +715,8 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    bool is_materialized = false;
+    bool is_recursive_with = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;
     bool is_group_by_with_totals = false;
@@ -587,9 +724,12 @@ private:
     bool is_group_by_with_cube = false;
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
+    bool is_order_by_all = false;
+    bool is_limit_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;
+    Names projection_aliases_to_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
 
@@ -601,14 +741,16 @@ private:
     static constexpr size_t group_by_child_index = 5;
     static constexpr size_t having_child_index = 6;
     static constexpr size_t window_child_index = 7;
-    static constexpr size_t order_by_child_index = 8;
-    static constexpr size_t interpolate_child_index = 9;
-    static constexpr size_t limit_by_limit_child_index = 10;
-    static constexpr size_t limit_by_offset_child_index = 11;
-    static constexpr size_t limit_by_child_index = 12;
-    static constexpr size_t limit_child_index = 13;
-    static constexpr size_t offset_child_index = 14;
-    static constexpr size_t children_size = offset_child_index + 1;
+    static constexpr size_t qualify_child_index = 8;
+    static constexpr size_t order_by_child_index = 9;
+    static constexpr size_t interpolate_child_index = 10;
+    static constexpr size_t limit_by_limit_child_index = 11;
+    static constexpr size_t limit_by_offset_child_index = 12;
+    static constexpr size_t limit_by_child_index = 13;
+    static constexpr size_t limit_child_index = 14;
+    static constexpr size_t offset_child_index = 15;
+    static constexpr size_t correlated_columns_list_index = 16;
+    static constexpr size_t children_size = correlated_columns_list_index + 1;
 };
 
 }

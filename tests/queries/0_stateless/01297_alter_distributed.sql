@@ -25,7 +25,7 @@ show create table merge_distributed;
 
 --error: should fall, because there is no `dummy1` column
 alter table merge_distributed add column dummy1 String after CounterID;
-select CounterID, dummy1 from merge_distributed where dummy1 <> '' limit 10; -- { serverError 47 }
+select CounterID, dummy1 from merge_distributed where dummy1 <> '' limit 10; -- { serverError UNKNOWN_IDENTIFIER }
 
 drop table merge_distributed;
 drop table merge_distributed1;

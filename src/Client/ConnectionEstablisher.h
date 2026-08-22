@@ -1,11 +1,8 @@
 #pragma once
 
-#include <variant>
-
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
-#include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
@@ -20,30 +17,32 @@ class ConnectionEstablisher
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisher(IConnectionPool * pool_,
+    ConnectionEstablisher(ConnectionPoolPtr pool_,
                           const ConnectionTimeouts * timeouts_,
-                          const Settings * settings_,
-                          Poco::Logger * log,
+                          const Settings & settings_,
+                          LoggerPtr log,
                           const QualifiedTableName * table_to_check = nullptr);
 
     /// Establish connection and save it in result, write possible exception message in fail_message.
+    /// The connection is returned from the connection pool and it can be stale (the server may have
+    /// closed it while it was idle). The pooled connection is not pinged before use: pinging it adds
+    /// an unnecessary Ping-Pong round trip when the connection is still alive. Instead, a stale
+    /// connection is detected by a zero-timeout poll (see Connection::forceConnected) or, failing
+    /// that, by retrying - either here (a pooled connection that fails its first request is
+    /// reconnected once) or at a higher level (ConnectionPoolWithFailover retries the next replica).
     void run(TryResult & result, std::string & fail_message);
 
     /// Set async callback that will be called when reading from socket blocks.
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
-    bool isFinished() const { return is_finished; }
-
 private:
-    IConnectionPool * pool;
+    ConnectionPoolPtr pool;
     const ConnectionTimeouts * timeouts;
-    const Settings * settings;
-    Poco::Logger * log;
+    const Settings & settings;
+    LoggerPtr log;
     const QualifiedTableName * table_to_check;
 
-    bool is_finished;
     AsyncCallback async_callback = {};
-
 };
 
 #if defined(OS_LINUX)
@@ -59,10 +58,10 @@ class ConnectionEstablisherAsync : public AsyncTaskExecutor
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisherAsync(IConnectionPool * pool_,
+    ConnectionEstablisherAsync(ConnectionPoolPtr pool_,
                                const ConnectionTimeouts * timeouts_,
-                               const Settings * settings_,
-                               Poco::Logger * log_,
+                               const Settings & settings_,
+                               LoggerPtr log_,
                                const QualifiedTableName * table_to_check_ = nullptr);
 
     /// Get file descriptor that can be added in epoll and be polled,
@@ -72,7 +71,7 @@ public:
     /// Check if the process of connection establishing was finished.
     /// The process is considered finished if connection is ready,
     /// some exception occurred or timeout exceeded.
-    bool isFinished() { return is_finished; }
+    bool isFinished() const { return is_finished; }
     TryResult getResult() const { return result; }
 
     const std::string & getFailMessage() const { return fail_message; }
@@ -87,7 +86,10 @@ private:
 
     struct Task : public AsyncTask
     {
-        Task(ConnectionEstablisherAsync & connection_establisher_async_) : connection_establisher_async(connection_establisher_async_) {}
+        explicit Task(ConnectionEstablisherAsync & connection_establisher_async_)
+            : connection_establisher_async(connection_establisher_async_)
+        {
+        }
 
         ConnectionEstablisherAsync & connection_establisher_async;
 
@@ -113,7 +115,7 @@ private:
     /// We use timer descriptor for checking socket receive timeout.
     TimerDescriptor timeout_descriptor;
     Poco::Timespan timeout;
-    AsyncEventTimeoutType timeout_type;
+    AsyncEventTimeoutType timeout_type{};
 
     /// In read callback we add socket file descriptor and timer descriptor with receive timeout
     /// in epoll, so we can return epoll file descriptor outside for polling.

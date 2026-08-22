@@ -178,19 +178,19 @@ static const std::map<std::pair<std::string, std::string>, std::string> answer =
     {{"Float64", "Float64"}, "Float64"}
 };
 
-static std::string getTypeString(DB::UInt8) { return "UInt8"; }
-static std::string getTypeString(DB::UInt16) { return "UInt16"; }
-static std::string getTypeString(DB::UInt32) { return "UInt32"; }
-static std::string getTypeString(DB::UInt64) { return "UInt64"; }
-static std::string getTypeString(DB::UInt256) { return "UInt256"; }
-static std::string getTypeString(DB::Int8) { return "Int8"; }
-static std::string getTypeString(DB::Int16) { return "Int16"; }
-static std::string getTypeString(DB::Int32) { return "Int32"; }
-static std::string getTypeString(DB::Int64) { return "Int64"; }
-static std::string getTypeString(DB::Int128) { return "Int128"; }
-static std::string getTypeString(DB::Int256) { return "Int256"; }
-static std::string getTypeString(DB::Float32) { return "Float32"; }
-static std::string getTypeString(DB::Float64) { return "Float64"; }
+static std::string getTypeString(UInt8) { return "UInt8"; }
+static std::string getTypeString(UInt16) { return "UInt16"; }
+static std::string getTypeString(UInt32) { return "UInt32"; }
+static std::string getTypeString(UInt64) { return "UInt64"; }
+static std::string getTypeString(UInt256) { return "UInt256"; }
+static std::string getTypeString(Int8) { return "Int8"; }
+static std::string getTypeString(Int16) { return "Int16"; }
+static std::string getTypeString(Int32) { return "Int32"; }
+static std::string getTypeString(Int64) { return "Int64"; }
+static std::string getTypeString(Int128) { return "Int128"; }
+static std::string getTypeString(Int256) { return "Int256"; }
+static std::string getTypeString(Float32) { return "Float32"; }
+static std::string getTypeString(Float64) { return "Float64"; }
 static std::string getTypeString(DB::NumberTraits::Error) { return "Error"; }
 
 template <typename T0, typename T1>
@@ -219,61 +219,60 @@ void ifRightType()
 template <typename T0>
 void ifLeftType()
 {
-    ifRightType<T0, DB::UInt8>();
-    ifRightType<T0, DB::UInt16>();
-    ifRightType<T0, DB::UInt32>();
-    ifRightType<T0, DB::UInt64>();
-    ifRightType<T0, DB::UInt256>();
-    ifRightType<T0, DB::Int8>();
-    ifRightType<T0, DB::Int16>();
-    ifRightType<T0, DB::Int32>();
-    ifRightType<T0, DB::Int64>();
-    ifRightType<T0, DB::Int128>();
-    ifRightType<T0, DB::Int256>();
-    ifRightType<T0, DB::Float32>();
-    ifRightType<T0, DB::Float64>();
+    ifRightType<T0, UInt8>();
+    ifRightType<T0, UInt16>();
+    ifRightType<T0, UInt32>();
+    ifRightType<T0, UInt64>();
+    ifRightType<T0, UInt256>();
+    ifRightType<T0, Int8>();
+    ifRightType<T0, Int16>();
+    ifRightType<T0, Int32>();
+    ifRightType<T0, Int64>();
+    ifRightType<T0, Int128>();
+    ifRightType<T0, Int256>();
+    ifRightType<T0, Float32>();
+    ifRightType<T0, Float64>();
 }
 
 
 TEST(NumberTraits, ResultOfAdditionMultiplication)
 {
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfAdditionMultiplication<DB::UInt8, DB::UInt8>::Type()), "UInt16");
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfAdditionMultiplication<DB::UInt8, DB::Int32>::Type()), "Int64");
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfAdditionMultiplication<DB::UInt8, DB::Float32>::Type()), "Float64");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfAdditionMultiplication<UInt8, UInt8>::Type()), "UInt16");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfAdditionMultiplication<UInt8, Int32>::Type()), "Int64");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfAdditionMultiplication<UInt8, Float32>::Type()), "Float64");
 }
 
 
 TEST(NumberTraits, ResultOfSubtraction)
 {
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfSubtraction<DB::UInt8, DB::UInt8>::Type()), "Int16");
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfSubtraction<DB::UInt16, DB::UInt8>::Type()), "Int32");
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfSubtraction<DB::UInt16, DB::Int8>::Type()), "Int32");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfSubtraction<UInt8, UInt8>::Type()), "Int16");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfSubtraction<UInt16, UInt8>::Type()), "Int32");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfSubtraction<UInt16, Int8>::Type()), "Int32");
 }
 
 
 TEST(NumberTraits, Others)
 {
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfFloatingPointDivision<DB::UInt16, DB::Int16>::Type()), "Float64");
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfFloatingPointDivision<DB::UInt32, DB::Int16>::Type()), "Float64");
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfIntegerDivision<DB::UInt8, DB::Int16>::Type()), "Int8");
-    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfModulo<DB::UInt32, DB::Int8>::Type()), "UInt8");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfFloatingPointDivision<UInt16, Int16>::Type()), "Float64");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfFloatingPointDivision<UInt32, Int16>::Type()), "Float64");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfIntegerDivision<UInt8, Int16>::Type()), "Int8");
+    ASSERT_EQ(getTypeString(DB::NumberTraits::ResultOfModulo<UInt32, Int8>::Type()), "UInt8");
 }
 
 
 TEST(NumberTraits, FunctionIf)
 {
-    ifLeftType<DB::UInt8>();
-    ifLeftType<DB::UInt16>();
-    ifLeftType<DB::UInt32>();
-    ifLeftType<DB::UInt64>();
-    ifLeftType<DB::UInt256>();
-    ifLeftType<DB::Int8>();
-    ifLeftType<DB::Int16>();
-    ifLeftType<DB::Int32>();
-    ifLeftType<DB::Int64>();
-    ifLeftType<DB::Int128>();
-    ifLeftType<DB::Int256>();
-    ifLeftType<DB::Float32>();
-    ifLeftType<DB::Float64>();
+    ifLeftType<UInt8>();
+    ifLeftType<UInt16>();
+    ifLeftType<UInt32>();
+    ifLeftType<UInt64>();
+    ifLeftType<UInt256>();
+    ifLeftType<Int8>();
+    ifLeftType<Int16>();
+    ifLeftType<Int32>();
+    ifLeftType<Int64>();
+    ifLeftType<Int128>();
+    ifLeftType<Int256>();
+    ifLeftType<Float32>();
+    ifLeftType<Float64>();
 }
-

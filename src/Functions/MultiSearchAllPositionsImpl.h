@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <Columns/ColumnString.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -30,10 +31,10 @@ struct MultiSearchAllPositionsImpl
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be at most 255", name, needles_arr.size());
 
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
-            needles.emplace_back(needle.get<String>());
+            needles.emplace_back(needle.safeGet<String>());
 
         auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64
         {
@@ -57,7 +58,7 @@ struct MultiSearchAllPositionsImpl
             for (size_t j = 0, from = 0; j < haystack_size; ++j, from += needles_size)
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset - 1;
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset;
                 searcher.searchOneAll(haystack, haystack_end, vec_res.begin() + from, res_callback);
                 prev_haystack_offset = haystack_offsets[j];
             }
@@ -89,9 +90,9 @@ struct MultiSearchAllPositionsImpl
 
         offsets_res.reserve(haystack_offsets.size());
 
-        const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
+        const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
 
         for (size_t i = 0; i < haystack_offsets.size(); ++i)
         {
@@ -99,7 +100,7 @@ struct MultiSearchAllPositionsImpl
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                needles.emplace_back(needles_data_string->getDataAt(j).toView());
+                needles.emplace_back(needles_data_string.getDataAt(j));
             }
 
             const size_t needles_size = needles.size();
@@ -119,7 +120,7 @@ struct MultiSearchAllPositionsImpl
             while (searcher.hasMoreToSearch())
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
-                const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset - 1;
+                const auto * haystack_end = haystack + haystack_offsets[i] - prev_haystack_offset;
                 searcher.searchOneAll(haystack, haystack_end, vec_res.begin() + vec_res.size() - needles_size, res_callback);
             }
 

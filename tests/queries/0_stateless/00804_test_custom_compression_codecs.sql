@@ -37,13 +37,13 @@ DROP TABLE IF EXISTS codec_multiple_direct_specification_2;
 DROP TABLE IF EXISTS delta_bad_params1;
 DROP TABLE IF EXISTS delta_bad_params2;
 
-CREATE TABLE bad_codec(id UInt64 CODEC(adssadads)) ENGINE = MergeTree() order by tuple(); -- { serverError 432 }
-CREATE TABLE too_many_params(id UInt64 CODEC(ZSTD(2,3,4,5))) ENGINE = MergeTree() order by tuple(); -- { serverError 431 }
-CREATE TABLE params_when_no_params(id UInt64 CODEC(LZ4(1))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 378 }
-CREATE TABLE codec_multiple_direct_specification_1(id UInt64 CODEC(MULTIPLE(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 432 }
-CREATE TABLE codec_multiple_direct_specification_2(id UInt64 CODEC(multiple(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 432 }
-CREATE TABLE delta_bad_params1(id UInt64 CODEC(Delta(3))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 433 }
-CREATE TABLE delta_bad_params2(id UInt64 CODEC(Delta(16))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 433 }
+CREATE TABLE bad_codec(id UInt64 CODEC(adssadads)) ENGINE = MergeTree() order by tuple(); -- { serverError UNKNOWN_CODEC }
+CREATE TABLE too_many_params(id UInt64 CODEC(ZSTD(2,3,4,5))) ENGINE = MergeTree() order by tuple(); -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
+CREATE TABLE params_when_no_params(id UInt64 CODEC(LZ4(1))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError DATA_TYPE_CANNOT_HAVE_ARGUMENTS }
+CREATE TABLE codec_multiple_direct_specification_1(id UInt64 CODEC(MULTIPLE(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError UNKNOWN_CODEC }
+CREATE TABLE codec_multiple_direct_specification_2(id UInt64 CODEC(multiple(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError UNKNOWN_CODEC }
+CREATE TABLE delta_bad_params1(id UInt64 CODEC(Delta(3))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_CODEC_PARAMETER }
+CREATE TABLE delta_bad_params2(id UInt64 CODEC(Delta(16))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_CODEC_PARAMETER }
 
 DROP TABLE IF EXISTS bad_codec;
 DROP TABLE IF EXISTS params_when_no_params;
@@ -88,7 +88,7 @@ CREATE TABLE compression_codec_multiple_more_types (
     id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, Delta(2), Delta(4), Delta(1), LZ4HC),
     data FixedString(12) CODEC(ZSTD, ZSTD, Delta, Delta, Delta, NONE, NONE, NONE, LZ4HC),
     ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD, Delta(8))
-) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 36 }
+) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE compression_codec_multiple_more_types (
     id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, Delta(2), Delta(4), Delta(1), LZ4HC),

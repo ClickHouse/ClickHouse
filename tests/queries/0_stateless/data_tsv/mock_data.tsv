@@ -1,0 +1,5 @@
+UserName	Age	Tags
+String	Int8	Map(String, UInt64)
+user127	20	{'test': 123}
+user405	43	{'test': 123}
+user902	43	{'test': 123}

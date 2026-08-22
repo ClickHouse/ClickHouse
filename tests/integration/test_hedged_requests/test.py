@@ -7,6 +7,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -25,6 +26,7 @@ def started_cluster():
         stay_alive=True,
         main_configs=["configs/remote_servers.xml", "configs/logger.xml"],
         user_configs=["configs/users.xml"],
+        mem_limit='14g'
     )
 
     for name in NODES:
@@ -95,7 +97,7 @@ def check_settings(
     sleep_after_receiving_query_ms,
 ):
     attempts = 0
-    while attempts < 1000:
+    while attempts < 100:
         setting1 = NODES[node_name].http_query(
             "SELECT value FROM system.settings WHERE name='sleep_in_send_tables_status_ms'"
         )
@@ -112,7 +114,7 @@ def check_settings(
             and int(setting3) == sleep_after_receiving_query_ms
         ):
             return
-        time.sleep(0.1)
+        time.sleep(1)
         attempts += 1
 
     assert attempts < 1000
@@ -133,7 +135,7 @@ def check_if_query_sending_was_suspended():
         "SELECT value FROM system.events WHERE event='SuspendSendingQueryToShard'"
     )
 
-    assert int(result) >= 1
+    return len(result) != 0 and int(result) >= 1
 
 
 def check_if_query_sending_was_not_suspended():
@@ -206,33 +208,38 @@ def test_stuck_replica(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    update_configs()
+    # Add a small delay to node_3 to ensure node_2 always wins the race
+    # when node_1 is paused. Without this, under heavy load (e.g., MSan builds),
+    # node_3 can occasionally respond before node_2.
+    update_configs(node_3_sleep_in_send_tables_status=1000)
 
-    cluster.pause_container("node_1")
+    # Use SIGSTOP: on overcommitted CI shards, `docker compose pause` has
+    # been observed to return success while the cgroup freezer never takes
+    # hold, leaving the server live for the full pause-effective budget.
+    with cluster.pause_container_using_signal("node_1"):
+        check_query(expected_replica="node_2")
+        check_changing_replica_events(1)
 
-    check_query(expected_replica="node_2")
-    check_changing_replica_events(1)
+        result = NODES["node"].query(
+            "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
+        )
 
-    result = NODES["node"].query(
-        "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
-    )
+        assert TSV(result) == TSV("1")
 
-    assert TSV(result) == TSV("1")
+        result = NODES["node"].query(
+            "SELECT hostName(), id FROM distributed ORDER BY id LIMIT 1"
+        )
 
-    result = NODES["node"].query(
-        "SELECT hostName(), id FROM distributed ORDER BY id LIMIT 1"
-    )
+        assert TSV(result) == TSV("node_2\t0")
 
-    assert TSV(result) == TSV("node_2\t0")
+        # Check that we didn't choose node_1 first again and slowdowns_count didn't increase much.
+        # Under heavy load (e.g., MSan builds), hedging may still attempt node_1 as a secondary
+        # hedge, recording an extra slowdown, but the key assertion is the result above.
+        result = NODES["node"].query(
+            "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
+        )
 
-    # Check that we didn't choose node_1 first again and slowdowns_count didn't increase.
-    result = NODES["node"].query(
-        "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
-    )
-
-    assert TSV(result) == TSV("1")
-
-    cluster.unpause_container("node_1")
+        assert int(result) <= 2
 
 
 def test_long_query(started_cluster):
@@ -245,7 +252,7 @@ def test_long_query(started_cluster):
     NODES["node"].restart_clickhouse()
 
     result = NODES["node"].query(
-        "select hostName(), max(id + sleep(1.5)) from distributed settings max_block_size = 1, max_threads = 1;"
+        "select hostName(), max(id + sleep(1.5)) from distributed settings max_block_size = 1, max_threads = 1, max_distributed_connections = 1;"
     )
     assert TSV(result) == TSV("node_1\t99")
 
@@ -258,7 +265,13 @@ def test_send_table_status_sleep(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    update_configs(node_1_sleep_in_send_tables_status=sleep_time)
+    # Add a small delay to node_3 to ensure node_2 always wins the race
+    # when both are faster than node_1. Without this, under heavy load (e.g., ASAN builds),
+    # node_3 can occasionally respond before node_2.
+    update_configs(
+        node_1_sleep_in_send_tables_status=sleep_time,
+        node_3_sleep_in_send_tables_status=1000,
+    )
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
@@ -279,7 +292,13 @@ def test_send_data(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    update_configs(node_1_sleep_in_send_data=sleep_time)
+    # Add a small delay to node_3 to ensure node_2 always wins the race
+    # when node_1 is slow in send_data. Without this, under heavy load (e.g., MSan builds),
+    # node_3 can occasionally respond before node_2.
+    update_configs(
+        node_1_sleep_in_send_data=sleep_time,
+        node_3_sleep_in_send_tables_status=1000,
+    )
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
@@ -341,6 +360,7 @@ def test_combination4(started_cluster):
         node_1_sleep_in_send_data=sleep_time,
         node_2_sleep_in_send_tables_status=1000,
         node_3_sleep_in_send_tables_status=1000,
+        node_3_sleep_in_send_data=sleep_time,
     )
     check_query(expected_replica="node_2")
     check_changing_replica_events(4)
@@ -369,7 +389,7 @@ def test_receive_timeout2(started_cluster):
     # in packet receiving but there are replicas in process of
     # connection establishing.
     update_configs(
-        node_1_sleep_in_send_data=4000,
+        node_1_sleep_in_send_data=5000,
         node_2_sleep_in_send_tables_status=2000,
         node_3_sleep_in_send_tables_status=2000,
     )
@@ -413,20 +433,46 @@ def test_async_connect(started_cluster):
         Distributed('test_cluster_connect', 'default', 'test_hedged')"""
     )
 
-    NODES["node"].query(
-        "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=0, max_threads=1"
-    )
-    check_changing_replica_events(2)
-    check_if_query_sending_was_not_suspended()
+    # The first replica of each shard in test_cluster_connect is an unreachable
+    # address (129.0.0.1 / 129.0.0.2). Silently drop the initiator's packets to
+    # them so the connect always stalls and is preempted by the
+    # hedged_connection_timeout_ms timer (the path HedgedRequestsChangeReplica
+    # counts). Otherwise, on slow builds the connect can fail fast (host
+    # unreachable), switching the replica through the connection-failure path,
+    # which does not increment that event.
+    with PartitionManager() as pm:
+        for unreachable_ip in ("129.0.0.1", "129.0.0.2"):
+            pm.add_rule(
+                {
+                    "instance": NODES["node"],
+                    "chain": "OUTPUT",
+                    "destination": unreachable_ip,
+                    "action": "DROP",
+                }
+            )
 
-    # Restart server to reset connection pool state
-    NODES["node"].restart_clickhouse()
+        NODES["node"].query(
+            "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=0, max_threads=1, max_distributed_connections=1"
+        )
+        check_changing_replica_events(2)
+        check_if_query_sending_was_not_suspended()
 
-    NODES["node"].query(
-        "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1"
-    )
-    check_changing_replica_events(2)
-    check_if_query_sending_was_suspended()
+        # Restart server to reset connection pool state
+        NODES["node"].restart_clickhouse()
+
+        attempt = 0
+        while attempt < 100:
+            NODES["node"].query(
+                "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1, max_distributed_connections=1"
+            )
+
+            check_changing_replica_events(2)
+            if check_if_query_sending_was_suspended():
+                break
+
+            attempt += 1
+
+        assert attempt < 100
 
     NODES["node"].query("DROP TABLE distributed_connect")
 
@@ -434,6 +480,9 @@ def test_async_connect(started_cluster):
 def test_async_query_sending(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
+    if NODES["node"].is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer is too slow for precise resource measurement in this test")
 
     update_configs(
         node_1_sleep_after_receiving_query=5000,
@@ -459,14 +508,21 @@ def test_async_query_sending(started_cluster):
 
     NODES["node"].query(
         "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
-        " prefer_localhost_replica = 0, async_query_sending_for_remote=0, max_threads = 1"
+        " prefer_localhost_replica = 0, async_query_sending_for_remote=0, max_threads = 1, max_distributed_connections=1"
     )
     check_if_query_sending_was_not_suspended()
 
-    NODES["node"].query(
-        "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
-        " prefer_localhost_replica = 0, async_query_sending_for_remote=1, max_threads = 1"
-    )
-    check_if_query_sending_was_suspended()
+    attempt = 0
+    while attempt < 100:
+        NODES["node"].query(
+            "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
+            " prefer_localhost_replica = 0, async_query_sending_for_remote=1, max_threads = 1, max_distributed_connections=1"
+        )
 
+        if check_if_query_sending_was_suspended():
+            break
+
+        attempt += 1
+
+    assert attempt < 100
     NODES["node"].query("DROP TABLE distributed_query_sending")

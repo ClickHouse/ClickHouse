@@ -1,0 +1,8 @@
+42	24	0
+42	24	0
+43	34	55
+42	24
+43	34
+INSERT INTO default.t_async_insert_alter (id, v1) FORMAT Values	Parsed	Ok
+INSERT INTO default.t_async_insert_alter (id, v1, value2) FORMAT Values	Parsed	Ok
+INSERT INTO default.t_async_insert_alter (id, v1, value2) FORMAT Values	Parsed	FlushError

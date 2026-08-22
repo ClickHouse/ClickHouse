@@ -1,0 +1,22 @@
+42	Int64	false
+hello	String	false
+2020-01-01	Date	true
+43	Int64	false
+2020-01-01	Date	true
+[1,2,3]	Array(Int64)	true
+{1:2}	Map(Int64, Int64)	true
+world	String	false
+[4,5]	Array(Int64)	true
+44	Int64	false
+{"a":1,"b":42,"c":"2020-01-01"}	{'b':'Int64','c':'Date'}	{}
+{"a":2,"b":"2020-01-01","c":42,"d":42}	{'b':'Date','c':'Int64'}	{'d':'Int64'}
+{"a":3,"b":"str1","c":[1,2,3],"d":"str1","e":42}	{'b':'String','c':'Array(Nullable(Int64))'}	{'d':'String','e':'Int64'}
+{"a":4,"b":[1,2,3],"c":"str1","d":[1,2,3],"e":"str1"}	{'b':'Array(Nullable(Int64))','c':'String'}	{'d':'Array(Nullable(Int64))','e':'String'}
+{"a":[{"b":42,"c":"2020-01-01"}]}	{'b':'Int64'}	{'c':'Date'}
+{"a":[{"b":"2020-01-01","c":42,"d":42}]}	{'b':'Date'}	{'c':'Int64','d':'Int64'}
+{"a":[{"b":"str1","c":[1,2,3],"d":[1,2,3]}]}	{'b':'String'}	{'c':'Array(Nullable(Int64))','d':'Array(Nullable(Int64))'}
+{"a":[{"b":43,"c":43}]}	{'b':'Int64'}	{'c':'Int64'}
+{"a":[{"b":42,"c":"2020-01-01"}]}	{}	{'b':'Int64','c':'Date'}
+{"a":[{"b":"2020-01-01","c":42,"d":42}]}	{}	{'b':'Date','c':'Int64','d':'Int64'}
+{"a":[{"b":"str1","c":[1,2,3],"d":[1,2,3]}]}	{}	{'b':'String','c':'Array(Nullable(Int64))','d':'Array(Nullable(Int64))'}
+{"a":[{"b":43,"c":43}]}	{}	{'b':'Int64','c':'Int64'}

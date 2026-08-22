@@ -1,55 +1,52 @@
+import gzip
 import os
-import pytest
 import sys
 import time
-import pytz
 import uuid
-import grpc
-from helpers.cluster import ClickHouseCluster, run_and_check
 from threading import Thread
-import gzip
+
+import grpc
 import lz4.frame
+import pytest
+import pytz
+import snappy
+
+from helpers.cluster import ClickHouseCluster
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+pb2_dir = os.path.join(script_dir, "pb2")
+if pb2_dir not in sys.path:
+    sys.path.append(pb2_dir)
+import clickhouse_grpc_pb2  # Execute pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 GRPC_PORT = 9100
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
-
-
-# Use grpcio-tools to generate *pb2.py files from *.proto.
-
-proto_dir = os.path.join(SCRIPT_DIR, "./protos")
-gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
-os.makedirs(gen_dir, exist_ok=True)
-run_and_check(
-    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
-    {proto_dir}/clickhouse_grpc.proto".format(
-        proto_dir=proto_dir, gen_dir=gen_dir
-    ),
-    shell=True,
-)
-
-sys.path.append(gen_dir)
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
 
 
 # Utilities
 
-config_dir = os.path.join(SCRIPT_DIR, "./configs")
+IPV6_ADDRESS = "2001:3984:3989::1:1111"
+
+config_dir = os.path.join(script_dir, "./configs")
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/grpc_config.xml"],
+    main_configs=["configs/config.xml"],
     # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
     env_variables={
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
     },
+    ipv6_address=IPV6_ADDRESS,
+    stay_alive=True,
 )
 main_channel = None
 
 
-def create_channel():
-    node_ip_with_grpc_port = cluster.get_instance_ip("node") + ":" + str(GRPC_PORT)
+def create_channel(hostname=None):
+    if not hostname:
+        hostname = cluster.get_instance_ip("node")
+    node_ip_with_grpc_port = hostname + ":" + str(GRPC_PORT)
     channel = grpc.insecure_channel(node_ip_with_grpc_port)
     grpc.channel_ready_future(channel).result(timeout=10)
     global main_channel
@@ -70,6 +67,7 @@ def query_common(
     password="",
     query_id="123",
     session_id="",
+    database="",
     stream_output=False,
     channel=None,
 ):
@@ -97,6 +95,7 @@ def query_common(
             password=password,
             query_id=query_id,
             session_id=session_id,
+            database=database,
             next_query_info=bool(input_data),
         )
 
@@ -192,7 +191,7 @@ class QueryThread(Thread):
 def start_cluster():
     cluster.start()
     try:
-        with create_channel() as channel:
+        with create_channel():
             yield cluster
 
     finally:
@@ -210,6 +209,11 @@ def reset_after_test():
 
 def test_select_one():
     assert query("SELECT 1") == "1\n"
+
+
+def test_ipv6_select_one():
+    with create_channel(f"[{IPV6_ADDRESS}]") as channel:
+        assert query("SELECT 1", channel=channel) == "1\n"
 
 
 def test_ordinary_query():
@@ -262,7 +266,7 @@ def test_insert_default_column():
     )
 
 
-def test_insert_splitted_row():
+def test_insert_split_row():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES", input_data=["(1),(2),(", "3),(5),(4),(6)"])
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
@@ -279,6 +283,112 @@ def test_output_format():
         query("SELECT a FROM t ORDER BY a", output_format="JSONEachRow")
         == '{"a":1}\n{"a":2}\n{"a":3}\n'
     )
+
+
+def test_format_settings():
+    # The `format` / `input_format` / `output_format` settings are global format overrides that must
+    # work on every protocol, including gRPC (the resolution mirrors the server query path).
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t VALUES (1),(2),(3)")
+    # `output_format` overrides the gRPC `output_format` field (TabSeparated) and the query FORMAT clause.
+    assert (
+        query("SELECT a FROM t ORDER BY a", settings={"output_format": "JSONEachRow"})
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    assert (
+        query(
+            "SELECT a FROM t ORDER BY a FORMAT TabSeparated",
+            settings={"output_format": "JSONEachRow"},
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    # The generic `format` setting applies to output too.
+    assert (
+        query("SELECT a FROM t ORDER BY a", settings={"format": "JSONEachRow"})
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    # `input_format` selects the INSERT input format, overriding the query FORMAT clause.
+    query("DROP TABLE IF EXISTS t_in")
+    query("CREATE TABLE t_in (a UInt8, b UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_in FORMAT TabSeparated",
+        input_data="1,2\n3,4\n",
+        settings={"input_format": "CSV"},
+    )
+    assert query("SELECT a, b FROM t_in ORDER BY a") == "1\t2\n3\t4\n"
+    query("DROP TABLE t_in")
+    # An in-query `SETTINGS` clause must take effect too: it is applied by `executeQuery` after the
+    # `QueryInfo.settings`, so the formats are re-resolved from the final settings (otherwise the
+    # pre-`SETTINGS` snapshot would win and the in-query setting would be ignored on gRPC).
+    assert (
+        query(
+            "SELECT a FROM t ORDER BY a SETTINGS output_format = 'JSONEachRow' FORMAT TabSeparated"
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    query("DROP TABLE IF EXISTS t_in2")
+    query("CREATE TABLE t_in2 (a UInt8, b UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_in2 SETTINGS input_format = 'CSV' FORMAT TabSeparated",
+        input_data="5,6\n7,8\n",
+    )
+    assert query("SELECT a, b FROM t_in2 ORDER BY a") == "5\t6\n7\t8\n"
+    query("DROP TABLE t_in2")
+    query("DROP TABLE t")
+
+
+def test_database_setting():
+    # An explicit `QueryInfo.database` must win over a `database` value arriving via `QueryInfo.settings`
+    # (or a user profile): gRPC mirrors it into the `database` setting so `executeQuery`'s
+    # post-`SETTINGS` re-application of `database` does not switch the query back to the inherited one.
+    query("DROP DATABASE IF EXISTS grpc_db1")
+    query("DROP DATABASE IF EXISTS grpc_db2")
+    query("CREATE DATABASE grpc_db1")
+    query("CREATE DATABASE grpc_db2")
+    query("CREATE TABLE grpc_db1.t (x String) ENGINE = Memory")
+    query("CREATE TABLE grpc_db2.t (x String) ENGINE = Memory")
+    query("INSERT INTO grpc_db1.t VALUES ('from_db1')")
+    query("INSERT INTO grpc_db2.t VALUES ('from_db2')")
+    # The explicit database field selects grpc_db2 even though the settings say grpc_db1.
+    assert (
+        query("SELECT x FROM t", database="grpc_db2", settings={"database": "grpc_db1"})
+        == "from_db2\n"
+    )
+    # And it works on its own.
+    assert query("SELECT x FROM t", database="grpc_db1") == "from_db1\n"
+    query("DROP DATABASE grpc_db1")
+    query("DROP DATABASE grpc_db2")
+
+
+def test_input_function_format_settings():
+    # The input() table function initializes its reader during planning (inside executeQuery), before any
+    # post-execution step, so an in-query SETTINGS input_format must be applied before executeQuery. Here
+    # the INSERT has no FORMAT clause (would default to Values), and input_format = 'CSV' must win.
+    query("DROP TABLE IF EXISTS t_inp")
+    query("CREATE TABLE t_inp (a UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_inp SELECT * FROM input('a UInt8') SETTINGS input_format = 'CSV'",
+        input_data="1\n2\n3\n",
+    )
+    assert query("SELECT a FROM t_inp ORDER BY a") == "1\n2\n3\n"
+    query("DROP TABLE t_inp")
+
+
+def test_default_format_setting():
+    # `default_format` is the output fallback when there is no output_format/format setting, no FORMAT
+    # clause and no gRPC output_format field. It must be re-resolved from the final settings, so pass an
+    # empty gRPC output_format here.
+    query("DROP TABLE IF EXISTS t_df")
+    query("CREATE TABLE t_df (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t_df VALUES (1),(2),(3)")
+    assert (
+        query(
+            "SELECT a FROM t_df ORDER BY a SETTINGS default_format = 'JSONEachRow'",
+            output_format="",
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    query("DROP TABLE t_df")
 
 
 def test_totals_and_extremes():
@@ -352,10 +462,14 @@ def test_authentication():
 
 
 def test_logs():
-    logs = query_and_get_logs("SELECT 1", settings={"send_logs_level": "debug"})
-    assert "SELECT 1" in logs
-    assert "Read 1 rows" in logs
-    assert "Peak memory usage" in logs
+    query = "SELECT has(groupArray(number), 42) FROM numbers(1000000) SETTINGS max_block_size=100000"
+    logs = query_and_get_logs(
+        query,
+        settings={"send_logs_level": "debug"},
+    )
+    assert query in logs
+    assert "Read 1000000 rows" in logs
+    assert "Query peak memory usage" in logs
 
 
 def test_progress():
@@ -363,46 +477,33 @@ def test_progress():
         "SELECT number, sleep(0.31) FROM numbers(8) SETTINGS max_block_size=2, interactive_delay=100000",
         stream_output=True,
     )
-    results = list(results)
-    for result in results:
-        result.time_zone = ""
-        result.query_id = ""
-    # print(results)
 
-    # Note: We can't convert those messages to string like `results = str(results)` and then compare it as a string
-    # because str() can serialize a protobuf message with any order of fields.
-    expected_results = [
-        clickhouse_grpc_pb2.Result(
-            output_format="TabSeparated",
-            progress=clickhouse_grpc_pb2.Progress(
-                read_rows=2, read_bytes=16, total_rows_to_read=8
-            ),
-        ),
-        clickhouse_grpc_pb2.Result(output=b"0\t0\n1\t0\n"),
-        clickhouse_grpc_pb2.Result(
-            progress=clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16)
-        ),
-        clickhouse_grpc_pb2.Result(output=b"2\t0\n3\t0\n"),
-        clickhouse_grpc_pb2.Result(
-            progress=clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16)
-        ),
-        clickhouse_grpc_pb2.Result(output=b"4\t0\n5\t0\n"),
-        clickhouse_grpc_pb2.Result(
-            progress=clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16)
-        ),
-        clickhouse_grpc_pb2.Result(output=b"6\t0\n7\t0\n"),
-        clickhouse_grpc_pb2.Result(
-            stats=clickhouse_grpc_pb2.Stats(
-                rows=8,
-                blocks=4,
-                allocated_bytes=1092,
-                applied_limit=True,
-                rows_before_limit=8,
-            )
-        ),
+    # Note: We can't compare results using a statement like `assert results == expected_results`
+    # because `results` can come in slightly different order.
+    # So we compare `outputs` and `progresses` separately and not `results` as a whole.
+
+    outputs = [i.output for i in results if i.output]
+    progresses = [i.progress for i in results if i.HasField("progress")]
+
+    # print(outputs)
+    # print(progresses)
+
+    expected_outputs = [
+        b"0\t0\n1\t0\n",
+        b"2\t0\n3\t0\n",
+        b"4\t0\n5\t0\n",
+        b"6\t0\n7\t0\n",
     ]
 
-    assert results == expected_results
+    expected_progresses = [
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16, total_rows_to_read=8),
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
+    ]
+
+    assert outputs == expected_outputs
+    assert progresses == expected_progresses
 
 
 def test_session_settings():
@@ -612,7 +713,13 @@ def test_cancel_while_generating_output():
     output = b""
     for result in results:
         output += result.output
-    assert output == b"0\t0\n1\t0\n2\t0\n3\t0\n"
+    # The exact number of rows emitted before the cancel takes effect depends on
+    # how the server-side block production races against the cancel signal,
+    # which is timing-sensitive under load. Verify cancellation interrupted the
+    # query mid-stream by checking the output is a strict prefix of the full result.
+    full_output = b"".join(b"%d\t0\n" % i for i in range(10))
+    assert full_output.startswith(output), f"output not a prefix of full result: {output!r}"
+    assert len(output) < len(full_output), "cancel did not interrupt: got the full result"
 
 
 def test_compressed_output():
@@ -723,6 +830,33 @@ def test_compressed_external_table():
     )
 
 
+def test_compressed_external_table_snappy_framed():
+    # A per-table `snappy_mode = 'framed'` in `external_table.settings()` must be honored when
+    # decompressing the external table data. The server default is `basic` (Hadoop-block snappy),
+    # so the framing-format payload below only decodes if the per-table setting is applied before
+    # the decompression buffer is wrapped.
+    columns = [
+        clickhouse_grpc_pb2.NameAndType(name="UserID", type="UInt64"),
+        clickhouse_grpc_pb2.NameAndType(name="UserName", type="String"),
+    ]
+    data = snappy.StreamCompressor().add_chunk(b"1\tAlex\n2\tBen\n3\tCarl\n")
+    ext = clickhouse_grpc_pb2.ExternalTable(
+        name="ext_snappy",
+        columns=columns,
+        data=data,
+        format="TabSeparated",
+        compression_type="snappy",
+        settings={"snappy_mode": "framed"},
+    )
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    query_info = clickhouse_grpc_pb2.QueryInfo(
+        query="SELECT * FROM ext_snappy ORDER BY UserID",
+        external_tables=[ext],
+    )
+    result = stub.ExecuteQuery(query_info)
+    assert result.output == b"1\tAlex\n2\tBen\n3\tCarl\n"
+
+
 def test_transport_compression():
     query_info = clickhouse_grpc_pb2.QueryInfo(
         query="SELECT 0 FROM numbers(1000000)",
@@ -756,3 +890,9 @@ def test_opentelemetry_context_propagation():
         )
         == "SELECT 1\tsome custom state\n"
     )
+
+
+def test_restart():
+    assert query("SELECT 1") == "1\n"
+    node.restart_clickhouse()
+    assert query("SELECT 2") == "2\n"

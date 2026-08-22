@@ -92,7 +92,7 @@ void MemoryWriteBuffer::nextImpl()
 
 void MemoryWriteBuffer::addChunk()
 {
-    size_t next_chunk_size;
+    size_t next_chunk_size = 0;
     if (chunk_list.empty())
     {
         chunk_tail = chunk_list.before_begin();
@@ -100,7 +100,7 @@ void MemoryWriteBuffer::addChunk()
     }
     else
     {
-        next_chunk_size = std::max(1uz, static_cast<size_t>(chunk_tail->size() * growth_rate));
+        next_chunk_size = std::max(1uz, static_cast<size_t>(static_cast<double>(chunk_tail->size()) * growth_rate));
         next_chunk_size = std::min(next_chunk_size, max_chunk_size);
     }
 
@@ -112,7 +112,7 @@ void MemoryWriteBuffer::addChunk()
         if (0 == next_chunk_size)
         {
             set(position(), 0);
-            throw MemoryWriteBuffer::CurrentBufferExhausted();
+            throw WriteBuffer::CurrentBufferExhausted();
         }
     }
 
@@ -124,11 +124,11 @@ void MemoryWriteBuffer::addChunk()
 }
 
 
-std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
+std::unique_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
 {
     finalize();
 
-    auto res = std::make_shared<ReadBufferFromMemoryWriteBuffer>(std::move(*this));
+    auto res = std::make_unique<ReadBufferFromMemoryWriteBuffer>(std::move(*this));
 
     /// invalidate members
     chunk_list.clear();

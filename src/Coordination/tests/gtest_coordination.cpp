@@ -1,88 +1,210 @@
-#include <chrono>
-#include <gtest/gtest.h>
-#include "Common/ZooKeeper/IKeeper.h"
-
-#include "Core/Defines.h"
 #include "config.h"
 
 #if USE_NURAFT
-#include <filesystem>
-#include <thread>
-#include <Coordination/Changelog.h>
+
+#include <Coordination/tests/gtest_coordination_common.h>
+
 #include <Coordination/InMemoryLogStore.h>
+#include <Coordination/SummingStateMachine.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperRequestDispatcher.h>
+#include <Coordination/KeeperRequestDispatcherOld.h>
+#include <Coordination/KeeperServer.h>
 #include <Coordination/KeeperConstants.h>
-#include <Coordination/KeeperFeatureFlags.h>
-#include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperStorage.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/Types.h>
+#include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
-#include <Coordination/KeeperStorage.h>
-#include <Coordination/LoggerWrapper.h>
-#include <Coordination/ReadBufferFromNuraftBuffer.h>
-#include <Coordination/SummingStateMachine.h>
+#include <Coordination/RaftServerConfig.h>
+
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <Coordination/pathUtils.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <libnuraft/nuraft.hxx>
-#include <Poco/ConsoleChannel.h>
-#include <Poco/Logger.h>
-#include <Common/Exception.h>
-#include <Common/SipHash.h>
+#include <Coordination/ReadBufferFromNuraftBuffer.h>
+
+#include <Coordination/LoggerWrapper.h>
+
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/scope_guard_safe.h>
 
-#include <Disks/DiskLocal.h>
+#include <Poco/Util/XMLConfiguration.h>
 
-#include <Coordination/SnapshotableHashTable.h>
+#include <future>
+#include <limits>
+#include <sstream>
 
-namespace fs = std::filesystem;
-struct ChangelogDirTest
+namespace DB::CoordinationSetting
 {
-    std::string path;
-    bool drop;
-    explicit ChangelogDirTest(std::string path_, bool drop_ = true) : path(path_), drop(drop_)
-    {
-        if (fs::exists(path))
-        {
-            EXPECT_TRUE(false) << "Path " << path << " already exists, remove it to run test";
-        }
-        fs::create_directory(path);
-    }
+    extern const CoordinationSettingsUInt64 write_snapshot_version;
+}
 
-    ~ChangelogDirTest()
-    {
-        if (fs::exists(path) && drop)
-            fs::remove_all(path);
-    }
-};
-
-struct CompressionParam
+TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
 {
-    bool enable_compression;
-    std::string extension;
-};
+    auto load = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+    };
 
-class CoordinationTest : public ::testing::TestWithParam<CompressionParam>
+    /// A zero max_requests_batch_size caused an infinite append-entries loop in a multi-node
+    /// setup, because it defaults max_requests_append_size to zero too. See issue #84099.
+    EXPECT_THROW(
+        load("<clickhouse><keeper_server><coordination_settings>"
+             "<max_requests_batch_size>0</max_requests_batch_size>"
+             "</coordination_settings></keeper_server></clickhouse>"),
+        DB::Exception);
+
+    /// max_requests_append_size feeds NuRaft's max_append_size_ directly and must not be zero either.
+    EXPECT_THROW(
+        load("<clickhouse><keeper_server><coordination_settings>"
+             "<max_requests_append_size>0</max_requests_append_size>"
+             "</coordination_settings></keeper_server></clickhouse>"),
+        DB::Exception);
+
+    /// Non-zero values are accepted.
+    EXPECT_NO_THROW(
+        load("<clickhouse><keeper_server><coordination_settings>"
+             "<max_requests_batch_size>1</max_requests_batch_size>"
+             "<max_requests_append_size>1</max_requests_append_size>"
+             "</coordination_settings></keeper_server></clickhouse>"));
+}
+
+TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
 {
-protected:
-    DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
-    Poco::Logger * log{&Poco::Logger::get("CoordinationTest")};
+    auto ctx = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V8);
 
-    void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
+    /// write_snapshot_version is hot-reloadable: a valid update takes effect.
+    auto updated = std::make_shared<DB::CoordinationSettings>();
+    (*updated)[DB::CoordinationSetting::write_snapshot_version] = 9;
+    ctx->updateSettings(updated);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
 
-    void setSnapshotDirectory(const std::string & path)
+    /// An out-of-range update is rejected and the previous value stays in effect.
+    auto too_old = std::make_shared<DB::CoordinationSettings>();
+    (*too_old)[DB::CoordinationSetting::write_snapshot_version] = 3;
+    EXPECT_THROW(ctx->updateSettings(too_old), DB::Exception);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
+
+    auto too_new = std::make_shared<DB::CoordinationSettings>();
+    (*too_new)[DB::CoordinationSetting::write_snapshot_version] = DB::MAX_SUPPORTED_SNAPSHOT_VERSION + 1;
+    EXPECT_THROW(ctx->updateSettings(too_new), DB::Exception);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
+}
+
+TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
+{
+    auto load = [](const std::string & xml)
     {
-        keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", path));
-    }
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return settings[DB::CoordinationSetting::nuraft_snapshot_sync_ctx_timeout_ms].totalMilliseconds();
+    };
 
-    void setStateFileDirectory(const std::string & path)
+    /// The default must stay 0, which is what `raft_server::get_snapshot_sync_ctx_timeout` treats as
+    /// "derive from raft_limits_response_limit * heart_beat_interval_ms". Anything else would change
+    /// the snapshot-install budget of every existing installation on upgrade.
+    EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              0);
+
+    /// A bare number in the config is milliseconds, which is the unit
+    /// `raft_params::snapshot_sync_ctx_timeout_` expects. Had the setting been declared with a
+    /// coarser unit, the same config would mean a budget 1000 times larger.
+    EXPECT_EQ(load("<clickhouse><keeper_server><coordination_settings>"
+                   "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              60000);
+
+    /// The setting itself is unbounded, so an operator can configure more milliseconds than the
+    /// int32 `raft_params::snapshot_sync_ctx_timeout_` can hold. Such a value survives parsing and
+    /// must be narrowed by `buildRaftParams` rather than wrapping - covered by the tests below.
+    EXPECT_GT(load("<clickhouse><keeper_server><coordination_settings>"
+                   "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                   "</coordination_settings></keeper_server></clickhouse>"),
+              std::numeric_limits<int32_t>::max());
+}
+
+/// The composition that actually reaches NuRaft: config text -> setting -> `raft_params` field.
+/// Parsing and narrowing are pinned separately below, but only this test would notice the timeout
+/// being handed over in the wrong unit or bypassing the narrowing.
+TEST(CoordinationSettingsParse, BuildRaftParams)
+{
+    auto build = [](const std::string & xml)
     {
-        keeper_context->setStateFileDisk(std::make_shared<DB::DiskLocal>("StateFile", path));
-    }
-};
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return DB::buildRaftParams(settings, getLogger("CoordinationSettingsParse"));
+    };
+
+    /// 0 is what makes `raft_server::get_snapshot_sync_ctx_timeout` fall back to
+    /// `raft_limits_response_limit * heart_beat_interval_`, i.e. today's behaviour.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              0);
+
+    /// Milliseconds all the way through: 60000 in the config must be 60000 in `raft_params`, not
+    /// 60 and not 60000000.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<nuraft_snapshot_sync_ctx_timeout_ms>60000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              60000);
+
+    /// The field is an int32, so an operator value beyond its range must be narrowed here rather
+    /// than wrapping to a negative timeout.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .snapshot_sync_ctx_timeout_,
+              std::numeric_limits<int32_t>::max());
+
+    /// Neighbouring millisecond settings go through the same conversion, so pin one of them too.
+    EXPECT_EQ(build("<clickhouse><keeper_server><coordination_settings>"
+                    "<heart_beat_interval_ms>250</heart_beat_interval_ms>"
+                    "</coordination_settings></keeper_server></clickhouse>")
+                  .heart_beat_interval_,
+              250);
+}
+
+/// Every `nuraft::raft_params` field Keeper configures from an unbounded setting is narrowed by this
+/// function, so a value that does not fit must be reported and capped instead of wrapping to a
+/// negative timeout or gap.
+TEST(CoordinationSettingsParse, ValueOrMaxInt32)
+{
+    auto log = getLogger("CoordinationSettingsParse");
+
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(0, "test", log), 0);
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(60000, "test", log), 60000);
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(std::numeric_limits<int32_t>::max(), "test", log),
+        std::numeric_limits<int32_t>::max());
+
+    /// Above the range it caps rather than wrapping negative.
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(
+            static_cast<uint64_t>(std::numeric_limits<int32_t>::max()) + 1, "test", log),
+        std::numeric_limits<int32_t>::max());
+    EXPECT_EQ(DB::getValueOrMaxInt32AndLogWarning(3000000000, "test", log), std::numeric_limits<int32_t>::max());
+    EXPECT_EQ(
+        DB::getValueOrMaxInt32AndLogWarning(std::numeric_limits<uint64_t>::max(), "test", log),
+        std::numeric_limits<int32_t>::max());
+}
 
 TEST_P(CoordinationTest, RaftServerConfigParse)
 {
@@ -138,31 +260,128 @@ TEST_P(CoordinationTest, BufferSerde)
     request->xid = 3;
     dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request).path = "/path/value";
 
+    const auto test_serde = [&](bool use_xid_64)
+    {
+        size_t xid_size = use_xid_64 ? sizeof(int64_t) : sizeof(int32_t);
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        request->write(wbuf, use_xid_64);
+        auto nuraft_buffer = wbuf.getBuffer();
+        EXPECT_EQ(nuraft_buffer->size(), 24 + xid_size);
+
+        DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
+
+        int32_t length = {};
+        Coordination::read(length, rbuf);
+        EXPECT_EQ(length + sizeof(length), nuraft_buffer->size());
+
+        int64_t xid = 0;
+        if (use_xid_64)
+        {
+            Coordination::read(xid, rbuf);
+        }
+        else
+        {
+            int32_t xid_32 = 0;
+            Coordination::read(xid_32, rbuf);
+            xid = xid_32;
+        }
+
+        EXPECT_EQ(xid, request->xid);
+
+        Coordination::OpNum opnum = {};
+        Coordination::read(opnum, rbuf);
+
+        Coordination::ZooKeeperRequestPtr request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+        request_read->xid = xid;
+        request_read->readImpl(rbuf);
+
+        EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
+        EXPECT_EQ(request_read->xid, 3);
+        EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request_read).path, "/path/value");
+    };
+
+    {
+        SCOPED_TRACE("32bit XID");
+        test_serde(/*use_xid_64=*/false);
+    }
+    {
+        SCOPED_TRACE("64bit XID");
+        test_serde(/*use_xid_64=*/true);
+    }
+}
+
+TEST_P(CoordinationTest, ContainerCreateSerde)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    request->path = "/container";
+    request->is_container = true;
+    EXPECT_EQ(request->getOpNum(), Coordination::OpNum::CreateContainer);
+
     DB::WriteBufferFromNuraftBuffer wbuf;
-    request->write(wbuf);
+    request->write(wbuf, /*use_xid_64=*/true);
     auto nuraft_buffer = wbuf.getBuffer();
-    EXPECT_EQ(nuraft_buffer->size(), 28);
 
     DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
-
-    int32_t length;
+    int32_t length = 0;
     Coordination::read(length, rbuf);
-    EXPECT_EQ(length + sizeof(length), nuraft_buffer->size());
-
-    int32_t xid;
+    int64_t xid = 0;
     Coordination::read(xid, rbuf);
-    EXPECT_EQ(xid, request->xid);
-
-    Coordination::OpNum opnum;
+    Coordination::OpNum opnum = {};
     Coordination::read(opnum, rbuf);
+    EXPECT_EQ(opnum, Coordination::OpNum::CreateContainer);
 
-    Coordination::ZooKeeperRequestPtr request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
-    request_read->xid = xid;
+    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request_read->readImpl(rbuf);
+    auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+    EXPECT_TRUE(create_read.is_container);
+    EXPECT_FALSE(create_read.is_sequential);
+    EXPECT_FALSE(create_read.is_ephemeral);
+    EXPECT_FALSE(create_read.include_ttl);
+}
 
-    EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
-    EXPECT_EQ(request_read->xid, 3);
-    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request_read).path, "/path/value");
+TEST_P(CoordinationTest, ContainerCreateModeMismatchRejected)
+{
+    /// An opnum/create-mode mismatch must be rejected, not silently accepted as both a
+    /// container and a sequential node — that would diverge the Raft log across replicas.
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    Coordination::write(std::string{"/container"}, wbuf); /// path
+    Coordination::write(std::string{}, wbuf);             /// data
+    Coordination::write(Coordination::ACLs{}, wbuf);      /// acls
+    Coordination::write(static_cast<int32_t>(2), wbuf);   /// CreateMode::PERSISTENT_SEQUENTIAL
+
+    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::CreateContainer);
+    DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+    EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
+}
+
+TEST_P(CoordinationTest, Create2WithContainerFlagRejected)
+{
+    /// A Create2 opnum carrying the CONTAINER flag must be rejected: getOpNum() prioritizes
+    /// include_stats over is_container, so this combination would otherwise validate and log
+    /// as Create2 (gated by CREATE_WITH_STATS) while still creating a container node (gated
+    /// separately by CREATE_CONTAINER) — bypassing the CreateContainer feature-flag gate.
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    Coordination::write(std::string{"/container"}, wbuf); /// path
+    Coordination::write(std::string{}, wbuf);             /// data
+    Coordination::write(Coordination::ACLs{}, wbuf);      /// acls
+    Coordination::write(static_cast<int32_t>(4), wbuf);   /// CreateMode::CONTAINER
+
+    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create2);
+    DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+    EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
+}
+
+TEST_P(CoordinationTest, PlainCreateWithContainerFlagRejected)
+{
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    Coordination::write(std::string{"/container"}, wbuf); /// path
+    Coordination::write(std::string{}, wbuf);             /// data
+    Coordination::write(Coordination::ACLs{}, wbuf);      /// acls
+    Coordination::write(static_cast<int32_t>(4), wbuf);   /// CreateMode::CONTAINER
+
+    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+    DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+    EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
 }
 
 template <typename StateMachine>
@@ -222,6 +441,11 @@ struct SimpliestRaftServer
         }
     }
 
+    ~SimpliestRaftServer()
+    {
+        state_manager->flushAndShutDownLogStore();
+    }
+
     // Server ID.
     int server_id;
 
@@ -248,7 +472,7 @@ struct SimpliestRaftServer
 
 using SummingRaftServer = SimpliestRaftServer<DB::SummingStateMachine>;
 
-nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
+static nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
 {
     nuraft::ptr<nuraft::buffer> ret = nuraft::buffer::alloc(sizeof(number));
     nuraft::buffer_serializer bs(ret);
@@ -259,10 +483,10 @@ nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
 TEST_P(CoordinationTest, TestSummingRaft1)
 {
     ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-    setStateFileDirectory(".");
+    this->setLogDirectory("./logs");
+    this->setStateFileDirectory(".");
 
-    SummingRaftServer s1(1, "localhost", 44444, keeper_context);
+    SummingRaftServer s1(1, "localhost", 0, this->keeper_context);
     SCOPE_EXIT(if (std::filesystem::exists("./state")) std::filesystem::remove("./state"););
 
     /// Single node is leader
@@ -275,7 +499,7 @@ TEST_P(CoordinationTest, TestSummingRaft1)
 
     while (s1.state_machine->getValue() != 143)
     {
-        LOG_INFO(log, "Waiting s1 to apply entry");
+        LOG_INFO(this->log, "Waiting s1 to apply entry");
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
@@ -284,1279 +508,39 @@ TEST_P(CoordinationTest, TestSummingRaft1)
     s1.launcher.shutdown(5);
 }
 
-DB::LogEntryPtr getLogEntry(const std::string & s, size_t term)
-{
-    DB::WriteBufferFromNuraftBuffer bufwriter;
-    writeText(s, bufwriter);
-    return nuraft::cs_new<nuraft::log_entry>(term, bufwriter.getBuffer());
-}
-
-TEST_P(CoordinationTest, ChangelogTestSimple)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog.init(1, 0);
-    auto entry = getLogEntry("hello world", 77);
-    changelog.append(entry);
-    changelog.end_of_append_batch(0, 0);
-
-    EXPECT_EQ(changelog.next_slot(), 2);
-    EXPECT_EQ(changelog.start_index(), 1);
-    EXPECT_EQ(changelog.last_entry()->get_term(), 77);
-    EXPECT_EQ(changelog.entry_at(1)->get_term(), 77);
-    EXPECT_EQ(changelog.log_entries(1, 2)->size(), 1);
-}
-
-namespace
-{
-void waitDurableLogs(nuraft::log_store & log_store)
-{
-    while (log_store.last_durable_index() != log_store.next_slot() - 1)
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-}
-
-}
-
-TEST_P(CoordinationTest, ChangelogTestFile)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog.init(1, 0);
-    auto entry = getLogEntry("hello world", 77);
-    changelog.append(entry);
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    for (const auto & p : fs::directory_iterator("./logs"))
-        EXPECT_EQ(p.path(), "./logs/changelog_1_5.bin" + params.extension);
-
-    changelog.append(entry);
-    changelog.append(entry);
-    changelog.append(entry);
-    changelog.append(entry);
-    changelog.append(entry);
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-}
-
-TEST_P(CoordinationTest, ChangelogReadWrite)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000}, keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 10; ++i)
-    {
-        auto entry = getLogEntry("hello world", i * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-
-    EXPECT_EQ(changelog.size(), 10);
-
-    waitDurableLogs(changelog);
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000}, keeper_context);
-    changelog_reader.init(1, 0);
-    EXPECT_EQ(changelog_reader.size(), 10);
-    EXPECT_EQ(changelog_reader.last_entry()->get_term(), changelog.last_entry()->get_term());
-    EXPECT_EQ(changelog_reader.start_index(), changelog.start_index());
-    EXPECT_EQ(changelog_reader.next_slot(), changelog.next_slot());
-
-    for (size_t i = 0; i < 10; ++i)
-        EXPECT_EQ(changelog_reader.entry_at(i + 1)->get_term(), changelog.entry_at(i + 1)->get_term());
-
-    auto entries_from_range_read = changelog_reader.log_entries(1, 11);
-    auto entries_from_range = changelog.log_entries(1, 11);
-    EXPECT_EQ(entries_from_range_read->size(), entries_from_range->size());
-    EXPECT_EQ(10, entries_from_range->size());
-}
-
-TEST_P(CoordinationTest, ChangelogWriteAt)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000}, keeper_context);
-    changelog.init(1, 0);
-    for (size_t i = 0; i < 10; ++i)
-    {
-        auto entry = getLogEntry("hello world", i * 10);
-        changelog.append(entry);
-    }
-
-    changelog.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog.size(), 10);
-
-    auto entry = getLogEntry("writer", 77);
-    changelog.write_at(7, entry);
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_EQ(changelog.size(), 7);
-    EXPECT_EQ(changelog.last_entry()->get_term(), 77);
-    EXPECT_EQ(changelog.entry_at(7)->get_term(), 77);
-    EXPECT_EQ(changelog.next_slot(), 8);
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1000}, keeper_context);
-    changelog_reader.init(1, 0);
-
-    EXPECT_EQ(changelog_reader.size(), changelog.size());
-    EXPECT_EQ(changelog_reader.last_entry()->get_term(), changelog.last_entry()->get_term());
-    EXPECT_EQ(changelog_reader.start_index(), changelog.start_index());
-    EXPECT_EQ(changelog_reader.next_slot(), changelog.next_slot());
-}
-
-
-TEST_P(CoordinationTest, ChangelogTestAppendAfterRead)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog.init(1, 0);
-    for (size_t i = 0; i < 7; ++i)
-    {
-        auto entry = getLogEntry("hello world", i * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-
-    EXPECT_EQ(changelog.size(), 7);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog_reader.init(1, 0);
-
-    EXPECT_EQ(changelog_reader.size(), 7);
-    for (size_t i = 7; i < 10; ++i)
-    {
-        auto entry = getLogEntry("hello world", i * 10);
-        changelog_reader.append(entry);
-    }
-    changelog_reader.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog_reader.size(), 10);
-
-    waitDurableLogs(changelog_reader);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-
-    size_t logs_count = 0;
-    for (const auto & _ [[maybe_unused]] : fs::directory_iterator("./logs"))
-        logs_count++;
-
-    EXPECT_EQ(logs_count, 2);
-
-    auto entry = getLogEntry("someentry", 77);
-    changelog_reader.append(entry);
-    changelog_reader.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog_reader.size(), 11);
-
-    waitDurableLogs(changelog_reader);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-
-    logs_count = 0;
-    for (const auto & _ [[maybe_unused]] : fs::directory_iterator("./logs"))
-        logs_count++;
-
-    EXPECT_EQ(logs_count, 3);
-}
-
-namespace
-{
-
-void assertFileDeleted(std::string path)
-{
-    for (size_t i = 0; i < 100; ++i)
-    {
-        if (!fs::exists(path))
-            return;
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    }
-
-    FAIL() << "File " << path << " was not removed";
-}
-
-}
-
-TEST_P(CoordinationTest, ChangelogTestCompaction)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 3; ++i)
-    {
-        auto entry = getLogEntry("hello world", i * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_EQ(changelog.size(), 3);
-
-    changelog.compact(2);
-
-    EXPECT_EQ(changelog.size(), 1);
-    EXPECT_EQ(changelog.start_index(), 3);
-    EXPECT_EQ(changelog.next_slot(), 4);
-    EXPECT_EQ(changelog.last_entry()->get_term(), 20);
-    // nothing should be deleted
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-
-    auto e1 = getLogEntry("hello world", 30);
-    changelog.append(e1);
-    auto e2 = getLogEntry("hello world", 40);
-    changelog.append(e2);
-    auto e3 = getLogEntry("hello world", 50);
-    changelog.append(e3);
-    auto e4 = getLogEntry("hello world", 60);
-    changelog.append(e4);
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-
-    changelog.compact(6);
-    std::this_thread::sleep_for(std::chrono::microseconds(1000));
-
-    assertFileDeleted("./logs/changelog_1_5.bin" + params.extension);
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-
-    EXPECT_EQ(changelog.size(), 1);
-    EXPECT_EQ(changelog.start_index(), 7);
-    EXPECT_EQ(changelog.next_slot(), 8);
-    EXPECT_EQ(changelog.last_entry()->get_term(), 60);
-    /// And we able to read it
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog_reader.init(7, 0);
-
-    EXPECT_EQ(changelog_reader.size(), 1);
-    EXPECT_EQ(changelog_reader.start_index(), 7);
-    EXPECT_EQ(changelog_reader.next_slot(), 8);
-    EXPECT_EQ(changelog_reader.last_entry()->get_term(), 60);
-}
-
-TEST_P(CoordinationTest, ChangelogTestBatchOperations)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-    changelog.init(1, 0);
-    for (size_t i = 0; i < 10; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-
-    EXPECT_EQ(changelog.size(), 10);
-
-    waitDurableLogs(changelog);
-
-    auto entries = changelog.pack(1, 5);
-
-    DB::KeeperLogStore apply_changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-    apply_changelog.init(1, 0);
-
-    for (size_t i = 0; i < 10; ++i)
-    {
-        EXPECT_EQ(apply_changelog.entry_at(i + 1)->get_term(), i * 10);
-    }
-    EXPECT_EQ(apply_changelog.size(), 10);
-
-    apply_changelog.apply_pack(8, *entries);
-    apply_changelog.end_of_append_batch(0, 0);
-
-    EXPECT_EQ(apply_changelog.size(), 12);
-    EXPECT_EQ(apply_changelog.start_index(), 1);
-    EXPECT_EQ(apply_changelog.next_slot(), 13);
-
-    for (size_t i = 0; i < 7; ++i)
-    {
-        EXPECT_EQ(apply_changelog.entry_at(i + 1)->get_term(), i * 10);
-    }
-
-    EXPECT_EQ(apply_changelog.entry_at(8)->get_term(), 0);
-    EXPECT_EQ(apply_changelog.entry_at(9)->get_term(), 10);
-    EXPECT_EQ(apply_changelog.entry_at(10)->get_term(), 20);
-    EXPECT_EQ(apply_changelog.entry_at(11)->get_term(), 30);
-    EXPECT_EQ(apply_changelog.entry_at(12)->get_term(), 40);
-}
-
-TEST_P(CoordinationTest, ChangelogTestBatchOperationsEmpty)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    nuraft::ptr<nuraft::buffer> entries;
-    {
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-        changelog.init(1, 0);
-        for (size_t i = 0; i < 10; ++i)
-        {
-            auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-            changelog.append(entry);
-        }
-        changelog.end_of_append_batch(0, 0);
-
-        EXPECT_EQ(changelog.size(), 10);
-
-        waitDurableLogs(changelog);
-
-        entries = changelog.pack(5, 5);
-    }
-
-    ChangelogDirTest test1("./logs1");
-    setLogDirectory("./logs1");
-    DB::KeeperLogStore changelog_new(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-    changelog_new.init(1, 0);
-    EXPECT_EQ(changelog_new.size(), 0);
-
-    changelog_new.apply_pack(5, *entries);
-    changelog_new.end_of_append_batch(0, 0);
-
-    EXPECT_EQ(changelog_new.size(), 5);
-    EXPECT_EQ(changelog_new.start_index(), 5);
-    EXPECT_EQ(changelog_new.next_slot(), 10);
-
-    for (size_t i = 4; i < 9; ++i)
-        EXPECT_EQ(changelog_new.entry_at(i + 1)->get_term(), i * 10);
-
-    auto e = getLogEntry("hello_world", 110);
-    changelog_new.append(e);
-    changelog_new.end_of_append_batch(0, 0);
-
-    EXPECT_EQ(changelog_new.size(), 6);
-    EXPECT_EQ(changelog_new.start_index(), 5);
-    EXPECT_EQ(changelog_new.next_slot(), 11);
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-    changelog_reader.init(5, 0);
-}
-
-
-TEST_P(CoordinationTest, ChangelogTestWriteAtPreviousFile)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 33; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
-
-    EXPECT_EQ(changelog.size(), 33);
-
-    auto e1 = getLogEntry("helloworld", 5555);
-    changelog.write_at(7, e1);
-    changelog.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog.size(), 7);
-    EXPECT_EQ(changelog.start_index(), 1);
-    EXPECT_EQ(changelog.next_slot(), 8);
-    EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-
-    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
-
-    DB::KeeperLogStore changelog_read(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog_read.init(1, 0);
-    EXPECT_EQ(changelog_read.size(), 7);
-    EXPECT_EQ(changelog_read.start_index(), 1);
-    EXPECT_EQ(changelog_read.next_slot(), 8);
-    EXPECT_EQ(changelog_read.last_entry()->get_term(), 5555);
-}
-
-TEST_P(CoordinationTest, ChangelogTestWriteAtFileBorder)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 33; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
-
-    EXPECT_EQ(changelog.size(), 33);
-
-    auto e1 = getLogEntry("helloworld", 5555);
-    changelog.write_at(11, e1);
-    changelog.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog.size(), 11);
-    EXPECT_EQ(changelog.start_index(), 1);
-    EXPECT_EQ(changelog.next_slot(), 12);
-    EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
-
-    DB::KeeperLogStore changelog_read(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog_read.init(1, 0);
-    EXPECT_EQ(changelog_read.size(), 11);
-    EXPECT_EQ(changelog_read.start_index(), 1);
-    EXPECT_EQ(changelog_read.next_slot(), 12);
-    EXPECT_EQ(changelog_read.last_entry()->get_term(), 5555);
-}
-
-TEST_P(CoordinationTest, ChangelogTestWriteAtAllFiles)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog.init(1, 0);
-    for (size_t i = 0; i < 33; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
-
-    EXPECT_EQ(changelog.size(), 33);
-
-    auto e1 = getLogEntry("helloworld", 5555);
-    changelog.write_at(1, e1);
-    changelog.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog.size(), 1);
-    EXPECT_EQ(changelog.start_index(), 1);
-    EXPECT_EQ(changelog.next_slot(), 2);
-    EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-
-    EXPECT_FALSE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
-}
-
-TEST_P(CoordinationTest, ChangelogTestStartNewLogAfterRead)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 35; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog.size(), 35);
-
-    waitDurableLogs(changelog);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_36_40.bin" + params.extension));
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog_reader.init(1, 0);
-
-    auto entry = getLogEntry("36_hello_world", 360);
-    changelog_reader.append(entry);
-    changelog_reader.end_of_append_batch(0, 0);
-
-    EXPECT_EQ(changelog_reader.size(), 36);
-
-    waitDurableLogs(changelog_reader);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_36_40.bin" + params.extension));
-}
-
-namespace
-{
-void assertBrokenLogRemoved(const fs::path & log_folder, const fs::path & filename)
-{
-    EXPECT_FALSE(fs::exists(log_folder / filename));
-    // broken logs are sent to the detached/{timestamp} folder
-    // we don't know timestamp so we iterate all of them
-    for (const auto & dir_entry : fs::recursive_directory_iterator(log_folder / "detached"))
-    {
-        if (dir_entry.path().filename() == filename)
-            return;
-    }
-
-    FAIL() << "Broken log " << filename << " was not moved to the detached folder";
-}
-
-}
-
-TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
-{
-    static const fs::path log_folder{"./logs"};
-
-    auto params = GetParam();
-    ChangelogDirTest test(log_folder);
-    setLogDirectory(log_folder);
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 35; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog.size(), 35);
-
-    waitDurableLogs(changelog);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_16_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_25.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_26_30.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
-
-    DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_11_15.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
-    plain_buf.truncate(0);
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog_reader.init(1, 0);
-    changelog_reader.end_of_append_batch(0, 0);
-
-    EXPECT_EQ(changelog_reader.size(), 10);
-    EXPECT_EQ(changelog_reader.last_entry()->get_term(), 90);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-
-    assertBrokenLogRemoved(log_folder, "changelog_16_20.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_21_25.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_26_30.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_31_35.bin" + params.extension);
-
-    auto entry = getLogEntry("h", 7777);
-    changelog_reader.append(entry);
-    changelog_reader.end_of_append_batch(0, 0);
-    EXPECT_EQ(changelog_reader.size(), 11);
-    EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
-
-    waitDurableLogs(changelog_reader);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + params.extension));
-
-    assertBrokenLogRemoved(log_folder, "changelog_16_20.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_21_25.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_26_30.bin" + params.extension);
-    assertBrokenLogRemoved(log_folder, "changelog_31_35.bin" + params.extension);
-
-    DB::KeeperLogStore changelog_reader2(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog_reader2.init(1, 0);
-    EXPECT_EQ(changelog_reader2.size(), 11);
-    EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
-}
-
-TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20}, keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 35; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
-
-    DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_1_20.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
-    plain_buf.truncate(30);
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20}, keeper_context);
-    changelog_reader.init(1, 0);
-
-    EXPECT_EQ(changelog_reader.size(), 0);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
-    auto entry = getLogEntry("hello_world", 7777);
-    changelog_reader.append(entry);
-    changelog_reader.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog_reader);
-
-    EXPECT_EQ(changelog_reader.size(), 1);
-    EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
-
-    DB::KeeperLogStore changelog_reader2(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 1}, keeper_context);
-    changelog_reader2.init(1, 0);
-    EXPECT_EQ(changelog_reader2.size(), 1);
-    EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
-}
-
-TEST_P(CoordinationTest, ChangelogTestLostFiles)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20}, keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 35; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
-
-    fs::remove("./logs/changelog_1_20.bin" + params.extension);
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20}, keeper_context);
-    /// It should print error message, but still able to start
-    changelog_reader.init(5, 0);
-    assertBrokenLogRemoved("./logs", "changelog_21_40.bin" + params.extension);
-}
-
-TEST_P(CoordinationTest, ChangelogTestLostFiles2)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 10}, keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 35; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_30.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_31_40.bin" + params.extension));
-
-    // we have a gap in our logs, we need to remove all the logs after the gap
-    fs::remove("./logs/changelog_21_30.bin" + params.extension);
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 10}, keeper_context);
-    /// It should print error message, but still able to start
-    changelog_reader.init(5, 0);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin" + params.extension));
-
-    assertBrokenLogRemoved("./logs", "changelog_31_40.bin" + params.extension);
-}
-struct IntNode
-{
-    int value;
-    IntNode(int value_) : value(value_) { } // NOLINT(google-explicit-constructor)
-    UInt64 sizeInBytes() const { return sizeof value; }
-    IntNode & operator=(int rhs)
-    {
-        this->value = rhs;
-        return *this;
-    }
-    bool operator==(const int & rhs) const { return value == rhs; }
-    bool operator!=(const int & rhs) const { return rhs != this->value; }
-};
-
-TEST_P(CoordinationTest, SnapshotableHashMapSimple)
-{
-    DB::SnapshotableHashTable<IntNode> hello;
-    EXPECT_TRUE(hello.insert("hello", 5).second);
-    EXPECT_TRUE(hello.contains("hello"));
-    EXPECT_EQ(hello.getValue("hello"), 5);
-    EXPECT_FALSE(hello.insert("hello", 145).second);
-    EXPECT_EQ(hello.getValue("hello"), 5);
-    hello.updateValue("hello", [](IntNode & value) { value = 7; });
-    EXPECT_EQ(hello.getValue("hello"), 7);
-    EXPECT_EQ(hello.size(), 1);
-    EXPECT_TRUE(hello.erase("hello"));
-    EXPECT_EQ(hello.size(), 0);
-}
-
-TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
-{
-    DB::SnapshotableHashTable<IntNode> map_snp;
-    EXPECT_TRUE(map_snp.insert("/hello", 7).second);
-    EXPECT_FALSE(map_snp.insert("/hello", 145).second);
-    map_snp.enableSnapshotMode(100000);
-    EXPECT_FALSE(map_snp.insert("/hello", 145).second);
-    map_snp.updateValue("/hello", [](IntNode & value) { value = 554; });
-    EXPECT_EQ(map_snp.getValue("/hello"), 554);
-    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 2);
-    EXPECT_EQ(map_snp.size(), 1);
-
-    auto itr = map_snp.begin();
-    EXPECT_EQ(itr->key, "/hello");
-    EXPECT_EQ(itr->value, 7);
-    EXPECT_EQ(itr->active_in_map, false);
-    itr = std::next(itr);
-    EXPECT_EQ(itr->key, "/hello");
-    EXPECT_EQ(itr->value, 554);
-    EXPECT_EQ(itr->active_in_map, true);
-    itr = std::next(itr);
-    EXPECT_EQ(itr, map_snp.end());
-    for (int i = 0; i < 5; ++i)
-    {
-        EXPECT_TRUE(map_snp.insert("/hello" + std::to_string(i), i).second);
-    }
-    EXPECT_EQ(map_snp.getValue("/hello3"), 3);
-
-    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 7);
-    EXPECT_EQ(map_snp.size(), 6);
-    itr = std::next(map_snp.begin(), 2);
-    for (size_t i = 0; i < 5; ++i)
-    {
-        EXPECT_EQ(itr->key, "/hello" + std::to_string(i));
-        EXPECT_EQ(itr->value, i);
-        EXPECT_EQ(itr->active_in_map, true);
-        itr = std::next(itr);
-    }
-
-    EXPECT_TRUE(map_snp.erase("/hello3"));
-    EXPECT_TRUE(map_snp.erase("/hello2"));
-
-    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 7);
-    EXPECT_EQ(map_snp.size(), 4);
-    itr = std::next(map_snp.begin(), 2);
-    for (size_t i = 0; i < 5; ++i)
-    {
-        EXPECT_EQ(itr->key, "/hello" + std::to_string(i));
-        EXPECT_EQ(itr->value, i);
-        EXPECT_EQ(itr->active_in_map, i != 3 && i != 2);
-        itr = std::next(itr);
-    }
-    map_snp.clearOutdatedNodes();
-
-    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 4);
-    EXPECT_EQ(map_snp.size(), 4);
-    itr = map_snp.begin();
-    EXPECT_EQ(itr->key, "/hello");
-    EXPECT_EQ(itr->value, 554);
-    EXPECT_EQ(itr->active_in_map, true);
-    itr = std::next(itr);
-    EXPECT_EQ(itr->key, "/hello0");
-    EXPECT_EQ(itr->value, 0);
-    EXPECT_EQ(itr->active_in_map, true);
-    itr = std::next(itr);
-    EXPECT_EQ(itr->key, "/hello1");
-    EXPECT_EQ(itr->value, 1);
-    EXPECT_EQ(itr->active_in_map, true);
-    itr = std::next(itr);
-    EXPECT_EQ(itr->key, "/hello4");
-    EXPECT_EQ(itr->value, 4);
-    EXPECT_EQ(itr->active_in_map, true);
-    itr = std::next(itr);
-    EXPECT_EQ(itr, map_snp.end());
-    map_snp.disableSnapshotMode();
-}
-
-TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
-{
-    /// int
-    DB::SnapshotableHashTable<IntNode> hello;
-    hello.disableSnapshotMode();
-    EXPECT_EQ(hello.getApproximateDataSize(), 0);
-
-    hello.insert("hello", 1);
-    EXPECT_EQ(hello.getApproximateDataSize(), 9);
-    hello.updateValue("hello", [](IntNode & value) { value = 2; });
-    EXPECT_EQ(hello.getApproximateDataSize(), 9);
-    hello.insertOrReplace("hello", 3);
-    EXPECT_EQ(hello.getApproximateDataSize(), 9);
-
-    hello.erase("hello");
-    EXPECT_EQ(hello.getApproximateDataSize(), 0);
-
-    hello.clear();
-    EXPECT_EQ(hello.getApproximateDataSize(), 0);
-
-    hello.enableSnapshotMode(10000);
-    hello.insert("hello", 1);
-    EXPECT_EQ(hello.getApproximateDataSize(), 9);
-    hello.updateValue("hello", [](IntNode & value) { value = 2; });
-    EXPECT_EQ(hello.getApproximateDataSize(), 18);
-    hello.insertOrReplace("hello", 1);
-    EXPECT_EQ(hello.getApproximateDataSize(), 27);
-
-    hello.clearOutdatedNodes();
-    EXPECT_EQ(hello.getApproximateDataSize(), 9);
-
-    hello.erase("hello");
-    EXPECT_EQ(hello.getApproximateDataSize(), 9);
-
-    hello.clearOutdatedNodes();
-    EXPECT_EQ(hello.getApproximateDataSize(), 0);
-
-    /// Node
-    using Node = DB::KeeperStorage::Node;
-    DB::SnapshotableHashTable<Node> world;
-    Node n1;
-    n1.setData("1234");
-    Node n2;
-    n2.setData("123456");
-    n2.addChild("");
-
-    world.disableSnapshotMode();
-    world.insert("world", n1);
-    EXPECT_EQ(world.getApproximateDataSize(), 193);
-    world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateDataSize(), 211);
-
-    world.erase("world");
-    EXPECT_EQ(world.getApproximateDataSize(), 0);
-
-    world.enableSnapshotMode(100000);
-    world.insert("world", n1);
-    EXPECT_EQ(world.getApproximateDataSize(), 193);
-    world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateDataSize(), 404);
-
-    world.clearOutdatedNodes();
-    EXPECT_EQ(world.getApproximateDataSize(), 211);
-
-    world.erase("world");
-    EXPECT_EQ(world.getApproximateDataSize(), 211);
-
-    world.clear();
-    EXPECT_EQ(world.getApproximateDataSize(), 0);
-}
-
-void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0)
-{
-    using Node = DB::KeeperStorage::Node;
-    Node node{};
-    node.setData(data);
-    node.stat.ephemeralOwner = ephemeral_owner;
-    storage.container.insertOrReplace(path, node);
-    auto child_it = storage.container.find(path);
-    auto child_path = DB::getBaseNodeName(child_it->key);
-    storage.container.updateValue(
-        DB::parentNodePath(StringRef{path}),
-        [&](auto & parent)
-        {
-            parent.addChild(child_path);
-            parent.stat.numChildren++;
-        });
-}
-
-TEST_P(CoordinationTest, TestStorageSnapshotSimple)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./snapshots");
-    setSnapshotDirectory("./snapshots");
-
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
-
-    DB::KeeperStorage storage(500, "", keeper_context);
-    addNode(storage, "/hello", "world", 1);
-    addNode(storage, "/hello/somepath", "somedata", 3);
-    storage.session_id_counter = 5;
-    storage.zxid = 2;
-    storage.ephemerals[3] = {"/hello"};
-    storage.ephemerals[1] = {"/hello/somepath"};
-    storage.getSessionID(130);
-    storage.getSessionID(130);
-
-    DB::KeeperStorageSnapshot snapshot(&storage, 2);
-
-    EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
-    EXPECT_EQ(snapshot.session_id, 7);
-    EXPECT_EQ(snapshot.snapshot_container_size, 6);
-    EXPECT_EQ(snapshot.session_and_timeout.size(), 2);
-
-    auto buf = manager.serializeSnapshotToBuffer(snapshot);
-    manager.serializeSnapshotBufferToDisk(*buf, 2);
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin" + params.extension));
-
-
-    auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
-
-    auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
-
-    EXPECT_EQ(restored_storage->container.size(), 6);
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 2);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
-
-    EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getData(), "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getData(), "somedata");
-    EXPECT_EQ(restored_storage->session_id_counter, 7);
-    EXPECT_EQ(restored_storage->zxid, 2);
-    EXPECT_EQ(restored_storage->ephemerals.size(), 2);
-    EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
-    EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
-    EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
-}
-
-TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./snapshots");
-    setSnapshotDirectory("./snapshots");
-
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
-
-    DB::KeeperStorage storage(500, "", keeper_context);
-    storage.getSessionID(130);
-
-    for (size_t i = 0; i < 50; ++i)
-    {
-        addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
-    }
-
-    DB::KeeperStorageSnapshot snapshot(&storage, 50);
-    EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 50);
-    EXPECT_EQ(snapshot.snapshot_container_size, 54);
-
-    for (size_t i = 50; i < 100; ++i)
-    {
-        addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
-    }
-
-    EXPECT_EQ(storage.container.size(), 104);
-
-    auto buf = manager.serializeSnapshotToBuffer(snapshot);
-    manager.serializeSnapshotBufferToDisk(*buf, 50);
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
-
-
-    auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-    auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
-
-    EXPECT_EQ(restored_storage->container.size(), 54);
-    for (size_t i = 0; i < 50; ++i)
-    {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
-    }
-}
-
-
-TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./snapshots");
-    setSnapshotDirectory("./snapshots");
-
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
-
-    DB::KeeperStorage storage(500, "", keeper_context);
-    storage.getSessionID(130);
-
-    for (size_t j = 1; j <= 5; ++j)
-    {
-        for (size_t i = (j - 1) * 50; i < j * 50; ++i)
-        {
-            addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
-        }
-
-        DB::KeeperStorageSnapshot snapshot(&storage, j * 50);
-        auto buf = manager.serializeSnapshotToBuffer(snapshot);
-        manager.serializeSnapshotBufferToDisk(*buf, j * 50);
-        EXPECT_TRUE(fs::exists(std::string{"./snapshots/snapshot_"} + std::to_string(j * 50) + ".bin" + params.extension));
-    }
-
-    EXPECT_FALSE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
-    EXPECT_FALSE(fs::exists("./snapshots/snapshot_100.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_150.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_200.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_250.bin" + params.extension));
-
-
-    auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
-
-    EXPECT_EQ(restored_storage->container.size(), 254);
-
-    for (size_t i = 0; i < 250; ++i)
-    {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
-    }
-}
-
-TEST_P(CoordinationTest, TestStorageSnapshotMode)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./snapshots");
-    setSnapshotDirectory("./snapshots");
-
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
-    DB::KeeperStorage storage(500, "", keeper_context);
-    for (size_t i = 0; i < 50; ++i)
-    {
-        addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
-    }
-
-    {
-        DB::KeeperStorageSnapshot snapshot(&storage, 50);
-        for (size_t i = 0; i < 50; ++i)
-        {
-            addNode(storage, "/hello_" + std::to_string(i), "wlrd_" + std::to_string(i));
-        }
-        for (size_t i = 0; i < 50; ++i)
-        {
-            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).getData(), "wlrd_" + std::to_string(i));
-        }
-        for (size_t i = 0; i < 50; ++i)
-        {
-            if (i % 2 == 0)
-                storage.container.erase("/hello_" + std::to_string(i));
-        }
-        EXPECT_EQ(storage.container.size(), 29);
-        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 105);
-        EXPECT_EQ(storage.container.snapshotSizeWithVersion().second, 1);
-        auto buf = manager.serializeSnapshotToBuffer(snapshot);
-        manager.serializeSnapshotBufferToDisk(*buf, 50);
-    }
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
-    EXPECT_EQ(storage.container.size(), 29);
-    storage.clearGarbageAfterSnapshot();
-    EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 29);
-    for (size_t i = 0; i < 50; ++i)
-    {
-        if (i % 2 != 0)
-            EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).getData(), "wlrd_" + std::to_string(i));
-        else
-            EXPECT_FALSE(storage.container.contains("/hello_" + std::to_string(i)));
-    }
-
-    auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
-
-    for (size_t i = 0; i < 50; ++i)
-    {
-        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
-    }
-}
-
-TEST_P(CoordinationTest, TestStorageSnapshotBroken)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./snapshots");
-    setSnapshotDirectory("./snapshots");
-
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
-    DB::KeeperStorage storage(500, "", keeper_context);
-    for (size_t i = 0; i < 50; ++i)
-    {
-        addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
-    }
-    {
-        DB::KeeperStorageSnapshot snapshot(&storage, 50);
-        auto buf = manager.serializeSnapshotToBuffer(snapshot);
-        manager.serializeSnapshotBufferToDisk(*buf, 50);
-    }
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
-
-    /// Let's corrupt file
-    DB::WriteBufferFromFile plain_buf(
-        "./snapshots/snapshot_50.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
-    plain_buf.truncate(34);
-    plain_buf.sync();
-
-    EXPECT_THROW(manager.restoreFromLatestSnapshot(), DB::Exception);
-}
-
-nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
-{
-    DB::WriteBufferFromNuraftBuffer buf;
-    DB::writeIntBinary(session_id, buf);
-    request->write(buf);
-    using namespace std::chrono;
-    auto time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    DB::writeIntBinary(time, buf);
-    DB::writeIntBinary(zxid, buf);
-    DB::writeIntBinary(DB::KeeperStorage::DigestVersion::NO_DIGEST, buf);
-    return buf.getBuffer();
-}
-
-nuraft::ptr<nuraft::log_entry>
-getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
-{
-    auto buffer = getBufferFromZKRequest(session_id, zxid, request);
-    return nuraft::cs_new<nuraft::log_entry>(term, buffer);
-}
-
-void testLogAndStateMachine(
-    Coordination::CoordinationSettingsPtr settings,
+static void testLogAndStateMachine(
+    DB::CoordinationSettingsPtr settings,
     uint64_t total_logs,
-    bool enable_compression,
-    Coordination::KeeperContextPtr keeper_context)
+    const StorageTypeAndCompression & param)
 {
     using namespace Coordination;
     using namespace DB;
 
     ChangelogDirTest snapshots("./snapshots");
-    keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
     ChangelogDirTest logs("./logs");
-    keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
 
-    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    auto get_keeper_context = [&]
+    {
+        auto local_keeper_context = makeKeeperContext(param.use_lsmt_storage, settings);
+        local_keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
+        local_keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
+        return local_keeper_context;
+    };
+
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+
+    auto keeper_context = get_keeper_context();
+    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, keeper_context, nullptr);
+
     state_machine->init();
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{
-            .force_sync = true, .compress_logs = enable_compression, .rotate_interval = settings->rotate_log_storage_interval},
+            .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         keeper_context);
-    changelog.init(state_machine->last_commit_index() + 1, settings->reserved_log_items);
+    changelog.init(state_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
+
     for (size_t i = 1; i < total_logs + 1; ++i)
     {
         std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
@@ -1570,14 +554,14 @@ void testLogAndStateMachine(
         state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
         state_machine->commit(i, changelog.entry_at(i)->get_buf());
         bool snapshot_created = false;
-        if (i % settings->snapshot_distance == 0)
+        if (i % (*settings)[DB::CoordinationSetting::snapshot_distance] == 0)
         {
             nuraft::snapshot s(i, 0, std::make_shared<nuraft::cluster_config>());
             nuraft::async_result<bool>::handler_type when_done
                 = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
             {
                 snapshot_created = ret;
-                LOG_INFO(&Poco::Logger::get("CoordinationTest"), "Snapshot finished");
+                LOG_INFO(getLogger("CoordinationTest"), "Snapshot finished");
             };
 
             state_machine->create_snapshot(s, when_done);
@@ -1585,28 +569,32 @@ void testLogAndStateMachine(
             bool pop_result = snapshots_queue.pop(snapshot_task);
             EXPECT_TRUE(pop_result);
 
-            snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+            snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
         }
-        if (snapshot_created && changelog.size() > settings->reserved_log_items)
-            changelog.compact(i - settings->reserved_log_items);
+
+        if (snapshot_created && changelog.size() > (*settings)[DB::CoordinationSetting::reserved_log_items])
+            changelog.compact(i - (*settings)[DB::CoordinationSetting::reserved_log_items]);
     }
 
     SnapshotsQueue snapshots_queue1{1};
-    auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, settings, keeper_context, nullptr);
+    keeper_context = get_keeper_context();
+    auto restore_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue1, keeper_context, nullptr);
     restore_machine->init();
-    EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % settings->snapshot_distance);
+    EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % (*settings)[DB::CoordinationSetting::snapshot_distance]);
 
     DB::KeeperLogStore restore_changelog(
         DB::LogFileSettings{
-            .force_sync = true, .compress_logs = enable_compression, .rotate_interval = settings->rotate_log_storage_interval},
+            .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         keeper_context);
-    restore_changelog.init(restore_machine->last_commit_index() + 1, settings->reserved_log_items);
+    restore_changelog.init(restore_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 
-    EXPECT_EQ(restore_changelog.size(), std::min(settings->reserved_log_items + total_logs % settings->snapshot_distance, total_logs));
+    EXPECT_EQ(restore_changelog.size(), std::min((*settings)[DB::CoordinationSetting::reserved_log_items] + total_logs % (*settings)[DB::CoordinationSetting::snapshot_distance], total_logs));
     EXPECT_EQ(restore_changelog.next_slot(), total_logs + 1);
-    if (total_logs > settings->reserved_log_items + 1)
+    if (total_logs > (*settings)[DB::CoordinationSetting::reserved_log_items] + 1)
         EXPECT_EQ(
-            restore_changelog.start_index(), total_logs - total_logs % settings->snapshot_distance - settings->reserved_log_items + 1);
+            restore_changelog.start_index(), total_logs - total_logs % (*settings)[DB::CoordinationSetting::snapshot_distance] - (*settings)[DB::CoordinationSetting::reserved_log_items] + 1);
     else
         EXPECT_EQ(restore_changelog.start_index(), 1);
 
@@ -1619,82 +607,82 @@ void testLogAndStateMachine(
     auto & source_storage = state_machine->getStorageUnsafe();
     auto & restored_storage = restore_machine->getStorageUnsafe();
 
-    EXPECT_EQ(source_storage.container.size(), restored_storage.container.size());
+    EXPECT_EQ(source_storage.getStorageStats().nodes_count, restored_storage.getStorageStats().nodes_count);
     for (size_t i = 1; i < total_logs + 1; ++i)
     {
         auto path = "/hello_" + std::to_string(i);
-        EXPECT_EQ(source_storage.container.getValue(path).getData(), restored_storage.container.getValue(path).getData());
+        EXPECT_EQ(committedNodeData(source_storage, path), committedNodeData(restored_storage, path));
     }
 }
 
-TEST_P(CoordinationTest, TestStateMachineAndLogStore)
+TEST_P(CoordinationTestWithCompression, TestStateMachineAndLogStore)
 {
     using namespace Coordination;
     using namespace DB;
-    auto params = GetParam();
 
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        settings->snapshot_distance = 10;
-        settings->reserved_log_items = 10;
-        settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 37, params.enable_compression, keeper_context);
+        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
+        (*settings)[DB::CoordinationSetting::reserved_log_items] = 10;
+        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
+
+        testLogAndStateMachine(settings, 37, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        settings->snapshot_distance = 10;
-        settings->reserved_log_items = 10;
-        settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 11, params.enable_compression, keeper_context);
+        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
+        (*settings)[DB::CoordinationSetting::reserved_log_items] = 10;
+        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
+        testLogAndStateMachine(settings, 11, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        settings->snapshot_distance = 10;
-        settings->reserved_log_items = 10;
-        settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
+        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
+        (*settings)[DB::CoordinationSetting::reserved_log_items] = 10;
+        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
+        testLogAndStateMachine(settings, 40, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        settings->snapshot_distance = 10;
-        settings->reserved_log_items = 20;
-        settings->rotate_log_storage_interval = 30;
-        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
+        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
+        (*settings)[DB::CoordinationSetting::reserved_log_items] = 20;
+        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 30;
+        testLogAndStateMachine(settings, 40, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        settings->snapshot_distance = 10;
-        settings->reserved_log_items = 0;
-        settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
+        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
+        (*settings)[DB::CoordinationSetting::reserved_log_items] = 0;
+        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
+        testLogAndStateMachine(settings, 40, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        settings->snapshot_distance = 1;
-        settings->reserved_log_items = 1;
-        settings->rotate_log_storage_interval = 32;
-        testLogAndStateMachine(settings, 32, params.enable_compression, keeper_context);
+        (*settings)[DB::CoordinationSetting::snapshot_distance] = 1;
+        (*settings)[DB::CoordinationSetting::reserved_log_items] = 1;
+        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 32;
+        testLogAndStateMachine(settings, 32, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        settings->snapshot_distance = 10;
-        settings->reserved_log_items = 7;
-        settings->rotate_log_storage_interval = 1;
-        testLogAndStateMachine(settings, 33, params.enable_compression, keeper_context);
+        (*settings)[DB::CoordinationSetting::snapshot_distance] = 10;
+        (*settings)[DB::CoordinationSetting::reserved_log_items] = 7;
+        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 1;
+        testLogAndStateMachine(settings, 33, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        settings->snapshot_distance = 37;
-        settings->reserved_log_items = 1000;
-        settings->rotate_log_storage_interval = 5000;
-        testLogAndStateMachine(settings, 33, params.enable_compression, keeper_context);
+        (*settings)[DB::CoordinationSetting::snapshot_distance] = 37;
+        (*settings)[DB::CoordinationSetting::reserved_log_items] = 1000;
+        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 5000;
+        testLogAndStateMachine(settings, 33, GetParam());
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        settings->snapshot_distance = 37;
-        settings->reserved_log_items = 1000;
-        settings->rotate_log_storage_interval = 5000;
-        testLogAndStateMachine(settings, 45, params.enable_compression, keeper_context);
+        (*settings)[DB::CoordinationSetting::snapshot_distance] = 37;
+        (*settings)[DB::CoordinationSetting::reserved_log_items] = 1000;
+        (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 5000;
+        testLogAndStateMachine(settings, 45, GetParam());
     }
 }
 
@@ -1704,13 +692,11 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     using namespace DB;
 
     ChangelogDirTest snapshots("./snapshots");
-    setSnapshotDirectory("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
 
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-
-    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
@@ -1721,7 +707,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     state_machine->commit(1, entry_c->get_buf());
     const auto & storage = state_machine->getStorageUnsafe();
 
-    EXPECT_EQ(storage.ephemerals.size(), 1);
+    EXPECT_EQ(storage.committed_ephemerals.size(), 1);
     std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
     request_d->path = "/hello";
     /// Delete from other session
@@ -1729,7 +715,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     state_machine->pre_commit(2, entry_d->get_buf());
     state_machine->commit(2, entry_d->get_buf());
 
-    EXPECT_EQ(storage.ephemerals.size(), 0);
+    EXPECT_EQ(storage.committed_ephemerals.size(), 0);
 }
 
 
@@ -1739,12 +725,11 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
     using namespace DB;
 
     ChangelogDirTest snapshots("./snapshots");
-    setSnapshotDirectory("./snapshots");
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+    this->setSnapshotDirectory("./snapshots");
+
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
@@ -1768,20 +753,248 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
     auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
     state_machine->pre_commit(2, create_entry->get_buf());
 
-    const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
-    ASSERT_TRUE(uncommitted_state.nodes.contains(node_path));
+    auto & storage = state_machine->getStorageUnsafe();
+    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path, /*out_stats=*/nullptr, /*out_data=*/nullptr));
 
     // commit log entries
     state_machine->commit(1, auth_entry->get_buf());
     state_machine->commit(2, create_entry->get_buf());
 
-    auto node = uncommitted_state.getNode(node_path);
-    ASSERT_NE(node, nullptr);
-    auto acls = uncommitted_state.getACLs(node_path);
+    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path, /*out_stats=*/nullptr, /*out_data=*/nullptr));
+    auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
     EXPECT_EQ(acls[0].id, digest);
     EXPECT_EQ(acls[0].permissions, 31);
+}
+
+TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    SnapshotsQueue snapshots_queue{1};
+    int64_t session_without_auth = 1;
+    int64_t session_with_auth = 2;
+    size_t term = 0;
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    state_machine->init();
+
+    auto & storage = state_machine->getStorageUnsafe();
+
+    auto auth_req = std::make_shared<ZooKeeperAuthRequest>();
+    auth_req->scheme = "digest";
+    auth_req->data = "test_user:test_password";
+
+    // Add auth data to the session
+    auto auth_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), auth_req);
+    state_machine->pre_commit(1, auth_entry->get_buf());
+    state_machine->commit(1, auth_entry->get_buf());
+
+    std::string node_without_acl = "/node_without_acl";
+    {
+        auto create_req = std::make_shared<ZooKeeperCreateRequest>();
+        create_req->path = node_without_acl;
+        create_req->data = "notmodified";
+        auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
+        state_machine->pre_commit(2, create_entry->get_buf());
+        state_machine->commit(2, create_entry->get_buf());
+        ASSERT_TRUE(committedNodeExists(storage, node_without_acl));
+    }
+
+    std::string node_with_acl = "/node_with_acl";
+    {
+        auto create_req = std::make_shared<ZooKeeperCreateRequest>();
+        create_req->path = node_with_acl;
+        create_req->data = "notmodified";
+        create_req->acls = {{.permissions = ACL::All, .scheme = "auth", .id = ""}};
+        auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
+        state_machine->pre_commit(3, create_entry->get_buf());
+        state_machine->commit(3, create_entry->get_buf());
+        ASSERT_TRUE(committedNodeExists(storage, node_with_acl));
+    }
+
+    auto set_req_with_acl = std::make_shared<ZooKeeperSetRequest>();
+    set_req_with_acl->path = node_with_acl;
+    set_req_with_acl->data = "modified";
+
+    auto set_req_without_acl = std::make_shared<ZooKeeperSetRequest>();
+    set_req_without_acl->path = node_without_acl;
+    set_req_without_acl->data = "modified";
+
+    const auto reset_node_value = [&](std::string_view path)
+    { storage.nodes_storage->updateCommittedNode(path, /*new_stats=*/std::nullopt, /*new_data=*/"notmodified", /*out_digest=*/nullptr); };
+
+    auto close_req = std::make_shared<ZooKeeperCloseRequest>();
+
+    {
+        SCOPED_TRACE("Session with Auth");
+
+        // test we can modify both nodes
+        auto set_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_with_acl);
+        state_machine->pre_commit(5, set_entry->get_buf());
+        state_machine->commit(5, set_entry->get_buf());
+        ASSERT_EQ(committedNodeData(storage, node_with_acl), "modified");
+        reset_node_value(node_with_acl);
+
+        set_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
+        state_machine->pre_commit(6, set_entry->get_buf());
+        state_machine->commit(6, set_entry->get_buf());
+        ASSERT_EQ(committedNodeData(storage, node_without_acl), "modified");
+        reset_node_value(node_without_acl);
+
+        auto close_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), close_req);
+
+        // Pre-commit close session
+        state_machine->pre_commit(7, close_entry->get_buf());
+
+        /// will be rejected because we don't have required auth
+        auto set_entry_with_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_with_acl);
+        state_machine->pre_commit(8, set_entry_with_acl->get_buf());
+
+        /// will be accepted because no ACL
+        auto set_entry_without_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
+        state_machine->pre_commit(9, set_entry_without_acl->get_buf());
+
+        ASSERT_EQ(uncommittedNodeData(storage, node_with_acl), "notmodified");
+        ASSERT_EQ(uncommittedNodeData(storage, node_without_acl), "modified");
+
+        state_machine->rollback(9, set_entry_without_acl->get_buf());
+        state_machine->rollback(8, set_entry_with_acl->get_buf());
+
+        // let's commit close and verify we get same outcome
+        state_machine->commit(7, close_entry->get_buf());
+
+        /// will be rejected because we don't have required auth
+        set_entry_with_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_with_acl);
+        state_machine->pre_commit(8, set_entry_with_acl->get_buf());
+
+        /// will be accepted because no ACL
+        set_entry_without_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
+        state_machine->pre_commit(9, set_entry_without_acl->get_buf());
+
+        ASSERT_EQ(uncommittedNodeData(storage, node_with_acl), "notmodified");
+        ASSERT_EQ(uncommittedNodeData(storage, node_without_acl), "modified");
+
+        state_machine->commit(8, set_entry_with_acl->get_buf());
+        state_machine->commit(9, set_entry_without_acl->get_buf());
+
+        ASSERT_EQ(committedNodeData(storage, node_with_acl), "notmodified");
+        ASSERT_EQ(committedNodeData(storage, node_without_acl), "modified");
+
+        reset_node_value(node_without_acl);
+    }
+
+    {
+        SCOPED_TRACE("Session without Auth");
+
+        // test we can modify only node without acl
+        auto set_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_with_acl);
+        state_machine->pre_commit(10, set_entry->get_buf());
+        state_machine->commit(10, set_entry->get_buf());
+        ASSERT_EQ(committedNodeData(storage, node_with_acl), "notmodified");
+
+        set_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
+        state_machine->pre_commit(11, set_entry->get_buf());
+        state_machine->commit(11, set_entry->get_buf());
+        ASSERT_EQ(committedNodeData(storage, node_without_acl), "modified");
+        reset_node_value(node_without_acl);
+
+        auto close_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), close_req);
+
+        // Pre-commit close session
+        state_machine->pre_commit(12, close_entry->get_buf());
+
+        /// will be rejected because we don't have required auth
+        auto set_entry_with_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_with_acl);
+        state_machine->pre_commit(13, set_entry_with_acl->get_buf());
+
+        /// will be accepted because no ACL
+        auto set_entry_without_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
+        state_machine->pre_commit(14, set_entry_without_acl->get_buf());
+
+        ASSERT_EQ(uncommittedNodeData(storage, node_with_acl), "notmodified");
+        ASSERT_EQ(uncommittedNodeData(storage, node_without_acl), "modified");
+
+        state_machine->rollback(14, set_entry_without_acl->get_buf());
+        state_machine->rollback(13, set_entry_with_acl->get_buf());
+
+        // let's commit close and verify we get same outcome
+        state_machine->commit(12, close_entry->get_buf());
+
+        /// will be rejected because we don't have required auth
+        set_entry_with_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_with_acl);
+        state_machine->pre_commit(13, set_entry_with_acl->get_buf());
+
+        /// will be accepted because no ACL
+        set_entry_without_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
+        state_machine->pre_commit(14, set_entry_without_acl->get_buf());
+
+        ASSERT_EQ(uncommittedNodeData(storage, node_with_acl), "notmodified");
+        ASSERT_EQ(uncommittedNodeData(storage, node_without_acl), "modified");
+
+        state_machine->commit(13, set_entry_with_acl->get_buf());
+        state_machine->commit(14, set_entry_without_acl->get_buf());
+
+        ASSERT_EQ(committedNodeData(storage, node_with_acl), "notmodified");
+        ASSERT_EQ(committedNodeData(storage, node_without_acl), "modified");
+
+        reset_node_value(node_without_acl);
+    }
+}
+
+TEST_P(CoordinationTest, TestMultiRequestWithNoAuth)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    SnapshotsQueue snapshots_queue{1};
+    int64_t session_without_auth = 1;
+    int64_t session_with_auth = 2;
+    size_t term = 0;
+
+    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    state_machine->init();
+
+    auto & storage = state_machine->getStorageUnsafe();
+
+    auto auth_req = std::make_shared<ZooKeeperAuthRequest>();
+    auth_req->scheme = "digest";
+    auth_req->data = "test_user:test_password";
+
+    // Add auth data to the session
+    auto auth_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), auth_req);
+    state_machine->pre_commit(1, auth_entry->get_buf());
+    state_machine->commit(1, auth_entry->get_buf());
+
+    std::string node_with_acl = "/node_with_acl";
+    {
+        auto create_req = std::make_shared<ZooKeeperCreateRequest>();
+        create_req->path = node_with_acl;
+        create_req->data = "notmodified";
+        create_req->acls = {{.permissions = ACL::Read, .scheme = "auth", .id = ""}};
+        auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
+        state_machine->pre_commit(3, create_entry->get_buf());
+        state_machine->commit(3, create_entry->get_buf());
+        ASSERT_TRUE(committedNodeExists(storage, node_with_acl));
+    }
+    Requests ops;
+    ops.push_back(zkutil::makeSetRequest(node_with_acl, "modified", -1));
+    ops.push_back(zkutil::makeCheckRequest("/nonexistentnode", -1));
+    auto multi_req = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+    auto multi_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), multi_req);
+    state_machine->pre_commit(4, multi_entry->get_buf());
+    state_machine->commit(4, multi_entry->get_buf());
+
+    ASSERT_TRUE(committedNodeExists(storage, node_with_acl));
+    ASSERT_EQ(committedNodeData(storage, node_with_acl), "notmodified");
 }
 
 TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
@@ -1790,13 +1003,12 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     using namespace DB;
 
     ChangelogDirTest snapshots("./snapshots");
-    setSnapshotDirectory("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
 
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-    ResponsesQueue queue(std::numeric_limits<size_t>::max());
+
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, settings, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
@@ -1831,109 +1043,14 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     state_machine->commit(2, create_entry->get_buf());
     state_machine->commit(3, set_acl_entry->get_buf());
 
-    const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
-    auto node = uncommitted_state.getNode(node_path);
+    auto & storage = state_machine->getStorageUnsafe();
+    ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path, /*out_stats=*/nullptr, /*out_data=*/nullptr));
 
-    ASSERT_NE(node, nullptr);
-    auto acls = uncommitted_state.getACLs(node_path);
+    auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
     EXPECT_EQ(acls[0].id, digest);
     EXPECT_EQ(acls[0].permissions, 31);
-}
-
-
-TEST_P(CoordinationTest, TestRotateIntervalChanges)
-{
-    using namespace Coordination;
-    auto params = GetParam();
-    ChangelogDirTest snapshots("./logs");
-    setLogDirectory("./logs");
-    {
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-
-        changelog.init(0, 3);
-        for (size_t i = 1; i < 55; ++i)
-        {
-            std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-            request->path = "/hello_" + std::to_string(i);
-            auto entry = getLogEntryFromZKRequest(0, 1, i, request);
-            changelog.append(entry);
-            changelog.end_of_append_batch(0, 0);
-        }
-
-        waitDurableLogs(changelog);
-    }
-
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin" + params.extension));
-
-    DB::KeeperLogStore changelog_1(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 10}, keeper_context);
-    changelog_1.init(0, 50);
-    for (size_t i = 0; i < 55; ++i)
-    {
-        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = "/hello_" + std::to_string(100 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
-        changelog_1.append(entry);
-        changelog_1.end_of_append_batch(0, 0);
-    }
-
-    waitDurableLogs(changelog_1);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin" + params.extension));
-
-    DB::KeeperLogStore changelog_2(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 7}, keeper_context);
-    changelog_2.init(98, 55);
-
-    for (size_t i = 0; i < 17; ++i)
-    {
-        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = "/hello_" + std::to_string(200 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
-        changelog_2.append(entry);
-        changelog_2.end_of_append_batch(0, 0);
-    }
-
-    waitDurableLogs(changelog_2);
-
-    changelog_2.compact(105);
-    std::this_thread::sleep_for(std::chrono::microseconds(1000));
-
-    assertFileDeleted("./logs/changelog_1_100.bin" + params.extension);
-    EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_111_117.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_118_124.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_125_131.bin" + params.extension));
-
-    DB::KeeperLogStore changelog_3(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 5}, keeper_context);
-    changelog_3.init(116, 3);
-    for (size_t i = 0; i < 17; ++i)
-    {
-        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = "/hello_" + std::to_string(300 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
-        changelog_3.append(entry);
-        changelog_3.end_of_append_batch(0, 0);
-    }
-
-    waitDurableLogs(changelog_3);
-
-    changelog_3.compact(125);
-    std::this_thread::sleep_for(std::chrono::microseconds(1000));
-    assertFileDeleted("./logs/changelog_101_110.bin" + params.extension);
-    assertFileDeleted("./logs/changelog_111_117.bin" + params.extension);
-    assertFileDeleted("./logs/changelog_118_124.bin" + params.extension);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_125_131.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_132_136.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_137_141.bin" + params.extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_142_146.bin" + params.extension));
 }
 
 TEST_P(CoordinationTest, TestSessionExpiryQueue)
@@ -1953,528 +1070,18 @@ TEST_P(CoordinationTest, TestSessionExpiryQueue)
     EXPECT_EQ(queue.getExpiredSessions(), std::vector<int64_t>({1}));
 }
 
-
-TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
-{
-    using namespace Coordination;
-    auto test_params = GetParam();
-    ChangelogDirTest logs("./logs");
-    setLogDirectory("./logs");
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
-
-    changelog.init(0, 3);
-    for (size_t i = 1; i < 55; ++i)
-    {
-        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
-        changelog.append(entry);
-        changelog.end_of_append_batch(0, 0);
-    }
-
-    waitDurableLogs(changelog);
-
-    DB::KeeperLogStore changelog1(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
-    changelog1.init(0, 3);
-    for (size_t i = 55; i < 70; ++i)
-    {
-        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
-        changelog1.append(entry);
-        changelog1.end_of_append_batch(0, 0);
-    }
-
-    waitDurableLogs(changelog1);
-
-    DB::KeeperLogStore changelog2(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
-    changelog2.init(0, 3);
-    for (size_t i = 70; i < 80; ++i)
-    {
-        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
-        changelog2.append(entry);
-        changelog2.end_of_append_batch(0, 0);
-    }
-}
-
-TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
-{
-    auto params = GetParam();
-
-    ChangelogDirTest test("./snapshots");
-    setSnapshotDirectory("./snapshots");
-
-    DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
-
-    DB::KeeperStorage storage(500, "", keeper_context);
-    addNode(storage, "/hello", "world", 1);
-    addNode(storage, "/hello/somepath", "somedata", 3);
-    storage.session_id_counter = 5;
-    storage.zxid = 2;
-    storage.ephemerals[3] = {"/hello"};
-    storage.ephemerals[1] = {"/hello/somepath"};
-    storage.getSessionID(130);
-    storage.getSessionID(130);
-
-    DB::KeeperStorageSnapshot snapshot(&storage, 2);
-
-    auto buf = manager.serializeSnapshotToBuffer(snapshot);
-    manager.serializeSnapshotBufferToDisk(*buf, 2);
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin" + params.extension));
-
-    DB::KeeperSnapshotManager new_manager(3, keeper_context, !params.enable_compression);
-
-    auto debuf = new_manager.deserializeSnapshotBufferFromDisk(2);
-
-    auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
-
-    EXPECT_EQ(restored_storage->container.size(), 6);
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 2);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
-
-    EXPECT_EQ(restored_storage->container.getValue("/").getData(), "");
-    EXPECT_EQ(restored_storage->container.getValue("/hello").getData(), "world");
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getData(), "somedata");
-    EXPECT_EQ(restored_storage->session_id_counter, 7);
-    EXPECT_EQ(restored_storage->zxid, 2);
-    EXPECT_EQ(restored_storage->ephemerals.size(), 2);
-    EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
-    EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
-    EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
-}
-
-TEST_P(CoordinationTest, ChangelogInsertThreeTimesSmooth)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-    {
-        LOG_INFO(log, "================First time=====================");
-        DB::KeeperLogStore changelog(DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-        changelog.init(1, 0);
-        auto entry = getLogEntry("hello_world", 1000);
-        changelog.append(entry);
-        changelog.end_of_append_batch(0, 0);
-        EXPECT_EQ(changelog.next_slot(), 2);
-        waitDurableLogs(changelog);
-    }
-
-    {
-        LOG_INFO(log, "================Second time=====================");
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-        changelog.init(1, 0);
-        auto entry = getLogEntry("hello_world", 1000);
-        changelog.append(entry);
-        changelog.end_of_append_batch(0, 0);
-        EXPECT_EQ(changelog.next_slot(), 3);
-        waitDurableLogs(changelog);
-    }
-
-    {
-        LOG_INFO(log, "================Third time=====================");
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-        changelog.init(1, 0);
-        auto entry = getLogEntry("hello_world", 1000);
-        changelog.append(entry);
-        changelog.end_of_append_batch(0, 0);
-        EXPECT_EQ(changelog.next_slot(), 4);
-        waitDurableLogs(changelog);
-    }
-
-    {
-        LOG_INFO(log, "================Fourth time=====================");
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-        changelog.init(1, 0);
-        auto entry = getLogEntry("hello_world", 1000);
-        changelog.append(entry);
-        changelog.end_of_append_batch(0, 0);
-        EXPECT_EQ(changelog.next_slot(), 5);
-        waitDurableLogs(changelog);
-    }
-}
-
-
-TEST_P(CoordinationTest, ChangelogInsertMultipleTimesSmooth)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-    for (size_t i = 0; i < 36; ++i)
-    {
-        LOG_INFO(log, "================First time=====================");
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-        changelog.init(1, 0);
-        for (size_t j = 0; j < 7; ++j)
-        {
-            auto entry = getLogEntry("hello_world", 7);
-            changelog.append(entry);
-        }
-        changelog.end_of_append_batch(0, 0);
-        waitDurableLogs(changelog);
-    }
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-    changelog.init(1, 0);
-    EXPECT_EQ(changelog.next_slot(), 36 * 7 + 1);
-}
-
-TEST_P(CoordinationTest, ChangelogInsertThreeTimesHard)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-    {
-        LOG_INFO(log, "================First time=====================");
-        DB::KeeperLogStore changelog1(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-        changelog1.init(1, 0);
-        auto entry = getLogEntry("hello_world", 1000);
-        changelog1.append(entry);
-        changelog1.end_of_append_batch(0, 0);
-        EXPECT_EQ(changelog1.next_slot(), 2);
-        waitDurableLogs(changelog1);
-    }
-
-    {
-        LOG_INFO(log, "================Second time=====================");
-        DB::KeeperLogStore changelog2(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-        changelog2.init(1, 0);
-        auto entry = getLogEntry("hello_world", 1000);
-        changelog2.append(entry);
-        changelog2.end_of_append_batch(0, 0);
-        EXPECT_EQ(changelog2.next_slot(), 3);
-        waitDurableLogs(changelog2);
-    }
-
-    {
-        LOG_INFO(log, "================Third time=====================");
-        DB::KeeperLogStore changelog3(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-        changelog3.init(1, 0);
-        auto entry = getLogEntry("hello_world", 1000);
-        changelog3.append(entry);
-        changelog3.end_of_append_batch(0, 0);
-        EXPECT_EQ(changelog3.next_slot(), 4);
-        waitDurableLogs(changelog3);
-    }
-
-    {
-        LOG_INFO(log, "================Fourth time=====================");
-        DB::KeeperLogStore changelog4(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100}, keeper_context);
-        changelog4.init(1, 0);
-        auto entry = getLogEntry("hello_world", 1000);
-        changelog4.append(entry);
-        changelog4.end_of_append_batch(0, 0);
-        EXPECT_EQ(changelog4.next_slot(), 5);
-        waitDurableLogs(changelog4);
-    }
-}
-
-TEST_P(CoordinationTest, TestStorageSnapshotEqual)
-{
-    auto params = GetParam();
-    ChangelogDirTest test("./snapshots");
-    setSnapshotDirectory("./snapshots");
-
-    std::optional<UInt128> snapshot_hash;
-    for (size_t i = 0; i < 15; ++i)
-    {
-        DB::KeeperSnapshotManager manager(3, keeper_context, params.enable_compression);
-
-        DB::KeeperStorage storage(500, "", keeper_context);
-        addNode(storage, "/hello", "");
-        for (size_t j = 0; j < 5000; ++j)
-        {
-            addNode(storage, "/hello_" + std::to_string(j), "world", 1);
-            addNode(storage, "/hello/somepath_" + std::to_string(j), "somedata", 3);
-        }
-
-        storage.session_id_counter = 5;
-
-        storage.ephemerals[3] = {"/hello"};
-        storage.ephemerals[1] = {"/hello/somepath"};
-
-        for (size_t j = 0; j < 3333; ++j)
-            storage.getSessionID(130 * j);
-
-        DB::KeeperStorageSnapshot snapshot(&storage, storage.zxid);
-
-        auto buf = manager.serializeSnapshotToBuffer(snapshot);
-
-        auto new_hash = sipHash128(reinterpret_cast<char *>(buf->data()), buf->size());
-        if (!snapshot_hash.has_value())
-        {
-            snapshot_hash = new_hash;
-        }
-        else
-        {
-            EXPECT_EQ(*snapshot_hash, new_hash);
-        }
-    }
-}
-
-
-TEST_P(CoordinationTest, TestLogGap)
-{
-    using namespace Coordination;
-    auto test_params = GetParam();
-    ChangelogDirTest logs("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
-
-    changelog.init(0, 3);
-    for (size_t i = 1; i < 55; ++i)
-    {
-        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = "/hello_" + std::to_string(i);
-        auto entry = getLogEntryFromZKRequest(0, 1, i, request);
-        changelog.append(entry);
-        changelog.end_of_append_batch(0, 0);
-    }
-
-    DB::KeeperLogStore changelog1(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = test_params.enable_compression, .rotate_interval = 100}, keeper_context);
-    changelog1.init(61, 3);
-
-    /// Logs discarded
-    EXPECT_FALSE(fs::exists("./logs/changelog_1_100.bin" + test_params.extension));
-    EXPECT_EQ(changelog1.start_index(), 61);
-    EXPECT_EQ(changelog1.next_slot(), 61);
-}
-
-template <typename ResponseType>
-ResponseType getSingleResponse(const auto & responses)
-{
-    EXPECT_FALSE(responses.empty());
-    return dynamic_cast<ResponseType &>(*responses[0].response);
-}
-
-TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
-{
-    using namespace DB;
-    using namespace Coordination;
-
-    DB::KeeperStorage storage{500, "", keeper_context};
-
-    constexpr std::string_view path = "/test";
-
-    const auto get_committed_data = [&]() -> std::optional<String>
-    {
-        auto request = std::make_shared<ZooKeeperGetRequest>();
-        request->path = path;
-        auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
-        const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
-
-        if (get_response.error != Error::ZOK)
-            return std::nullopt;
-
-        return get_response.data;
-    };
-
-    const auto preprocess_get = [&](int64_t zxid)
-    {
-        auto get_request = std::make_shared<ZooKeeperGetRequest>();
-        get_request->path = path;
-        storage.preprocessRequest(get_request, 0, 0, zxid);
-        return get_request;
-    };
-
-    const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
-    create_request->path = path;
-    create_request->data = "initial_data";
-    storage.preprocessRequest(create_request, 0, 0, 1);
-    storage.preprocessRequest(create_request, 0, 0, 2);
-
-    ASSERT_FALSE(get_committed_data());
-
-    const auto after_create_get = preprocess_get(3);
-
-    ASSERT_FALSE(get_committed_data());
-
-    const auto set_request = std::make_shared<ZooKeeperSetRequest>();
-    set_request->path = path;
-    set_request->data = "new_data";
-    storage.preprocessRequest(set_request, 0, 0, 4);
-
-    const auto after_set_get = preprocess_get(5);
-
-    ASSERT_FALSE(get_committed_data());
-
-    const auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
-    remove_request->path = path;
-    storage.preprocessRequest(remove_request, 0, 0, 6);
-    storage.preprocessRequest(remove_request, 0, 0, 7);
-
-    const auto after_remove_get = preprocess_get(8);
-
-    ASSERT_FALSE(get_committed_data());
-
-    {
-        const auto responses = storage.processRequest(create_request, 0, 1);
-        const auto & create_response = getSingleResponse<ZooKeeperCreateResponse>(responses);
-        ASSERT_EQ(create_response.error, Error::ZOK);
-    }
-
-    {
-        const auto responses = storage.processRequest(create_request, 0, 2);
-        const auto & create_response = getSingleResponse<ZooKeeperCreateResponse>(responses);
-        ASSERT_EQ(create_response.error, Error::ZNODEEXISTS);
-    }
-
-    {
-        const auto responses = storage.processRequest(after_create_get, 0, 3);
-        const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
-        ASSERT_EQ(get_response.error, Error::ZOK);
-        ASSERT_EQ(get_response.data, "initial_data");
-    }
-
-    ASSERT_EQ(get_committed_data(), "initial_data");
-
-    {
-        const auto responses = storage.processRequest(set_request, 0, 4);
-        const auto & create_response = getSingleResponse<ZooKeeperSetResponse>(responses);
-        ASSERT_EQ(create_response.error, Error::ZOK);
-    }
-
-    {
-        const auto responses = storage.processRequest(after_set_get, 0, 5);
-        const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
-        ASSERT_EQ(get_response.error, Error::ZOK);
-        ASSERT_EQ(get_response.data, "new_data");
-    }
-
-    ASSERT_EQ(get_committed_data(), "new_data");
-
-    {
-        const auto responses = storage.processRequest(remove_request, 0, 6);
-        const auto & create_response = getSingleResponse<ZooKeeperRemoveResponse>(responses);
-        ASSERT_EQ(create_response.error, Error::ZOK);
-    }
-
-    {
-        const auto responses = storage.processRequest(remove_request, 0, 7);
-        const auto & create_response = getSingleResponse<ZooKeeperRemoveResponse>(responses);
-        ASSERT_EQ(create_response.error, Error::ZNONODE);
-    }
-
-    {
-        const auto responses = storage.processRequest(after_remove_get, 0, 8);
-        const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
-        ASSERT_EQ(get_response.error, Error::ZNONODE);
-    }
-
-    ASSERT_FALSE(get_committed_data());
-}
-
-TEST_P(CoordinationTest, TestListRequestTypes)
-{
-    using namespace DB;
-    using namespace Coordination;
-
-    KeeperStorage storage{500, "", keeper_context};
-
-    int32_t zxid = 0;
-
-    static constexpr std::string_view test_path = "/list_request_type/node";
-
-    const auto create_path = [&](const auto & path, bool is_ephemeral, bool is_sequential = true)
-    {
-        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
-        int new_zxid = ++zxid;
-        create_request->path = path;
-        create_request->is_sequential = is_sequential;
-        create_request->is_ephemeral = is_ephemeral;
-        storage.preprocessRequest(create_request, 1, 0, new_zxid);
-        auto responses = storage.processRequest(create_request, 1, new_zxid);
-
-        EXPECT_GE(responses.size(), 1);
-        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
-        const auto & create_response = dynamic_cast<ZooKeeperCreateResponse &>(*responses[0].response);
-        return create_response.path_created;
-    };
-
-    create_path(parentNodePath(StringRef{test_path}).toString(), false, false);
-
-    static constexpr size_t persistent_num = 5;
-    std::unordered_set<std::string> expected_persistent_children;
-    for (size_t i = 0; i < persistent_num; ++i)
-    {
-        expected_persistent_children.insert(getBaseNodeName(create_path(test_path, false)).toString());
-    }
-    ASSERT_EQ(expected_persistent_children.size(), persistent_num);
-
-    static constexpr size_t ephemeral_num = 5;
-    std::unordered_set<std::string> expected_ephemeral_children;
-    for (size_t i = 0; i < ephemeral_num; ++i)
-    {
-        expected_ephemeral_children.insert(getBaseNodeName(create_path(test_path, true)).toString());
-    }
-    ASSERT_EQ(expected_ephemeral_children.size(), ephemeral_num);
-
-    const auto get_children = [&](const auto list_request_type)
-    {
-        const auto list_request = std::make_shared<ZooKeeperFilteredListRequest>();
-        int new_zxid = ++zxid;
-        list_request->path = parentNodePath(StringRef{test_path}).toString();
-        list_request->list_request_type = list_request_type;
-        storage.preprocessRequest(list_request, 1, 0, new_zxid);
-        auto responses = storage.processRequest(list_request, 1, new_zxid);
-
-        EXPECT_GE(responses.size(), 1);
-        const auto & list_response = dynamic_cast<ZooKeeperListResponse &>(*responses[0].response);
-        return list_response.names;
-    };
-
-    const auto persistent_children = get_children(ListRequestType::PERSISTENT_ONLY);
-    EXPECT_EQ(persistent_children.size(), persistent_num);
-    for (const auto & child : persistent_children)
-    {
-        EXPECT_TRUE(expected_persistent_children.contains(child)) << "Missing persistent child " << child;
-    }
-
-    const auto ephemeral_children = get_children(ListRequestType::EPHEMERAL_ONLY);
-    EXPECT_EQ(ephemeral_children.size(), ephemeral_num);
-    for (const auto & child : ephemeral_children)
-    {
-        EXPECT_TRUE(expected_ephemeral_children.contains(child)) << "Missing ephemeral child " << child;
-    }
-
-    const auto all_children = get_children(ListRequestType::ALL);
-    EXPECT_EQ(all_children.size(), ephemeral_num + persistent_num);
-    for (const auto & child : all_children)
-    {
-        EXPECT_TRUE(expected_ephemeral_children.contains(child) || expected_persistent_children.contains(child))
-            << "Missing child " << child;
-    }
-}
-
 TEST_P(CoordinationTest, TestDurableState)
 {
     ChangelogDirTest logs("./logs");
-    setLogDirectory("./logs");
-    setStateFileDirectory(".");
+    this->setLogDirectory("./logs");
+    this->setStateFileDirectory(".");
 
     auto state = nuraft::cs_new<nuraft::srv_state>();
     std::optional<DB::KeeperStateManager> state_manager;
 
     const auto reload_state_manager = [&]
     {
-        state_manager.emplace(1, "localhost", 9181, keeper_context);
+        state_manager.emplace(1, "localhost", 9181, this->keeper_context);
         state_manager->loadLogStore(1, 0);
     };
 
@@ -2503,7 +1110,7 @@ TEST_P(CoordinationTest, TestDurableState)
     {
         SCOPED_TRACE("Read from corrupted file");
         state_manager.reset();
-        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
+        DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
         write_buf.seek(20, SEEK_SET);
         DB::writeIntBinary(31, write_buf);
         write_buf.sync();
@@ -2520,7 +1127,7 @@ TEST_P(CoordinationTest, TestDurableState)
         SCOPED_TRACE("Read from file with invalid size");
         state_manager.reset();
 
-        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+        DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
         DB::writeIntBinary(20, write_buf);
         write_buf.sync();
         write_buf.close();
@@ -2537,273 +1144,610 @@ TEST_P(CoordinationTest, TestDurableState)
     }
 }
 
+namespace
+{
+
+/// Test disk: throws when the given file is (re)opened for writing, and rejects moveFile
+/// (as plain/s3_plain metadata does).
+class ThrowingStateDisk : public DB::DiskLocal
+{
+public:
+    ThrowingStateDisk(const std::string & disk_name, const std::string & disk_path, std::string fail_path_)
+        : DB::DiskLocal(disk_name, disk_path), fail_path(std::move(fail_path_))
+    {
+    }
+
+    void arm() { armed = true; }
+    void disarm() { armed = false; }
+
+    std::unique_ptr<DB::WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
+    {
+        auto inner = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
+        if (armed && path == fail_path)
+            throw std::runtime_error("Injected state write failure");
+        return inner;
+    }
+
+    void moveFile(const String &, const String &) override
+    {
+        /// Matches plain (s3_plain) metadata, which throws NOT_IMPLEMENTED for moveFile.
+        throw std::runtime_error("moveFile is not implemented for this disk");
+    }
+
+private:
+    std::string fail_path;
+    bool armed = false;
+};
+
+}
+
+/// Regression test for https://github.com/ClickHouse/ClickHouse/issues/111454.
+TEST_P(CoordinationTest, TestDurableStateCrashDuringSave)
+{
+    ChangelogDirTest logs("./logs");
+    this->setLogDirectory("./logs");
+
+    auto disk = std::make_shared<ThrowingStateDisk>("StateFile", ".", "state");
+    this->keeper_context->setStateFileDisk(disk);
+
+    std::optional<DB::KeeperStateManager> state_manager;
+    const auto reload_state_manager = [&]
+    {
+        state_manager.emplace(1, "localhost", 9181, this->keeper_context);
+        state_manager->loadLogStore(1, 0);
+    };
+
+    reload_state_manager();
+    ASSERT_EQ(state_manager->read_state(), nullptr);
+
+    /// Persist an initial state (term 1) successfully.
+    auto state = nuraft::cs_new<nuraft::srv_state>();
+    state->set_term(1);
+    state->set_voted_for(2);
+    state->allow_election_timer(true);
+    state_manager->save_state(*state);
+
+    {
+        auto read_state = state_manager->read_state();
+        ASSERT_NE(read_state, nullptr);
+        ASSERT_EQ(read_state->get_term(), 1);
+        ASSERT_EQ(read_state->get_voted_for(), 2);
+    }
+
+    /// Now attempt to persist term 2 but crash (throw) while the live "state" file is being
+    /// rewritten. The live file is left truncated/torn, exactly the vulnerable window.
+    auto new_state = nuraft::cs_new<nuraft::srv_state>();
+    new_state->set_term(2);
+    new_state->set_voted_for(3);
+    new_state->allow_election_timer(true);
+
+    disk->arm();
+    ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+    disk->disarm();
+
+    /// After the "crash" the previously committed state must still be recoverable: read_state
+    /// must not return nullptr (which would reset the node to term 0 and lose the vote).
+    reload_state_manager();
+    auto recovered = state_manager->read_state();
+    ASSERT_NE(recovered, nullptr);
+    /// The recovered state is the last durably persisted one (term 1); the interrupted term-2
+    /// write never became durable. The invariant that matters is that state is not lost.
+    ASSERT_EQ(recovered->get_term(), 1);
+    ASSERT_EQ(recovered->get_voted_for(), 2);
+
+    /// A subsequent successful save must work normally after recovery.
+    state_manager->save_state(*new_state);
+    reload_state_manager();
+    auto final_state = state_manager->read_state();
+    ASSERT_NE(final_state, nullptr);
+    ASSERT_EQ(final_state->get_term(), 2);
+    ASSERT_EQ(final_state->get_voted_for(), 3);
+
+    if (std::filesystem::exists("./state"))
+        std::filesystem::remove("./state");
+    if (std::filesystem::exists("./state-OLD"))
+        std::filesystem::remove("./state-OLD");
+}
+
 TEST_P(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
-    KeeperStorage storage{500, "", keeper_context};
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
     auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = DB::keeper_api_feature_flags_path;
-    auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
+    KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 0, .request = request}};
+    auto responses = storage.processLocalRequests(requests, true);
     const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
     DB::KeeperFeatureFlags feature_flags;
     feature_flags.setFeatureFlags(get_response.data);
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ));
-    ASSERT_FALSE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::MULTI_WATCHES));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA));
 }
 
-TEST_P(CoordinationTest, TestSystemNodeModify)
+TEST(CoordinationRequestSize, WriteRejectsRequestOverInt32)
 {
-    using namespace Coordination;
-    int64_t zxid{0};
-
-    // On INIT we abort when a system path is modified
-    keeper_context->setServerState(KeeperContext::Phase::RUNNING);
-    KeeperStorage storage{500, "", keeper_context};
-    const auto assert_create = [&](const std::string_view path, const auto expected_code)
+    // The guard fires on the computed size before serialization, so a fake sizeImpl needs no real data.
+    struct HugeRequest final : Coordination::ZooKeeperRequest
     {
-        auto request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = path;
-        storage.preprocessRequest(request, 0, 0, zxid);
-        auto responses = storage.processRequest(request, 0, zxid);
-        ASSERT_FALSE(responses.empty());
-
-        const auto & response = responses[0];
-        ASSERT_EQ(response.response->error, expected_code) << "Unexpected error for path " << path;
-
-        ++zxid;
+        String getPath() const override { return {}; }
+        Coordination::OpNum getOpNum() const override { return Coordination::OpNum::Create; }
+        void writeImpl(DB::WriteBuffer &) const override {}
+        size_t sizeImpl() const override { return std::numeric_limits<int32_t>::max(); }
+        void readImpl(DB::ReadBuffer &) override {}
+        Coordination::ZooKeeperResponsePtr makeResponse() const override { return nullptr; }
+        bool isReadRequest() const override { return false; }
     };
 
-    assert_create("/keeper", Error::ZBADARGUMENTS);
-    assert_create("/keeper/with_child", Error::ZBADARGUMENTS);
-    assert_create(DB::keeper_api_version_path, Error::ZBADARGUMENTS);
-
-    assert_create("/keeper_map", Error::ZOK);
-    assert_create("/keeper1", Error::ZOK);
-    assert_create("/keepe", Error::ZOK);
-    assert_create("/keeper1/test", Error::ZOK);
+    HugeRequest request;
+    DB::WriteBufferFromNuraftBuffer wbuf;
+    EXPECT_THROW(request.write(wbuf, false, false), Coordination::Exception);
 }
 
-TEST_P(CoordinationTest, ChangelogTestMaxLogSize)
+/// checkIfRequestIncreaseMem is the memory-soft-limit admission classifier. It is a pure function of
+/// the request, so it is tested here rather than through the integration test: reproducing sustained
+/// memory pressure is RSS-driven and decays as soon as the load stops, which makes any assertion that
+/// depends on Keeper still refusing inherently racy.
+namespace
 {
-    auto params = GetParam();
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
 
-    uint64_t last_entry_index{0};
-    size_t i{0};
+Coordination::ZooKeeperRequestPtr makeSetRequest(const std::string & path, const std::string & data)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperSetRequest>();
+    request->path = path;
+    request->data = data;
+    request->version = -1;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeCreateRequest(const std::string & path, const std::string & data)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    request->path = path;
+    request->data = data;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeRemoveRequest(const std::string & path)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperRemoveRequest>();
+    request->path = path;
+    request->version = -1;
+    return request;
+}
+
+Coordination::ZooKeeperRequestPtr makeMultiRequest(const Coordination::Requests & subrequests)
+{
+    return std::make_shared<Coordination::ZooKeeperMultiRequest>(subrequests, Coordination::ACLs{});
+}
+
+}
+
+TEST(KeeperMemorySoftLimitAdmission, EmptySetIsNotMemoryIncreasing)
+{
+    /// The session-registration write from ZooKeeper::initSession. Refusing it is what locked tables
+    /// into readonly for the duration of a Keeper memory event: a Set cannot allocate a znode, and with
+    /// empty data the amount of stored data can only shrink.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeSetRequest("/clickhouse/sessions/zookeeper/uuid", "")));
+
+    /// A Set that actually carries data can grow the store, so it must still be refused - note this is
+    /// true even though the path is long, i.e. the decision is on the data and not on the request size.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeSetRequest("/clickhouse/sessions/zookeeper/uuid", "x")));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, CreateIsAlwaysMemoryIncreasing)
+{
+    /// Unchanged behaviour, asserted so that narrowing the Set branch cannot silently widen this one.
+    /// An empty Create still allocates a znode, so unlike Set it is classified increasing.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeCreateRequest("/a", "")));
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeCreateRequest("/a", "data")));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, MultiClassifiedBySumOfDataSizes)
+{
+    /// A Multi of only empty Sets has a zero delta and must be admitted. Before the fix this returned
+    /// true, because the branch summed bytesSize() - which includes the path, the version and the xid -
+    /// so an empty Set contributed growth proportional to its path length. `Set(<table>/replicas, "")`
+    /// in SharedMergeTree's activateReplica is exactly this shape.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeSetRequest("/some/quite/long/path/that/would/have/dominated/bytesSize", ""),
+        makeSetRequest("/another/long/path/replicas", ""),
+    })));
+
+    /// Data in any subrequest still makes the Multi increasing.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeSetRequest("/a", ""),
+        makeSetRequest("/b", "data"),
+    })));
+
+    /// So does a Create, which is the gate-2 shape from activateReplica: an ephemeral is_active node
+    /// plus Sets. This one genuinely allocates and is expected to stay refused.
+    ASSERT_TRUE(DB::checkIfRequestIncreaseMem(makeMultiRequest({
+        makeCreateRequest("/table/replicas/r1/is_active", ""),
+        makeSetRequest("/table/replicas/r1/host", "hostname"),
+        makeSetRequest("/table/replicas", ""),
+    })));
+}
+
+TEST(KeeperMemorySoftLimitAdmission, ReadsAndRemovesAreNotMemoryIncreasing)
+{
+    /// Reads fall through to the final `return false`, which is why a saturated Keeper still serves
+    /// them - the property the end-to-end test relies on.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(std::make_shared<Coordination::ZooKeeperGetRequest>()));
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(std::make_shared<Coordination::ZooKeeperListRequest>()));
+
+    /// A standalone Remove is not classified increasing. Deliberately unchanged by this fix.
+    ASSERT_FALSE(DB::checkIfRequestIncreaseMem(makeRemoveRequest("/a")));
+}
+
+namespace DB
+{
+
+/// The in-flight batch queue and the SessionID error path are private, so the tests below reach them
+/// through these friend accessors.
+class KeeperRequestDispatcherTestAccessor
+{
+public:
+    /// Puts one request in a fresh in-flight batch, the way dispatchThread would, and returns its index.
+    static size_t seedInFlightBatch(KeeperRequestDispatcher & dispatcher, const KeeperRequestForSession & request)
     {
-        SCOPED_TRACE("Small rotation interval, big size limit");
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{
-                .force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 20, .max_size = 50 * 1024 * 1024},
-            keeper_context);
-        changelog.init(1, 0);
+        size_t batch_idx = dispatcher.tail_idx.load();
+        auto & batch = dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()];
+        batch.requests = {request};
+        batch.activate({});
+        dispatcher.tail_idx.store(batch_idx + 1);
+        return batch_idx;
+    }
 
-        for (; i < 100; ++i)
+    static size_t committedRequests(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
+    {
+        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].committed_requests;
+    }
+
+    static size_t headIdx(const KeeperRequestDispatcher & dispatcher) { return dispatcher.head_idx.load(); }
+
+    static void dropInFlightRequests(KeeperRequestDispatcher & dispatcher) { dispatcher.dropInFlightRequests(); }
+};
+
+class KeeperRequestDispatcherOldTestAccessor
+{
+public:
+    static void addErrorResponses(
+        KeeperRequestDispatcherOld & dispatcher,
+        const KeeperRequestsForSessions & requests_for_sessions,
+        Coordination::Error error,
+        bool may_have_dependent_reads)
+    {
+        dispatcher.addErrorResponses(requests_for_sessions, error, may_have_dependent_reads);
+    }
+};
+
+class KeeperDispatcherTestAccessor
+{
+public:
+    static void setKeeperContext(KeeperDispatcher & dispatcher, KeeperContextPtr keeper_context)
+    {
+        dispatcher.keeper_context = std::move(keeper_context);
+    }
+
+    static void setServer(KeeperDispatcher & dispatcher, std::unique_ptr<KeeperServer> server)
+    {
+        dispatcher.server = std::move(server);
+    }
+
+    static KeeperServer * server(KeeperDispatcher & dispatcher) { return dispatcher.server.get(); }
+
+    static KeeperSpecialResponseRouter router(KeeperDispatcher & dispatcher)
+    {
+        return [&dispatcher](const KeeperResponseForSession & response)
+        { return dispatcher.tryRouteSpecialResponse(response); };
+    }
+
+    /// Registers a waiter the way getSessionID does, and returns the future a client blocks on.
+    /// Empty if the internal id was already registered.
+    static std::optional<std::future<int64_t>> registerSessionIDWaiter(KeeperDispatcher & dispatcher, int64_t internal_id)
+    {
+        std::lock_guard lock(dispatcher.new_session_id_mutex);
+        auto [it, inserted] = dispatcher.new_session_id_requests.try_emplace(internal_id);
+        if (!inserted)
+            return {};
+        return it->second.get_future();
+    }
+
+    static size_t sessionIDWaiterCount(KeeperDispatcher & dispatcher, int64_t internal_id)
+    {
+        std::lock_guard lock(dispatcher.new_session_id_mutex);
+        return dispatcher.new_session_id_requests.count(internal_id);
+    }
+};
+
+}
+
+namespace
+{
+
+/// A server without a started Raft instance. Enough for onCommit and the error paths, which only
+/// touch in_flight_batches and the response routing.
+struct DispatcherFixture
+{
+    ChangelogDirTest dir{"./session_id_routing_logs"};
+    DB::KeeperContextPtr keeper_context;
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config;
+    DB::SnapshotsQueue snapshots_queue{1};
+    DB::KeeperSnapshotManagerS3 snapshot_s3;
+    std::unique_ptr<DB::KeeperServer> server;
+    std::unique_ptr<DB::KeeperRequestDispatcher> dispatcher;
+
+    /// Responses the router took, i.e. that did not go to the per-session response queue.
+    std::vector<DB::KeeperResponseForSession> routed;
+
+    DB::KeeperSpecialResponseRouter router()
+    {
+        return [this](const DB::KeeperResponseForSession & response)
         {
-            auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
-            last_entry_index = changelog.append(entry);
-        }
-        changelog.end_of_append_batch(0, 0);
-
-        waitDurableLogs(changelog);
-
-        ASSERT_EQ(changelog.entry_at(last_entry_index)->get_term(), (i - 1 + 44) * 10);
+            if (response.response->getOpNum() != Coordination::OpNum::SessionID)
+                return false;
+            routed.push_back(response);
+            return true;
+        };
     }
+
+    DispatcherFixture()
     {
-        SCOPED_TRACE("Large rotation interval, small size limit");
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{
-                .force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100'000, .max_size = 4000},
-            keeper_context);
-        changelog.init(1, 0);
+        std::string xml = R"(<clickhouse><keeper_server>
+            <server_id>1</server_id>
+            <tcp_port>0</tcp_port>
+            <raft_configuration><server>
+                <id>1</id><hostname>localhost</hostname><port>44444</port>
+            </server></raft_configuration>
+        </keeper_server></clickhouse>)";
+        std::stringstream stream(xml); // NOLINT(readability-isolate-declaration)
+        config = new Poco::Util::XMLConfiguration(stream);
 
-        ASSERT_EQ(changelog.entry_at(last_entry_index)->get_term(), (i - 1 + 44) * 10);
+        keeper_context = ::makeKeeperContext(false, nullptr);
+        keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", dir.path));
+        keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", dir.path));
+        keeper_context->setStateFileDisk(std::make_shared<DB::DiskLocal>("StateFile", dir.path));
+        keeper_context->setLocalLogsPreprocessed();
 
-        for (; i < 500; ++i)
-        {
-            auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
-            last_entry_index = changelog.append(entry);
-        }
-        changelog.end_of_append_batch(0, 0);
+        server = std::make_unique<DB::KeeperServer>(
+            DB::KeeperConfiguration::loadFromConfig(*config, true),
+            *config,
+            [](DB::KeeperResponseForSession) {},
+            snapshots_queue,
+            keeper_context,
+            snapshot_s3,
+            [](uint64_t, const DB::KeeperRequestForSession &) {});
 
-        waitDurableLogs(changelog);
-
-        ASSERT_EQ(changelog.entry_at(last_entry_index)->get_term(), (i - 1 + 44) * 10);
+        dispatcher = std::make_unique<DB::KeeperRequestDispatcher>(server.get(), router());
     }
-    {
-        SCOPED_TRACE("Final verify all logs");
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{
-                .force_sync = true, .compress_logs = params.enable_compression, .rotate_interval = 100'000, .max_size = 4000},
-            keeper_context);
-        changelog.init(1, 0);
-        ASSERT_EQ(changelog.entry_at(last_entry_index)->get_term(), (i - 1 + 44) * 10);
-    }
+};
+
+DB::KeeperRequestForSession makeSessionIDRequest(int32_t server_id, int64_t internal_id)
+{
+    auto request = std::make_shared<Coordination::ZooKeeperSessionIDRequest>();
+    request->server_id = server_id;
+    request->internal_id = internal_id;
+    request->session_timeout_ms = 10000;
+    /// KeeperDispatcher::getSessionID leaves xid at its default and uses session id -1, so every
+    /// SessionID request in the cluster carries the same (session_id, xid).
+    DB::KeeperRequestForSession request_for_session;
+    request_for_session.request = request;
+    request_for_session.session_id = DB::keeper_internal_get_session_id;
+    return request_for_session;
 }
 
-TEST_P(CoordinationTest, TestCheckNotExistsRequest)
-{
-    using namespace DB;
-    using namespace Coordination;
+using RequestDispatcherAccessor = DB::KeeperRequestDispatcherTestAccessor;
+using RequestDispatcherOldAccessor = DB::KeeperRequestDispatcherOldTestAccessor;
+using DispatcherAccessor = DB::KeeperDispatcherTestAccessor;
 
-    KeeperStorage storage{500, "", keeper_context};
-
-    int32_t zxid = 0;
-
-    const auto create_path = [&](const auto & path)
-    {
-        const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
-        int new_zxid = ++zxid;
-        create_request->path = path;
-        storage.preprocessRequest(create_request, 1, 0, new_zxid);
-        auto responses = storage.processRequest(create_request, 1, new_zxid);
-
-        EXPECT_GE(responses.size(), 1);
-        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
-    };
-
-    const auto check_request = std::make_shared<ZooKeeperCheckRequest>();
-    check_request->path = "/test_node";
-    check_request->not_exists = true;
-
-    {
-        SCOPED_TRACE("CheckNotExists returns ZOK");
-        int new_zxid = ++zxid;
-        storage.preprocessRequest(check_request, 1, 0, new_zxid);
-        auto responses = storage.processRequest(check_request, 1, new_zxid);
-        EXPECT_GE(responses.size(), 1);
-        auto error = responses[0].response->error;
-        EXPECT_EQ(error, Coordination::Error::ZOK) << "CheckNotExists returned invalid result: " << errorMessage(error);
-    }
-
-    create_path("/test_node");
-    auto node_it = storage.container.find("/test_node");
-    ASSERT_NE(node_it, storage.container.end());
-    auto node_version = node_it->value.stat.version;
-
-    {
-        SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");
-        int new_zxid = ++zxid;
-        storage.preprocessRequest(check_request, 1, 0, new_zxid);
-        auto responses = storage.processRequest(check_request, 1, new_zxid);
-        EXPECT_GE(responses.size(), 1);
-        auto error = responses[0].response->error;
-        EXPECT_EQ(error, Coordination::Error::ZNODEEXISTS) << "CheckNotExists returned invalid result: " << errorMessage(error);
-    }
-
-    {
-        SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS for same version");
-        int new_zxid = ++zxid;
-        check_request->version = node_version;
-        storage.preprocessRequest(check_request, 1, 0, new_zxid);
-        auto responses = storage.processRequest(check_request, 1, new_zxid);
-        EXPECT_GE(responses.size(), 1);
-        auto error = responses[0].response->error;
-        EXPECT_EQ(error, Coordination::Error::ZNODEEXISTS) << "CheckNotExists returned invalid result: " << errorMessage(error);
-    }
-
-    {
-        SCOPED_TRACE("CheckNotExists returns ZOK for different version");
-        int new_zxid = ++zxid;
-        check_request->version = node_version + 1;
-        storage.preprocessRequest(check_request, 1, 0, new_zxid);
-        auto responses = storage.processRequest(check_request, 1, new_zxid);
-        EXPECT_GE(responses.size(), 1);
-        auto error = responses[0].response->error;
-        EXPECT_EQ(error, Coordination::Error::ZOK) << "CheckNotExists returned invalid result: " << errorMessage(error);
-    }
 }
 
-TEST_P(CoordinationTest, TestReapplyingDeltas)
+/// A SessionID commit from another server must not retire our in-flight SessionID request, and our
+/// own must still retire it.
+TEST(KeeperDispatcher, SessionIDCommitCorrelation)
 {
-    using namespace DB;
-    using namespace Coordination;
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
 
-    static constexpr int64_t initial_zxid = 100;
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 7));
 
-    const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
-    create_request->path = "/test/data";
-    create_request->is_sequential = true;
+    ASSERT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 0u);
 
-    const auto process_create = [](KeeperStorage & storage, const auto & request, int64_t zxid)
-    {
-        storage.preprocessRequest(request, 1, 0, zxid);
-        auto responses = storage.processRequest(request, 1, zxid);
-        EXPECT_GE(responses.size(), 1);
-        EXPECT_EQ(responses[0].response->error, Error::ZOK);
-    };
+    /// Same degenerate (session_id, xid), different origin.
+    dispatcher.onCommit(makeSessionIDRequest(/*server_id=*/ 2, /*internal_id=*/ 7));
+    EXPECT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 0u)
+        << "a foreign server's SessionID commit retired our request";
 
-    const auto commit_initial_data = [&](auto & storage)
-    {
-        int64_t zxid = 1;
+    /// Same server, different client.
+    dispatcher.onCommit(makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 8));
+    EXPECT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 0u)
+        << "another client's SessionID commit retired our request";
 
-        const auto root_create = std::make_shared<ZooKeeperCreateRequest>();
-        root_create->path = "/test";
-        process_create(storage, root_create, zxid);
-        ++zxid;
-
-        for (; zxid <= initial_zxid; ++zxid)
-            process_create(storage, create_request, zxid);
-    };
-
-    KeeperStorage storage1{500, "", keeper_context};
-    commit_initial_data(storage1);
-
-    for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
-        storage1.preprocessRequest(create_request, 1, 0, zxid);
-
-    /// create identical new storage
-    KeeperStorage storage2{500, "", keeper_context};
-    commit_initial_data(storage2);
-
-    storage1.applyUncommittedState(storage2, initial_zxid);
-
-    const auto commit_unprocessed = [&](KeeperStorage & storage)
-    {
-        for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
-        {
-            auto responses = storage.processRequest(create_request, 1, zxid);
-            EXPECT_GE(responses.size(), 1);
-            EXPECT_EQ(responses[0].response->error, Error::ZOK);
-        }
-    };
-
-    commit_unprocessed(storage1);
-    commit_unprocessed(storage2);
-
-    const auto get_children = [&](KeeperStorage & storage)
-    {
-        const auto list_request = std::make_shared<ZooKeeperListRequest>();
-        list_request->path = "/test";
-        auto responses = storage.processRequest(list_request, 1, std::nullopt, /*check_acl=*/true, /*is_local=*/true);
-        EXPECT_EQ(responses.size(), 1);
-        const auto * list_response = dynamic_cast<const ListResponse *>(responses[0].response.get());
-        EXPECT_TRUE(list_response);
-        return list_response->names;
-    };
-
-    auto children1 = get_children(storage1);
-    std::unordered_set<std::string> children1_set(children1.begin(), children1.end());
-
-    auto children2 = get_children(storage2);
-    std::unordered_set<std::string> children2_set(children2.begin(), children2.end());
-
-    ASSERT_TRUE(children1_set == children2_set);
+    /// Ours: correlation must still work, otherwise every session request would stall.
+    dispatcher.onCommit(makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 7));
+    EXPECT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 1u)
+        << "our own SessionID commit did not retire our request";
+    EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the fully committed batch was not popped";
 }
 
-INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
-    CoordinationTest,
-    ::testing::ValuesIn(std::initializer_list<CompressionParam>{CompressionParam{true, ".zstd"}, CompressionParam{false, ""}}));
-
-int main(int argc, char ** argv)
+/// A dropped SessionID request must reach its waiter instead of the per-session response queue,
+/// where session id -1 has no callback and the response is discarded.
+TEST(KeeperDispatcher, SessionIDErrorReachesWaiter)
 {
-    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
-    Poco::Logger::root().setChannel(channel);
-    Poco::Logger::root().setLevel("trace");
-    testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 11));
+
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+
+    ASSERT_EQ(fixture.routed.size(), 1u) << "the dropped SessionID error did not reach its waiter";
+    const auto & response = fixture.routed.front();
+    EXPECT_EQ(response.response->error, Coordination::Error::ZCONNECTIONLOSS);
+
+    /// The identifiers the waiter is keyed by must survive makeResponse().
+    const auto & session_id_response = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response.response);
+    EXPECT_EQ(session_id_response.server_id, 1);
+    EXPECT_EQ(session_id_response.internal_id, 11);
+
+    EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the dropped batch was not popped";
+}
+
+/// use_new_dispatcher is a setting, so the old dispatcher is a live carrier of the same defect. It
+/// has no in-flight batch tracking, so it synthesizes the error straight from addErrorResponses.
+TEST(KeeperDispatcherOld, SessionIDErrorReachesWaiter)
+{
+    DispatcherFixture fixture;
+    DB::KeeperRequestDispatcherOld dispatcher_old(fixture.server.get(), fixture.router());
+    /// Its threads loop until the context says shutdown, the way KeeperDispatcher::shutdown does it.
+    SCOPE_EXIT({
+        fixture.keeper_context->setShutdownCalled();
+        dispatcher_old.shutdown();
+    });
+
+    RequestDispatcherOldAccessor::addErrorResponses(
+        dispatcher_old,
+        {makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 13)},
+        Coordination::Error::ZCONNECTIONLOSS,
+        /*may_have_dependent_reads=*/ false);
+
+    ASSERT_EQ(fixture.routed.size(), 1u) << "the dropped SessionID error did not reach its waiter";
+    const auto & response = fixture.routed.front();
+    EXPECT_EQ(response.response->error, Coordination::Error::ZCONNECTIONLOSS);
+    const auto & session_id_response = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response.response);
+    EXPECT_EQ(session_id_response.server_id, 1);
+    EXPECT_EQ(session_id_response.internal_id, 13);
+}
+
+/// Unlike the arms above, which stop at the router seam, this one drives the production router and
+/// asserts on the getSessionID waiter a client actually blocks on.
+TEST(KeeperDispatcher, SessionIDErrorReachesRealWaiter)
+{
+    DispatcherFixture fixture;
+
+    /// onSessionIDResponse reads only server->getServerID(), set by the KeeperServer constructor, so
+    /// an un-started server suffices here.
+    DB::KeeperDispatcher keeper_dispatcher;
+    /// Holds a raw pointer to the server keeper_dispatcher takes over, and would outlive it.
+    fixture.dispatcher.reset();
+    DispatcherAccessor::setServer(keeper_dispatcher, std::move(fixture.server));
+
+    DB::KeeperRequestDispatcher dispatcher(
+        DispatcherAccessor::server(keeper_dispatcher), DispatcherAccessor::router(keeper_dispatcher));
+
+    constexpr int64_t internal_id = 17;
+    auto waiter = DispatcherAccessor::registerSessionIDWaiter(keeper_dispatcher, internal_id);
+    ASSERT_TRUE(waiter.has_value());
+    auto & future = *waiter;
+
+    /// A response for a different client must not wake our waiter.
+    RequestDispatcherAccessor::seedInFlightBatch(dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 18));
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::timeout)
+        << "another client's SessionID error woke our waiter";
+    EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 1u);
+
+    RequestDispatcherAccessor::seedInFlightBatch(dispatcher, makeSessionIDRequest(/*server_id=*/ 1, internal_id));
+    RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+
+    /// Ready without waiting: the client does not sit out the session timeout.
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+        << "the dropped SessionID error did not reach the getSessionID waiter";
+
+    try
+    {
+        FAIL() << "getSessionID returned session id " << future.get() << " instead of the error";
+    }
+    catch (const Coordination::Exception & e)
+    {
+        EXPECT_EQ(e.code, Coordination::Error::ZCONNECTIONLOSS);
+    }
+
+    EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
+}
+
+/// A request accepted before the shutdown flag was set is discarded without a response: the drains
+/// do not synthesize one, and the old dispatcher's requestThread abandons what it already popped.
+/// Routing cannot cover that, so the waiter is completed once no dispatcher can produce a response.
+TEST(KeeperDispatcher, PendingSessionIDRequestsFailOnShutdown)
+{
+    DispatcherFixture fixture;
+    fixture.dispatcher.reset();
+
+    /// Drives the real KeeperDispatcher::shutdown, so removing its call reddens this arm. Neither
+    /// dispatcher is constructed and `server` is left null: shutdown skips both, and the waiter
+    /// must still be completed.
+    DB::KeeperDispatcher keeper_dispatcher;
+    DispatcherAccessor::setKeeperContext(keeper_dispatcher, fixture.keeper_context);
+
+    constexpr int64_t internal_id = 31;
+    auto waiter = DispatcherAccessor::registerSessionIDWaiter(keeper_dispatcher, internal_id);
+    ASSERT_TRUE(waiter.has_value());
+    auto & future = *waiter;
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::timeout)
+        << "the waiter completed before shutdown";
+
+    keeper_dispatcher.shutdown(/*closed_all_connections=*/ true);
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+        << "the waiter was left to time out across shutdown";
+    try
+    {
+        FAIL() << "getSessionID returned session id " << future.get() << " instead of the error";
+    }
+    catch (const Coordination::Exception & e)
+    {
+        EXPECT_EQ(e.code, Coordination::Error::ZSESSIONEXPIRED);
+    }
+
+    EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
+}
+
+/// setShutdownCalled is one-shot, so a shutdown step that throws before the normal cleanup point
+/// is the waiters' only chance to be completed.
+TEST(KeeperDispatcher, PendingSessionIDRequestsFailOnThrowingShutdown)
+{
+    DispatcherFixture fixture;
+    fixture.dispatcher.reset();
+
+    DB::KeeperDispatcher keeper_dispatcher;
+    DispatcherAccessor::setKeeperContext(keeper_dispatcher, fixture.keeper_context);
+
+    constexpr int64_t internal_id = 37;
+    auto waiter = DispatcherAccessor::registerSessionIDWaiter(keeper_dispatcher, internal_id);
+    ASSERT_TRUE(waiter.has_value());
+    auto & future = *waiter;
+
+    DB::FailPointInjection::enableFailPoint("keeper_shutdown_throw_after_flag");
+    SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint("keeper_shutdown_throw_after_flag"); });
+
+    keeper_dispatcher.shutdown(/*closed_all_connections=*/ true);
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+        << "a shutdown that threw left the waiter to time out";
+    try
+    {
+        FAIL() << "getSessionID returned session id " << future.get() << " instead of the error";
+    }
+    catch (const Coordination::Exception & e)
+    {
+        EXPECT_EQ(e.code, Coordination::Error::ZSESSIONEXPIRED);
+    }
+
+    EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
 }
 
 #endif

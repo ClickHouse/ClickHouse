@@ -1,9 +1,8 @@
 #pragma once
 
-#include <base/strong_typedef.h>
 #include <base/extended_types.h>
-#include <Common/formatIPv6.h>
-#include <Common/memcmpSmall.h>
+#include <base/strong_typedef.h>
+
 
 namespace DB
 {
@@ -20,32 +19,11 @@ namespace DB
         using StrongTypedef::StrongTypedef;
         using StrongTypedef::operator=;
 
-        bool operator<(const IPv6 & rhs) const
-        {
-            return
-                memcmp16(
-                    reinterpret_cast<const unsigned char *>(toUnderType().items),
-                    reinterpret_cast<const unsigned char *>(rhs.toUnderType().items)
-                ) < 0;
-        }
+        bool operator<(const IPv6 & rhs) const;
 
-        bool operator>(const IPv6 & rhs) const
-        {
-            return
-                memcmp16(
-                    reinterpret_cast<const unsigned char *>(toUnderType().items),
-                    reinterpret_cast<const unsigned char *>(rhs.toUnderType().items)
-                ) > 0;
-        }
+        bool operator>(const IPv6 & rhs) const;
 
-        bool operator==(const IPv6 & rhs) const
-        {
-            return
-                memcmp16(
-                    reinterpret_cast<const unsigned char *>(toUnderType().items),
-                    reinterpret_cast<const unsigned char *>(rhs.toUnderType().items)
-                ) == 0;
-        }
+        bool operator==(const IPv6 & rhs) const;
 
         bool operator<=(const IPv6 & rhs) const { return !operator>(rhs); }
         bool operator>=(const IPv6 & rhs) const { return !operator<(rhs); }
@@ -62,7 +40,8 @@ namespace std
     {
         size_t operator()(const DB::IPv6 & x) const
         {
-            return std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char*>(&x.toUnderType()), IPV6_BINARY_LENGTH));
+            return std::hash<std::string_view>{}(
+                std::string_view(reinterpret_cast<const char *>(&x.toUnderType()), sizeof(DB::IPv6::UnderlyingType)));
         }
     };
 

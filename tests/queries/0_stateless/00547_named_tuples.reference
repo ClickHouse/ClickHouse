@@ -1,1 +1,1 @@
-(1,'Hello')	Tuple(x UInt64, s String)	1	Hello	1	Hello
+(1,'Hello')	Tuple(\n    x UInt64,\n    s String)	1	Hello	1	Hello

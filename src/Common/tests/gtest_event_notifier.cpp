@@ -9,7 +9,6 @@ TEST(EventNotifier, SimpleTest)
     using namespace DB;
 
     size_t result = 1;
-    EventNotifier::init();
 
     auto handler3 = EventNotifier::instance().subscribe(Coordination::Error::ZSESSIONEXPIRED, [&result](){ result *= 3; });
 
@@ -48,6 +47,4 @@ TEST(EventNotifier, SimpleTest)
     handler13.reset();
     EventNotifier::instance().notify(Coordination::Error::ZSESSIONEXPIRED);
     ASSERT_EQ(result, 1);
-
-    EventNotifier::shutdown();
 }

@@ -1,0 +1,7 @@
+hi
+ACCESS_DENIED
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+Ex**ptionBeforeStart	9	refreshable materialized view	1	0
+Ex**ptionWhileProcessing	9	refreshable materialized view	1	1
+QueryFinish	9	refreshable materialized view	0	1
+QueryStart	9	refreshable materialized view	0	1

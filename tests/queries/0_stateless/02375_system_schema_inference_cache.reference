@@ -1,9 +1,3 @@
-storage	String					
-source	String					
-format	String					
-additional_format_info	String					
-registration_time	DateTime					
-schema	String					
 x	Nullable(Int64)					
 s	Nullable(String)					
 x	Nullable(Int64)					

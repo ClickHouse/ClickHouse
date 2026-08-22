@@ -1,38 +1,41 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <IO/PeekableReadBuffer.h>
 
 
 namespace DB
 {
 
+class TabSeparatedFormatReader;
+
 /** A stream to input data in tsv format.
   */
-class TabSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class TabSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes<TabSeparatedFormatReader>
 {
 public:
     /** with_names - the first line is the header with the names of the columns
       * with_types - on the next line header with type names
       */
-    TabSeparatedRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+    TabSeparatedRowInputFormat(SharedHeader header_, ReadBuffer & in_, const Params & params_,
                                bool with_names_, bool with_types_, bool is_raw, const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
+    void resetReadBuffer() override;
 
 private:
-    TabSeparatedRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,
+    TabSeparatedRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,
                                bool with_names_, bool with_types_, bool is_raw, const FormatSettings & format_settings_);
 
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
 
+    bool supportsCountRows() const override { return true; }
 
     std::unique_ptr<PeekableReadBuffer> buf;
 };
@@ -59,6 +62,8 @@ public:
     std::vector<String> readTypes() override { return readHeaderRow(); }
     std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
 
+    void skipRow() override;
+
     template <bool read_string>
     String readFieldIntoString();
 
@@ -76,6 +81,7 @@ public:
     void setReadBuffer(ReadBuffer & in_) override;
 
     bool checkForSuffix() override;
+    bool checkForEndOfRow() override;
 
 private:
     template <bool is_header>
@@ -86,14 +92,16 @@ private:
     bool first_row = true;
 };
 
-class TabSeparatedSchemaReader : public FormatWithNamesAndTypesSchemaReader
+class TabSeparatedSchemaReader final : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     TabSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings);
 
 private:
-    DataTypes readRowAndGetDataTypesImpl() override;
-    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
+    bool allowVariableNumberOfColumns() const override { return format_settings.tsv.allow_variable_number_of_columns; }
+
+    std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
+    std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
 
     PeekableReadBuffer buf;
     TabSeparatedFormatReader reader;

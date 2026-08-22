@@ -1,0 +1,50 @@
+---
+description: 'Documentation de la clause HAVING'
+sidebarTitle: 'HAVING'
+slug: /sql-reference/statements/select/having
+title: 'Clause HAVING'
+doc_type: 'reference'
+---
+
+Permet de filtrer les résultats d’agrégation produits par [GROUP BY](/fr/reference/statements/select/group-by). Cette clause est similaire à [WHERE](/fr/reference/statements/select/where), à la différence que `WHERE` est exécutée avant l’agrégation, tandis que `HAVING` l’est après.
+
+Il est possible de référencer dans la clause `HAVING`, via leur alias, les résultats d’agrégation de la clause `SELECT`. La clause `HAVING` peut également filtrer les résultats d’agrégations supplémentaires qui ne sont pas renvoyés dans les résultats de la requête.
+
+<div id="example">
+  ## Exemple
+</div>
+
+Si vous avez une table `sales` comme ceci :
+
+```sql
+CREATE TABLE sales
+(
+    region String,
+    salesperson String,
+    amount Float64
+)
+ORDER BY (region, salesperson);
+```
+
+Vous pouvez l’interroger comme suit :
+
+```sql
+SELECT
+    region,
+    salesperson,
+    sum(amount) AS total_sales
+FROM sales
+GROUP BY
+    region,
+    salesperson
+HAVING total_sales > 10000
+ORDER BY total_sales DESC;
+```
+
+Cette requête liste les commerciaux dont le total des ventes dans leur région dépasse 10 000.
+
+<div id="limitations">
+  ## Limites
+</div>
+
+`HAVING` ne peut pas être utilisé sans agrégation. Utilisez `WHERE` à la place.

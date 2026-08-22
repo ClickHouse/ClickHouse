@@ -1,1 +1,0 @@
-../team_keys_lambda/build_and_deploy_archive.sh

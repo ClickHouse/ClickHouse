@@ -1,4 +1,4 @@
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 
 -- { echoOn }
 with arrayJoin([0, 1, 2, 10]) as x select quantilesGK(100, 0.5, 0.4, 0.1)(x);
@@ -15,12 +15,25 @@ select quantilesGK(100, 100/1000, 200/1000, 250/1000, 314/1000, 777/1000)(number
 select quantilesGK(1000, 100/1000, 200/1000, 250/1000, 314/1000, 777/1000)(number + 1) from numbers(1000);
 select quantilesGK(10000, 100/1000, 200/1000, 250/1000, 314/1000, 777/1000)(number + 1) from numbers(1000);
 
+SELECT quantileGKMerge(100, 0.5)(x)
+FROM
+(
+    SELECT quantileGKState(100, 0.5)(number + 1) AS x
+    FROM numbers(49999)
+);
 
-select medianGK()(number) from numbers(10) SETTINGS allow_experimental_analyzer = 0; -- { serverError BAD_ARGUMENTS }
-select medianGK()(number) from numbers(10) SETTINGS allow_experimental_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT quantilesGKMerge(100, 0.5, 0.9, 0.99)(x)
+FROM
+(
+    SELECT quantilesGKState(100, 0.5, 0.9, 0.99)(number + 1) AS x
+    FROM numbers(49999)
+);
 
-select quantileGK()(number) from numbers(10) SETTINGS allow_experimental_analyzer = 0; -- { serverError BAD_ARGUMENTS }
-select quantileGK()(number) from numbers(10) SETTINGS allow_experimental_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select medianGK()(number) from numbers(10) SETTINGS enable_analyzer = 0; -- { serverError BAD_ARGUMENTS }
+select medianGK()(number) from numbers(10) SETTINGS enable_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+select quantileGK()(number) from numbers(10) SETTINGS enable_analyzer = 0; -- { serverError BAD_ARGUMENTS }
+select quantileGK()(number) from numbers(10) SETTINGS enable_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 select medianGK(100)(number) from numbers(10);
 select quantileGK(100)(number) from numbers(10);
@@ -30,8 +43,8 @@ select quantileGK('abc', 0.5)(number) from numbers(10); -- { serverError ILLEGAL
 select quantileGK(1.23, 0.5)(number) from numbers(10); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select quantileGK(-100, 0.5)(number) from numbers(10); -- { serverError BAD_ARGUMENTS }
 
-select quantilesGK()(number) from numbers(10) SETTINGS allow_experimental_analyzer = 0; -- { serverError BAD_ARGUMENTS }
-select quantilesGK()(number) from numbers(10) SETTINGS allow_experimental_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select quantilesGK()(number) from numbers(10) SETTINGS enable_analyzer = 0; -- { serverError BAD_ARGUMENTS }
+select quantilesGK()(number) from numbers(10) SETTINGS enable_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 select quantilesGK(100)(number) from numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select quantilesGK(100, 0.5)(number) from numbers(10);

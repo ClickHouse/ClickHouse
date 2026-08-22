@@ -1,12 +1,11 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-fasttest
 
-DROP DATABASE IF EXISTS database_for_dict;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE DATABASE database_for_dict;
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-DROP TABLE IF EXISTS database_for_dict.table_for_dict;
-
-CREATE TABLE database_for_dict.table_for_dict
+CREATE TABLE table_for_dict
 (
   key_column UInt64,
   second_column UInt64,
@@ -15,35 +14,25 @@ CREATE TABLE database_for_dict.table_for_dict
 ENGINE = MergeTree()
 ORDER BY key_column;
 
-INSERT INTO database_for_dict.table_for_dict VALUES (100500, 10000000, 'Hello world');
+INSERT INTO table_for_dict VALUES (100500, 10000000, 'Hello world');
 
-DROP DATABASE IF EXISTS ordinary_db;
+DROP DICTIONARY IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
 
-CREATE DATABASE ordinary_db;
-
-DROP DICTIONARY IF EXISTS ordinary_db.dict1;
-
-CREATE DICTIONARY ordinary_db.dict1
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict1
 (
   key_column UInt64 DEFAULT 0,
   second_column UInt64 DEFAULT 1,
   third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB currentDatabase()))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT()) SETTINGS(max_result_bytes=1);
 
 SELECT 'INITIALIZING DICTIONARY';
 
-SELECT dictGetUInt64('ordinary_db.dict1', 'second_column', toUInt64(100500)); -- { serverError 396 }
+SELECT dictGetUInt64('dict1', 'second_column', toUInt64(100500)); -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
 SELECT 'END';
 
-DROP DICTIONARY IF EXISTS ordinary_db.dict1;
-
-DROP DATABASE IF EXISTS ordinary_db;
-
-DROP TABLE IF EXISTS database_for_dict.table_for_dict;
-
-DROP DATABASE IF EXISTS database_for_dict;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

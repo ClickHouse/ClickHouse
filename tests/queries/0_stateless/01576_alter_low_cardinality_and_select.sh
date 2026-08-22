@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-upgrade-check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +29,7 @@ do
     create_query=$($CLICKHOUSE_CLIENT --query "$show_query")
 done
 
-# checking type is LowCardinalty
+# checking type is LowCardinality
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE alter_table"
 
 # checking no mutations happened

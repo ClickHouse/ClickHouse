@@ -18,7 +18,7 @@ TEST(ParserTableOptions, AllSubpatitionOptions)
                    " STATS_PERSISTENT DEFAULT STATS_SAMPLE_PAGES 3 TABLESPACE tablespace_name STORAGE MEMORY UNION (table_01, table_02)";
 
     ParserDeclareTableOptions p_table_options;
-    ASTPtr ast = parseQuery(p_table_options, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(p_table_options, input.data(), input.data() + input.size(), "", 0, 0, 0);
 
     ASTDeclareOptions * declare_options = ast->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options->changes["auto_increment"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);
@@ -56,7 +56,7 @@ TEST(ParserTableOptions, OptionalTableOptions)
 {
     String input = "STATS_AUTO_RECALC DEFAULT AUTO_INCREMENt = 1 ";
     ParserDeclareTableOptions p_table_options;
-    ASTPtr ast = parseQuery(p_table_options, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(p_table_options, input.data(), input.data() + input.size(), "", 0, 0, 0);
 
     ASTDeclareOptions * declare_options = ast->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options->changes["auto_increment"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);

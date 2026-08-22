@@ -1,0 +1,5 @@
+Ok.
+HTTP/1.1 302 Found
+Location: /?query=SELECT+'Pepyaka'
+HTTP/1.1 404 Not Found
+Pepyaka

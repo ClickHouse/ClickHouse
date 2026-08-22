@@ -16,25 +16,25 @@ select 100 = length(format(concat((select arrayStringConcat(arrayMap(x ->'}', ra
 select format('', 'first');
 select concat('third', 'first', 'second')=format('{2}{0}{1}', 'first', 'second', 'third');
 
-select format('{', ''); -- { serverError 36 }
-select format('{{}', ''); -- { serverError 36 }
-select format('{ {}', ''); -- { serverError 36 }
-select format('}', ''); -- { serverError 36 }
+select format('{', ''); -- { serverError BAD_ARGUMENTS }
+select format('{{}', ''); -- { serverError BAD_ARGUMENTS }
+select format('{ {}', ''); -- { serverError BAD_ARGUMENTS }
+select format('}', ''); -- { serverError BAD_ARGUMENTS }
 select format('{{', '');
-select format('{}}', ''); -- { serverError 36 }
+select format('{}}', ''); -- { serverError BAD_ARGUMENTS }
 select format('}}', '');
-select format('{2 }', ''); -- { serverError 36 }
-select format('{}{}{}{}{}{} }{}', '', '', '', '', '', '', ''); -- { serverError 36 }
-select format('{sometext}', ''); -- { serverError 36 }
-select format('{\0sometext}', ''); -- { serverError 36 }
-select format('{1023}', ''); -- { serverError 36 }
-select format('{10000000000000000000000000000000000000000000000000}', ''); -- { serverError 36 }
-select format('{} {0}', '', ''); -- { serverError 36 }
-select format('{0} {}', '', ''); -- { serverError 36 }
-select format('Hello {} World {} {}{}', 'first', 'second', 'third') from system.numbers limit 2; -- { serverError 36 }
-select format('Hello {0} World {1} {2}{3}', 'first', 'second', 'third') from system.numbers limit 2; -- { serverError 36 }
+select format('{2 }', ''); -- { serverError BAD_ARGUMENTS }
+select format('{}{}{}{}{}{} }{}', '', '', '', '', '', '', ''); -- { serverError BAD_ARGUMENTS }
+select format('{sometext}', ''); -- { serverError BAD_ARGUMENTS }
+select format('{\0sometext}', ''); -- { serverError BAD_ARGUMENTS }
+select format('{1023}', ''); -- { serverError BAD_ARGUMENTS }
+select format('{10000000000000000000000000000000000000000000000000}', ''); -- { serverError BAD_ARGUMENTS }
+select format('{} {0}', '', ''); -- { serverError BAD_ARGUMENTS }
+select format('{0} {}', '', ''); -- { serverError BAD_ARGUMENTS }
+select format('Hello {} World {} {}{}', 'first', 'second', 'third') from system.numbers limit 2; -- { serverError BAD_ARGUMENTS }
+select format('Hello {0} World {1} {2}{3}', 'first', 'second', 'third') from system.numbers limit 2; -- { serverError BAD_ARGUMENTS }
 
-select 50 = length(format((select arrayStringConcat(arrayMap(x ->'{', range(101)))), ''));  -- { serverError 36 }
+select 50 = length(format((select arrayStringConcat(arrayMap(x ->'{', range(101)))), ''));  -- { serverError BAD_ARGUMENTS }
 
 select format('{}{}{}', materialize(toFixedString('a', 1)), materialize(toFixedString('b', 1)), materialize(toFixedString('c', 1))) == 'abc';
 select format('{}{}{}', materialize(toFixedString('a', 1)), materialize('b'), materialize(toFixedString('c', 1))) == 'abc';

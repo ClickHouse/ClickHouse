@@ -2,4 +2,20 @@
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore([[1], [2]][number % 2 + 2])</query>
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore([[], [2]][number % 2 + 2])</query>
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore([[], []][number % 2 + 2])</query>
+
+    <!-- arrayElement function with input type Array(Array(UInt8)) -->
+    <query>select materialize(array(array(1,2,3,4)))[1] from numbers(10000000) format Null</query>
+    <query>select materialize(array(array(1,2,3,4)))[materialize(1)] from numbers(10000000) format Null</query>
+
+    <!-- arrayElement function with input type Array(Array(String)) -->
+    <query>select materialize(array(array('hello', 'world')))[1] from numbers(10000000) format Null</query>
+    <query>select materialize(array(array('hello', 'world')))[materialize(1)] from numbers(10000000) format Null</query>
+
+    <!-- arrayElement function with input type Array(Array(Map(String, UInt8))) -->
+    <query>select materialize(array(map('hello', 1, 'world', 2)))[1] from numbers(10000000) format Null</query>
+    <query>select materialize(array(map('hello', 1, 'world', 2)))[materialize(1)] from numbers(10000000) format Null</query>
+
+    <!-- arrayElement function with input type Array(Decimal256(2)) -->
+    <query>select materialize(array(1.23::Decimal256(2), 4.56::Decimal256(2)))[1] from numbers(10000000) format Null</query>
+    <query>select materialize(array(1.23::Decimal256(2), 4.56::Decimal256(2)))[materialize(1)] from numbers(10000000) format Null</query>
 </test>

@@ -7,4 +7,4 @@ FROM
     FROM system.numbers_mt
     GROUP BY k
 )
-ARRAY JOIN ns; -- { serverError 47 }
+ARRAY JOIN ns; -- { serverError UNKNOWN_IDENTIFIER }

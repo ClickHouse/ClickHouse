@@ -17,7 +17,7 @@ SCHEMADIR=$CURDIR/format_schemas
 set -eo pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS persons_00825;
 DROP TABLE IF EXISTS roundtrip_persons_00825;
 DROP TABLE IF EXISTS alt_persons_00825;
@@ -114,10 +114,26 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO syntax2_persons_00825 SETTINGS format_sc
 $CLICKHOUSE_CLIENT --query "SELECT * FROM syntax2_persons_00825 ORDER BY name"
 rm "$BINARY_FILE_PATH"
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+# Use schema 00825_protobuf_format_persons_edition2023:Person
+
+echo
+echo "Schema 00825_protobuf_format_persons_edition2023:Person"
+BINARY_FILE_PATH=$(mktemp "$CURDIR/00825_protobuf_format_persons.XXXXXX.binary")
+$CLICKHOUSE_CLIENT --query "SELECT * FROM persons_00825 ORDER BY name FORMAT Protobuf SETTINGS format_schema = '$SCHEMADIR/00825_protobuf_format_persons_edition2023:Person'" > $BINARY_FILE_PATH
+echo
+$CURDIR/helpers/protobuf_length_delimited_encoder.py --decode_and_check --format_schema "$SCHEMADIR/00825_protobuf_format_persons_edition2023:Person" --input "$BINARY_FILE_PATH"
+echo
+echo "Roundtrip:"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE edition2023_persons_00825 AS persons_00825"
+$CLICKHOUSE_CLIENT --query "INSERT INTO edition2023_persons_00825 SETTINGS format_schema='$SCHEMADIR/00825_protobuf_format_persons_edition2023:Person' FORMAT Protobuf" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM edition2023_persons_00825 ORDER BY name"
+rm "$BINARY_FILE_PATH"
+
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE persons_00825;
 DROP TABLE roundtrip_persons_00825;
 DROP TABLE alt_persons_00825;
 DROP TABLE str_persons_00825;
 DROP TABLE syntax2_persons_00825;
+DROP TABLE edition2023_persons_00825;
 EOF

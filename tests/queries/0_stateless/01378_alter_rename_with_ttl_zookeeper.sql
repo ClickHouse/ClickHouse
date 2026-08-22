@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-upgrade-check
+-- Tags: zookeeper
 
 DROP TABLE IF EXISTS table_rename_with_ttl;
 

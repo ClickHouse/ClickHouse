@@ -35,7 +35,7 @@ TEST(AzureBlobContainerClient, CurlMemoryLeak)
     options.Retry.MaxRetries = 0;
 
     auto client = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(unavailable_url, container, options));
-    EXPECT_THROW({ client->ListBlobs(); }, Azure::Core::Http::TransportException);
+    EXPECT_THROW({ client->ListBlobs(); }, Azure::Core::RequestFailedException);
 }
 
 #endif

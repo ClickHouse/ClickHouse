@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-tsan, no-asan, no-debug, no-s3-storage, no-fasttest, no-replicated-database
+# Tags: long, no-parallel, no-tsan, no-asan, no-debug, no-object-storage, no-fasttest, no-replicated-database
 
 set -e
 
@@ -28,7 +28,7 @@ function thread2()
 {
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+        $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS trace_log"
     done
 }
 
@@ -45,4 +45,11 @@ thread2 $TIMEOUT >/dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE '02497_$CLICKHOUSE_DATABASE%'" | rg '^0$'
+for _ in {1..10}
+do
+    # process list is cleaned after everything is sent to client
+    # so this check can be run before process list is cleaned
+    # to avoid spurious failures we retry the check couple of times
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE '02497_$CLICKHOUSE_DATABASE%'" | rg '^0$' && break
+    sleep 1
+done

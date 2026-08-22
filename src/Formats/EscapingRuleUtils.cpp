@@ -6,11 +6,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Common/isValidUTF8.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
-#include <Parsers/TokenIterator.h>
 
 
 namespace DB
@@ -25,22 +26,21 @@ FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule)
 {
     if (escaping_rule.empty())
         return FormatSettings::EscapingRule::None;
-    else if (escaping_rule == "None")
+    if (escaping_rule == "None")
         return FormatSettings::EscapingRule::None;
-    else if (escaping_rule == "Escaped")
+    if (escaping_rule == "Escaped")
         return FormatSettings::EscapingRule::Escaped;
-    else if (escaping_rule == "Quoted")
+    if (escaping_rule == "Quoted")
         return FormatSettings::EscapingRule::Quoted;
-    else if (escaping_rule == "CSV")
+    if (escaping_rule == "CSV")
         return FormatSettings::EscapingRule::CSV;
-    else if (escaping_rule == "JSON")
+    if (escaping_rule == "JSON")
         return FormatSettings::EscapingRule::JSON;
-    else if (escaping_rule == "XML")
+    if (escaping_rule == "XML")
         return FormatSettings::EscapingRule::XML;
-    else if (escaping_rule == "Raw")
+    if (escaping_rule == "Raw")
         return FormatSettings::EscapingRule::Raw;
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
 }
 
 String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
@@ -62,7 +62,6 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
         case FormatSettings::EscapingRule::Raw:
             return "Raw";
     }
-    UNREACHABLE();
 }
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
@@ -76,7 +75,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             /// Empty field, just skip spaces
             break;
         case FormatSettings::EscapingRule::Escaped:
-            readEscapedStringInto(out, buf);
+            readEscapedStringInto<NullOutput,false>(out, buf);
             break;
         case FormatSettings::EscapingRule::Quoted:
             readQuotedFieldInto(out, buf);
@@ -85,7 +84,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readCSVStringInto(out, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
-            skipJSONField(buf, StringRef(field_name, field_name_len));
+            skipJSONField(buf, std::string_view(field_name, field_name_len), format_settings.json);
             break;
         case FormatSettings::EscapingRule::Raw:
             readStringInto(out, buf);
@@ -93,6 +92,19 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
         default:
             UNREACHABLE();
     }
+}
+
+bool isCSVSeparateColumnsTuple(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    /// A non-empty `custom_delimiter` means the field boundary is that string rather than
+    /// `csv.delimiter`, which is then stale, so the tuple stays inside one field.
+    if (!format_settings.csv.custom_delimiter.empty())
+        return false;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    return tuple_type && !tuple_type->getElements().empty()
+        && format_settings.csv.deserialize_separate_columns_into_tuple
+        && format_settings.csv.tuple_delimiter == format_settings.csv.delimiter;
 }
 
 bool deserializeFieldByEscapingRule(
@@ -109,31 +121,31 @@ bool deserializeFieldByEscapingRule(
     {
         case FormatSettings::EscapingRule::Escaped:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeTextEscapedImpl(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextEscaped(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::Quoted:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeTextQuotedImpl(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::CSV:
-            if (parse_as_nullable)
-                read = SerializationNullable::deserializeTextCSVImpl(column, buf, format_settings, serialization);
+            if (parse_as_nullable && !isCSVSeparateColumnsTuple(type, format_settings))
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextCSV(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::JSON:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeTextJSONImpl(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextJSON(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::Raw:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeTextRawImpl(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextRaw(column, buf, format_settings);
             break;
@@ -174,6 +186,45 @@ void serializeFieldByEscapingRule(
             break;
         case FormatSettings::EscapingRule::None:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot serialize field with None escaping rule");
+    }
+}
+
+bool settingsLiteralsMayProduceRawBytes(const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule)
+{
+    auto is_not_valid_utf8 = [](const String & s)
+    {
+        return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
+    };
+
+    /// `SerializationBool` writes these verbatim in the plain text, `Escaped`, `CSV`, and `Raw` kinds
+    /// (see `serializeCustom` there); the `Quoted`, `JSON`, and `XML` kinds write `true` / `false`.
+    const bool bool_representations = is_not_valid_utf8(format_settings.bool_true_representation)
+        || is_not_valid_utf8(format_settings.bool_false_representation);
+
+    switch (escaping_rule)
+    {
+        case FormatSettings::EscapingRule::Escaped:
+        case FormatSettings::EscapingRule::Raw:
+            /// `SerializationNullable::serializeNullEscaped` / `serializeNullRaw` write the `TSV`
+            /// `NULL` representation verbatim.
+            return bool_representations || is_not_valid_utf8(format_settings.tsv.null_representation);
+        case FormatSettings::EscapingRule::CSV:
+            /// `SerializationNullable::serializeNullCSV` writes the `CSV` `NULL` representation
+            /// verbatim, and `SerializationTuple::serializeTextCSV` writes the tuple delimiter
+            /// verbatim between the elements when a `Tuple` is serialized into a single field.
+            /// A single byte >= 0x80 is never valid UTF-8 on its own.
+            return bool_representations
+                || is_not_valid_utf8(format_settings.csv.null_representation)
+                || static_cast<unsigned char>(format_settings.csv.tuple_delimiter) >= 0x80;
+        /// `None` stands here for the plain `serializeText` kind used by the presentational formats
+        /// (`Pretty`, `Vertical`) and by the `*Strings*` JSON variants: `NULL` is a constant there,
+        /// but the `Bool` representations still apply.
+        case FormatSettings::EscapingRule::None:
+            return bool_representations;
+        case FormatSettings::EscapingRule::Quoted:
+        case FormatSettings::EscapingRule::JSON:
+        case FormatSettings::EscapingRule::XML:
+            return false;
     }
 }
 
@@ -219,9 +270,9 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
             break;
         case FormatSettings::EscapingRule::JSON:
             if constexpr (read_string)
-                readJSONString(result, buf);
+                readJSONString(result, buf, format_settings.json);
             else
-                readJSONField(result, buf);
+                readJSONField(result, buf, format_settings.json);
             break;
         case FormatSettings::EscapingRule::Raw:
             readString(result, buf);
@@ -303,8 +354,12 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 /// Try to determine the type of value inside quotes
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
-                /// If we couldn't infer any type or it's a number or tuple in quotes, we determine it as a string.
-                if (!type || isNumber(removeNullable(type)) || isTuple(type))
+                /// Return String type if one of the following conditions apply
+                ///  - we couldn't infer any type
+                ///  - it's a number and csv.try_infer_numbers_from_strings = 0
+                ///  - it's a tuple and try_infer_strings_from_quoted_tuples = 1
+                ///  - it's a Bool type (we don't allow reading bool values from strings)
+                if (!type || (format_settings.csv.try_infer_strings_from_quoted_tuples && isTuple(type)) || (!format_settings.csv.try_infer_numbers_from_strings && isNumber(type)) || isBool(type))
                     return std::make_shared<DataTypeString>();
 
                 return type;
@@ -337,13 +392,15 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
 
-            /// Special case when we have number that starts with 0. In TSV we don't parse such numbers,
-            /// see readIntTextUnsafe in ReadHelpers.h. If we see data started with 0, we can determine it
-            /// as a String, so parsing won't fail.
-            if (field[0] == '0' && field.size() != 1)
+            auto type = tryInferDataTypeForSingleField(field, format_settings);
+
+            /// An integer starting with 0 must stay a String, because readIntTextUnsafe (see
+            /// ReadHelpers.h) reads the leading '0' as the whole value.
+            /// allow_number_leading_zeros (hive partitioning) opts out.
+            if (type && field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros
+                && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
                 return std::make_shared<DataTypeString>();
 
-            auto type = tryInferDataTypeForSingleField(field, format_settings);
             if (!type)
                 return std::make_shared<DataTypeString>();
             return type;
@@ -408,11 +465,15 @@ DataTypes getDefaultDataTypeForEscapingRules(const std::vector<FormatSettings::E
 String getAdditionalFormatInfoForAllRowBasedFormats(const FormatSettings & settings)
 {
     return fmt::format(
-        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}",
+        "schema_inference_hints={}, max_rows_to_read_for_schema_inference={}, max_bytes_to_read_for_schema_inference={}, schema_inference_make_columns_nullable={}, schema_inference_allow_nullable_tuple_type={}, date_time_input_format={}, input_format_try_infer_variants={}, max_parser_depth={}",
         settings.schema_inference_hints,
         settings.max_rows_to_read_for_schema_inference,
         settings.max_bytes_to_read_for_schema_inference,
-        settings.schema_inference_make_columns_nullable);
+        settings.schema_inference_make_columns_nullable,
+        settings.schema_inference_allow_nullable_tuple_type,
+        settings.date_time_input_format,
+        settings.try_infer_variant,
+        settings.max_parser_depth);
 }
 
 String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)
@@ -420,10 +481,11 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
     String result = getAdditionalFormatInfoForAllRowBasedFormats(settings);
     /// First, settings that are common for all text formats:
     result += fmt::format(
-        ", try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}",
+        ", try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}, try_infer_datetimes_only_datetime64={}",
         settings.try_infer_integers,
         settings.try_infer_dates,
-        settings.try_infer_datetimes);
+        settings.try_infer_datetimes,
+        settings.try_infer_datetimes_only_datetime64);
 
     /// Second, format-specific settings:
     switch (escaping_rule)
@@ -431,31 +493,53 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
         case FormatSettings::EscapingRule::Escaped:
         case FormatSettings::EscapingRule::Raw:
             result += fmt::format(
-                ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={}, null_representation={}",
+                ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={}, null_representation={},"
+                " input_format_try_infer_exponent_floats={}",
                 settings.tsv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
-                settings.tsv.null_representation);
+                settings.tsv.null_representation,
+                settings.try_infer_exponent_floats);
             break;
         case FormatSettings::EscapingRule::CSV:
             result += fmt::format(
                 ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={},"
-                " null_representation={}, delimiter={}, tuple_delimiter={}",
+                " null_representation={}, delimiter={}, tuple_delimiter={}, try_infer_numbers_from_strings={}, try_infer_strings_from_quoted_tuples={},"
+                " input_format_try_infer_exponent_floats={}",
                 settings.csv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
                 settings.csv.null_representation,
                 settings.csv.delimiter,
-                settings.csv.tuple_delimiter);
+                settings.csv.tuple_delimiter,
+                settings.csv.try_infer_numbers_from_strings,
+                settings.csv.try_infer_strings_from_quoted_tuples,
+                settings.try_infer_exponent_floats);
+            break;
+        case FormatSettings::EscapingRule::Quoted:
+            result += fmt::format(
+                ", input_format_try_infer_exponent_floats={}",
+                settings.try_infer_exponent_floats);
             break;
         case FormatSettings::EscapingRule::JSON:
+            /// input_format_try_infer_exponent_floats is deliberately absent here: tryReadFloat
+            /// short-circuits it for JSON, so it cannot change the inferred type.
             result += fmt::format(
-                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_objects_as_strings={}, read_numbers_as_strings={}, try_infer_objects={}",
+                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_bools_as_strings={}, read_objects_as_strings={}, "
+                "read_numbers_as_strings={}, "
+                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, "
+                "use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects={}, "
+                "infer_array_of_dynamic_from_array_of_different_values={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
+                settings.json.read_bools_as_strings,
                 settings.json.read_objects_as_strings,
                 settings.json.read_numbers_as_strings,
-                settings.json.allow_object_type);
+                settings.json.read_arrays_as_strings,
+                settings.json.try_infer_objects_as_tuples,
+                settings.json.infer_incomplete_types_as_strings,
+                settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects,
+                settings.json.infer_array_of_dynamic_from_array_of_different_values);
             break;
         default:
             break;

@@ -15,7 +15,7 @@ namespace DB
   */
 struct User : public IAccessEntity
 {
-    AuthenticationData auth_data;
+    std::vector<AuthenticationData> authentication_methods;
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
     AccessRights access;
     GrantedRoles granted_roles;
@@ -31,7 +31,12 @@ struct User : public IAccessEntity
     void setName(const String & name_) override;
 
     std::vector<UUID> findDependencies() const override;
+    bool hasDependencies(const std::unordered_set<UUID> & ids) const override;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+    void copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids) override;
+    void removeDependencies(const std::unordered_set<UUID> & ids) override;
+    void clearAllExceptDependencies() override;
+
     bool isBackupAllowed() const override { return settings.isBackupAllowed(); }
 };
 

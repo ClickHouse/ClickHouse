@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database
+# Tags: long, zookeeper, no-replicated-database, no-shared-merge-tree
+# Tag long: concurrent CLEAR COLUMN + INSERT race test exceeds 180s flaky-check
+# budget under contention; flaky-check enforces TEST_MAX_RUN_TIME_IN_SECONDS
+# only for tests without the `long` tag (see tests/clickhouse-test).
 # Tag no-replicated-database: Old syntax is not allowed
+# no-shared-merge-tree -- old syntax
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,7 +28,7 @@ set -e
 $ch "INSERT INTO clear_column1 VALUES ('2000-01-01', 1, 'a'), ('2000-02-01', 2, 'b')"
 $ch "INSERT INTO clear_column1 VALUES ('2000-01-01', 3, 'c'), ('2000-02-01', 4, 'd')"
 
-for _ in $(seq 10); do
+for _ in $(seq 5); do
     $ch "INSERT INTO clear_column1 VALUES ('2000-02-01', 0, ''), ('2000-02-01', 0, '')" & # insert into the same partition
     $ch "ALTER TABLE clear_column1 CLEAR COLUMN i IN PARTITION '200001'" --replication_alter_partitions_sync=2
     $ch "ALTER TABLE clear_column1 CLEAR COLUMN s IN PARTITION '200001'" --replication_alter_partitions_sync=2

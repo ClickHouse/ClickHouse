@@ -20,7 +20,7 @@ public:
         return "Optimize single countDistinct into count over subquery";
     }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

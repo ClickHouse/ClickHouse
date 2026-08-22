@@ -1,0 +1,64 @@
+-- Tags: long, no-asan, no-tsan, no-ubsan, no-msan
+
+-- This test verifies assertions and logical errors when selecting different subsets of columns using various join types and algorithms
+
+DROP TABLE IF EXISTS t0;
+DROP TABLE IF EXISTS t1;
+
+CREATE TABLE t0 (c0 UInt32, c1 String, c2 String) ENGINE = MergeTree ORDER BY c0;
+INSERT INTO t0 VALUES (1, 'a', 'b'), (2, 'c', 'd'), (3, 'e', 'f');
+
+CREATE TABLE t1 (c0 UInt32, c1 String, c2 String) ENGINE = MergeTree ORDER BY c0;
+INSERT INTO t1 VALUES (2, 'c', 'd'), (3, 'e', 'f'), (4, 'g', 'h');
+
+{% set columns_list =[
+    '*',
+    't0.c0',
+    't1.c0',
+    't0.c2',
+    't1.c2',
+    't1.c2, t1.c0',
+    't1.c2, t0.c0',
+    'count()',
+    '1',
+] -%}
+
+{%- for kind in [
+    'INNER',
+    'LEFT',
+    'RIGHT',
+    'FULL',
+    'ANY INNER',
+    'ANY LEFT',
+    'ANY RIGHT',
+    'ANTI LEFT',
+    'ANTI RIGHT',
+    'SEMI LEFT',
+    'SEMI RIGHT',
+] -%}
+
+{%- for columns in columns_list -%}
+{%- for join_algorithm in ['default', 'hash', 'full_sorting_merge', 'parallel_hash', 'grace_hash'] -%}
+{%- for condition in ['ON t1.c0 = t0.c0', 'USING (c0)'] -%}
+
+{%- set is_not_supported = (
+    ('ANTI' in kind and join_algorithm == 'full_sorting_merge') or
+    ('SEMI' in kind and join_algorithm == 'full_sorting_merge')
+) -%}
+
+SELECT {{ columns }} FROM t0 {{ kind }} JOIN t1 {{ condition }}
+SETTINGS join_algorithm = '{{ join_algorithm }}'
+FORMAT Null; {{ '-- { serverError NOT_IMPLEMENTED }' if is_not_supported else '' }}
+
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+
+{% for kind in ['ASOF', 'ASOF LEFT'] -%}
+{%- for columns in columns_list -%}
+
+SELECT {{ columns }} FROM t0 {{ kind }} JOIN t1 ON t1.c1 = t0.c1 AND t1.c0 <= t0.c0 FORMAT Null;
+
+{% endfor -%}
+{% endfor -%}

@@ -4,7 +4,8 @@
 #include <shared_mutex>
 
 #include <Core/Defines.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Formats/IndexForNativeFormat.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
@@ -20,7 +21,7 @@ using BackupPtr = std::shared_ptr<const IBackup>;
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public IStorage, public WithMutableContext
+class StorageStripeLog final : public StorageWithCommonVirtualColumns, public WithMutableContext
 {
 friend class StripeLogSource;
 friend class StripeLogSink;
@@ -33,12 +34,14 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        bool attach,
+        LoadingStrictnessLevel mode,
         ContextMutablePtr context_);
 
     ~StorageStripeLog() override;
 
     String getName() const override { return "StripeLog"; }
+
+    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,
@@ -53,15 +56,18 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr ocal_context) override;
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
+    static VirtualColumnsDescription createVirtuals();
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -93,6 +99,20 @@ private:
     const DiskPtr disk;
     String table_path;
 
+    struct DataValidationTasks : public IStorage::DataValidationTasksBase
+    {
+        DataValidationTasks(FileChecker::DataValidationTasksPtr file_checker_tasks_, ReadLock && lock_)
+            : file_checker_tasks(std::move(file_checker_tasks_)), lock(std::move(lock_))
+        {}
+
+        size_t size() const override { return file_checker_tasks->size(); }
+
+        FileChecker::DataValidationTasksPtr file_checker_tasks;
+
+        /// Lock to prevent table modification while checking
+        ReadLock lock;
+    };
+
     String data_file_path;
     String index_file_path;
     FileChecker file_checker;
@@ -108,7 +128,7 @@ private:
 
     mutable std::shared_timed_mutex rwlock;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

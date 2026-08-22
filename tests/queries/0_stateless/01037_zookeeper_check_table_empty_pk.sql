@@ -10,7 +10,7 @@ CREATE TABLE mt_without_pk (SomeField1 Int64, SomeField2 Double) ENGINE = MergeT
 
 INSERT INTO mt_without_pk VALUES (1, 2);
 
-CHECK TABLE mt_without_pk;
+CHECK TABLE mt_without_pk SETTINGS max_threads = 1;
 
 DROP TABLE IF EXISTS mt_without_pk SYNC;
 
@@ -20,6 +20,6 @@ CREATE TABLE replicated_mt_without_pk (SomeField1 Int64, SomeField2 Double) ENGI
 
 INSERT INTO replicated_mt_without_pk VALUES (1, 2);
 
-CHECK TABLE replicated_mt_without_pk;
+CHECK TABLE replicated_mt_without_pk SETTINGS max_threads = 1;
 
 DROP TABLE IF EXISTS replicated_mt_without_pk SYNC;

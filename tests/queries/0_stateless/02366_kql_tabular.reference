@@ -1,0 +1,139 @@
+-- test Query only has table name: --
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management	Bachelors	33
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Latoya	Shen	Professional	Graduate Degree	25
+Joshua	Lee	Professional	Partial College	26
+Edward	Hernandez	Skilled Manual	High School	36
+Dalton	Wood	Professional	Partial College	42
+Christine	Nara	Skilled Manual	Partial College	33
+Cameron	Rodriguez	Professional	Partial College	28
+Angel	Stewart	Professional	Partial College	46
+-- Query has Column Selection --
+Theodore	Diaz	Skilled Manual
+Stephanie	Cox	Management
+Peter	Nara	Skilled Manual
+Latoya	Shen	Professional
+Joshua	Lee	Professional
+Edward	Hernandez	Skilled Manual
+Dalton	Wood	Professional
+Christine	Nara	Skilled Manual
+Cameron	Rodriguez	Professional
+Angel	Stewart	Professional
+-- Query has limit --
+Theodore	Diaz	Skilled Manual
+Stephanie	Cox	Management
+Peter	Nara	Skilled Manual
+Latoya	Shen	Professional
+Joshua	Lee	Professional
+Theodore	Diaz	Skilled Manual
+Stephanie	Cox	Management
+Peter	Nara	Skilled Manual
+Latoya	Shen	Professional
+Joshua	Lee	Professional
+-- Query has second limit with bigger value --
+Theodore	Diaz	Skilled Manual
+Stephanie	Cox	Management
+Peter	Nara	Skilled Manual
+Latoya	Shen	Professional
+Joshua	Lee	Professional
+-- Query has second limit with smaller value --
+Theodore	Diaz	Skilled Manual
+Stephanie	Cox	Management
+Peter	Nara	Skilled Manual
+-- Query has second Column selection --
+Theodore	Diaz
+Stephanie	Cox
+Peter	Nara
+-- Query has second Column selection with extra column --
+-- Query with desc sort --
+Theodore
+Stephanie
+Peter
+Latoya
+Joshua
+Skilled Manual
+Skilled Manual
+Professional
+Professional
+Management
+-- Query with asc sort --
+Management
+Professional
+Professional
+Skilled Manual
+Skilled Manual
+-- Query with sort (without keyword asc desc) --
+Theodore
+Stephanie
+Peter
+Latoya
+Joshua
+Skilled Manual
+Skilled Manual
+Professional
+Professional
+Management
+-- Query with sort 2 Columns with different direction --
+Stephanie	Cox	Management
+Latoya	Shen	Professional
+Joshua	Lee	Professional
+Peter	Nara	Skilled Manual
+Theodore	Diaz	Skilled Manual
+-- Query with second sort --
+Stephanie	Cox	Management
+Latoya	Shen	Professional
+Joshua	Lee	Professional
+Peter	Nara	Skilled Manual
+Theodore	Diaz	Skilled Manual
+-- Test String Equals (==) --
+Theodore	Diaz	Skilled Manual
+Peter	Nara	Skilled Manual
+Edward	Hernandez	Skilled Manual
+Christine	Nara	Skilled Manual
+-- Test String Not equals (!=) --
+Stephanie	Cox	Management
+Latoya	Shen	Professional
+Joshua	Lee	Professional
+Dalton	Wood	Professional
+Cameron	Rodriguez	Professional
+Angel	Stewart	Professional
+-- Test Filter using a list (in) --
+Theodore	Diaz	Skilled Manual	Bachelors
+Stephanie	Cox	Management	Bachelors
+Edward	Hernandez	Skilled Manual	High School
+-- Test Filter using a list (!in) --
+Peter	Nara	Skilled Manual	Graduate Degree
+Latoya	Shen	Professional	Graduate Degree
+Joshua	Lee	Professional	Partial College
+Dalton	Wood	Professional	Partial College
+Christine	Nara	Skilled Manual	Partial College
+Cameron	Rodriguez	Professional	Partial College
+Angel	Stewart	Professional	Partial College
+-- Test Filter using common string operations (contains_cs) --
+Joshua	Lee	Professional	Partial College
+Dalton	Wood	Professional	Partial College
+Christine	Nara	Skilled Manual	Partial College
+Cameron	Rodriguez	Professional	Partial College
+Angel	Stewart	Professional	Partial College
+-- Test Filter using common string operations (startswith_cs) --
+Latoya	Shen	Professional	Graduate Degree
+Joshua	Lee	Professional	Partial College
+Dalton	Wood	Professional	Partial College
+Cameron	Rodriguez	Professional	Partial College
+Angel	Stewart	Professional	Partial College
+-- Test Filter using common string operations (endswith_cs) --
+Latoya	Shen	Professional	Graduate Degree
+Joshua	Lee	Professional	Partial College
+-- Test Filter using numerical equal (==) --
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Joshua	Lee	Professional	Partial College	26
+-- Test Filter using numerical great and less (> , <) --
+Stephanie	Cox	Management	Bachelors	33
+Edward	Hernandez	Skilled Manual	High School	36
+Christine	Nara	Skilled Manual	Partial College	33
+-- Test Filter using multi where --
+Dalton	Wood	Professional	Partial College	42
+Angel	Stewart	Professional	Partial College	46
+-- Complex query with unknown function --
+-- Missing column in front of startsWith --

@@ -24,7 +24,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTAuthenticationData>(*this);
+        auto clone = make_intrusive<ASTAuthenticationData>(*this);
         clone->cloneChildren();
         return clone;
     }
@@ -33,6 +33,7 @@ public:
 
     std::optional<String> getPassword() const;
     std::optional<String> getSalt() const;
+    std::optional<String> ssl_cert_subject_type; /// CN or SubjectAltName
 
     /// If type is empty we use the default password type.
     /// AuthenticationType::NO_PASSWORD is specified explicitly.
@@ -40,9 +41,11 @@ public:
 
     bool contains_password = false;
     bool contains_hash = false;
+    bool jwt_use_authenticator = false;
+    ASTPtr valid_until;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }

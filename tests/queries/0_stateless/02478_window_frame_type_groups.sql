@@ -1,7 +1,10 @@
-SET allow_experimental_analyzer = 0;
+-- GROUPS frame is supported. With ORDER BY a constant, all rows form a single
+-- peer group, so dense_rank() is 1 for every row.
 
-SELECT toUInt64(dense_rank(1) OVER (ORDER BY 100 ASC GROUPS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)) FROM numbers(10); -- { serverError 48 }
+SET enable_analyzer = 0;
 
-SET allow_experimental_analyzer = 1;
+SELECT toUInt64(dense_rank() OVER (ORDER BY 100 ASC GROUPS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)) FROM numbers(10);
 
-SELECT toUInt64(dense_rank(1) OVER (ORDER BY 100 ASC GROUPS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)) FROM numbers(10); -- { serverError 48 }
+SET enable_analyzer = 1;
+
+SELECT toUInt64(dense_rank() OVER (ORDER BY 100 ASC GROUPS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)) FROM numbers(10);

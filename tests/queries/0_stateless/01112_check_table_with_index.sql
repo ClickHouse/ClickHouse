@@ -10,6 +10,6 @@ CREATE TABLE check_table_with_indices (
 
 INSERT INTO check_table_with_indices VALUES (0, 'test'), (1, 'test2');
 
-CHECK TABLE check_table_with_indices;
+CHECK TABLE check_table_with_indices SETTINGS max_threads = 1;
 
 DROP TABLE check_table_with_indices;

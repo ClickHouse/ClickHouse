@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 
 DROP USER IF EXISTS test_user_01075, test_user_01075_x, test_user_01075_x@localhost, test_user_01075_x@'192.168.23.15';
 
@@ -42,6 +42,15 @@ ALTER USER test_user_01075 HOST REGEXP '.*\.anothersite2\.com', REGEXP '.*\.anot
 SHOW CREATE USER test_user_01075;
 
 ALTER USER test_user_01075 HOST REGEXP '.*\.anothersite3\.com' HOST REGEXP '.*\.anothersite3\.org';
+SHOW CREATE USER test_user_01075;
+
+ALTER USER test_user_01075 HOST LIKE '%.likesite.com', '%.likesite.org';
+SHOW CREATE USER test_user_01075;
+
+ALTER USER test_user_01075 HOST LIKE '%.likesite2.com', LIKE '%.likesite2.org';
+SHOW CREATE USER test_user_01075;
+
+ALTER USER test_user_01075 HOST LIKE '%.likesite3.com' HOST LIKE '%.likesite3.org';
 SHOW CREATE USER test_user_01075;
 
 DROP USER test_user_01075;

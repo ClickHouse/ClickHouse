@@ -17,7 +17,7 @@ TEST(ParserPartition, AllPatitionOptions)
                    " TABLESPACE table_space_name";
 
     ParserDeclarePartition p_partition;
-    ASTPtr ast = parseQuery(p_partition, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(p_partition, input.data(), input.data() + input.size(), "", 0, 0, 0);
 
     ASTDeclarePartition * declare_partition = ast->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition->partition_name, "partition_name");
@@ -35,7 +35,7 @@ TEST(ParserPartition, OptionalPatitionOptions)
 {
     String input = "PARTITION partition_name STORAGE engine = engine_name max_rows 1000 min_rows 0 tablespace table_space_name";
     ParserDeclarePartition p_partition;
-    ASTPtr ast = parseQuery(p_partition, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(p_partition, input.data(), input.data() + input.size(), "", 0, 0, 0);
 
     ASTDeclarePartition * declare_partition = ast->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition->partition_name, "partition_name");
@@ -50,7 +50,7 @@ TEST(ParserPartition, PatitionOptionsWithLessThan)
 {
     ParserDeclarePartition p_partition;
     String partition_01 = "PARTITION partition_01 VALUES LESS THAN (1991) STORAGE engine = engine_name";
-    ASTPtr ast_partition_01 = parseQuery(p_partition, partition_01.data(), partition_01.data() + partition_01.size(), "", 0, 0);
+    ASTPtr ast_partition_01 = parseQuery(p_partition, partition_01.data(), partition_01.data() + partition_01.size(), "", 0, 0, 0);
 
     ASTDeclarePartition * declare_partition_01 = ast_partition_01->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_01->partition_name, "partition_01");
@@ -59,7 +59,7 @@ TEST(ParserPartition, PatitionOptionsWithLessThan)
     EXPECT_EQ(declare_options_01->changes["engine"]->as<ASTIdentifier>()->name(), "engine_name");
 
     String partition_02 = "PARTITION partition_02 VALUES LESS THAN MAXVALUE STORAGE engine = engine_name";
-    ASTPtr ast_partition_02 = parseQuery(p_partition, partition_02.data(), partition_02.data() + partition_02.size(), "", 0, 0);
+    ASTPtr ast_partition_02 = parseQuery(p_partition, partition_02.data(), partition_02.data() + partition_02.size(), "", 0, 0, 0);
 
     ASTDeclarePartition * declare_partition_02 = ast_partition_02->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_02->partition_name, "partition_02");
@@ -68,7 +68,7 @@ TEST(ParserPartition, PatitionOptionsWithLessThan)
     EXPECT_EQ(declare_options_02->changes["engine"]->as<ASTIdentifier>()->name(), "engine_name");
 
     String partition_03 = "PARTITION partition_03 VALUES LESS THAN (50, MAXVALUE) STORAGE engine = engine_name";
-    ASTPtr ast_partition_03 = parseQuery(p_partition, partition_03.data(), partition_03.data() + partition_03.size(), "", 0, 0);
+    ASTPtr ast_partition_03 = parseQuery(p_partition, partition_03.data(), partition_03.data() + partition_03.size(), "", 0, 0, 0);
 
     ASTDeclarePartition * declare_partition_03 = ast_partition_03->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_03->partition_name, "partition_03");
@@ -79,7 +79,7 @@ TEST(ParserPartition, PatitionOptionsWithLessThan)
     EXPECT_EQ(declare_options_03->changes["engine"]->as<ASTIdentifier>()->name(), "engine_name");
 
     String partition_04 = "PARTITION partition_04 VALUES LESS THAN (MAXVALUE, MAXVALUE) STORAGE engine = engine_name";
-    ASTPtr ast_partition_04 = parseQuery(p_partition, partition_04.data(), partition_04.data() + partition_04.size(), "", 0, 0);
+    ASTPtr ast_partition_04 = parseQuery(p_partition, partition_04.data(), partition_04.data() + partition_04.size(), "", 0, 0, 0);
 
     ASTDeclarePartition * declare_partition_04 = ast_partition_04->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_04->partition_name, "partition_04");
@@ -94,7 +94,7 @@ TEST(ParserPartition, PatitionOptionsWithInExpression)
 {
     ParserDeclarePartition p_partition;
     String partition_01 = "PARTITION partition_01 VALUES IN (NULL, 1991, MAXVALUE) STORAGE engine = engine_name";
-    ASTPtr ast_partition_01 = parseQuery(p_partition, partition_01.data(), partition_01.data() + partition_01.size(), "", 0, 0);
+    ASTPtr ast_partition_01 = parseQuery(p_partition, partition_01.data(), partition_01.data() + partition_01.size(), "", 0, 0, 0);
 
     ASTDeclarePartition * declare_partition_01 = ast_partition_01->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_01->partition_name, "partition_01");
@@ -106,7 +106,7 @@ TEST(ParserPartition, PatitionOptionsWithInExpression)
     EXPECT_EQ(declare_options_01->changes["engine"]->as<ASTIdentifier>()->name(), "engine_name");
 
     String partition_02 = "PARTITION partition_02 VALUES IN ((NULL, 1991), (1991, NULL), (MAXVALUE, MAXVALUE)) STORAGE engine = engine_name";
-    ASTPtr ast_partition_02 = parseQuery(p_partition, partition_02.data(), partition_02.data() + partition_02.size(), "", 0, 0);
+    ASTPtr ast_partition_02 = parseQuery(p_partition, partition_02.data(), partition_02.data() + partition_02.size(), "", 0, 0, 0);
 
     ASTDeclarePartition * declare_partition_02 = ast_partition_02->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_02->partition_name, "partition_02");
@@ -132,18 +132,17 @@ TEST(ParserPartition, PatitionOptionsWithSubpartitions)
 {
     ParserDeclarePartition p_partition;
     String partition_01 = "PARTITION partition_01 VALUES IN (NULL, 1991, MAXVALUE) STORAGE engine = engine_name (SUBPARTITION s_p01)";
-    ASTPtr ast_partition_01 = parseQuery(p_partition, partition_01.data(), partition_01.data() + partition_01.size(), "", 0, 0);
+    ASTPtr ast_partition_01 = parseQuery(p_partition, partition_01.data(), partition_01.data() + partition_01.size(), "", 0, 0, 0);
 
     ASTDeclarePartition * declare_partition_01 = ast_partition_01->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_01->partition_name, "partition_01");
     EXPECT_TRUE(declare_partition_01->subpartitions->as<ASTExpressionList>()->children[0]->as<ASTDeclareSubPartition>());
 
     String partition_02 = "PARTITION partition_02 VALUES IN (NULL, 1991, MAXVALUE) STORAGE engine = engine_name (SUBPARTITION s_p01, SUBPARTITION s_p02)";
-    ASTPtr ast_partition_02 = parseQuery(p_partition, partition_02.data(), partition_02.data() + partition_02.size(), "", 0, 0);
+    ASTPtr ast_partition_02 = parseQuery(p_partition, partition_02.data(), partition_02.data() + partition_02.size(), "", 0, 0, 0);
 
     ASTDeclarePartition * declare_partition_02 = ast_partition_02->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_02->partition_name, "partition_02");
     EXPECT_TRUE(declare_partition_02->subpartitions->as<ASTExpressionList>()->children[0]->as<ASTDeclareSubPartition>());
     EXPECT_TRUE(declare_partition_02->subpartitions->as<ASTExpressionList>()->children[1]->as<ASTDeclareSubPartition>());
 }
-

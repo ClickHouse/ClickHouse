@@ -3,6 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <boost/range/adaptor/reversed.hpp>
 
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -448,7 +449,7 @@ std::vector<StorageID> TablesDependencyGraph::getTables() const
 void TablesDependencyGraph::mergeWith(const TablesDependencyGraph & other)
 {
     for (const auto & other_node : other.nodes)
-        addDependencies(other_node->storage_id, other.getDependencies(*other_node));
+        addDependencies(other_node->storage_id, TablesDependencyGraph::getDependencies(*other_node));
 }
 
 
@@ -699,19 +700,38 @@ std::vector<StorageID> TablesDependencyGraph::getTablesSortedByDependency() cons
 }
 
 
-std::vector<std::vector<StorageID>> TablesDependencyGraph::getTablesSortedByDependencyForParallel() const
+std::vector<std::vector<StorageID>> TablesDependencyGraph::getTablesSplitByDependencyLevel() const
 {
-    std::vector<std::vector<StorageID>> res;
-    std::optional<size_t> last_level;
-    for (const auto * node : getNodesSortedByLevel())
+    std::vector<std::vector<StorageID>> tables_split_by_level;
+    auto sorted_nodes = getNodesSortedByLevel();
+    if (sorted_nodes.empty())
+        return tables_split_by_level;
+
+    /// Find the maximum non-cyclic level to size the vector.
+    /// Nodes with level == CYCLIC_LEVEL are placed into a dedicated trailing bucket
+    /// so that callers (e.g. RestorerFromBackup) that tolerate cycles still work
+    /// instead of crashing due to SIZE_MAX + 1 overflow in resize().
+    size_t max_level = 0;
+    bool has_cyclic = false;
+    for (const auto * node : sorted_nodes)
     {
-        if (node->level != last_level)
-            res.emplace_back();
-        auto & table_ids = res.back();
-        table_ids.emplace_back(node->storage_id);
-        last_level = node->level;
+        if (node->level == CYCLIC_LEVEL)
+            has_cyclic = true;
+        else if (node->level > max_level)
+            max_level = node->level;
     }
-    return res;
+
+    tables_split_by_level.resize(max_level + 1 + (has_cyclic ? 1 : 0));
+    size_t cyclic_bucket = max_level + 1;
+
+    for (const auto * node : sorted_nodes)
+    {
+        if (node->level == CYCLIC_LEVEL)
+            tables_split_by_level[cyclic_bucket].emplace_back(node->storage_id);
+        else
+            tables_split_by_level[node->level].emplace_back(node->storage_id);
+    }
+    return tables_split_by_level;
 }
 
 
@@ -736,10 +756,10 @@ void TablesDependencyGraph::log() const
 }
 
 
-Poco::Logger * TablesDependencyGraph::getLogger() const
+LoggerPtr TablesDependencyGraph::getLogger() const
 {
     if (!logger)
-        logger = &Poco::Logger::get(name_for_logging);
+        logger = ::getLogger(name_for_logging);
     return logger;
 }
 

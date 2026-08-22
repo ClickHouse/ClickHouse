@@ -4,12 +4,12 @@
 
 namespace DB
 {
-CachedAccessChecking::CachedAccessChecking(const std::shared_ptr<const ContextAccess> & access_, AccessFlags access_flags_)
+CachedAccessChecking::CachedAccessChecking(const std::shared_ptr<const ContextAccessWrapper> & access_, AccessFlags access_flags_)
     : CachedAccessChecking(access_, AccessRightsElement{access_flags_})
 {
 }
 
-CachedAccessChecking::CachedAccessChecking(const std::shared_ptr<const ContextAccess> & access_, const AccessRightsElement & element_)
+CachedAccessChecking::CachedAccessChecking(const std::shared_ptr<const ContextAccessWrapper> & access_, const AccessRightsElement & element_)
     : access(access_), element(element_)
 {
 }

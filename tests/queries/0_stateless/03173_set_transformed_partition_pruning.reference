@@ -1,0 +1,50 @@
+-- Single partition by function
+0
+2
+-- Nested partition by function
+1
+2
+1
+1
+-- Nested partition by function, LowCardinality
+1
+2
+1
+1
+-- Nested partition by function, Nullable
+1
+2
+1
+1
+-- Nested partition by function, LowCardinality + Nullable
+1
+2
+1
+1
+-- Non-safe cast
+2
+2
+-- Multiple partition columns
+1
+1
+1
+2
+-- LowCardinality set
+1
+1
+-- Nullable set
+1
+1
+-- LowCardinality + Nullable set
+1
+1
+-- Not failing with date parsing functions
+1
+0
+-- Pruning + not failing with nested date parsing functions
+1
+2
+0
+-- Empty transform functions
+2
+1

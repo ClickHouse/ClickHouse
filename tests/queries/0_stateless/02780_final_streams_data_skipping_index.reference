@@ -10,14 +10,14 @@ ExpressionTransform × 2
     ExpressionTransform × 2
       AggregatingSortedTransform 2 → 1
         FilterSortedStreamByRange × 2
-        Description: filter values in [(999424), +inf)
+        Description: filter values in ((999424), +inf]
           ExpressionTransform × 2
-            MergeTreeInOrder × 2 0 → 1
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
               AggregatingSortedTransform
                 FilterSortedStreamByRange
-                Description: filter values in [-inf, (999424))
+                Description: filter values in (-inf, (999424)]
                   ExpressionTransform
-                    MergeTreeInOrder 0 → 1
+                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 EXPLAIN PIPELINE SELECT * FROM data FINAL WHERE v1 >= now() - INTERVAL 180 DAY
 SETTINGS max_threads=2, max_final_threads=2, force_data_skipping_indices='v1_index', use_skip_indexes_if_final=0
 FORMAT LineAsString;
@@ -29,11 +29,11 @@ ExpressionTransform × 2
     ExpressionTransform × 2
       AggregatingSortedTransform 2 → 1
         FilterSortedStreamByRange × 2
-        Description: filter values in [(999424), +inf)
+        Description: filter values in ((999424), +inf]
           ExpressionTransform × 2
-            MergeTreeInOrder × 2 0 → 1
+            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
               AggregatingSortedTransform
                 FilterSortedStreamByRange
-                Description: filter values in [-inf, (999424))
+                Description: filter values in (-inf, (999424)]
                   ExpressionTransform
-                    MergeTreeInOrder 0 → 1
+                    MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1

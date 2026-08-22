@@ -1,0 +1,1 @@
+SELECT (EXPLAIN AST SELECT 1 INTO OUTFILE 'a') FROM numbers(0); -- { clientError BAD_ARGUMENTS }

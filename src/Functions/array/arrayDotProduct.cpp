@@ -1,80 +1,511 @@
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NumberTraits.h>
 #include <Functions/FunctionFactory.h>
-#include <Core/Types_fwd.h>
-#include <DataTypes/Serializations/ISerialization.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
-#include <Functions/array/arrayScalarProduct.h>
-#include <base/types.h>
-#include <Functions/FunctionBinaryArithmetic.h>
-
+#include <Interpreters/Context_fwd.h>
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
-struct NameArrayDotProduct
+
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(template <typename ResultType, typename ArgumentType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
+    dotProductBatchImpl,
+    MULTITARGET_FUNCTION_BODY(
+        (const ArgumentType * __restrict data_x,
+         const ArgumentType * __restrict data_y,
+         const ColumnArray::Offset * __restrict offsets,
+         ResultType * __restrict result,
+         size_t rows)
+         {
+            ColumnArray::Offset prev = 0;
+            for (size_t row = 0; row < rows; ++row)
+            {
+                /// Manual unrolling with independent accumulators to break FP dependency chains.
+                /// With FMA latency ~4 cycles and throughput 1/cycle, we need >= 4 independent
+                /// chains to saturate the pipeline. 16 accumulators is enough to do that while
+                /// keeping the per-row reduction and scalar remainder small: a wider unroll
+                /// (e.g. 128/sizeof = 32 for Float32) only pays off for very long arrays and
+                /// noticeably regresses the short (~150-element) arrays typical of vector search.
+                constexpr size_t unroll_count = 16;
+                ResultType partial_sums[unroll_count]{};
+
+                const ColumnArray::Offset off = offsets[row];
+                const size_t array_size = off - prev;
+                size_t i = 0;
+                const size_t unrolled_end = array_size / unroll_count * unroll_count;
+                /// Main unrolled loop — compiler auto-vectorizes with FMA
+                for (; i < unrolled_end; i += unroll_count)
+                    for (size_t s = 0; s < unroll_count; ++s)
+                        partial_sums[s] += static_cast<ResultType>(data_x[prev + i + s]) * static_cast<ResultType>(data_y[prev + i + s]);
+
+                /// Reduce partial sums
+                ResultType sum = 0;
+                for (auto & partial_sum : partial_sums)
+                    sum += partial_sum;
+
+                /// Tail: process remaining elements that don't fill a full unroll block
+                for (; i < array_size; ++i)
+                    sum += static_cast<ResultType>(data_x[prev + i]) * static_cast<ResultType>(data_y[prev + i]);
+
+                result[row] = sum;
+                prev = off;
+            }
+        }))
+
+/// Const-left-argument variant: the left vector `a` is fixed across rows, only the right column advances.
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(template <typename ResultType, typename ArgumentType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
+    dotProductConstBatchImpl,
+    MULTITARGET_FUNCTION_BODY((const ArgumentType * __restrict a, const ArgumentType * __restrict data_y, size_t array_size, ResultType * __restrict result, size_t rows) {
+        for (size_t row = 0; row < rows; ++row)
+        {
+            /// Manual unrolling with independent accumulators to break FP dependency chains.
+            /// With FMA latency ~4 cycles and throughput 1/cycle, we need >= 4 independent
+            /// chains to saturate the pipeline. 16 accumulators is enough to do that while
+            /// keeping the per-row reduction and scalar remainder small: a wider unroll
+            /// (e.g. 128/sizeof = 32 for Float32) only pays off for very long arrays and
+            /// noticeably regresses the short (~150-element) arrays typical of vector search.
+            constexpr size_t unroll_count = 16;
+            ResultType partial_sums[unroll_count]{};
+
+            const ArgumentType * __restrict y = data_y + row * array_size;
+            size_t i = 0;
+            /// Main unrolled loop — compiler auto-vectorizes with FMA
+            const size_t unrolled_end = array_size / unroll_count * unroll_count;
+            for (; i < unrolled_end; i += unroll_count)
+                for (size_t s = 0; s < unroll_count; ++s)
+                    partial_sums[s] += static_cast<ResultType>(a[i + s]) * static_cast<ResultType>(y[i + s]);
+
+            /// Reduce partial sums
+            ResultType sum = 0;
+            for (auto & partial_sum : partial_sums)
+                sum += partial_sum;
+
+            /// Tail: process remaining elements that don't fill a full unroll block
+            for (; i < array_size; ++i)
+                sum += static_cast<ResultType>(a[i]) * static_cast<ResultType>(y[i]);
+
+            result[row] = sum;
+        }
+    }))
+
+
+struct DotProduct
 {
     static constexpr auto name = "arrayDotProduct";
-};
 
-class ArrayDotProductImpl
-{
-public:
     static DataTypePtr getReturnType(const DataTypePtr & left, const DataTypePtr & right)
     {
-        using Types = TypeList<DataTypeFloat32, DataTypeFloat64,
-                               DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64,
-                               DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64>;
+        using Types = TypeList<
+            DataTypeBFloat16,
+            DataTypeFloat32,
+            DataTypeFloat64,
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64>;
+        Types types;
 
         DataTypePtr result_type;
-        bool valid = castTypeToEither(Types{}, left.get(), [&](const auto & left_)
-        {
-            return castTypeToEither(Types{}, right.get(), [&](const auto & right_)
+        bool valid = castTypeToEither(
+            types,
+            left.get(),
+            [&](const auto & left_)
             {
-                using LeftDataType = typename std::decay_t<decltype(left_)>::FieldType;
-                using RightDataType = typename std::decay_t<decltype(right_)>::FieldType;
-                using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<LeftDataType, RightDataType>::Type;
-                if (std::is_same_v<LeftDataType, Float32> && std::is_same_v<RightDataType, Float32>)
-                    result_type = std::make_shared<DataTypeFloat32>();
-                else
-                    result_type = std::make_shared<DataTypeFromFieldType<ResultType>>();
-                return true;
+                return castTypeToEither(
+                    types,
+                    right.get(),
+                    [&](const auto & right_)
+                    {
+                        using LeftType = typename std::decay_t<decltype(left_)>::FieldType;
+                        using RightType = typename std::decay_t<decltype(right_)>::FieldType;
+                        using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<LeftType, RightType>::Type;
+
+                        /// Same-type `Float32` and `BFloat16` both accumulate to `Float32` (matching
+                        /// `arrayNorm`/`arrayDistance`); everything else uses the promoted arithmetic type.
+                        if constexpr ((std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
+                                   || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>))
+                            result_type = std::make_shared<DataTypeFloat32>();
+                        else
+                            result_type = std::make_shared<DataTypeNumber<ResultType>>();
+                        return true;
+                    });
             });
-        });
 
         if (!valid)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Arguments of function {} "
-                "only support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                std::string(NameArrayDotProduct::name));
+                "Arguments of function {} only support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
+                name);
         return result_type;
     }
 
-    template <typename ResultType, typename T, typename U>
-    static inline NO_SANITIZE_UNDEFINED ResultType apply(
-        const T * left,
-        const U * right,
-        size_t size)
+    template <typename Type>
+    struct State
     {
-        ResultType result = 0;
-        for (size_t i = 0; i < size; ++i)
-            result += static_cast<ResultType>(left[i]) * static_cast<ResultType>(right[i]);
-        return result;
+        Type sum = 0;
+    };
+
+    template <typename Type>
+    static NO_SANITIZE_UNDEFINED void accumulate(State<Type> & state, Type x, Type y)
+    {
+        state.sum += x * y;
+    }
+
+    template <typename Type>
+    static NO_SANITIZE_UNDEFINED void combine(State<Type> & state, const State<Type> & other_state)
+    {
+        state.sum += other_state.sum;
+    }
+
+    template <typename Type>
+    static Type finalize(const State<Type> & state)
+    {
+        return state.sum;
     }
 };
 
-using FunctionArrayDotProduct = FunctionArrayScalarProduct<ArrayDotProductImpl, NameArrayDotProduct>;
+
+/// The implementation is modeled after the implementation of distance functions arrayL1Distance, arrayL2Distance, etc.
+/// The main difference is that arrayDotProduct() infers the result type differently.
+template <typename Kernel>
+class FunctionArrayScalarProduct final : public IFunction
+{
+public:
+    static constexpr auto name = Kernel::name;
+
+    String getName() const override { return name; }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayScalarProduct>(); }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        std::array<DataTypePtr, 2> nested_types;
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+            if (!array_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for function {} must be of type Array", getName());
+
+            const auto & nested_type = array_type->getNestedType();
+            if (!isNativeNumber(nested_type) && !WhichDataType(nested_type).isBFloat16())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} cannot process values of type {}",
+                    getName(),
+                    nested_type->getName());
+
+            nested_types[i] = nested_type;
+        }
+
+        return Kernel::getReturnType(nested_types[0], nested_types[1]);
+    }
+
+#define SUPPORTED_TYPES(ACTION) \
+    ACTION(UInt8) \
+    ACTION(UInt16) \
+    ACTION(UInt32) \
+    ACTION(UInt64) \
+    ACTION(Int8) \
+    ACTION(Int16) \
+    ACTION(Int32) \
+    ACTION(Int64) \
+    ACTION(BFloat16) \
+    ACTION(Float32) \
+    ACTION(Float64)
+
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    {
+        DataTypePtr type_x = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
+
+        switch (type_x->getTypeId())
+        {
+#define ON_TYPE(type) \
+    case TypeIndex::type: \
+        return executeWithLeftType<type>(arguments, input_rows_count); \
+        break;
+
+            SUPPORTED_TYPES(ON_TYPE)
+#undef ON_TYPE
+
+            default:
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments of function {} has nested type {}. "
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
+                    getName(),
+                    type_x->getName());
+        }
+    }
+
+private:
+    template <typename LeftType>
+    ColumnPtr executeWithLeftType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    {
+        DataTypePtr type_y = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
+
+        switch (type_y->getTypeId())
+        {
+#define ON_TYPE(type) \
+    case TypeIndex::type: \
+        return executeWithLeftAndRightType<LeftType, type>(arguments[0].column, arguments[1].column, input_rows_count); \
+        break;
+
+            SUPPORTED_TYPES(ON_TYPE)
+#undef ON_TYPE
+
+            default:
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Arguments of function {} has nested type {}. "
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
+                    getName(),
+                    type_y->getName());
+        }
+    }
+
+    template <typename LeftType, typename RightType>
+    ColumnPtr executeWithLeftAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    {
+        /// Compute result type from input types, matching getReturnType logic.
+        /// This avoids an extra dispatch level (10x fewer template instantiations).
+        using ResultType = std::conditional_t<
+            (std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
+                || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>),
+            Float32,
+            typename NumberTraits::ResultOfAdditionMultiplication<LeftType, RightType>::Type>;
+
+        return executeWithResultTypeAndLeftTypeAndRightType<ResultType, LeftType, RightType>(col_x, col_y, input_rows_count);
+    }
+
+    template <typename ResultType, typename LeftType, typename RightType>
+    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    {
+        if (typeid_cast<const ColumnConst *>(col_x.get()))
+        {
+            return executeWithLeftArgConst<ResultType, LeftType, RightType>(col_x, col_y, input_rows_count);
+        }
+        if (typeid_cast<const ColumnConst *>(col_y.get()))
+        {
+            return executeWithLeftArgConst<ResultType, RightType, LeftType>(col_y, col_x, input_rows_count);
+        }
+
+        const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
+        const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
+
+        const auto & data_x = typeid_cast<const ColumnVector<LeftType> &>(array_x.getData()).getData();
+        const auto & data_y = typeid_cast<const ColumnVector<RightType> &>(array_y.getData()).getData();
+
+        const auto & offsets_x = array_x.getOffsets();
+
+        if (!array_x.hasEqualOffsets(array_y))
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments for function {} must have equal sizes", getName());
+
+        auto col_res = ColumnVector<ResultType>::create(input_rows_count);
+        auto & result_data = col_res->getData();
+
+        if constexpr (
+            std::is_same_v<LeftType, RightType>
+            && ((std::is_same_v<ResultType, LeftType> && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
+                || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
+        {
+            /// SIMD-optimized path: one batched call over all rows keeps the load stream continuous.
+#if USE_MULTITARGET_CODE
+            if (isArchSupported(TargetArch::x86_64_v4))
+                dotProductBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count);
+            else
+#endif
+                dotProductBatchImpl<ResultType, LeftType>(data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count);
+        }
+        else
+        {
+            /// Scalar path for non-same-type-float inputs (mixed types or same-type
+            /// integers whose ResultType is widened, e.g. Int32 x Int32 -> Int64).
+            ColumnArray::Offset current_offset = 0;
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                const size_t array_size = offsets_x[row] - current_offset;
+                size_t i = 0;
+
+                static constexpr size_t VEC_SIZE = 4;
+                typename Kernel::template State<ResultType> states[VEC_SIZE];
+                for (; i + VEC_SIZE <= array_size; i += VEC_SIZE)
+                {
+                    for (size_t j = 0; j < VEC_SIZE; ++j)
+                        Kernel::template accumulate<ResultType>(
+                            states[j],
+                            static_cast<ResultType>(data_x[current_offset + i + j]),
+                            static_cast<ResultType>(data_y[current_offset + i + j]));
+                }
+
+                typename Kernel::template State<ResultType> state;
+                for (const auto & other_state : states)
+                    Kernel::template combine<ResultType>(state, other_state);
+
+                /// Process the tail
+                for (; i < array_size; ++i)
+                    Kernel::template accumulate<ResultType>(
+                        state, static_cast<ResultType>(data_x[current_offset + i]), static_cast<ResultType>(data_y[current_offset + i]));
+
+                result_data[row] = Kernel::template finalize<ResultType>(state);
+
+                current_offset = offsets_x[row];
+            }
+        }
+
+        return col_res;
+    }
+
+    template <typename ResultType, typename LeftType, typename RightType>
+    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count) const
+    {
+        col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
+        col_y = col_y->convertToFullColumnIfConst();
+
+        const auto & array_x = *assert_cast<const ColumnArray *>(col_x.get());
+        const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
+
+        const auto & data_x = typeid_cast<const ColumnVector<LeftType> &>(array_x.getData()).getData();
+        const auto & data_y = typeid_cast<const ColumnVector<RightType> &>(array_y.getData()).getData();
+
+        const auto & offsets_x = array_x.getOffsets();
+        const auto & offsets_y = array_y.getOffsets();
+
+        ColumnArray::Offset prev_offset = 0;
+        for (auto offset_y : offsets_y)
+        {
+            if (offsets_x[0] != offset_y - prev_offset) [[unlikely]]
+            {
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    "Arguments of function {} have different array sizes: {} and {}",
+                    getName(),
+                    offsets_x[0],
+                    offset_y - prev_offset);
+            }
+            prev_offset = offset_y;
+        }
+
+        auto col_res = ColumnVector<ResultType>::create(input_rows_count);
+        auto & result = col_res->getData();
+
+        const size_t array_size = offsets_x[0];
+        if constexpr (
+            std::is_same_v<LeftType, RightType>
+            && ((std::is_same_v<ResultType, LeftType> && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
+                || (std::is_same_v<LeftType, BFloat16> && std::is_same_v<ResultType, Float32>)))
+        {
+            /// SIMD-optimized path: one batched call over all rows keeps the column load stream continuous.
+#if USE_MULTITARGET_CODE
+            if (isArchSupported(TargetArch::x86_64_v4))
+                dotProductConstBatchImpl_x86_64_v4<ResultType, LeftType>(data_x.data(), data_y.data(), array_size, result.data(), input_rows_count);
+            else
+#endif
+                dotProductConstBatchImpl<ResultType, LeftType>(data_x.data(), data_y.data(), array_size, result.data(), input_rows_count);
+        }
+        else
+        {
+            /// Scalar path for non-same-type-float inputs (mixed types or same-type
+            /// integers whose ResultType is widened, e.g. Int32 x Int32 -> Int64).
+            ColumnArray::Offset current_offset = 0;
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                size_t i = 0;
+
+                static constexpr size_t VEC_SIZE = 4;
+                typename Kernel::template State<ResultType> states[VEC_SIZE];
+                for (; i + VEC_SIZE <= array_size; i += VEC_SIZE)
+                {
+                    for (size_t j = 0; j < VEC_SIZE; ++j)
+                        Kernel::template accumulate<ResultType>(
+                            states[j],
+                            static_cast<ResultType>(data_x[i + j]),
+                            static_cast<ResultType>(data_y[current_offset + i + j]));
+                }
+
+                typename Kernel::template State<ResultType> state;
+                for (const auto & other_state : states)
+                    Kernel::template combine<ResultType>(state, other_state);
+
+                /// Process the tail
+                for (; i < array_size; ++i)
+                    Kernel::template accumulate<ResultType>(
+                        state, static_cast<ResultType>(data_x[i]), static_cast<ResultType>(data_y[current_offset + i]));
+
+                result[row] = Kernel::template finalize<ResultType>(state);
+
+                current_offset = offsets_y[row];
+            }
+        }
+
+        return col_res;
+    }
+};
+
+using FunctionArrayDotProduct = FunctionArrayScalarProduct<DotProduct>;
 
 REGISTER_FUNCTION(ArrayDotProduct)
 {
-    factory.registerFunction<FunctionArrayDotProduct>();
+    FunctionDocumentation::Description description = R"(
+Returns the dot product of two arrays.
+
+:::note
+The sizes of the two vectors must be equal. Arrays and Tuples may also contain mixed element types.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "arrayDotProduct(v1, v2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"v1", "First vector.", {"Array((U)Int* | Float* | BFloat16 | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
+        {"v2", "Second vector.", {"Array((U)Int* | Float* | BFloat16 | Decimal)", "Tuple((U)Int* | Float* | Decimal)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value
+        = {R"(
+The dot product of the two vectors.
+
+:::note
+The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
+Two `BFloat16` arrays accumulate in and return `Float32` (the same rule as two `Float32` arrays).
+:::
+
+)",
+           {"(U)Int*", "Float*", "Decimal"}};
+    FunctionDocumentation::Examples examples
+        = {{"Array example", "SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);", "32    UInt16"},
+           {"Tuple example",
+            "SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UInt8)) AS res, toTypeName(res);",
+            "32    Float64"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayDotProduct>(documentation);
 }
 
 // These functions are used by TupleOrArrayFunction in Function/vectorFunctions.cpp
-FunctionPtr createFunctionArrayDotProduct(ContextPtr context_) { return FunctionArrayDotProduct::create(context_); }
+FunctionPtr createFunctionArrayDotProduct(ContextPtr context_);
+FunctionPtr createFunctionArrayDotProduct(ContextPtr context_)
+{
+    return FunctionArrayDotProduct::create(context_);
+}
+
 }

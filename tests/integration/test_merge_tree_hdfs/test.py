@@ -1,19 +1,25 @@
 import logging
-import time
 import os
+import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.utility import generate_values
-from helpers.wait_for_helpers import wait_for_delete_inactive_parts
-from helpers.wait_for_helpers import wait_for_delete_empty_parts
-
 from pyhdfs import HdfsClient
+
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.utility import generate_values
+from helpers.wait_for_helpers import (
+    wait_for_delete_empty_parts,
+    wait_for_delete_inactive_parts,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_PATH = os.path.join(
     SCRIPT_DIR, "./_instances/node/configs/config.d/storage_conf.xml"
 )
+
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 
 def create_table(cluster, table_name, additional_settings=None):
@@ -30,7 +36,12 @@ def create_table(cluster, table_name, additional_settings=None):
             storage_policy='hdfs',
             old_parts_lifetime=0,
             index_granularity=512,
-            temporary_directories_lifetime=1
+            temporary_directories_lifetime=1,
+            write_marks_for_substreams_in_compact_parts=1,
+            cleanup_delay_period=1,
+            cleanup_delay_period_random_add=0,
+            cleanup_thread_preferred_points_per_iteration=0,
+            auto_statistics_types=''
         """.format(
         table_name
     )
@@ -46,16 +57,27 @@ FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
 FILES_OVERHEAD_METADATA_VERSION = 1
+FILES_OVERHEAD_COLUMNS_SUBSTREAMS = 1
+# The minmax skip index goes into a single skp_idx.packed archive instead of a
+# separate .idx2 + .mrk2 pair, because packed_skip_index_max_bytes is 1 MiB by default.
+FILES_SAVED_BY_PACKED_SKIP_INDEX = 1
 FILES_OVERHEAD_PER_PART_WIDE = (
     FILES_OVERHEAD_PER_COLUMN * 3
     + 2
     + 6
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
+    + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
+    - FILES_SAVED_BY_PACKED_SKIP_INDEX
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
-    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION
+    10
+    + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
+    + FILES_OVERHEAD_METADATA_VERSION
+    + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
+    - FILES_SAVED_BY_PACKED_SKIP_INDEX
 )
+FILES_OVERHEAD_PER_INVALIDATED_COLUMN = 1
 
 
 @pytest.fixture(scope="module")
@@ -69,7 +91,7 @@ def cluster():
         cluster.start()
         logging.info("Cluster started")
 
-        fs = HdfsClient(hosts=cluster.hdfs_ip)
+        fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
         fs.mkdirs("/clickhouse")
 
         logging.info("Created HDFS directory")
@@ -79,23 +101,31 @@ def cluster():
         cluster.shutdown()
 
 
+def list_hdfs_objects(fs, path="/clickhouse"):
+    # The object keys contain a nested directory prefix (e.g. `abc/xyz...`),
+    # so list the files recursively; directories are not objects.
+    return [
+        root + "/" + name for root, _, files in fs.walk(path) for name in files
+    ]
+
+
 def wait_for_delete_hdfs_objects(cluster, expected, num_tries=30):
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
     while num_tries > 0:
-        num_hdfs_objects = len(fs.listdir("/clickhouse"))
+        num_hdfs_objects = len(list_hdfs_objects(fs))
         if num_hdfs_objects == expected:
             break
         num_tries -= 1
         time.sleep(1)
-    assert len(fs.listdir("/clickhouse")) == expected
+    assert len(list_hdfs_objects(fs)) == expected
 
 
 @pytest.fixture(autouse=True)
 def drop_table(cluster):
     node = cluster.instances["node"]
 
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
-    hdfs_objects = fs.listdir("/clickhouse")
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
+    hdfs_objects = list_hdfs_objects(fs)
     print("Number of hdfs objects to delete:", len(hdfs_objects), sep=" ")
 
     node.query("DROP TABLE IF EXISTS hdfs_test SYNC")
@@ -103,7 +133,7 @@ def drop_table(cluster):
     try:
         wait_for_delete_hdfs_objects(cluster, 0)
     finally:
-        hdfs_objects = fs.listdir("/clickhouse")
+        hdfs_objects = list_hdfs_objects(fs)
         if len(hdfs_objects) == 0:
             return
         print(
@@ -133,9 +163,9 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
         node.query("SELECT * FROM hdfs_test order by dt, id FORMAT Values") == values1
     )
 
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     print(hdfs_objects)
     assert len(hdfs_objects) == FILES_OVERHEAD + files_per_part
 
@@ -146,7 +176,7 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
         == values1 + "," + values2
     )
 
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     assert len(hdfs_objects) == FILES_OVERHEAD + files_per_part * 2
 
     assert (
@@ -158,7 +188,6 @@ def test_alter_table_columns(cluster):
     create_table(cluster, "hdfs_test")
 
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
 
     node.query(
         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -207,7 +236,7 @@ def test_attach_detach_partition(cluster):
     create_table(cluster, "hdfs_test")
 
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
     node.query(
         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -217,7 +246,7 @@ def test_attach_detach_partition(cluster):
     )
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("ALTER TABLE hdfs_test DETACH PARTITION '2020-01-03'")
@@ -225,17 +254,18 @@ def test_attach_detach_partition(cluster):
     wait_for_delete_empty_parts(node, "hdfs_test")
     wait_for_delete_inactive_parts(node, "hdfs_test")
     wait_for_delete_hdfs_objects(
-        cluster,
-        FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION,
+        cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
     )
 
     node.query("ALTER TABLE hdfs_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = fs.listdir("/clickhouse")
-    assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
+    wait_for_delete_hdfs_objects(
+        cluster,
+        FILES_OVERHEAD
+        + FILES_OVERHEAD_PER_PART_WIDE * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN,
+    )
 
     node.query("ALTER TABLE hdfs_test DROP PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(4096)"
@@ -244,13 +274,16 @@ def test_attach_detach_partition(cluster):
     wait_for_delete_hdfs_objects(cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE)
 
     node.query("ALTER TABLE hdfs_test DETACH PARTITION '2020-01-04'")
+    assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(0)"
+    wait_for_delete_empty_parts(node, "hdfs_test")
+    wait_for_delete_inactive_parts(node, "hdfs_test")
+    wait_for_delete_hdfs_objects(cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE)
+
     node.query(
         "ALTER TABLE hdfs_test DROP DETACHED PARTITION '2020-01-04'",
         settings={"allow_drop_detached": 1},
     )
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(0)"
-    wait_for_delete_empty_parts(node, "hdfs_test")
-    wait_for_delete_inactive_parts(node, "hdfs_test")
     wait_for_delete_hdfs_objects(cluster, FILES_OVERHEAD)
 
 
@@ -258,7 +291,7 @@ def test_move_partition_to_another_disk(cluster):
     create_table(cluster, "hdfs_test")
 
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
     node.query(
         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -268,19 +301,19 @@ def test_move_partition_to_another_disk(cluster):
     )
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-04' TO DISK 'hdd'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
 
     node.query("ALTER TABLE hdfs_test MOVE PARTITION '2020-01-04' TO DISK 'hdfs'")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
 
@@ -288,7 +321,7 @@ def test_table_manipulations(cluster):
     create_table(cluster, "hdfs_test")
 
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
     node.query(
         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -300,17 +333,22 @@ def test_table_manipulations(cluster):
     node.query("RENAME TABLE hdfs_test TO hdfs_renamed")
     assert node.query("SELECT count(*) FROM hdfs_renamed FORMAT Values") == "(8192)"
 
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("RENAME TABLE hdfs_renamed TO hdfs_test")
-    assert node.query("CHECK TABLE hdfs_test FORMAT Values") == "(1)"
+    assert (
+        node.query(
+            "CHECK TABLE hdfs_test FORMAT Values SETTINGS check_query_single_value_result = 1"
+        )
+        == "(1)"
+    )
 
     node.query("DETACH TABLE hdfs_test")
     node.query("ATTACH TABLE hdfs_test")
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(8192)"
 
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
     node.query("TRUNCATE TABLE hdfs_test")
@@ -324,7 +362,7 @@ def test_move_replace_partition_to_another_table(cluster):
     create_table(cluster, "hdfs_test")
 
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
 
     node.query(
         "INSERT INTO hdfs_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -345,7 +383,7 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     assert len(hdfs_objects) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
 
     create_table(cluster, "hdfs_clone")
@@ -358,14 +396,15 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT count(*) FROM hdfs_clone FORMAT Values") == "(8192)"
 
     # Number of objects in HDFS should be unchanged.
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     for obj in hdfs_objects:
         print("Object in HDFS after move", obj)
     wait_for_delete_hdfs_objects(
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     # Add new partitions to source table, but with different values and replace them from copied table.
@@ -380,7 +419,7 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT sum(id) FROM hdfs_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
     for obj in hdfs_objects:
         print("Object in HDFS after insert", obj)
 
@@ -388,7 +427,8 @@ def test_move_replace_partition_to_another_table(cluster):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 6
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     node.query("ALTER TABLE hdfs_test REPLACE PARTITION '2020-01-03' FROM hdfs_clone")
@@ -403,7 +443,8 @@ def test_move_replace_partition_to_another_table(cluster):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 4,
     )
 
     node.query("DROP TABLE hdfs_clone SYNC")
@@ -411,7 +452,7 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT count(*) FROM hdfs_test FORMAT Values") == "(16384)"
 
     # Data should remain in hdfs
-    hdfs_objects = fs.listdir("/clickhouse")
+    hdfs_objects = list_hdfs_objects(fs)
 
     for obj in hdfs_objects:
         print("Object in HDFS after drop", obj)
@@ -420,5 +461,6 @@ def test_move_replace_partition_to_another_table(cluster):
         cluster,
         FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )

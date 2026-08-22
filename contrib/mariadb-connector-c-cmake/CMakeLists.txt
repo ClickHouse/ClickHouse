@@ -1,4 +1,4 @@
-if(OS_LINUX AND TARGET OpenSSL::SSL)
+if((OS_LINUX OR OS_DARWIN) AND TARGET OpenSSL::SSL)
     option(ENABLE_MYSQL "Enable MySQL" ${ENABLE_LIBRARIES})
 else ()
     option(ENABLE_MYSQL "Enable MySQL" FALSE)
@@ -43,6 +43,14 @@ MATH(EXPR MARIADB_VERSION_ID "${MARIADB_CLIENT_VERSION_MAJOR} * 10000 +
                               ${MARIADB_CLIENT_VERSION_MINOR} * 100   +
                               ${MARIADB_CLIENT_VERSION_PATCH}")
 
+set(CPACK_PACKAGE_VERSION_MAJOR 3)
+set(CPACK_PACKAGE_VERSION_MINOR 4)
+set(CPACK_PACKAGE_VERSION_PATCH 9)
+set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
+MATH(EXPR MARIADB_PACKAGE_VERSION_ID "${CPACK_PACKAGE_VERSION_MAJOR} * 10000 +
+                                      ${CPACK_PACKAGE_VERSION_MINOR} * 100   +
+                                      ${CPACK_PACKAGE_VERSION_PATCH}")
+
 IF (NOT MARIADB_PORT)
   set(MARIADB_PORT 3306)
 ENDIF ()
@@ -50,7 +58,11 @@ if(NOT MARIADB_UNIX_ADDR)
   set(MARIADB_UNIX_ADDR "/tmp/mysql.sock")
 endif()
 
-set(HAVE_ALLOCA_H 1)
+if (OS_FREEBSD)
+  set(HAVE_ALLOCA_H 0)
+else()
+  set(HAVE_ALLOCA_H 1)
+endif()
 set(HAVE_ARPA_INET_H 1)
 set(HAVE_DLFCN_H 1)
 set(HAVE_FCNTL_H 1)
@@ -73,7 +85,7 @@ set(HAVE_SYS_TYPES_H 1)
 set(HAVE_SYS_UN_H 1)
 set(HAVE_UNISTD_H 1)
 set(HAVE_UTIME_H 1)
-set(HAVE_UCONTEXT_H 1)
+set(HAVE_UCONTEXT_H 0)
 set(HAVE_ALLOCA 1)
 set(HAVE_DLERROR 0)
 set(HAVE_DLOPEN 0)
@@ -116,9 +128,13 @@ CONFIGURE_FILE(${CC_SOURCE_DIR}/include/ma_config.h.in
 CONFIGURE_FILE(${CC_SOURCE_DIR}/include/mariadb_version.h.in
                ${CC_BINARY_DIR}/include-public/mariadb_version.h)
 
-if(WITH_SSL)
+if (WITH_SSL)
   set(SYSTEM_LIBS ${SYSTEM_LIBS} ${SSL_LIBRARIES})
-endif()
+endif ()
+
+if (OS_DARWIN)
+  set(SYSTEM_LIBS ${SYSTEM_LIBS} iconv)
+endif ()
 
 
 function(REGISTER_PLUGIN)
@@ -175,10 +191,14 @@ REGISTER_PLUGIN(TARGET mysql_native_password
                 TYPE MARIADB_CLIENT_PLUGIN_AUTH
                 SOURCES "${CC_SOURCE_DIR}/plugins/auth/my_auth.c")
 
-REGISTER_PLUGIN(TARGET aurora
-                TYPE MARIADB_CLIENT_PLUGIN_CONNECTION
-                SOURCES "${CC_SOURCE_DIR}/plugins/connection/aurora.c")
-
+# zlib protocol compression (CLIENT_COMPRESS). Since connector 3.4 the zlib
+# compression moved behind a client compression plugin, so it must be
+# registered as a static builtin before ma_client_plugin.c is generated;
+# otherwise compression_plugin(net) stays null and mysql_real_connect fails
+# with CR_ERR_LOAD_PLUGIN when MYSQL_OPT_COMPRESS is requested.
+REGISTER_PLUGIN(TARGET zlib
+                TYPE MARIADB_CLIENT_PLUGIN_COMPRESSION
+                SOURCES "${CC_SOURCE_DIR}/plugins/compress/c_zlib.c")
 
 add_definitions(-D HAVE_COMPRESS)
 add_definitions(-D LIBMARIADB)
@@ -199,7 +219,7 @@ set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES}
 ${CC_SOURCE_DIR}/plugins/auth/my_auth.c
 ${CC_SOURCE_DIR}/libmariadb/ma_array.c
 ${CC_SOURCE_DIR}/libmariadb/ma_charset.c
-${CC_SOURCE_DIR}/libmariadb/ma_hash.c
+${CC_SOURCE_DIR}/libmariadb/ma_hashtbl.c
 ${CC_SOURCE_DIR}/libmariadb/ma_net.c
 ${CC_SOURCE_DIR}/libmariadb/mariadb_charset.c
 ${CC_SOURCE_DIR}/libmariadb/ma_time.c
@@ -214,7 +234,7 @@ ${CC_SOURCE_DIR}/libmariadb/ma_compress.c
 ${CC_SOURCE_DIR}/libmariadb/ma_init.c
 ${CC_SOURCE_DIR}/libmariadb/ma_password.c
 ${CC_SOURCE_DIR}/libmariadb/ma_ll2str.c
-${CC_SOURCE_DIR}/libmariadb/ma_sha1.c
+${CC_SOURCE_DIR}/libmariadb/ma_decimal.c
 ${CC_SOURCE_DIR}/libmariadb/mariadb_stmt.c
 ${CC_SOURCE_DIR}/libmariadb/ma_loaddata.c
 ${CC_SOURCE_DIR}/libmariadb/ma_stmt_codec.c
@@ -227,14 +247,7 @@ ${CC_SOURCE_DIR}/libmariadb/secure/openssl_crypt.c
 ${CC_BINARY_DIR}/libmariadb/ma_client_plugin.c
 )
 
-if(ICONV_INCLUDE_DIR)
-   include_directories(BEFORE ${ICONV_INCLUDE_DIR})
-endif()
 add_definitions(-DLIBICONV_PLUG)
-
-if(WITH_DYNCOL)
-  set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb_dyncol.c)
-endif()
 
 set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb_async.c ${CC_SOURCE_DIR}/libmariadb/ma_context.c)
 
@@ -246,5 +259,11 @@ target_include_directories(_mariadbclient PRIVATE ${CC_BINARY_DIR}/include-priva
 target_include_directories(_mariadbclient SYSTEM PUBLIC ${CC_BINARY_DIR}/include-public ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
 
 set_target_properties(_mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
+# NOTE: revert it once https://github.com/llvm/llvm-project/issues/173168 will be resolved
+target_compile_options(_mariadbclient
+    PRIVATE
+        -Wno-incompatible-pointer-types
+)
+
 
 add_library(ch_contrib::mariadbclient ALIAS _mariadbclient)

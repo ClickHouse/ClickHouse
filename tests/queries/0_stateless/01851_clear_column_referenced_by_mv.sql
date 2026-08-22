@@ -18,10 +18,10 @@ SELECT
 FROM `01851_merge_tree`;
 
 ALTER TABLE `01851_merge_tree`
-    DROP COLUMN n3;  -- { serverError 524 }
+    DROP COLUMN n3;  -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 ALTER TABLE `01851_merge_tree`
-    DROP COLUMN n2;  -- { serverError 524 }
+    DROP COLUMN n2;  -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- ok
 ALTER TABLE `01851_merge_tree`

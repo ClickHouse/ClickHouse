@@ -1,8 +1,3 @@
--- Tags: no-parallel
-
-CREATE DATABASE IF NOT EXISTS test_00800;
-
-USE test_00800;
 
 DROP TABLE IF EXISTS join_any_inner;
 DROP TABLE IF EXISTS join_any_left;
@@ -54,24 +49,22 @@ SELECT joinGet('join_string_key', 'x', 'abc'), joinGet('join_string_key', 'k', '
 
 USE default;
 
-DROP TABLE test_00800.join_any_inner;
-DROP TABLE test_00800.join_any_left;
-DROP TABLE test_00800.join_any_left_null;
-DROP TABLE test_00800.join_all_inner;
-DROP TABLE test_00800.join_all_left;
-DROP TABLE test_00800.join_string_key;
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.join_any_inner;
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.join_any_left;
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.join_any_left_null;
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.join_all_inner;
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.join_all_left;
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.join_string_key;
 
 -- test provided by Alexander Zaitsev
-DROP TABLE IF EXISTS test_00800.join_test;
-CREATE TABLE test_00800.join_test (a UInt8, b UInt8) Engine = Join(ANY, LEFT, a);
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.join_test;
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.join_test (a UInt8, b UInt8) Engine = Join(ANY, LEFT, a);
 
-USE test_00800;
+USE {CLICKHOUSE_DATABASE:Identifier};
 select joinGet('join_test', 'b', 1);
 
 USE system;
-SELECT joinGet('test_00800.join_test', 'b', 1);
+SELECT joinGet({CLICKHOUSE_DATABASE:String} || '.join_test', 'b', 1);
 
 USE default;
-DROP TABLE test_00800.join_test;
-
-DROP DATABASE test_00800;
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.join_test;

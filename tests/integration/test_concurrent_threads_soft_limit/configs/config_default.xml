@@ -1,4 +1,5 @@
 <clickhouse>
+    <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
     <query_log>
       <database>system</database>
       <table>query_log</table>

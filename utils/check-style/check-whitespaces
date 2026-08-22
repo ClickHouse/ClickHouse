@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-
-ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing/|Parsers/New'
-
-# Double whitespaces
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
-    grep -vP $EXCLUDE_DIRS |
-    while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done

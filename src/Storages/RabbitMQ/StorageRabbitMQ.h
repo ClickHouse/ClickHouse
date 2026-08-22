@@ -1,13 +1,15 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
-#include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
+#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
+#include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -16,32 +18,41 @@
 
 namespace DB
 {
-
+struct RabbitMQSettings;
 using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 
-class StorageRabbitMQ final: public IStorage, WithContext
+class StorageRabbitMQ final: public IStreamingStorage, WithContext
 {
 public:
     StorageRabbitMQ(
             const StorageID & table_id_,
             ContextPtr context_,
             const ColumnsDescription & columns_,
+            const String & comment,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            bool is_attach_);
+            LoadingStrictnessLevel mode);
 
-    std::string getName() const override { return "RabbitMQ"; }
+    ~StorageRabbitMQ() override;
 
-    bool noPushingToViews() const override { return true; }
+    std::string getName() const override { return RabbitMQ::TABLE_ENGINE_NAME; }
+
+    bool isMessageQueue() const override { return true; }
+
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
+
+    void cancelBackgroundActivity() override;
+
+    void renameInMemory(const StorageID & new_table_id) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
     /// actions require an open connection. Therefore there needs to be a way inside shutdown() method to know whether it is called
     /// because of drop query. And drop() method is not suitable at all, because it will not only require to reopen connection, but also
     /// it can be called considerable time after table is dropped (for example, in case of Atomic database), which is not appropriate for the case.
-    void checkTableCanBeDropped() const override { drop_table = true; }
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { drop_table = true; }
 
     /// Always return virtual columns in addition to required columns
     void read(
@@ -68,7 +79,6 @@ public:
     RabbitMQConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
-    NamesAndTypesList getVirtuals() const override;
 
     String getExchange() const { return exchange_name; }
     void unbindExchange();
@@ -77,6 +87,9 @@ public:
 
     void incrementReader();
     void decrementReader();
+
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
 
 private:
     ContextMutablePtr rabbitmq_context;
@@ -92,6 +105,9 @@ private:
     String queue_base;
     Names queue_settings_list;
     size_t max_rows_per_message;
+    bool reject_unhandled_messages = false;
+
+    LoggerPtr log;
 
     /// For insert query. Mark messages as durable.
     const bool persistent;
@@ -102,7 +118,6 @@ private:
     bool use_user_setup;
 
     bool hash_exchange;
-    Poco::Logger * log;
 
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
@@ -126,18 +141,15 @@ private:
 
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
-    BackgroundSchedulePool::TaskHolder streaming_task;
-    BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder init_task;
+    BackgroundSchedulePoolTaskHolder streaming_task;
+    BackgroundSchedulePoolTaskHolder looping_task;
+    BackgroundSchedulePoolTaskHolder init_task;
 
     uint64_t milliseconds_to_wait;
 
     /**
      * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
      */
-    /// Needed for tell MV or producer background tasks
-    /// that they must finish as soon as possible.
-    std::atomic<bool> shutdown_called{false};
     /// Counter for producers, needed for channel id.
     /// Needed to generate unique producer identifiers.
     std::atomic<size_t> producer_id = 1;
@@ -146,7 +158,8 @@ private:
     /// For select query we must be aware of the end of streaming
     /// to be able to turn off the loop.
     std::atomic<size_t> readers_count = 0;
-    std::atomic<bool> mv_attached = false;
+
+    void scheduleStreamingTasksImpl() override;
 
     /// In select query we start event loop, but do not stop it
     /// after that select is finished. Then in a thread, which
@@ -158,13 +171,14 @@ private:
 
     size_t read_attempts = 0;
     mutable bool drop_table = false;
-    bool is_attach;
 
     RabbitMQConsumerPtr createConsumer();
-    bool initialized = false;
+    std::atomic<bool> initialized = false;
+
+    UInt64 last_seen_refresh_epoch = 0;
 
     /// Functions working in the background
-    void streamingToViewsFunc();
+    void threadFunc();
     void loopingFunc();
     void connectionFunc();
 
@@ -178,25 +192,26 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
+    void deactivateTask(BackgroundSchedulePoolTaskHolder & task, bool wait, bool stop_loop);
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
 
-    void initExchange(AMQP::TcpChannel & rabbit_channel);
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
     /// Return true on successful stream attempt.
-    bool tryStreamToViews();
+    bool streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker);
     bool hasDependencies(const StorageID & table_id);
+
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     static String getRandomName()
     {
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');
         for (auto & c : random_str)
-            c = distribution(thread_local_rng);
+            c = static_cast<char>(distribution(thread_local_rng));
         return random_str;
     }
 };

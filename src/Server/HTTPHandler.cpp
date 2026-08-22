@@ -1,254 +1,181 @@
 #include <Server/HTTPHandler.h>
+#include <Server/HTTPQueryConstructor.h>
 
-#include <Access/Authentication.h>
-#include <Access/Credentials.h>
-#include <Access/ExternalAuthenticators.h>
+#include <Access/AccessControl.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <IO/CompressionMethod.h>
+#include <IO/WriteBufferFromString.h>
+#include <Poco/URI.h>
+#include <Common/quoteString.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/TableNameHints.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
+#include <Processors/Port.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/SettingsChanges.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Processors/Formats/Framing/FramingFormatFactory.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <base/scope_guard.h>
+#include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
+#include <Server/HTTP/authenticateUserByHTTP.h>
+#include <Server/HTTP/deferHTTP100Continue.h>
+#include <Server/HTTP/sendExceptionToHTTPClient.h>
+#include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
-#include "config.h"
+#include <Poco/Net/HTTPMessage.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
-#include <Poco/Base64Decoder.h>
-#include <Poco/Base64Encoder.h>
-#include <Poco/Net/HTTPBasicCredentials.h>
-#include <Poco/Net/HTTPStream.h>
-#include <Poco/MemoryStream.h>
-#include <Poco/StreamCopier.h>
-#include <Poco/String.h>
-#include <Poco/Net/SocketAddress.h>
-
-#include <re2/re2.h>
-
-#include <chrono>
-#include <sstream>
-
-#if USE_SSL
-#include <Poco/Net/X509Certificate.h>
-#endif
+#include <algorithm>
+#include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <memory>
+#include <optional>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool add_http_cors_header;
+    extern const SettingsBool cancel_http_readonly_queries_on_client_close;
+    extern const SettingsBool enable_http_compression;
+    extern const SettingsUInt64 http_headers_progress_interval_ms;
+    extern const SettingsUInt64 http_max_request_param_data_size;
+    extern const SettingsBool http_native_compression_disable_checksumming_on_decompress;
+    extern const SettingsUInt64 http_response_buffer_size;
+    extern const SettingsBool http_wait_end_of_query;
+    extern const SettingsBool http_write_exception_in_output_format;
+    extern const SettingsInt64 http_zlib_compression_level;
+    extern const SettingsUInt64 input_format_max_block_wait_ms;
+    extern const SettingsUInt64 readonly;
+    extern const SettingsBool run_query_in_background;
+    extern const SettingsBool send_progress_in_http_headers;
+    extern const SettingsSnappyMode snappy_mode;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsInt64 zstd_window_log_max;
+
+    extern const SettingsBool http_allow_database_as_path;
+    extern const SettingsBool http_allow_table_as_file;
+    extern const SettingsBool http_allow_filters_as_path;
+    extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
+    extern const SettingsString compression;
+    extern const SettingsString filter;
+    extern const SettingsString format;
+    extern const SettingsString input_format;
+    extern const SettingsString output_format;
+    extern const SettingsString default_format;
+    extern const SettingsString database;
+    extern const SettingsString implicit_table_at_top_level;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_PARSE_TEXT;
-    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
-    extern const int CANNOT_PARSE_QUOTED_STRING;
-    extern const int CANNOT_PARSE_DATE;
-    extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_PARSE_NUMBER;
-    extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
-    extern const int CANNOT_PARSE_IPV4;
-    extern const int CANNOT_PARSE_IPV6;
-    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_COMPILE_REGEXP;
 
-    extern const int UNKNOWN_ELEMENT_IN_AST;
-    extern const int UNKNOWN_TYPE_OF_AST_NODE;
-    extern const int TOO_DEEP_AST;
-    extern const int TOO_BIG_AST;
-    extern const int UNEXPECTED_AST_STRUCTURE;
-
-    extern const int SYNTAX_ERROR;
-
-    extern const int INCORRECT_DATA;
-    extern const int TYPE_MISMATCH;
-
-    extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_FUNCTION;
-    extern const int UNKNOWN_IDENTIFIER;
-    extern const int UNKNOWN_TYPE;
-    extern const int UNKNOWN_STORAGE;
-    extern const int UNKNOWN_DATABASE;
-    extern const int UNKNOWN_SETTING;
-    extern const int UNKNOWN_DIRECTION_OF_SORTING;
-    extern const int UNKNOWN_AGGREGATE_FUNCTION;
-    extern const int UNKNOWN_FORMAT;
-    extern const int UNKNOWN_DATABASE_ENGINE;
-    extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
 
-    extern const int QUERY_IS_TOO_LARGE;
-
-    extern const int NOT_IMPLEMENTED;
-    extern const int SOCKET_TIMEOUT;
-
-    extern const int UNKNOWN_USER;
-    extern const int WRONG_PASSWORD;
-    extern const int REQUIRED_PASSWORD;
-    extern const int AUTHENTICATION_FAILED;
-
     extern const int INVALID_SESSION_TIMEOUT;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
-    extern const int SUPPORT_IS_DISABLED;
+    extern const int SESSION_ID_EMPTY;
+    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_TABLE;
+    extern const int NOT_IMPLEMENTED;
+    extern const int FAULT_INJECTED;
+}
 
-    extern const int TIMEOUT_EXCEEDED;
+namespace FailPoints
+{
+    extern const char http_output_finalize_throw[];
+    extern const char http_push_delayed_results_throw[];
 }
 
 namespace
 {
-bool tryAddHttpOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+/// Whether the request declares a body that the HTTP handler layer reads by itself, regardless of the query:
+/// Poco's `HTMLForm` loads `application/x-www-form-urlencoded` payloads, and `multipart/form-data` is parsed as
+/// "external data for query processing". Such a body must come with a length on a non-chunked request.
+bool requestDeclaresFormBody(const HTTPServerRequest & request)
 {
-    if (config.has("http_options_response"))
-    {
-        Strings config_keys;
-        config.keys("http_options_response", config_keys);
-        for (const std::string & config_key : config_keys)
-        {
-            if (config_key == "header" || config_key.starts_with("header["))
-            {
-                /// If there is empty header name, it will not be processed and message about it will be in logs
-                if (config.getString("http_options_response." + config_key + ".name", "").empty())
-                    LOG_WARNING(&Poco::Logger::get("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
-                else
-                    response.add(config.getString("http_options_response." + config_key + ".name", ""),
-                                    config.getString("http_options_response." + config_key + ".value", ""));
+    const auto & content_type = request.getContentType();
+    return startsWith(content_type, "application/x-www-form-urlencoded")
+        || startsWith(content_type, "multipart/form-data");
+}
 
-            }
+void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+{
+    if (!config.has("http_options_response"))
+        return;
+
+    Strings config_keys;
+    config.keys("http_options_response", config_keys);
+    for (const std::string & config_key : config_keys)
+    {
+        if (config_key == "header" || config_key.starts_with("header["))
+        {
+            /// If there is empty header name, it will not be processed and message about it will be in logs
+            if (config.getString("http_options_response." + config_key + ".name", "").empty())
+                LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+            else
+                response.add(config.getString("http_options_response." + config_key + ".name", ""),
+                             config.getString("http_options_response." + config_key + ".value", ""));
+
         }
-        return true;
     }
-    return false;
 }
 
 /// Process options request. Useful for CORS.
 void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
-    /// If can add some headers from config
-    if (tryAddHttpOptionHeadersFromConfig(response, config))
-    {
-        response.setKeepAlive(false);
-        response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
-        response.send();
-    }
+    /// Add extra response headers (e.g. for CORS) when an `http_options_response` section is configured.
+    addHTTPOptionHeadersFromConfig(response, config);
+
+    /// Always answer an OPTIONS request, even when there is nothing to add from the config. Otherwise the
+    /// connection is closed without any HTTP response and the client sees an empty reply. The default
+    /// `clickhouse-server` config ships an `http_options_response` section, but `clickhouse-local` (which
+    /// typically runs without a config) does not, so without this the web UI (`/play`) reports the
+    /// connection as broken — its `OPTIONS` health-check fails — even though queries work.
+    response.setKeepAlive(false);
+    response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
+    response.send();
 }
 }
-
-static String base64Decode(const String & encoded)
-{
-    String decoded;
-    Poco::MemoryInputStream istr(encoded.data(), encoded.size());
-    Poco::Base64Decoder decoder(istr);
-    Poco::StreamCopier::copyToString(decoder, decoded);
-    return decoded;
-}
-
-static String base64Encode(const String & decoded)
-{
-    std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ostr.exceptions(std::ios::failbit);
-    Poco::Base64Encoder encoder(ostr);
-    encoder.rdbuf()->setLineLength(0);
-    encoder << decoded;
-    encoder.close();
-    return ostr.str();
-}
-
-static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code)
-{
-    using namespace Poco::Net;
-
-    if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
-    {
-        return HTTPResponse::HTTP_UNAUTHORIZED;
-    }
-    else if (exception_code == ErrorCodes::UNKNOWN_USER ||
-             exception_code == ErrorCodes::WRONG_PASSWORD ||
-             exception_code == ErrorCodes::AUTHENTICATION_FAILED)
-    {
-        return HTTPResponse::HTTP_FORBIDDEN;
-    }
-    else if (exception_code == ErrorCodes::CANNOT_PARSE_TEXT ||
-             exception_code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE ||
-             exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING ||
-             exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
-             exception_code == ErrorCodes::CANNOT_PARSE_DATETIME ||
-             exception_code == ErrorCodes::CANNOT_PARSE_NUMBER ||
-             exception_code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING ||
-             exception_code == ErrorCodes::CANNOT_PARSE_IPV4 ||
-             exception_code == ErrorCodes::CANNOT_PARSE_IPV6 ||
-             exception_code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED ||
-             exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
-             exception_code == ErrorCodes::TOO_DEEP_AST ||
-             exception_code == ErrorCodes::TOO_BIG_AST ||
-             exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE ||
-             exception_code == ErrorCodes::SYNTAX_ERROR ||
-             exception_code == ErrorCodes::INCORRECT_DATA ||
-             exception_code == ErrorCodes::TYPE_MISMATCH)
-    {
-        return HTTPResponse::HTTP_BAD_REQUEST;
-    }
-    else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
-             exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
-             exception_code == ErrorCodes::UNKNOWN_IDENTIFIER ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE ||
-             exception_code == ErrorCodes::UNKNOWN_STORAGE ||
-             exception_code == ErrorCodes::UNKNOWN_DATABASE ||
-             exception_code == ErrorCodes::UNKNOWN_SETTING ||
-             exception_code == ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING ||
-             exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
-             exception_code == ErrorCodes::UNKNOWN_FORMAT ||
-             exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE ||
-             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
-    {
-        return HTTPResponse::HTTP_NOT_FOUND;
-    }
-    else if (exception_code == ErrorCodes::QUERY_IS_TOO_LARGE)
-    {
-        return HTTPResponse::HTTP_REQUESTENTITYTOOLARGE;
-    }
-    else if (exception_code == ErrorCodes::NOT_IMPLEMENTED)
-    {
-        return HTTPResponse::HTTP_NOT_IMPLEMENTED;
-    }
-    else if (exception_code == ErrorCodes::SOCKET_TIMEOUT ||
-             exception_code == ErrorCodes::CANNOT_OPEN_FILE)
-    {
-        return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
-    }
-    else if (exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
-    {
-        return HTTPResponse::HTTP_LENGTH_REQUIRED;
-    }
-    else if (exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
-    {
-        return HTTPResponse::HTTP_REQUEST_TIMEOUT;
-    }
-
-    return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
-}
-
 
 static std::chrono::steady_clock::duration parseSessionTimeout(
     const Poco::Util::AbstractConfiguration & config,
@@ -274,48 +201,42 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
     return std::chrono::seconds(session_timeout);
 }
 
-
-void HTTPHandler::pushDelayedResults(Output & used_output)
+/// Returns true if `url` starts with `prefix` and either matches it exactly or is followed by a
+/// segment boundary (`/`, `?`, or `#`). Plain `starts_with` would also accept `/api/v11/...` under
+/// prefix `/api/v1`, which leaks unrelated endpoints into the dynamic-query factory and produces
+/// nonsensical path parsing after the prefix is stripped.
+static bool hasUrlPrefixWithSegmentBoundary(std::string_view url, std::string_view prefix)
 {
-    std::vector<WriteBufferPtr> write_buffers;
-    ConcatReadBuffer::Buffers read_buffers;
+    if (!url.starts_with(prefix))
+        return false;
+    if (url.size() == prefix.size())
+        return true;
+    /// A prefix that already ends in a boundary character (e.g. `/api/v1/`) is itself
+    /// segment-aligned, so any non-empty continuation is a valid child path: `/api/v1/db/hits`
+    /// must match prefix `/api/v1/` even though `url[prefix.size()]` is `d`.
+    if (!prefix.empty() && (prefix.back() == '/' || prefix.back() == '?' || prefix.back() == '#'))
+        return true;
+    const char next = url[prefix.size()];
+    return next == '/' || next == '?' || next == '#';
+}
 
-    auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
-    if (!cascade_buffer)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
-
-    cascade_buffer->getResultBuffers(write_buffers);
-
-    if (write_buffers.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "At least one buffer is expected to overwrite result into HTTP response");
-
-    for (auto & write_buf : write_buffers)
-    {
-        if (!write_buf)
-            continue;
-
-        IReadableWriteBuffer * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get());
-        if (write_buf_concrete)
-        {
-            ReadBufferPtr reread_buf = write_buf_concrete->tryGetReadBuffer();
-            if (reread_buf)
-                read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
-        }
-    }
-
-    if (!read_buffers.empty())
-    {
-        ConcatReadBuffer concat_read_buffer(std::move(read_buffers));
-        copyData(concat_read_buffer, *used_output.out_maybe_compressed);
-    }
+HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+{
+    if (config.has(config_prefix + ".handler.password"))
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "{}.handler.password will be ignored. Please remove it from config.", config_prefix);
+    if (config.has(config_prefix + ".handler.user"))
+        credentials.emplace(config.getString(config_prefix + ".handler.user", "default"));
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_)
-    : server(server_)
-    , log(&Poco::Logger::get(name))
+HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_, const std::string & url_prefix_, HTTPPathHintsPtr path_hints_)
+    : log(getLogger(name))
+    , server(server_)
     , default_settings(server.context()->getSettingsRef())
-    , content_type_override(content_type_override_)
+    , http_response_headers_override(http_response_headers_override_)
+    , url_prefix(url_prefix_)
+    , path_hints(std::move(path_hints_))
+    , connection_config(connection_config_)
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -326,204 +247,9 @@ HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const std:
 HTTPHandler::~HTTPHandler() = default;
 
 
-bool HTTPHandler::authenticateUser(
-    HTTPServerRequest & request,
-    HTMLForm & params,
-    HTTPServerResponse & response)
+bool HTTPHandler::authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponse & response)
 {
-    using namespace Poco::Net;
-
-    /// The user and password can be passed by headers (similar to X-Auth-*),
-    /// which is used by load balancers to pass authentication information.
-    std::string user = request.get("X-ClickHouse-User", "");
-    std::string password = request.get("X-ClickHouse-Key", "");
-    std::string quota_key = request.get("X-ClickHouse-Quota", "");
-
-    /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
-    /// extracted from the SSL certificate used for this connection instead of checking password.
-    bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
-    bool has_auth_headers = !user.empty() || !password.empty() || !quota_key.empty() || has_ssl_certificate_auth;
-
-    /// User name and password can be passed using HTTP Basic auth or query parameters
-    /// (both methods are insecure).
-    bool has_http_credentials = request.hasCredentials();
-    bool has_credentials_in_query_params = params.has("user") || params.has("password") || params.has("quota_key");
-
-    std::string spnego_challenge;
-    std::string certificate_common_name;
-
-    if (has_auth_headers)
-    {
-        /// It is prohibited to mix different authorization schemes.
-        if (has_http_credentials)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                            "Invalid authentication: it is not allowed "
-                            "to use SSL certificate authentication and Authorization HTTP header simultaneously");
-        if (has_credentials_in_query_params)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                            "Invalid authentication: it is not allowed "
-                            "to use SSL certificate authentication and authentication via parameters simultaneously simultaneously");
-
-        if (has_ssl_certificate_auth)
-        {
-#if USE_SSL
-            if (!password.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                                "Invalid authentication: it is not allowed "
-                                "to use SSL certificate authentication and authentication via password simultaneously");
-
-            if (request.havePeerCertificate())
-                certificate_common_name = request.peerCertificate().commonName();
-
-            if (certificate_common_name.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name");
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "SSL certificate authentication disabled because ClickHouse was built without SSL library");
-#endif
-        }
-    }
-    else if (has_http_credentials)
-    {
-        /// It is prohibited to mix different authorization schemes.
-        if (has_credentials_in_query_params)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                            "Invalid authentication: it is not allowed "
-                            "to use Authorization HTTP header and authentication via parameters simultaneously");
-
-        std::string scheme;
-        std::string auth_info;
-        request.getCredentials(scheme, auth_info);
-
-        if (Poco::icompare(scheme, "Basic") == 0)
-        {
-            HTTPBasicCredentials credentials(auth_info);
-            user = credentials.getUsername();
-            password = credentials.getPassword();
-        }
-        else if (Poco::icompare(scheme, "Negotiate") == 0)
-        {
-            spnego_challenge = auth_info;
-
-            if (spnego_challenge.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: SPNEGO challenge is empty");
-        }
-        else
-        {
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: '{}' HTTP Authorization scheme is not supported", scheme);
-        }
-
-        quota_key = params.get("quota_key", "");
-    }
-    else
-    {
-        /// If the user name is not set we assume it's the 'default' user.
-        user = params.get("user", "default");
-        password = params.get("password", "");
-        quota_key = params.get("quota_key", "");
-    }
-
-    if (!certificate_common_name.empty())
-    {
-        if (!request_credentials)
-            request_credentials = std::make_unique<SSLCertificateCredentials>(user, certificate_common_name);
-
-        auto * certificate_credentials = dynamic_cast<SSLCertificateCredentials *>(request_credentials.get());
-        if (!certificate_credentials)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected SSL certificate authorization scheme");
-    }
-    else if (!spnego_challenge.empty())
-    {
-        if (!request_credentials)
-            request_credentials = server.context()->makeGSSAcceptorContext();
-
-        auto * gss_acceptor_context = dynamic_cast<GSSAcceptorContext *>(request_credentials.get());
-        if (!gss_acceptor_context)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected");
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
-        const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
-#pragma clang diagnostic pop
-
-        if (!spnego_response.empty())
-            response.set("WWW-Authenticate", "Negotiate " + spnego_response);
-
-        if (!gss_acceptor_context->isFailed() && !gss_acceptor_context->isReady())
-        {
-            if (spnego_response.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: 'Negotiate' HTTP Authorization failure");
-
-            response.setStatusAndReason(HTTPResponse::HTTP_UNAUTHORIZED);
-            response.send();
-            return false;
-        }
-    }
-    else // I.e., now using user name and password strings ("Basic").
-    {
-        if (!request_credentials)
-            request_credentials = std::make_unique<BasicCredentials>();
-
-        auto * basic_credentials = dynamic_cast<BasicCredentials *>(request_credentials.get());
-        if (!basic_credentials)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Basic' HTTP Authorization scheme");
-
-        basic_credentials->setUserName(user);
-        basic_credentials->setPassword(password);
-    }
-
-    /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
-
-    ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
-    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
-        http_method = ClientInfo::HTTPMethod::GET;
-    else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
-        http_method = ClientInfo::HTTPMethod::POST;
-
-    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
-    session->setForwardedFor(request.get("X-Forwarded-For", ""));
-    session->setQuotaClientKey(quota_key);
-
-    /// Extract the last entry from comma separated list of forwarded_for addresses.
-    /// Only the last proxy can be trusted (if any).
-    String forwarded_address = session->getClientInfo().getLastForwardedFor();
-    try
-    {
-        if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
-            session->authenticate(*request_credentials, Poco::Net::SocketAddress(forwarded_address, request.clientAddress().port()));
-        else
-            session->authenticate(*request_credentials, request.clientAddress());
-    }
-    catch (const Authentication::Require<BasicCredentials> & required_credentials)
-    {
-        request_credentials = std::make_unique<BasicCredentials>();
-
-        if (required_credentials.getRealm().empty())
-            response.set("WWW-Authenticate", "Basic");
-        else
-            response.set("WWW-Authenticate", "Basic realm=\"" + required_credentials.getRealm() + "\"");
-
-        response.setStatusAndReason(HTTPResponse::HTTP_UNAUTHORIZED);
-        response.send();
-        return false;
-    }
-    catch (const Authentication::Require<GSSAcceptorContext> & required_credentials)
-    {
-        request_credentials = server.context()->makeGSSAcceptorContext();
-
-        if (required_credentials.getRealm().empty())
-            response.set("WWW-Authenticate", "Negotiate");
-        else
-            response.set("WWW-Authenticate", "Negotiate realm=\"" + required_credentials.getRealm() + "\"");
-
-        response.setStatusAndReason(HTTPResponse::HTTP_UNAUTHORIZED);
-        response.send();
-        return false;
-    }
-
-    request_credentials.reset();
-    return true;
+    return authenticateUserByHTTP(request, params, response, *session, request_credentials, connection_config, server.context(), log);
 }
 
 
@@ -532,43 +258,420 @@ void HTTPHandler::processQuery(
     HTMLForm & params,
     HTTPServerResponse & response,
     Output & used_output,
-    std::optional<CurrentThread::QueryScope> & query_scope)
+    QueryScope & query_scope,
+    const ProfileEvents::Event & write_event)
 {
     using namespace Poco::Net;
 
-    LOG_TRACE(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
 
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
+
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
     const auto & config = server.config();
 
+    /// Close http session (if any) after processing the request
+    bool close_session = false;
+    if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
+        close_session = true;
+
     if (session_is_set)
     {
         session_id = params.get("session_id");
+        if (session_id.empty())
+            throw Exception(ErrorCodes::SESSION_ID_EMPTY, "Session id query parameter was provided, but it was empty");
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
     else
     {
+        session_id = "";
         /// We should create it even if we don't have a session_id
         session->makeSessionContext();
     }
 
-    auto client_info = session->getClientInfo();
-    auto context = session->makeQueryContext(std::move(client_info));
+    /// We need to have both releasing/closing a session here and below. The problem with having it only as a SCOPE_EXIT
+    /// is that it will be invoked after finalizing the buffer in the end of processQuery, and that technically means that
+    /// the client has received all the data, but the session is not released yet. And it can (and sometimes does) happen
+    /// that we'll try to acquire the same session in another request before releasing the session here, and the session for
+    /// the following request will be technically locked, while it shouldn't be.
+    /// Also, SCOPE_EXIT is still needed to release a session in case of any exception. If the exception occurs at some point
+    /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
+    SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
+
+    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
+
+    const AccessControl & access_control = session->sessionContext()->getAccessControl();
+    NameToNameMap query_parameters = session->sessionContext()->getQueryParameters();
+
+    auto param_could_be_skipped = [&] (const String & name)
+    {
+        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
+        if (name.empty())
+            return true;
+
+        /// HTTP-specific parameters that are consumed by the handler itself and never propagated as settings.
+        /// `database` and `default_format` are NOT here — they are now proper settings and flow through the
+        /// settings pipeline (with `changeable_in_readonly` constraints in the default profile so they remain
+        /// settable on read-only HTTP methods).
+        /// `filter` is NOT here either: it is collected as a construction filter only after
+        /// `customizeQueryParam` has had a chance to bind it (e.g. a `predefined_query_handler` with a
+        /// `{filter:String}` query parameter); see the parameter loop below.
+        static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
+            "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
+
+        if (reserved_param_names.contains(name))
+            return true;
+
+        if (has_external_data)
+        {
+            /// For external data we have unspecified parameters which literally are {'<temp_table_name>_format', '<temp_table_name>_types', '<temp_table_name>_structure'}.
+            /// That parameters are not supposed to be used in the query as a settings. They have to be skipped.
+            /// But we could not just skip all parameters with suffixes '_format', '_types', '_structure',
+            /// because some of them are used in the query as a settings, like 'date_time_input_format',
+            static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
+            for (const String & suffix : reserved_param_suffixes)
+            {
+                if (endsWith(name, suffix))
+                    return (!access_control.isSettingNameAllowed(name));
+            }
+        }
+
+        return false;
+    };
+
+    auto is_known_setting = [&](const String & name) -> bool
+    {
+        /// A few names aren't declared as settings via `DECLARE(...)` but are still handled by
+        /// `Context::setSetting` as "settings" — most importantly `profile`, which triggers
+        /// profile loading rather than mapping to a stored value. Without this carve-out, those
+        /// names would be deferred to the unrecognized-URL-params path and (if the
+        /// `http_allow_filters_as_unrecognized_url_parameters` feature is on) misinterpreted as
+        /// filter expressions.
+        if (name == "profile")
+            return true;
+        return access_control.isSettingNameAllowed(name);
+    };
+
+    /// Collect filter URL parameters and unrecognized parameters (as filters when enabled).
+    /// We need to consult the resolved settings to decide what to do with unrecognized params,
+    /// so we apply settings in two phases: first the recognized ones, then optionally add filters
+    /// from unrecognized ones.
+    std::vector<String> url_filters_from_params;
+    std::vector<std::pair<String, String>> deferred_unrecognized_params;
+
+    /// Settings can be overridden in the query.
+    SettingsChanges settings_changes;
+    for (const auto & [key, value] : params)
+    {
+        if (param_could_be_skipped(key))
+            continue;
+        if (customizeQueryParam(query_parameters, key, value))
+            continue;
+        /// `filter` is a construction setting, but the HTTP interface allows multiple `?filter=`
+        /// parameters combined with AND, so collect them here rather than letting the single-valued
+        /// `is_known_setting` path apply only the last one. This runs after `customizeQueryParam`, so
+        /// a configured handler that binds a `filter` query parameter (e.g. a `predefined_query_handler`
+        /// with `{filter:String}`) still receives it.
+        if (key == "filter")
+        {
+            url_filters_from_params.push_back("(" + value + ")");
+            continue;
+        }
+        /// Recognized as a setting if it has a known setting name or starts with allowed prefixes.
+        /// Otherwise, defer for possible filter treatment.
+        if (is_known_setting(key))
+            settings_changes.setSetting(key, value);
+        else
+            deferred_unrecognized_params.emplace_back(key, value);
+    }
+
+    /// The `X-ClickHouse-Database` header is an alias for the `database` setting, and
+    /// `X-ClickHouse-Format` is an alias for the `output_format` setting. They override any matching
+    /// URL parameter (preserving the historical precedence).
+    ///
+    /// `X-ClickHouse-Format` maps to `output_format` rather than to `default_format`: sending this
+    /// header means the client definitely wants the response in that format, so it is an explicit
+    /// override (winning over the query's `FORMAT` clause and the path extension), not a fallback
+    /// used only when nothing else selects a format. It maps to `output_format` and not to the
+    /// bidirectional `format`, because the header has always described the response only: the same
+    /// header on `INSERT INTO t FORMAT JSONEachRow …` must not reinterpret the request body.
+    if (auto header_value = request.get("X-ClickHouse-Database", ""); !header_value.empty())
+        settings_changes.setSetting("database", header_value);
+    if (auto header_value = request.get("X-ClickHouse-Format", ""); !header_value.empty())
+        settings_changes.setSetting("output_format", header_value);
+
+    ContextMutablePtr context;
+    {
+        /// To decide whether to make a detached query context, we need the run_query_in_background setting's value.
+        /// But the setting value may be altered by setting the profile via HTTP params.
+        /// So, we construct settings_changes (including profile) and then we apply them to a temporary context,
+        /// which was copied from the session context.
+        /// And from that we derive the effective value of run_query_in_background.
+        /// For HTTP handler, run_query_in_background cannot be enabled in the SETTINGS clause of the query.
+
+        auto tmp_context = Context::createCopy(session->sessionContext());
+        SettingsChanges settings_changes_copy = settings_changes;
+
+        tmp_context->checkSettingsConstraints(settings_changes_copy, SettingSource::QUERY);
+        tmp_context->applySettingsChanges(settings_changes_copy);
+
+        const bool run_query_in_background = tmp_context->getSettingsRef()[Setting::run_query_in_background];
+        const bool throw_on_unsupported_query_inside_transaction = tmp_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction];
+
+        context = run_query_in_background ? session->makeDetachedQueryContext() : session->makeQueryContext();
+
+        if (run_query_in_background && session->sessionContext()->getCurrentTransaction()
+            && throw_on_unsupported_query_inside_transaction)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Background queries inside transactions are not supported");
+    }
+    context->setQueryParameters(query_parameters);
+
+    /// Expose the HTTP request URL and the SQL-defined handler name (if any) to the query
+    /// via `currentRequestURL()` / `currentHandler()` and the query_log.
+    context->setHTTPRequestURL(request.getURI());
+    if (!introspection_handler_name.empty())
+    {
+        context->setHTTPHandlerName(introspection_handler_name);
+
+        /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
+        /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
+        /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
+        /// Parse it with unlimited depth and backtracks (`0` disables the limit) here too, so a handler
+        /// that was accepted at creation stays invokable under ordinary session limits instead of failing
+        /// each request until the caller raises `max_parser_depth` / `max_parser_backtracks` themselves.
+        /// The client controls only the typed query parameters, never the query text, and could raise
+        /// these settings per-request anyway (they are changeable under `readonly = 2`); `parseQuery`
+        /// still guards against stack overflow via `checkStackSize`.
+        context->setSetting("max_parser_depth", Field(0));
+        context->setSetting("max_parser_backtracks", Field(0));
+    }
+
+    /// === Authentication and user profile are applied first ===
+    /// Authentication has already happened above (line `authenticateUser`); makeQueryContext()
+    /// loads the user's default profile. Auth-related parameters (role) are applied immediately
+    /// after, so that the resulting settings/constraints are in effect before we process any
+    /// general settings.
+    auto roles = params.getAll("role");
+    if (!roles.empty())
+        context->setCurrentRoles(roles);
+
+    /// POST always allows modifying queries. For SQL-defined handlers (which set `introspection_handler_name`)
+    /// the mutating idempotent methods PUT and DELETE are allowed to modify data too, as decided per handler in
+    /// `makeSQLDefinedHandler`. Config-defined and built-in handlers keep the POST-only behavior.
+    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod(), /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty());
+
+    /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+    String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
+
+    /// Sanitize query_id: remove ASCII control characters to prevent CRLF injection
+    /// into HTTP response headers (the query_id is reflected in X-ClickHouse-Query-Id).
+    std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
+
+    context->setCurrentQueryId(query_id);
+
+    context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+    context->applySettingsChanges(settings_changes);
+
+    const auto & settings = context->getSettingsRef();
+
+    /// === URL path parsing happens after settings are applied ===
+    /// This way the `http_allow_*_as_path` settings are read from the authenticated, profile-resolved
+    /// context (the same way any per-user setting works), not from server defaults. If the user
+    /// has all path features off, we skip path parsing entirely — the rest of the request is treated
+    /// exactly as it would be at the root URL.
+    HTTPPathInfo path_info;
+    bool any_path_feature_enabled = settings[Setting::http_allow_database_as_path]
+                                  || settings[Setting::http_allow_table_as_file]
+                                  || settings[Setting::http_allow_filters_as_path];
+    if (parsesHTTPPath() && any_path_feature_enabled)
+    {
+        const String & raw_uri = request.getURI();
+        String path_only = raw_uri;
+        auto qmark = path_only.find('?');
+        if (qmark != String::npos)
+            path_only = path_only.substr(0, qmark);
+        /// Keep `path_only` percent-encoded here. `parseHTTPPath` splits on '/' and then percent-decodes
+        /// each component, so an encoded slash (`%2F`) stays as data inside one component instead of being
+        /// turned into a component boundary — which `Poco::URI::getPath` (returning the fully decoded path)
+        /// would do, splitting legal encoded data into extra path components. The query string, if any, was
+        /// already stripped above.
+
+        /// If this handler is registered under a URL prefix, strip it so only the trailing portion
+        /// is interpreted as `database/table.format` (or filters / hive partitions). Require a
+        /// segment boundary so that prefix `/api/v1` does not also match `/api/v11/...`.
+        if (!url_prefix.empty() && hasUrlPrefixWithSegmentBoundary(path_only, url_prefix))
+        {
+            path_only = path_only.substr(url_prefix.size());
+            if (path_only.empty())
+                path_only = "/";
+        }
+
+        /// The legacy query endpoints — `/` and `/query`, plus the `?…` / `/?…` / `/query?…` forms the
+        /// routing filter (`addDefaultHandlersFactory`) claims as the query route — are not table-as-file
+        /// paths. Skip path parsing for them, so e.g. `GET /query?query=SELECT+1` keeps working when the
+        /// user has a path feature enabled; otherwise `parseHTTPPath` would read `query` as a table name
+        /// and the pre-check below would throw `UNKNOWN_TABLE` (or `implicit_table_at_top_level` would
+        /// rewrite a FROM-less query) before the SQL runs.
+        if (!path_only.empty() && path_only != "/" && path_only != "/query")
+            path_info = parseHTTPPath(
+                path_only,
+                settings[Setting::http_allow_database_as_path],
+                settings[Setting::http_allow_table_as_file],
+                settings[Setting::http_allow_filters_as_path]);
+    }
+
+    /// Resolve the current database from the path and the `database` setting, in that order.
+    /// If both are specified and differ, that's an error. We do this *before* `QueryScope::create`
+    /// — if `setCurrentDatabase` throws (e.g. the database doesn't exist), the exception unwinds
+    /// cleanly without leaving an in-flight query scope behind that would deadlock the response
+    /// buffers.
+    /// When the URL path supplied the database, we additionally append a hint about the closest
+    /// matching configured HTTP handler path (e.g. `/dashboard`) so a user who typed `/sashbord`
+    /// sees both the closest-handler suggestion and the closest-database-name suggestion.
+    {
+        /// The database explicitly supplied by *this request* via the `database` URL parameter or the
+        /// `X-ClickHouse-Database` header — it was collected into `settings_changes` and already
+        /// validated/applied above. A profile *default* for `database` is deliberately not treated as
+        /// request-supplied, so a path like `/db2/table` does not spuriously conflict with (and is not
+        /// blocked by) an inherited default — the path simply takes precedence over the default.
+        const Field * explicit_database_field = settings_changes.tryGet("database");
+        const String explicit_database = explicit_database_field ? explicit_database_field->safeGet<String>() : "";
+
+        String resolved_database = settings[Setting::database];
+        if (!path_info.database.empty())
+        {
+            if (!explicit_database.empty() && explicit_database != path_info.database)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Conflicting database specification: '{}' in URL path vs '{}' in `database` setting.",
+                    path_info.database, explicit_database);
+
+            /// A database from the URL path bypasses the `database` URL-parameter/header pipeline, so
+            /// run it through `checkSettingsConstraints` here too — otherwise a `database` constraint
+            /// (e.g. marked `const`, or restricted values) would protect the URL-parameter/header form
+            /// but not the `/database/table` path form. The path takes precedence over a profile default.
+            ///
+            /// Apply it as the `database` setting as well (not just `setCurrentDatabase` below): `executeQuery`
+            /// re-applies a non-empty `database` setting via `setCurrentDatabase` after the query SETTINGS are
+            /// resolved, so an inherited profile default such as `database = 'db1'` would otherwise switch the
+            /// query back to `db1` after `/db2/...` had already set the current database — making unqualified
+            /// names resolve in the wrong database. Overwriting the setting here keeps the two in sync.
+            SettingsChanges database_change;
+            database_change.setSetting("database", path_info.database);
+            context->checkSettingsConstraints(database_change, SettingSource::QUERY);
+            context->applySettingsChanges(database_change);
+            resolved_database = path_info.database;
+        }
+        if (!resolved_database.empty())
+        {
+            try
+            {
+                context->setCurrentDatabase(resolved_database);
+            }
+            catch (Exception & e)
+            {
+                if (!path_info.database.empty() && path_hints)
+                {
+                    auto handler_hints = path_hints->getHints("/" + path_info.database);
+                    if (!handler_hints.empty())
+                        e.addMessage("Or maybe HTTP handler {}?", handler_hints.front());
+                }
+                throw;
+            }
+        }
+    }
+
+    /// Initialize query scope, once query_id is initialized.
+    /// (To track as much allocations as possible)
+    query_scope = QueryScope::create(context);
+
+    /// Now we know the resolved settings. Decide what to do with unrecognized URL params:
+    /// - if http_allow_filters_as_unrecognized_url_parameters is true: treat them as filter expressions
+    /// - otherwise: pass them through as settings (which will likely fail with "unknown setting"),
+    ///   preserving the original behavior.
+    std::vector<String> url_filters_from_unrecognized;
+    if (settings[Setting::http_allow_filters_as_unrecognized_url_parameters])
+    {
+        for (const auto & [key, value] : deferred_unrecognized_params)
+        {
+            String f = parseURLParameterAsFilter(key, value);
+            if (!f.empty())
+                url_filters_from_unrecognized.push_back(f);
+        }
+    }
+    else
+    {
+        SettingsChanges extra_changes;
+        for (const auto & [key, value] : deferred_unrecognized_params)
+            extra_changes.setSetting(key, value);
+        if (!extra_changes.empty())
+        {
+            context->checkSettingsConstraints(extra_changes, SettingSource::QUERY);
+            context->applySettingsChanges(extra_changes);
+        }
+    }
 
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
     if (params.has("client_protocol_version"))
     {
         UInt64 version_param = parse<UInt64>(params.get("client_protocol_version"));
         context->setClientProtocolVersion(version_param);
+    }
+
+    /// Apply compression from path (if no `compression` setting was specified explicitly).
+    SettingsChanges path_derived_changes;
+    if (!path_info.compression.empty())
+    {
+        /// Only a compression supplied by this request (URL parameter or header, collected into
+        /// `settings_changes` above) counts as an explicit override that can conflict with the path.
+        /// A value inherited from a user profile or session default is a fallback, and the extension
+        /// written in the path is per-request and more specific, so the path wins over it — the same
+        /// precedence rule as for `default_format` below.
+        const Field * request_compression = settings_changes.tryGet("compression");
+        const String current_compression = request_compression ? request_compression->safeGet<String>() : String{};
+        /// Compare the resolved `CompressionMethod`, not the raw strings: `chooseCompressionMethod`
+        /// treats `gzip`/`gz`, `zstd`/`zst`, `lzma`/`xz`, `brotli`/`br` etc. as aliases, so
+        /// `/hits.CSV.gz?compression=gzip` must not be rejected as a conflict.
+        const CompressionMethod request_compression_method = chooseCompressionMethod(path_info.filename_for_disposition, current_compression);
+        const CompressionMethod path_compression_method = chooseCompressionMethod({}, path_info.compression);
+        if (!current_compression.empty() && request_compression_method != path_compression_method)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Conflicting compression: '{}' in URL path vs '{}' in `compression` setting.",
+                path_info.compression, current_compression);
+        /// Resolve `compression = 'auto'` against the path extension before storing it in the
+        /// context. The response writer does not otherwise have a filename to use as autodetection
+        /// context, so leaving `auto` there would produce an uncompressed response for `/t.CSV.gz`.
+        if (current_compression.empty() || Poco::icompare(current_compression, "auto") == 0)
+            path_derived_changes.setSetting("compression", path_info.compression);
+    }
+    /// Apply format from path (if no explicit `format`/`output_format` override exists).
+    /// "When there is a format from the file extension and there is also an explicit override, the override wins."
+    ///
+    /// `default_format` is not an override: it is the fallback used when nothing else selects a format,
+    /// and it often comes from a user profile or a session-wide default rather than from this request.
+    /// The extension in the path is written per request and is more specific, so it wins over
+    /// `default_format` — but still loses to the explicit `format` / `output_format` overrides.
+    if (!path_info.format.empty())
+    {
+        const String & format_override = settings[Setting::format];
+        const String & output_format_override = settings[Setting::output_format];
+        if (format_override.empty() && output_format_override.empty())
+        {
+            /// Use as default_format so that queries with an explicit FORMAT clause still honor that clause.
+            path_derived_changes.setSetting("default_format", path_info.format);
+        }
+    }
+    if (!path_derived_changes.empty())
+    {
+        context->checkSettingsConstraints(path_derived_changes, SettingSource::QUERY);
+        context->applySettingsChanges(path_derived_changes);
     }
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
@@ -582,72 +685,121 @@ void HTTPHandler::processQuery(
 
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
     /// compressed using internal algorithm. This is not reflected in HTTP headers.
-    bool internal_compression = params.getParsed<bool>("compress", false);
+    bool internal_compression = params.getParsedLast<bool>("compress", false);
 
-    /// At least, we should postpone sending of first buffer_size result bytes
-    size_t buffer_size_total = std::max(
-        params.getParsed<size_t>("buffer_size", context->getSettingsRef().http_response_buffer_size),
-        static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
-
-    /// If it is specified, the whole result will be buffered.
+    /// If wait_end_of_query is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", context->getSettingsRef().http_wait_end_of_query);
+    auto buffer_size_http = settings[Setting::http_response_buffer_size];
+    /// setting overrides deprecated buffer_size parameter
+    if (!params.has("http_response_buffer_size"))
+        buffer_size_http = params.getParsedLast<size_t>("buffer_size", buffer_size_http);
 
-    size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
-    size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
+    bool wait_end_of_query = settings[Setting::http_wait_end_of_query];
+    /// setting overrides deprecated wait_end_of_query parameter
+    if (!params.has("http_wait_end_of_query"))
+        wait_end_of_query = params.getParsedLast<bool>("wait_end_of_query", wait_end_of_query);
 
-    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
+    bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
+    Int64 http_zlib_compression_level
+        = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
+    /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format,
+    /// independent of the user-tunable `snappy_mode` (which controls generic `file()`/`url()` reads).
+    auto snappy_mode = SnappyMode::Framed;
 
-    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response,
-        request.getMethod() == HTTPRequest::HTTP_HEAD,
-        keep_alive_timeout,
-        client_supports_http_compression,
-        http_response_compression_method);
+    used_output.out_holder =
+        std::make_shared<WriteBufferFromHTTPServerResponse>(
+            response,
+            request.getMethod() == HTTPRequest::HTTP_HEAD,
+            write_event);
+    used_output.out_maybe_compressed = used_output.out_holder;
+    used_output.out = used_output.out_holder;
+
+    if (client_supports_http_compression && enable_http_compression)
+    {
+        used_output.out_holder->setCompressionMethodHeader(http_response_compression_method);
+        used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(
+            used_output.out.get(),
+            http_response_compression_method,
+            static_cast<int>(http_zlib_compression_level),
+            0,
+            snappy_mode,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            nullptr,
+            0,
+            false);
+        used_output.out_maybe_compressed = used_output.wrap_compressed_holder;
+        used_output.out = used_output.wrap_compressed_holder;
+    }
+
+    /// Generic response-body compression from the `compression` setting (or URL path file extension).
+    /// This is independent of HTTP Content-Encoding — the bytes sent to the client are compressed
+    /// and the client is expected to decompress them.
+    const String & response_compression_name = settings[Setting::compression];
+    if (!response_compression_name.empty())
+    {
+        /// `chooseCompressionMethod` throws for an unrecognized hint and returns `None` for the recognized
+        /// no-op hints (`none`, or `auto` with no matching extension). Only wrap when a codec is actually
+        /// selected, so `compression = 'none'` disables a profile/default codec instead of being rejected.
+        CompressionMethod response_compression_method = chooseCompressionMethod({}, response_compression_name);
+        if (response_compression_method != CompressionMethod::None)
+        {
+            used_output.generic_compression_holder = wrapWriteBufferWithCompressionMethod(
+                used_output.out.get(),
+                response_compression_method,
+                static_cast<int>(http_zlib_compression_level),
+                0,
+                settings[Setting::snappy_mode],
+                DBMS_DEFAULT_BUFFER_SIZE,
+                nullptr,
+                0,
+                false);
+            used_output.out_maybe_compressed = used_output.generic_compression_holder;
+            used_output.out = used_output.generic_compression_holder;
+        }
+    }
 
     if (internal_compression)
-        used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
-    else
-        used_output.out_maybe_compressed = used_output.out;
-
-    if (buffer_size_memory > 0 || buffer_until_eof)
     {
-        CascadeWriteBuffer::WriteBufferPtrs cascade_buffer1;
-        CascadeWriteBuffer::WriteBufferConstructors cascade_buffer2;
+        used_output.out_compressed_holder = std::make_shared<CompressedWriteBuffer>(*used_output.out);
+        used_output.out_maybe_compressed = used_output.out_compressed_holder;
+        used_output.out = used_output.out_compressed_holder;
+    }
 
-        if (buffer_size_memory > 0)
-            cascade_buffer1.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_memory));
+    if (buffer_size_http > 0 || wait_end_of_query)
+    {
+        CascadeWriteBuffer::WriteBufferPtrs cascade_buffers;
+        CascadeWriteBuffer::WriteBufferConstructors cascade_buffers_lazy;
 
-        if (buffer_until_eof)
+        if (buffer_size_http > 0)
+            cascade_buffers.emplace_back(std::make_shared<MemoryWriteBuffer>(buffer_size_http));
+
+        if (wait_end_of_query)
         {
-            auto tmp_data = std::make_shared<TemporaryDataOnDisk>(server.context()->getTempDataOnDisk());
-
-            auto create_tmp_disk_buffer = [tmp_data] (const WriteBufferPtr &) -> WriteBufferPtr
+            auto tmp_data = server.context()->getTempDataOnDisk();
+            cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
             {
-                return tmp_data->createRawStream();
-            };
-
-            cascade_buffer2.emplace_back(std::move(create_tmp_disk_buffer));
+                return std::make_unique<TemporaryDataBuffer>(tmp_data);
+            });
         }
         else
         {
-            auto push_memory_buffer_and_continue = [next_buffer = used_output.out_maybe_compressed] (const WriteBufferPtr & prev_buf)
+            auto push_memory_buffer_and_continue = [next_buffer = used_output.out] (const WriteBufferPtr & prev_buf)
             {
                 auto * prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
                 if (!prev_memory_buffer)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected MemoryWriteBuffer");
 
                 auto rdbuf = prev_memory_buffer->tryGetReadBuffer();
-                copyData(*rdbuf , *next_buffer);
+                copyData(*rdbuf, *next_buffer);
 
                 return next_buffer;
             };
 
-            cascade_buffer2.emplace_back(push_memory_buffer_and_continue);
+            cascade_buffers_lazy.emplace_back(push_memory_buffer_and_continue);
         }
 
-        used_output.out_maybe_delayed_and_compressed = std::make_shared<CascadeWriteBuffer>(
-            std::move(cascade_buffer1), std::move(cascade_buffer2));
+        used_output.out_delayed_and_compressed_holder = std::make_unique<CascadeWriteBuffer>(std::move(cascade_buffers), std::move(cascade_buffers_lazy));
+        used_output.out_maybe_delayed_and_compressed = used_output.out_delayed_and_compressed_holder;
     }
     else
     {
@@ -656,149 +808,198 @@ void HTTPHandler::processQuery(
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
-    int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
+    int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
+    /// TODO check
+    /// input stream are hold inside in_post instance
     auto in_post = wrapReadBufferWithCompressionMethod(
-        wrapReadBufferReference(request.getStream()),
-        chooseCompressionMethod({}, http_request_compression_method_str), zstd_window_log_max);
+        wrapReadBufferPointer(request.getStream()),
+        chooseCompressionMethod({}, http_request_compression_method_str),
+        zstd_window_log_max,
+        snappy_mode);
+    LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
+
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
     std::unique_ptr<ReadBuffer> in_post_maybe_compressed;
-    bool in_post_compressed = false;
-    if (params.getParsed<bool>("decompress", false))
+    bool is_in_post_compressed = false;
+    if (params.getParsedLast<bool>("decompress", false))
     {
-        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post);
-        in_post_compressed = true;
+        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(std::move(in_post), /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
+        is_in_post_compressed = true;
     }
     else
+    {
         in_post_maybe_compressed = std::move(in_post);
-
-    std::unique_ptr<ReadBuffer> in;
-
-    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
-
-    Names reserved_param_suffixes;
-
-    auto param_could_be_skipped = [&] (const String & name)
-    {
-        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
-        if (name.empty())
-            return true;
-
-        if (reserved_param_names.contains(name))
-            return true;
-
-        for (const String & suffix : reserved_param_suffixes)
-        {
-            if (endsWith(name, suffix))
-                return true;
-        }
-
-        return false;
-    };
-
-    /// Settings can be overridden in the query.
-    /// Some parameters (database, default_format, everything used in the code above) do not
-    /// belong to the Settings class.
-
-    /// 'readonly' setting values mean:
-    /// readonly = 0 - any query is allowed, client can change any setting.
-    /// readonly = 1 - only readonly queries are allowed, client can't change settings.
-    /// readonly = 2 - only readonly queries are allowed, client can change any setting except 'readonly'.
-
-    /// In theory if initially readonly = 0, the client can change any setting and then set readonly
-    /// to some other value.
-    const auto & settings = context->getSettingsRef();
-
-    /// Only readonly queries are allowed for HTTP GET requests.
-    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
-    {
-        if (settings.readonly == 0)
-            context->setSetting("readonly", 2);
     }
-
-    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
-
-    if (has_external_data)
-    {
-        /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-        reserved_param_suffixes.reserve(3);
-        /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
-        reserved_param_suffixes.emplace_back("_format");
-        reserved_param_suffixes.emplace_back("_types");
-        reserved_param_suffixes.emplace_back("_structure");
-    }
-
-    std::string database = request.get("X-ClickHouse-Database", "");
-    std::string default_format = request.get("X-ClickHouse-Format", "");
-
-    SettingsChanges settings_changes;
-    for (const auto & [key, value] : params)
-    {
-        if (key == "database")
-        {
-            if (database.empty())
-                database = value;
-        }
-        else if (key == "default_format")
-        {
-            if (default_format.empty())
-                default_format = value;
-        }
-        else if (param_could_be_skipped(key))
-        {
-        }
-        else
-        {
-            /// Other than query parameters are treated as settings.
-            if (!customizeQueryParam(context, key, value))
-                settings_changes.push_back({key, value});
-        }
-    }
-
-    if (!database.empty())
-        context->setCurrentDatabase(database);
-
-    if (!default_format.empty())
-        context->setDefaultFormat(default_format);
-
-    /// For external data we also want settings
-    context->checkSettingsConstraints(settings_changes);
-    context->applySettingsChanges(settings_changes);
-
-    /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
-
-    /// Initialize query scope, once query_id is initialized.
-    /// (To track as much allocations as possible)
-    query_scope.emplace(context);
 
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
-    const auto & query = getQuery(request, params, context);
+    const auto & raw_query = getQuery(request, params, context, *in_post_maybe_compressed);
+
+    /// Combine all HTTP filter sources into the `filter` setting. The query-construction settings
+    /// (`select`/`filter`/`order`/`sort`/`page`) are applied by the engine in `executeQuery`, on the
+    /// parsed AST — see `applyQueryConstructionSettings`. The HTTP interface only needs to assemble
+    /// the `filter` value here, because it has additional sources the engine does not: the existing
+    /// `filter` setting value, filters from the URL path, repeated `?filter=` parameters, and (when
+    /// enabled) unrecognized URL parameters, combined with `AND` in that order. `select`, `order`,
+    /// `sort` and `page` are already regular settings applied from the URL parameters, so the engine
+    /// reads them directly.
+    {
+        /// The filters that the HTTP request *adds* on top of the existing `filter` setting: filters
+        /// from the URL path, repeated `?filter=` parameters, and (when enabled) unrecognized URL
+        /// parameters.
+        std::vector<String> added_filters;
+        for (const auto & f : path_info.path_filters)
+            added_filters.push_back(f);
+        for (const auto & f : url_filters_from_params)
+            added_filters.push_back(f);
+        for (const auto & f : url_filters_from_unrecognized)
+            added_filters.push_back(f);
+
+        /// Only act when the request actually adds filters. Otherwise the existing `filter` setting
+        /// (e.g. a profile default) is left untouched and applied as-is by
+        /// `applyQueryConstructionSettings`. (Re-submitting the already-applied value through
+        /// `checkSettingsConstraints` would reject a `filter` constrained as `const` even when the
+        /// request changes nothing.)
+        if (!added_filters.empty())
+        {
+            String added_combined;
+            for (const auto & f : added_filters)
+            {
+                if (!added_combined.empty())
+                    added_combined += " AND ";
+                added_combined += f;
+            }
+
+            /// Enforce the `filter` constraint on the added sources: build the full value (the
+            /// existing `filter` setting AND the added filters) and run `checkSettingsConstraints`,
+            /// so a profile that constrains `filter` (e.g. marks it `const`) blocks adding filters
+            /// via `?filter=` / the URL path. The check throws on violation; the value is not applied.
+            std::vector<String> all_filters;
+            if (!settings[Setting::filter].value.empty())
+                all_filters.push_back("(" + settings[Setting::filter].value + ")");
+            for (const auto & f : added_filters)
+                all_filters.push_back(f);
+            String full_filter;
+            for (const auto & f : all_filters)
+            {
+                if (!full_filter.empty())
+                    full_filter += " AND ";
+                full_filter += f;
+            }
+            SettingsChanges filter_change;
+            filter_change.setSetting("filter", full_filter);
+            context->checkSettingsConstraints(filter_change, SettingSource::QUERY);
+
+            /// Stash the added filters in an overwrite-immune context channel (NOT the `filter`
+            /// setting) so they still apply — combined with `AND` — when the query carries its own
+            /// `SETTINGS filter = ...` clause, which would otherwise overwrite the `filter` setting.
+            context->setHTTPCombinedFilter(added_combined);
+        }
+    }
+
+    /// Determine base query: from URL path table, or from `query` param (raw_query).
+    String final_query = raw_query;
+
+    if (!path_info.table.empty())
+    {
+        /// `qualified_table` is the back-quoted `database.table` (or just `table`) from the URL path.
+        /// It is used both as SQL text spliced into a generated query (`SELECT * FROM <qualified_table>`)
+        /// and as the value of the `implicit_table_at_top_level` setting for a FROM-less query. The
+        /// analyzer parses that setting as a quoted compound identifier (see
+        /// `QueryTreeBuilder::buildJoinTree`), so back-quoting is required and correct: it lets a
+        /// database/table whose name needs quoting (e.g. `/weird-db/my-table`) and — crucially — a table
+        /// name that contains a literal dot (e.g. `/db/my.table` → `` `db`.`my.table` ``) resolve to the
+        /// right identifier parts instead of being split on every `.`.
+        String qualified_table;
+        if (!path_info.database.empty())
+            qualified_table = backQuoteIfNeed(path_info.database) + "." + backQuoteIfNeed(path_info.table);
+        else
+            qualified_table = backQuoteIfNeed(path_info.table);
+
+        /// Validate up-front that the table from the URL path actually exists, so a typo like
+        /// `/sashboards` produces a single clean response that combines the closest table-name
+        /// hint with the closest configured-handler hint (e.g. `/dashboard`). Without this check
+        /// the table-existence error would be raised later from query execution and would carry
+        /// only the table-name hint.
+        ///
+        /// Skip the pre-check when the parsed table name still contains a dot: that means the
+        /// path parser tried to extract a format/compression extension and failed (e.g.
+        /// `/hits.Parquet` on a build that does not register Parquet). Deferring to the normal
+        /// query execution path preserves the existing response headers (Content-Disposition,
+        /// X-ClickHouse-Format) that other tests assert on.
+        ///
+        /// Skip the pre-check when the user supplied an explicit query: either via the `query` URL
+        /// parameter (`raw_query`) or via a body. In those cases the path table is at
+        /// most a filename hint for `Content-Disposition`, or the source for
+        /// `implicit_table_at_top_level` (only applied to FROM-less queries). Forcing the path
+        /// table to exist would reject valid requests like `/foo.CSV?query=SELECT+1+FROM+other`
+        /// or `POST /db/path_table` with body `SELECT ... FROM other_table`.
+        bool request_has_body = feeds_request_body_to_query
+            && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
+        const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
+        bool table_name_is_simple = !path_info.table.contains('.');
+        if (table_name_is_simple && !table_db.empty() && raw_query.empty() && !request_has_body)
+        {
+            StorageID table_id(table_db, path_info.table);
+            if (!DatabaseCatalog::instance().isTableExist(table_id, context))
+            {
+                auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(table_db);
+                TableNameHints table_hints(db_ptr, context);
+                auto table_name_hints = table_hints.getHints(path_info.table);
+                /// Format the message so it remains greppable by historical tests that look for
+                /// `There is no handle /X. Maybe you meant /Y` (02842, 03522). The leading clause
+                /// matches `NotFoundHandler` exactly; the trailing clauses add the database/table
+                /// context that the original handler did not have.
+                String message = fmt::format("There is no handle /{}.", path_info.table);
+                if (path_hints)
+                {
+                    auto handler_hints = path_hints->getHints("/" + path_info.table);
+                    if (!handler_hints.empty())
+                        message += fmt::format(" Maybe you meant {}?", handler_hints.front());
+                }
+                message += fmt::format(" Or table {} (which does not exist)", table_id.getNameForLogs());
+                if (!table_name_hints.empty())
+                    message += fmt::format(" - maybe you meant table {}", backQuoteIfNeed(table_name_hints.front()));
+                message += ".";
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "{}", message);
+            }
+        }
+
+        /// Always set implicit_table_at_top_level so a FROM-less SELECT (whether user-supplied
+        /// or auto-generated) picks up the table from the URL path.
+        SettingsChanges implicit_change;
+        implicit_change.setSetting("implicit_table_at_top_level", qualified_table);
+        context->checkSettingsConstraints(implicit_change, SettingSource::QUERY);
+        context->applySettingsChanges(implicit_change);
+
+        /// If there is no user-supplied query (URL param empty AND no body), generate a default one.
+        if (raw_query.empty() && !request_has_body)
+            final_query = "SELECT * FROM " + qualified_table;
+    }
+
+    /// The query-construction settings (`select`/`filter`/`order`/`sort`/`page`) are applied by the
+    /// engine (`executeQuery`) on the parsed AST, so the query text is not wrapped here. When the
+    /// SQL comes from the request body, `final_query` is empty and the body is concatenated below;
+    /// the engine then wraps the parsed body query just the same.
+    const String & query = final_query;
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
-    /// HTTP response compression is turned on only if the client signalled that they support it
-    /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
-    used_output.out->setCompression(client_supports_http_compression && settings.enable_http_compression);
-    if (client_supports_http_compression)
-        used_output.out->setCompressionLevel(static_cast<int>(settings.http_zlib_compression_level));
-
-    used_output.out->setSendProgress(settings.send_progress_in_http_headers);
-    used_output.out->setSendProgressInterval(settings.http_headers_progress_interval_ms);
+    used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
+    used_output.out_holder->setSendProgressInterval(settings[Setting::http_headers_progress_interval_ms]);
 
     /// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
     /// checksums of client data compressed with internal algorithm are not checked.
-    if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
+    if (is_in_post_compressed && settings[Setting::http_native_compression_disable_checksumming_on_decompress])
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
     /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin
     /// Note that whether the header is added is determined by the settings, and we can only get the user settings after authentication.
     /// Once the authentication fails, the header can't be added.
-    if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
-        used_output.out->addHeaderCORS(true);
+    if (settings[Setting::add_http_cors_header] && !request.get("Origin", "").empty() && !config.has("http_options_response"))
+        used_output.out_holder->addHeaderCORS(true);
 
     auto append_callback = [my_context = context] (ProgressCallback callback)
     {
@@ -814,10 +1015,14 @@ void HTTPHandler::processQuery(
     };
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
-    /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
-    append_callback([&used_output](const Progress & progress) { used_output.out->onProgress(progress); });
+    /// Note that for foreground queries we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
+    if (!settings[Setting::run_query_in_background])
+        append_callback([&used_output, &context](const Progress & progress)
+        {
+            used_output.out_holder->onProgress(progress, context);
+        });
 
-    if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
+    if (!settings[Setting::run_query_in_background] && settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
     {
         append_callback([&context, &request](const Progress &)
         {
@@ -829,145 +1034,463 @@ void HTTPHandler::processQuery(
     }
 
     customizeContext(request, context, *in_post_maybe_compressed);
-    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
-
-    executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response, this] (const QueryResultDetails & details)
-        {
-            response.add("X-ClickHouse-Query-Id", details.query_id);
-
-            if (content_type_override)
-                response.setContentType(*content_type_override);
-            else if (details.content_type)
-                response.setContentType(*details.content_type);
-
-            if (details.format)
-                response.add("X-ClickHouse-Format", *details.format);
-
-            if (details.timezone)
-                response.add("X-ClickHouse-Timezone", *details.timezone);
-        }
-    );
-
-    if (used_output.hasDelayed())
+    std::unique_ptr<ReadBuffer> in;
+    /// `feeds_request_body_to_query` is false for a SQL-defined handler whose query never reads the body. Appending
+    /// the body to such a query would be meaningless, and it would also hang a lengthless non-chunked `PUT`: that
+    /// body is delimited only by the connection close, while `executeQuery` reads the query text ahead up to
+    /// `max_query_size`, so it would wait for a client that is itself waiting for the response.
+    if (has_external_data || !feeds_request_body_to_query)
     {
-        /// TODO: set Content-Length if possible
-        pushDelayedResults(used_output);
+        in = std::move(in_param);
+        in_post_maybe_compressed.reset();
+    }
+    else
+    {
+        in = std::make_unique<ConcatReadBuffer>(std::move(in_param), std::move(in_post_maybe_compressed));
     }
 
-    /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to the client.
-    used_output.finalize();
+    applyHTTPResponseHeaders(response, http_response_headers_override);
+
+    /// Capture data needed for Content-Disposition computation from the surrounding scope. The
+    /// filename normally comes from the URL path component verbatim (preserving the case the user
+    /// wrote, e.g. `hits.CSV.gz`); when the path did not name a table it is empty and a
+    /// `result.<format>.<compression>` fallback is built below.
+    ///
+    /// An explicit output-format override (`output_format` / `format`) changes the bytes, so the
+    /// path's format extension would be wrong (e.g. `/hits.CSV?output_format=Native` sends `Native`).
+    /// In that case rebuild the filename from the path table name plus the override format (which
+    /// carries the user's casing — the path-derived format goes to `default_format`, not these). The
+    /// `compression` setting is handled similarly: if the response is compressed but the path
+    /// filename does not already carry that extension (`/hits.CSV?compression=gz`), it is appended.
+    String disposition_filename = path_info.filename_for_disposition;
+    String disposition_base = path_info.table;
+    String disposition_path_format = path_info.format;
+    String disposition_compression = settings[Setting::compression];
+    /// Only advertise a compression suffix when a codec is actually selected. The response-buffer setup
+    /// wraps via `chooseCompressionMethod` and skips wrapping when it returns `None` (the recognized no-op
+    /// hints `none` / `auto`), so mirror that here — otherwise a plain response would get a misleading
+    /// `.none` / `.auto` suffix in the attachment filename.
+    if (!disposition_compression.empty()
+        && chooseCompressionMethod({}, disposition_compression) == CompressionMethod::None)
+        disposition_compression.clear();
+    /// Canonicalize the compression to its file-extension form (`gzip` -> `gz`, `zstd` -> `zst`, …) so
+    /// the `Content-Disposition` filename uses the same suffix as the URL path. Otherwise an accepted
+    /// alias would duplicate the extension: `/hits.CSV.gz?compression=gzip` has a path filename of
+    /// `hits.CSV.gz` but a raw `gzip` setting, and appending `.gzip` would yield `hits.CSV.gz.gzip`.
+    /// Unknown values are left as-is (the response-buffer setup throws on them anyway).
+    if (!disposition_compression.empty())
+        if (String canonical = canonicalizeCompressionExtension(disposition_compression); !canonical.empty())
+            disposition_compression = std::move(canonical);
+    String disposition_format_override = !settings[Setting::output_format].value.empty()
+        ? settings[Setting::output_format].value
+        : settings[Setting::format].value;
+    auto set_query_result
+        = [&response, &used_output, this, disposition_filename, disposition_base, disposition_path_format, disposition_compression, disposition_format_override]
+        (const QueryResultDetails & details)
+    {
+        response.add("X-ClickHouse-Query-Id", details.query_id);
+
+        if (details.framed)
+            used_output.framed = true;
+
+        if (!(http_response_headers_override && http_response_headers_override->contains(Poco::Net::HTTPMessage::CONTENT_TYPE))
+            && details.content_type)
+            response.setContentType(*details.content_type);
+
+        if (details.format)
+            response.add("X-ClickHouse-Format", *details.format);
+
+        if (details.timezone)
+            response.add("X-ClickHouse-Timezone", *details.timezone);
+
+        if (details.query_cache_entry_created_at)
+            response.add("Age", std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - *details.query_cache_entry_created_at).count()));
+
+        if (details.query_cache_entry_expires_at)
+            response.add("Expires", std::format("{:%a, %d %b %Y %H:%M:%S} GMT", *details.query_cache_entry_expires_at));
+
+        /// Set Content-Disposition: attachment for binary/compressed responses, unless the handler
+        /// already configured a `Content-Disposition` header. A `predefined_query_handler` /
+        /// `dynamic_query_handler` may set `Content-Disposition: inline` or a fixed filename via
+        /// `http_response_headers`; that explicit contract must win over the automatic attachment,
+        /// mirroring the `Content-Type` guard above.
+        /// Configured HTTP header names are case-insensitive, so match `Content-Disposition` that way —
+        /// a config spelling like `content-disposition` is applied earlier and must still suppress the
+        /// automatic attachment header below.
+        bool content_disposition_configured = false;
+        if (http_response_headers_override)
+            for (const auto & header : *http_response_headers_override)
+                if (boost::iequals(header.first, "Content-Disposition"))
+                {
+                    content_disposition_configured = true;
+                    break;
+                }
+        bool response_is_binary = details.format && isBinaryOutputFormat(*details.format);
+        bool response_is_compressed = !disposition_compression.empty();
+        if (!content_disposition_configured && (response_is_binary || response_is_compressed))
+        {
+            String filename;
+            if (!disposition_format_override.empty())
+            {
+                /// An explicit `output_format` / `format` override supersedes the path's format
+                /// extension; rebuild from the path table name (or `result`) + the override format.
+                filename = (disposition_base.empty() ? "result" : disposition_base) + "." + disposition_format_override;
+                if (response_is_compressed)
+                    filename += "." + disposition_compression;
+            }
+            else if (!disposition_filename.empty()
+                && (disposition_path_format.empty() || !details.format || *details.format == disposition_path_format))
+            {
+                /// The path filename already reflects the effective output format (both `path_info.format`
+                /// and `details.format` are canonical format names), so keep it — it preserves the user's
+                /// casing (`/hits.csv`).
+                filename = disposition_filename;
+                /// The response is compressed (e.g. via `?compression=gz`); make sure the path-derived
+                /// filename ends with the effective compression extension instead of advertising bytes
+                /// it does not carry.
+                if (response_is_compressed)
+                {
+                    const String compression_suffix = "." + disposition_compression;
+                    if (!filename.ends_with(compression_suffix))
+                        filename += compression_suffix;
+                }
+            }
+            else if (details.format)
+            {
+                /// The effective output format (`details.format`) differs from the path's extension —
+                /// this happens when a query-level `SETTINGS output_format = …` / `format = …` (applied
+                /// inside `executeQuery`, after `disposition_format_override` was captured from the
+                /// URL/profile settings) overrides the path. Honor the same "explicit override wins over
+                /// the path extension" contract by rebuilding the filename from the path table name (or
+                /// `result`) + the effective format.
+                filename = (disposition_base.empty() ? "result" : disposition_base) + "." + *details.format;
+                if (response_is_compressed)
+                    filename += "." + disposition_compression;
+            }
+            else
+            {
+                /// No filename from the URL path: build `result.<format>[.<compression>]`.
+                filename = "result";
+                if (details.format)
+                {
+                    filename += ".";
+                    filename += *details.format;
+                }
+                if (response_is_compressed)
+                {
+                    filename += ".";
+                    filename += disposition_compression;
+                }
+            }
+            /// Sanitize filename: strip control and quote characters to avoid header injection, and the
+            /// path separators `/` and `\` so a back-quoted, percent-encoded path component (e.g.
+            /// `` `..%2F..%2Fout.Native` ``, whose encoded slashes the path parser preserves as data) cannot
+            /// put request-controlled path-traversal metadata into the attachment filename.
+            String safe;
+            safe.reserve(filename.size());
+            for (char c : filename)
+            {
+                if (isControlASCII(static_cast<unsigned char>(c)) || c == '"' || c == '\\' || c == '/')
+                    continue;
+                safe += c;
+            }
+            response.set("Content-Disposition", "attachment; filename=\"" + safe + "\"");
+        }
+
+        for (const auto & [name, value] : details.additional_headers)
+            response.set(name, value);
+    };
+
+    auto handle_exception_in_output_format = [&, session_id, close_session](IOutputFormat & current_output_format,
+                                                 const String & format_name,
+                                                 const ContextPtr & context_,
+                                                 const std::optional<FormatSettings> & format_settings)
+    {
+        const auto & framing = current_output_format.getFraming();
+
+        /// Latch the fail-close guard for framed responses here as well, not only in
+        /// `set_query_result`. On the exception path `executeQuery` deliberately swallows a failure
+        /// of the `set_result_details` callback (see the
+        /// `execute_query_calling_empty_set_result_func_on_exception` failpoint and the `04629`
+        /// test), so the callback may never run even though the response is about to be written
+        /// through a framing format. Without this, a second failure - while writing the exception
+        /// packet or while closing the response - would make `trySendExceptionToClient` miss the
+        /// framed fast path and append a plain `__exception__` block after a partial packet stream.
+        if (framing)
+            used_output.framed = true;
+
+        /// With a framing format, the exception is always written as a separate packet, because the
+        /// client parses the response as a stream of packets. Otherwise the exception is written into
+        /// the output format if the format supports it and the corresponding setting is enabled.
+        if (framing || (settings[Setting::http_write_exception_in_output_format] && current_output_format.supportsWritingException()))
+        {
+            /// If wait_end_of_query=true in case of an exception all data written to output format during query execution will be
+            /// ignored, so we cannot write exception message in current output format as it will be also ignored.
+            /// Instead, we create exception_writer function that will write exception in required format
+            /// and will use it later in trySendExceptionToClient when all buffers will be prepared.
+            if (wait_end_of_query)
+            {
+                auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
+                String framing_name = framing ? framing->getName() : "";
+
+                /// The buffered output is discarded on an exception, so the framing format is recreated
+                /// below from `framing_name` alone. Carry over the log and profile-events queues that
+                /// were attached during parsing and planning (the `framing` object goes out of scope
+                /// before this writer runs, so the queues are captured by value here) - otherwise the
+                /// framed exception response would drop the `log` / `profile_events` packets that the
+                /// streaming path and the documentation promise.
+                std::shared_ptr<InternalTextLogsQueue> framing_logs_queue = framing ? framing->getLogsQueue() : nullptr;
+                InternalProfileEventsQueuePtr framing_profile_events_queue = framing ? framing->getProfileEventsQueue() : nullptr;
+                String framing_profile_events_host_name = framing ? framing->getProfileEventsHostName() : "";
+                UInt64 framing_profile_events_period_us = framing ? framing->getProfileEventsPeriodMicroseconds() : 0;
+
+                used_output.exception_writer = [&, format_name, framing_name, header, context_, format_settings, session_id, close_session,
+                    framing_logs_queue, framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us](WriteBuffer & buf, int code, const String & message)
+                {
+                    if (used_output.out_holder->isCanceled())
+                    {
+                        chassert(buf.isCanceled());
+                        return;
+                    }
+
+                    drainRequestIfNeeded(request, response);
+                    used_output.out_holder->setExceptionCode(code);
+
+                    if (!framing_name.empty())
+                    {
+                        /// All the output buffered so far is discarded, so the framing format is created
+                        /// anew, and the response consists of the auxiliary packets (logs, profile events)
+                        /// accumulated so far followed by a single exception packet.
+                        auto framing_for_exception = createFramingFormat(
+                            framing_name, buf, format_settings ? *format_settings : getFormatSettings(context_), {.is_http = true});
+                        if (framing_logs_queue)
+                            framing_for_exception->setLogsQueue(framing_logs_queue);
+                        if (framing_profile_events_queue)
+                            framing_for_exception->setProfileEventsQueue(
+                                framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us);
+                        framing_for_exception->setException(message);
+                        framing_for_exception->finalize();
+                    }
+                    else
+                    {
+                        auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
+                        output_format->setException(message);
+                        output_format->finalize();
+                    }
+                    releaseOrCloseSession(session_id, close_session);
+                    used_output.finalize();
+                    used_output.exception_is_written = true;
+                };
+            }
+            else
+            {
+                if (used_output.out_holder->isCanceled())
+                    return;
+
+                bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
+                ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+
+                drainRequestIfNeeded(request, response);
+                used_output.out_holder->setExceptionCode(status.code);
+                if (framing)
+                    framing->setException(status.message);
+                else
+                    current_output_format.setException(status.message);
+                current_output_format.finalize();
+                /// The output format may defer finalizing the framing format (see
+                /// `deferFramingFinalize`); finalize it here so the exception packet is written.
+                /// `finalize` is idempotent, so this is a no-op if it was already finalized.
+                if (framing)
+                    framing->finalize();
+                releaseOrCloseSession(session_id, close_session);
+                used_output.finalize();
+
+                used_output.exception_is_written = true;
+            }
+        }
+    };
+
+    auto query_finish_callback = [&]()
+    {
+        releaseOrCloseSession(session_id, close_session);
+
+        /// Flush all the data from one buffer to another. For a plain response the callback runs
+        /// before the QueryFinish entry is recorded (inside `finishExecutedQuery`), so the
+        /// NetworkSendElapsedMicroseconds/NetworkSendBytes of this flush are attributed to the
+        /// query. For a framed response it runs after the QueryFinish entry instead (the framed
+        /// stream tail must include the packets emitted by the query-finish logging, and closing
+        /// the response must come after that - see `executeQuery.h`), so the send counters of the
+        /// response tail are not part of the query's snapshot, like the trailing sends of the
+        /// native protocol.
+        used_output.finalize();
+    };
+
+    /// Create callback to defer HTTP 100 Continue response to after quota checks
+    HTTPContinueCallback http_continue_callback = {};
+    if (shouldDeferHTTP100Continue(request))
+    {
+        http_continue_callback = [&request, &response]()
+        {
+            if (request.getExpectContinue() && response.getStatus() == HTTPResponse::HTTP_OK)
+            {
+                response.sendContinue();
+            }
+        };
+    }
+
+    QueryFlags query_flags;
+    /// Streaming `INSERT` needs the parser to stop at the end of the URL-provided query so the
+    /// request body stays intact for the input format. Only enable this when the URL query
+    /// alone already begins with an `INSERT` statement, otherwise we would break the legacy
+    /// behavior of splitting SQL text between the `query` parameter and the request body.
+    /// Leading whitespace and SQL comments are skipped so that forms like `/*trace*/ INSERT ...`
+    /// also take the streaming-safe parse path.
+    auto url_query_starts_with_insert = [&query]()
+    {
+        Lexer lexer(query.data(), query.data() + query.size());
+        Token token = lexer.nextToken();
+        while (!token.isSignificant() && !token.isEnd() && !token.isError())
+            token = lexer.nextToken();
+        if (token.type != TokenType::BareWord)
+            return false;
+        static constexpr std::string_view kw = "INSERT";
+        if (static_cast<size_t>(token.end - token.begin) != kw.size())
+            return false;
+        for (size_t j = 0; j < kw.size(); ++j)
+            if (toUpperIfAlphaASCII(token.begin[j]) != kw[j])
+                return false;
+        return true;
+    };
+    query_flags.parse_query_from_initial_buffer
+        = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
+
+    executeQuery(
+        std::move(in),
+        *used_output.out_maybe_delayed_and_compressed,
+        context,
+        set_query_result,
+        query_flags,
+        {},
+        handle_exception_in_output_format,
+        query_finish_callback,
+        http_continue_callback);
 }
 
-void HTTPHandler::trySendExceptionToClient(
-    const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+bool HTTPHandler::trySendExceptionToClient(
+    int exception_code, const std::string & message, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
-    /// In case data has already been sent, like progress headers, try using the output buffer to
-    /// set the exception code since it will be able to append it if it hasn't finished writing headers
-    if (response.sent() && used_output.out)
-        used_output.out->setExceptionCode(exception_code);
-    else
-        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
-
-    /// FIXME: make sure that no one else is reading from the same stream at the moment.
-
-    /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
-    /// to avoid reading part of the current request body in the next request.
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-        && response.getKeepAlive()
-        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED
-        && !request.getStream().eof())
-    {
-        request.getStream().ignoreAll();
-    }
-
-    if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
-    {
-        response.requireAuthentication("ClickHouse server HTTP API");
-    }
-    else
-    {
-        response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
-    }
-
-    if (!response.sent() && !used_output.out_maybe_compressed)
+    if (!used_output.out_holder && !used_output.exception_is_written)
     {
         /// If nothing was sent yet and we don't even know if we must compress the response.
-        *response.send() << s << std::endl;
+        auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
+        return wb.cancelWithException(request, exception_code, message, nullptr);
     }
-    else if (used_output.out_maybe_compressed)
+
+    /// A framed response fails closed once its transmission has started. That covers a failure in
+    /// the middle of `Output::finalize` after some of the response was pushed towards the client
+    /// (pushing the delayed results, finalizing the compression, closing the response stream) and
+    /// a failure of the framed exception delivery itself: when `handle_exception_in_output_format`
+    /// throws while writing the terminal `exception` packet (for example while draining the `log`
+    /// / `profile_events` queues) after `data` packets were already streamed, the escaped
+    /// exception lands here with the packet stream unterminated and `exception_is_written` still
+    /// false. In both cases some (or all) of the framed stream is already on the wire. The same
+    /// applies when framed packets are merely buffered: even before `response.sent()`, bytes
+    /// written into `out_maybe_compressed` / `out_holder` are not discarded by
+    /// `cancelWithException` (it keeps non-empty buffers and appends the error message after
+    /// them), so the client would receive a partial packet stream followed by a plain error body.
+    /// Note that `count` is cumulative (bytes ever consumed by the buffer, not bytes currently
+    /// pending in its working buffer), and `out_maybe_compressed` is the buffer the framing
+    /// writes into - the topmost of the HTTP compression wrapper, the internal `compress=1`
+    /// layer and the response buffer. So framed bytes that a transport compressor has already
+    /// swallowed into its internal codec state (where nothing can discard them, and where a
+    /// `count` of the buffers below would show nothing) still make this check fire.
+    /// Appending anything at that point - whether a fresh framed `exception` stream or the generic
+    /// `__exception__` block that `cancelWithException` writes -
+    /// would follow a partial packet stream, breaking the "always a stream of packets" contract.
+    /// The client observes a truncated response and an aborted connection instead - the same
+    /// fail-close rule as for a half-written packet (see `IFramingFormat`). A framed response
+    /// that has not produced any output yet takes the paths below instead: the `exception_writer`
+    /// set up for `wait_end_of_query` discards the stream buffered in the cascade (which does not
+    /// pass through `out_maybe_compressed` until `pushDelayedResults`) and writes a fresh framed
+    /// exception response, and the generic path produces a proper HTTP error response.
+    /// Deliberately NOT gated on `Output::isFinalized`: `finalized` is latched at the very start
+    /// of `Output::finalize`, before `pushDelayedResults` moves anything out of the cascade. Under
+    /// `wait_end_of_query` that push can fail before a single delayed byte reaches
+    /// `out_maybe_compressed` (finalizing the cascade, reopening a temporary file to re-read it),
+    /// and then the response is still untouched - `response.sent()` is false and both counters
+    /// are zero - so a clean error response is still possible and fail-close would only turn a
+    /// reportable error into an aborted connection for no benefit.
+    bool framed_bytes_produced = (used_output.out_maybe_compressed && used_output.out_maybe_compressed->count() > 0)
+        || (used_output.out_holder && used_output.out_holder->count() > 0);
+    if (used_output.framed && !used_output.exception_is_written
+        && (response.sent() || framed_bytes_produced))
     {
-        /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
-        if (used_output.hasDelayed())
-        {
-            /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
-            /// exception is written into used_output.out_maybe_compressed later
-            /// HTTPHandler::trySendExceptionToClient is called with exception context, it is Ok to destroy buffers
-            used_output.out_maybe_delayed_and_compressed.reset();
-        }
-
-        /// Send the error message into already used (and possibly compressed) stream.
-        /// Note that the error message will possibly be sent after some data.
-        /// Also HTTP code 200 could have already been sent.
-
-        /// If buffer has data, and that data wasn't sent yet, then no need to send that data
-        bool data_sent = used_output.out->count() != used_output.out->offset();
-
-        if (!data_sent)
-        {
-            used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
-            used_output.out->position() = used_output.out->buffer().begin();
-        }
-
-        writeString(s, *used_output.out_maybe_compressed);
-        writeChar('\n', *used_output.out_maybe_compressed);
-
-        used_output.out_maybe_compressed->next();
+        used_output.cancel();
+        return false;
     }
-    else
+
+    chassert(used_output.out_maybe_compressed);
+
+    /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
+    if (used_output.hasDelayed())
     {
-        UNREACHABLE();
+        /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
+        /// exception is written into used_output.out_maybe_compressed later
+        auto write_buffers = used_output.out_delayed_and_compressed_holder->getResultBuffers();
+        /// cancel the rest unused buffers
+        for (auto & wb : write_buffers)
+            if (isSharedPtrUnique(wb))
+                wb->cancel();
+
+        used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
+        used_output.out_delayed_and_compressed_holder.reset();
     }
 
-    used_output.finalize();
+    if (used_output.exception_is_written)
+    {
+        LOG_TRACE(log, "Exception has already been written to output format by current output formatter, nothing to do");
+        /// everything has been held by output format write
+        return true;
+    }
+
+    /// We might have special formatter for exception message.
+    if (used_output.exception_writer)
+    {
+        used_output.exception_writer(*used_output.out_maybe_compressed, exception_code, message);
+        return true;
+    }
+
+    /// This is the worst case scenario
+    /// There is no support from output_format.
+    /// output_format either did not faced the exception or did not support the exception writing
+
+    /// Send the error message into already used (and possibly compressed) stream.
+    /// Note that the error message will possibly be sent after some data.
+    /// Also HTTP code 200 could have already been sent.
+    return used_output.out_holder->cancelWithException(request, exception_code, message, used_output.out_maybe_compressed.get());
 }
 catch (...)
 {
+    /// The message could be not sent due to error on allocations
+    /// or due to exception in used_output.exception_writer
+    /// or because the socket is broken
     tryLogCurrentException(log, "Cannot send exception to client");
-
-    try
-    {
-        used_output.finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
-    }
+    return false;
 }
 
-
-void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
-    setThreadName("HTTPHandler");
-    ThreadStatus thread_status;
+    DB::setThreadName(ThreadName::HTTP_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
-    std::optional<CurrentThread::QueryScope> query_scope;
+    QueryScope query_scope;
 
     Output used_output;
 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
-    /// Close http session (if any) after processing the request
-    bool close_session = false;
-    String session_id;
-
-    SCOPE_EXIT_SAFE({
-        if (close_session && !session_id.empty())
-            session->closeSession(session_id);
-    });
 
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
     SCOPE_EXIT({
@@ -1003,35 +1526,65 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
-        thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
+        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+        thread_trace_context->root_span.addAttribute(
+            "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
+        thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
+        thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
+        thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
+        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())
-            tryAddHttpOptionHeadersFromConfig(response, server.config());
+            addHTTPOptionHeadersFromConfig(response, server.config());
 
         /// For keep-alive to work.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
         HTMLForm params(default_settings, request);
-        with_stacktrace = params.getParsed<bool>("stacktrace", false);
-        close_session = params.getParsed<bool>("close_session", false);
-        if (close_session)
-            session_id = params.get("session_id");
+
+        if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
+            with_stacktrace = true;
 
         /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
-        if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
+        /// SQL-defined handlers (CREATE HANDLER) may run mutating queries over PUT and DELETE, in which case those
+        /// methods carry a request body just like POST. Without Content-Length a non-chunked PUT body is read until
+        /// EOF - so a dropped connection would be accepted as a partial INSERT - and a non-chunked DELETE is treated
+        /// as an empty body. Require the length up front for these methods too, matching the POST contract.
+        ///
+        /// But require it only when the body is actually consumed - either by the handler's query
+        /// (`consumes_request_body`) or by the form/multipart parsing that the handler layer itself performs. A
+        /// handler such as `CREATE HANDLER h URL '/x' METHODS (DELETE) AS SELECT 1` never looks at the body, and
+        /// demanding `Content-Length: 0` from every ordinary HTTP client would make that class of handlers unusable.
+        /// The same applies to `POST` when the handler's body contract is known (a SQL-defined handler): a plain
+        /// `curl -X POST` sends neither a body nor `Content-Length`, and a handler that never reads the body must
+        /// accept it. For the other handlers `POST` keeps the historical unconditional requirement: their body may
+        /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
+        ///
+        /// Accepting a lengthless non-chunked `POST`/`PUT` here is framing-safe even if the client does send
+        /// bytes: the request stream stays unbounded (EOF-delimited), so `HTTPServerRequest::canKeepAlive`
+        /// returns false, `HTTPServerResponse::writeHeaders` advertises `Connection: close`, and
+        /// `HTTPServerConnection` closes the socket after the response - the unread bytes can never be
+        /// misread as the next request on the connection (pinned by 04826_handler_lengthless_body_keep_alive).
+        const auto & method = request.getMethod();
+        const bool is_body_carrying_method
+            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+        const bool body_may_be_consumed = body_contract_known
+            ? (consumes_request_body || requestDeclaresFormBody(request))
+            : (method == HTTPRequest::HTTP_POST || requestDeclaresFormBody(request));
+        const bool method_requires_content_length = is_body_carrying_method && body_may_be_consumed;
+        if (method_requires_content_length && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
             throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
                             "The Transfer-Encoding is not chunked and there "
-                            "is no Content-Length header for POST request");
+                            "is no Content-Length header for a {} request", method);
         }
 
-        processQuery(request, params, response, used_output, query_scope);
+        processQuery(request, params, response, used_output, query_scope, write_event);
         if (request_credentials)
             LOG_DEBUG(log, "Authentication in progress...");
         else
@@ -1043,39 +1596,49 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             request_credentials.reset(); // ...so that the next requests on the connection have to always start afresh in case of exceptions.
         });
 
-        /// Check if exception was thrown in used_output.finalize().
-        /// In this case used_output can be in invalid state and we
-        /// cannot write in it anymore. So, just log this exception.
-        if (used_output.isFinalized())
-        {
-            if (thread_trace_context)
-                thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
-
-            tryLogCurrentException(log, "Cannot flush data to client");
-            return;
-        }
-
         tryLogCurrentException(log);
 
         /** If exception is received from remote server, then stack trace is embedded in message.
           * If exception is thrown on local server, then stack trace is in separate field.
           */
-        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
-        trySendExceptionToClient(status.message, status.code, request, response, used_output);
+        const bool include_version = session && session->sessionContext();
+        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace, include_version);
+        auto error_sent = trySendExceptionToClient(status.code, status.message, request, response, used_output);
+
+        used_output.cancel();
+
+        if (!error_sent && thread_trace_context)
+                thread_trace_context->root_span.addAttribute("clickhouse.exception", "Cannot flush data to client");
 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(status);
     }
-
-    used_output.finalize();
 }
 
-DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_, const std::optional<String>& content_type_override_)
-    : HTTPHandler(server_, "DynamicQueryHandler", content_type_override_), param_name(param_name_)
+void HTTPHandler::releaseOrCloseSession(const String & session_id, bool close_session)
+{
+    if (!session_id.empty())
+    {
+        if (close_session)
+            session->closeSession(session_id);
+        else
+            session->releaseSessionID();
+    }
+}
+
+DynamicQueryHandler::DynamicQueryHandler(
+    IServer & server_,
+    const HTTPHandlerConnectionConfig & connection_config_,
+    const std::string & param_name_,
+    const HTTPResponseHeaderSetup & http_response_headers_override_,
+    const std::string & url_prefix_,
+    HTTPPathHintsPtr path_hints_)
+    : HTTPHandler(server_, connection_config_, "DynamicQueryHandler", http_response_headers_override_, url_prefix_, std::move(path_hints_))
+    , param_name(param_name_)
 {
 }
 
-bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
+bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)
 {
     if (key == param_name)
         return true;    /// do nothing
@@ -1085,15 +1648,14 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
         /// Save name and values of substitution in dictionary.
         const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
-        if (!context->getQueryParameters().contains(parameter_name))
-            context->setQueryParameter(parameter_name, value);
+        query_parameters.emplace(parameter_name, value);
         return true;
     }
 
     return false;
 }
 
-std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
@@ -1107,9 +1669,10 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Support for "external data for query processing".
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
-    params.load(request, request.getStream(), handler);
+    params.load(request, body, handler);
 
     std::string full_query;
+    NameToNameMap query_parameters = context->getQueryParameters();
     /// Params are of both form params POST and uri (GET params)
     for (const auto & it : params)
     {
@@ -1119,33 +1682,51 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
         }
         else
         {
-            customizeQueryParam(context, it.first, it.second);
+            customizeQueryParam(query_parameters, it.first, it.second);
         }
     }
+    context->setQueryParameters(query_parameters);
 
     return full_query;
 }
 
 PredefinedQueryHandler::PredefinedQueryHandler(
     IServer & server_,
+    const HTTPHandlerConnectionConfig & connection_config,
     const NameSet & receive_params_,
     const std::string & predefined_query_,
-    const CompiledRegexPtr & url_regex_,
-    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
-    const std::optional<String> & content_type_override_)
-    : HTTPHandler(server_, "PredefinedQueryHandler", content_type_override_)
+    const CompiledRegexPtr & url_regexp_,
+    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
+    const HTTPResponseHeaderSetup & http_response_headers_override_)
+    : HTTPHandler(server_, connection_config, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
-    , url_regex(url_regex_)
-    , header_name_with_capture_regex(header_name_with_regex_)
+    , url_regexp(url_regexp_)
+    , header_name_with_capture_regexp(header_name_with_regexp_)
 {
 }
 
-bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
+bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)
 {
+    auto set_query_parameter = [&query_parameters](const String & name, const String & parameter_value)
+    {
+        if (!query_parameters.emplace(name, parameter_value).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate name {} of query parameter", backQuote(name));
+    };
+
     if (receive_params.contains(key))
     {
-        context->setQueryParameter(key, value);
+        set_query_parameter(key, value);
+        return true;
+    }
+
+    if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
+    {
+        /// Save name and values of substitution in dictionary.
+        const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+
+        if (receive_params.contains(parameter_name))
+            set_query_parameter(parameter_name, value);
         return true;
     }
 
@@ -1161,9 +1742,9 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        std::string_view matches[num_captures];
+        std::vector<std::string_view> matches(num_captures);
         std::string_view input(begin, end - begin);
-        if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
+        if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches.data(), num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())
             {
@@ -1175,15 +1756,18 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
         }
     };
 
-    if (url_regex)
+    if (url_regexp)
     {
         const auto & uri = request.getURI();
-        set_query_params(uri.data(), find_first_symbols<'?'>(uri.data(), uri.data() + uri.size()), url_regex);
+        set_query_params(uri.data(), find_first_symbols<'?'>(uri.data(), uri.data() + uri.size()), url_regexp);
     }
 
-    for (const auto & [header_name, regex] : header_name_with_capture_regex)
+    for (const auto & [header_name, regex] : header_name_with_capture_regexp)
     {
-        const auto & header_value = request.get(header_name);
+        /// Use a defaulted lookup like `headersFilter` does: a missing header is treated as an empty string.
+        /// A header regex can match the empty string, so the rule may match a request without that header,
+        /// and reading it here without a default would raise an exception after the rule has already matched.
+        const auto header_value = request.get(header_name, "");
         set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
     }
 
@@ -1192,127 +1776,293 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
         WriteBufferFromOwnString value;
         const auto & settings = context->getSettingsRef();
 
-        copyDataMaxBytes(body, value, settings.http_max_request_param_data_size);
+        copyDataMaxBytes(body, value, settings[Setting::http_max_request_param_data_size]);
         context->setQueryParameter("_request_body", value.str());
     }
 }
 
-std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
+    bool body_fields_loaded = false;
+
+    /// A handler may declare `_request_body` alongside form-bindable parameters. Form parsing consumes the
+    /// body, while `_request_body` is bound in `customizeContext`, which runs only after `getQuery` - so it
+    /// would find the body at EOF and bind an empty string. Preserve a copy of the raw body up front and
+    /// parse the form from the copy, so both contracts hold: `_request_body` receives the raw body and the
+    /// form fields bind their parameters. The copy is bounded by `http_max_request_param_data_size` - the same
+    /// limit `customizeContext` applies when it reads the body itself.
+    const auto & preserve_raw_body = [&]
+    {
+        WriteBufferFromOwnString value;
+        copyDataMaxBytes(body, value, context->getSettingsRef()[Setting::http_max_request_param_data_size]);
+        context->setQueryParameter("_request_body", value.str());
+        return std::make_unique<ReadBufferFromOwnString>(std::move(value.str()));
+    };
+    const bool wants_request_body
+        = receive_params.contains("_request_body") && !context->getQueryParameters().contains("_request_body");
+
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
-        params.load(request, request.getStream(), handler);
+        if (wants_request_body)
+        {
+            auto body_copy = preserve_raw_body();
+            params.load(request, *body_copy, handler);
+        }
+        else
+            params.load(request, body, handler);
+        body_fields_loaded = true;
+    }
+    else if (unlikely(startsWith(request.getContentType(), "application/x-www-form-urlencoded")))
+    {
+        /// A urlencoded body carries parameter values for the query, so parse it - but only for a handler that
+        /// declares parameters bindable this way, and only on a body-carrying method. `_request_body` alone does
+        /// not count: a handler whose only body use is `_request_body` gets the raw body instead of form parsing.
+        const bool wants_form_body_params = std::any_of(
+            receive_params.begin(), receive_params.end(), [](const String & name) { return name != "_request_body"; });
+        const auto & method = request.getMethod();
+        const bool body_carrying_method
+            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+        if (wants_form_body_params && body_carrying_method)
+        {
+            if (wants_request_body)
+            {
+                auto body_copy = preserve_raw_body();
+                params.read(*body_copy);
+            }
+            else
+                params.read(body);
+            body_fields_loaded = true;
+        }
+    }
+
+    if (body_fields_loaded)
+    {
+        /// The parameter loop in `processQuery` ran before the body was parsed, so bind the body-sourced fields
+        /// here. Unlike URL parameters they only bind declared query parameters and are never treated as settings
+        /// (mirroring the `DynamicQueryHandler` multipart path), and a parameter already bound - e.g. from the
+        /// URL query string, which `params` still also contains - keeps its value.
+        for (const auto & [key, value] : params)
+        {
+            String name = key;
+            if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
+                name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+
+            if (receive_params.contains(name) && !context->getQueryParameters().contains(name))
+                context->setQueryParameter(name, value);
+        }
     }
 
     return predefined_query;
 }
 
+SQLDefinedQueryHandler::SQLDefinedQueryHandler(
+    IServer & server_,
+    const HTTPHandlerConnectionConfig & connection_config,
+    const SQLDefinedHandler & handler)
+    : PredefinedQueryHandler(
+        server_,
+        connection_config,
+        handler.receive_params,
+        handler.query,
+        handler.url_match_type == SQLDefinedHandler::URLMatchType::Regexp ? handler.url_regex : CompiledRegexPtr{},
+        {},
+        std::nullopt)
+{
+    setIntrospectionHandlerName(handler.name);
+    setConsumesRequestBody(handler.consumes_request_body);
+}
+
+std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
+{
+    return PredefinedQueryHandler::getQuery(request, params, context, body) + "\n";
+}
+
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix)
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers)
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
-    std::optional<String> content_type_override;
-    if (config.has(config_prefix + ".handler.content_type"))
-        content_type_override = config.getString(config_prefix + ".handler.content_type");
+    /// Optional URL prefix under which this handler is mounted. When set, the prefix is required
+    /// to match incoming requests and is stripped before the remaining URL path is parsed as
+    /// `database/table.format[.compression]` (or filters / hive partitions). Example config:
+    ///   <url_prefix>/api</url_prefix>
+    /// A request `GET /api/db/hits.csv` is then processed as if the path were `/db/hits.csv`.
+    auto url_prefix = config.getString(config_prefix + ".url_prefix", "");
+    /// Normalize the prefix once (strip a trailing slash) before it is used for BOTH the routing filter
+    /// below and path stripping in the handler. `addFiltersFromConfig` already installs a `url_prefix`
+    /// filter that tolerates a trailing slash (it matches `/api/v1?query=...` for `<url_prefix>/api/v1/`),
+    /// so without normalizing, the extra raw-prefix `hasUrlPrefixWithSegmentBoundary` filter below would
+    /// reject that same request — a regression for configured prefixes written with a trailing slash.
+    while (url_prefix.size() > 1 && url_prefix.ends_with('/'))
+        url_prefix.pop_back();
 
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(
-        server, std::move(query_param_name), std::move(content_type_override));
-
-    factory->addFiltersFromConfig(config, config_prefix);
-
-    return factory;
-}
-
-static inline bool capturingNamedQueryParam(NameSet receive_params, const CompiledRegexPtr & compiled_regex)
-{
-    const auto & capturing_names = compiled_regex->NamedCapturingGroups();
-    return std::count_if(capturing_names.begin(), capturing_names.end(), [&](const auto & iterator)
+    HTTPHandlerConnectionConfig connection_config(config, config_prefix);
+    HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
+    if (!common_headers.empty())
     {
-        return std::count_if(receive_params.begin(), receive_params.end(),
-            [&](const auto & param_name) { return param_name == iterator.first; });
-    });
-}
+        if (!http_response_headers_override.has_value())
+            http_response_headers_override.emplace();
+        http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
+    }
 
-static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
-{
-    auto compiled_regex = std::make_shared<const re2::RE2>(expression);
+    auto creator = [&server, query_param_name, http_response_headers_override, connection_config, url_prefix]() -> std::unique_ptr<DynamicQueryHandler>
+    { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override, url_prefix); };
 
-    if (!compiled_regex->ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile re2: {} for http handling rule, error: {}. "
-            "Look at https://github.com/google/re2/wiki/Syntax for reference.", expression, compiled_regex->error());
-
-    return compiled_regex;
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
+    factory->addFiltersFromConfig(config, config_prefix);
+    if (!url_prefix.empty())
+        factory->addFilter([url_prefix](const auto & request)
+        { return hasUrlPrefixWithSegmentBoundary(request.getURI(), url_prefix); });
+    return factory;
 }
 
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix)
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers)
 {
     if (!config.has(config_prefix + ".handler.query"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}.handler.query' in configuration file.", config_prefix);
 
     std::string predefined_query = config.getString(config_prefix + ".handler.query");
+    /// Remove leading and trailing whitespace that may come from XML formatting in the config file.
+    /// This prevents whitespace from being interpreted as data for binary formats like MsgPack.
+    boost::algorithm::trim(predefined_query);
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
-    std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;
-    Poco::Util::AbstractConfiguration::Keys headers_name;
-    config.keys(config_prefix + ".headers", headers_name);
+    HTTPHandlerConnectionConfig connection_config(config, config_prefix);
 
-    for (const auto & header_name : headers_name)
+    /// Regular expressions from the rule's url/headers whose named capturing groups are referenced by the query;
+    /// their captured values are passed to the query as parameters by PredefinedQueryHandler::customizeContext.
+    auto regexps = HTTPHandlerRegexpsWithNamedGroups::fromConfig(config, config_prefix, analyze_receive_params);
+
+    HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
+    if (!common_headers.empty())
     {
-        auto expression = config.getString(config_prefix + ".headers." + header_name);
-
-        if (!startsWith(expression, "regex:"))
-            continue;
-
-        expression = expression.substr(6);
-        auto regex = getCompiledRegex(expression);
-        if (capturingNamedQueryParam(analyze_receive_params, regex))
-            headers_name_with_regex.emplace(std::make_pair(header_name, regex));
+        if (!http_response_headers_override.has_value())
+            http_response_headers_override.emplace();
+        http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
     }
 
-    std::optional<String> content_type_override;
-    if (config.has(config_prefix + ".handler.content_type"))
-        content_type_override = config.getString(config_prefix + ".handler.content_type");
-
-    std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
-
-    if (config.has(config_prefix + ".url"))
+    auto creator = [
+        &server,
+        analyze_receive_params,
+        predefined_query,
+        url_regexp = regexps.url_regexp,
+        headers_name_with_regexp = std::move(regexps.headers_name_with_regexp),
+        http_response_headers_override,
+        connection_config]
+        -> std::unique_ptr<PredefinedQueryHandler>
     {
-        auto url_expression = config.getString(config_prefix + ".url");
-
-        if (startsWith(url_expression, "regex:"))
-            url_expression = url_expression.substr(6);
-
-        auto regex = getCompiledRegex(url_expression);
-        if (capturingNamedQueryParam(analyze_receive_params, regex))
-        {
-            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
-                server,
-                std::move(analyze_receive_params),
-                std::move(predefined_query),
-                std::move(regex),
-                std::move(headers_name_with_regex),
-                std::move(content_type_override));
-            factory->addFiltersFromConfig(config, config_prefix);
-            return factory;
-        }
-    }
-
-    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
-        server,
-        std::move(analyze_receive_params),
-        std::move(predefined_query),
-        CompiledRegexPtr{},
-        std::move(headers_name_with_regex),
-        std::move(content_type_override));
+        return std::make_unique<PredefinedQueryHandler>(
+            server,
+            connection_config,
+            analyze_receive_params,
+            predefined_query,
+            url_regexp,
+            headers_name_with_regexp,
+            http_response_headers_override);
+    };
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
-
     return factory;
 }
 
+void HTTPHandler::Output::pushDelayedResults() const
+{
+    /// Test-only: emulate a failure before any delayed byte reaches the real response (finalizing
+    /// the cascade, reopening a temporary file to re-read it). A framed response must still get a
+    /// proper HTTP error response here, not an aborted connection (see `trySendExceptionToClient`).
+    fiu_do_on(FailPoints::http_push_delayed_results_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before pushing the delayed results");
+    });
+
+    auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(out_maybe_delayed_and_compressed.get());
+    if (!cascade_buffer)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
+
+    cascade_buffer->finalize();
+    auto write_buffers = cascade_buffer->getResultBuffers();
+
+    if (write_buffers.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "At least one buffer is expected to overwrite result into HTTP response");
+
+    ConcatReadBuffer::Buffers read_buffers;
+    for (auto & write_buf : write_buffers)
+    {
+        if (auto * write_buf_concrete = dynamic_cast<TemporaryDataBuffer *>(write_buf.get()))
+        {
+            if (auto reread_buf = write_buf_concrete->read())
+            {
+                read_buffers.emplace_back(std::move(reread_buf));
+            }
+        }
+
+        if (auto * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
+        {
+            if (auto reread_buf = write_buf_concrete->tryGetReadBuffer())
+            {
+                read_buffers.emplace_back(std::move(reread_buf));
+            }
+        }
+    }
+
+    if (!read_buffers.empty())
+    {
+        ConcatReadBuffer concat_read_buffer(std::move(read_buffers));
+        copyData(concat_read_buffer, *out_maybe_compressed);
+    }
+}
+
+void HTTPHandler::Output::finalize()
+{
+    if (finalized)
+        return;
+    finalized = true;
+
+    if (hasDelayed())
+        pushDelayedResults();
+
+    /// Test-only: emulate a failure in the middle of finalizing the response - after the delayed
+    /// results were pushed towards the client, but before the response stream is closed. A framed
+    /// response must fail closed here (see `trySendExceptionToClient`).
+    fiu_do_on(FailPoints::http_output_finalize_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while finalizing the HTTP response");
+    });
+
+    if (out_delayed_and_compressed_holder)
+        out_delayed_and_compressed_holder->finalize();
+    if (out_compressed_holder)
+        out_compressed_holder->finalize();
+    if (generic_compression_holder)
+        generic_compression_holder->finalize();
+    if (wrap_compressed_holder)
+        wrap_compressed_holder->finalize();
+    if (out_holder)
+        out_holder->finalize();
+}
+
+void HTTPHandler::Output::cancel()
+{
+    if (canceled)
+        return;
+    canceled = true;
+
+    if (out_delayed_and_compressed_holder)
+        out_delayed_and_compressed_holder->cancel();
+    if (out_compressed_holder)
+        out_compressed_holder->cancel();
+    if (generic_compression_holder)
+        generic_compression_holder->cancel();
+    if (wrap_compressed_holder)
+        wrap_compressed_holder->cancel();
+    if (out_holder)
+        out_holder->cancel();
+}
 }

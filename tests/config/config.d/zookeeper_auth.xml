@@ -1,0 +1,10 @@
+<clickhouse>
+    <zookeeper>
+        <identity>clickhouse:withauth</identity>
+    </zookeeper>
+    <auxiliary_zookeepers>
+        <zookeeper2>
+            <identity>clickhouse:withauth</identity>
+        </zookeeper2>
+    </auxiliary_zookeepers>
+</clickhouse>

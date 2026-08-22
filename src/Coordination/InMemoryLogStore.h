@@ -39,6 +39,8 @@ public:
 
     bool flush() override { return true; }
 
+    bool is_conf(uint64_t index) override;
+
 private:
     std::map<uint64_t, nuraft::ptr<nuraft::log_entry>> logs TSA_GUARDED_BY(logs_lock);
     mutable std::mutex logs_lock;

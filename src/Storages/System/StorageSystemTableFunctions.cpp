@@ -1,3 +1,8 @@
+#include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -10,17 +15,17 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
 }
 
-NamesAndTypesList StorageSystemTableFunctions::getNamesAndTypes()
+ColumnsDescription StorageSystemTableFunctions::getColumnsDescription()
 {
-    return
-        {
-            {"name", std::make_shared<DataTypeString>()},
-            {"description", std::make_shared<DataTypeString>()},
-            {"allow_readonly", std::make_shared<DataTypeUInt8>()}
-       };
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Name of a table function."},
+        {"description", std::make_shared<DataTypeString>(), "Brief description of a table function."},
+        {"allow_readonly", std::make_shared<DataTypeUInt8>(), "Flag that indicated whether a readonly user may use this function."}
+    };
 }
 
-void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & factory = TableFunctionFactory::instance();
     const auto & functions_names = factory.getAllRegisteredNames();
@@ -28,10 +33,12 @@ void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, Context
     {
         res_columns[0]->insert(function_name);
 
+        auto documentation = factory.tryGetDocumentation(function_name);
         auto properties = factory.tryGetProperties(function_name);
-        if (properties)
+
+        if (documentation && properties)
         {
-            res_columns[1]->insert(properties->documentation.description);
+            res_columns[1]->insert(documentation->description);
             res_columns[2]->insert(properties->allow_readonly);
         }
         else
@@ -40,3 +47,6 @@ void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, Context
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTableFunctions) }

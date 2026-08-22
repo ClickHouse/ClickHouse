@@ -2,7 +2,7 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 
 #include <unistd.h>
 
@@ -34,7 +34,7 @@ protected:
     /// Doesn't seek (`offset` must match fd's position if !use_pread).
     /// Stops after min_bytes or eof. Returns 0 if eof.
     /// Thread safe.
-    size_t readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset);
+    size_t readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset) const;
 
 public:
     explicit ReadBufferFromFileDescriptor(
@@ -50,6 +50,8 @@ public:
         , throttler(throttler_)
     {
     }
+
+    bool poll(size_t timeout_microseconds) override;
 
     int getFD() const
     {
@@ -69,16 +71,17 @@ public:
     /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
     void rewind();
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     bool checkIfActuallySeekable() override;
 
-    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) override;
-    bool supportsReadAt() override { return use_pread; }
+    /// O_DIRECT requires the user buffer to be sector-aligned, so an aligned descriptor cannot
+    /// accept an arbitrary external buffer - callers must read into its own aligned internal
+    /// buffer instead.
+    bool supportsExternalBufferMode() const override { return required_alignment == 0; }
 
-private:
-    /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
-    bool poll(size_t timeout_microseconds) const;
+    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) const override;
+    bool supportsReadAt() override { return use_pread; }
 };
 
 

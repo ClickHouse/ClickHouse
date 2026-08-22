@@ -26,6 +26,12 @@ namespace DB
     bool isLocalAddress(const Poco::Net::SocketAddress & address);
     bool isLocalAddress(const Poco::Net::IPAddress & address);
 
-    /// Returns number of different bytes in hostnames, used for load balancing
-    size_t getHostNameDifference(const std::string & local_hostname, const std::string & host);
+    /// Returns host name difference with name prefix, used for load balancing
+    size_t getHostNamePrefixDistance(const std::string & local_hostname, const std::string & host);
+    /// Returns host name difference with Levenshtein Distance.
+    size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const std::string & host);
+    /// Returns the length of the longest common prefix of two host names (longer means more similar). Used for load balancing.
+    size_t getHostNameLongestCommonPrefix(const std::string & local_hostname, const std::string & host);
+    /// Returns the length of the longest common suffix of two host names (longer means more similar). Used for load balancing.
+    size_t getHostNameLongestCommonSuffix(const std::string & local_hostname, const std::string & host);
 }

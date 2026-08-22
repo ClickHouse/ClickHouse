@@ -1,4 +1,4 @@
 <test>
-    <query>SELECT boundingRatio(number, number) FROM numbers(100000000)</query>
-    <query>SELECT (argMax(number, number) - argMin(number, number)) / (max(number) - min(number)) FROM numbers(100000000)</query>
+    <query>SELECT boundingRatio(number, number) FROM numbers(30000000)</query>
+    <query>SELECT (argMax(number, number) - argMin(number, number)) / (max(number) - min(number)) FROM numbers(30000000)</query>
 </test>

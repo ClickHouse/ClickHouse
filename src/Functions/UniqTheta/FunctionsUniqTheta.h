@@ -6,15 +6,9 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
@@ -57,7 +51,7 @@ namespace DB
     };
 
     template <typename Impl, typename Name>
-    class FunctionUniqTheta : public IFunction
+    class FunctionUniqTheta final : public IFunction
     {
     public:
         static constexpr auto name = Name::name;
@@ -137,8 +131,8 @@ namespace DB
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const AggregateDataPtr data_ptr_0 = is_column_const[0] ? container0[0] : container0[i];
-                const AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
+                AggregateDataPtr data_ptr_0 = is_column_const[0] ? container0[0] : container0[i];
+                AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
 
                 col_to->insertFrom(data_ptr_0);
                 AggregateFunctionUniqThetaData & sketch_data_1 = *reinterpret_cast<AggregateFunctionUniqThetaData *>(col_to->getData()[i]);

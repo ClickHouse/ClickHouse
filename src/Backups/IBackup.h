@@ -1,10 +1,15 @@
 #pragma once
 
+#include "config.h"
+
+#include <ctime>
+#include <map>
+#include <memory>
+#include <optional>
+
 #include <Core/Types.h>
 #include <Disks/WriteMode.h>
 #include <IO/WriteSettings.h>
-#include <memory>
-#include <optional>
 
 
 namespace DB
@@ -15,6 +20,7 @@ struct BackupFileInfo;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class SeekableReadBuffer;
+class ReadBufferFromFileBase;
 
 /// Represents a backup, i.e. a storage of BackupEntries which can be accessed by their names.
 /// A backup can be either incremental or non-incremental. An incremental backup doesn't store
@@ -28,14 +34,18 @@ public:
     //virtual const String & getName() const = 0;
     virtual const String & getNameForLogging() const = 0;
 
-    enum class OpenMode
+    enum class OpenMode : uint8_t
     {
         READ,
         WRITE,
+        UNLOCK, /// unlock a lightweight backup
     };
 
     /// Returns whether the backup was opened for reading or writing.
     virtual OpenMode getOpenMode() const = 0;
+
+    /// Settings effectively used by the backup engine's reader/writer (e.g. S3 `allow_native_copy`). Empty if none.
+    virtual std::map<String, String> getEngineSettings() const = 0;
 
     /// Returns the time point when this backup was created.
     virtual time_t getTimestamp() const = 0;
@@ -43,7 +53,11 @@ public:
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
 
-    /// Returns the base backup (can be null).
+    /// The backup's operation id (the `id` setting, else the UUID), as recorded in the manifest.
+    /// Empty for backups written before this field existed.
+    virtual const String & getBackupId() const = 0;
+
+    /// Returns the base backup or null if there is no base backup.
     virtual std::shared_ptr<const IBackup> getBaseBackup() const = 0;
 
     /// Returns the number of files stored in the backup. Compare with getNumEntries().
@@ -78,9 +92,12 @@ public:
     /// The following is always true: `getNumReadBytes() <= getTotalSize()`.
     virtual UInt64 getNumReadBytes() const = 0;
 
+    /// Checks if a specified directory exists.
+    virtual bool directoryExists(const String & directory) const = 0;
+
     /// Returns names of entries stored in a specified directory in the backup.
     /// If `directory` is empty or '/' the functions returns entries in the backup's root.
-    virtual Strings listFiles(const String & directory, bool recursive = false) const = 0;
+    virtual Strings listFiles(const String & directory, bool recursive) const = 0;
 
     /// Checks if a specified directory contains any files.
     /// The function returns the same as `!listFiles(directory).empty()`.
@@ -96,32 +113,78 @@ public:
     /// This function does the same as `read(file_name)->getSize()` but faster.
     virtual UInt64 getFileSize(const String & file_name) const = 0;
 
+#if CLICKHOUSE_CLOUD
+    /// Methods guarded by CLICKHOUSE_CLOUD are deliberately not pure: they do not exist in the public
+    /// build, so a subclass written there cannot know it must override them.
+
+    /// Returns the disk name where the object is stored, e.g., in a lightweight snapshot.
+    /// Throws BACKUP_ENTRY_NOT_FOUND if the object_key is not found in the snapshot.
+    virtual const String & getRemoteDiskName(const String & object_key) const;
+
+    /// Converts a backup file name to its object key in remote storage.
+    /// Returns empty string if the file is not stored as a remote object (i.e., not part of a snapshot).
+    /// This is used for lightweight snapshot backups.
+    virtual String getObjectKey(const String & file_name) const;
+
+    /// Returns whether the file referenced by a lightweight snapshot is stored in the encrypted form
+    /// (i.e. it belongs to an encrypted disk and the object contains the raw encrypted bytes),
+    /// according to the metadata of the snapshot.
+    /// object_key is the remote storage path (e.g. S3 key) where the file is located.
+    virtual bool isFileEncryptedByDisk(const String & /* object_key */) const { return false; }
+
+    /// Returns the namespace (e.g. S3 bucket) of the object storage the files referenced by
+    /// a lightweight snapshot are located in, according to the metadata of the snapshot.
+    /// Empty if the backup is not a lightweight snapshot.
+    virtual String getOriginalNamespace() const { return ""; }
+
+    /// Returns the endpoint of the object storage the files referenced by a lightweight snapshot
+    /// are located in, according to the metadata of the snapshot.
+    /// Empty if the backup is not a lightweight snapshot.
+    virtual String getOriginalEndpoint() const { return ""; }
+#endif
     /// Returns the checksum of the entry's data.
-    /// This function does the same as `read(file_name)->getCheckum()` but faster.
+    /// This function does the same as `read(file_name)->getChecksum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
     /// Returns both the size and checksum in one call.
     virtual SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const = 0;
 
     /// Reads an entry from the backup.
-    virtual std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const = 0;
-    virtual std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const = 0;
+
+#if CLICKHOUSE_CLOUD
+    /// Reads a file directly from remote storage using its object key.
+    /// Used for lightweight snapshot backups.
+    /// object_key is the remote storage path (e.g., S3 key) where the file is located.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readRemoteFile(const String & object_key) const;
+#endif
 
     /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
-    virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path,
-                                  WriteMode write_mode = WriteMode::Rewrite) const = 0;
+    /// When `sync` is true the destination file's contents are fsynced before this call returns, so a
+    /// restored part can be made as durable as an inserted one (see MergeTreeData::restorePartFromBackup).
+    virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const = 0;
 
-    virtual size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
-                                  WriteMode write_mode = WriteMode::Rewrite) const = 0;
+    virtual size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const = 0;
 
     /// Puts a new entry to the backup.
     virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
 
-    /// Finalizes writing the backup, should be called after all entries have been successfully written.
-    virtual void finalizeWriting() = 0;
+    virtual void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept = 0;
 
     /// Whether it's possible to add new entries to the backup in multiple threads.
     virtual bool supportsWritingInMultipleThreads() const = 0;
+
+    /// Finalizes writing the backup, should be called after all entries have been successfully written.
+    virtual void finalizeWriting() = 0;
+
+    /// Sets that a non-retriable error happened while the backup was being written which means that
+    /// the backup is most likely corrupted and it can't be finalized.
+    /// This function is called while handling an exception or if the backup was cancelled.
+    virtual bool setIsCorrupted() noexcept = 0;
+
+    /// Try to remove all files copied to the backup. Could be used after setIsCorrupted().
+    virtual bool tryRemoveAllFiles() noexcept = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

@@ -1,3 +1,5 @@
+SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
+
 select toUInt8(x) from values('x Nullable(String)', '42', NULL, '0', '', '256');
 select toInt64(x) from values('x Nullable(String)', '42', NULL, '0', '', '256');
 

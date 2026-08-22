@@ -6,6 +6,8 @@
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/NaNUtils.h>
+#include <Common/iota.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -30,8 +32,8 @@ namespace ErrorCodes
 template <typename T>    /// float or double
 struct QuantileLevels
 {
-    using Levels = std::vector<T>;
-    using Permutation = std::vector<size_t>;
+    using Levels = VectorWithMemoryTracking<T>;
+    using Permutation = VectorWithMemoryTracking<size_t>;
 
     Levels levels;
     Permutation permutation;    /// Index of the i-th level in `levels`.
@@ -63,10 +65,9 @@ struct QuantileLevels
 
             if (isNaN(levels[i]) || levels[i] < 0 || levels[i] > 1)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Quantile level is out of range [0..1]");
-
-            permutation[i] = i;
         }
 
+        iota(permutation.data(), size, Permutation::value_type(0));
         ::sort(permutation.begin(), permutation.end(), [this] (size_t a, size_t b) { return levels[a] < levels[b]; });
     }
 };

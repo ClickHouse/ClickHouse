@@ -16,6 +16,7 @@ create table out_01277
     b2 Int,
     c  Int
 ) Engine=Null();
+
 create table buffer_01277 as out_01277 Engine=Buffer(currentDatabase(), out_01277, 1,
     86400, 86400,
     1e5, 1e6,

@@ -1,12 +1,29 @@
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
 
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
+#include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+void setKeeperFileDescriptorMetrics(
+    AsynchronousMetricValues & new_values, Int64 open_file_descriptor_count, std::optional<size_t> max_file_descriptor_count)
+{
+    new_values["KeeperOpenFileDescriptorCount"]
+        = {open_file_descriptor_count, "The number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined."};
+    if (max_file_descriptor_count.has_value())
+        new_values["KeeperMaxFileDescriptorCount"] = {
+            *max_file_descriptor_count,
+            "The maximum number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined."};
+    else
+        new_values["KeeperMaxFileDescriptorCount"]
+            = {-1, "The maximum number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined."};
+}
 
 void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousMetricValues & new_values)
 {
@@ -15,21 +32,18 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     size_t is_follower = 0;
     size_t is_observer = 0;
     size_t is_standalone = 0;
-    size_t znode_count = 0;
-    size_t watch_count = 0;
-    size_t ephemerals_count = 0;
-    size_t approximate_data_size = 0;
-    size_t key_arena_size = 0;
-    size_t latest_snapshot_size = 0;
-    size_t open_file_descriptor_count = 0;
-    size_t max_file_descriptor_count = 0;
+    /// Signed on purpose: `getCurrentProcessFDCount` reports an undetermined count as `-1`,
+    /// and it must not wrap around to 2^64 - 1, which is indistinguishable from an unlimited
+    /// `RLIMIT_NOFILE`. This matches the contract of the `mntr` four-letter command.
+    /// The values are assigned only on Linux and macOS, so start from "undetermined",
+    /// not from 0, for the same reason.
+    Int64 open_file_descriptor_count = -1;
+    std::optional<size_t> max_file_descriptor_count;
     size_t followers = 0;
     size_t synced_followers = 0;
-    size_t zxid = 0;
-    size_t session_with_watches = 0;
-    size_t paths_watched = 0;
-    //size_t snapshot_dir_size = 0;
-    //size_t log_dir_size = 0;
+    size_t is_exceeding_mem_soft_limit = 0;
+    UInt64 last_leader_election_time_ms = 0;
+    UInt64 last_leader_unavailable_time_ms = 0;
 
     if (keeper_dispatcher.isServerActive())
     {
@@ -38,19 +52,7 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         is_leader = static_cast<size_t>(keeper_info.is_leader);
         is_observer = static_cast<size_t>(keeper_info.is_observer);
         is_follower = static_cast<size_t>(keeper_info.is_follower);
-
-        zxid = keeper_info.last_zxid;
-        const auto & state_machine = keeper_dispatcher.getStateMachine();
-        znode_count = state_machine.getNodesCount();
-        watch_count = state_machine.getTotalWatchesCount();
-        ephemerals_count = state_machine.getTotalEphemeralNodesCount();
-        approximate_data_size = state_machine.getApproximateDataSize();
-        key_arena_size = state_machine.getKeyArenaSize();
-        latest_snapshot_size = state_machine.getLatestSnapshotBufSize();
-        session_with_watches = state_machine.getSessionsWithWatchesCount();
-        paths_watched = state_machine.getWatchedPathsCount();
-        //snapshot_dir_size = keeper_dispatcher.getSnapDirSize();
-        //log_dir_size = keeper_dispatcher.getLogDirSize();
+        is_exceeding_mem_soft_limit = static_cast<size_t>(keeper_info.is_exceeding_mem_soft_limit);
 
 #    if defined(__linux__) || defined(__APPLE__)
         open_file_descriptor_count = getCurrentProcessFDCount();
@@ -61,32 +63,40 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         {
             followers = keeper_info.follower_count;
             synced_followers = keeper_info.synced_follower_count;
+            if (keeper_info.last_leader_election_time_ms)
+                last_leader_election_time_ms = *keeper_info.last_leader_election_time_ms;
+            if (keeper_info.last_leader_unavailable_time_ms)
+                last_leader_unavailable_time_ms = *keeper_info.last_leader_unavailable_time_ms;
         }
     }
+
+    const auto & state_machine = keeper_dispatcher.getStateMachine();
+    const auto storage_stats = state_machine.getStorageStatsAndAsynchronousMetrics(new_values);
 
     new_values["KeeperIsLeader"] = { is_leader, "1 if ClickHouse Keeper is a leader, 0 otherwise." };
     new_values["KeeperIsFollower"] = { is_follower, "1 if ClickHouse Keeper is a follower, 0 otherwise." };
     new_values["KeeperIsObserver"] = { is_observer, "1 if ClickHouse Keeper is an observer, 0 otherwise." };
     new_values["KeeperIsStandalone"] = { is_standalone, "1 if ClickHouse Keeper is in a standalone mode, 0 otherwise." };
+    new_values["KeeperIsExceedingMemorySoftLimitHit"] = { is_exceeding_mem_soft_limit, "1 if ClickHouse Keeper is exceeding the memory soft limit, 0 otherwise." };
+    new_values["KeeperLastLeaderElectionTime"] = { last_leader_election_time_ms, "Duration in milliseconds of the most recent locally observed no-leader window that ended when this ClickHouse Keeper instance became leader. Leadership transfers that do not expose a sampled no-leader state are not recorded. `0` if this instance is not the active leader or has no recorded completed window." };
+    new_values["KeeperLastLeaderUnavailableTime"] = { last_leader_unavailable_time_ms, "Duration in milliseconds of the most recent locally observed no-leader window completed by this ClickHouse Keeper leader. `0` if this instance is not the active leader or has no recorded completed no-leader window." };
 
-    new_values["KeeperZnodeCount"] = { znode_count, "The number of nodes (data entries) in ClickHouse Keeper." };
-    new_values["KeeperWatchCount"] = { watch_count, "The number of watches in ClickHouse Keeper." };
-    new_values["KeeperEphemeralsCount"] = { ephemerals_count, "The number of ephemeral nodes in ClickHouse Keeper." };
+    new_values["KeeperZnodeCount"] = { storage_stats.nodes_count, "The number of nodes (data entries) in ClickHouse Keeper." };
+    new_values["KeeperWatchCount"] = { storage_stats.total_watches_count, "The number of watches in ClickHouse Keeper." };
+    new_values["KeeperEphemeralsCount"] = { storage_stats.total_emphemeral_nodes_count, "The number of ephemeral nodes in ClickHouse Keeper." };
 
-    new_values["KeeperApproximateDataSize"] = { approximate_data_size, "The approximate data size of ClickHouse Keeper, in bytes." };
-    new_values["KeeperKeyArenaSize"] = { key_arena_size, "The size in bytes of the memory arena for keys in ClickHouse Keeper." };
-    new_values["KeeperLatestSnapshotSize"] = { latest_snapshot_size, "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper." };
+    new_values["KeeperApproximateDataSize"] = { storage_stats.approximate_data_size, "The approximate data size of ClickHouse Keeper, in bytes." };
+    /// TODO: value was incorrectly set to 0 previously for local snapshots
+    /// it needs to be fixed and it needs to be atomic to avoid deadlock
+    ///new_values["KeeperLatestSnapshotSize"] = { latest_snapshot_size, "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper." };
 
-    new_values["KeeperOpenFileDescriptorCount"] = { open_file_descriptor_count, "The number of open file descriptors in ClickHouse Keeper." };
-    new_values["KeeperMaxFileDescriptorCount"] = { max_file_descriptor_count, "The maximum number of open file descriptors in ClickHouse Keeper." };
+    setKeeperFileDescriptorMetrics(new_values, open_file_descriptor_count, max_file_descriptor_count);
 
     new_values["KeeperFollowers"] = { followers, "The number of followers of ClickHouse Keeper." };
     new_values["KeeperSyncedFollowers"] = { synced_followers, "The number of followers of ClickHouse Keeper who are also in-sync." };
-    new_values["KeeperZxid"] = { zxid, "The current transaction id number (zxid) in ClickHouse Keeper." };
-    new_values["KeeperSessionWithWatches"] = { session_with_watches, "The number of client sessions of ClickHouse Keeper having watches." };
-    new_values["KeeperPathsWatched"] = { paths_watched, "The number of different paths watched by the clients of ClickHouse Keeper." };
-    //new_values["KeeperSnapshotDirSize"] = { snapshot_dir_size, "The size of the snapshots directory of ClickHouse Keeper, in bytes." };
-    //new_values["KeeperLogDirSize"] = { log_dir_size, "The size of the logs directory of ClickHouse Keeper, in bytes." };
+    new_values["KeeperZxid"] = { storage_stats.last_committed_zxid, "The current transaction id number (zxid) in ClickHouse Keeper." };
+    new_values["KeeperSessionWithWatches"] = { storage_stats.sessions_with_watches_count, "The number of client sessions of ClickHouse Keeper having watches." };
+    new_values["KeeperPathsWatched"] = { storage_stats.watched_paths_count, "The number of different paths watched by the clients of ClickHouse Keeper." };
 
     auto keeper_log_info = keeper_dispatcher.getKeeperLogInfo();
 
@@ -96,6 +106,12 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperLastCommittedLogIdx"] = { keeper_log_info.last_committed_log_idx, "Index of the last committed log in ClickHouse Keeper." };
     new_values["KeeperTargetCommitLogIdx"] = { keeper_log_info.target_committed_log_idx, "Index until which logs can be committed in ClickHouse Keeper." };
     new_values["KeeperLastSnapshotIdx"] = { keeper_log_info.last_snapshot_idx, "Index of the last log present in the last created snapshot." };
+
+    new_values["KeeperLatestLogsCacheEntries"] = {keeper_log_info.latest_logs_cache_entries, "Number of entries stored in the in-memory cache for latest logs"};
+    new_values["KeeperLatestLogsCacheSize"] = {keeper_log_info.latest_logs_cache_size, "Total size of in-memory cache for latest logs"};
+
+    new_values["KeeperCommitLogsCacheEntries"] = {keeper_log_info.commit_logs_cache_entries, "Number of decoded log entries currently buffered ahead of the commit thread by the changelog read-ahead reader"};
+    new_values["KeeperCommitLogsCacheSize"] = {keeper_log_info.commit_logs_cache_size, "Total size of decoded log entries currently buffered ahead of the commit thread by the changelog read-ahead reader"};
 
     auto & keeper_connection_stats = keeper_dispatcher.getKeeperConnectionStats();
 
@@ -108,12 +124,28 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
 }
 
 KeeperAsynchronousMetrics::KeeperAsynchronousMetrics(
-    ContextPtr context_, int update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
-    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_), context(std::move(context_))
+    ContextPtr context_,
+    unsigned update_period_seconds,
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+    bool update_jemalloc_epoch_,
+    bool update_rss_)
+    : AsynchronousMetrics(
+        update_period_seconds,
+        protocol_server_metrics_func_,
+        update_jemalloc_epoch_,
+        update_rss_,
+        context_)
+    , context(std::move(context_))
 {
 }
 
-void KeeperAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint /*update_time*/, TimePoint /*current_time*/)
+KeeperAsynchronousMetrics::~KeeperAsynchronousMetrics()
+{
+    /// NOTE: stop() from base class is not enough, since this leads to leak on vptr
+    stop();
+}
+
+void KeeperAsynchronousMetrics::updateImpl(TimePoint /*update_time*/, TimePoint /*current_time*/, bool /*force_update*/, bool /*first_run*/, AsynchronousMetricValues & new_values)
 {
 #if USE_NURAFT
     {
@@ -122,6 +154,12 @@ void KeeperAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             updateKeeperInformation(*keeper_dispatcher, new_values);
     }
 #endif
+}
+
+void KeeperAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
+{
+    if (auto asynchronous_metric_log = context->getAsynchronousMetricLog())
+        asynchronous_metric_log->addValues(new_values);
 }
 
 }

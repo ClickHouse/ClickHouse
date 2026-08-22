@@ -16,7 +16,7 @@ CREATE DICTIONARY hierarchy_flat_dictionary_index
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'test_hierarchy_source_table'))
 LAYOUT(FLAT())
-LIFETIME(0); -- {serverError 36 }
+LIFETIME(0); -- {serverError BAD_ARGUMENTS }
 
 DROP DICTIONARY IF EXISTS hierarchy_flat_dictionary_index;
 CREATE DICTIONARY hierarchy_flat_dictionary_index

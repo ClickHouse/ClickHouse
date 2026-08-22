@@ -1,0 +1,23 @@
+name: Clean runner
+description: Clean the runner's temp path on ending
+inputs:
+  images:
+    description: clean docker images
+    default: false
+    type: boolean
+runs:
+  using: "composite"
+  steps:
+    - name: Clean Temp
+      shell: bash
+      run: |
+        sudo rm -fr "${{runner.temp}}"
+    - name: Clean Docker Containers
+      shell: bash
+      run: |
+          docker rm -vf $(docker ps -aq) ||:
+    - name: Clean Docker Images
+      if: ${{ inputs.images }}
+      shell: bash
+      run: |
+        docker rmi -f $(docker images -aq) ||:

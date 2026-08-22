@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -73,3 +74,8 @@ def test_default_database_on_cluster(started_cluster):
             database="test_default_database",
             sql="SHOW CREATE test_local_table FORMAT TSV",
         ).endswith("old_parts_lifetime = 100\n")
+
+    ch1.query(
+        database="test_default_database",
+        sql="DROP TABLE test_local_table ON CLUSTER 'cluster' SYNC",
+    )

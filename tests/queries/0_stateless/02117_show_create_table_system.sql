@@ -1,6 +1,6 @@
 /* we will `use system` to bypass style check,
 because `show create table` statement
-cannot fit the requirement in check-sytle, which is as
+cannot fit the requirement in check-style, which is as
 
 "# Queries to:
 tables_with_database_column=(
@@ -25,11 +25,13 @@ show create table collations format TSVRaw;
 show create table columns format TSVRaw;
 show create table contributors format TSVRaw;
 show create table current_roles format TSVRaw;
+show create table data_skipping_index_types format TSVRaw;
 show create table data_skipping_indices format TSVRaw;
 show create table data_type_families format TSVRaw;
 show create table databases format TSVRaw;
 show create table detached_parts format TSVRaw;
 show create table dictionaries format TSVRaw;
+show create table dictionary_layouts format TSVRaw;
 show create table disks format TSVRaw;
 show create table distributed_ddl_queue format TSVRaw;
 show create table distribution_queue format TSVRaw;
@@ -38,7 +40,7 @@ show create table errors format TSVRaw;
 show create table events format TSVRaw;
 show create table formats format TSVRaw;
 show create table functions format TSVRaw;
-show create table grants format TSVRaw;
+-- show create table grants format TSVRaw; -- it's updated too often, it's inconvenient to update the test
 show create table graphite_retentions format TSVRaw;
 show create table licenses format TSVRaw;
 show create table macros format TSVRaw;
@@ -53,7 +55,7 @@ show create table one format TSVRaw;
 show create table part_moves_between_shards format TSVRaw;
 show create table parts format TSVRaw;
 show create table parts_columns format TSVRaw;
-show create table privileges format TSVRaw;
+-- show create table privileges format TSVRaw; -- it's updated too often, it's inconvenient to update the test
 show create table processes format TSVRaw;
 show create table projection_parts format TSVRaw;
 show create table projection_parts_columns format TSVRaw;

@@ -8,14 +8,14 @@ SET send_logs_level='error';
 CREATE TABLE tmp_01683 (n Int8) ENGINE=Memory;
 CREATE TABLE dist_01683 (n UInt64) Engine=Distributed(test_cluster_two_shards, currentDatabase(), tmp_01683, n);
 
-SET insert_distributed_sync=1;
+SET distributed_foreground_insert=1;
 INSERT INTO dist_01683 VALUES (1),(2);
 
-SET insert_distributed_sync=0;
+SET distributed_foreground_insert=0;
 INSERT INTO dist_01683 VALUES (1),(2);
 SYSTEM FLUSH DISTRIBUTED dist_01683;
 
--- TODO: cover distributed_directory_monitor_batch_inserts=1
+-- TODO: cover distributed_background_insert_batch=1
 
 SELECT * FROM tmp_01683 ORDER BY n;
 

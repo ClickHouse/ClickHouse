@@ -1,0 +1,15 @@
+# foo (pipe)
+foo
+# foo (file)
+foo
+# !foo
+# bar
+bar
+# defaults
+bam
+# inferred destination table structure
+foo
+# direct
+foo
+# infile
+foo

@@ -10,10 +10,6 @@
 # Most of the command line options are the same, for more information type
 # ./clickhouse_grpc_client.py --help
 
-import grpc  # pip3 install grpcio
-import grpc_tools  # pip3 install grpcio-tools
-import argparse, cmd, os, signal, subprocess, sys, threading, time, uuid
-
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 9100
 DEFAULT_USER_NAME = "default"
@@ -22,6 +18,25 @@ HISTORY_FILENAME = "~/.clickhouse_grpc_history"
 HISTORY_SIZE = 1000
 STDIN_BUFFER_SIZE = 1048576
 DEFAULT_ENCODING = "utf-8"
+
+
+import argparse
+import cmd
+import os
+import signal
+import sys
+import threading
+import time
+import uuid
+
+import grpc  # pip3 install grpcio
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+pb2_dir = os.path.join(script_dir, "pb2")
+if pb2_dir not in sys.path:
+    sys.path.append(pb2_dir)
+import clickhouse_grpc_pb2  # Execute pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 
 class ClickHouseGRPCError(Exception):
@@ -59,6 +74,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
         port=DEFAULT_PORT,
         user_name=DEFAULT_USER_NAME,
         password="",
+        jwt="",
         database="",
         output_format="",
         settings="",
@@ -70,6 +86,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
         self.port = port
         self.user_name = user_name
         self.password = password
+        self.jwt = jwt
         self.database = database
         self.output_format = output_format
         self.settings = settings
@@ -80,8 +97,6 @@ class ClickHouseGRPCClient(cmd.Cmd):
         self.session_id = None
 
     def __enter__(self):
-        ClickHouseGRPCClient.__generate_pb2()
-        ClickHouseGRPCClient.__import_pb2()
         self.__connect()
         return self
 
@@ -95,6 +110,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
                 query=query_text,
                 user_name=self.user_name,
                 password=self.password,
+                jwt=self.jwt,
                 database=self.database,
                 output_format="TabSeparated",
                 settings=self.settings,
@@ -136,6 +152,7 @@ class ClickHouseGRPCClient(cmd.Cmd):
                         query=query_text,
                         user_name=self.user_name,
                         password=self.password,
+                        jwt=self.jwt,
                         database=self.database,
                         output_format=self.output_format,
                         settings=self.settings,
@@ -229,40 +246,6 @@ class ClickHouseGRPCClient(cmd.Cmd):
         if result.HasField("exception"):
             raise ClickHouseGRPCError(result.exception.display_text)
 
-    # Use grpcio-tools to generate *pb2.py files from *.proto.
-    @staticmethod
-    def __generate_pb2():
-        script_dir = os.path.dirname(os.path.realpath(__file__))
-        proto_dir = os.path.join(script_dir, "./protos")
-        gen_dir = os.path.join(script_dir, "./_gen")
-        if os.path.exists(os.path.join(gen_dir, "clickhouse_grpc_pb2_grpc.py")):
-            return
-        os.makedirs(gen_dir, exist_ok=True)
-        cmd = [
-            "python3",
-            "-m",
-            "grpc_tools.protoc",
-            "-I" + proto_dir,
-            "--python_out=" + gen_dir,
-            "--grpc_python_out=" + gen_dir,
-            proto_dir + "/clickhouse_grpc.proto",
-        ]
-        p = subprocess.Popen(cmd, stderr=subprocess.PIPE)
-        # We don't want to show grpc_tools warnings.
-        errors = p.stderr.read().decode().strip("\n").split("\n")
-        only_warnings = all(("Warning" in error) for error in errors)
-        if not only_warnings:
-            error_print("\n".join(errors))
-
-    # Import the generated *pb2.py files.
-    @staticmethod
-    def __import_pb2():
-        script_dir = os.path.dirname(os.path.realpath(__file__))
-        gen_dir = os.path.join(script_dir, "./_gen")
-        sys.path.append(gen_dir)
-        global clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc
-        import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc
-
     # Prints only if interactive mode is activated.
     def verbatim_print(self, *args, **kwargs):
         if self.verbatim:
@@ -325,7 +308,7 @@ def main(args):
     parser.add_argument(
         "--host",
         "-h",
-        help="The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.",
+        help="The server name, 'localhost' by default. You can use either the name or the IPv4 or IPv6 address.",
         default="localhost",
     )
     parser.add_argument(
@@ -337,11 +320,16 @@ def main(args):
         "--user",
         "-u",
         dest="user_name",
-        help="The username. Default value: ‘default’.",
+        help="The username. Default value: 'default'.",
         default="default",
     )
     parser.add_argument(
         "--password", help="The password. Default value: empty string.", default=""
+    )
+    parser.add_argument(
+        "--jwt",
+        help="JSON Web Token based authentication. Default value: empty string.",
+        default="",
     )
     parser.add_argument(
         "--query",
@@ -352,7 +340,7 @@ def main(args):
     parser.add_argument(
         "--database",
         "-d",
-        help="Select the current default database. Default value: the current database from the server settings (‘default’ by default).",
+        help="Select the current default database. Default value: the current database from the server settings ('default' by default).",
         default="",
     )
     parser.add_argument(
@@ -387,6 +375,7 @@ def main(args):
             port=args.port,
             user_name=args.user_name,
             password=args.password,
+            jwt=args.jwt,
             database=args.database,
             output_format=output_format,
             verbatim=verbatim,

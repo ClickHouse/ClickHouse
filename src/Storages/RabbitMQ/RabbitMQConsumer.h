@@ -4,6 +4,9 @@
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/saturatedDuration.h>
+
+#include <functional>
 
 namespace Poco
 {
@@ -22,6 +25,7 @@ class RabbitMQHandler;
 class RabbitMQConnection;
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 static constexpr auto SANITY_TIMEOUT = 1000 * 60 * 10; /// 10min.
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class RabbitMQConsumer
 {
@@ -32,13 +36,14 @@ public:
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         uint32_t queue_size_);
 
     struct CommitInfo
     {
         UInt64 delivery_tag = 0;
         String channel_id;
+        std::vector<UInt64> failed_delivery_tags;
     };
 
     struct MessageData
@@ -50,7 +55,9 @@ public:
         UInt64 delivery_tag = 0;
         String channel_id;
     };
+
     const MessageData & currentMessage() { return current; }
+    const String & getChannelID() const { return channel_id; }
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.
@@ -63,16 +70,21 @@ public:
     bool isConsumerStopped() const { return stopped.load(); }
 
     bool ackMessages(const CommitInfo & commit_info);
+    bool nackMessages(const CommitInfo & commit_info, bool requeue = false);
 
     bool hasPendingMessages() { return !received.empty(); }
 
-    void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt)
+    void waitForMessages(std::optional<uint64_t> timeout_ms = std::nullopt, std::function<bool()> is_cancelled = {})
     {
         std::unique_lock lock(mutex);
         if (!timeout_ms)
             timeout_ms = SANITY_TIMEOUT;
-        cv.wait_for(lock, std::chrono::milliseconds(*timeout_ms), [this]{ return !received.empty() || isConsumerStopped(); });
+        cv.wait_for(lock, saturatedMilliseconds(*timeout_ms),
+            [&]{ return !received.empty() || isConsumerStopped() || (is_cancelled && is_cancelled()); });
     }
+
+    /// Wake a source parked in `waitForMessages` so it can re-check its cancellation state.
+    void wakeUp();
 
     void closeConnections();
 
@@ -88,13 +100,13 @@ private:
     const String channel_base;
     const size_t channel_id_base;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     std::atomic<bool> stopped;
 
     String channel_id;
     UInt64 channel_id_counter = 0;
 
-    enum class State
+    enum class State : uint8_t
     {
         NONE,
         INITIALIZING,
@@ -107,7 +119,7 @@ private:
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;
 
-    UInt64 last_commited_delivery_tag;
+    UInt64 last_commited_delivery_tag = 0;
 
     std::condition_variable cv;
     std::mutex mutex;

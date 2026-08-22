@@ -35,8 +35,8 @@ SELECT * FROM t1 FULL JOIN full_join j USING(x) ORDER BY x, str, s;
 
 SET join_use_nulls = 1;
 
-SELECT * FROM t1 LEFT JOIN left_join j USING(x) ORDER BY x, str, s; -- { serverError 264 }
-SELECT * FROM t1 FULL JOIN full_join j USING(x) ORDER BY x, str, s; -- { serverError 264 }
+SELECT * FROM t1 LEFT JOIN left_join j USING(x) ORDER BY x, str, s; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t1 FULL JOIN full_join j USING(x) ORDER BY x, str, s; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 
 SELECT 'inner (join_use_nulls mix)';
 SELECT * FROM t1 INNER JOIN inner_join j USING(x) ORDER BY x, str, s;
@@ -73,8 +73,8 @@ SELECT * FROM t1 FULL JOIN full_join j USING(x) ORDER BY x, str, s;
 
 SET join_use_nulls = 0;
 
-SELECT * FROM t1 LEFT JOIN left_join j USING(x) ORDER BY x, str, s; -- { serverError 264 }
-SELECT * FROM t1 FULL JOIN full_join j USING(x) ORDER BY x, str, s; -- { serverError 264 }
+SELECT * FROM t1 LEFT JOIN left_join j USING(x) ORDER BY x, str, s; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
+SELECT * FROM t1 FULL JOIN full_join j USING(x) ORDER BY x, str, s; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN }
 
 SELECT 'inner (join_use_nulls mix2)';
 SELECT * FROM t1 INNER JOIN inner_join j USING(x) ORDER BY x, str, s;

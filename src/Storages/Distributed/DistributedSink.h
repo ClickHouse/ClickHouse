@@ -1,16 +1,16 @@
 #pragma once
 
-#include <Parsers/formatAST.h>
+#include <Client/ConnectionPool.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Common/PODArray.h>
+#include <Core/Block_fwd.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
 #include <atomic>
 #include <memory>
-#include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
 
@@ -36,7 +36,7 @@ class PushingPipelineExecutor;
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
-class DistributedSink : public SinkToStorage
+class DistributedSink final : public SinkToStorage
 {
 public:
     DistributedSink(
@@ -46,15 +46,14 @@ public:
         const ClusterPtr & cluster_,
         bool insert_sync_,
         UInt64 insert_timeout_,
-        StorageID main_table_,
         const Names & columns_to_send_);
 
     String getName() const override { return "DistributedSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
-    void onCancel() override;
+    void onCancel() noexcept override;
 
     IColumn::Selector createSelector(const Block & source_block) const;
 
@@ -72,6 +71,9 @@ private:
 
     /// Increments finished_writings_count after each repeat.
     void writeToLocal(const Cluster::ShardInfo & shard_info, const Block & block, size_t repeats);
+
+    /// Async inserts are spooled into a directory named after each element of `dir_names`.
+    void checkDirectoryNameLengths(const Cluster::ShardInfo & shard_info, const std::vector<std::string> & dir_names) const;
 
     void writeToShard(const Cluster::ShardInfo & shard_info, const Block & block, const std::vector<std::string> & dir_names);
 
@@ -108,12 +110,13 @@ private:
 
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds
-    StorageID main_table;
     NameSet columns_to_send;
     Stopwatch watch;
     Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
+
+    std::mutex execution_mutex;
 
     struct JobReplica
     {
@@ -124,10 +127,13 @@ private:
         size_t replica_index = 0;
         bool is_local_job = false;
 
+        /// The shard reported an ignorable error (see `skip_unavailable_shards_mode`); discard its data.
+        bool skip = false;
+
         Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;
-        ContextPtr local_context;
+        ContextMutablePtr local_context;
         QueryPipeline pipeline;
         std::unique_ptr<PushingPipelineExecutor> executor;
 
@@ -152,7 +158,7 @@ private:
 
     std::atomic<unsigned> finished_jobs_count{0};
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

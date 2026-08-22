@@ -1,16 +1,14 @@
 #pragma once
 
-#include "IArraySink.h"
+#include <Functions/GatherUtils/IArraySink.h>
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
 namespace DB::GatherUtils
@@ -48,7 +46,7 @@ struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
     NumericArraySink(IColumn & elements_, ColumnArray::Offsets & offsets_, size_t column_size)
             : elements(assert_cast<ColVecType&>(elements_).getData()), offsets(offsets_)
     {
-        offsets.resize(column_size);
+        offsets.resize_exact(column_size);
     }
 
     void next()
@@ -69,7 +67,7 @@ struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
 
     void reserve(size_t num_elements)
     {
-        elements.reserve(num_elements);
+        elements.reserve_exact(num_elements);
     }
 };
 
@@ -85,13 +83,11 @@ struct StringSink
     StringSink(ColumnString & col, size_t column_size)
             : elements(col.getChars()), offsets(col.getOffsets())
     {
-        offsets.resize(column_size);
+        offsets.resize_exact(column_size);
     }
 
     void ALWAYS_INLINE next()
     {
-        elements.push_back(0);
-        ++current_offset;
         offsets[row_num] = current_offset;
         ++row_num;
     }
@@ -108,7 +104,7 @@ struct StringSink
 
     void reserve(size_t num_elements)
     {
-        elements.reserve(num_elements);
+        elements.reserve_exact(num_elements);
     }
 };
 
@@ -125,7 +121,7 @@ struct FixedStringSink
     FixedStringSink(ColumnFixedString & col, size_t column_size)
             : elements(col.getChars()), string_size(col.getN()), total_rows(column_size)
     {
-        elements.resize(column_size * string_size);
+        elements.resize_exact(column_size * string_size);
     }
 
     void next()
@@ -146,7 +142,7 @@ struct FixedStringSink
 
     void reserve(size_t num_elements)
     {
-        elements.reserve(num_elements);
+        elements.reserve_exact(num_elements);
     }
 };
 
@@ -165,7 +161,7 @@ struct GenericArraySink : public ArraySinkImpl<GenericArraySink>
     GenericArraySink(IColumn & elements_, ColumnArray::Offsets & offsets_, size_t column_size)
             : elements(elements_), offsets(offsets_)
     {
-        offsets.resize(column_size);
+        offsets.resize_exact(column_size);
     }
 
     void next()
@@ -210,7 +206,7 @@ struct NullableArraySink : public ArraySink
     void reserve(size_t num_elements)
     {
         ArraySink::reserve(num_elements);
-        null_map.reserve(num_elements);
+        null_map.reserve_exact(num_elements);
     }
 };
 

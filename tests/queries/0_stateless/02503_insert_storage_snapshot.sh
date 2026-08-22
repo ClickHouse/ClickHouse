@@ -20,6 +20,13 @@ counter=0 retries=60
 # for a short period of time. To avoid flakyness we check that refcount became 1 at least once during long INSERT query.
 # It proves that the INSERT query doesn't hold redundant references to parts.
 while [[ $counter -lt $retries ]]; do
+    query_result=$($CLICKHOUSE_CLIENT -q "select count() from system.processes where query_id = '$query_id' FORMAT CSV")
+    if [ "$query_result" -lt 1 ]; then
+        sleep 0.1
+        ((++counter))
+        continue;
+    fi
+
     query_result=$($CLICKHOUSE_CLIENT -q "SELECT name, active, refcount FROM system.parts WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_insert_storage_snapshot' FORMAT CSV")
     if [ "$query_result" == '"all_1_1_0",1,1' ]; then
         echo "$query_result"

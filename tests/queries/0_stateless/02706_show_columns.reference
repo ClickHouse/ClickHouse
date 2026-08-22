@@ -1,47 +1,48 @@
 --- Aliases of SHOW COLUMNS
-int32	Nullable(Int32)	1		\N	
-str	String	0	SOR	\N	
-uint64	UInt64	0	PRI SOR	\N	
-int32	Nullable(Int32)	1		\N	
-str	String	0	SOR	\N	
-uint64	UInt64	0	PRI SOR	\N	
+int32	Nullable(Int32)	YES		\N	
+str	String	NO	SOR	\N	
+uint64	UInt64	NO	PRI SOR	\N	
+int32	Nullable(Int32)	YES		\N	
+str	String	NO	SOR	\N	
+uint64	UInt64	NO	PRI SOR	\N	
 --- EXTENDED
-int32	Nullable(Int32)	1		\N	
-str	String	0	SOR	\N	
-uint64	UInt64	0	PRI SOR	\N	
+int32	Nullable(Int32)	YES		\N	
+str	String	NO	SOR	\N	
+uint64	UInt64	NO	PRI SOR	\N	
 --- FULL
-int32	Nullable(Int32)	1		\N		\N	example comment	
-str	String	0	SOR	\N		\N		
-uint64	UInt64	0	PRI SOR	\N		\N		
+int32	Nullable(Int32)	YES		\N		\N	example comment	
+str	String	NO	SOR	\N		\N		
+uint64	UInt64	NO	PRI SOR	\N		\N		
 --- LIKE
-int32	Nullable(Int32)	1		\N	
-uint64	UInt64	0	PRI SOR	\N	
+int32	Nullable(Int32)	YES		\N	
+uint64	UInt64	NO	PRI SOR	\N	
 --- NOT LIKE
-str	String	0	SOR	\N	
+str	String	NO	SOR	\N	
 --- ILIKE
-int32	Nullable(Int32)	1		\N	
-uint64	UInt64	0	PRI SOR	\N	
+int32	Nullable(Int32)	YES		\N	
+uint64	UInt64	NO	PRI SOR	\N	
 --- NOT ILIKE
-str	String	0	SOR	\N	
+str	String	NO	SOR	\N	
 --- WHERE
-int32	Nullable(Int32)	1		\N	
-uint64	UInt64	0	PRI SOR	\N	
+int32	Nullable(Int32)	YES		\N	
+uint64	UInt64	NO	PRI SOR	\N	
 --- LIMIT
-int32	Nullable(Int32)	1		\N	
+int32	Nullable(Int32)	YES		\N	
 --- Check with weird table names
-c	String	0	PRI SOR	\N	
-c	String	0	PRI SOR	\N	
-c	String	0	PRI SOR	\N	
-c	String	0	PRI SOR	\N	
+c	String	NO	PRI SOR	\N	
+c	String	NO	PRI SOR	\N	
+c	String	NO	PRI SOR	\N	
+c	String	NO	PRI SOR	\N	
+c	String	NO	PRI SOR	\N	
 --- Original table
-int32	Nullable(Int32)	1		\N	
-str	String	0	SOR	\N	
-uint64	UInt64	0	PRI SOR	\N	
+int32	Nullable(Int32)	YES		\N	
+str	String	NO	SOR	\N	
+uint64	UInt64	NO	PRI SOR	\N	
 --- Equally named table in other database
-int32	Int32	0		\N	
-str	String	0		\N	
-uint64	UInt64	0	PRI SOR	\N	
+int32	Int32	NO		\N	
+str	String	NO		\N	
+uint64	UInt64	NO	PRI SOR	\N	
 --- Short form
-int32	Int32	0		\N	
-str	String	0		\N	
-uint64	UInt64	0	PRI SOR	\N	
+int32	Int32	NO		\N	
+str	String	NO		\N	
+uint64	UInt64	NO	PRI SOR	\N	

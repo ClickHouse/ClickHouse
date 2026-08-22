@@ -1,0 +1,41 @@
+*** correct aggregation ***
+1	0	0	1249950000
+1	0	2	1250000000
+1	1	1	1249975000
+1	1	3	1250025000
+*** correct aggregation with projection ***
+1	0	0	1249950000
+1	0	2	1250000000
+1	1	1	1249975000
+1	1	3	1250025000
+*** optimize_aggregation_in_order = 0, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 1 ***
+1	0	0	1249950000
+1	0	2	1250000000
+1	1	1	1249975000
+1	1	3	1250025000
+*** optimize_aggregation_in_order = 1, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 1 ***
+1	0	0	1249950000
+1	0	2	1250000000
+1	1	1	1249975000
+1	1	3	1250025000
+*** after materialization ***
+*** correct aggregation ***
+1	0	0	1249950000
+1	0	2	1250000000
+1	1	1	1249975000
+1	1	3	1250025000
+*** correct aggregation with projection ***
+1	0	0	1249950000
+1	0	2	1250000000
+1	1	1	1249975000
+1	1	3	1250025000
+*** optimize_aggregation_in_order = 0, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 1 ***
+1	0	0	1249950000
+1	0	2	1250000000
+1	1	1	1249975000
+1	1	3	1250025000
+*** optimize_aggregation_in_order = 1, max_bytes_before_external_group_by = 1, group_by_two_level_threshold = 1 ***
+1	0	0	1249950000
+1	0	2	1250000000
+1	1	1	1249975000
+1	1	3	1250025000

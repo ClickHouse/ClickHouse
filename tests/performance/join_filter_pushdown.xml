@@ -1,0 +1,9 @@
+<test>
+    <create_query>create table t(a UInt64) engine=MergeTree order by tuple()</create_query>
+    <fill_query>insert into t select * from numbers_mt(5e6)</fill_query>
+
+    <query>select * from t as t0 inner join t as t1 using(a) where t1.a = 100</query>
+
+    <drop_query>drop table t</drop_query>
+</test>
+

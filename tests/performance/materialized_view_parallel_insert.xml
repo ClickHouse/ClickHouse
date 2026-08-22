@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <parallel_view_processing>1</parallel_view_processing>
+    </settings>
+
     <create_query>
         CREATE MATERIALIZED VIEW hits_mv ENGINE MergeTree
         PARTITION BY toYYYYMM(EventDate)

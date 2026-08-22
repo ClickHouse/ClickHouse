@@ -9,7 +9,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
       COLUMN id: 4, column_name: b, result_type: LowCardinality(String), source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.02668_logical_optimizer
+    TABLE id: 3, alias: __table1, table_name: default.02668_logical_optimizer
   WHERE
     FUNCTION id: 5, function_name: in, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -26,7 +26,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
       COLUMN id: 4, column_name: b, result_type: LowCardinality(String), source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.02668_logical_optimizer
+    TABLE id: 3, alias: __table1, table_name: default.02668_logical_optimizer
   WHERE
     FUNCTION id: 5, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -42,7 +42,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
       COLUMN id: 4, column_name: b, result_type: LowCardinality(String), source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.02668_logical_optimizer
+    TABLE id: 3, alias: __table1, table_name: default.02668_logical_optimizer
   WHERE
     CONSTANT id: 5, constant_value: UInt64_0, constant_value_type: UInt8
 3	another
@@ -55,7 +55,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
       COLUMN id: 4, column_name: b, result_type: LowCardinality(String), source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.02668_logical_optimizer
+    TABLE id: 3, alias: __table1, table_name: default.02668_logical_optimizer
   WHERE
     FUNCTION id: 5, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -80,10 +80,47 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
       COLUMN id: 4, column_name: b, result_type: LowCardinality(String), source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.02668_logical_optimizer
+    TABLE id: 3, alias: __table1, table_name: default.02668_logical_optimizer
   WHERE
     FUNCTION id: 5, function_name: equals, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: a, result_type: Int32, source_id: 3
           CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
+2	test2
+QUERY id: 0
+  PROJECTION COLUMNS
+    a Int32
+    b LowCardinality(String)
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: b, result_type: LowCardinality(String), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.02668_logical_optimizer
+  WHERE
+    FUNCTION id: 5, function_name: notIn, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 6, nodes: 2
+          COLUMN id: 7, column_name: a, result_type: Int32, source_id: 3
+          CONSTANT id: 8, constant_value: Tuple_(UInt64_1, UInt64_3), constant_value_type: Tuple(UInt8, UInt8)
+2	test2
+3	another
+QUERY id: 0
+  PROJECTION COLUMNS
+    a Int32
+    b LowCardinality(String)
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: b, result_type: LowCardinality(String), source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.02668_logical_optimizer
+  WHERE
+    FUNCTION id: 5, function_name: notEquals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 6, nodes: 2
+          COLUMN id: 7, column_name: a, result_type: Int32, source_id: 3
+          CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+1
+1

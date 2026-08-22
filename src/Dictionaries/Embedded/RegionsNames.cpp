@@ -1,21 +1,21 @@
-#include "RegionsNames.h"
+#include <Dictionaries/Embedded/RegionsNames.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Poco/Exception.h>
 #include <Common/logger_useful.h>
-#include "GeodataProviders/INamesProvider.h"
+#include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
-}
-
 
 RegionsNames::RegionsNames(IRegionsNamesDataProviderPtr data_provider)
 {
@@ -30,7 +30,7 @@ RegionsNames::RegionsNames(IRegionsNamesDataProviderPtr data_provider)
 
 std::string RegionsNames::dumpSupportedLanguagesNames()
 {
-    DB::WriteBufferFromOwnString out;
+    WriteBufferFromOwnString out;
     for (size_t i = 0; i < total_languages; ++i)
     {
         if (i > 0)
@@ -42,7 +42,7 @@ std::string RegionsNames::dumpSupportedLanguagesNames()
 
 void RegionsNames::reload()
 {
-    Poco::Logger * log = &Poco::Logger::get("RegionsNames");
+    LoggerPtr log = getLogger("RegionsNames");
     LOG_DEBUG(log, "Reloading regions names");
 
     RegionID max_region_id = 0;
@@ -63,7 +63,7 @@ void RegionsNames::reload()
         const size_t max_size = 15000000;
 
         Chars new_chars;
-        StringRefs new_names_refs(initial_size, StringRef("", 0));
+        StringViews new_names_refs(initial_size);
 
         /// Allocate a continuous slice of memory, which is enough to store all names.
         new_chars.reserve(names_source->estimateTotalSize());
@@ -74,7 +74,8 @@ void RegionsNames::reload()
             size_t old_size = new_chars.size();
 
             if (new_chars.capacity() < old_size + name_entry.name.length() + 1)
-                throw Poco::Exception("Logical error. Maybe size estimate of " + names_source->getSourceName() + " is wrong.");
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Logical error. Maybe size estimate of {} is wrong", names_source->getSourceName());
 
             new_chars.resize(old_size + name_entry.name.length() + 1);
             memcpy(new_chars.data() + old_size, name_entry.name.c_str(), name_entry.name.length() + 1);
@@ -84,15 +85,14 @@ void RegionsNames::reload()
                 max_region_id = name_entry.id;
 
                 if (name_entry.id > max_size)
-                    throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
-                        "Region id is too large: {}, should be not more than {}",
-                        DB::toString(name_entry.id), DB::toString(max_size));
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA, "Region id is too large: {}, should be not more than {}", name_entry.id, max_size);
             }
 
             while (name_entry.id >= new_names_refs.size())
-                new_names_refs.resize(new_names_refs.size() * 2, StringRef("", 0));
+                new_names_refs.resize(new_names_refs.size() * 2);
 
-            new_names_refs[name_entry.id] = StringRef(new_chars.data() + old_size, name_entry.name.length());
+            new_names_refs[name_entry.id] = std::string_view(new_chars.data() + old_size, name_entry.name.length());
         }
 
         chars[language_id].swap(new_chars);
@@ -100,5 +100,7 @@ void RegionsNames::reload()
     }
 
     for (size_t language_id = 0; language_id < total_languages; ++language_id)
-        names_refs[language_id].resize(max_region_id + 1, StringRef("", 0));
+        names_refs[language_id].resize(max_region_id + 1);
+}
+
 }

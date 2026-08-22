@@ -26,7 +26,7 @@ class LDAPClient
 public:
     struct SearchParams
     {
-        enum class Scope
+        enum class Scope : uint8_t
         {
             BASE,
             ONE_LEVEL,
@@ -57,20 +57,20 @@ public:
 
     struct Params
     {
-        enum class ProtocolVersion
+        enum class ProtocolVersion : uint8_t
         {
             V2,
             V3
         };
 
-        enum class TLSEnable
+        enum class TLSEnable : uint8_t
         {
             NO,
             YES_STARTTLS,
             YES
         };
 
-        enum class TLSProtocolVersion
+        enum class TLSProtocolVersion : uint8_t
         {
             SSL2,
             SSL3,
@@ -79,7 +79,7 @@ public:
             TLS1_2
         };
 
-        enum class TLSRequireCert
+        enum class TLSRequireCert : uint8_t
         {
             NEVER,
             ALLOW,
@@ -87,7 +87,7 @@ public:
             DEMAND
         };
 
-        enum class SASLMechanism
+        enum class SASLMechanism : uint8_t
         {
             UNKNOWN,
             SIMPLE
@@ -121,6 +121,8 @@ public:
         std::chrono::seconds network_timeout{30};
         std::chrono::seconds search_timeout{20};
         UInt32 search_limit = 256; /// An arbitrary number, no particular motivation for this value.
+
+        bool follow_referrals = false; /// Whether to follow LDAP referrals for server.
 
         void updateHash(SipHash & hash) const;
     };

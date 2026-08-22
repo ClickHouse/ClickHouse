@@ -2,6 +2,8 @@
 
 #include <Common/typeid_cast.h>
 
+#include <Core/Settings.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 
@@ -11,6 +13,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool asterisk_include_alias_columns;
+    extern const SettingsBool asterisk_include_materialized_columns;
+}
 
 namespace ErrorCodes
 {
@@ -137,7 +144,7 @@ std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier 
 {
     if (identifier.name_parts.size() == 3 && table_name == identifier.name_parts[0])
         return identifier.name_parts[1] + '.' + identifier.name_parts[2];
-    else if (identifier.name_parts.size() == 2)
+    if (identifier.name_parts.size() == 2)
         return identifier.name_parts[0] + '.' + identifier.name_parts[1];
     return {};
 }
@@ -202,8 +209,7 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
     {
         if (!db_and_table.alias.empty())
             return ColumnMatch::AliasedTableName;
-        else
-            return ColumnMatch::TableName;
+        return ColumnMatch::TableName;
     }
 
     return ColumnMatch::NoMatch;
@@ -312,9 +318,8 @@ IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuer
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
     const auto & settings = context->getSettingsRef();
-    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context,
-                                             settings.asterisk_include_alias_columns,
-                                             settings.asterisk_include_materialized_columns);
+    tables = getDatabaseAndTablesWithColumns(
+        getTableExpressions(select), context, settings[Setting::asterisk_include_alias_columns], settings[Setting::asterisk_include_materialized_columns]);
 }
 
 std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr ast) const

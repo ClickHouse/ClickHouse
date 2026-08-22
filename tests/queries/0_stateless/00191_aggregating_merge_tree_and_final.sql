@@ -7,9 +7,9 @@ INSERT INTO aggregating_00191 (k, u) SELECT intDiv(number, 100) AS k, uniqState(
 
 SELECT k, finalizeAggregation(u) FROM aggregating_00191 FINAL order by k;
 
-OPTIMIZE TABLE aggregating_00191;
+OPTIMIZE TABLE aggregating_00191 FINAL;
 
-SELECT k, finalizeAggregation(u) FROM aggregating_00191;
+SELECT k, finalizeAggregation(u) FROM aggregating_00191 order by k;
 SELECT k, finalizeAggregation(u) FROM aggregating_00191 FINAL order by k;
 
 DROP TABLE aggregating_00191;

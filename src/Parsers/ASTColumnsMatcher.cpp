@@ -1,8 +1,12 @@
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <re2/re2.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
@@ -12,12 +16,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPILE_REGEXP;
+    extern const int BAD_ARGUMENTS;
 }
 
 ASTPtr ASTColumnsRegexpMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTColumnsRegexpMatcher>(*this);
+    auto clone = make_intrusive<ASTColumnsRegexpMatcher>(*this);
     clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
@@ -34,64 +38,55 @@ void ASTColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) const
         writeCString(".", ostr);
     }
     writeCString("COLUMNS(", ostr);
-    writeQuotedString(original_pattern, ostr);
+    writeQuotedString(pattern, ostr);
     writeChar(')', ostr);
 }
 
-void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    hash_state.update(original_pattern.size());
-    hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
+    hash_state.update(pattern.size());
+    hash_state.update(pattern);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-
     if (expression)
     {
-        expression->formatImpl(settings, state, frame);
-        settings.ostr << ".";
+        expression->format(ostr, settings, state, frame);
+        ostr << ".";
     }
 
-    settings.ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
-    settings.ostr << quoteString(original_pattern);
-    settings.ostr << ")";
+    if (format_as_asterisk_like)
+    {
+        ostr << "* " << (asterisk_like_case_insensitive ? "ILIKE " : "LIKE ") << quoteString(asterisk_like_pattern);
+    }
+    else
+    {
+        ostr << "COLUMNS" << "(";
+        ostr << quoteString(pattern);
+        ostr << ")";
+    }
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 
-void ASTColumnsRegexpMatcher::setPattern(String pattern)
+void ASTColumnsRegexpMatcher::setPattern(String pattern_)
 {
-    original_pattern = std::move(pattern);
-    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
-    if (!column_matcher->ok())
-        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "COLUMNS pattern {} cannot be compiled: {}", original_pattern, column_matcher->error());
+    pattern = std::move(pattern_);
 }
 
 const String & ASTColumnsRegexpMatcher::getPattern() const
 {
-    return original_pattern;
-}
-
-const std::shared_ptr<re2::RE2> & ASTColumnsRegexpMatcher::getMatcher() const
-{
-    return column_matcher;
-}
-
-bool ASTColumnsRegexpMatcher::isColumnMatching(const String & column_name) const
-{
-    return RE2::PartialMatch(column_name, *column_matcher);
+    return pattern;
 }
 
 ASTPtr ASTColumnsListMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTColumnsListMatcher>(*this);
+    auto clone = make_intrusive<ASTColumnsListMatcher>(*this);
     clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
@@ -111,7 +106,7 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
         writeCString(".", ostr);
     }
     writeCString("COLUMNS(", ostr);
-    for (auto * it = column_list->children.begin(); it != column_list->children.end(); ++it)
+    for (auto it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
             writeCString(", ", ostr);
@@ -121,37 +116,35 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-
     if (expression)
     {
-        expression->formatImpl(settings, state, frame);
-        settings.ostr << ".";
+        expression->format(ostr, settings, state, frame);
+        ostr << ".";
     }
 
-    settings.ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    ostr << "COLUMNS" << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
         {
-            settings.ostr << ", ";
+            ostr << ", ";
         }
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
-    settings.ostr << ")";
+    ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 
 ASTPtr ASTQualifiedColumnsRegexpMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTQualifiedColumnsRegexpMatcher>(*this);
+    auto clone = make_intrusive<ASTQualifiedColumnsRegexpMatcher>(*this);
     clone->children.clear();
 
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
@@ -166,59 +159,51 @@ void ASTQualifiedColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) cons
 {
     qualifier->appendColumnName(ostr);
     writeCString(".COLUMNS(", ostr);
-    writeQuotedString(original_pattern, ostr);
+    writeQuotedString(pattern, ostr);
     writeChar(')', ostr);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::setPattern(String pattern, bool set_matcher)
+void ASTQualifiedColumnsRegexpMatcher::setPattern(String pattern_)
 {
-    original_pattern = std::move(pattern);
-
-    if (!set_matcher)
-        return;
-
-    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
-    if (!column_matcher->ok())
-        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "COLUMNS pattern {} cannot be compiled: {}", original_pattern, column_matcher->error());
+    pattern = std::move(pattern_);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::setMatcher(std::shared_ptr<re2::RE2> matcher)
+const String & ASTQualifiedColumnsRegexpMatcher::getPattern() const
 {
-    column_matcher = std::move(matcher);
+    return pattern;
 }
 
-const std::shared_ptr<re2::RE2> & ASTQualifiedColumnsRegexpMatcher::getMatcher() const
+void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    return column_matcher;
+    hash_state.update(pattern.size());
+    hash_state.update(pattern);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTQualifiedColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    hash_state.update(original_pattern.size());
-    hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
-}
+    qualifier->format(ostr, settings, state, frame);
 
-void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-
-    qualifier->formatImpl(settings, state, frame);
-
-    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
-    settings.ostr << quoteString(original_pattern);
-    settings.ostr << ")";
+    if (format_as_asterisk_like)
+    {
+        ostr << ".* " << (asterisk_like_case_insensitive ? "ILIKE " : "LIKE ") << quoteString(asterisk_like_pattern);
+    }
+    else
+    {
+        ostr << ".COLUMNS" << "(";
+        ostr << quoteString(pattern);
+        ostr << ")";
+    }
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 
 ASTPtr ASTQualifiedColumnsListMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTQualifiedColumnsListMatcher>(*this);
+    auto clone = make_intrusive<ASTQualifiedColumnsListMatcher>(*this);
     clone->children.clear();
 
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
@@ -237,7 +222,7 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     qualifier->appendColumnName(ostr);
     writeCString(".COLUMNS(", ostr);
 
-    for (auto * it = column_list->children.begin(); it != column_list->children.end(); ++it)
+    for (auto it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
             writeCString(", ", ostr);
@@ -247,25 +232,124 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTQualifiedColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTQualifiedColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-    qualifier->formatImpl(settings, state, frame);
-    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    qualifier->format(ostr, settings, state, frame);
+    ostr << ".COLUMNS" << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
-            settings.ostr << ", ";
+            ostr << ", ";
 
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
-    settings.ostr << ")";
+    ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
+}
+
+void ASTColumnsRegexpMatcher::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsRegexpMatcher");
+    w.writeString("pattern", getPattern());
+    w.writeChild("expression", expression);
+    w.writeChild("transformers", transformers);
+}
+
+void ASTColumnsListMatcher::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnsListMatcher");
+    w.writeChild("expression", expression);
+    w.writeChild("column_list", column_list);
+    w.writeChild("transformers", transformers);
+}
+
+void ASTQualifiedColumnsRegexpMatcher::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "QualifiedColumnsRegexpMatcher");
+    w.writeString("pattern", getPattern());
+    w.writeChild("qualifier", qualifier);
+    w.writeChild("transformers", transformers);
+}
+
+void ASTQualifiedColumnsListMatcher::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "QualifiedColumnsListMatcher");
+    w.writeChild("qualifier", qualifier);
+    w.writeChild("column_list", column_list);
+    w.writeChild("transformers", transformers);
+}
+
+void ASTColumnsRegexpMatcher::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    if (!r.has("pattern"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'pattern' field in `ColumnsRegexpMatcher` during AST JSON deserialization");
+    setPattern(r.getString("pattern"));
+    expression = r.readChild("expression");
+    if (expression)
+        children.push_back(expression);
+    transformers = r.readChildOfType<ASTColumnsTransformerList>("transformers");
+    if (transformers)
+        children.push_back(transformers);
+}
+
+void ASTColumnsListMatcher::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    expression = r.readChild("expression");
+    if (expression)
+        children.push_back(expression);
+    column_list = r.readChildOfType<ASTExpressionList>("column_list");
+    if (!column_list)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'column_list' field in `ColumnsListMatcher` during AST JSON deserialization");
+    /// `QueryTreeBuilder` downcasts each `column_list` child with `as<ASTIdentifier &>`.
+    for (const auto & column : column_list->children)
+        if (!column || !column->as<ASTIdentifier>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ColumnsListMatcher` 'column_list' must contain only identifiers during AST JSON deserialization");
+    children.push_back(column_list);
+    transformers = r.readChildOfType<ASTColumnsTransformerList>("transformers");
+    if (transformers)
+        children.push_back(transformers);
+}
+
+void ASTQualifiedColumnsRegexpMatcher::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    if (!r.has("pattern"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'pattern' field in `QualifiedColumnsRegexpMatcher` during AST JSON deserialization");
+    setPattern(r.getString("pattern"));
+    qualifier = r.readChildOfType<ASTIdentifier>("qualifier");
+    if (!qualifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'qualifier' field in `QualifiedColumnsRegexpMatcher` during AST JSON deserialization");
+    children.push_back(qualifier);
+    transformers = r.readChildOfType<ASTColumnsTransformerList>("transformers");
+    if (transformers)
+        children.push_back(transformers);
+}
+
+void ASTQualifiedColumnsListMatcher::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    qualifier = r.readChildOfType<ASTIdentifier>("qualifier");
+    if (!qualifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'qualifier' field in `QualifiedColumnsListMatcher` during AST JSON deserialization");
+    children.push_back(qualifier);
+    column_list = r.readChildOfType<ASTExpressionList>("column_list");
+    if (!column_list)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'column_list' field in `QualifiedColumnsListMatcher` during AST JSON deserialization");
+    /// `QueryTreeBuilder` downcasts each `column_list` child with `as<ASTIdentifier &>`.
+    for (const auto & column : column_list->children)
+        if (!column || !column->as<ASTIdentifier>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`QualifiedColumnsListMatcher` 'column_list' must contain only identifiers during AST JSON deserialization");
+    children.push_back(column_list);
+    transformers = r.readChildOfType<ASTColumnsTransformerList>("transformers");
+    if (transformers)
+        children.push_back(transformers);
 }
 
 }

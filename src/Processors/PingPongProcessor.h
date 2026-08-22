@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class Block;
+
 /*
  * Processor with N inputs and N outputs. Moves data from i-th input to i-th output as is.
  * It has a pair of auxiliary ports to notify another instance by sending empty chunk after some condition holds.
@@ -54,7 +56,7 @@ protected:
     };
 
     bool sendPing();
-    bool recievePing();
+    bool receivePing();
     bool canSend() const;
 
     bool isPairsFinished() const;

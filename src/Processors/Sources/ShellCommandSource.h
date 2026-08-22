@@ -5,9 +5,10 @@
 #include <base/BorrowedObjectPool.h>
 
 #include <Common/ShellCommand.h>
+#include <Common/ShellCommandSettings.h>
 #include <Common/ThreadPool.h>
+#include <Common/VectorWithMemoryTracking.h>
 
-#include <IO/ReadHelpers.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ISource.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -23,6 +24,8 @@ using ShellCommandHolderPtr = std::unique_ptr<ShellCommandHolder>;
 
 using ProcessPool = BorrowedObjectPool<ShellCommandHolderPtr>;
 
+class UDFProcessSubtreeSampler;
+
 struct ShellCommandSourceConfiguration
 {
     /// Read fixed number of rows from command output
@@ -33,9 +36,9 @@ struct ShellCommandSourceConfiguration
     size_t number_of_rows_to_read = 0;
     /// Max block size
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
-    /// Will throw if the command exited with
-    /// non-zero status code
-    size_t check_exit_code = false;
+    /// Optional accumulator for executable_pool UDF resource accounting.
+    /// Only set by the executable_pool UDF factory; other consumers leave it null.
+    std::shared_ptr<UDFProcessSubtreeSampler> sampler;
 };
 
 class ShellCommandSourceCoordinator
@@ -57,6 +60,18 @@ public:
         /// Timeout for writing data to command stdin
         size_t command_write_timeout_milliseconds = 10000;
 
+        /// Requested capacity for command stdin/stdout pipes. Zero keeps the OS default.
+        size_t command_pipe_capacity = 0;
+
+        /// Reaction when external command outputs data to its stderr.
+        ExternalCommandStderrReaction stderr_reaction = ExternalCommandStderrReaction::NONE;
+
+        /// Will throw if the command exited with
+        /// non-zero status code.
+        /// NOTE: If executable pool is used, we cannot check exit code,
+        /// which makes this configuration no effect.
+        size_t check_exit_code = false;
+
         /// Pool size valid only if executable_pool = true
         size_t pool_size = 16;
 
@@ -72,6 +87,9 @@ public:
         /// Execute script direct or with /bin/bash.
         bool execute_direct = true;
 
+        /// True when this coordinator runs an executable or executable pool UDF.
+        bool is_user_defined_function = false;
+
     };
 
     explicit ShellCommandSourceCoordinator(const Configuration & configuration_);
@@ -83,7 +101,7 @@ public:
 
     Pipe createPipe(
         const std::string & command,
-        const std::vector<std::string> & arguments,
+        const VectorWithMemoryTracking<std::string> & arguments,
         std::vector<Pipe> && input_pipes,
         Block sample_block,
         ContextPtr context,
@@ -99,11 +117,8 @@ public:
         return createPipe(command, {}, std::move(input_pipes), std::move(sample_block), std::move(context), source_configuration);
     }
 
-    Pipe createPipe(
-        const std::string & command,
-        const std::vector<std::string> & arguments,
-        Block sample_block,
-        ContextPtr context)
+    Pipe
+    createPipe(const std::string & command, const VectorWithMemoryTracking<std::string> & arguments, Block sample_block, ContextPtr context)
     {
         return createPipe(command, arguments, {}, std::move(sample_block), std::move(context), {});
     }

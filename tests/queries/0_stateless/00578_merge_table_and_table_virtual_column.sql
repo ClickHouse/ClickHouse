@@ -13,6 +13,8 @@ CREATE TABLE numbers5 ENGINE = MergeTree ORDER BY number AS SELECT number FROM n
 SELECT count() FROM merge(currentDatabase(), '^numbers\\d+$');
 SELECT DISTINCT count() FROM merge(currentDatabase(), '^numbers\\d+$') GROUP BY number;
 
+SET optimize_aggregation_in_order = 0; -- FIXME : in order may happen before filter push down
+
 SET max_rows_to_read = 1000;
 
 SET max_threads = 'auto';

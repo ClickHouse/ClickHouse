@@ -1,0 +1,24 @@
+src_table	6
+1	Alice
+1	Alice
+2	Bob
+3	Charlie
+3	Charlie
+4	David
+dst_1_0	2
+2	1
+4	1
+dst_1_1	2
+1	2
+3	2
+dst_1_2	4
+1	2
+2	1
+3	2
+4	1
+dst_2_01	4
+1	2
+2	1
+3	2
+4	1
+INSERT INTO default.src_table (id, name) FORMAT Values	AsyncInsertFlush	0

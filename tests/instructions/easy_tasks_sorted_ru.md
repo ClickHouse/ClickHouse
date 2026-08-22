@@ -78,7 +78,7 @@ Upd: сделали по-другому: теперь всё безопасно.
 
 ## LEFT ONLY JOIN
 
-## Функции makeDate, makeDateTime.
+## + Функции makeDate, makeDateTime.
 
 `makeDate(year, month, day)`
 `makeDateTime(year, month, day, hour, minute, second, [timezone])`
@@ -96,10 +96,6 @@ Upd: сделали по-другому: теперь всё безопасно.
 ## Функция rowNumberForKey.
 
 Возвращает инкрементальное число для повторно встречающихся значений key.
-
-## Агрегатная функция groupConcat.
-
-`groupConcat(x, ',')` - собрать из переданных значений x строку, разделённую запятыми.
 
 ## Функции DATE_ADD, DATE_SUB как синонимы для совместимости с SQL.
 
@@ -129,7 +125,7 @@ position с конца строки.
 
 Атомарно удаляет таблицу перед созданием новой, если такая была.
 
-## * Приведение типов для IN (subquery).
+## + Приведение типов для IN (subquery).
 
 `SELECT 1 IN (SELECT -1 UNION ALL SELECT 1)`
 
@@ -141,7 +137,7 @@ position с конца строки.
 
 ## Возможность использовать ALIAS столбцы при INSERT.
 
-https://clickhouse.com/docs/en/query_language/create/#create-table
+https://clickhouse.com/docs/query_language/create/#create-table
 
 `INSERT INTO table (column1, column2, ...)`
 
@@ -183,17 +179,17 @@ world │ 123 │
 
 ## Работоспособность внешних данных на время сессии.
 
-https://clickhouse.com/docs/en/operations/table_engines/external_data/
+https://clickhouse.com/docs/operations/table_engines/external_data/
 
 Не работает, если открыть clickhouse-client в интерактивном режиме и делать несколько запросов.
 
-## + Настройка для возможности получить частичный результат при cancel-е.
+## Настройка для возможности получить частичный результат при cancel-е.
 
 Хотим по Ctrl+C получить те данные, которые успели обработаться.
 
 ## Раскрытие кортежей в функциях высшего порядка.
 
-## Табличная функция loop.
+## + Табличная функция loop.
 
 `SELECT * FROM loop(database, table)`
 
@@ -201,16 +197,16 @@ https://clickhouse.com/docs/en/operations/table_engines/external_data/
 
 ## Возможность ATTACH партиции с меньшим или большим количеством столбцов.
 
-## Поддержка неконстантного аргумента с тайм-зоной у некоторых функций для работы с датой и временем.
+## + Поддержка неконстантного аргумента с тайм-зоной у некоторых функций для работы с датой и временем.
 
-## Возможность задавать параметры соединений для табличных функций, движков таблиц и для реплик из отдельных разделов конфигурации.
+## + Возможность задавать параметры соединений для табличных функций, движков таблиц и для реплик из отдельных разделов конфигурации.
 
-## Настройка rollup_use_nulls.
+## + Настройка rollup_use_nulls.
+
+Upd: it is named "group_by_use_nulls".
 
 ## + Настройка cast_keep_nullable.
 
-## Функция bitEquals для сравнения произвольных типов данных побитово.
+## Функция bitEquals для сравнения произвольных типов данных побитово
 
 ## Функция serialize для implementation specific non portable non backwards compatible сериализации любого типа данных в набор байт.
-
-## Функция bitEquals и оператор <=>.

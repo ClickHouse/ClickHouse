@@ -26,6 +26,62 @@ select all values as input stream
 0	id_key_0	value_0	value_second_0
 1	id_key_1	value_1	value_second_1
 2	id_key_2	value_2	value_second_2
+Dictionary hashed_array_dictionary_complex_key_simple_attributes
+dictGet existing value
+value_0	value_second_0
+value_1	value_second_1
+value_2	value_second_2
+dictGet with non existing value
+value_0	value_second_0
+value_1	value_second_1
+value_2	value_second_2
+value_first_default	value_second_default
+dictGetOrDefault existing value
+value_0	value_second_0
+value_1	value_second_1
+value_2	value_second_2
+dictGetOrDefault non existing value
+value_0	value_second_0
+value_1	value_second_1
+value_2	value_second_2
+default	default
+dictHas
+1
+1
+1
+0
+select all values as input stream
+0	id_key_0	value_0	value_second_0
+1	id_key_1	value_1	value_second_1
+2	id_key_2	value_2	value_second_2
+Dictionary hashed_array_dictionary_complex_key_complex_attributes
+dictGet existing value
+value_0	value_second_0
+value_1	\N
+value_2	value_second_2
+dictGet with non existing value
+value_0	value_second_0
+value_1	\N
+value_2	value_second_2
+value_first_default	value_second_default
+dictGetOrDefault existing value
+value_0	value_second_0
+value_1	\N
+value_2	value_second_2
+dictGetOrDefault non existing value
+value_0	value_second_0
+value_1	\N
+value_2	value_second_2
+default	default
+dictHas
+1
+1
+1
+0
+select all values as input stream
+0	id_key_0	value_0	value_second_0
+1	id_key_1	value_1	\N
+2	id_key_2	value_2	value_second_2
 Dictionary hashed_array_dictionary_complex_key_complex_attributes
 dictGet existing value
 value_0	value_second_0

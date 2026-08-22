@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
-import socket
-import os
-import uuid
 import json
+import os
+import socket
+import uuid
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "900000"))
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+CLIENT_NAME = "simple native protocol"
 
 
 def writeVarUInt(x, ba):
@@ -86,7 +87,7 @@ def readStringBinary(s):
 def sendHello(s):
     ba = bytearray()
     writeVarUInt(0, ba)  # Hello
-    writeStringBinary("simple native protocol", ba)
+    writeStringBinary(CLIENT_NAME, ba)
     writeVarUInt(21, ba)
     writeVarUInt(9, ba)
     writeVarUInt(54449, ba)
@@ -116,7 +117,7 @@ def serializeClientInfo(ba, query_id):
     ba.append(1)  # TCP
     writeStringBinary("os_user", ba)  # os_user
     writeStringBinary("client_hostname", ba)  # client_hostname
-    writeStringBinary("client_name", ba)  # client_name
+    writeStringBinary(CLIENT_NAME, ba)  # client_name
     writeVarUInt(21, ba)
     writeVarUInt(9, ba)
     writeVarUInt(54449, ba)

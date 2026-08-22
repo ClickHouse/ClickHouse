@@ -1,4 +1,5 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-shared-merge-tree
+-- no-shared-merge-tree: boring test, nothing new
 
 SET optimize_on_insert = 0;
 

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 
 #include <Core/MySQL/IMySQLReadPacket.h>
@@ -18,7 +19,8 @@ namespace ProtocolText
 enum CharacterSet
 {
     utf8_general_ci = 33,
-    binary = 63
+    binary = 63,
+    utf8mb4_0900_ai_ci = 255
 };
 
 // https://dev.mysql.com/doc/dev/mysql-server/latest/group__group__cs__column__definition__flags.html
@@ -67,16 +69,16 @@ class ResultSetRow : public IMySQLWritePacket
 {
 protected:
     const Columns & columns;
-    int row_num;
+    size_t row_num;
     size_t payload_size = 0;
-    std::vector<String> serialized;
+    VectorWithMemoryTracking<String> serialized;
 
     size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    ResultSetRow(const Serializations & serializations, const Columns & columns_, int row_num_);
+    ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, size_t row_num_);
 };
 
 class ComFieldList : public LimitedReadPacket
@@ -116,16 +118,29 @@ public:
     ColumnDefinition();
 
     ColumnDefinition(
-        String schema_, String table_, String org_table_, String name_, String org_name_, uint16_t character_set_, uint32_t column_length_,
-        ColumnType column_type_, uint16_t flags_, uint8_t decimals_, bool with_defaults_ = false);
+        String schema_,
+        String table_,
+        String org_table_,
+        String name_,
+        String org_name_,
+        uint16_t character_set_,
+        uint32_t column_length_,
+        ColumnType column_type_,
+        uint16_t flags_,
+        uint8_t decimals_,
+        bool with_defaults_ = false);
 
     /// Should be used when column metadata (original name, table, original table, database) is unknown.
     ColumnDefinition(
-        String name_, uint16_t character_set_, uint32_t column_length_, ColumnType column_type_, uint16_t flags_, uint8_t decimals_);
-
+        String name_,
+        uint16_t character_set_,
+        uint32_t column_length_,
+        ColumnType column_type_,
+        uint16_t flags_,
+        uint8_t decimals_);
 };
 
-ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex index);
+ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type);
 
 }
 

@@ -1,32 +1,75 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 
 namespace DB::QueryPlanOptimizations
 {
 
-/// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
-size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
+static size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 {
+    auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get());
+    if (!join_step || node->children.size() != 2 || typeid_cast<JoinStepLogicalLookup *>(node->children.back()->step.get()))
+        return 0;
+
+    const auto & lhs_header = node->children.front()->step->getOutputHeader();
+    const auto & rhs_header = node->children.back()->step->getOutputHeader();
+
+    size_t num_new_nodes = 0;
+    for (auto [idx, side]: {std::make_pair(0, JoinTableSide::Left), std::make_pair(1, JoinTableSide::Right)})
+    {
+        auto & child_node = *node->children.at(idx);
+        const auto & header = side == JoinTableSide::Left ? lhs_header : rhs_header;
+        auto filter_dag = join_step->getFilterActions(side, lhs_header, rhs_header);
+        if (!filter_dag)
+            continue;
+        const auto & filter_column_name = filter_dag->dag.getOutputs()[filter_dag->filter_pos]->result_name;
+        QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(filter_dag->dag), filter_column_name, filter_dag->remove_filter);
+        step->setStepDescription("Join filter");
+
+        auto * new_node = &nodes.emplace_back(std::move(child_node));
+        child_node = QueryPlan::Node{std::move(step), {new_node}};
+        num_new_nodes = std::max<size_t>(num_new_nodes, 2);
+    }
+    return num_new_nodes;
+}
+
+/// Split FilterStep into chain `FilterStep -> ExpressionStep`, where FilterStep contains minimal number of nodes.
+size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+{
+    if (size_t join_split = trySplitJoin(node, nodes))
+        return join_split;
+
     auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
     if (!filter_step)
         return 0;
 
     const auto & expr = filter_step->getExpression();
+    const std::string & filter_column_name = filter_step->getFilterColumnName();
 
     /// Do not split if there are function like runningDifference.
-    if (expr->hasStatefulFunctions())
+    if (expr.hasStatefulFunctions())
         return 0;
 
-    auto split = expr->splitActionsForFilter(filter_step->getFilterColumnName());
+    const auto * filter_dag_node = expr.tryFindInOutputs(filter_column_name);
 
-    if (split.second->trivial())
+    /// `tryPushDownVolumeReducingFunction` moves these functions below the filter so that the wide
+    /// argument column is not copied by the filter. Keeping them in the filter part here prevents
+    /// the two optimizations from moving the same nodes in opposite directions forever.
+    std::unordered_set<const ActionsDAG::Node *> volume_reducing_functions;
+    if (settings.push_down_volume_reducing_functions)
+        volume_reducing_functions = collectVolumeReducingFunctionsToKeepBelow(expr, filter_dag_node);
+
+    auto split = expr.splitActionsForFilter(filter_column_name, std::move(volume_reducing_functions));
+
+    if (split.second.trivial())
         return 0;
 
     bool remove_filter = false;
     if (filter_step->removesFilterColumn())
-        remove_filter = split.second->removeUnusedResult(filter_step->getFilterColumnName());
+        remove_filter = split.second.removeUnusedResult(filter_column_name);
 
     auto description = filter_step->getStepDescription();
 
@@ -34,16 +77,22 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     node->children.swap(filter_node.children);
     node->children.push_back(&filter_node);
 
+    /// The filter node may have been renamed by the split to avoid clashing with an input of the same name.
+    std::string split_filter_name = split.split_nodes_mapping.at(filter_dag_node)->result_name;
+
     filter_node.step = std::make_unique<FilterStep>(
-            filter_node.children.at(0)->step->getOutputStream(),
+            filter_node.children.at(0)->step->getOutputHeader(),
             std::move(split.first),
-            filter_step->getFilterColumnName(),
+            std::move(split_filter_name),
             remove_filter);
 
-    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
+    auto expression_step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
 
-    filter_node.step->setStepDescription("(" + description + ")[split]");
-    node->step->setStepDescription(description);
+    if (settings.max_step_description_length)
+        filter_node.step->setStepDescription(fmt::format("({})[split]", description), settings.max_step_description_length);
+
+    expression_step->setStepDescription(*filter_step);
+    node->step = std::move(expression_step);
 
     return 2;
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/ListNode.h>
 
 namespace DB
@@ -15,11 +16,11 @@ namespace DB
 class InterpolateNode;
 using InterpolateNodePtr = std::shared_ptr<InterpolateNode>;
 
-class InterpolateNode final : public IQueryTreeNode
+class InterpolateNode final : public ITableExpressionNode
 {
 public:
     /// Initialize interpolate node with expression and interpolate expression
-    explicit InterpolateNode(QueryTreeNodePtr expression_, QueryTreeNodePtr interpolate_expression_);
+    explicit InterpolateNode(std::shared_ptr<IdentifierNode> expression_, QueryTreeNodePtr interpolate_expression_);
 
     /// Get expression to interpolate
     const QueryTreeNodePtr & getExpression() const
@@ -50,16 +51,21 @@ public:
         return QueryTreeNodeType::INTERPOLATE;
     }
 
+    const std::string & getExpressionName() const { return expression_name; }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & hash_state) const override;
+    void updateTreeHashImpl(HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+
+    /// Initial name from column identifier.
+    std::string expression_name;
 
 private:
     static constexpr size_t expression_child_index = 0;

@@ -1,5 +1,5 @@
 #include <Common/ClickHouseRevision.h>
-#include "config_version.h"
+#include <Common/config_version.h>
 
 namespace ClickHouseRevision
 {

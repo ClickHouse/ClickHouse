@@ -52,8 +52,7 @@ void Pool::Entry::decrementRefCount()
 Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & config_name,
      unsigned default_connections_, unsigned max_connections_,
      const char * parent_config_name_)
-    : logger(Poco::Logger::get("mysqlxx::Pool"))
-    , default_connections(default_connections_)
+    : default_connections(default_connections_)
     , max_connections(max_connections_)
 {
     server = cfg.getString(config_name + ".host");
@@ -79,21 +78,27 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         socket = cfg.has(config_name + ".socket")
             ? cfg.getString(config_name + ".socket")
             : cfg.getString(parent_config_name + ".socket", "");
-        ssl_ca = cfg.has(config_name + ".ssl_ca")
-            ? cfg.getString(config_name + ".ssl_ca")
-            : cfg.getString(parent_config_name + ".ssl_ca", "");
-        ssl_cert = cfg.has(config_name + ".ssl_cert")
-            ? cfg.getString(config_name + ".ssl_cert")
-            : cfg.getString(parent_config_name + ".ssl_cert", "");
-        ssl_key = cfg.has(config_name + ".ssl_key")
-            ? cfg.getString(config_name + ".ssl_key")
-            : cfg.getString(parent_config_name + ".ssl_key", "");
+        auto get_ssl_param = [&](const std::string & key)
+        {
+            return cfg.has(config_name + "." + key)
+                ? cfg.getString(config_name + "." + key)
+                : cfg.getString(parent_config_name + "." + key, "");
+        };
+        ssl_params.ca_path = get_ssl_param("ssl_ca");
+        ssl_params.cert_path = get_ssl_param("ssl_cert");
+        ssl_params.key_path = get_ssl_param("ssl_key");
+        ssl_params.ca_pem = get_ssl_param("ssl_ca_pem");
+        ssl_params.cert_pem = get_ssl_param("ssl_cert_pem");
+        ssl_params.key_pem = get_ssl_param("ssl_key_pem");
 
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
 
         opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
             cfg.getBool(parent_config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT));
+
+        enable_compression = cfg.getBool(config_name + ".enable_compression",
+            cfg.getBool(parent_config_name + ".enable_compression", false));
     }
     else
     {
@@ -106,14 +111,19 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         port = cfg.getInt(config_name + ".port", 0);
         socket = cfg.getString(config_name + ".socket", "");
-        ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
-        ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
-        ssl_key = cfg.getString(config_name + ".ssl_key", "");
+        ssl_params.ca_path = cfg.getString(config_name + ".ssl_ca", "");
+        ssl_params.cert_path = cfg.getString(config_name + ".ssl_cert", "");
+        ssl_params.key_path = cfg.getString(config_name + ".ssl_key", "");
+        ssl_params.ca_pem = cfg.getString(config_name + ".ssl_ca_pem", "");
+        ssl_params.cert_pem = cfg.getString(config_name + ".ssl_cert_pem", "");
+        ssl_params.key_pem = cfg.getString(config_name + ".ssl_key_pem", "");
 
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
 
         opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+
+        enable_compression = cfg.getBool(config_name + ".enable_compression", false);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -124,6 +134,45 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         cfg.getInt(config_name + ".rw_timeout",
             cfg.getInt("mysql_rw_timeout",
                 MYSQLXX_DEFAULT_RW_TIMEOUT));
+
+    resolved_ssl_paths = ResolvedSSLPaths(ssl_params);
+}
+
+
+Pool::Pool(
+    const std::string & db_,
+     const std::string & server_,
+     const std::string & user_,
+     const std::string & password_,
+     unsigned port_,
+     const SSLParams & ssl_params_,
+     const std::string & socket_,
+     unsigned connect_timeout_,
+     unsigned rw_timeout_,
+     unsigned default_connections_,
+     unsigned max_connections_,
+     unsigned enable_local_infile_,
+     bool opt_reconnect_,
+     bool enable_compression_)
+    : default_connections(default_connections_)
+    , max_connections(max_connections_)
+    , db(db_)
+    , server(server_)
+    , user(user_)
+    , password(password_)
+    , port(port_)
+    , socket(socket_)
+    , connect_timeout(connect_timeout_)
+    , rw_timeout(rw_timeout_)
+    , ssl_params(ssl_params_)
+    , resolved_ssl_paths(ssl_params_)
+    , enable_local_infile(enable_local_infile_)
+    , opt_reconnect(opt_reconnect_)
+    , enable_compression(enable_compression_)
+{
+    LOG_DEBUG(log,
+        "Created MySQL Pool with settings: connect_timeout={}, read_write_timeout={}, default_connections_number={}, max_connections_number={}",
+        connect_timeout, rw_timeout, default_connections, max_connections);
 }
 
 
@@ -148,26 +197,29 @@ Pool::Entry Pool::get(uint64_t wait_timeout)
     initialize();
     for (;;)
     {
-        logger.trace("(%s): Iterating through existing MySQL connections", getDescription());
+        LOG_TRACE(log, "{}: Iterating through existing MySQL connections", getDescriptionImpl());
 
         for (auto & connection : connections)
         {
             if (connection->ref_count == 0)
+            {
+                LOG_TEST(log, "Found free connection in pool, returning it to the caller");
                 return Entry(connection, this);
+            }
         }
 
-        logger.trace("(%s): Trying to allocate a new connection.", getDescription());
+        LOG_TRACE(log, "{}: Trying to allocate a new connection.", getDescriptionImpl());
         if (connections.size() < static_cast<size_t>(max_connections))
         {
             Connection * conn = allocConnection();
             if (conn)
                 return Entry(conn, this);
 
-            logger.trace("(%s): Unable to create a new connection: Allocation failed.", getDescription());
+            LOG_TRACE(log, "{}: Unable to create a new connection: Allocation failed.", getDescriptionImpl());
         }
         else
         {
-            logger.trace("(%s): Unable to create a new connection: Max number of connections has been reached.", getDescription());
+            LOG_TRACE(log, "{}: Unable to create a new connection: Max number of connections has been reached.", getDescriptionImpl());
         }
 
         if (!wait_timeout)
@@ -177,7 +229,7 @@ Pool::Entry Pool::get(uint64_t wait_timeout)
             throw Poco::Exception("mysqlxx::Pool is full (connection_wait_timeout is exceeded)");
 
         lock.unlock();
-        logger.trace("(%s): Sleeping for %d seconds.", getDescription(), MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
+        LOG_TRACE(log, "{}: Sleeping for {} seconds.", getDescriptionImpl(), MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
         sleepForSeconds(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
         lock.lock();
     }
@@ -194,7 +246,6 @@ Pool::Entry Pool::tryGet()
     for (auto connection_it = connections.cbegin(); connection_it != connections.cend();)
     {
         Connection * connection_ptr = *connection_it;
-        /// Fixme: There is a race condition here b/c we do not synchronize with Pool::Entry's copy-assignment operator
         if (connection_ptr->ref_count == 0)
         {
             {
@@ -203,7 +254,7 @@ Pool::Entry Pool::tryGet()
                     return res;
             }
 
-            logger.debug("(%s): Idle connection to MySQL server cannot be recovered, dropping it.", getDescription());
+            LOG_DEBUG(log, "{}: Idle connection to MySQL server cannot be recovered, dropping it.", getDescriptionImpl());
 
             /// This one is disconnected, cannot be reestablished and so needs to be disposed of.
             connection_it = connections.erase(connection_it);
@@ -226,7 +277,7 @@ Pool::Entry Pool::tryGet()
 
 void Pool::removeConnection(Connection* connection)
 {
-    logger.trace("(%s): Removing connection.", getDescription());
+    LOG_TRACE(log, "{}: Removing connection.", getDescriptionImpl());
 
     std::lock_guard lock(mutex);
     if (connection)
@@ -257,24 +308,34 @@ void Pool::Entry::forceConnected() const
         else
             sleepForSeconds(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 
-        pool->logger.debug(
-            "Creating a new MySQL connection to %s with settings: connect_timeout=%u, read_write_timeout=%u",
+        LOG_DEBUG(pool->log,
+            "Creating a new MySQL connection to {} with settings: connect_timeout={}, read_write_timeout={}",
             pool->description, pool->connect_timeout, pool->rw_timeout);
-
-        data->conn.connect(
-            pool->db.c_str(),
-            pool->server.c_str(),
-            pool->user.c_str(),
-            pool->password.c_str(),
-            pool->port,
-            pool->socket.c_str(),
-            pool->ssl_ca.c_str(),
-            pool->ssl_cert.c_str(),
-            pool->ssl_key.c_str(),
-            pool->connect_timeout,
-            pool->rw_timeout,
-            pool->enable_local_infile,
-            pool->opt_reconnect);
+        try
+        {
+            data->conn.connect(
+                pool->db.c_str(),
+                pool->server.c_str(),
+                pool->user.c_str(),
+                pool->password.c_str(),
+                pool->port,
+                pool->socket.c_str(),
+                pool->resolved_ssl_paths.getCA().c_str(),
+                pool->resolved_ssl_paths.getCert().c_str(),
+                pool->resolved_ssl_paths.getKey().c_str(),
+                pool->connect_timeout,
+                pool->rw_timeout,
+                pool->enable_local_infile,
+                pool->opt_reconnect,
+                pool->enable_compression);
+        }
+        catch (mysqlxx::ConnectionFailed &)
+        {
+            pool->online = false;
+            pool->removeConnection(data);
+            throw;
+        }
+        pool->online = true;
     }
 }
 
@@ -284,21 +345,21 @@ bool Pool::Entry::tryForceConnected() const
     auto * const mysql_driver = data->conn.getDriver();
     const auto prev_connection_id = mysql_thread_id(mysql_driver);
 
-    pool->logger.trace("Entry(connection %lu): sending PING to check if it is alive.", prev_connection_id);
+    LOG_TRACE(pool->log, "Entry(connection {}): sending PING to check if it is alive.", prev_connection_id);
     if (data->conn.ping())  /// Attempts to reestablish lost connection
     {
         const auto current_connection_id = mysql_thread_id(mysql_driver);
         if (prev_connection_id != current_connection_id)
         {
-            pool->logger.debug("Entry(connection %lu): Reconnected to MySQL server. Connection id changed: %lu -> %lu",
-                                current_connection_id, prev_connection_id, current_connection_id);
+            LOG_DEBUG(pool->log, "Entry(connection {}): Reconnected to MySQL server. Connection id changed: {} -> {}",
+                current_connection_id, prev_connection_id, current_connection_id);
         }
 
-        pool->logger.trace("Entry(connection %lu): PING ok.", current_connection_id);
+        LOG_TRACE(pool->log, "Entry(connection {}): PING ok.", current_connection_id);
         return true;
     }
 
-    pool->logger.trace("Entry(connection %lu): PING failed.", prev_connection_id);
+    LOG_TRACE(pool->log, "Entry(connection {}): PING failed.", prev_connection_id);
     return false;
 }
 
@@ -319,14 +380,14 @@ void Pool::initialize()
 
 Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
-    std::unique_ptr conn_ptr = std::make_unique<Connection>();
+    auto conn_ptr = std::make_unique<Connection>();
 
     try
     {
-        logger.debug("Connecting to %s", description);
+        LOG_DEBUG(log, "Connecting to {}", description);
 
-        logger.debug(
-            "Creating a new MySQL connection to %s with settings: connect_timeout=%u, read_write_timeout=%u",
+        LOG_DEBUG(log,
+            "Creating a new MySQL connection to {} with settings: connect_timeout={}, read_write_timeout={}",
             description, connect_timeout, rw_timeout);
 
         conn_ptr->conn.connect(
@@ -336,32 +397,42 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             password.c_str(),
             port,
             socket.c_str(),
-            ssl_ca.c_str(),
-            ssl_cert.c_str(),
-            ssl_key.c_str(),
+            resolved_ssl_paths.getCA().c_str(),
+            resolved_ssl_paths.getCert().c_str(),
+            resolved_ssl_paths.getKey().c_str(),
             connect_timeout,
             rw_timeout,
             enable_local_infile,
-            opt_reconnect);
+            opt_reconnect,
+            enable_compression);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {
-        logger.error(e.what());
-
-        if ((!was_successful && !dont_throw_if_failed_first_time)
-            || e.errnum() == ER_ACCESS_DENIED_ERROR
+        const bool permanent_error = e.errnum() == ER_ACCESS_DENIED_ERROR
             || e.errnum() == ER_DBACCESS_DENIED_ERROR
-            || e.errnum() == ER_BAD_DB_ERROR)
+            || e.errnum() == ER_BAD_DB_ERROR;
+
+        /// A transient failure is left for the caller to tolerate (e.g. on ATTACH), so it is not an
+        /// error yet, while a permanent one must stay visible even if the caller tolerates it.
+        if (permanent_error)
+            LOG_ERROR(log, "Failed to connect to MySQL ({}): {}", description, e.what());
+        else
+            LOG_WARNING(log, "Failed to connect to MySQL ({}): {}", description, e.what());
+
+        if (!online
+            || (!was_successful && !dont_throw_if_failed_first_time)
+            || permanent_error)
         {
+            online = false;
             throw;
         }
-        else
-        {
-            return nullptr;
-        }
+        online = false;
+
+        return nullptr;
     }
 
     connections.push_back(conn_ptr.get());
+    online = true;
     was_successful = true;
     return conn_ptr.release();
 }

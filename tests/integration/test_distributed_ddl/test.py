@@ -8,6 +8,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from helpers.test_tools import TSV
+
 from .cluster import ClickHouseClusterWithDDLHelpers
 
 
@@ -21,7 +22,9 @@ def test_cluster(request):
         yield cluster
 
         instance = cluster.instances["ch1"]
-        cluster.ddl_check_query(instance, "DROP DATABASE test ON CLUSTER 'cluster'")
+        cluster.ddl_check_query(
+            instance, "DROP DATABASE IF EXISTS test ON CLUSTER 'cluster'"
+        )
         cluster.ddl_check_query(
             instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster'"
         )
@@ -41,14 +44,17 @@ def test_default_database(test_cluster):
     instance = test_cluster.instances["ch3"]
 
     test_cluster.ddl_check_query(
-        instance, "CREATE DATABASE IF NOT EXISTS test2 ON CLUSTER 'cluster' FORMAT TSV"
+        instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster' SYNC FORMAT TSV"
+    )
+    test_cluster.ddl_check_query(
+        instance, "CREATE DATABASE test2 ON CLUSTER 'cluster' FORMAT TSV"
     )
     test_cluster.ddl_check_query(
         instance, "DROP TABLE IF EXISTS null ON CLUSTER 'cluster' FORMAT TSV"
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE null ON CLUSTER 'cluster2' (s String DEFAULT 'escape\t\nme') ENGINE = Null",
+        "CREATE TABLE IF NOT EXISTS null ON CLUSTER 'cluster2' (s String DEFAULT 'escape\t\nme') ENGINE = Null",
         settings={"distributed_ddl_entry_format_version": 2},
     )
 
@@ -74,14 +80,15 @@ def test_create_view(test_cluster):
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE VIEW test.super_simple_view ON CLUSTER 'cluster' AS SELECT * FROM system.numbers FORMAT TSV",
+        "CREATE VIEW IF NOT EXISTS test.super_simple_view ON CLUSTER 'cluster' AS SELECT * FROM system.numbers FORMAT TSV",
     )
     test_cluster.ddl_check_query(
         instance,
         "CREATE MATERIALIZED VIEW test.simple_mat_view ON CLUSTER 'cluster' ENGINE = Memory AS SELECT * FROM system.numbers FORMAT TSV",
     )
     test_cluster.ddl_check_query(
-        instance, "DROP TABLE test.simple_mat_view ON CLUSTER 'cluster' FORMAT TSV"
+        instance,
+        "DROP TABLE IF EXISTS test.simple_mat_view ON CLUSTER 'cluster' FORMAT TSV",
     )
     test_cluster.ddl_check_query(
         instance,
@@ -90,14 +97,14 @@ def test_create_view(test_cluster):
 
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test.super_simple ON CLUSTER 'cluster' (i Int8) ENGINE = Memory",
+        "CREATE TABLE IF NOT EXISTS test.super_simple ON CLUSTER 'cluster' (i Int8) ENGINE = Memory",
     )
     test_cluster.ddl_check_query(
         instance,
         "RENAME TABLE test.super_simple TO test.super_simple2 ON CLUSTER 'cluster' FORMAT TSV",
     )
     test_cluster.ddl_check_query(
-        instance, "DROP TABLE test.super_simple2 ON CLUSTER 'cluster'"
+        instance, "DROP TABLE IF EXISTS test.super_simple2 ON CLUSTER 'cluster'"
     )
 
 
@@ -130,7 +137,7 @@ def test_on_server_fail(test_cluster):
     assert TSV(contents) == TSV("ch1\nch2\nch3\nch4\n")
 
     test_cluster.ddl_check_query(
-        instance, "DROP TABLE test.test_server_fail ON CLUSTER 'cluster'"
+        instance, "DROP TABLE IF EXISTS test.test_server_fail ON CLUSTER 'cluster'"
     )
 
 
@@ -210,12 +217,14 @@ ENGINE = Distributed('{cluster}', default, merge, i)
         "".join(["{}\t{}\n".format(x, x) for x in range(4)])
     )
 
-    test_cluster.ddl_check_query(instance, "DROP TABLE merge ON CLUSTER '{cluster}'")
     test_cluster.ddl_check_query(
-        instance, "DROP TABLE all_merge_32 ON CLUSTER '{cluster}'"
+        instance, "DROP TABLE IF EXISTS merge ON CLUSTER '{cluster}'"
     )
     test_cluster.ddl_check_query(
-        instance, "DROP TABLE all_merge_64 ON CLUSTER '{cluster}'"
+        instance, "DROP TABLE IF EXISTS all_merge_32 ON CLUSTER '{cluster}'"
+    )
+    test_cluster.ddl_check_query(
+        instance, "DROP TABLE IF EXISTS all_merge_64 ON CLUSTER '{cluster}'"
     )
 
 
@@ -223,7 +232,7 @@ def test_macro(test_cluster):
     instance = test_cluster.instances["ch2"]
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE tab ON CLUSTER '{cluster}' (value UInt8) ENGINE = Memory",
+        "CREATE TABLE IF NOT EXISTS tab ON CLUSTER '{cluster}' (value UInt8) ENGINE = Memory",
     )
 
     for i in range(4):
@@ -234,7 +243,7 @@ def test_macro(test_cluster):
 
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE distr ON CLUSTER '{cluster}' (value UInt8) ENGINE = Distributed('{cluster}', 'default', 'tab', value % 4)",
+        "CREATE TABLE IF NOT EXISTS distr ON CLUSTER '{cluster}' (value UInt8) ENGINE = Distributed('{cluster}', 'default', 'tab', value % 4)",
     )
 
     assert TSV(instance.query("SELECT value FROM distr ORDER BY value")) == TSV(
@@ -262,7 +271,7 @@ def test_implicit_macros(test_cluster):
         instance, "DROP DATABASE IF EXISTS test_db ON CLUSTER '{cluster}' SYNC"
     )
     test_cluster.ddl_check_query(
-        instance, "CREATE DATABASE IF NOT EXISTS test_db ON CLUSTER '{cluster}'"
+        instance, "CREATE DATABASE test_db ON CLUSTER '{cluster}'"
     )
 
     test_cluster.ddl_check_query(
@@ -287,8 +296,10 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/{layer}-{shard}/{tab
 
 def test_allowed_databases(test_cluster):
     instance = test_cluster.instances["ch2"]
-    instance.query("CREATE DATABASE IF NOT EXISTS db1 ON CLUSTER cluster")
-    instance.query("CREATE DATABASE IF NOT EXISTS db2 ON CLUSTER cluster")
+    instance.query("DROP DATABASE IF EXISTS db1 ON CLUSTER cluster SYNC")
+    instance.query("CREATE DATABASE db1 ON CLUSTER cluster")
+    instance.query("DROP DATABASE IF EXISTS db2 ON CLUSTER cluster SYNC")
+    instance.query("CREATE DATABASE db2 ON CLUSTER cluster")
 
     instance.query(
         "CREATE TABLE db1.t1 ON CLUSTER cluster (i Int8) ENGINE = Memory",
@@ -300,11 +311,13 @@ def test_allowed_databases(test_cluster):
             "CREATE TABLE db2.t2 ON CLUSTER cluster (i Int8) ENGINE = Memory",
             settings={"user": "restricted_user"},
         )
+
     with pytest.raises(Exception):
         instance.query(
             "CREATE TABLE t3 ON CLUSTER cluster (i Int8) ENGINE = Memory",
             settings={"user": "restricted_user"},
         )
+
     with pytest.raises(Exception):
         instance.query(
             "DROP DATABASE db2 ON CLUSTER cluster", settings={"user": "restricted_user"}
@@ -348,7 +361,7 @@ def test_optimize_query(test_cluster):
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_optimize ON CLUSTER cluster (p Date, i Int32) ENGINE = MergeTree(p, p, 8192)",
+        "CREATE TABLE IF NOT EXISTS test_optimize ON CLUSTER cluster (p Date, i Int32) ENGINE = MergeTree(p, p, 8192)",
     )
     test_cluster.ddl_check_query(
         instance, "OPTIMIZE TABLE test_optimize ON CLUSTER cluster FORMAT TSV"
@@ -359,7 +372,7 @@ def test_create_as_select(test_cluster):
     instance = test_cluster.instances["ch2"]
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_as_select ON CLUSTER cluster ENGINE = Memory AS (SELECT 1 AS x UNION ALL SELECT 2 AS x)",
+        "CREATE TABLE IF NOT EXISTS test_as_select ON CLUSTER cluster ENGINE = Memory AS (SELECT 1 AS x UNION ALL SELECT 2 AS x)",
     )
     assert TSV(instance.query("SELECT x FROM test_as_select ORDER BY x")) == TSV(
         "1\n2\n"
@@ -373,11 +386,11 @@ def test_create_reserved(test_cluster):
     instance = test_cluster.instances["ch2"]
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_reserved ON CLUSTER cluster (`p` Date, `image` Nullable(String), `index` Nullable(Float64), `invalidate` Nullable(Int64)) ENGINE = MergeTree(`p`, `p`, 8192)",
+        "CREATE TABLE IF NOT EXISTS test_reserved ON CLUSTER cluster (`p` Date, `image` Nullable(String), `index` Nullable(Float64), `invalidate` Nullable(Int64)) ENGINE = MergeTree(`p`, `p`, 8192)",
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_as_reserved ON CLUSTER cluster ENGINE = Memory AS (SELECT * from test_reserved)",
+        "CREATE TABLE IF NOT EXISTS test_as_reserved ON CLUSTER cluster ENGINE = Memory AS (SELECT * from test_reserved)",
     )
     test_cluster.ddl_check_query(
         instance, "DROP TABLE IF EXISTS test_reserved ON CLUSTER cluster"
@@ -405,11 +418,11 @@ def test_rename(test_cluster):
 
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE rename_shard ON CLUSTER cluster (id Int64, sid String DEFAULT concat('old', toString(id))) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/staging/test_shard', '{replica}') ORDER BY (id)",
+        "CREATE TABLE IF NOT EXISTS rename_shard ON CLUSTER cluster (id Int64, sid String DEFAULT concat('old', toString(id))) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/staging/test_shard', '{replica}') ORDER BY (id)",
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE rename_new ON CLUSTER cluster AS rename_shard ENGINE = Distributed(cluster, default, rename_shard, id % 2)",
+        "CREATE TABLE IF NOT EXISTS rename_new ON CLUSTER cluster AS rename_shard ENGINE = Distributed(cluster, default, rename_shard, id % 2)",
     )
     test_cluster.ddl_check_query(
         instance, "RENAME TABLE rename_new TO rename ON CLUSTER cluster;"
@@ -423,15 +436,21 @@ def test_rename(test_cluster):
     # so ddl query will always fail on some replicas even if query was actually executed by leader
     # Also such inconsistency in cluster configuration may lead to query duplication if leader suddenly changed
     # because path of lock in zk contains shard name, which is list of host names of replicas
+    #
+    # NOTE: we do not need to ignore errors here, since even though it is true
+    # that the conflict is possible (due to one replica uses IPs, and the other
+    # hostnames, so the lock path will be different, and the lock in DDLWorker
+    # will not avoid race), DDLWorker has retries for CANNOT_ASSIGN_ALTER.
     instance.query(
         "ALTER TABLE rename_shard ON CLUSTER cluster MODIFY COLUMN sid String DEFAULT concat('new', toString(id))",
-        ignore_error=True,
+        settings={
+            "alter_sync": 2,
+        },
     )
-    time.sleep(1)
 
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE rename_new ON CLUSTER cluster AS rename_shard ENGINE = Distributed(cluster, default, rename_shard, id % 2)",
+        "CREATE TABLE IF NOT EXISTS rename_new ON CLUSTER cluster AS rename_shard ENGINE = Distributed(cluster, default, rename_shard, id % 2)",
     )
 
     instance.query("system stop distributed sends rename")
@@ -491,24 +510,25 @@ def test_replicated_without_arguments(test_cluster):
     )
 
     test_cluster.ddl_check_query(
-        instance, "CREATE DATABASE test_atomic ON CLUSTER cluster ENGINE=Atomic"
+        instance,
+        "CREATE DATABASE test_atomic ON CLUSTER cluster ENGINE=Atomic",
     )
     assert (
-        "are supported only for ON CLUSTER queries with Atomic database engine"
+        "only supported when the UUID is explicitly specified"
         in instance.query_and_get_error(
             "CREATE TABLE test_atomic.rmt (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n"
         )
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree() ORDER BY n",
+        "CREATE TABLE IF NOT EXISTS test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree() ORDER BY n",
     )
     test_cluster.ddl_check_query(
         instance, "DROP TABLE test_atomic.rmt ON CLUSTER cluster SYNC"
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_atomic.rmt UUID '12345678-0000-4000-8000-000000000001' ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n",
+        "CREATE TABLE IF NOT EXISTS test_atomic.rmt UUID '12345678-0000-4000-8000-000000000001' ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n",
     )
     assert (
         instance.query("SHOW CREATE test_atomic.rmt FORMAT TSVRaw")
@@ -520,7 +540,7 @@ def test_replicated_without_arguments(test_cluster):
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') ORDER BY n",
+        "CREATE TABLE IF NOT EXISTS test_atomic.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') ORDER BY n",
     )
     test_cluster.ddl_check_query(
         instance,
@@ -540,47 +560,50 @@ def test_replicated_without_arguments(test_cluster):
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_atomic.rrmt ON CLUSTER cluster (n UInt64, m UInt64) ENGINE=ReplicatedReplacingMergeTree(m) ORDER BY n",
+        "CREATE TABLE IF NOT EXISTS test_atomic.rrmt ON CLUSTER cluster (n UInt64, m UInt64) ENGINE=ReplicatedReplacingMergeTree(m) ORDER BY n",
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_atomic.rsmt ON CLUSTER cluster (n UInt64, m UInt64, k UInt64) ENGINE=ReplicatedSummingMergeTree((m, k)) ORDER BY n",
+        "CREATE TABLE IF NOT EXISTS test_atomic.rsmt ON CLUSTER cluster (n UInt64, m UInt64, k UInt64) ENGINE=ReplicatedSummingMergeTree((m, k)) ORDER BY n",
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_atomic.rvcmt ON CLUSTER cluster (n UInt64, m Int8, k UInt64) ENGINE=ReplicatedVersionedCollapsingMergeTree(m, k) ORDER BY n",
+        "CREATE TABLE IF NOT EXISTS test_atomic.rvcmt ON CLUSTER cluster (n UInt64, m Int8, k UInt64) ENGINE=ReplicatedVersionedCollapsingMergeTree(m, k) ORDER BY n",
     )
     test_cluster.ddl_check_query(
         instance, "DROP DATABASE test_atomic ON CLUSTER cluster SYNC"
     )
 
     test_cluster.ddl_check_query(
+        instance, "DROP DATABASE IF EXISTS test_ordinary ON CLUSTER cluster SYNC"
+    )
+    test_cluster.ddl_check_query(
         instance,
         "CREATE DATABASE test_ordinary ON CLUSTER cluster ENGINE=Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
     )
     assert (
-        "are supported only for ON CLUSTER queries with Atomic database engine"
+        "only supported when the UUID is explicitly specified"
         in instance.query_and_get_error(
             "CREATE TABLE test_ordinary.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n"
         )
     )
     assert (
-        "are supported only for ON CLUSTER queries with Atomic database engine"
+        "only supported when the UUID is explicitly specified"
         in instance.query_and_get_error(
             "CREATE TABLE test_ordinary.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree('/{shard}/{uuid}/', '{replica}') ORDER BY n"
         )
     )
     test_cluster.ddl_check_query(
         instance,
-        "CREATE TABLE test_ordinary.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree('/{shard}/{table}/', '{replica}') ORDER BY n",
+        "CREATE TABLE IF NOT EXISTS test_ordinary.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree('/{shard}/{table}/', '{replica}') ORDER BY n",
     )
     assert (
         instance.query("SHOW CREATE test_ordinary.rmt FORMAT TSVRaw")
         == "CREATE TABLE test_ordinary.rmt\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree('/{shard}/rmt/', '{replica}')\nORDER BY n\nSETTINGS index_granularity = 8192\n"
     )
     test_cluster.ddl_check_query(
-        instance, "DROP DATABASE test_ordinary ON CLUSTER cluster SYNC"
+        instance, "DROP DATABASE IF EXISTS test_ordinary ON CLUSTER cluster SYNC"
     )
     test_cluster.pm_random_drops.push_rules(rules)
 

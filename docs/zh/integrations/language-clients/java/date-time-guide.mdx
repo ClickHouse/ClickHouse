@@ -1,0 +1,242 @@
+---
+sidebarTitle: '在 JDBC 中处理 Date/Time 值'
+keywords: ['java', 'jdbc', 'driver', '集成', '指南', 'Date', 'Time']
+description: '在 JDBC 中使用 Date/Time 值的指南'
+slug: /integrations/language-clients/java/jdbc_date_time_guide
+title: 'Date/Time 值指南'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+Date、Time 和 Timestamp 需要特别注意，因为它们涉及几个常见问题。
+最常见的问题是如何处理时区。另一个问题是它们的字符串表示形式以及如何使用这种表示形式。
+除此之外，每个数据库和驱动程序也都有各自的特性和限制。
+
+本文旨在通过描述任务、提供实现细节并解释相关问题，帮助你做出决策。
+
+<div id="timezones">
+  ## 时区
+</div>
+
+我们都知道，时区很难处理 (比如夏令时、固定偏移量的变化) 。但本节要讨论的是另一个与时区相关的问题：时区与时间戳字符串表示形式之间的关系。
+
+<div id="clickhouse-datetime-string-conversion">
+  ### ClickHouse 如何转换 DateTime 字符串
+</div>
+
+ClickHouse 使用以下规则转换 `DateTime` 字符串值：
+
+* 如果某一列定义了时区 (`DateTime64(9, ‘Asia/Tokyo’)`) ，则该字符串值会被视为该时区中的时间戳。`2026-01-01 13:00:00` 换算为 `UTC` 时间后将是 `2026-01-01 04:00:00`。
+* 如果某一列没有定义时区，则只使用服务器时区。注意：`session_timezone` 设置不起作用。因此，如果服务器时区为 `UTC`，而会话时区为 `America/Los_Angeles`，那么 `2026-01-01 13:00:00` 将按 `UTC` 时间写入。
+* 从未定义时区的列中读取值时，会使用 `session_timezone`；如果未设置，则使用服务器时区。这就是为什么将时间戳作为字符串读取时会受到 `session_timezone` 的影响。这本身没有问题，但需要注意这一点。
+
+<div id="writing-timestamps-across-timezones">
+  ### 跨时区写入时间戳
+</div>
+
+现在假设有一个应用运行在 `us-west` 区域，本地时区为 `UTC-8`，我们需要写入一个本地时间戳 `2026-01-01 02:00:00`，它对应的 `UTC` 时间为 `2026-01-01 10:00:00`：
+
+* 如果以字符串形式写入，就需要先将其转换为服务器时区或列时区。
+* 如果以语言原生的时间结构写入，则要求驱动知道目标时区，但：
+  * 这并不总是可行的
+  * 驱动 API 在这方面的设计并不理想
+  * 唯一的办法是明确会执行哪些转换，以便应用进行补偿 (或者将 Unix 时间戳 作为数值写入)
+
+<div id="java-and-jdbc-timestamp-apis">
+  ### Java 和 JDBC 的 timestamp API
+</div>
+
+Java 和 JDBC 提供了不同的 timestamp 设置方式：
+
+1. 使用 `Timestamp` 类，它本质上是一个 Unix 时间戳。
+   1. 与 `Calendar` 对象一起使用时，可以按照该日历的时区重新解释 `Timestamp`。
+   2. `Timestamp` 有一个不太直观的内部日历。
+2. 使用 `LocalDateTime` 类，它很容易转换为任意时区，但没有方法允许你传入目标时区。
+3. 使用 `ZonedDateTime` 类，在写入不带时区的 `DateTime` 时，它有助于进行时区转换 (因为我们知道应使用服务器时区) 。
+   1. 但将 `ZonedDateTime` 写入定义了时区的列时，用户需要自行补偿驱动程序的转换。
+4. 使用 `Long` 写入 Unix 时间戳 的毫秒值。
+5. 使用 `String` 在应用程序端完成所有转换 (这并不是很可移植) 。
+
+<Warning>
+  按 ID 查找时区时，建议优先使用 `java.time.ZoneId#of(java.lang.String)`。
+  如果找不到该时区，此方法会抛出异常 (`java.util.TimeZone#getTimeZone(java.lang.String)` 则会静默回退到 `GMT`) 。
+
+  获取 `Tokyo` 时区的正确方式是：
+
+  `TimeZone.getTimeZone(ZoneId.of("Asia/Tokyo"))`
+</Warning>
+
+<div id="date">
+  ## 日期
+</div>
+
+日期天然不受时区影响。`Date` 和 `Date32` 类型用于存储日期。这两种类型都使用自纪元 (1970-01-01) 以来的天数。`Date` 仅使用正整数天数，因此其范围截止于 `2149-06-06`。`Date32` 支持负整数天数，以覆盖 `1970-01-01` 之前的日期，但它的范围更小 (从 `1900-01-01` 到 `2100-01-01`，其中 0 对应 `1970-01-01`) 。无论在哪个时区，ClickHouse 都会将 `2026-01-01` 视为 `2026-01-01`，并且列定义中没有时区参数。
+
+<div id="using-localdate">
+  ### 使用 `java.time.LocalDate`
+</div>
+
+在 Java 中，最适合表示日期值的类是 `java.time.LocalDate`。客户端使用该类存储 `Date` 和 `Date32` 列的值 (读取 `LocalDate.ofEpochDay((long)readUnsignedShortLE())`) 。
+
+我们建议使用 `java.time.LocalDate`，因为它不受时区转换影响，并且属于现代时间 API。
+
+<div id="using-java-sql-date">
+  ### 使用 `java.sql.Date`
+</div>
+
+`LocalDate` 是在 Java 8 中引入的。在此之前，读写日期使用的是 `java.sql.Date`。从内部实现来看，这个类本质上是对某个瞬时值的封装 (即表示时间轴上绝对时间点的时间值) 。因此，`toString()` 返回的日期会因 JVM 所在时区不同而有所差异。这就要求驱动程序在构造值时格外谨慎，也要求用户清楚这一点。
+
+<div id="calendar-based-reinterpretation">
+  ### 基于日历的重新诠释
+</div>
+
+`java.sql.ResultSet` 提供了一个可接收 `Calendar` 参数的日期值获取方法，`java.sql.PreparedStatement` 中也有类似的方法。这样设计是为了让 JDBC 驱动按照指定时区重新诠释日期值。例如，DB 中的值是 `2026-01-01`，但应用程序希望将该日期视为 `Tokyo` 时区的午夜。这意味着返回的 `java.sql.Date` 对象会对应某个特定时刻；当它转换到本地时区时，由于时差，可能会变成不同的日期。对于 `LocalDate`，也可以通过 `java.time.LocalDate#atStartOfDay(java.time.ZoneId)` 实现同样的效果。
+
+ClickHouse JDBC 驱动始终返回一个表示**本地**日期午夜的 `java.sql.Date` 对象。换句话说，如果日期是 `2026-01-01`，它表示的是 JVM 时区中的 `2026-01-01 12:00 AM` (其行为与 PostgreSQL 和 MariaDB 的 JDBC 驱动相同) 。
+
+<div id="time">
+  ## Time
+</div>
+
+Time 值和 Date 值类似，在大多数情况下都与时区无关。ClickHouse 不会将时间字面量转换为任何时区——`’6:30’` 在任何地方读取都一样。
+
+<div id="clickhouse-time-types">
+  ### ClickHouse Time 类型
+</div>
+
+`Time` 和 `Time64` 是在 `25.6` 版本中引入的。在此之前，使用的是时间戳类型 `DateTime` 和 `DateTime64` (将在本指南后文讨论) 。`Time` 以 32 位整数的秒数形式存储，取值范围为 `[-999:59:59, 999:59:59]`。`Time64` 编码为无符号 `Decimal64`，并会根据精度存储不同的时间单位。常见的精度选择有 3 (毫秒) 、6 (微秒) 和 9 (纳秒) 。精度取值范围为 `[0, 9]`。
+
+<div id="java-type-mapping">
+  ### Java 类型映射
+</div>
+
+客户端会读取 `Time` 和 `Time64`，并将其存储为 `LocalDateTime`。这样做是为了支持负时间范围 (`LocalTime` 不支持) 。在这种情况下，日期部分为纪元日期 `1970-01-01`，因此负值会落在该日期之前。
+
+对时间类型的主要支持通过 `LocalTime` (当值在一天以内时) 和 `Duration` 实现，以覆盖完整的取值范围。`LocalDateTime` 只能用于读取。
+
+<div id="using-java-sql-time">
+  ### 使用 `java.sql.Time`
+</div>
+
+`java.sql.Time` 的使用仅限于 `LocalTime` 的取值范围。在内部，`java.sql.Time` 会被转换为字符串字面量。可以通过在 `PreparedStatement#setTime()` 中传入 Calendar 参数来更改该值。
+
+<div id="totime-function">
+  ### `toTime` 函数
+</div>
+
+<Note>
+  * `toTime` 始终要求输入 `Date`、`DateTime` 或其他类似类型，不接受字符串。相关问题：https://github.com/ClickHouse/ClickHouse/issues/89896
+  * 它是 [`toTimeWithFixedDate`](/zh/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate) 的别名。
+  * 存在一个与时区相关的问题：https://github.com/ClickHouse/ClickHouse/pull/90310
+</Note>
+
+<div id="timestamp">
+  ## 时间戳
+</div>
+
+时间戳是某一特定的时间点。例如，Unix 时间戳将任意时间点表示为相对于 `1970-01-01 00:00:00` `UTC` 的秒数 (负数表示 Unix 时间之前的时间戳，正数表示之后的时间戳) 。如果观察者处于 `UTC` 时区，或者使用 `UTC` 而非本地时区，这种表示方式就很容易计算和处理。
+
+<div id="clickhouse-timestamp-types">
+  ### ClickHouse 时间戳类型
+</div>
+
+ClickHouse 中有两种时间戳类型：`DateTime` (32 位整数，分辨率始终为秒) 和 `DateTime64` (64 位整数，分辨率取决于定义) 。值始终以 UTC 时间戳存储。这意味着，当它们以数字形式表示时，不会进行任何时区转换。
+
+<div id="string-representation-and-timezone-behavior">
+  ### 字符串表示形式和时区行为
+</div>
+
+字符串表示形式有一些复杂之处：
+
+* 如果列定义中未指定时区，且写入时传入的是字符串，它会从服务器时区转换为 UTC timestamp 数值。从这类列中读取值时，则会将 UTC timestamp 转换为字面 timestamp，并使用服务器时区或会话时区 (对于 expression 中未显式定义时区的 timestamp 字面量，也采用类似的处理方式) 。
+* 如果列定义中指定了时区，那么所有字符串转换都只会使用该时区。这与未指定时区时的逻辑不同，因此需要充分理解查询中每一列的数据是如何写入的。
+* 如果以包含时区的格式将日期作为字符串传入，则需要使用转换函数。通常使用 [`parseDateTimeBestEffort`](/zh/reference/functions/regular-functions/type-conversion-functions#parseDateTimeBestEffort)。
+
+<div id="how-jdbc-driver-handles-timestamps">
+  ### JDBC 驱动如何处理时间戳
+</div>
+
+在 JDBC 驱动中，我们会将时间戳转换为数值形式：
+
+```java
+"fromUnixTimestamp64Nano(" + epochSeconds * 1_000_000_000L + nanos + ")"
+```
+
+这种表示方式解决了 `timestamp` 值的大多数转换问题，因为它会以统一的格式将数据发送到服务器。不过，这种方法需要对 SQL 语句做一些小调整，但它也是将时间戳写入任意列的最简单、最直接的方法。
+
+`DateTime` 和 `DateTime64` 在客户端会以 `java.time.ZonedDateTime` 的形式读取和存储，这有助于将这类值转换为任何其他时区 (时区信息会被保留) 。
+
+<div id="common-pitfall-todatetime64">
+  ### `toDateTime64` 的常见陷阱
+</div>
+
+下面的代码示例看起来没问题，但会在断言处失败：
+
+```java
+String sql = "SELECT toDateTime64(?, 3)";
+try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+    LocalDateTime localTs = LocalDateTime.parse("2021-01-01T01:34:56");
+    stmt.setObject(1, localTs);
+    try (ResultSet rs = stmt.executeQuery()) {
+        rs.next();
+        assertEquals(rs.getObject(1, LocalDateTime.class), localTs);
+    }
+}
+```
+
+出现这种情况，是因为 `toDateTime64` 使用的是服务器时区，无法识别源时区。
+
+<div id="conversion-tables">
+  ## 转换表
+</div>
+
+如果某个转换对未在下表中列出，则表示不支持该转换。例如，`Date` 列不能读取为 `java.sql.Timestamp`，因为它不包含时间部分。
+驱动程序不会将整数值转换为任何日期/时间值。调用 `pstmt.setLong("timestamp", 1772132359L)` 会导致 `1772132359` 作为数字写入服务器，并被视为
+UTC Unix 时间戳 (以秒为单位) 。
+
+<div id="writing-values-setobject">
+  ### 使用 `PreparedStatement#setObject` 写入值
+</div>
+
+下表展示了使用 `PreparedStatement#setObject(column, value)` 设置值时的转换方式：
+
+| `value` 的类                | 转换                                                     |
+| ------------------------- | ------------------------------------------------------ |
+| `java.time.LocalDate`     | 格式化为 `YYYY-MM-DD`。                                     |
+| `java.sql.Date`           | 使用默认日历转换，并按 `LocalDate` (`YYYY-MM-DD`) 格式化。            |
+| `java.time.LocalTime`     | 格式化为 `HH:mm:ss`。                                       |
+| `java.time.Duration`      | 格式化为 `HHH:mm:ss`。值可以为负数。                               |
+| `java.sql.Time`           | 使用默认日历转换，并按 `LocalTime` (`HH:mm`) 格式化。                 |
+| `java.time.LocalDateTime` | 转换为纳秒级 Unix 时间戳，并用 `fromUnixTimestamp64Nano` 包装。 |
+| `java.time.ZonedDateTime` | 转换为纳秒级 Unix 时间戳，并用 `fromUnixTimestamp64Nano` 包装。 |
+| `java.sql.Timestamp`      | 转换为纳秒级 Unix 时间戳，并用 `fromUnixTimestamp64Nano` 包装。 |
+
+<Note>
+  应将该列的类型视为未知，具体向预处理语句传递什么值由应用程序决定。
+</Note>
+
+<div id="reading-values-getobject">
+  ### 使用 `ResultSet#getObject` 读取值
+</div>
+
+下表展示了使用 `ResultSet#getObject(column, class)` 读取时，值会如何转换：
+
+| `column` 的 ClickHouse Data Type | `class` 的值                | 转换                                                                                                                                               |
+| ------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Date` 或 `Date32`               | `java.time.LocalDate`     | DB 值 (天数) 会转换为 `LocalDate`。                                                                                                                      |
+| `Date` 或 `Date32`               | `java.sql.Date`           | DB 值 (天数) 会先转换为 `LocalDate`，然后以本地时区的午夜作为时间部分转换为 `java.sql.Date`。如果使用了 calendar，则会使用其时区而不是本地时区。示例：DB 值 `1970-01-10` → `LocalDate` 为 `1970-01-10`。 |
+| `Time` 或 `Time64`               | `java.time.LocalTime`     | DB 值会转换为 `LocalDateTime`，然后再转换为 `LocalTime`。这仅适用于一天内的时间。                                                                                         |
+| `Time` 或 `Time64`               | `java.time.LocalDateTime` | DB 值会转换为 `LocalDateTime`。                                                                                                                        |
+| `Time` 或 `Time64`               | `java.sql.Time`           | DB 值会转换为 `LocalDateTime`，然后使用默认 calendar 转换为 `java.sql.Time`。这仅适用于一天内的时间。                                                                        |
+| `Time` 或 `Time64`               | `java.time.Duration`      | DB 值会转换为 `LocalDateTime`，然后再转换为 `Duration`。                                                                                                      |
+| `DateTime` 或 `DateTime64`       | `java.time.LocalDateTime` | DB 值会转换为 `ZonedDateTime`，然后再转换为 `LocalDateTime`。                                                                                                 |
+| `DateTime` 或 `DateTime64`       | `java.time.ZonedDateTime` | DB 值会转换为 `ZonedDateTime`。                                                                                                                        |
+| `DateTime` 或 `DateTime64`       | `java.sql.Timestamp`      | DB 值会转换为 `ZonedDateTime`，然后使用默认时区转换为 `java.sql.Timestamp`。                                                                                       |
+
+<div id="using-calendar-based-methods">
+  ### 使用基于 Calendar 的方法
+</div>
+
+如果值分别通过 `PreparedStatement#setTime(param, value, calendar)` 和 `PreparedStatement#setDate(param, value, calendar)` 存储，则应相应使用 `ResultSet#getTime(column, calendar)` 和 `ResultSet#getDate(column, calendar)`。

@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+          <filesystem_cache_segments_batch_size>10</filesystem_cache_segments_batch_size>
+        </default>
+    </profiles>
+</clickhouse>

@@ -1,20 +1,22 @@
 #pragma once
 
-#include "Connection.h"
-#include <Interpreters/Context.h>
+#include <Client/Connection.h>
+#include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
-#include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Storages/ColumnsDescription.h>
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
 {
+class ColumnsDescription;
 class PullingAsyncPipelineExecutor;
 class PushingAsyncPipelineExecutor;
 class PushingPipelineExecutor;
+class QueryPipeline;
+class ReadBuffer;
 
 /// State of query processing.
 struct LocalQueryState
@@ -25,19 +27,38 @@ struct LocalQueryState
 
     /// Query text.
     String query;
+    /// Parser-affecting settings captured when the query was received, before any query-local `SETTINGS`
+    /// from the query itself are applied during execution. The `input()` initializer reparses `query` and
+    /// must use the dialect/gate the query was originally accepted with — a JSON
+    /// `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'` (or `... enable_json_ast_dialect = 0`)
+    /// would otherwise be reparsed with the changed settings and fail.
+    bool parsed_as_json_dialect = false;
+    bool enable_json_ast_dialect = false;
+    /// AST-size limits captured at the same point. The JSON branch of the `input()` initializer reparses
+    /// `query` through `IAST::createFromJSON`; it must use the limits the original parse was accepted with,
+    /// so a JSON `INSERT ... FROM input(...) SETTINGS max_ast_depth = 1` (or `max_query_size` /
+    /// `max_ast_elements`) cannot make that second parse fail under limits the first parse never saw.
+    UInt64 json_ast_max_query_size = 0;
+    UInt64 json_ast_max_depth = 0;
+    UInt64 json_ast_max_elements = 0;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
     /// Current stream to pull blocks from.
     std::unique_ptr<PullingAsyncPipelineExecutor> executor;
     std::unique_ptr<PushingPipelineExecutor> pushing_executor;
     std::unique_ptr<PushingAsyncPipelineExecutor> pushing_async_executor;
+    /// For sending data for input() function.
+    std::unique_ptr<QueryPipeline> input_pipeline;
+    std::unique_ptr<PullingAsyncPipelineExecutor> input_pipeline_executor;
+
     InternalProfileEventsQueuePtr profile_queue;
+    InternalTextLogsQueuePtr logs_queue;
 
     std::unique_ptr<Exception> exception;
 
     /// Current block to be sent next.
     std::optional<Block> block;
-    std::optional<ColumnsDescription> columns_description;
+    std::shared_ptr<ColumnsDescription> columns_description;
     std::optional<ProfileInfo> profile_info;
 
     /// Is request cancelled
@@ -56,7 +77,7 @@ struct LocalQueryState
     Stopwatch after_send_progress;
     Stopwatch after_send_profile_events;
 
-    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
+    QueryScope query_scope_holder;
 };
 
 
@@ -64,7 +85,18 @@ class LocalConnection : public IServerConnection, WithContext
 {
 public:
     explicit LocalConnection(
-        ContextPtr context_, bool send_progress_ = false, bool send_profile_events_ = false, const String & server_display_name_ = "");
+        ContextPtr context_,
+        ReadBuffer * in_,
+        bool send_progress_,
+        bool send_profile_events_,
+        const String & server_display_name_);
+
+    explicit LocalConnection(
+        std::unique_ptr<Session> && session_,
+        ReadBuffer * in_,
+        bool send_progress_ = false,
+        bool send_profile_events_ = false,
+        const String & server_display_name_ = "");
 
     ~LocalConnection() override;
 
@@ -73,11 +105,22 @@ public:
     static ServerConnectionPtr createConnection(
         const ConnectionParameters & connection_parameters,
         ContextPtr current_context,
+        ReadBuffer * in = nullptr,
+        bool send_progress = false,
+        bool send_profile_events = false,
+        const String & server_display_name = "");
+
+    static ServerConnectionPtr createConnection(
+        const ConnectionParameters & connection_parameters,
+        std::unique_ptr<Session> && session,
+        ReadBuffer * in_,
         bool send_progress = false,
         bool send_profile_events = false,
         const String & server_display_name = "");
 
     void setDefaultDatabase(const String & database) override;
+
+    void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
 
     void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
@@ -90,7 +133,7 @@ public:
     const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
-    const String & getDescription() const override { return description; }
+    const String & getDescription([[maybe_unused]] bool with_extra = false) const override { return description; }  /// NOLINT
 
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
 
@@ -103,15 +146,24 @@ public:
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
         bool with_pending_data/* = false */,
+        const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
+
+    void sendQueryPlan(const QueryPlan &) override;
 
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
+    bool isSendDataNeeded() const override;
+
     void sendExternalTablesData(ExternalTablesData &) override;
 
+    void sendScalarsData(Scalars & data) override;
+
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
@@ -120,6 +172,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds/* = 0*/) override;
 
     Packet receivePacket() override;
+    UInt64 receivePacketType() override;
 
     void forceConnected(const ConnectionTimeouts &) override {}
 
@@ -127,19 +180,13 @@ public:
 
     bool checkConnected(const ConnectionTimeouts & /*timeouts*/) override { return true; }
 
+    bool checkConnectedWithoutRoundTrip() override { return true; }
+
     void disconnect() override {}
 
     void setThrottler(const ThrottlerPtr &) override {}
 
 private:
-    void initBlockInput();
-
-    void processOrdinaryQuery();
-
-    void processOrdinaryQueryWithProcessors();
-
-    void updateState();
-
     bool pullBlock(Block & block);
 
     void finishQuery();
@@ -148,14 +195,21 @@ private:
 
     void sendProfileEvents();
 
+    /// Returns true on executor timeout, meaning a retryable error.
     bool pollImpl();
 
+    bool needSendProgressOrMetrics();
+    bool needSendLogs();
+
     ContextMutablePtr query_context;
-    Session session;
+    std::unique_ptr<Session> session;
 
     bool send_progress;
     bool send_profile_events;
     String server_display_name;
+    /// Optional callback to check if the query was cancelled (e.g. via Ctrl+C).
+    /// Set by the client application; used as `interactive_cancel_callback` on the query context.
+    std::function<bool()> is_cancelled_callback;
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
@@ -166,5 +220,8 @@ private:
     String current_database;
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
+
+    ReadBuffer * in;
 };
+
 }

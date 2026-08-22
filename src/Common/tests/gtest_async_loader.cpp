@@ -1,8 +1,15 @@
+#include <boost/core/noncopyable.hpp>
 #include <gtest/gtest.h>
 
+#include <array>
+#include <atomic>
+#include <cstdlib>
+#include <exception>
+#include <list>
 #include <barrier>
 #include <chrono>
 #include <mutex>
+#include <shared_mutex>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
@@ -13,14 +20,36 @@
 #include <base/sleep.h>
 #include <Common/Exception.h>
 #include <Common/AsyncLoader.h>
+#include <Common/ProfileEvents.h>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
 
 using namespace DB;
 
+namespace
+{
+
+// Looked up by name, so this file links whether or not the event is registered. 0 when it is not.
+UInt64 spawnFailures()
+{
+    static const ProfileEvents::Event event = []
+    {
+        for (auto e = ProfileEvents::Event(0); e < ProfileEvents::end(); ++e)
+            if (ProfileEvents::getName(e) == "AsyncLoaderSpawnFailures")
+                return e;
+        return ProfileEvents::end();
+    }();
+
+    return event == ProfileEvents::end() ? 0 : ProfileEvents::global_counters[event];
+}
+
+}
+
 namespace CurrentMetrics
 {
-    extern const Metric TablesLoaderThreads;
-    extern const Metric TablesLoaderThreadsActive;
+    extern const Metric TablesLoaderBackgroundThreads;
+    extern const Metric TablesLoaderBackgroundThreadsActive;
+    extern const Metric TablesLoaderBackgroundThreadsScheduled;
 }
 
 namespace DB::ErrorCodes
@@ -28,6 +57,7 @@ namespace DB::ErrorCodes
     extern const int ASYNC_LOAD_CYCLE;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
+    extern const int ASYNC_LOAD_WAIT_FAILED;
 }
 
 struct Initializer {
@@ -43,13 +73,13 @@ struct AsyncLoaderTest
     pcg64 rng{randomSeed()};
 
     explicit AsyncLoaderTest(std::vector<Initializer> initializers)
-        : loader(getPoolInitializers(initializers), /* log_failures = */ false, /* log_progress = */ false)
+        : loader(getPoolInitializers(initializers), /* log_failures = */ false, /* log_progress = */ false, /* log_events = */ false)
     {
-        loader.stop(); // All tests call `start()` manually to better control ordering
+        loader.pause(); // All tests call `unpause()` manually to better control ordering
     }
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
-        : AsyncLoaderTest({{.max_threads = max_threads}})
+        : AsyncLoaderTest({{.max_threads = max_threads, .priority = {}}})
     {}
 
     std::vector<AsyncLoader::PoolInitializer> getPoolInitializers(std::vector<Initializer> initializers)
@@ -60,8 +90,9 @@ struct AsyncLoaderTest
         {
             result.push_back({
                 .name = fmt::format("Pool{}", pool_id),
-                .metric_threads = CurrentMetrics::TablesLoaderThreads,
-                .metric_active_threads = CurrentMetrics::TablesLoaderThreadsActive,
+                .metric_threads = CurrentMetrics::TablesLoaderBackgroundThreads,
+                .metric_active_threads = CurrentMetrics::TablesLoaderBackgroundThreadsActive,
+                .metric_scheduled_threads = CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
                 .max_threads = desc.max_threads,
                 .priority = desc.priority
             });
@@ -74,7 +105,7 @@ struct AsyncLoaderTest
     T randomInt(T from, T to)
     {
         std::uniform_int_distribution<T> distribution(from, to);
-        std::scoped_lock lock(rng_mutex);
+        std::lock_guard lock(rng_mutex);
         return distribution(rng);
     }
 
@@ -153,7 +184,7 @@ TEST(AsyncLoader, Smoke)
     std::atomic<size_t> jobs_done{0};
     std::atomic<size_t> low_priority_jobs_done{0};
 
-    auto job_func = [&] (const LoadJobPtr & self) {
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr & self) {
         jobs_done++;
         if (self->pool() == low_priority_pool)
             low_priority_jobs_done++;
@@ -170,13 +201,13 @@ TEST(AsyncLoader, Smoke)
         auto job5 = makeLoadJob({ job3, job4 }, low_priority_pool, "job5", job_func);
         task2->merge(t.schedule({ job5 }));
 
-        std::thread waiter_thread([=] { job5->wait(); });
+        std::thread waiter_thread([&t, job5] { t.loader.wait(job5); });
 
-        t.loader.start();
+        t.loader.unpause();
 
-        job3->wait();
+        t.loader.wait(job3);
         t.loader.wait();
-        job4->wait();
+        t.loader.wait(job4);
 
         waiter_thread.join();
 
@@ -187,14 +218,14 @@ TEST(AsyncLoader, Smoke)
     ASSERT_EQ(jobs_done, 5);
     ASSERT_EQ(low_priority_jobs_done, 1);
 
-    t.loader.stop();
+    t.loader.pause();
 }
 
 TEST(AsyncLoader, CycleDetection)
 {
     AsyncLoaderTest t;
 
-    auto job_func = [&] (const LoadJobPtr &) {};
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {};
 
     LoadJobPtr cycle_breaker; // To avoid memleak we introduce with a cycle
 
@@ -229,7 +260,7 @@ TEST(AsyncLoader, CycleDetection)
     {
         int present[] = { 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 };
         for (int i = 0; i < std::size(present); i++)
-            ASSERT_EQ(e.message().find(fmt::format("job{}", i)) != String::npos, present[i]);
+            ASSERT_EQ(e.message().contains(fmt::format("job{}", i)), present[i]);
     }
 
     const_cast<LoadJobSet &>(cycle_breaker->dependencies).clear();
@@ -239,7 +270,7 @@ TEST(AsyncLoader, CancelPendingJob)
 {
     AsyncLoaderTest t;
 
-    auto job_func = [&] (const LoadJobPtr &) {};
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {};
 
     auto job = makeLoadJob({}, "job", job_func);
     auto task = t.schedule({ job });
@@ -249,12 +280,13 @@ TEST(AsyncLoader, CancelPendingJob)
     ASSERT_EQ(job->status(), LoadStatus::CANCELED);
     try
     {
-        job->wait();
+        t.loader.wait(job);
         FAIL();
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 
@@ -262,7 +294,7 @@ TEST(AsyncLoader, CancelPendingTask)
 {
     AsyncLoaderTest t;
 
-    auto job_func = [&] (const LoadJobPtr &) {};
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {};
 
     auto job1 = makeLoadJob({}, "job1", job_func);
     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
@@ -275,22 +307,24 @@ TEST(AsyncLoader, CancelPendingTask)
 
     try
     {
-        job1->wait();
+        t.loader.wait(job1);
         FAIL();
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 
     try
     {
-        job2->wait();
+        t.loader.wait(job2);
         FAIL();
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 
@@ -298,7 +332,7 @@ TEST(AsyncLoader, CancelPendingDependency)
 {
     AsyncLoaderTest t;
 
-    auto job_func = [&] (const LoadJobPtr &) {};
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {};
 
     auto job1 = makeLoadJob({}, "job1", job_func);
     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
@@ -312,33 +346,35 @@ TEST(AsyncLoader, CancelPendingDependency)
 
     try
     {
-        job1->wait();
+        t.loader.wait(job1);
         FAIL();
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 
     try
     {
-        job2->wait();
+        t.loader.wait(job2);
         FAIL();
     }
     catch (Exception & e)
     {
-        ASSERT_TRUE(e.code() == ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
 }
 
 TEST(AsyncLoader, CancelExecutingJob)
 {
     AsyncLoaderTest t;
-    t.loader.start();
+    t.loader.unpause();
 
-    std::barrier sync(2);
+    std::barrier<std::__empty_completion> sync(2);
 
-    auto job_func = [&] (const LoadJobPtr &)
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &)
     {
         sync.arrive_and_wait(); // (A) sync with main thread
         sync.arrive_and_wait(); // (B) wait for waiter
@@ -360,28 +396,28 @@ TEST(AsyncLoader, CancelExecutingJob)
     canceler.join();
 
     ASSERT_EQ(job->status(), LoadStatus::OK);
-    job->wait();
+    t.loader.wait(job);
 }
 
 TEST(AsyncLoader, CancelExecutingTask)
 {
     AsyncLoaderTest t(16);
-    t.loader.start();
-    std::barrier sync(2);
+    t.loader.unpause();
+    std::barrier<std::__empty_completion> sync(2);
 
-    auto blocker_job_func = [&] (const LoadJobPtr &)
+    auto blocker_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
     {
         sync.arrive_and_wait(); // (A) sync with main thread
         sync.arrive_and_wait(); // (B) wait for waiter
         // signals (C)
     };
 
-    auto job_to_cancel_func = [&] (const LoadJobPtr &)
+    auto job_to_cancel_func = [&] (AsyncLoader &, const LoadJobPtr &)
     {
         FAIL(); // this job should be canceled
     };
 
-    auto job_to_succeed_func = [&] (const LoadJobPtr &)
+    auto job_to_succeed_func = [&] (AsyncLoader &, const LoadJobPtr &)
     {
     };
 
@@ -419,16 +455,14 @@ TEST(AsyncLoader, CancelExecutingTask)
     }
 }
 
-// This test is disabled due to `MemorySanitizer: use-of-uninitialized-value` issue in `collectSymbolsFromProgramHeaders` function
-// More details: https://github.com/ClickHouse/ClickHouse/pull/48923#issuecomment-1545415482
-TEST(AsyncLoader, DISABLED_JobFailure)
+TEST(AsyncLoader, JobFailure)
 {
     AsyncLoaderTest t;
-    t.loader.start();
+    t.loader.unpause();
 
     std::string error_message = "test job failure";
 
-    auto job_func = [&] (const LoadJobPtr &) {
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
         throw std::runtime_error(error_message);
     };
 
@@ -440,24 +474,25 @@ TEST(AsyncLoader, DISABLED_JobFailure)
     ASSERT_EQ(job->status(), LoadStatus::FAILED);
     try
     {
-        job->wait();
+        t.loader.wait(job);
         FAIL();
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_FAILED);
-        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains(error_message));
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_FAILED"));
     }
 }
 
 TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
 {
     AsyncLoaderTest t;
-    t.loader.start();
+    t.loader.unpause();
 
     std::string_view error_message = "test job failure";
 
-    auto failed_job_func = [&] (const LoadJobPtr &) {
+    auto failed_job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
         throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
     };
 
@@ -466,7 +501,7 @@ TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
 
     t.loader.wait();
 
-    auto job_func = [&] (const LoadJobPtr &) {};
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {};
 
     auto job1 = makeLoadJob({ failed_job }, "job1", job_func);
     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
@@ -478,23 +513,25 @@ TEST(AsyncLoader, ScheduleJobWithFailedDependencies)
     ASSERT_EQ(job2->status(), LoadStatus::CANCELED);
     try
     {
-        job1->wait();
+        t.loader.wait(job1);
         FAIL();
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
-        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
+        ASSERT_TRUE(e.message().contains(error_message));
     }
     try
     {
-        job2->wait();
+        t.loader.wait(job2);
         FAIL();
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
-        ASSERT_TRUE(e.message().find(error_message) != String::npos);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
+        ASSERT_TRUE(e.message().contains(error_message));
     }
 }
 
@@ -502,14 +539,14 @@ TEST(AsyncLoader, ScheduleJobWithCanceledDependencies)
 {
     AsyncLoaderTest t;
 
-    auto canceled_job_func = [&] (const LoadJobPtr &) {};
+    auto canceled_job_func = [&] (AsyncLoader &, const LoadJobPtr &) {};
     auto canceled_job = makeLoadJob({}, "canceled_job", canceled_job_func);
     auto canceled_task = t.schedule({ canceled_job });
     canceled_task->remove();
 
-    t.loader.start();
+    t.loader.unpause();
 
-    auto job_func = [&] (const LoadJobPtr &) {};
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {};
     auto job1 = makeLoadJob({ canceled_job }, "job1", job_func);
     auto job2 = makeLoadJob({ job1 }, "job2", job_func);
     auto task = t.schedule({ job1, job2 });
@@ -520,35 +557,202 @@ TEST(AsyncLoader, ScheduleJobWithCanceledDependencies)
     ASSERT_EQ(job2->status(), LoadStatus::CANCELED);
     try
     {
-        job1->wait();
+        t.loader.wait(job1);
         FAIL();
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
     try
     {
-        job2->wait();
+        t.loader.wait(job2);
         FAIL();
     }
     catch (Exception & e)
     {
-        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_CANCELED);
+        ASSERT_EQ(e.code(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+        ASSERT_TRUE(e.message().contains("ASYNC_LOAD_CANCELED"));
     }
+}
+
+TEST(AsyncLoader, IgnoreDependencyFailure)
+{
+    AsyncLoaderTest t;
+    std::atomic<bool> success{false};
+    t.loader.unpause();
+
+    std::string_view error_message = "test job failure";
+
+    auto failed_job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
+    };
+    auto dependent_job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        success.store(true);
+    };
+
+    auto failed_job = makeLoadJob({}, "failed_job", failed_job_func);
+    auto dependent_job = makeLoadJob({failed_job},
+        "dependent_job", ignoreDependencyFailure, dependent_job_func);
+    auto task = t.schedule({ failed_job, dependent_job });
+
+    t.loader.wait();
+
+    ASSERT_EQ(failed_job->status(), LoadStatus::FAILED);
+    ASSERT_EQ(dependent_job->status(), LoadStatus::OK);
+    ASSERT_EQ(success.load(), true);
+}
+
+TEST(AsyncLoader, CustomDependencyFailure)
+{
+    AsyncLoaderTest t(16);
+    int error_count = 0;
+    std::atomic<size_t> good_count{0};
+    std::barrier<std::__empty_completion> canceled_sync(4);
+    t.loader.unpause();
+
+    std::string_view error_message = "test job failure";
+
+    auto evil_dep_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
+    };
+    auto good_dep_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        good_count++;
+    };
+    auto late_dep_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        canceled_sync.arrive_and_wait(); // wait for fail (A) before this job is finished
+    };
+    auto collect_job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        FAIL(); // job should be canceled, so we never get here
+    };
+    auto dependent_job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        FAIL(); // job should be canceled, so we never get here
+    };
+    auto fail_after_two = [&] (const LoadJobPtr & self, const LoadJobPtr &, std::exception_ptr & cancel) {
+        if (++error_count == 2)
+            cancel = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
+                "Load job '{}' canceled: too many dependencies have failed",
+                self->name));
+    };
+
+    auto evil_dep1 = makeLoadJob({}, "evil_dep1", evil_dep_func);
+    auto evil_dep2 = makeLoadJob({}, "evil_dep2", evil_dep_func);
+    auto evil_dep3 = makeLoadJob({}, "evil_dep3", evil_dep_func);
+    auto good_dep1 = makeLoadJob({}, "good_dep1", good_dep_func);
+    auto good_dep2 = makeLoadJob({}, "good_dep2", good_dep_func);
+    auto good_dep3 = makeLoadJob({}, "good_dep3", good_dep_func);
+    auto late_dep1 = makeLoadJob({}, "late_dep1", late_dep_func);
+    auto late_dep2 = makeLoadJob({}, "late_dep2", late_dep_func);
+    auto late_dep3 = makeLoadJob({}, "late_dep3", late_dep_func);
+    auto collect_job = makeLoadJob({
+            evil_dep1, evil_dep2, evil_dep3,
+            good_dep1, good_dep2, good_dep3,
+            late_dep1, late_dep2, late_dep3
+        }, "collect_job", fail_after_two, collect_job_func);
+    auto dependent_job1 = makeLoadJob({ collect_job }, "dependent_job1", dependent_job_func);
+    auto dependent_job2 = makeLoadJob({ collect_job }, "dependent_job2", dependent_job_func);
+    auto dependent_job3 = makeLoadJob({ collect_job }, "dependent_job3", dependent_job_func);
+    auto task = t.schedule({
+            dependent_job1, dependent_job2, dependent_job3,
+            collect_job,
+            late_dep1, late_dep2, late_dep3,
+            good_dep1, good_dep2, good_dep3,
+            evil_dep1, evil_dep2, evil_dep3,
+        });
+
+    t.loader.wait(collect_job, true);
+    canceled_sync.arrive_and_wait(); // (A)
+
+    t.loader.wait();
+
+    ASSERT_EQ(late_dep1->status(), LoadStatus::OK);
+    ASSERT_EQ(late_dep2->status(), LoadStatus::OK);
+    ASSERT_EQ(late_dep3->status(), LoadStatus::OK);
+    ASSERT_EQ(collect_job->status(), LoadStatus::CANCELED);
+    ASSERT_EQ(dependent_job1->status(), LoadStatus::CANCELED);
+    ASSERT_EQ(dependent_job2->status(), LoadStatus::CANCELED);
+    ASSERT_EQ(dependent_job3->status(), LoadStatus::CANCELED);
+    ASSERT_EQ(good_count.load(), 3);
+}
+
+TEST(AsyncLoader, WaitersLimit)
+{
+    AsyncLoaderTest t(16);
+
+    std::atomic<int> waiters_total{0};
+    int waiters_limit = 5;
+    auto waiters_inc = [&] (const LoadJobPtr &) {
+        int value = waiters_total.load();
+        while (true)
+        {
+            if (value >= waiters_limit)
+                throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "Too many waiters: {}", value);
+            if (waiters_total.compare_exchange_strong(value, value + 1))
+                break;
+        }
+    };
+    auto waiters_dec = [&] (const LoadJobPtr &) {
+        waiters_total.fetch_sub(1);
+    };
+
+    std::barrier<std::__empty_completion> sync(2);
+    t.loader.unpause();
+
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        sync.arrive_and_wait(); // (A)
+    };
+
+    auto job = makeLoadJob({}, "job", waiters_inc, waiters_dec, job_func);
+    auto task = t.schedule({job});
+
+    std::atomic<int> failure{0};
+    std::atomic<int> success{0};
+    std::vector<std::thread> waiters;
+    waiters.reserve(10);
+    auto waiter = [&] {
+        try
+        {
+            t.loader.wait(job);
+            success.fetch_add(1);
+        }
+        catch(...) // Ok: test counts success/failure outcomes
+        {
+            failure.fetch_add(1);
+        }
+    };
+
+    for (int i = 0; i < 10; i++)
+        waiters.emplace_back(waiter);
+
+    while (failure.load() != 5)
+        std::this_thread::yield();
+
+    ASSERT_EQ(job->waitersCount(), 5);
+
+    sync.arrive_and_wait(); // (A)
+
+    for (auto & thread : waiters)
+        thread.join();
+
+    ASSERT_EQ(success.load(), 5);
+    ASSERT_EQ(failure.load(), 5);
+    ASSERT_EQ(waiters_total.load(), 0);
+
+    t.loader.wait();
 }
 
 TEST(AsyncLoader, TestConcurrency)
 {
     AsyncLoaderTest t(10);
-    t.loader.start();
+    t.loader.unpause();
 
     for (int concurrency = 1; concurrency <= 10; concurrency++)
     {
-        std::barrier sync(concurrency);
+        std::barrier<std::__empty_completion> sync(concurrency);
 
         std::atomic<int> executing{0};
-        auto job_func = [&] (const LoadJobPtr &)
+        auto job_func = [&] (AsyncLoader &, const LoadJobPtr &)
         {
             executing++;
             ASSERT_LE(executing, concurrency);
@@ -568,14 +772,14 @@ TEST(AsyncLoader, TestConcurrency)
 TEST(AsyncLoader, TestOverload)
 {
     AsyncLoaderTest t(3);
-    t.loader.start();
+    t.loader.unpause();
 
     size_t max_threads = t.loader.getMaxThreads(/* pool = */ 0);
     std::atomic<int> executing{0};
 
     for (int concurrency = 4; concurrency <= 8; concurrency++)
     {
-        auto job_func = [&] (const LoadJobPtr &)
+        auto job_func = [&] (AsyncLoader &, const LoadJobPtr &)
         {
             executing++;
             t.randomSleepUs(100, 200, 100);
@@ -583,12 +787,12 @@ TEST(AsyncLoader, TestOverload)
             executing--;
         };
 
-        t.loader.stop();
+        t.loader.pause();
         std::vector<LoadTaskPtr> tasks;
         tasks.reserve(concurrency);
         for (int i = 0; i < concurrency; i++)
             tasks.push_back(t.schedule(t.chainJobSet(5, job_func)));
-        t.loader.start();
+        t.loader.unpause();
         t.loader.wait();
         ASSERT_EQ(executing, 0);
     }
@@ -611,7 +815,7 @@ TEST(AsyncLoader, StaticPriorities)
 
     std::string schedule;
 
-    auto job_func = [&] (const LoadJobPtr & self)
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr & self)
     {
         schedule += fmt::format("{}{}", self->name, self->pool());
     };
@@ -636,7 +840,7 @@ TEST(AsyncLoader, StaticPriorities)
     jobs.push_back(makeLoadJob({ jobs[6] }, 9, "H", job_func)); // 7
     auto task = t.schedule({ jobs.begin(), jobs.end() });
 
-    t.loader.start();
+    t.loader.unpause();
     t.loader.wait();
     ASSERT_TRUE(schedule == "A9E9D9F9G9H9C4B3" || schedule == "A9D9E9F9G9H9C4B3");
 }
@@ -649,23 +853,23 @@ TEST(AsyncLoader, SimplePrioritization)
         {.max_threads = 1, .priority{-2}},
     });
 
-    t.loader.start();
+    t.loader.unpause();
 
     std::atomic<int> executed{0}; // Number of previously executed jobs (to test execution order)
     LoadJobPtr job_to_prioritize;
 
-    auto job_func_A_booster = [&] (const LoadJobPtr &)
+    auto job_func_A_booster = [&] (AsyncLoader &, const LoadJobPtr &)
     {
         ASSERT_EQ(executed++, 0);
         t.loader.prioritize(job_to_prioritize, 2);
     };
 
-    auto job_func_B_tester = [&] (const LoadJobPtr &)
+    auto job_func_B_tester = [&] (AsyncLoader &, const LoadJobPtr &)
     {
         ASSERT_EQ(executed++, 2);
     };
 
-    auto job_func_C_boosted = [&] (const LoadJobPtr &)
+    auto job_func_C_boosted = [&] (AsyncLoader &, const LoadJobPtr &)
     {
         ASSERT_EQ(executed++, 1);
     };
@@ -678,7 +882,8 @@ TEST(AsyncLoader, SimplePrioritization)
 
     job_to_prioritize = jobs[2]; // C
 
-    scheduleAndWaitLoadAll(task);
+    scheduleLoad(task);
+    waitLoad(task);
 }
 
 TEST(AsyncLoader, DynamicPriorities)
@@ -699,7 +904,7 @@ TEST(AsyncLoader, DynamicPriorities)
     for (bool prioritize : {false, true})
     {
         // Although all pools have max_threads=1, workers from different pools can run simultaneously just after `prioritize()` call
-        std::barrier sync(2);
+        std::barrier<std::__empty_completion> sync(2);
         bool wait_sync = prioritize;
         std::mutex schedule_mutex;
         std::string schedule;
@@ -712,7 +917,7 @@ TEST(AsyncLoader, DynamicPriorities)
         UInt64 ready_seqno_D = 0;
         UInt64 ready_seqno_E = 0;
 
-        auto job_func = [&] (const LoadJobPtr & self)
+        auto job_func = [&] (AsyncLoader &, const LoadJobPtr & self)
         {
             {
                 std::unique_lock lock{schedule_mutex};
@@ -768,9 +973,9 @@ TEST(AsyncLoader, DynamicPriorities)
 
         job_to_prioritize = jobs[6]; // G
 
-        t.loader.start();
+        t.loader.unpause();
         t.loader.wait();
-        t.loader.stop();
+        t.loader.pause();
 
         if (prioritize)
         {
@@ -784,12 +989,61 @@ TEST(AsyncLoader, DynamicPriorities)
     }
 }
 
+TEST(AsyncLoader, JobPrioritizedWhileWaited)
+{
+    AsyncLoaderTest t({
+        {.max_threads = 2, .priority{0}},
+        {.max_threads = 1, .priority{-1}},
+    });
+
+    std::barrier<std::__empty_completion> sync(2);
+
+    LoadJobPtr job_to_wait; // and then to prioritize
+
+    auto running_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+        sync.arrive_and_wait();
+    };
+
+    auto dependent_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+    };
+
+    auto waiting_job_func = [&] (AsyncLoader & loader, const LoadJobPtr &)
+    {
+        loader.wait(job_to_wait);
+    };
+
+    std::vector<LoadJobPtr> jobs;
+    jobs.push_back(makeLoadJob({}, 0, "running", running_job_func));
+    jobs.push_back(makeLoadJob({jobs[0]}, 0, "dependent", dependent_job_func));
+    jobs.push_back(makeLoadJob({}, 0, "waiting", waiting_job_func));
+    auto task = t.schedule({ jobs.begin(), jobs.end() });
+
+    job_to_wait = jobs[1];
+
+    t.loader.unpause();
+
+    while (job_to_wait->waitersCount() == 0)
+        std::this_thread::yield();
+
+    ASSERT_EQ(t.loader.suspendedWorkersCount(0), 1);
+
+    t.loader.prioritize(job_to_wait, 1);
+    sync.arrive_and_wait();
+
+    t.loader.wait();
+    t.loader.pause();
+    ASSERT_EQ(t.loader.suspendedWorkersCount(1), 0);
+    ASSERT_EQ(t.loader.suspendedWorkersCount(0), 0);
+}
+
 TEST(AsyncLoader, RandomIndependentTasks)
 {
     AsyncLoaderTest t(16);
-    t.loader.start();
+    t.loader.unpause();
 
-    auto job_func = [&] (const LoadJobPtr & self)
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr & self)
     {
         for (const auto & dep : self->dependencies)
             ASSERT_EQ(dep->status(), LoadStatus::OK);
@@ -809,14 +1063,14 @@ TEST(AsyncLoader, RandomIndependentTasks)
 TEST(AsyncLoader, RandomDependentTasks)
 {
     AsyncLoaderTest t(16);
-    t.loader.start();
+    t.loader.unpause();
 
     std::mutex mutex;
     std::condition_variable cv;
     std::vector<LoadTaskPtr> tasks;
     std::vector<LoadJobPtr> all_jobs;
 
-    auto job_func = [&] (const LoadJobPtr & self)
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr & self)
     {
         for (const auto & dep : self->dependencies)
             ASSERT_EQ(dep->status(), LoadStatus::OK);
@@ -858,7 +1112,7 @@ TEST(AsyncLoader, SetMaxThreads)
         syncs.push_back(std::make_unique<std::barrier<>>(max_threads + 1));
 
 
-    auto job_func = [&] (const LoadJobPtr &)
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &)
     {
         int idx = sync_index;
         if (idx < syncs.size())
@@ -871,10 +1125,12 @@ TEST(AsyncLoader, SetMaxThreads)
     };
 
     // Generate enough independent jobs
+    std::vector<LoadTaskPtr> tasks;
+    tasks.reserve(1000);
     for (int i = 0; i < 1000; i++)
-        t.schedule({makeLoadJob({}, "job", job_func)})->detach();
+        tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
 
-    t.loader.start();
+    t.loader.unpause();
     while (sync_index < syncs.size())
     {
         // Wait for `max_threads` jobs to start executing
@@ -895,58 +1151,615 @@ TEST(AsyncLoader, SetMaxThreads)
     t.loader.wait();
 }
 
-TEST(AsyncLoader, DynamicPools)
+TEST(AsyncLoader, SubJobs)
 {
-    const size_t max_threads[] { 2, 10 };
-    const int jobs_in_chain = 16;
-    AsyncLoaderTest t({
-        {.max_threads = max_threads[0], .priority{0}},
-        {.max_threads = max_threads[1], .priority{-1}},
-    });
+    AsyncLoaderTest t(1);
+    t.loader.unpause();
 
-    t.loader.start();
+    // An example of component with an asynchronous loading interface
+    class MyComponent : boost::noncopyable {
+    public:
+        MyComponent(AsyncLoader & loader_, int jobs)
+            : loader(loader_)
+            , jobs_left(jobs)
+        {}
 
-    std::atomic<size_t> executing[2] { 0, 0 }; // Number of currently executing jobs per pool
-
-    for (int concurrency = 1; concurrency <= 12; concurrency++)
-    {
-        std::atomic<bool> boosted{false}; // Visible concurrency was increased
-        std::atomic<int> left{concurrency * jobs_in_chain / 2}; // Number of jobs to start before `prioritize()` call
-
-        LoadJobSet jobs_to_prioritize;
-
-        auto job_func = [&] (const LoadJobPtr & self)
+        [[nodiscard]] LoadTaskPtr loadAsync()
         {
-            auto pool_id = self->executionPool();
-            executing[pool_id]++;
-            if (executing[pool_id] > max_threads[0])
-                boosted = true;
-            ASSERT_LE(executing[pool_id], max_threads[pool_id]);
+            auto job_func = [this] (AsyncLoader &, const LoadJobPtr &) {
+                auto sub_job_func = [this] (AsyncLoader &, const LoadJobPtr &) {
+                    --jobs_left;
+                };
+                LoadJobSet jobs;
+                for (size_t j = 0; j < jobs_left; j++)
+                    jobs.insert(makeLoadJob({}, fmt::format("sub job {}", j), sub_job_func));
+                waitLoad(makeLoadTask(loader, std::move(jobs)));
+            };
+            auto job = makeLoadJob({}, "main job", job_func);
+            return load_task = makeLoadTask(loader, { job });
+        }
 
-            // Dynamic prioritization
-            if (--left == 0)
+        bool isLoaded() const
+        {
+            return jobs_left == 0;
+        }
+
+    private:
+        AsyncLoader & loader;
+        std::atomic<int> jobs_left;
+        // It is a good practice to keep load task inside the component:
+        // 1) to make sure it outlives its load jobs;
+        // 2) to avoid removing load jobs from `system.asynchronous_loader` while we use the component
+        LoadTaskPtr load_task;
+    };
+
+    for (double jobs_per_thread : std::array{0.5, 1.0, 2.0})
+    {
+        for (size_t threads = 1; threads <= 32; threads *= 2)
+        {
+            t.loader.setMaxThreads(0, threads);
+            std::list<MyComponent> components;
+            LoadTaskPtrs tasks;
+            size_t size = static_cast<size_t>(jobs_per_thread * static_cast<double>(threads));
+            tasks.reserve(size);
+            for (size_t j = 0; j < size; j++)
             {
-                for (const auto & job : jobs_to_prioritize)
-                    t.loader.prioritize(job, 1);
+                components.emplace_back(t.loader, 5);
+                tasks.emplace_back(components.back().loadAsync());
             }
+            waitLoad(tasks);
+            for (const auto & component: components)
+                ASSERT_TRUE(component.isLoaded());
+        }
+    }
+}
 
-            t.randomSleepUs(100, 200, 100);
+TEST(AsyncLoader, RecursiveJob)
+{
+    AsyncLoaderTest t(1);
+    t.loader.unpause();
 
-            ASSERT_LE(executing[pool_id], max_threads[pool_id]);
-            executing[pool_id]--;
-        };
+    // An example of component with an asynchronous loading interface (a complicated one)
+    class MyComponent : boost::noncopyable {
+    public:
+        MyComponent(AsyncLoader & loader_, int jobs)
+            : loader(loader_)
+            , jobs_left(jobs)
+        {}
 
-        std::vector<LoadTaskPtr> tasks;
-        tasks.reserve(concurrency);
-        for (int i = 0; i < concurrency; i++)
-            tasks.push_back(makeLoadTask(t.loader, t.chainJobSet(jobs_in_chain, job_func)));
-        jobs_to_prioritize = getGoals(tasks); // All jobs
-        scheduleAndWaitLoadAll(tasks);
+        [[nodiscard]] LoadTaskPtr loadAsync()
+        {
+            return load_task = loadAsyncImpl(jobs_left);
+        }
 
-        ASSERT_EQ(executing[0], 0);
-        ASSERT_EQ(executing[1], 0);
-        ASSERT_EQ(boosted, concurrency > 2);
-        boosted = false;
+        bool isLoaded() const
+        {
+            return jobs_left == 0;
+        }
+
+    private:
+        [[nodiscard]] LoadTaskPtr loadAsyncImpl(int id)
+        {
+            auto job_func = [this] (AsyncLoader &, const LoadJobPtr & self) {
+                jobFunction(self);
+            };
+            auto job = makeLoadJob({}, fmt::format("job{}", id), job_func);
+            auto task = makeLoadTask(loader, { job });
+            return task;
+        }
+
+        void jobFunction(const LoadJobPtr & self)
+        {
+            int next = --jobs_left;
+            if (next > 0)
+                waitLoad(self->pool(), loadAsyncImpl(next));
+        }
+
+        AsyncLoader & loader;
+        std::atomic<int> jobs_left;
+        // It is a good practice to keep load task inside the component:
+        // 1) to make sure it outlives its load jobs;
+        // 2) to avoid removing load jobs from `system.asynchronous_loader` while we use the component
+        LoadTaskPtr load_task;
+    };
+
+    for (double jobs_per_thread : std::array{0.5, 1.0, 2.0})
+    {
+        for (size_t threads = 1; threads <= 32; threads *= 2)
+        {
+            t.loader.setMaxThreads(0, threads);
+            std::list<MyComponent> components;
+            LoadTaskPtrs tasks;
+            size_t size = static_cast<size_t>(jobs_per_thread * static_cast<double>(threads));
+            tasks.reserve(size);
+            for (size_t j = 0; j < size; j++)
+            {
+                components.emplace_back(t.loader, 5);
+                tasks.emplace_back(components.back().loadAsync());
+            }
+            waitLoad(tasks);
+            for (const auto & component: components)
+                ASSERT_TRUE(component.isLoaded());
+        }
+    }
+}
+
+// Restores the global thread pool limits whatever the test does, because exhausting them is
+// observable by every other test in this binary.
+struct GlobalThreadPoolLimits
+{
+    GlobalThreadPool & pool = GlobalThreadPool::instance();
+
+    void saturate(size_t capacity)
+    {
+        pool.setMaxThreads(capacity);
+        pool.setMaxFreeThreads(0);
+        pool.setQueueSize(capacity);
     }
 
+    // Accepts jobs into the queue but runs none of them, so a spawned worker stays submitted
+    // without ever entering `worker()`.
+    void submitWithoutStarting(size_t queue_capacity)
+    {
+        pool.setMaxThreads(0);
+        pool.setMaxFreeThreads(0);
+        pool.setQueueSize(queue_capacity);
+    }
+
+    void restore()
+    {
+        pool.setMaxThreads(10000);
+        pool.setMaxFreeThreads(1000);
+        pool.setQueueSize(10000);
+    }
+
+    ~GlobalThreadPoolLimits() { restore(); }
+};
+
+// `spawn()` blocks fault injections unless the pool has a running worker, so at probability 1 only the
+// spawn made alongside a running worker fails. Which tier was taken is therefore observable in
+// `AsyncLoaderSpawnFailures` without exhausting anything and without aborting.
+struct AlwaysFailToAllocateThread
+{
+    AlwaysFailToAllocateThread() { CannotAllocateThreadFaultInjector::setFaultProbability(1.0); }
+    ~AlwaysFailToAllocateThread() { CannotAllocateThreadFaultInjector::setFaultProbability(0.0); }
+};
+
+// A spawn dropped while a worker is still running costs concurrency only, so every job must still
+// complete, and the pool must be probed once per saturation episode, not once per queued job.
+TEST(AsyncLoader, SpawnFailureWithRunningWorkerDoesNotTerminate)
+{
+    GlobalThreadPoolLimits limits;
+    const auto failures_before = spawnFailures();
+
+    AsyncLoaderTest t(16); // > 1 so that every enqueue attempts a spawn
+    std::barrier<std::__empty_completion> sync(2);
+    std::atomic<size_t> jobs_done{0};
+
+    auto blocking_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+        sync.arrive_and_wait(); // (A) hold this worker running while the global pool is saturated
+        jobs_done++;
+    };
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; };
+
+    auto blocking_job = makeLoadJob({}, "blocking_job", blocking_job_func);
+    auto blocking_task = t.schedule({blocking_job});
+    t.loader.unpause();
+
+    // The first worker must be running, and not suspended, before the pool is saturated.
+    while (blocking_job->startTime() == LoadJob::TimePoint{})
+        std::this_thread::yield();
+    limits.saturate(1);
+
+    LoadTaskPtrs tasks;
+    tasks.reserve(64);
+    for (size_t i = 0; i < 64; i++)
+        tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
+
+    sync.arrive_and_wait(); // (A) release the worker so it drains the queue itself
+    waitLoad(blocking_task);
+    waitLoad(tasks);
+
+    ASSERT_EQ(jobs_done, 65);
+    // One failed attempt per saturation episode, whatever the number of queued jobs.
+    ASSERT_EQ(spawnFailures() - failures_before, 1);
+    t.loader.wait();
+}
+
+// A dropped spawn must not leave `Pool::workers` overcounted: a leaked increment makes `hasWorker()`
+// report a worker forever, so `wait()` never returns. Once the limits are restored the pool must
+// spawn again, which is asserted by requiring two jobs to run at the same time.
+TEST(AsyncLoader, SpawnFailureThenRecovers)
+{
+    GlobalThreadPoolLimits limits;
+
+    AsyncLoaderTest t(16);
+    std::barrier<std::__empty_completion> sync(2);
+    std::atomic<size_t> jobs_done{0};
+
+    auto blocking_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+        sync.arrive_and_wait(); // (A)
+        jobs_done++;
+    };
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; };
+
+    auto blocking_job = makeLoadJob({}, "blocking_job", blocking_job_func);
+    auto blocking_task = t.schedule({blocking_job});
+    t.loader.unpause();
+    while (blocking_job->startTime() == LoadJob::TimePoint{})
+        std::this_thread::yield();
+    limits.saturate(1);
+
+    LoadTaskPtrs tasks;
+    tasks.reserve(32);
+    for (size_t i = 0; i < 32; i++)
+        tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
+
+    sync.arrive_and_wait(); // (A)
+    waitLoad(blocking_task);
+    waitLoad(tasks);
+    ASSERT_EQ(jobs_done, 33);
+
+    limits.restore();
+
+    // The second job is enqueued while the first one is already running, which is the case in which
+    // a spawn is droppable. It can therefore only run if the pool spawns a worker again. Both jobs
+    // wait for the other to arrive, so a pool that stopped spawning leaves them both waiting; the
+    // wait is bounded so that this fails the assertion instead of hanging the test binary.
+    std::mutex overlap_mutex;
+    std::condition_variable overlap_cv;
+    size_t arrived = 0;
+    size_t observed_overlap = 0;
+    auto overlapping_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+        std::unique_lock lock{overlap_mutex};
+        arrived++;
+        overlap_cv.notify_all();
+        if (overlap_cv.wait_for(lock, std::chrono::seconds(30), [&] { return arrived == 2; }))
+            observed_overlap++;
+    };
+
+    auto first_job = makeLoadJob({}, "overlapping_job0", overlapping_job_func);
+    auto first_overlapping_task = t.schedule({first_job});
+    while (first_job->startTime() == LoadJob::TimePoint{})
+        std::this_thread::yield();
+    auto second_overlapping_task = t.schedule({makeLoadJob({}, "overlapping_job1", overlapping_job_func)});
+    waitLoad(first_overlapping_task);
+    waitLoad(second_overlapping_task);
+
+    ASSERT_EQ(observed_overlap, 2);
+    t.loader.wait();
+}
+
+// The reported abort happens on the job-completion path: a worker calls `finish()`, which enqueues
+// the now-ready dependent job and spawns a worker for it. The calling worker is still running, so
+// dropping that spawn is safe and it picks the dependent job up itself.
+TEST(AsyncLoader, SpawnFailureFromFinishDoesNotTerminate)
+{
+    GlobalThreadPoolLimits limits;
+
+    AsyncLoaderTest t(16);
+    std::barrier<std::__empty_completion> sync(2);
+    std::atomic<size_t> jobs_done{0};
+
+    auto blocking_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+        sync.arrive_and_wait(); // (A) saturate the global pool while this worker runs
+        jobs_done++;
+    };
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; };
+
+    // Dependents are enqueued from `finish()`, i.e. from inside the worker, which is the reported path.
+    auto blocking_job = makeLoadJob({}, "blocking_job", blocking_job_func);
+    std::vector<LoadJobPtr> jobs{blocking_job};
+    for (size_t i = 0; i < 8; i++)
+        jobs.push_back(makeLoadJob({blocking_job}, fmt::format("dependent_job{}", i), job_func));
+    auto task = t.schedule({jobs.begin(), jobs.end()});
+
+    t.loader.unpause();
+    while (blocking_job->startTime() == LoadJob::TimePoint{}) // The worker must be running before saturating
+        std::this_thread::yield();
+    limits.saturate(1);
+
+    const auto failures_before = spawnFailures();
+    sync.arrive_and_wait(); // (A) `finish(blocking_job)` now enqueues the dependents and fails to spawn
+    waitLoad(task);
+
+    ASSERT_EQ(jobs_done, 9);
+    // Completion alone would also hold if the spawn were skipped, so require that it was attempted.
+    ASSERT_EQ(spawnFailures() - failures_before, 1);
+    t.loader.wait();
+}
+
+// A submitted but not yet started worker cannot take a job from the ready queue, so a pool holding
+// only such workers still needs a spawn. Measurements are taken into locals and asserted only after
+// the limits are restored: an early return while the pool cannot run jobs hangs in `~LoadTask`.
+TEST(AsyncLoader, SpawnIsRequiredWhileNoWorkerHasStarted)
+{
+    GlobalThreadPoolLimits limits;
+
+    AsyncLoaderTest t(16);
+    std::atomic<size_t> jobs_done{0};
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; };
+
+    t.loader.unpause();
+    limits.submitWithoutStarting(1000); // Loader workers get queued in the global pool but never start
+
+    LoadTaskPtrs tasks;
+    tasks.reserve(8);
+    for (size_t i = 0; i < 4; i++)
+        tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
+
+    // No worker has started, so every spawn here runs with injections blocked and succeeds. One that
+    // counted a queued worker as a drainer would call `trySchedule`, which the injector fails.
+    const auto failures_before = spawnFailures();
+    const auto submitted_before = limits.pool.active();
+    {
+        AlwaysFailToAllocateThread always_fail;
+        for (size_t i = 0; i < 4; i++)
+            tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
+    }
+    const auto failures = spawnFailures() - failures_before;
+    // Zero failures alone would also hold if no spawn had been attempted, so require that each of the
+    // four enqueues submitted a worker of its own.
+    const auto submitted = limits.pool.active() - submitted_before;
+
+    limits.restore(); // Let the submitted workers start and drain everything
+    waitLoad(tasks);
+
+    ASSERT_EQ(failures, 0);
+    ASSERT_EQ(submitted, 4);
+    ASSERT_EQ(jobs_done, 8);
+    t.loader.wait();
+}
+
+// A worker blocked in `wait()` cannot take a job from its own pool's ready queue even when it waits
+// for a job of another pool, a case that priority inheritance does not convert into a same-pool wait.
+// Treating it as a drainer leaves that pool's queue with nobody to run it.
+TEST(AsyncLoader, SpawnIsAttemptedWhileTheOnlyWorkerWaitsForAnotherPool)
+{
+    // Sibling pools of equal priority: `prioritize()` refuses to move a job between them and `wait()`
+    // does not inherit priority, so the wait stays cross-pool and is never counted as suspended.
+    // Equal priority is also what lets both pools spawn at the same time.
+    AsyncLoaderTest t({
+        {.max_threads = 2, .priority = Priority{0}},
+        {.max_threads = 2, .priority = Priority{0}},
+    });
+
+    std::barrier<std::__empty_completion> sync(2);
+    std::atomic<size_t> jobs_done{0};
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; };
+
+    // Held pending until the measurement is taken, so the waiting worker really is inside `wait()`.
+    auto awaited_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+        sync.arrive_and_wait(); // (A)
+        jobs_done++;
+    };
+    auto awaited_job = makeLoadJob({}, 0, "awaited_job", awaited_job_func);
+    auto awaited_task = t.schedule({awaited_job});
+
+    auto waiting_job_func = [&] (AsyncLoader & loader, const LoadJobPtr &)
+    {
+        loader.wait(awaited_job); // Blocks this pool-1 worker on a pool-0 job
+        jobs_done++;
+    };
+    auto waiting_job = makeLoadJob({}, 1, "waiting_job", waiting_job_func);
+    auto waiting_task = t.schedule({waiting_job});
+    t.loader.unpause();
+
+    while (awaited_job->waitersCount() == 0) // Pool 1's only worker is inside `wait()`
+        std::this_thread::yield();
+    const auto suspended_in_pool1 = t.loader.suspendedWorkersCount(1);
+
+    // Queue a job in pool 1 while its only worker is inside `wait()`. That spawn runs with injections
+    // blocked, so it succeeds; treating the waiter as a drainer would leave the job with nobody to run it.
+    const auto failures_before = spawnFailures();
+    auto queued_job = makeLoadJob({}, 1, "queued_job", job_func);
+    LoadTaskPtr queued_task;
+    {
+        AlwaysFailToAllocateThread always_fail;
+        queued_task = t.schedule({queued_job});
+    }
+    const auto failures = spawnFailures() - failures_before;
+
+    // The spawned worker must run the queued job while the wait is still outstanding. Zero failures
+    // alone would also hold if no spawn had been attempted, since the waiter drains once released.
+    // Polled rather than awaited, so a queue left with no worker fails here instead of hanging.
+    bool ran_during_wait = false;
+    for (size_t i = 0; i < 3000 && !ran_during_wait; i++)
+    {
+        ran_during_wait = queued_job->status() == LoadStatus::OK;
+        if (!ran_during_wait)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    sync.arrive_and_wait(); // (A) release the awaited job before asserting, so a failure cannot hang
+    waitLoad(awaited_task);
+    waitLoad(waiting_task);
+    waitLoad(queued_task);
+
+    ASSERT_EQ(suspended_in_pool1, 0); // The cross-pool wait is not counted as suspended
+    ASSERT_EQ(failures, 0);
+    ASSERT_TRUE(ran_during_wait);
+    ASSERT_EQ(jobs_done, 3);
+    t.loader.wait();
+}
+
+// A job left in a pool's ready queue is drained by that pool's running worker, so no spawn is needed
+// while such a worker exists. When that worker enters `wait()` it stops draining, and the job needs a
+// worker of its own from that moment, whichever pool the awaited job belongs to. A wait that does not
+// reconsider spawning leaves the job queued for the whole duration of the wait.
+TEST(AsyncLoader, SpawnIsAttemptedWhenTheOnlyWorkerStartsWaitingForAnotherPool)
+{
+    // Sibling pools of equal priority, so `prioritize()` refuses to move a job between them and
+    // `wait()` does not inherit priority: the wait stays cross-pool.
+    AsyncLoaderTest t({
+        {.max_threads = 2, .priority = Priority{0}},
+        {.max_threads = 2, .priority = Priority{0}},
+    });
+
+    std::barrier<std::__empty_completion> sync(2);
+    std::atomic<bool> start_waiting{false};
+    std::atomic<bool> queued_job_done{false};
+    std::atomic<size_t> jobs_done{0};
+
+    // Held pending until the measurement is taken, so the cross-pool wait is still outstanding then.
+    auto awaited_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+        sync.arrive_and_wait(); // (A)
+        jobs_done++;
+    };
+    auto awaited_job = makeLoadJob({}, 0, "awaited_job", awaited_job_func);
+    auto awaited_task = t.schedule({awaited_job});
+
+    auto waiting_job_func = [&] (AsyncLoader & loader, const LoadJobPtr &)
+    {
+        while (!start_waiting.load()) // Stay running, and not waiting, while the next job is queued
+            std::this_thread::yield();
+        loader.wait(awaited_job); // Blocks this pool-1 worker on a pool-0 job
+        jobs_done++;
+    };
+    auto waiting_job = makeLoadJob({}, 1, "waiting_job", waiting_job_func);
+    auto waiting_task = t.schedule({waiting_job});
+    t.loader.unpause();
+
+    while (waiting_job->startTime() == LoadJob::TimePoint{})
+        std::this_thread::yield();
+
+    // Queue a job in pool 1 while that pool has a running worker to drain it. The spawn is optional
+    // here, and the injector makes it fail, which is the state the pool is meant to tolerate.
+    LoadTaskPtr queued_task;
+    {
+        AlwaysFailToAllocateThread always_fail;
+        queued_task = t.schedule({makeLoadJob({}, 1, "queued_job", [&] (AsyncLoader &, const LoadJobPtr &)
+        {
+            queued_job_done = true;
+            jobs_done++;
+        })});
+    }
+
+    // The only worker able to run it now enters a cross-pool wait.
+    start_waiting = true;
+    while (awaited_job->waitersCount() == 0)
+        std::this_thread::yield();
+
+    // The queued job must run while that wait is still outstanding. Bounded, so a pool that never
+    // spawns fails by assertion instead of hanging here.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (!queued_job_done.load() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    const bool ran_during_wait = queued_job_done.load();
+
+    sync.arrive_and_wait(); // (A) release the awaited job, so everything drains either way
+    waitLoad(awaited_task);
+    waitLoad(waiting_task);
+    waitLoad(queued_task);
+
+    ASSERT_TRUE(ran_during_wait);
+    ASSERT_EQ(jobs_done, 3);
+    t.loader.wait();
+}
+
+// A worker waiting on another pool's job resumes draining its own queue once that job runs, so a
+// failed spawn costs latency, not liveness, and must not be fatal. Measurements are taken into
+// locals and asserted only after the limits are restored: an early return hangs in `~LoadTask`.
+TEST(AsyncLoader, SpawnFailureWithOnlyAWorkerWaitingForAnotherPoolDoesNotTerminate)
+{
+    GlobalThreadPoolLimits limits;
+
+    // Sibling pools of equal priority, so `prioritize()` refuses to move a job between them and
+    // `wait()` does not inherit priority: the wait stays cross-pool and is never counted as suspended.
+    AsyncLoaderTest t({
+        {.max_threads = 2, .priority = Priority{0}},
+        {.max_threads = 2, .priority = Priority{0}},
+    });
+
+    std::barrier<std::__empty_completion> sync(2);
+    std::atomic<bool> start_waiting{false};
+    std::atomic<size_t> jobs_done{0};
+
+    // Held pending until the measurement is taken, so the cross-pool wait is still outstanding then.
+    auto awaited_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+        sync.arrive_and_wait(); // (A)
+        jobs_done++;
+    };
+    auto awaited_job = makeLoadJob({}, 0, "awaited_job", awaited_job_func);
+    auto awaited_task = t.schedule({awaited_job});
+
+    auto waiting_job_func = [&] (AsyncLoader & loader, const LoadJobPtr &)
+    {
+        while (!start_waiting.load()) // Stay running while the global pool is exhausted and a job is queued
+            std::this_thread::yield();
+        loader.wait(awaited_job); // Blocks this pool-1 worker on a pool-0 job, and spawns from there
+        jobs_done++;
+    };
+    auto waiting_job = makeLoadJob({}, 1, "waiting_job", waiting_job_func);
+    auto waiting_task = t.schedule({waiting_job});
+    t.loader.unpause();
+
+    // Both workers must be running before the global pool is exhausted, so that the spawn attempted
+    // from inside `wait()` is the one that fails.
+    while (awaited_job->startTime() == LoadJob::TimePoint{} || waiting_job->startTime() == LoadJob::TimePoint{})
+        std::this_thread::yield();
+    limits.saturate(2);
+
+    const auto failures_before = spawnFailures();
+
+    // Queued while pool 1 still has a running worker to drain it, so this spawn is droppable and its
+    // failure is expected. It also arms the memo, which must not suppress the attempt made below.
+    auto queued_task = t.schedule({makeLoadJob({}, 1, "queued_job", [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; })});
+    const auto failures_after_queueing = spawnFailures() - failures_before;
+
+    // Pool 1's only worker now enters a cross-pool wait, which reaches the spawn while the global pool
+    // still cannot provide a thread. Reaching a fatal branch here would abort the whole test binary.
+    start_waiting = true;
+    while (awaited_job->waitersCount() == 0)
+        std::this_thread::yield();
+    const auto failures_after_wait = spawnFailures() - failures_before;
+
+    sync.arrive_and_wait(); // (A) release the awaited job, so the wait ends whatever happened
+    limits.restore();
+    waitLoad(awaited_task);
+    waitLoad(waiting_task);
+    waitLoad(queued_task);
+
+    // Surviving is necessary but not sufficient: the spawn attempted from inside `wait()` must have
+    // been made and must have failed, otherwise this test would pass without exercising the branch.
+    ASSERT_EQ(failures_after_queueing, 1); // The droppable spawn, before the wait
+    ASSERT_EQ(failures_after_wait, 2); // Plus the one attempted from inside `wait()`
+    ASSERT_EQ(jobs_done, 3); // The queued job still runs once the wait ends
+    t.loader.wait();
+}
+
+// The abort is kept for the one state that cannot be recovered from: a pool with no worker able to
+// drain its queue, and no thread to be had. Dropping the spawn there would leave the jobs queued
+// forever, so a failure to spawn must remain fatal.
+TEST(AsyncLoaderDeathTest, MandatorySpawnFailureTerminates)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    auto mandatory_spawn_with_no_thread_available = []
+    {
+        // Fill the global thread pool's queue while it can run nothing, so the next request for a
+        // thread fails immediately rather than waiting. Only this child process is affected.
+        GlobalThreadPoolLimits limits;
+        limits.submitWithoutStarting(1);
+        GlobalThreadPool::instance().scheduleOrThrow([] {}, {}, /* wait_microseconds = */ 0);
+
+        // A pool whose workers have all yet to start needs this spawn to succeed, so the fault
+        // injector is bypassed and the failure cannot be dropped.
+        AsyncLoaderTest t(16);
+        auto task = t.schedule({makeLoadJob({}, "job", [] (AsyncLoader &, const LoadJobPtr &) {})});
+        t.loader.unpause(); // Spawns, and must not return
+
+        // Reached only if the failure was swallowed. Exiting successfully reports that to the parent,
+        // whereas draining would be impossible here and would hang instead.
+        std::_Exit(0);
+    };
+
+    EXPECT_DEATH(mandatory_spawn_with_no_thread_available(), "Cannot schedule a task");
 }

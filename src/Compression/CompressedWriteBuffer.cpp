@@ -1,8 +1,8 @@
 #include <city.h>
 #include <cstring>
+#include <algorithm>
 
 #include <base/types.h>
-#include <base/unaligned.h>
 #include <base/defines.h>
 
 #include <IO/WriteHelpers.h>
@@ -13,6 +13,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 void CompressedWriteBuffer::nextImpl()
 {
@@ -55,16 +60,43 @@ void CompressedWriteBuffer::nextImpl()
 
         out.write(compressed_buffer.data(), compressed_size);
     }
+
+    growAdaptiveBufferAfterFlush();
 }
 
-CompressedWriteBuffer::~CompressedWriteBuffer()
+void CompressedWriteBuffer::finalizeImpl()
 {
-    finalize();
+    /// Don't try to resize buffer in nextImpl.
+    use_adaptive_buffer_size = false;
+    next();
+    BufferWithOwnMemory<WriteBuffer>::finalizeImpl();
 }
 
-CompressedWriteBuffer::CompressedWriteBuffer(WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(std::move(codec_))
+CompressedWriteBuffer::CompressedWriteBuffer(
+    WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size, bool use_adaptive_buffer_size_, size_t adaptive_buffer_initial_size)
+    : BufferWithOwnMemory<WriteBuffer>(adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size, buf_size))
+    , out(out_)
+    , codec(std::move(codec_))
 {
+    enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, buf_size);
+    if (!codec)
+        codec = CompressionCodecFactory::instance().getDefaultCodec();
 }
 
+void CompressedWriteBuffer::cancelImpl() noexcept
+{
+    BufferWithOwnMemory<WriteBuffer>::cancelImpl();
+    out.cancel();
+}
+
+void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
+{
+    // Flush all the pending data that was supposed to be compressed with the old codec.
+    next();
+    if (offset() != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedWriteBuffer: offset() is not zero");
+
+    chassert(codec_);
+    codec = std::move(codec_);
+}
 }

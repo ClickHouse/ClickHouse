@@ -9,51 +9,53 @@
 
     <substitutions>
         <substitution>
-            <name>collapsing</name>
+            <name>replacing</name>
             <values>
-                <value>collapsing_final_16p_ord</value>
-                <value>collapsing_final_16p_rnd</value>
-                <value>collapsing_final_16p_int_keys_ord</value>
-                <value>collapsing_final_16p_int_keys_rnd</value>
-                <value>collapsing_final_16p_str_keys_ord</value>
-                <value>collapsing_final_16p_str_keys_rnd</value>
-                <value>collapsing_final_1024p_ord</value>
-                <value>collapsing_final_1024p_rnd</value>
-                <value>collapsing_final_1p_ord</value>
+                <value>replacing_final_16p_ord</value>
+                <value>replacing_final_16p_rnd</value>
+                <value>replacing_final_16p_int_keys_ord</value>
+                <value>replacing_final_16p_int_keys_rnd</value>
+                <value>replacing_final_16p_str_keys_ord</value>
+                <value>replacing_final_16p_str_keys_rnd</value>
+                <value>replacing_final_1024p_ord</value>
+                <value>replacing_final_1024p_rnd</value>
+                <value>replacing_final_1p_ord</value>
             </values>
         </substitution>
     </substitutions>
 
-    <create_query>create table collapsing_final_16p_ord (key1 UInt32, key2 String, sign Int8, s UInt64) engine = CollapsingMergeTree(sign) order by (key1, key2) partition by intDiv(key1, 8192 * 64) </create_query>
-    <create_query>create table collapsing_final_16p_rnd (key1 UInt32, key2 String, sign Int8, s UInt64) engine = CollapsingMergeTree(sign) order by (key1, key2) partition by key1 % 16 </create_query>
-    <create_query>create table collapsing_final_16p_int_keys_ord (key1 UInt32, key2 UInt32, key3 UInt32, key4 UInt32, key5 UInt32, key6 UInt32, key7 UInt32, key8 UInt32, sign Int8, s UInt64) engine = CollapsingMergeTree(sign) order by (key1, key2, key3, key4, key5, key6, key7, key8) partition by intDiv(key1, 8192 * 64) </create_query>
-    <create_query>create table collapsing_final_16p_int_keys_rnd (key1 UInt32, key2 UInt32, key3 UInt32, key4 UInt32, key5 UInt32, key6 UInt32, key7 UInt32, key8 UInt32, sign Int8, s UInt64) engine = CollapsingMergeTree(sign) order by (key1, key2, key3, key4, key5, key6, key7, key8) partition by key1 % 16 </create_query>
-    <create_query>create table collapsing_final_16p_str_keys_ord (key1 UInt32, key2 String, key3 String, key4 String, key5 String, key6 String, key7 String, key8 String, sign Int8, s UInt64) engine = CollapsingMergeTree(sign) order by (key1, key2, key3, key4, key5, key6, key7, key8) partition by intDiv(key1, 8192 * 64) </create_query>
-    <create_query>create table collapsing_final_16p_str_keys_rnd (key1 UInt32, key2 String, key3 String, key4 String, key5 String, key6 String, key7 String, key8 String, sign Int8, s UInt64) engine = CollapsingMergeTree(sign) order by (key1, key2, key3, key4, key5, key6, key7, key8) partition by key1 % 16 </create_query>
-    <create_query>create table collapsing_final_1024p_ord (key1 UInt32, sign Int8, s UInt64) engine = CollapsingMergeTree(sign) order by (key1) partition by intDiv(key1, 8192 * 2) </create_query>
-    <create_query>create table collapsing_final_1024p_rnd (key1 UInt32, sign Int8, s UInt64) engine = CollapsingMergeTree(sign) order by (key1) partition by key1 % 1024 </create_query>
-    <create_query>create table collapsing_final_1p_ord (key1 UInt64, key2 UInt64, sign Int8, s UInt64) engine = CollapsingMergeTree(sign) order by (key1, key2)</create_query>
+    <create_query>create table replacing_final_16p_ord (key1 UInt32, key2 String, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1, key2) partition by intDiv(key1, 8192 * 64) </create_query>
+    <create_query>create table replacing_final_16p_rnd (key1 UInt32, key2 String, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1, key2) partition by key1 % 16 </create_query>
+    <create_query>create table replacing_final_16p_int_keys_ord (key1 UInt32, key2 UInt32, key3 UInt32, key4 UInt32, key5 UInt32, key6 UInt32, key7 UInt32, key8 UInt32, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1, key2, key3, key4, key5, key6, key7, key8) partition by intDiv(key1, 8192 * 64) </create_query>
+    <create_query>create table replacing_final_16p_int_keys_rnd (key1 UInt32, key2 UInt32, key3 UInt32, key4 UInt32, key5 UInt32, key6 UInt32, key7 UInt32, key8 UInt32, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1, key2, key3, key4, key5, key6, key7, key8) partition by key1 % 16 </create_query>
+    <create_query>create table replacing_final_16p_str_keys_ord (key1 UInt32, key2 String, key3 String, key4 String, key5 String, key6 String, key7 String, key8 String, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1, key2, key3, key4, key5, key6, key7, key8) partition by intDiv(key1, 8192 * 64) </create_query>
+    <create_query>create table replacing_final_16p_str_keys_rnd (key1 UInt32, key2 String, key3 String, key4 String, key5 String, key6 String, key7 String, key8 String, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1, key2, key3, key4, key5, key6, key7, key8) partition by key1 % 16 </create_query>
+    <create_query>create table replacing_final_1024p_ord (key1 UInt32, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1) partition by intDiv(key1, 8192 * 2) </create_query>
+    <create_query>create table replacing_final_1024p_rnd (key1 UInt32, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1) partition by key1 % 1024 </create_query>
+    <create_query>create table replacing_final_1p_ord (key1 UInt64, key2 UInt64, ver Int8, s UInt64) engine = ReplacingMergeTree(ver) order by (key1, key2)</create_query>
 
     <!-- 16 parts, 8192 * 1024 rows each -->
-    <fill_query>insert into collapsing_final_16p_ord select number, number, 1, number from numbers_mt(8388608) </fill_query>
-    <fill_query>insert into collapsing_final_16p_rnd select sipHash64(number), number, 1, number from numbers_mt(8388608) </fill_query>
-    <fill_query>insert into collapsing_final_16p_int_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
-    <fill_query>insert into collapsing_final_16p_int_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
-    <fill_query>insert into collapsing_final_16p_str_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
-    <fill_query>insert into collapsing_final_16p_str_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into replacing_final_16p_ord select number, number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into replacing_final_16p_rnd select sipHash64(number), number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into replacing_final_16p_int_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into replacing_final_16p_int_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into replacing_final_16p_str_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into replacing_final_16p_str_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
 
     <!-- 1024 parts, 8192 * 2 rows each -->
-    <fill_query>insert into collapsing_final_1024p_ord select number, 1, number from numbers_mt(16777216) </fill_query>
-    <fill_query>insert into collapsing_final_1024p_rnd select number, 1, number from numbers_mt(16777216) </fill_query>
+    <fill_query>insert into replacing_final_1024p_ord select number, 1, number from numbers_mt(16777216) </fill_query>
+    <fill_query>insert into replacing_final_1024p_rnd select number, 1, number from numbers_mt(16777216) </fill_query>
 
     <!-- 1 big part of 5e7 rows -->
-    <fill_query>insert into collapsing_final_1p_ord select number, number + 1, 1, number from numbers_mt(5e7)</fill_query>
+    <fill_query>insert into replacing_final_1p_ord select number, number + 1, 1, number from numbers_mt(5e7)</fill_query>
 
-    <fill_query>optimize table {collapsing} final</fill_query>
+    <fill_query>optimize table {replacing} final</fill_query>
 
-    <query>SELECT count() FROM {collapsing} final</query>
-    <query>SELECT sum(s) FROM {collapsing} final group by key1 limit 10</query>
-    <query>SELECT sum(s) FROM {collapsing} final group by key1 % 8192 limit 10</query>
+    <query>SELECT count() FROM {replacing} final</query>
+    <query>SELECT sum(s) FROM {replacing} final group by key1 limit 10</query>
+    <query>SELECT sum(s) FROM {replacing} final group by key1 % 8192 limit 10</query>
 
-    <drop_query>DROP TABLE IF EXISTS {collapsing}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS {replacing}</drop_query>
+
+    <drop_query>DROP TABLE IF EXISTS {replacing}</drop_query>
 </test>

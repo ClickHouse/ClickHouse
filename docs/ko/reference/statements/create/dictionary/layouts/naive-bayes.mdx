@@ -1,0 +1,511 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/naive-bayes
+title: 'Naive Bayes 딕셔너리'
+sidebarTitle: 'Naive Bayes'
+description: '텍스트 분류를 위해 NAIVE_BAYES 딕셔너리를 구성합니다.'
+doc_type: '참고'
+---
+
+`naive_bayes` (`NAIVE_BAYES`) 딕셔너리는 텍스트 분류의 표준 이벤트 모델인 다항 [Naive Bayes](https://en.wikipedia.org/wiki/Naive_Bayes_classifier) 모델을 사용해 텍스트를 분류합니다. 입력의 n-그램이 각 클래스에 얼마나 자주 나타나는지를 기준으로 각 클래스의 점수를 계산합니다. 클래스별 **n-그램 출현 횟수** 테이블을 제공하면, 로드 시점에 이를 한 번 모델로 컴파일한 뒤 전달된 텍스트를 분류하는 데 사용합니다.
+
+이 딕셔너리는 감성 분석, 주제 또는 스팸 레이블링, 언어 또는 스크립트 감지와 같은 빠르고 경량의 텍스트 분류에 적합합니다.
+
+다음 세 함수 중 하나를 사용해 딕셔너리를 쿼리합니다:
+
+* [`naiveBayesClassifier`](/ko/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier)는 예측된 클래스 ID를 반환합니다.
+* [`naiveBayesClassifierWithProb`](/ko/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithProb)는 예측된 클래스와 해당 확률을 반환합니다.
+* [`naiveBayesClassifierWithAllProbs`](/ko/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifierWithAllProbs)는 모든 클래스와 각 확률을 반환합니다.
+
+기본 [`dictGet`](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet)으로도 분류할 수 있습니다([참고 사항](#notes) 참조). 또 다른 함수인 [`naiveBayesNgrams`](/ko/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams)는 분류를 수행하지 않습니다. 대신 텍스트를 딕셔너리와 동일한 방식으로 n-그램으로 분할하므로, 원시 텍스트(raw text)에서 학습 데이터를 만들 수 있습니다([원시 텍스트에서 학습 데이터 만들기](#build-training-data-from-raw-text) 참조).
+
+<div id="quickstart">
+  ## 빠른 시작
+</div>
+
+여기서는 감성 분석을 위해 token 모드의 unigram (`n = 1`) 모델을 구축합니다.
+
+**1. 클래스별 n-그램 개수를 저장하는 원본 테이블을 생성합니다:**
+
+```sql
+CREATE TABLE training_data (class_id UInt32, ngram String, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+```
+
+**2. 학습 데이터 삽입** — 단일 단어(유니그램)와 각 단어가 긍정 클래스(`1`)와 부정 클래스(`0`)에서 각각 얼마나 자주 나타나는지:
+
+```sql
+INSERT INTO training_data VALUES
+    (1,'good',10),(1,'great',8),(1,'excellent',6),(1,'love',7),(1,'happy',5),
+    (1,'amazing',4),(1,'wonderful',3),(1,'best',3),(1,'fantastic',2),(1,'nice',4),
+    (0,'bad',10),(0,'terrible',8),(0,'awful',6),(0,'hate',7),(0,'worst',5),
+    (0,'horrible',4),(0,'poor',3),(0,'disappointing',3),(0,'ugly',2),(0,'sad',4);
+```
+
+**3. 딕셔너리 생성**: `NAIVE_BAYES` 레이아웃 사용
+
+```sql
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+```
+
+`PRIMARY KEY ngram`은 `ngram` 컬럼을 키로 지정합니다. 하지만 `NAIVE_BAYES` 딕셔너리에서 이 &quot;키&quot;는 조회하는 저장된 값이 아니라 분류할 때 전달하는 텍스트입니다([딕셔너리 구조](#dictionary-structure) 참조). `LAYOUT`은 모델을 구성합니다. `class_attribute 'class_id'`는 `class_id`를 클래스 레이블로 지정하며(따라서 다른 속성인 `count`는 클래스별 출현 횟수입니다), `n 1`은 유니그램을 사용하고, `mode 'token'`은 텍스트를 공백으로 구분된 단어로 분할합니다([레이아웃 매개변수](#layout-parameters) 참조).
+
+**4. 분류** — `naiveBayesClassifier`는 클래스 ID를 반환합니다:
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+`1`은 2단계에서 삽입한 학습 데이터에 따르면 양성 클래스에 해당합니다.
+
+```sql
+SELECT naiveBayesClassifier('sentiment', 'this is terrible') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               0 │
+   └─────────────────┘
+```
+
+마찬가지로 `0`은 음성 클래스에 해당합니다.
+
+`dictGet`으로도 동일한 결과를 얻을 수 있습니다:
+
+```sql
+SELECT dictGet('sentiment', 'class_id', 'this is great') as predicted_class;
+```
+
+```response
+   ┌─predicted_class─┐
+1. │               1 │
+   └─────────────────┘
+```
+
+예측값이나 각 클래스의 확률을 가져옵니다:
+
+```sql
+SELECT naiveBayesClassifierWithProb('sentiment', 'amazing food but terrible service') as predicted_id_with_prob;
+```
+
+```response
+   ┌─predicted_id_with_prob─────────────┐
+1. │ {                                 ↴│
+   │↳  "class_id": 0,                  ↴│
+   │↳  "probability": 0.642857145060626↴│
+   │↳}                                  │
+   └────────────────────────────────────┘
+```
+
+예측 결과는 클래스 `0`(음성)이며, 확률은 `0.64`입니다.
+
+```sql
+SELECT naiveBayesClassifierWithAllProbs('sentiment', 'amazing food but terrible service') as all_predicted_ids_with_probs;
+```
+
+```response
+   ┌─all_predicted_ids_with_probs─────────┐
+1. │ [{                                  ↴│
+   │↳  "class_id": 0,                    ↴│
+   │↳  "probability": 0.642857145060626  ↴│
+   │↳},{                                 ↴│
+   │↳  "class_id": 1,                    ↴│
+   │↳  "probability": 0.35714285493937414↴│
+   │↳}]                                   │
+   └──────────────────────────────────────┘
+```
+
+`naiveBayesClassifierWithAllProbs`는 가능성이 가장 높은 클래스부터 가장 낮은 클래스까지 모든 클래스를 반환하며, 각 확률의 합은 `1.0`입니다 — 여기서는 음성 클래스가 `0.64`, 양성 클래스가 `0.36`입니다.
+
+<div id="how-it-works">
+  ## 작동 방식
+</div>
+
+**학습(로드 시점).** 각 원본 행은 `(n-gram, class, count)` 관측값입니다. 딕셔너리가 로드되면 이 행들은 한 번만 모델로 컴파일됩니다. 중복된 `(n-gram, class)` 행은 합산되며, `count = 0`인 행은 무시됩니다.
+
+**분류(쿼리 시점).** 문자열을 분류할 때 모델은 다음과 같이 동작합니다.
+
+1. `mode`와 `n`에 따라 문자열을 n-그램으로 분할합니다([토큰화 모드](#tokenization-modes) 참조).
+2. 클래스 사전확률과 입력의 n-그램이 해당 클래스에서 얼마나 자주 관측되었는지를 결합해 각 클래스의 점수를 계산합니다.
+3. 점수에 따라 클래스의 순위를 매깁니다. 가장 높은 점수를 받은 클래스가 `naiveBayesClassifier`가 반환하는 예측값이며, `naiveBayesClassifierWithProb`와 `naiveBayesClassifierWithAllProbs`는 확률도 함께 반환합니다. 각각 해당 클래스의 확률 또는 모든 클래스의 확률을 반환합니다.
+
+각 클래스의 점수에는 두 가지 요소가 영향을 줍니다. 첫 번째는 스무딩에 사용되는 `alpha`입니다. 스무딩은 학습 중 특정 n-그램이 어떤 클래스에 나타나지 않았다는 이유만으로 모델이 그 클래스에 0점을 주지 않도록 합니다. `alpha`가 작을수록 모델은 학습 데이터에 더 많이 의존하므로 한 클래스가 다른 클래스보다 훨씬 높은 점수를 받을 수 있지만, 학습 데이터가 적거나 고르지 않을 때는 모델이 지나치게 민감해질 수도 있습니다. `alpha`가 클수록 n-그램 출현 횟수의 영향이 줄어들어 서로 다른 클래스의 점수가 더 비슷해집니다. `alpha`가 매우 크면 n-그램 정보는 거의 영향을 주지 않으며, 점수는 주로 클래스 사전확률(다음에서 설명)에 의해 결정됩니다.
+
+두 번째는 클래스 사전확률입니다. 이는 모델이 텍스트를 보기 전에 각 클래스가 얼마나 가능성이 높은지에 대해 가정하는 값입니다. 어떤 n-그램도 고려되기 전에 각 클래스가 받는 시작 점수 역할을 하므로, 사전확률이 높을수록 해당 클래스가 예측될 가능성이 커집니다. 이 값이 어떻게 설정되는지는 `priors_mode`에 따라 달라집니다. 기본값인 `proportional`에서는 학습 데이터에서 전체 n-그램 수가 더 많은 클래스가 더 높은 점수로 시작합니다. `uniform`에서는 모든 클래스가 동일하게 시작하므로 n-그램만이 판단 기준이 됩니다. `explicit`에서는 각 클래스의 시작점을 직접 설정합니다. 자세한 내용은 [사전확률 모드](#prior-modes)를 참조하십시오.
+
+학습 데이터 전체에서 한 번도 나타나지 않은 n-그램은 무시됩니다. 이 n-그램은 모델의 어휘에 포함되지 않으므로 어떤 클래스에도 유리하거나 불리하게 작용하지 않습니다.
+
+이 알고리즘은 텍스트 분류를 위한 multinomial Naive Bayes 모델을 따릅니다. 자세한 내용은 [Manning, Raghavan &amp; Schütze, *Introduction to Information Retrieval*, ch. 13 (*Text Classification and Naive Bayes*)](https://nlp.stanford.edu/IR-book/html/htmledition/text-classification-and-naive-bayes-1.html)을 참조하십시오.
+
+<div id="dictionary-structure">
+  ## 딕셔너리 구조
+</div>
+
+`NAIVE_BAYES` 딕셔너리는 구조가 고정되어 있습니다.
+
+* `PRIMARY KEY`는 단일 `String` 컬럼, 즉 n-그램입니다. 쿼리 시점에는 이 &quot;키&quot;가 저장된 lookup 키가 아니라, 분류할 때 입력하는 텍스트를 의미합니다.
+* 이와 함께 **부호 없는 정수 속성 2개를 정확히 선언해야 합니다**. 하나는 클래스 레이블이고, 다른 하나는 발생 횟수입니다. 클래스 id는 내부적으로 항상 `UInt32`를 사용하므로, 속성을 `UInt64`로 선언하더라도 클래스 레이블은 반드시 `UInt32`(최대 `4294967295`)에 들어맞아야 합니다. 이 한도를 초과하는 값은 딕셔너리를 생성할 때가 아니라 로드할 때 거부됩니다. 선언한 타입에도 동일한 규칙이 적용됩니다. 원본 클래스 id 또는 횟수가 선언된 속성 타입에 맞지 않으면, 자동으로 잘리는 대신 로드가 실패합니다.
+* `class_attribute` 레이아웃 매개변수는 어떤 속성이 클래스 레이블인지 지정하며, 나머지 하나는 자동으로 횟수로 사용됩니다. 두 속성은 어느 순서로든 선언할 수 있습니다.
+
+원본 테이블에는 **사전 집계된** 횟수가 저장됩니다. 즉, 각 `(n-gram, class)`마다 해당 n-그램이 그 클래스에 몇 번 나타났는지를 나타내는 행이 하나씩 있습니다. 이러한 횟수는 코퍼스를 토큰화한 뒤 결과를 그룹화해 생성합니다. 자체 학습 파이프라인에서 생성할 수도 있고, ClickHouse에서 raw labelled text로부터 생성할 수도 있습니다([원시 텍스트에서 학습 데이터 생성](#build-training-data-from-raw-text) 참조). 딕셔너리는 이 집계 결과만 사용합니다.
+
+**모델 업데이트.** 모델은 테이블을 기반으로 하는 딕셔너리이므로, 테이블을 업데이트한 뒤 다시 로드해 재학습합니다.
+
+```sql
+INSERT INTO training_data VALUES (1, 'awesome', 5);
+SYSTEM RELOAD DICTIONARY sentiment;
+```
+
+<div id="layout-parameters">
+  ## 레이아웃 매개변수
+</div>
+
+| 매개변수              | 설명                                                                                                                                                | 예시                     | 기본값              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------- |
+| `class_attribute` | 클래스 레이블을 저장하는 속성의 이름이며, 나머지 속성은 개수입니다.                                                                                                            | `'class_id'`           | *필수*             |
+| `n`               | n-그램 크기: `1` = 유니그램, `2` = 바이그램, `3` = 트라이그램, … (1–1024).                                                                                         | `2`                    | *필수*             |
+| `mode`            | 토큰화 방식: `byte`, `codepoint`, 또는 `token`. [토큰화 모드](#tokenization-modes)를 참조하십시오.                                                                   | `'token'`              | *필수*             |
+| `alpha`           | n-그램 가능도에 적용하는 가산(Lidstone) 스무딩입니다. `alpha = 1`은 라플라스 스무딩이며(유한해야 하고 `> 0`이어야 함),                                                                  | `0.5`                  | `1.0`            |
+| `priors_mode`     | 클래스 사전 확률을 결정하는 방식: `uniform`, `proportional`, 또는 `explicit`. [사전 확률 모드](#prior-modes)를 참조하십시오.                                                   | `'uniform'`            | `'proportional'` |
+| `priors`          | 클래스별 명시적 사전 확률입니다. `(class, probability)` 쌍의 목록으로 지정합니다. `priors_mode 'explicit'`일 때만 유효하며, 이 경우 필수입니다. 다른 모드에서 지정하면 오류가 발생합니다. 합계는 `1.0`이어야 합니다. | `[(0, 0.6), (1, 0.4)]` | —                |
+| `store_source`    | `SELECT * FROM dictionary`가 작동하도록 원본 행을 유지합니다. 메모리 사용량이 대략 2배로 늘어납니다.                                                                             | `1`                    | `0`              |
+| `start_token`     | 입력 앞에 `(n-1)`번 추가되는 경계 토큰입니다. [경계 토큰](#boundary-tokens-padding)을 참조하십시오.                                                                          | `'0x01'` / `'<s>'`     | — (패딩 없음)        |
+| `end_token`       | 입력 뒤에 `(n-1)`번 추가되는 경계 토큰입니다.                                                                                                                     | `'0xFF'` / `'</s>'`    | — (패딩 없음)        |
+
+딕셔너리는 `CREATE DICTIONARY` DDL로 정의할 수도 있고(위의 빠른 시작 예시와 같음), XML 설정 파일에서 정의할 수도 있습니다. 해당 파일의 위치는 [Dictionary layouts](/ko/reference/statements/create/dictionary/layouts/overview)를 참조하십시오. 아래 예시에서는 모든 레이아웃 옵션을 설정해 전체 항목을 한눈에 볼 수 있도록 했습니다. 필수 항목은 `class_attribute`, `n`, `mode`뿐이며, 나머지 기본값은 위 표에 나와 있습니다. 설정 파일에서는 priors를 반복되는 `prior` 원소로 작성합니다(아래 예시처럼 클래스당 하나). 또한 `byte`와 `codepoint`의 패딩 토큰은 숫자로 작성합니다(설정 파일에는 raw bytes를 담을 수 없음). `token` 리터럴은 필요한 경우 XML 이스케이프를 적용하므로 `<s>`는 `&lt;s&gt;`가 됩니다.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY naive_bayes (ngram String, class_id UInt32, count UInt64)
+    PRIMARY KEY ngram
+    SOURCE(CLICKHOUSE(TABLE 'training_data'))
+    LAYOUT(NAIVE_BAYES(
+        class_attribute 'class_id'
+        n 2
+        mode 'token'
+        alpha 0.5
+        priors_mode 'explicit'
+        priors [(0, 0.6), (1, 0.4)]
+        store_source 1
+        start_token '<s>'
+        end_token '</s>'
+    ))
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <dictionary>
+        <name>naive_bayes</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>ngram</name>
+                    <type>String</type>
+                </attribute>
+            </key>
+            <attribute>
+                <name>class_id</name>
+                <type>UInt32</type>
+                <null_value>0</null_value>
+            </attribute>
+            <attribute>
+                <name>count</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+        <source>
+            <clickhouse>
+                <table>training_data</table>
+            </clickhouse>
+        </source>
+        <layout>
+            <naive_bayes>
+                <class_attribute>class_id</class_attribute>
+                <n>2</n>
+                <mode>token</mode>
+                <alpha>0.5</alpha>
+                <priors_mode>explicit</priors_mode>
+                <priors>
+                    <prior>
+                        <class>0</class>
+                        <probability>0.6</probability>
+                    </prior>
+                    <prior>
+                        <class>1</class>
+                        <probability>0.4</probability>
+                    </prior>
+                </priors>
+                <store_source>1</store_source>
+                <start_token>&lt;s&gt;</start_token>
+                <end_token>&lt;/s&gt;</end_token>
+            </naive_bayes>
+        </layout>
+        <lifetime>3600</lifetime>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="tokenization-modes">
+  ## 토큰화 모드
+</div>
+
+`mode`는 &quot;토큰&quot;이 무엇인지, 따라서 n-그램이 어떤 형태를 띠는지를 결정합니다. 원본 n-그램은 반드시 **동일한** `mode`와 `n`으로 생성되어 있어야 합니다.
+
+* `byte` — 각 토큰은 단일 바이트입니다. UTF-8은 가정하지 않습니다. `n = 2`이면 `'abc'`는 바이트 바이그램 `'ab'`, `'bc'`를 생성합니다. 임의의 바이트 시퀀스에서 언어 또는 인코딩을 감지하거나, 문자보다 더 작은 단위의 신호가 중요한 데이터에 *적합합니다*. 일반적으로 `n >= 2`와 함께 사용합니다.
+* `codepoint` — 각 토큰은 하나의 유니코드 코드 포인트이며, 입력은 UTF-8로 해석됩니다. `n = 1`이면 `'café'`는 코드 포인트 `'c'`, `'a'`, `'f'`, `'é'`를 생성합니다. 문자 체계와 언어 감지, 그리고 공백 기반 단어 경계를 신뢰하기 어려운 짧은 텍스트나 CJK 텍스트에 *적합합니다*. (원본 n-그램은 유효한 UTF-8이어야 하며, 쿼리 입력은 느슨하게 디코딩됩니다. 자세한 내용은 [참고](#notes)를 확인하십시오.)
+* `token` — 각 토큰은 **ASCII 공백 문자**(space, tab, newline, carriage return, form feed, vertical tab)로 구분되는 단어입니다. 연속된 공백은 하나의 구분자로 처리됩니다. `U+00A0`(no-break space)나 `U+2003`(em space) 같은 비ASCII 유니코드 공백은 **구분자**가 아니므로 토큰 내부에 그대로 유지됩니다. 분할은 오직 공백에서만 이루어지며, 소문자 변환이나 문자 제거는 수행되지 않습니다. 따라서 `'Hello, World!'`는 토큰 `'Hello,'`와 `'World!'`가 되며(쉼표, `!`, 대문자는 모두 유지됨), `n = 2`이면 이 둘은 단일 바이그램 `'Hello, World!'`를 이룹니다. 공백으로 구분되는 언어에서 단어 수준 분류(감성, 주제, 스팸, 문장 언어 판별)에 *적합합니다*.
+
+<div id="prior-modes">
+  ## 사전확률 모드
+</div>
+
+사전확률(prior)은 모델이 텍스트를 보기 *전*에 각 클래스에 대해 갖는 판단입니다. `priors_mode`는 이를 어떻게 설정할지 지정합니다.
+
+* `proportional` (기본값) — 각 클래스의 사전확률은 학습 데이터에서 해당 클래스의 총 n-그램 개수에 비례합니다. 즉, 행 수나 학습 문서 수가 아니라 해당 클래스의 `count` 컬럼 합계를 기준으로 하므로, 더 자주 나타난 클래스가 처음부터 더 높은 가능성을 갖습니다. 학습 클래스 비율(총 n-그램 개수 기준)이 쿼리 시점에 예상되는 빈도와 일치할 때 **이 모드를 선택하십시오**. **별도로 제공할 값은 없습니다** — source의 count에서 계산됩니다.
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'proportional'))
+  ```
+
+* `uniform` — 모든 클래스가 동일한 가능성으로 시작하므로 어떤 클래스도 유리하게 출발하지 않으며, 예측은 전적으로 입력의 n-그램에 의해 결정됩니다. 클래스가 균형을 이루고 있거나, 학습 빈도가 각 클래스가 쿼리 시점에 얼마나 자주 나타나는지를 반영하지 않을 때 **이 모드를 선택하십시오**. **별도로 제공할 값은 없습니다.**
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'uniform'))
+  ```
+
+* `explicit` — `priors [(0, 0.6), (1, 0.4)]`를 사용해 사전확률을 직접 제공합니다. 각 클래스마다 `(class, probability)` 쌍을 하나씩 지정하며, 각 확률은 0보다 크고 1 이하여야 하고, 전체 합은 `1.0`이어야 합니다. 실제 기본 비율을 알고 있고 그것이 학습 데이터와 다를 때 **이 모드를 선택하십시오**. 예를 들어 학습 세트는 균형 잡혀 있었더라도 실제 production 트래픽의 1%만 스팸일 수 있습니다. 각 클래스의 실제 예상 비중을 바탕으로 **이 값을 계산하십시오**.
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.9), (1, 0.1)]))
+  ```
+
+<div id="boundary-tokens-padding">
+  ## 경계 토큰 (padding)
+</div>
+
+Padding은 기본적으로 비활성화되어 있습니다. 이는 `n > 1`일 때만 의미가 있으며, 텍스트의 시작과 끝에서 모델이 신호를 활용할 수 있게 해 정확도를 높일 수 있습니다.
+
+**도움이 되는 이유.** `n > 1`이면 텍스트 중간의 n-그램은 왼쪽과 오른쪽 맥락을 모두 갖지만, 첫 번째와 마지막 토큰은 그렇지 않습니다. 경계 토큰을 추가하면 「텍스트 시작」과 「텍스트 끝」을 나타내는 n-그램이 만들어지므로, 모델이 위치와 관련된 패턴을 학습할 수 있습니다. 예를 들어 메시지 *시작*에 올 때 구별력이 있는 단어나, 단어 *끝*에 흔히 나타나는 문자를 학습할 수 있습니다.
+
+**반드시 해야 할 작업:**
+
+1. **각 방향을 따로 결정하십시오.** `start_token`과 `end_token`은 서로 독립적입니다 — 하나만 설정하거나, 둘 다 설정하거나, 둘 다 설정하지 않을 수 있습니다. 빈 값은 해당 방향에 padding이 적용되지 않음을 의미합니다.
+2. **드문 값을 선택하십시오.** 실제 데이터와 충돌하지 않는 값이어야 합니다. 예를 들어 `byte`에는 `0x01` / `0xFF`, `codepoint`에는 `U+10FFFE` / `U+10FFFF`, `token`에는 `<s>` / `</s>`를 사용할 수 있습니다.
+3. **학습용 n-그램도 동일한 padding으로 생성하십시오.** 딕셔너리는 쿼리 입력에는 padding을 적용하지만 원본 데이터에는 적용하지 않으므로, 경계 토큰은 로드하는 n-그램에 이미 포함되어 있어야 합니다. 이를 확실하게 맞추는 가장 쉬운 방법은 [`naiveBayesNgrams`](/ko/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams)로 원본을 만들면서, layout에 지정한 것과 동일한 `start_token`, `end_token`(그리고 `n`, `mode`)을 전달하는 것입니다 — 그러면 딕셔너리가 쿼리 시점에 생성하는 것과 정확히 동일한 padding된 n-그램이 출력됩니다.
+
+padding 토큰의 포맷은 mode에 따라 달라집니다.
+
+* `byte` — 바이트 값을 나타내는 숫자로, 10진수 또는 `0x` 16진수로 지정합니다(따라서 `'1'`과 `'0x01'`은 같습니다):
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte' start_token '0x01' end_token '0xFF'))
+  ```
+
+* `codepoint` — UTF-8 코드 포인트를 나타내는 숫자로, 10진수 또는 `0x` 16진수로 지정합니다(따라서 `'1114110'`과 `'0x10FFFE'`는 같습니다):
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF'))
+  ```
+
+* `token` — 토큰 문자열 리터럴입니다:
+
+  ```sql
+  LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'token' start_token '<s>' end_token '</s>'))
+  ```
+
+<div id="build-training-data-from-raw-text">
+  ## 원시 텍스트에서 학습 데이터 생성
+</div>
+
+미리 집계된 count 값이 아니라 레이블이 지정된 원시 텍스트에서 시작하는 경우, [`naiveBayesNgrams`](/ko/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams) 함수를 사용해 이를 n-그램으로 분할하십시오. 레이아웃과 동일한 `n`, `mode`, `start_token`, `end_token`을 지정하면 딕셔너리가 기대하는 n-그램이 정확히 생성되므로, 학습 데이터가 쿼리 시점에 모델이 확인하는 내용과 일치합니다.
+
+`(class_id, text)` 행으로 이루어진 테이블(table)이 주어지면, 하나의 `GROUP BY`로 `(ngram, class_id, count)` 소스를 생성하십시오:
+
+```sql
+CREATE TABLE docs (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO docs VALUES
+    (1, 'The food was amazing and the service was great'),
+    (0, 'The service was terrible and the food was awful'),
+    (1, 'I loved this cozy little place and the friendly staff'),
+    (0, 'I hated the bad weather and the long wait'),
+    (1, 'Best dinner we have had here, everything was delicious');
+
+CREATE TABLE training_data (ngram String, class_id UInt32, count UInt64)
+ENGINE = MergeTree ORDER BY (class_id, ngram);
+
+INSERT INTO training_data
+SELECT ngram, class_id, count()
+FROM docs
+ARRAY JOIN naiveBayesNgrams(text, 1, 'token') AS ngram
+GROUP BY ngram, class_id;
+```
+
+```sql
+SELECT * FROM training_data ORDER BY ngram LIMIT 5;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ Best  │        1 │     1 │
+2. │ I     │        1 │     1 │
+3. │ I     │        0 │     1 │
+4. │ The   │        0 │     1 │
+5. │ The   │        1 │     1 │
+   └───────┴──────────┴───────┘
+```
+
+`training_data`를 이제 `NAIVE_BAYES` 딕셔너리에 유효한 소스로 사용할 수 있습니다(여기서는 토큰 유니그램을 사용하며, 사용하는 레이아웃에 맞게 `n` 및 `mode` 인수를 변경하십시오). 이 딕셔너리는 쿼리 입력을 전달된 그대로 토큰화하므로, 학습 텍스트는 소문자로 되어 있는데 쿼리 텍스트는 그렇지 않으면 n-그램이 서로 일치하지 않아 모델 정확도가 떨어집니다.
+
+<Info>
+  **사전 확률과 문서 수**
+
+  `proportional` 사전 확률(prior, 기본값)은 각 클래스의 문서 수가 아니라 **총 n-그램 수**를 기준으로 가중치가 부여됩니다. 전통적인 문서 빈도 기반 사전 확률(`documents_in_class / total_documents`)을 사용하려면 원시 `docs` 테이블에서 이를 계산한 후 `priors_mode 'explicit'`와 함께 전달하십시오:
+
+  ```sql
+  SELECT groupArray((class_id, frac)) AS priors
+  FROM (SELECT class_id, count() / sum(count()) OVER () AS frac FROM docs GROUP BY class_id);
+  ```
+
+  ```response
+     ┌─priors────────────┐
+  1. │ [(0,0.4),(1,0.6)] │
+     └───────────────────┘
+  ```
+</Info>
+
+그런 다음 위에서 계산한 명시적 사전 확률을 전달하여 `training_data`에서 딕셔너리를 생성하고 새 리뷰를 분류합니다:
+
+```sql
+CREATE DICTIONARY review_sentiment (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'training_data'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' priors_mode 'explicit' priors [(0, 0.4), (1, 0.6)]))
+LIFETIME(0);
+```
+
+```sql
+SELECT
+    naiveBayesClassifier('review_sentiment', 'amazing food and friendly staff') AS positive_review,
+    naiveBayesClassifier('review_sentiment', 'awful service and a terrible meal') AS negative_review;
+```
+
+```response
+   ┌─positive_review─┬─negative_review─┐
+1. │               1 │               0 │
+   └─────────────────┴─────────────────┘
+```
+
+클래스 `1`은 긍정이고 `0`은 부정이므로 두 리뷰 모두 정확하게 분류되었습니다.
+
+<div id="more-examples">
+  ## 추가 예시
+</div>
+
+**바이트 모드** — 바이트 바이그램(`n = 2`, `mode 'byte'`; 클래스 `0` = `a`–`d` 문자로 구성된 문자열, 클래스 `1` = `x`–`z` 문자):
+
+```sql
+CREATE TABLE byte_patterns_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO byte_patterns_src VALUES (0,'ab',5),(0,'bc',5),(0,'cd',5),(1,'xy',5),(1,'yz',5),(1,'zw',5);
+
+CREATE DICTIONARY byte_patterns (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'byte_patterns_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'byte')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('byte_patterns', 'abcd') AS abcd, naiveBayesClassifier('byte_patterns', 'xyzw') AS xyzw;
+```
+
+```response
+   ┌─abcd─┬─xyzw─┐
+1. │    0 │    1 │
+   └──────┴──────┘
+```
+
+**Code-point mode** — 문자별 스크립트 감지 (`n = 1`, `mode 'codepoint'`; 클래스 `0` = 라틴 문자, `1` = 키릴 문자):
+
+```sql
+CREATE TABLE script_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO script_src VALUES (0,'a',5),(0,'b',5),(0,'c',5),(0,'d',5),(1,'а',5),(1,'б',5),(1,'в',5),(1,'г',5);
+
+CREATE DICTIONARY script (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'script_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'codepoint')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('script', 'abcd') AS latin, naiveBayesClassifier('script', 'абвг') AS cyrillic;
+```
+
+```response
+   ┌─latin─┬─cyrillic─┐
+1. │     0 │        1 │
+   └───────┴──────────┘
+```
+
+**학습 데이터를 다시 읽어오려면** `store_source`를 사용합니다:
+
+```sql
+CREATE TABLE stored_src (class_id UInt32, ngram String, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO stored_src VALUES (0,'alpha',3),(0,'beta',2),(1,'gamma',4);
+
+CREATE DICTIONARY stored (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'stored_src'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token' store_source 1)) LIFETIME(0);
+
+SELECT ngram, class_id, count FROM stored ORDER BY ngram;
+```
+
+```response
+   ┌─ngram─┬─class_id─┬─count─┐
+1. │ alpha │        0 │     3 │
+2. │ beta  │        0 │     2 │
+3. │ gamma │        1 │     4 │
+   └───────┴──────────┴───────┘
+```
+
+**원시 텍스트에서 언어 감지** — 경계 패딩이 적용된 짧은 단어(`n = 2`, `mode 'codepoint'`; 클래스 `0` = 영어, `1` = 스페인어)입니다. 학습용 n-그램은 [`naiveBayesNgrams`](/ko/reference/functions/regular-functions/splitting-merging-functions#naiveBayesNgrams)으로 원시 단어에서 생성되며, 함수와 layout에 모두 전달되는 경계 토큰을 사용하면 모델이 각 단어의 첫 글자와 마지막 글자를 활용할 수 있습니다:
+
+```sql
+CREATE TABLE words (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO words VALUES
+    (0,'dog'),(0,'cat'),(0,'fish'),(0,'bird'),(0,'book'),(0,'hand'),(0,'tree'),(0,'milk'),(0,'duck'),(0,'frog'),(0,'lamp'),(0,'desk'),
+    (1,'gato'),(1,'casa'),(1,'perro'),(1,'libro'),(1,'mano'),(1,'leche'),(1,'arbol'),(1,'agua'),(1,'queso'),(1,'fuego'),(1,'mesa'),(1,'silla');
+
+CREATE TABLE word_ngrams (ngram String, class_id UInt32, count UInt64) ENGINE = MergeTree ORDER BY (class_id, ngram);
+INSERT INTO word_ngrams
+SELECT ngram, class_id, count()
+FROM words
+ARRAY JOIN naiveBayesNgrams(text, 2, 'codepoint', '0x10FFFE', '0x10FFFF') AS ngram
+GROUP BY ngram, class_id;
+
+CREATE DICTIONARY lang (ngram String, class_id UInt32, count UInt64)
+PRIMARY KEY ngram SOURCE(CLICKHOUSE(TABLE 'word_ngrams'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 2 mode 'codepoint' start_token '0x10FFFE' end_token '0x10FFFF')) LIFETIME(0);
+
+SELECT naiveBayesClassifier('lang', 'window') AS window, naiveBayesClassifier('lang', 'fiesta') AS fiesta;
+```
+
+```response
+   ┌─window─┬─fiesta─┐
+1. │      0 │      1 │
+   └────────┴────────┘
+```
+
+<div id="notes">
+  ## 참고 사항
+</div>
+
+* **계산용 딕셔너리 의미 체계.** 이것은 *계산용* 딕셔너리입니다. `dictGet(dict, '<class_attribute>', text)`는 `text`를 분류합니다(키는 저장된 키가 아니라 분류할 입력값임). count 속성은 쿼리할 수 없으며, `dictHas`는 항상 `1`을 반환합니다.
+* **로드 시 소스 검증.** 모든 소스 n-그램은 구성된 `n` 및 `mode`와 일치해야 합니다(`codepoint` 모드에서는 유효한 UTF-8이어야 함). 일치하지 않으면 로드가 실패합니다. 개수가 0인 행은 무시되므로([작동 방식](#how-it-works) 참고), 비어 있거나 개수가 모두 0인 소스는 학습할 데이터가 없어 로드에 실패합니다.
+* **쿼리 시 토큰화는 허용적으로 처리됩니다.** 소스 검증과 달리 쿼리 입력은 절대 거부되지 않습니다. `codepoint` 모드에서는 UTF-8로 유효하지 않은 바이트가 쿼리를 실패시키는 대신 가능한 한 디코딩됩니다. `token` 모드에서는 ASCII 공백만 단어를 구분합니다(예: `U+00A0` 같은 유니코드 공백은 토큰 내부에 그대로 남음). 형식이 잘못된 입력도 여전히 분류되며, 해당 입력의 n-그램이 학습된 n-그램과 일치하지 않으므로 일반적으로는 사전 확률에 따라 분류됩니다.

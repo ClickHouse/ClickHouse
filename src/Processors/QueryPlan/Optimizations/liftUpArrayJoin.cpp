@@ -8,7 +8,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -24,17 +24,15 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!(expression_step || filter_step) || !array_join_step)
         return 0;
 
-    const auto & array_join = array_join_step->arrayJoin();
+    const auto & array_join_columns = array_join_step->getColumns();
     const auto & expression = expression_step ? expression_step->getExpression()
                                               : filter_step->getExpression();
 
-    auto split_actions = expression->splitActionsBeforeArrayJoin(array_join->columns);
+    auto split_actions = expression.splitActionsBeforeArrayJoin(array_join_columns);
 
     /// No actions can be moved before ARRAY JOIN.
-    if (split_actions.first->trivial())
+    if (split_actions.first.trivial())
         return 0;
-
-    auto description = parent->getStepDescription();
 
     /// Add new expression step before ARRAY JOIN.
     /// Expression/Filter -> ArrayJoin -> Something
@@ -43,18 +41,20 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     child_node->children.emplace_back(&node);
     /// Expression/Filter -> ArrayJoin -> node -> Something
 
-    node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputStream(),
+    node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputHeader(),
                                                  std::move(split_actions.first));
-    node.step->setStepDescription(description);
-    array_join_step->updateInputStream(node.step->getOutputStream());
+    node.step->setStepDescription(*parent);
+    array_join_step->updateInputHeader(node.step->getOutputHeader());
 
+    QueryPlanStepPtr new_step;
     if (expression_step)
-        parent = std::make_unique<ExpressionStep>(array_join_step->getOutputStream(), split_actions.second);
+        new_step = std::make_unique<ExpressionStep>(array_join_step->getOutputHeader(), std::move(split_actions.second));
     else
-        parent = std::make_unique<FilterStep>(array_join_step->getOutputStream(), split_actions.second,
+        new_step = std::make_unique<FilterStep>(array_join_step->getOutputHeader(), std::move(split_actions.second),
                                               filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
 
-    parent->setStepDescription(description + " [split]");
+    new_step->setStepDescription(fmt::format("{} [split]", parent->getStepDescription()), settings.max_step_description_length);
+    parent = std::move(new_step);
     return 3;
 }
 

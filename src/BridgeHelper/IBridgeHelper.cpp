@@ -1,9 +1,11 @@
-#include "IBridgeHelper.h"
+#include <BridgeHelper/IBridgeHelper.h>
 
-#include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/ReadHelpers.h>
+#include <csignal>
 #include <filesystem>
 #include <thread>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace fs = std::filesystem;
@@ -14,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -58,7 +61,7 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
     /// Path to executable folder
     fs::path path(config.getString("application.dir", "/usr/bin"));
 
-    std::vector<std::string> cmd_args;
+    VectorWithMemoryTracking<std::string> cmd_args;
     path /= serviceFileName();
 
     cmd_args.push_back("--http-port");
@@ -93,6 +96,16 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
     {
         cmd_args.push_back("--log-level");
         cmd_args.push_back(config.getString("logger." + configPrefix() + "_level"));
+    }
+
+    if (auto libraries_sandbox_path = getLibrariesSandboxPath())
+    {
+        if (libraries_sandbox_path->contains(':'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The libraries path of {} cannot contain the colon (:) symbol: {}", serviceAlias(), *libraries_sandbox_path);
+
+        cmd_args.push_back("--libraries-path");
+        cmd_args.push_back(*libraries_sandbox_path);
     }
 
     LOG_TRACE(getLog(), "Starting {}", serviceAlias());

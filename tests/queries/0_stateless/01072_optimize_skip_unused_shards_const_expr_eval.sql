@@ -16,16 +16,16 @@ select * from dist_01072 where key=toInt32OrZero(toString(xxHash64(0)));
 select * from dist_01072 where key=toInt32(xxHash32(0));
 select * from dist_01072 where key=toInt32(toInt32(xxHash32(0)));
 select * from dist_01072 where key=toInt32(toInt32(toInt32(xxHash32(0))));
-select * from dist_01072 where key=value; -- { serverError 507 }
-select * from dist_01072 where key=toInt32(value); -- { serverError 507 }
+select * from dist_01072 where key=value; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01072 where key=toInt32(value); -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 select * from dist_01072 where key=value settings force_optimize_skip_unused_shards=0;
 select * from dist_01072 where key=toInt32(value) settings force_optimize_skip_unused_shards=0;
 
 drop table dist_01072;
 create table dist_01072 (key Int, value Nullable(Int), str String) Engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01072, key%2);
 select * from dist_01072 where key=toInt32(xxHash32(0));
-select * from dist_01072 where key=value; -- { serverError 507 }
-select * from dist_01072 where key=toInt32(value); -- { serverError 507 }
+select * from dist_01072 where key=value; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01072 where key=toInt32(value); -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 select * from dist_01072 where key=value settings force_optimize_skip_unused_shards=0;
 select * from dist_01072 where key=toInt32(value) settings force_optimize_skip_unused_shards=0;
 
@@ -34,16 +34,16 @@ set allow_suspicious_low_cardinality_types=1;
 drop table dist_01072;
 create table dist_01072 (key Int, value LowCardinality(Int), str String) Engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01072, key%2);
 select * from dist_01072 where key=toInt32(xxHash32(0));
-select * from dist_01072 where key=value; -- { serverError 507 }
-select * from dist_01072 where key=toInt32(value); -- { serverError 507 }
+select * from dist_01072 where key=value; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01072 where key=toInt32(value); -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 select * from dist_01072 where key=value settings force_optimize_skip_unused_shards=0;
 select * from dist_01072 where key=toInt32(value) settings force_optimize_skip_unused_shards=0;
 
 drop table dist_01072;
 create table dist_01072 (key Int, value LowCardinality(Nullable(Int)), str String) Engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01072, key%2);
 select * from dist_01072 where key=toInt32(xxHash32(0));
-select * from dist_01072 where key=value; -- { serverError 507 }
-select * from dist_01072 where key=toInt32(value); -- { serverError 507 }
+select * from dist_01072 where key=value; -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
+select * from dist_01072 where key=toInt32(value); -- { serverError UNABLE_TO_SKIP_UNUSED_SHARDS }
 select * from dist_01072 where key=value settings force_optimize_skip_unused_shards=0;
 select * from dist_01072 where key=toInt32(value) settings force_optimize_skip_unused_shards=0;
 

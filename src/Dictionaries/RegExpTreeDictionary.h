@@ -2,27 +2,23 @@
 
 #include <atomic>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <variant>
 
 #include <base/types.h>
 
-#include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
-#include <Common/Exception.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/HashTable/HashSet.h>
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/Regexps.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/Exception.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
-
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -40,6 +36,7 @@ public:
     {
         bool require_nonempty;
         DictionaryLifetime lifetime;
+        bool use_async_executor = false;
     };
 
     const std::string name = "RegExpTree";
@@ -49,27 +46,29 @@ public:
         const DictionaryStructure & structure_,
         DictionarySourcePtr source_ptr_,
         Configuration configuration_,
-        bool use_vectorscan_);
+        bool use_vectorscan_,
+        bool flag_case_insensitive_,
+        bool flag_dotall_);
 
     std::string getTypeName() const override { return name; }
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(); }
 
     double getFoundRate() const override
     {
-        const auto queries = query_count.load(std::memory_order_relaxed);
+        const auto queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
 
@@ -83,9 +82,10 @@ public:
 
     bool hasHierarchy() const override { return false; }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
-        return std::make_shared<RegExpTreeDictionary>(getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan);
+        return std::make_shared<RegExpTreeDictionary>(
+            getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan, flag_case_insensitive, flag_dotall);
     }
 
     ColumnUInt8::Ptr hasKeys(const Columns &, const DataTypes &) const override
@@ -97,22 +97,33 @@ public:
 
     ColumnPtr getColumn(
         const std::string & attribute_name,
-        const DataTypePtr & result_type,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override
+        DefaultOrFilter default_or_filter) const override
     {
-        return getColumns(Strings({attribute_name}), DataTypes({result_type}), key_columns, key_types, Columns({default_values_column}))[0];
+        bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
+        chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+
+        if (is_short_circuit)
+        {
+            IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
+            return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
+        }
+
+        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
+        const Columns & columns = Columns({default_values_column});
+        return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
     }
 
     Columns getColumns(
         const Strings & attribute_names,
-        const DataTypes & result_types,
+        const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns) const override
+        DefaultsOrFilter defaults_or_filter) const override
     {
-        return getColumnsImpl(attribute_names, result_types, key_columns, key_types, default_values_columns, std::nullopt);
+        return getColumnsImpl(attribute_names, attribute_types, key_columns, key_types, defaults_or_filter, std::nullopt);
     }
 
     ColumnPtr getColumnAllValues(
@@ -143,7 +154,7 @@ public:
         const DataTypes & result_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns,
+        DefaultsOrFilter defaults_or_filter,
         std::optional<size_t> collect_values_limit) const;
 
 private:
@@ -164,14 +175,16 @@ private:
     void loadData();
 
     void initRegexNodes(Block & block);
-    void initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id);
+    void initTopologyOrder(UInt64 node_idx, SetWithMemoryTracking<UInt64> & visited, UInt64 & topology_id);
     void initGraph();
 
-    std::unordered_map<String, ColumnPtr> match(
+    using RefDefaultMap = std::reference_wrapper<const UnorderedMapWithMemoryTracking<String, ColumnPtr>>;
+    using DefaultMapOrFilter = std::variant<RefDefaultMap, RefFilter>;
+    UnorderedMapWithMemoryTracking<String, ColumnPtr> match(
         const ColumnString::Chars & keys_data,
         const ColumnString::Offsets & keys_offsets,
-        const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-        const std::unordered_map<String, ColumnPtr> & defaults,
+        const UnorderedMapWithMemoryTracking<String, const DictionaryAttribute &> & attributes,
+        DefaultMapOrFilter default_or_filter,
         std::optional<size_t> collect_values_limit) const;
 
     class AttributeCollector;
@@ -180,29 +193,39 @@ private:
         UInt64 id,
         AttributeCollector & attributes_to_set,
         const String & data,
-        std::unordered_set<UInt64> & visited_nodes,
-        const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-        const std::unordered_map<String, ColumnPtr> & defaults,
+        UnorderedSetWithMemoryTracking<UInt64> & visited_nodes,
+        const UnorderedMapWithMemoryTracking<String, const DictionaryAttribute &> & attributes,
+        const UnorderedMapWithMemoryTracking<String, ColumnPtr> & defaults,
         size_t key_index) const;
+
+    bool setAttributesShortCircuit(
+        UInt64 id,
+        AttributeCollector & attributes_to_set,
+        const String & data,
+        UnorderedSetWithMemoryTracking<UInt64> & visited_nodes,
+        const UnorderedMapWithMemoryTracking<String, const DictionaryAttribute &> & attributes,
+        UnorderedSetWithMemoryTracking<String> * defaults) const;
 
     struct RegexTreeNode;
     using RegexTreeNodePtr = std::shared_ptr<RegexTreeNode>;
 
     bool use_vectorscan;
+    bool flag_case_insensitive;
+    bool flag_dotall;
 
-    std::vector<std::string> simple_regexps;
-    std::vector<UInt64>      regexp_ids;
-    std::vector<RegexTreeNodePtr> complex_regexp_nodes;
+    VectorWithMemoryTracking<std::string> simple_regexps;
+    VectorWithMemoryTracking<UInt64>      regexp_ids;
+    VectorWithMemoryTracking<RegexTreeNodePtr> complex_regexp_nodes;
 
-    std::map<UInt64, RegexTreeNodePtr> regex_nodes;
-    std::unordered_map<UInt64, UInt64> topology_order;
-    #if USE_VECTORSCAN
+    MapWithMemoryTracking<UInt64, RegexTreeNodePtr> regex_nodes;
+    UnorderedMapWithMemoryTracking<UInt64, UInt64> topology_order;
+#if USE_VECTORSCAN
     MultiRegexps::DeferredConstructedRegexpsPtr hyperscan_regex;
     MultiRegexps::ScratchPtr origin_scratch;
-    hs_database_t* origin_db;
+    MultiRegexps::DataBasePtr origin_db;
     #endif
 
-    Poco::Logger * logger;
+    LoggerPtr logger;
 };
 
 }

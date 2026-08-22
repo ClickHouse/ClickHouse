@@ -21,12 +21,16 @@ std::string_view toString(BackupStatus backup_status)
             return "BACKUP_CREATED";
         case BackupStatus::BACKUP_FAILED:
             return "BACKUP_FAILED";
+        case BackupStatus::BACKUP_CANCELLED:
+            return "BACKUP_CANCELLED";
         case BackupStatus::RESTORING:
             return "RESTORING";
         case BackupStatus::RESTORED:
             return "RESTORED";
         case BackupStatus::RESTORE_FAILED:
             return "RESTORE_FAILED";
+        case BackupStatus::RESTORE_CANCELLED:
+            return "RESTORE_CANCELLED";
         default:
             break;
     }
@@ -40,6 +44,18 @@ const std::vector<std::pair<String, Int8>> & getBackupStatusEnumValues()
         std::vector<std::pair<String, Int8>> res;
         for (auto status : collections::range(BackupStatus::MAX))
             res.emplace_back(toString(status), static_cast<Int8>(status));
+        return res;
+    }();
+    return values;
+}
+
+const std::vector<std::pair<String, Int8>> & getSnapshotLockStatusEnumValues()
+{
+    static const std::vector<std::pair<String, Int8>> values = []
+    {
+        std::vector<std::pair<String, Int8>> res;
+        res.emplace_back(magic_enum::enum_name(SnapshotLockStatus::SNAPSHOT_LOCKED), static_cast<Int8>(SnapshotLockStatus::SNAPSHOT_LOCKED));
+        res.emplace_back(magic_enum::enum_name(SnapshotLockStatus::SNAPSHOT_UNLOCKING), static_cast<Int8>(SnapshotLockStatus::SNAPSHOT_UNLOCKING));
         return res;
     }();
     return values;

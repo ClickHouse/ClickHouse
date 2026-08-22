@@ -1,7 +1,9 @@
 \N	Nullable(String)
+\N	LowCardinality(Nullable(String))
 	String
 \N	Nullable(String)
 	Nullable(String)
+\N	Nullable(Nothing)
 \N	Nullable(Nothing)
 \N	Nullable(Nothing)
 b
@@ -21,3 +23,6 @@ true
 a
 \N
 \N
+('value')
+(NULL)
+(NULL)

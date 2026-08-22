@@ -45,7 +45,7 @@ SELECT number FROM numbers(2) ORDER BY 'x' COLLATE 'el';
 SELECT number FROM numbers(11) ORDER BY 'x', toString(number), 'y' COLLATE 'el';
 
 --- Trash locales
-SELECT '' as x ORDER BY x COLLATE 'qq'; --{serverError 186}
-SELECT '' as x ORDER BY x COLLATE 'qwe'; --{serverError 186}
-SELECT '' as x ORDER BY x COLLATE 'some_non_existing_locale'; --{serverError 186}
-SELECT '' as x ORDER BY x COLLATE 'ру'; --{serverError 186}
+SELECT '' as x ORDER BY x COLLATE 'qq'; --{serverError UNSUPPORTED_COLLATION_LOCALE}
+SELECT '' as x ORDER BY x COLLATE 'qwe'; --{serverError UNSUPPORTED_COLLATION_LOCALE}
+SELECT '' as x ORDER BY x COLLATE 'some_non_existing_locale'; --{serverError UNSUPPORTED_COLLATION_LOCALE}
+SELECT '' as x ORDER BY x COLLATE 'ру'; --{serverError UNSUPPORTED_COLLATION_LOCALE}

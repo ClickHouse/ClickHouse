@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP ROLE IF EXISTS r1_01293, r2_01293, r3_01293, r4_01293, r5_01293, r6_01293, r7_01293, r8_01293, r9_01293;
 DROP ROLE IF EXISTS r2_01293_renamed;
 DROP ROLE IF EXISTS r1_01293@'%', 'r2_01293@%.myhost.com';
@@ -12,7 +14,7 @@ SHOW CREATE ROLE r2_01293;
 
 SELECT '-- rename';
 ALTER ROLE r2_01293 RENAME TO 'r2_01293_renamed';
-SHOW CREATE ROLE r2_01293; -- { serverError 511 } -- Role not found
+SHOW CREATE ROLE r2_01293; -- { serverError UNKNOWN_ROLE } -- Role not found
 SHOW CREATE ROLE r2_01293_renamed;
 DROP ROLE r1_01293, r2_01293_renamed;
 
@@ -61,7 +63,7 @@ DROP ROLE r1_01293, r2_01293;
 
 SELECT '-- system.roles';
 CREATE ROLE r1_01293;
-SELECT name, storage from system.roles WHERE name='r1_01293';
+SELECT name, if(storage = 'replicated', 'local_directory', storage) from system.roles WHERE name='r1_01293';
 DROP ROLE r1_01293;
 
 SELECT '-- system.settings_profile_elements';

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-shared-catalog, log-engine, memory-engine
+# no-shared-catalog: Regular MergeTree is not supported
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +18,7 @@ function test_table_comments()
     local ENGINE_NAME="$1"
     echo "engine : ${ENGINE_NAME}"
 
-    $CLICKHOUSE_CLIENT -nm <<EOF
+    $CLICKHOUSE_CLIENT -m <<EOF
     DROP TABLE IF EXISTS comment_test_table;
 
     CREATE TABLE comment_test_table

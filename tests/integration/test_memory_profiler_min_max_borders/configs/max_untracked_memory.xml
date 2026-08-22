@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <max_untracked_memory>1</max_untracked_memory>
+        </default>
+    </profiles>
+</clickhouse>

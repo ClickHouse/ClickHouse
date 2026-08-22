@@ -5,22 +5,21 @@
                 <type>s3_plain</type>
                 <endpoint>http://minio1:9001/root/data/snapshots1/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </snapshot_s3_plain1>
             <snapshot_s3_plain2>
                 <type>s3_plain</type>
                 <endpoint>http://minio1:9001/root/data/snapshots2/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </snapshot_s3_plain2>
             <snapshot_s3_plain3>
                 <type>s3_plain</type>
                 <endpoint>http://minio1:9001/root/data/snapshots3/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </snapshot_s3_plain3>
         </disks>
     </storage_configuration>
 
 </clickhouse>
-

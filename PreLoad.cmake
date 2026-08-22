@@ -51,13 +51,18 @@ if (NOT "$ENV{CFLAGS}" STREQUAL ""
 endif()
 
 # Default toolchain - this is needed to avoid dependency on OS files.
-execute_process(COMMAND uname -s OUTPUT_VARIABLE OS)
-execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH)
+execute_process(COMMAND uname -s
+    OUTPUT_VARIABLE OS
+    COMMAND_ERROR_IS_FATAL ANY
+)
+execute_process(COMMAND uname -m
+    OUTPUT_VARIABLE ARCH
+    COMMAND_ERROR_IS_FATAL ANY
+)
 
-# By default, prefer clang on Linux
+# We already prefer clang
 # But note, that you still may change the compiler with -DCMAKE_C_COMPILER/-DCMAKE_CXX_COMPILER.
-if (OS MATCHES "Linux"
-    AND "$ENV{CC}" STREQUAL ""
+if ("$ENV{CC}" STREQUAL ""
     AND "$ENV{CXX}" STREQUAL ""
     AND NOT DEFINED CMAKE_C_COMPILER
     AND NOT DEFINED CMAKE_CXX_COMPILER)
@@ -78,6 +83,14 @@ if (OS MATCHES "Linux"
     AND ("$ENV{CC}" MATCHES ".*clang.*" OR CMAKE_C_COMPILER MATCHES ".*clang.*"))
 
     if (ARCH MATCHES "amd64|x86_64")
+        # NOTE: right now musl is not ready, since unwind is too slow with it
+        #
+        # FWIW the following had been tried:
+        # - update musl
+        # - compile musl with debug
+        # - compile musl with debug and -fasynchronous-unwind-tables
+        #
+        # But none of this changes anything so far.
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-x86_64.cmake" CACHE INTERNAL "")
     elseif (ARCH MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)")
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-aarch64.cmake" CACHE INTERNAL "")
@@ -85,6 +98,10 @@ if (OS MATCHES "Linux"
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-ppc64le.cmake" CACHE INTERNAL "")
     elseif (ARCH MATCHES "^(s390x.*|S390X.*)")
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-s390x.cmake" CACHE INTERNAL "")
+    elseif (ARCH MATCHES "^(loongarch64.*|LOONGARCH64.*)")
+        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-loongarch64.cmake" CACHE INTERNAL "")
+    elseif (ARCH MATCHES "^(e2k.*|E2K.*)")
+        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-e2k.cmake" CACHE INTERNAL "")
     else ()
         message (FATAL_ERROR "Unsupported architecture: ${ARCH}")
     endif ()

@@ -43,6 +43,21 @@ bool GSSAcceptorContext::isFailed() const
 
 #if USE_KRB5
 
+String bufferToString(const gss_buffer_desc & buf)
+{
+    // Copy the GSS buffer verbatim. Do not strip trailing NULs: some callers (notably
+    // output_token_buf from gss_accept_sec_context, which carries an encrypted AP-REP in
+    // SPNEGO) pass opaque binary data where trailing 0x00 bytes are meaningful. Display
+    // strings from gss_display_status / gss_display_name have buf.length excluding the
+    // NUL terminator on MIT krb5 and Heimdal, so no trimming is needed there either.
+    String str;
+
+    if (buf.length > 0 && buf.value != nullptr)
+        str.assign(static_cast<char *>(buf.value), buf.length);
+
+    return str;
+}
+
 namespace
 {
 
@@ -75,22 +90,9 @@ PrincipalName::PrincipalName(String principal)
     }
 }
 
-String bufferToString(const gss_buffer_desc & buf)
-{
-    String str;
-
-    if (buf.length > 0 && buf.value != nullptr)
-    {
-        str.assign(static_cast<char *>(buf.value), buf.length);
-        while (!str.empty() && str.back() == '\0') { str.pop_back(); }
-    }
-
-    return str;
-}
-
 String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, const gss_OID & mech_type)
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     String messages;
     OM_uint32 message_context = 0;
@@ -135,7 +137,7 @@ String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, con
 
 String extractStatusMessages(OM_uint32 major_status_code, OM_uint32 minor_status_code, const gss_OID & mech_type)
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     const auto gss_messages = extractSpecificStatusMessages(major_status_code, GSS_C_GSS_CODE, mech_type);
     const auto mech_messages = extractSpecificStatusMessages(minor_status_code, GSS_C_MECH_CODE, mech_type);
@@ -158,7 +160,7 @@ String extractStatusMessages(OM_uint32 major_status_code, OM_uint32 minor_status
 
 std::pair<String, String> extractNameAndRealm(const gss_name_t & name)
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     gss_buffer_desc name_buf;
     name_buf.length = 0;
@@ -186,7 +188,7 @@ std::pair<String, String> extractNameAndRealm(const gss_name_t & name)
 
 bool equalMechanisms(const String & left_str, const gss_OID & right_oid)
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     gss_buffer_desc left_buf;
     left_buf.length = left_str.size();
@@ -232,7 +234,7 @@ void GSSAcceptorContext::reset()
 
 void GSSAcceptorContext::resetHandles() noexcept
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     if (acceptor_credentials_handle != GSS_C_NO_CREDENTIAL)
     {
@@ -258,7 +260,7 @@ void GSSAcceptorContext::resetHandles() noexcept
 
 void GSSAcceptorContext::initHandles()
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     resetHandles();
 
@@ -328,9 +330,9 @@ void GSSAcceptorContext::initHandles()
     }
 }
 
-String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger * log)
+String GSSAcceptorContext::processToken(const String & input_token, LoggerPtr log)
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     String output_token;
 
@@ -455,7 +457,7 @@ void GSSAcceptorContext::initHandles()
 {
 }
 
-String GSSAcceptorContext::processToken(const String &, Poco::Logger *)
+String GSSAcceptorContext::processToken(const String &, LoggerPtr)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without GSS-API/Kerberos support");
 }

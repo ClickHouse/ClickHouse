@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorDump.h>
+#include <Common/checkStackSize.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -20,7 +21,7 @@ template <typename T>
 static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
-    writeText(x.getValue(), x.getScale(), buf, {});
+    writeText(x.getValue(), x.getScale(), buf, /* trailing_zeros */ true);
     writeChar('\'', buf);
 }
 
@@ -51,6 +52,7 @@ String FieldVisitorDump::operator() (const String & x) const
 
 String FieldVisitorDump::operator() (const Array & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << "Array_[";
@@ -67,6 +69,7 @@ String FieldVisitorDump::operator() (const Array & x) const
 
 String FieldVisitorDump::operator() (const Tuple & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << "Tuple_(";
@@ -83,6 +86,7 @@ String FieldVisitorDump::operator() (const Tuple & x) const
 
 String FieldVisitorDump::operator() (const Map & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << "Map_(";
@@ -99,6 +103,7 @@ String FieldVisitorDump::operator() (const Map & x) const
 
 String FieldVisitorDump::operator() (const Object & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << "Object_(";

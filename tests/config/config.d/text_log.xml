@@ -2,6 +2,6 @@
     <text_log>
         <database>system</database>
         <table>text_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <flush_interval_milliseconds>4000</flush_interval_milliseconds>
     </text_log>
 </clickhouse>

@@ -7,13 +7,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 3"
+
 # there are some issues with Atomic database, let's generate it uniq
 # otherwise flaky check will not pass.
 uuid=$(${CLICKHOUSE_CLIENT} --query "SELECT reinterpretAsUUID(currentDatabase())")
 
 echo "DROP TABLE IF EXISTS tab_00738 SYNC;
 DROP TABLE IF EXISTS mv SYNC;
-CREATE TABLE tab_00738(a Int) ENGINE = MergeTree() ORDER BY a;
+CREATE TABLE tab_00738(a Int) ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 -- The matview will take at least 2 seconds to be finished (10000000 * 0.0000002)
 CREATE MATERIALIZED VIEW mv UUID '$uuid' ENGINE = Log AS SELECT sleepEachRow(0.0000002) FROM tab_00738;" | ${CLICKHOUSE_CLIENT} -n
 
@@ -63,4 +65,3 @@ drop_inner_id
 wait
 
 drop_at_exit
-

@@ -1,5 +1,4 @@
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/queryToString.h>
 
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -38,15 +37,15 @@ bool isRightIdentifier(JoinIdentifierPos pos)
 
 }
 
-void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos)
+void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos, bool null_safe_comparison)
 {
     ASTPtr left = left_ast->clone();
     ASTPtr right = right_ast->clone();
 
     if (isLeftIdentifier(table_pos.first) && isRightIdentifier(table_pos.second))
-        analyzed_join.addOnKeys(left, right);
+        analyzed_join.addOnKeys(left, right, null_safe_comparison);
     else if (isRightIdentifier(table_pos.first) && isLeftIdentifier(table_pos.second))
-        analyzed_join.addOnKeys(right, left);
+        analyzed_join.addOnKeys(right, left, null_safe_comparison);
     else
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot detect left and right JOIN keys. JOIN ON section is ambiguous.");
 }
@@ -70,7 +69,7 @@ void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, co
     {
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                         "Expressions {} and {} are from the same table but from different arguments of equal function in ASOF JOIN",
-                        queryToString(left_ast), queryToString(right_ast));
+                        left_ast->formatForErrorMessage(), right_ast->formatForErrorMessage());
     }
 }
 
@@ -78,7 +77,7 @@ void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
 {
     if (!asof_left_key || !asof_right_key)
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "No inequality in ASOF JOIN ON section.");
-    addJoinKeys(asof_left_key, asof_right_key, {JoinIdentifierPos::Left, JoinIdentifierPos::Right});
+    addJoinKeys(asof_left_key, asof_right_key, {JoinIdentifierPos::Left, JoinIdentifierPos::Right}, false);
 }
 
 void CollectJoinOnKeysMatcher::visit(const ASTIdentifier & ident, const ASTPtr & ast, CollectJoinOnKeysMatcher::Data & data)
@@ -96,14 +95,14 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
 
     ASOFJoinInequality inequality = getASOFJoinInequality(func.name);
 
-    if (func.name == "equals" || inequality != ASOFJoinInequality::None)
+    if (func.name == "equals" || func.name == "isNotDistinctFrom" || inequality != ASOFJoinInequality::None)
     {
         if (func.arguments->children.size() != 2)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Function {} takes two arguments, got '{}' instead",
                             func.name, func.formatForErrorMessage());
     }
 
-    if (func.name == "equals")
+    if (func.name == "equals" || func.name == "isNotDistinctFrom")
     {
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
@@ -113,7 +112,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         {
             if (!isDeterminedIdentifier(table_numbers.first))
                 throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,
-                    "Ambiguous columns in expression '{}' in JOIN ON section", queryToString(ast));
+                    "Ambiguous columns in expression '{}' in JOIN ON section", ast->formatForErrorMessage());
             data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(table_numbers.first));
             return;
         }
@@ -121,7 +120,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         if ((isLeftIdentifier(table_numbers.first) && isRightIdentifier(table_numbers.second)) ||
             (isRightIdentifier(table_numbers.first) && isLeftIdentifier(table_numbers.second)))
         {
-            data.addJoinKeys(left, right, table_numbers);
+            bool null_safe_comparison = func.name == "isNotDistinctFrom";
+            data.addJoinKeys(left, right, table_numbers, null_safe_comparison);
             return;
         }
     }
@@ -137,7 +137,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     {
         if (data.asof_left_key || data.asof_right_key)
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF JOIN expects exactly one inequality in ON section. "
-                            "Unexpected '{}'", queryToString(ast));
+                            "Unexpected '{}'", ast->formatForErrorMessage());
 
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
@@ -148,7 +148,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     }
 
     throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unsupported JOIN ON conditions. Unexpected '{}'",
-                    queryToString(ast));
+                    ast->formatForErrorMessage());
 }
 
 void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out)
@@ -157,7 +157,7 @@ void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<co
     {
         if (func->name == "arrayJoin")
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Not allowed function in JOIN ON. Unexpected '{}'",
-                            queryToString(ast));
+                            ast->formatForErrorMessage());
     }
     else if (const auto * ident = ast->as<ASTIdentifier>())
     {

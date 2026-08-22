@@ -8,14 +8,14 @@ CREATE TABLE default_table (
 ENGINE = MergeTree()
 ORDER BY tuple();
 
-ALTER TABLE default_table MODIFY COLUMN key REMOVE MATERIALIZED; --{serverError 36}
-ALTER TABLE default_table MODIFY COLUMN key REMOVE ALIAS; --{serverError 36}
+ALTER TABLE default_table MODIFY COLUMN key REMOVE MATERIALIZED; --{serverError BAD_ARGUMENTS}
+ALTER TABLE default_table MODIFY COLUMN key REMOVE ALIAS; --{serverError BAD_ARGUMENTS}
 
-ALTER TABLE default_table MODIFY COLUMN value1 REMOVE DEFAULT; --{serverError 36}
-ALTER TABLE default_table MODIFY COLUMN value1 REMOVE ALIAS; --{serverError 36}
+ALTER TABLE default_table MODIFY COLUMN value1 REMOVE DEFAULT; --{serverError BAD_ARGUMENTS}
+ALTER TABLE default_table MODIFY COLUMN value1 REMOVE ALIAS; --{serverError BAD_ARGUMENTS}
 
-ALTER TABLE default_table MODIFY COLUMN value2 REMOVE DEFAULT; --{serverError 36}
-ALTER TABLE default_table MODIFY COLUMN value2 REMOVE MATERIALIZED; --{serverError 36}
+ALTER TABLE default_table MODIFY COLUMN value2 REMOVE DEFAULT; --{serverError BAD_ARGUMENTS}
+ALTER TABLE default_table MODIFY COLUMN value2 REMOVE MATERIALIZED; --{serverError BAD_ARGUMENTS}
 
 SHOW CREATE TABLE default_table;
 

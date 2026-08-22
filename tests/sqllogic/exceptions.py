@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from enum import Enum
-
 
 class Error(Exception):
     def __init__(
         self,
         message,
+        *args,
         file=None,
         name=None,
         pos=None,
         request=None,
         details=None,
-        *args,
         **kwargs,
     ):
         super().__init__(message, *args, **kwargs)
@@ -45,16 +43,8 @@ class Error(Exception):
 
     @property
     def reason(self):
-        return ", ".join(
-            (
-                str(x)
-                for x in [
-                    super().__str__(),
-                    "details: {}".format(self._details) if self._details else "",
-                ]
-                if x
-            )
-        )
+        details = f"details: {self._details}" if self._details else ""
+        return ", ".join((str(x) for x in [super().__str__(), details] if x))
 
     def set_details(self, file=None, name=None, pos=None, request=None, details=None):
         if file is not None:
@@ -79,7 +69,7 @@ class Error(Exception):
 
 
 class ErrorWithParent(Error):
-    def __init__(self, message, parent=None, *args, **kwargs):
+    def __init__(self, message, *args, parent=None, **kwargs):
         super().__init__(message, *args, **kwargs)
         self._parent = parent
 
@@ -88,16 +78,8 @@ class ErrorWithParent(Error):
 
     @property
     def reason(self):
-        return ", ".join(
-            (
-                str(x)
-                for x in [
-                    super().reason,
-                    "exception: {}".format(str(self._parent)) if self._parent else "",
-                ]
-                if x
-            )
-        )
+        exception = f"exception: {self._parent}" if self._parent else ""
+        return ", ".join((str(x) for x in [super().reason, exception] if x))
 
 
 class ProgramError(ErrorWithParent):

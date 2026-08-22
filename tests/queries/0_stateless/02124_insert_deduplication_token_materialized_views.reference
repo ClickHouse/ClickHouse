@@ -1,8 +1,8 @@
-deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplication_token = no, results inconsitent
-18	18	9	18
-deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = no, results inconsitent
-18	9	9	9
-deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplication_token = yes, results inconsitent
-18	18	9	18
-deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = yes, results consitent
+deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplication_token = no, results: test_mv_a and test_mv_c have all data, test_mv_b has data obly with max_partitions_per_insert_block=0
+18	36	27	36
+deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = no, results: all tables have deduplicated data
+18	18	18	18
+deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplication_token = yes, results: test_mv_a and test_mv_c have all data, test_mv_b has data obly with max_partitions_per_insert_block=0
+18	36	27	36
+deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplication_token = yes, results: all tables have deduplicated data
 18	18	18	18

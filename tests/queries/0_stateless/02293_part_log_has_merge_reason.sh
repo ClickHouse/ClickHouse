@@ -23,43 +23,39 @@ ${CLICKHOUSE_CLIENT} -q '
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_part_log_has_merge_type_table VALUES (now(), 1, 'username1');"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_part_log_has_merge_type_table VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');"
 
-function get_parts_count() {
+# Wait for the merge itself to be logged. Waiting for the parts to be merged into a single active part would
+# take much longer: the TTL merge produces an empty part, which stays active until the cleanup thread drops it.
+function wait_for_merge_in_part_log() {
     table_name=$1
-    ${CLICKHOUSE_CLIENT} -q '
-        SELECT
-            count(*)
-        FROM
-            system.parts
-        WHERE
-            table = '"'${table_name}'"'
-        AND
-            active = 1
-        AND
-            database = '"'${CLICKHOUSE_DATABASE}'"'
-    '
-}
+    local TIMELIMIT=$((SECONDS+60)) # 60 second timeout
 
-function wait_table_parts_are_merged_into_one_part() {
-    table_name=$1
-
-    while true
+    while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        count=$(get_parts_count $table_name)
-        if [[ count -gt 1 ]]
+        ${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS part_log'
+        count=$(${CLICKHOUSE_CLIENT} -q '
+            SELECT
+                count(*)
+            FROM
+                system.part_log
+            WHERE
+                event_date >= yesterday() AND event_time >= now() - 600
+            AND
+                event_type = '"'MergeParts'"'
+            AND
+                table = '"'${table_name}'"'
+            AND
+                database = '"'${CLICKHOUSE_DATABASE}'"'
+        ')
+        if [[ count -eq 0 ]]
         then
-            sleep 1
+            sleep 0.2
         else
             break
         fi
     done
 }
 
-export -f get_parts_count
-export -f wait_table_parts_are_merged_into_one_part
-
-timeout 60 bash -c 'wait_table_parts_are_merged_into_one_part t_part_log_has_merge_type_table'
-
-${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS'
+wait_for_merge_in_part_log t_part_log_has_merge_type_table
 
 ${CLICKHOUSE_CLIENT} -q '
   SELECT
@@ -68,6 +64,8 @@ ${CLICKHOUSE_CLIENT} -q '
   FROM
       system.part_log
   WHERE
+          event_date >= yesterday() AND event_time >= now() - 600
+      AND
           event_type = '"'MergeParts'"'
       AND
           table = '"'t_part_log_has_merge_type_table'"'

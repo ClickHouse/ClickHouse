@@ -6,6 +6,8 @@
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Common/Stopwatch.h>
 
+#include <optional>
+
 
 namespace Poco
 {
@@ -14,7 +16,7 @@ namespace Poco
 namespace DB
 {
 
-class KafkaSource : public ISource
+class KafkaSource final : public ISource
 {
 public:
     KafkaSource(
@@ -22,9 +24,10 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
         const Names & columns,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         size_t max_block_size_,
-        bool commit_in_suffix = false);
+        bool commit_in_suffix = false,
+        std::optional<UInt64> cancel_epoch_ = {});
     ~KafkaSource() override;
 
     String getName() const override { return storage.getName(); }
@@ -41,7 +44,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
     Names column_names;
-    Poco::Logger * log;
+    LoggerPtr log;
     UInt64 max_block_size;
 
     KafkaConsumerPtr consumer;
@@ -51,7 +54,8 @@ private:
 
     const Block non_virtual_header;
     const Block virtual_header;
-    const HandleKafkaErrorMode handle_error_mode;
+    const StreamingHandleErrorMode handle_error_mode;
+    const UInt64 cancel_epoch;
 
     Poco::Timespan max_execution_time = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};

@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 
 LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(const ASTFunction * or_function_,
-    const IAST::Hash & expression_, const std::string & alias_)
+    const IASTHash & expression_, const std::string & alias_)
     : or_function(or_function_), expression(expression_), alias(alias_)
 {
 }
@@ -120,7 +120,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 
         auto * function = to_node->as<ASTFunction>();
         /// Optimization does not respect aliases properly, which can lead to MULTIPLE_EXPRESSION_FOR_ALIAS error.
-        /// Disable it if an expression has an alias. Proper implementation is done with the new analyzer.
+        /// Disable it if an expression has an alias. Proper implementation is done with the analyzer.
         if (function && function->alias.empty() && function->name == "or" && function->children.size() == 1)
         {
             const auto * expression_list = function->children[0]->as<ASTExpressionList>();
@@ -139,7 +139,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
                             const auto * literal = equals_expression_list->children[1]->as<ASTLiteral>();
                             if (literal && literal->alias.empty())
                             {
-                                auto expr_lhs = equals_expression_list->children[0]->getTreeHash();
+                                auto expr_lhs = equals_expression_list->children[0]->getTreeHash(/*ignore_aliases=*/ true);
                                 OrWithExpression or_with_expression{function, expr_lhs, function->tryGetAlias()};
                                 disjunctive_equality_chains_map[or_with_expression].functions.push_back(equals);
                                 found_chain = true;
@@ -204,26 +204,41 @@ inline ASTs & getFunctionOperands(const ASTFunction * or_function)
 
 bool LogicalExpressionsOptimizer::isLowCardinalityEqualityChain(const std::vector<ASTFunction *> & functions) const
 {
-    if (functions.size() > 1)
+    if (functions.size() <= 1)
+        return false;
+
+    if (!functions[0])
+        return false;
+
+    /// Check if the identifier has LowCardinality type.
+    auto & first_operands = getFunctionOperands(functions.at(0));
+
+    if (first_operands.empty())
+        return false;
+
+    if (!first_operands[0])
+        return false;
+
+    const auto * identifier = first_operands.at(0)->as<ASTIdentifier>();
+    if (!identifier)
+        return false;
+
+    auto pos = IdentifierSemantic::getMembership(*identifier);
+    if (!pos)
+        pos = IdentifierSemantic::chooseTableColumnMatch(*identifier, tables_with_columns, true);
+
+    if (!pos)
+        return false;
+
+    if (*pos >= tables_with_columns.size())
+        return false;
+
+    if (auto data_type_and_name = tables_with_columns.at(*pos).columns.tryGetByName(identifier->shortName()))
     {
-        /// Check if identifier is LowCardinality type
-        auto & first_operands = getFunctionOperands(functions[0]);
-        const auto * identifier = first_operands[0]->as<ASTIdentifier>();
-        if (identifier)
-        {
-            auto pos = IdentifierSemantic::getMembership(*identifier);
-            if (!pos)
-                pos = IdentifierSemantic::chooseTableColumnMatch(*identifier, tables_with_columns, true);
-            if (pos)
-            {
-                if (auto data_type_and_name = tables_with_columns[*pos].columns.tryGetByName(identifier->shortName()))
-                {
-                    if (typeid_cast<const DataTypeLowCardinality *>(data_type_and_name->type.get()))
-                        return true;
-                }
-            }
-        }
+        if (typeid_cast<const DataTypeLowCardinality *>(data_type_and_name->type.get()))
+            return true;
     }
+
     return false;
 }
 
@@ -286,17 +301,10 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
         equals_expr_lhs = operands[0];
     }
 
-    auto tuple_literal = std::make_shared<ASTLiteral>(std::move(tuple));
-
-    ASTPtr expression_list = std::make_shared<ASTExpressionList>();
-    expression_list->children.push_back(equals_expr_lhs);
-    expression_list->children.push_back(tuple_literal);
+    auto tuple_literal = make_intrusive<ASTLiteral>(std::move(tuple));
 
     /// Construct the expression `expr IN (x1, ..., xN)`
-    auto in_function = std::make_shared<ASTFunction>();
-    in_function->name = "in";
-    in_function->arguments = expression_list;
-    in_function->children.push_back(in_function->arguments);
+    auto in_function = makeASTOperator("in", equals_expr_lhs, tuple_literal);
     in_function->setAlias(or_with_expression.alias);
 
     /// 2. Insert the new IN expression.
@@ -349,7 +357,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
     for (const auto & entry : garbage_map)
     {
         const auto * function = entry.first;
-        auto * first_erased = entry.second;
+        auto first_erased = entry.second;
 
         auto & operands = getFunctionOperands(function);
         operands.erase(first_erased, operands.end());

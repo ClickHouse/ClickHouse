@@ -13,7 +13,7 @@ using BSONSizeT = uint32_t;
 static const BSONSizeT MAX_BSON_SIZE = std::numeric_limits<BSONSizeT>::max();
 
 /// See details on https://bsonspec.org/spec.html
-enum class BSONType
+enum class BSONType : uint8_t
 {
     DOUBLE = 0x01,
     STRING = 0x02,
@@ -38,7 +38,7 @@ enum class BSONType
     MAX_KEY = 0x7F,
 };
 
-enum class BSONBinarySubtype
+enum class BSONBinarySubtype : uint8_t
 {
     BINARY = 0x00,
     FUNCTION = 0x01,

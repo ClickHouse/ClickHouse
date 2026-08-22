@@ -1,4 +1,4 @@
-#include "MySQLDictionarySource.h"
+#include <Dictionaries/MySQLDictionarySource.h>
 
 
 #if USE_MYSQL
@@ -6,10 +6,12 @@
 #endif
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Core/Settings.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/RemoteHostFilter.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -23,17 +25,30 @@
 #include <Common/LocalDateTime.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
-#include "readInvalidateQuery.h"
+#include <Dictionaries/readInvalidateQuery.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 external_storage_connect_timeout_sec;
+    extern const SettingsUInt64 external_storage_rw_timeout_sec;
+    extern const SettingsUInt64 glob_expansion_max_elements;
+}
+
+namespace MySQLSetting
+{
+    extern const MySQLSettingsUInt64 connect_timeout;
+    extern const MySQLSettingsUInt64 read_write_timeout;
+}
 
 [[maybe_unused]]
 static const size_t default_num_tries_on_connection_loss = 3;
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -42,17 +57,44 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
     "host", "port", "user", "password",
     "db", "database", "table", "schema",
     "update_field", "invalidate_query", "priority",
-    "update_lag", "dont_check_update_time",
+    "update_lag",
+    "dont_check_update_time" /* obsolete */,
     "query", "where", "name" /* name_collection */, "socket",
     "share_connection", "fail_on_connection_loss", "close_connection",
     "ssl_ca", "ssl_cert", "ssl_key",
-    "enable_local_infile", "opt_reconnect",
+    "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem",
+    "enable_local_infile", "opt_reconnect", "enable_compression",
     "connect_timeout", "mysql_connect_timeout",
     "mysql_rw_timeout", "rw_timeout"};
 
+#if USE_MYSQL
+/// The source configuration of a dictionary created with a DDL query comes from the query itself, so
+/// it may not name files for the server to open: the server reads them with its own privileges, and a
+/// user who cannot read a certificate and key must not be able to authenticate with them. The
+/// contents can be passed in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem` instead.
+/// Dictionaries defined in server configuration files are written by an operator and keep using paths.
+static void checkNoSSLPaths(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+{
+    static const std::initializer_list<std::pair<std::string_view, std::string_view>> keys
+        = {{"ssl_ca", "ssl_ca_pem"}, {"ssl_cert", "ssl_cert_pem"}, {"ssl_key", "ssl_key_pem"}};
+
+    for (const auto & [key, contents_key] : keys)
+    {
+        if (config.has(prefix + "." + std::string(key)))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be specified in a dictionary created with a DDL query. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+    }
+}
+#endif
+
+void registerDictionarySourceMysql(DictionarySourceFactory & factory);
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
@@ -60,7 +102,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                    const std::string & /* default_database */,
                                    [[maybe_unused]] bool created_from_ddl) -> DictionarySourcePtr {
 #if USE_MYSQL
-        StreamSettings mysql_input_stream_settings(
+        MySQLStreamSettings mysql_input_stream_settings(
             global_context->getSettingsRef(),
             config.getBool(config_prefix + ".mysql.close_connection", false) || config.getBool(config_prefix + ".mysql.share_connection", false),
             false,
@@ -70,13 +112,19 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         std::shared_ptr<mysqlxx::PoolWithFailover> pool;
         MySQLSettings mysql_settings;
 
+        /// Every key here comes from the `CREATE DICTIONARY` query, including the keys that override a
+        /// named collection, so this covers both of the branches below.
+        if (created_from_ddl)
+            checkNoSSLPaths(config, settings_config_prefix);
+
         std::optional<MySQLDictionarySource::Configuration> dictionary_configuration;
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
         if (named_collection)
         {
             auto allowed_arguments{dictionary_allowed_keys};
-            for (const auto & setting : mysql_settings.all())
-                allowed_arguments.insert(setting.getName());
+            auto setting_names = mysql_settings.getAllRegisteredNames();
+            for (const auto & name : setting_names)
+                allowed_arguments.insert(name);
             validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(*named_collection, {}, allowed_arguments);
 
             StorageMySQL::Configuration::Addresses addresses;
@@ -89,7 +137,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             }
             else
             {
-                size_t max_addresses = global_context->getSettingsRef().glob_expansion_max_elements;
+                size_t max_addresses = global_context->getSettingsRef()[Setting::glob_expansion_max_elements];
                 addresses = parseRemoteDescriptionForExternalDatabase(addresses_expr, max_addresses, 3306);
             }
 
@@ -104,21 +152,16 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .invalidate_query = named_collection->getOrDefault<String>("invalidate_query", ""),
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
-                .dont_check_update_time = named_collection->getOrDefault<bool>("dont_check_update_time", false),
+                .bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false),
             });
 
             const auto & settings = global_context->getSettingsRef();
-            if (!mysql_settings.isChanged("connect_timeout"))
-                mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
-            if (!mysql_settings.isChanged("read_write_timeout"))
-                mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
+            if (!mysql_settings[MySQLSetting::connect_timeout].changed)
+                mysql_settings[MySQLSetting::connect_timeout] = settings[Setting::external_storage_connect_timeout_sec];
+            if (!mysql_settings[MySQLSetting::read_write_timeout].changed)
+                mysql_settings[MySQLSetting::read_write_timeout] = settings[Setting::external_storage_rw_timeout_sec];
 
-            for (const auto & setting : mysql_settings.all())
-            {
-                const auto & setting_name = setting.getName();
-                if (named_collection->has(setting_name))
-                    mysql_settings.set(setting_name, named_collection->get<String>(setting_name));
-            }
+            mysql_settings.loadFromNamedCollection(*named_collection);
 
             pool = std::make_shared<mysqlxx::PoolWithFailover>(
                 createMySQLPoolWithFailover(
@@ -126,6 +169,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     addresses,
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
+                    StorageMySQL::getSSLParams(*named_collection),
                     mysql_settings));
         }
         else
@@ -138,8 +182,34 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
                 .update_field = config.getString(settings_config_prefix + ".update_field", ""),
                 .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-                .dont_check_update_time = config.getBool(settings_config_prefix + ".dont_check_update_time", false)
+                .bg_reconnect = config.getBool(settings_config_prefix + ".background_reconnect", false),
             });
+
+            if (created_from_ddl)
+            {
+                if (config.has(settings_config_prefix + ".replica"))
+                {
+                    Poco::Util::AbstractConfiguration::Keys replica_keys;
+                    config.keys(settings_config_prefix, replica_keys);
+                    for (const auto & replica_key : replica_keys)
+                    {
+                        if (replica_key.starts_with("replica"))
+                        {
+                            const auto replica_prefix = settings_config_prefix + "." + replica_key;
+                            checkNoSSLPaths(config, replica_prefix);
+                            global_context->getRemoteHostFilter().checkHostAndPort(
+                                config.getString(replica_prefix + ".host"),
+                                toString(config.getInt(replica_prefix + ".port", 3306)));
+                        }
+                    }
+                }
+                else
+                {
+                    global_context->getRemoteHostFilter().checkHostAndPort(
+                        config.getString(settings_config_prefix + ".host"),
+                        toString(config.getInt(settings_config_prefix + ".port", 3306)));
+                }
+            }
 
             pool = std::make_shared<mysqlxx::PoolWithFailover>(
                 mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
@@ -155,7 +225,149 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("mysql", create_table_source);
+    factory.registerSource("mysql", create_table_source, Documentation{
+        .description = R"DOCS_MD(
+# MySQL dictionary source
+
+Example of settings:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+SOURCE(MYSQL(
+    port 3306
+    user 'clickhouse'
+    password 'qwerty'
+    replica(host 'example01-1' priority 1)
+    replica(host 'example01-2' priority 1)
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+    fail_on_connection_loss 'true'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+    enable_compression 1
+))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<source>
+  <mysql>
+      <port>3306</port>
+      <user>clickhouse</user>
+      <password>qwerty</password>
+      <replica>
+          <host>example01-1</host>
+          <priority>1</priority>
+      </replica>
+      <replica>
+          <host>example01-2</host>
+          <priority>1</priority>
+      </replica>
+      <db>db_name</db>
+      <table>table_name</table>
+      <where>id=10</where>
+      <invalidate_query>SQL_QUERY</invalidate_query>
+      <fail_on_connection_loss>true</fail_on_connection_loss>
+      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+      <enable_compression>1</enable_compression>
+  </mysql>
+</source>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+Setting fields:
+
+| Setting | Description |
+|---------|-------------|
+| `port` | The port on the MySQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`). |
+| `user` | Name of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`). |
+| `password` | Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`). |
+| `replica` | Section of replica configurations. There can be multiple sections. |
+| `replica/host` | The MySQL host. |
+| `replica/priority` | The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority. |
+| `db` | Name of the database. |
+| `table` | Name of the table. |
+| `where` | The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional. |
+| `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](/reference/statements/create/dictionary/lifetime). |
+| `fail_on_connection_loss` | Controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the server retries to fetch data at least three times before reporting an error. Note that retrying leads to increased response times. Default value: `false`. |
+| `query` | The custom query. Optional. |
+| `enable_compression` | Enables zlib compression for the MySQL protocol connection. When set to `1`, ClickHouse requests protocol-level compression from the MySQL server. Can also be set per-replica inside `<replica>`. Default value: `0`. |
+| `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. Optional. |
+| `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. Optional. |
+| `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. Optional. |
+| `ssl_ca`, `ssl_cert`, `ssl_key` | The same credentials as paths to files on the server. Only allowed for a dictionary defined in a server configuration file, or through a named collection defined there, see below. Optional. |
+
+<Note>
+The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
+</Note>
+
+<Note>
+`ssl_ca`, `ssl_cert` and `ssl_key` name files that the server opens with its own privileges, so they are only accepted for a dictionary defined in a server configuration file, or through a named collection defined there. A `CREATE DICTIONARY` query that specifies the TLS credentials directly must pass their contents instead, in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem`. Those values are masked in logs and in `SHOW` queries, the same way passwords are.
+</Note>
+
+<Note>
+There is no explicit parameter `secure`. When establishing an SSL-connection security is mandatory.
+</Note>
+
+MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`.
+
+Example of settings:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+SOURCE(MYSQL(
+    host 'localhost'
+    socket '/path/to/socket/file.sock'
+    user 'clickhouse'
+    password 'qwerty'
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+    fail_on_connection_loss 'true'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<source>
+  <mysql>
+      <host>localhost</host>
+      <socket>/path/to/socket/file.sock</socket>
+      <user>clickhouse</user>
+      <password>qwerty</password>
+      <db>db_name</db>
+      <table>table_name</table>
+      <where>id=10</where>
+      <invalidate_query>SQL_QUERY</invalidate_query>
+      <fail_on_connection_loss>true</fail_on_connection_loss>
+      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+  </mysql>
+</source>
+```
+
+</Tab>
+</Tabs>
+)DOCS_MD"
+#if !USE_MYSQL
+            "\n\nCurrently unavailable, because this ClickHouse build does not include MySQL support."
+#endif
+        ,
+        .syntax = "SOURCE(MYSQL(host 'host' port 3306 user 'user' password '' db 'db' table 'table'))",
+        .related = {"clickhouse", "postgresql"}});
 }
 
 }
@@ -172,8 +384,8 @@ MySQLDictionarySource::MySQLDictionarySource(
     const Configuration & configuration_,
     mysqlxx::PoolWithFailoverPtr pool_,
     const Block & sample_block_,
-    const StreamSettings & settings_)
-    : log(&Poco::Logger::get("MySQLDictionarySource"))
+    const MySQLStreamSettings & settings_)
+    : log(getLogger("MySQLDictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
@@ -187,7 +399,7 @@ MySQLDictionarySource::MySQLDictionarySource(
 
 /// copy-constructor is provided in order to support cloneability
 MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other)
-    : log(&Poco::Logger::get("MySQLDictionarySource"))
+    : log(getLogger("MySQLDictionarySource"))
     , update_time(other.update_time)
     , dict_struct(other.dict_struct)
     , configuration(other.configuration)
@@ -195,7 +407,6 @@ MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other
     , sample_block(other.sample_block)
     , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks}
     , load_all_query{other.load_all_query}
-    , last_modification{other.last_modification}
     , invalidate_query_response{other.invalidate_query_response}
     , settings(other.settings)
 {
@@ -210,11 +421,9 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
         update_time = std::chrono::system_clock::now();
         return query_builder.composeUpdateQuery(configuration.update_field, str_time);
     }
-    else
-    {
-        update_time = std::chrono::system_clock::now();
-        return load_all_query;
-    }
+
+    update_time = std::chrono::system_clock::now();
+    return load_all_query;
 }
 
 QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
@@ -223,56 +432,51 @@ QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
             pool, query, sample_block, settings));
 }
 
-QueryPipeline MySQLDictionarySource::loadAll()
+BlockIO MySQLDictionarySource::loadAll()
 {
-    auto connection = pool->get();
-    last_modification = getLastModification(connection, false);
-
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    return loadFromQuery(load_all_query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(load_all_query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadUpdatedAll()
+BlockIO MySQLDictionarySource::loadUpdatedAll()
 {
-    auto connection = pool->get();
-    last_modification = getLastModification(connection, false);
-
     std::string load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
-    return loadFromQuery(load_update_query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(load_update_query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO MySQLDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return loadFromQuery(query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO MySQLDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return loadFromQuery(query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(query);
+    return io;
 }
 
 bool MySQLDictionarySource::isModified() const
 {
     if (!configuration.invalidate_query.empty())
     {
+        LOG_TRACE(log, "Executing invalidate query: {}", configuration.invalidate_query);
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response)
-            return false;
-
-        invalidate_query_response = response;
-        return true;
+        return invalidate_query_response.updateAndCheckModified(response);
     }
 
-    if (configuration.dont_check_update_time)
-        return true;
-
-    auto connection = pool->get();
-    return getLastModification(connection, true) > last_modification;
+    return true;
 }
 
 bool MySQLDictionarySource::supportsSelectiveLoad() const
@@ -313,64 +517,14 @@ std::string MySQLDictionarySource::quoteForLike(const std::string & value)
     return out.str();
 }
 
-LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & connection, bool allow_connection_closure) const
-{
-    LocalDateTime modification_time{std::time(nullptr)};
-
-    if (configuration.dont_check_update_time)
-        return modification_time;
-
-    try
-    {
-        auto query = connection->query("SHOW TABLE STATUS LIKE " + quoteForLike(configuration.table));
-
-        LOG_TRACE(log, fmt::runtime(query.str()));
-
-        auto result = query.use();
-
-        size_t fetched_rows = 0;
-        if (auto row = result.fetch())
-        {
-            ++fetched_rows;
-            static const auto UPDATE_TIME_IDX = 12;
-            const auto & update_time_value = row[UPDATE_TIME_IDX];
-
-            if (!update_time_value.isNull())
-            {
-                modification_time = update_time_value.getDateTime();
-                LOG_TRACE(log, "Got modification time: {}", update_time_value.getString());
-            }
-
-            /// fetch remaining rows to avoid "commands out of sync" error
-            while (result.fetch())
-                ++fetched_rows;
-        }
-
-        if (settings.auto_close && allow_connection_closure)
-        {
-            connection.disconnect();
-        }
-
-        if (0 == fetched_rows)
-            LOG_ERROR(log, "Cannot find table in SHOW TABLE STATUS result.");
-
-        if (fetched_rows > 1)
-            LOG_ERROR(log, "Found more than one table in SHOW TABLE STATUS result.");
-    }
-    catch (...)
-    {
-        tryLogCurrentException("MySQLDictionarySource");
-    }
-    /// we suppose failure to get modification time is not an error, therefore return current time
-    return modification_time;
-}
-
 std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request) const
 {
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(QueryPipeline(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings)));
+
+    QueryPipeline pipeline(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings));
+    return readInvalidateQuery(pipeline);
 }
 
 }

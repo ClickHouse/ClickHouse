@@ -3,7 +3,8 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -34,9 +35,9 @@ namespace Format
     static inline void init(
         const String & pattern,
         size_t argument_number,
-        const std::vector<std::optional<String>> & constant_strings,
+        const VectorWithMemoryTracking<std::optional<String>> & constant_strings,
         IndexPositions & index_positions,
-        std::vector<String> & substrings)
+        VectorWithMemoryTracking<String> & substrings)
     {
         /// Is current position after open curly brace.
         bool is_open_curly = false;
@@ -82,8 +83,7 @@ namespace Format
             if (pattern[i] == '{')
             {
                 /// Escaping handling
-                /// It is safe to access because of null termination
-                if (pattern[i + 1] == '{')
+                if (i + 1 < pattern.size() && pattern[i + 1] == '{')
                 {
                     ++i;
                     continue;
@@ -123,7 +123,7 @@ namespace Format
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot switch from automatic field numbering to manual field specification");
                     is_plain_numbering = true;
                     if (index_if_plain >= argument_number)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument is too big for formatting");
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not enough arguments to fill the placeholders in the format string");
                     index_positions.back() = index_if_plain++;
                 }
                 else

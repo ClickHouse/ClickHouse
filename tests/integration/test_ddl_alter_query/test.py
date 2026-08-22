@@ -5,7 +5,10 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node1",
+    main_configs=["configs/remote_servers.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
@@ -67,3 +70,53 @@ def test_alter(started_cluster):
     assert node2.query("SELECT somecolumn FROM testdb.test_table LIMIT 1") == "0\n"
     assert node3.query("SELECT somecolumn FROM testdb.test_table LIMIT 1") == "0\n"
     assert node4.query("SELECT somecolumn FROM testdb.test_table LIMIT 1") == "0\n"
+
+
+def test_ddl_queue_hostname_change(started_cluster):
+    node1.query(
+        "create table hostname_change on cluster test_cluster (n int) engine=Log"
+    )
+
+    # There's no easy way to change hostname of a container, so let's update values in zk
+    query_znode = node1.query(
+        "select max(name) from system.zookeeper where path='/clickhouse/task_queue/ddl'"
+    )[:-1]
+
+    value = (
+        node1.query(
+            "select value from system.zookeeper where path='/clickhouse/task_queue/ddl' and name='{}' format TSVRaw".format(
+                query_znode
+            )
+        )[:-1]
+        .replace("\\'", "#")
+        .replace("'", "\\'")
+        .replace("\n", "\\n")
+        .replace("#", "\\'")
+    )
+
+    finished_znode = node1.query(
+        "select name from system.zookeeper where path='/clickhouse/task_queue/ddl/{}/finished' and name like '%node1%'".format(
+            query_znode
+        )
+    )[:-1]
+
+    node1.query(
+        "insert into system.zookeeper (name, path, value) values ('{}', '/clickhouse/task_queue/ddl', '{}')".format(
+            query_znode, value.replace("node1", "imaginary.old.hostname")
+        )
+    )
+    started_cluster.get_kazoo_client("zoo1").delete(
+        "/clickhouse/task_queue/ddl/{}/finished/{}".format(query_znode, finished_znode)
+    )
+
+    node1.query(
+        "insert into system.zookeeper (name, path, value) values ('{}', '/clickhouse/task_queue/ddl/{}/finished', '0\\n')".format(
+            finished_znode.replace("node1", "imaginary.old.hostname"), query_znode
+        )
+    )
+
+    node1.restart_clickhouse(kill=True)
+
+    node1.query(
+        "create table hostname_change2 on cluster test_cluster (n int) engine=Log"
+    )

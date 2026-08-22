@@ -1,8 +1,8 @@
 SELECT 'check invalid params';
-SELECT IPv6CIDRToRange(1, 1); -- { serverError 43 }
-SELECT IPv6CIDRToRange('1234', 1); -- { serverError 43 }
-SELECT IPv6CIDRToRange(toFixedString('1234', 10), 1); -- { serverError 43 }
-SELECT IPv6CIDRToRange(toFixedString('1234', 16), toUInt16(1)); -- { serverError 43 }
+SELECT IPv6CIDRToRange(1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT IPv6CIDRToRange('1234', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT IPv6CIDRToRange(toFixedString('1234', 10), 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT IPv6CIDRToRange(toFixedString('1234', 16), toUInt16(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'tests';
 

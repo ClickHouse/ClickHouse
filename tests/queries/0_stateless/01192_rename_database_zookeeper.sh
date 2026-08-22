@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest
+# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree, no-flaky-check, no-azure-blob-storage
+# no-shared-merge-tree: database ordinary not supported
+# no-azure-blob-storage: this test runs concurrent `INSERT` queries with `sleepEachRow` while
+#   issuing `RENAME DATABASE`, and exceeds the test framework timeout reliably on slow Azure
+#   blob storage. CIDB shows 19 failures / 4482 OKs (0.42%) on
+#   `Stateless tests (arm_asan_ubsan, azure, sequential)`, with 0 failures across 50K+ runs
+#   on every other configuration. Coverage is preserved by other sanitizer/storage configs.
+
+# Creation of a database with Ordinary engine emits a warning.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
+
+# Creation of a database with Ordinary engine emits a warning.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,11 +32,11 @@ $CLICKHOUSE_CLIENT -q "SELECT engine, splitByChar('/', data_path)[-2], uuid, spl
 
 # 3. check RENAME don't wait for INSERT
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01192.mt (n UInt64) ENGINE=MergeTree ORDER BY n"
-$CLICKHOUSE_CLIENT -q "INSERT INTO test_01192.mt SELECT number + sleepEachRow(1.5) FROM numbers(10)" && echo "inserted" &
+$CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 15000000 -q "INSERT INTO test_01192.mt SELECT number + sleepEachRow(1.5) FROM numbers(10)" && echo "inserted" &
 sleep 1
 
 $CLICKHOUSE_CLIENT -q "RENAME DATABASE test_01192 TO default" 2>&1| grep -F "already exists" > /dev/null && echo "ok"
-$CLICKHOUSE_CLIENT -q "RENAME DATABASE test_01192_notexisting TO test_01192_renamed" 2>&1| grep -F "doesn't exist" > /dev/null && echo "ok"
+$CLICKHOUSE_CLIENT -q "RENAME DATABASE test_01192_notexisting TO test_01192_renamed" 2>&1| grep -F "does not exist" > /dev/null && echo "ok"
 $CLICKHOUSE_CLIENT -q "RENAME DATABASE test_01192 TO test_01192_renamed" && echo "renamed"
 wait
 
@@ -50,7 +62,7 @@ $CLICKHOUSE_CLIENT -q "RENAME TABLE test_01192.mt TO test_01192_atomic.mt, test_
 # 6. check data after RENAME
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_atomic.mt"
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_atomic.rmt"
-$CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_atomic.mv" 2>&1| grep -F "doesn't exist" > /dev/null && echo "ok"
+$CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_atomic.mv" 2>&1| grep -F "does not exist" > /dev/null && echo "ok"
 
 # 7. create dictionary and check it
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01192.mt (n UInt64, _part String) ENGINE=Memory" # mock
@@ -60,7 +72,7 @@ $CLICKHOUSE_CLIENT -q "SELECT database, name, status, origin FROM system.diction
 $CLICKHOUSE_CLIENT -q "SELECT dictGet('test_01192_atomic.dict', '_part', toUInt64(1))"
 
 # 8. check RENAME don't wait for INSERT
-$CLICKHOUSE_CLIENT -q "INSERT INTO test_01192_atomic.mt SELECT number + sleepEachRow(1) + 10 FROM numbers(10)" && echo "inserted" &
+$CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 10000000 -q "INSERT INTO test_01192_atomic.mt SELECT number + sleepEachRow(1) + 10 FROM numbers(10)" && echo "inserted" &
 sleep 1
 
 $CLICKHOUSE_CLIENT --check_table_dependencies=0 -q "RENAME DATABASE test_01192 TO test_01192_renamed" 2>&1| grep -F "not supported" > /dev/null && echo "ok"

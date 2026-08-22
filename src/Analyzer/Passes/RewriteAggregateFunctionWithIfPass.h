@@ -20,7 +20,7 @@ public:
         return "Rewrite aggregate functions with if expression as argument when logically equivalent";
     }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

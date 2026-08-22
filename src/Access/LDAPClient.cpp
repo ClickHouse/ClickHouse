@@ -18,7 +18,8 @@
 namespace
 {
 
-template <typename T, typename = std::enable_if_t<std::is_fundamental_v<std::decay_t<T>>>>
+template <typename T>
+requires std::is_fundamental_v<std::decay_t<T>>
 void updateHash(SipHash & hash, const T & value)
 {
     hash.update(value);
@@ -63,6 +64,7 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
     ::updateHash(hash, bind_dn);
     ::updateHash(hash, user);
     ::updateHash(hash, password);
+    ::updateHash(hash, static_cast<int>(follow_referrals)); // Include follow referral behavior
 
     if (user_dn_detection)
         user_dn_detection->updateHash(hash);
@@ -92,7 +94,7 @@ namespace
 
         for (auto ch : src)
         {
-            switch (ch)
+            switch (ch) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case ',':
                 case '\\':
@@ -171,7 +173,7 @@ namespace
 
 void LDAPClient::handleError(int result_code, String text)
 {
-    std::scoped_lock lock(ldap_global_mutex);
+    std::lock_guard lock(ldap_global_mutex);
 
     if (result_code != LDAP_SUCCESS)
     {
@@ -211,7 +213,7 @@ void LDAPClient::handleError(int result_code, String text)
 
 bool LDAPClient::openConnection()
 {
-    std::scoped_lock lock(ldap_global_mutex);
+    std::lock_guard lock(ldap_global_mutex);
 
     closeConnection();
 
@@ -245,6 +247,13 @@ bool LDAPClient::openConnection()
         handleError(ldap_set_option(handle, LDAP_OPT_PROTOCOL_VERSION, &value));
     }
 
+#ifdef LDAP_OPT_REFERRALS
+    handleError(ldap_set_option(
+        handle,
+        LDAP_OPT_REFERRALS,
+        params.follow_referrals ? LDAP_OPT_ON : LDAP_OPT_OFF));
+#endif
+
     handleError(ldap_set_option(handle, LDAP_OPT_RESTART, LDAP_OPT_ON));
 
 #ifdef LDAP_OPT_KEEPCONN
@@ -253,7 +262,7 @@ bool LDAPClient::openConnection()
 
 #ifdef LDAP_OPT_TIMEOUT
     {
-        ::timeval operation_timeout;
+        ::timeval operation_timeout{};
         operation_timeout.tv_sec = params.operation_timeout.count();
         operation_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_TIMEOUT, &operation_timeout));
@@ -262,7 +271,7 @@ bool LDAPClient::openConnection()
 
 #ifdef LDAP_OPT_NETWORK_TIMEOUT
     {
-        ::timeval network_timeout;
+        ::timeval network_timeout{};
         network_timeout.tv_sec = params.network_timeout.count();
         network_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_NETWORK_TIMEOUT, &network_timeout));
@@ -351,7 +360,7 @@ bool LDAPClient::openConnection()
     {
         case LDAPClient::Params::SASLMechanism::SIMPLE:
         {
-            ::berval cred;
+            ::berval cred{};
             cred.bv_val = const_cast<char *>(params.password.c_str());
             cred.bv_len = params.password.size();
 
@@ -389,7 +398,7 @@ bool LDAPClient::openConnection()
 
 void LDAPClient::closeConnection() noexcept
 {
-    std::scoped_lock lock(ldap_global_mutex);
+    std::lock_guard lock(ldap_global_mutex);
 
     if (!handle)
         return;
@@ -403,7 +412,7 @@ void LDAPClient::closeConnection() noexcept
 
 LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 {
-    std::scoped_lock lock(ldap_global_mutex);
+    std::lock_guard lock(ldap_global_mutex);
 
     SearchResults result;
 
@@ -449,7 +458,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
          msg = ldap_next_message(handle, msg)
     )
     {
-        switch (ldap_msgtype(msg))
+        switch (ldap_msgtype(msg)) // NOLINT(bugprone-switch-missing-default-case)
         {
             case LDAP_RES_SEARCH_ENTRY:
             {
@@ -466,7 +475,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         }
                     });
 
-                    ::berval bv;
+                    ::berval bv{};
 
                     handleError(ldap_get_dn_ber(handle, msg, &ber, &bv));
 
@@ -531,7 +540,12 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 
                     for (size_t i = 0; referrals[i]; ++i)
                     {
-                        LOG_WARNING(&Poco::Logger::get("LDAPClient"), "Received reference during LDAP search but not following it: {}", referrals[i]);
+                        if (params.follow_referrals)
+                            LOG_TRACE(getLogger("LDAPClient"), "Received LDAP search reference: {} (library referral chasing enabled)",
+                            referrals[i]);
+                        else
+                            LOG_TRACE(getLogger("LDAPClient"), "Received LDAP search reference but not following it: {}",
+                            referrals[i]);
                     }
                 }
 
@@ -548,7 +562,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 
                 if (rc != LDAP_SUCCESS)
                 {
-                    String message = "LDAP search failed";
+                    String message;
 
                     const char * raw_err_str = ldap_err2string(rc);
                     if (raw_err_str && *raw_err_str != '\0')
@@ -569,7 +583,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         message += matched_msg;
                     }
 
-                    throw Exception::createDeprecated(message, ErrorCodes::LDAP_ERROR);
+                    throw Exception(ErrorCodes::LDAP_ERROR, "LDAP search failed{}", message);
                 }
 
                 break;

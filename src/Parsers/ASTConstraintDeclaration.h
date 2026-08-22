@@ -2,6 +2,8 @@
 
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -17,19 +19,22 @@ public:
     };
 
     String name;
-    Type type;
-    IAST * expr;
+    Type type{};
+    IAST * expr{};
 
     String getID(char) const override { return "Constraint"; }
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&expr));
+        f(&expr, nullptr);
     }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

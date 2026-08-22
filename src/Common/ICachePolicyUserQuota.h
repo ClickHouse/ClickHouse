@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/UUID.h>
 #include <base/types.h>
 
 namespace DB
@@ -15,14 +16,17 @@ class ICachePolicyUserQuota
 {
 public:
     /// Register or update the user's quota for the given resource.
-    virtual void setQuotaForUser(const String & user_name, size_t max_size_in_bytes, size_t max_entries) = 0;
+    virtual void setQuotaForUser(const UUID & user_id, size_t max_size_in_bytes, size_t max_entries) = 0;
 
     /// Update the actual resource usage for the given user.
-    virtual void increaseActual(const String & user_name, size_t entry_size_in_bytes) = 0;
-    virtual void decreaseActual(const String & user_name, size_t entry_size_in_bytes) = 0;
+    virtual void increaseActual(const UUID & user_id, size_t entry_size_in_bytes) = 0;
+    virtual void decreaseActual(const UUID & user_id, size_t entry_size_in_bytes) = 0;
 
     /// Is the user allowed to write a new entry into the cache?
-    virtual bool approveWrite(const String & user_name, size_t entry_size_in_bytes) const = 0;
+    virtual bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const = 0;
+
+    /// Clears the policy contents
+    virtual void clear() = 0;
 
     virtual ~ICachePolicyUserQuota() = default;
 };
@@ -33,10 +37,11 @@ using CachePolicyUserQuotaPtr = std::unique_ptr<ICachePolicyUserQuota>;
 class NoCachePolicyUserQuota : public ICachePolicyUserQuota
 {
 public:
-    void setQuotaForUser(const String & /*user_name*/, size_t /*max_size_in_bytes*/, size_t /*max_entries*/) override {}
-    void increaseActual(const String & /*user_name*/, size_t /*entry_size_in_bytes*/) override {}
-    void decreaseActual(const String & /*user_name*/, size_t /*entry_size_in_bytes*/) override {}
-    bool approveWrite(const String & /*user_name*/, size_t /*entry_size_in_bytes*/) const override { return true; }
+    void setQuotaForUser(const UUID & /*user_id*/, size_t /*max_size_in_bytes*/, size_t /*max_entries*/) override {}
+    void increaseActual(const UUID & /*user_id*/, size_t /*entry_size_in_bytes*/) override {}
+    void decreaseActual(const UUID & /*user_id*/, size_t /*entry_size_in_bytes*/) override {}
+    bool approveWrite(const UUID & /*user_id*/, size_t /*entry_size_in_bytes*/) const override { return true; }
+    void clear() override {}
 };
 
 

@@ -69,7 +69,7 @@ struct PackedHashMapCell : public HashMapCell<Key, TMapped, Hash, TState, Packed
     bool isZero(const State & state) const { return isZero(this->value.first, state); }
     static bool isZero(const Key key, const State & /*state*/) { return ZeroTraits::check(key); }
 
-    static inline bool bitEqualsByValue(key_type a, key_type b) { return a == b; }
+    static bool bitEqualsByValue(key_type a, key_type b) { return a == b; }
 
     template <size_t I>
     auto get() const

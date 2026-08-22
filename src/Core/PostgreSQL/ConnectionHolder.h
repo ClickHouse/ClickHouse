@@ -7,7 +7,9 @@
 #include <pqxx/pqxx>
 #include <Core/Types.h>
 #include <base/BorrowedObjectPool.h>
-#include "Connection.h"
+#include <Core/PostgreSQL/Connection.h>
+
+#include <atomic>
 
 
 namespace postgres
@@ -28,10 +30,25 @@ public:
 
     ConnectionHolder(const ConnectionHolder & other) = delete;
 
+    void setBroken() { is_broken = true; }
+
     ~ConnectionHolder()
     {
         if (auto_close)
+        {
             connection.reset();
+        }
+        else if (is_broken)
+        {
+            try
+            {
+                connection->getRef().reset();
+            }
+            catch (...)
+            {
+                connection.reset();
+            }
+        }
         pool->returnObject(std::move(connection));
     }
 
@@ -49,6 +66,8 @@ private:
     PoolPtr pool;
     ConnectionPtr connection;
     bool auto_close;
+    /// Written by the cancelling thread and by the thread that starts the read, which can race.
+    std::atomic<bool> is_broken = false;
 };
 
 using ConnectionHolderPtr = std::unique_ptr<ConnectionHolder>;

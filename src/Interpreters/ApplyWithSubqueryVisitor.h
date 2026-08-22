@@ -2,7 +2,8 @@
 
 #include <map>
 
-#include <Parsers/IAST.h>
+#include <base/types.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -18,6 +19,7 @@ public:
     struct Data
     {
         std::map<String, ASTPtr> subqueries;
+        std::map<String, ASTPtr> literals;
     };
 
     static void visit(ASTPtr & ast) { visit(ast, {}); }

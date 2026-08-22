@@ -1,12 +1,11 @@
 #pragma once
 
-#include <string>
-#include <unordered_map>
-
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <DataTypes/Serializations/ISerialization.h>
+
+#include <map>
+#include <string>
 
 
 namespace DB
@@ -14,25 +13,22 @@ namespace DB
 
 class WriteBuffer;
 
-class PrometheusTextOutputFormat : public IRowOutputFormat
+class PrometheusTextOutputFormat final : public IRowOutputFormat
 {
 public:
     PrometheusTextOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & format_settings_);
 
     String getName() const override { return "PrometheusTextOutputFormat"; }
-
-    /// https://github.com/prometheus/docs/blob/86386ed25bc8a5309492483ec7d18d0914043162/content/docs/instrumenting/exposition_formats.md
-    String getContentType() const override { return "text/plain; version=0.0.4; charset=UTF-8"; }
 
 protected:
 
     struct ColumnPositions
     {
-        size_t name;
-        size_t value;
+        size_t name{};
+        size_t value{};
         std::optional<size_t> help;
         std::optional<size_t> type;
         std::optional<size_t> labels;

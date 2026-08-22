@@ -1,19 +1,15 @@
 #pragma once
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
+#include <Common/VectorWithMemoryTracking.h>
 
-// for better debug: #include <Core/iostream_debug_helpers.h>
 
 /** The function will enumerate distinct values of the passed multidimensional arrays looking inside at the specified depths.
   * This is very unusual function made as a special order for our dear customer - Metrica web analytics system.
@@ -60,7 +56,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
@@ -68,7 +65,7 @@ class FunctionArrayEnumerateUniqRanked;
 class FunctionArrayEnumerateDenseRanked;
 
 using DepthType = uint32_t;
-using DepthTypes = std::vector<DepthType>;
+using DepthTypes = VectorWithMemoryTracking<DepthType>;
 
 struct ArraysDepths
 {
@@ -85,7 +82,7 @@ struct ArraysDepths
 };
 
 /// Return depth info about passed arrays
-ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments);
+ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments, const char * function_name);
 
 template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
@@ -102,11 +99,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
                 "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
                 getName(), arguments.size());
 
-        const ArraysDepths arrays_depths = getArraysDepths(arguments);
+        const ArraysDepths arrays_depths = getArraysDepths(arguments, Derived::name);
 
         /// Return type is the array of the depth as the maximum effective depth of arguments, containing UInt32.
 
@@ -124,7 +121,7 @@ private:
     static constexpr size_t INITIAL_SIZE_DEGREE = 6;
 
     void executeMethodImpl(
-        const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
+        const VectorWithMemoryTracking<const ColumnArray::Offsets *> & offsets_by_depth,
         const ColumnRawPtrs & columns,
         const ArraysDepths & arrays_depths,
         ColumnUInt32::Container & res_values) const;
@@ -132,22 +129,7 @@ private:
 
 
 /// Hash a set of keys into a UInt128 value.
-static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & indices, const ColumnRawPtrs & key_columns)
-{
-    UInt128 key;
-    SipHash hash;
-
-    for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
-    {
-        // Debug: const auto & field = (*key_columns[j])[indices[j]]; DUMP(j, indices[j], field);
-        key_columns[j]->updateHashWithValue(indices[j], hash);
-    }
-
-    hash.get128(key);
-
-    return key;
-}
-
+UInt128 hash128depths(const VectorWithMemoryTracking<size_t> & indices, const ColumnRawPtrs & key_columns);
 
 template <typename Derived>
 ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
@@ -159,7 +141,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     Columns array_holders;
     ColumnPtr offsets_column;
 
-    const ArraysDepths arrays_depths = getArraysDepths(arguments);
+    const ArraysDepths arrays_depths = getArraysDepths(arguments, Derived::name);
 
     /// If the column is Array - return it. If the const Array - materialize it, keep ownership and return.
     auto get_array_column = [&](const auto & column) -> const DB::ColumnArray *
@@ -176,8 +158,8 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         return array;
     };
 
-    std::vector<const ColumnArray::Offsets *> offsets_by_depth;
-    std::vector<ColumnPtr> offsetsptr_by_depth;
+    VectorWithMemoryTracking<const ColumnArray::Offsets *> offsets_by_depth;
+    VectorWithMemoryTracking<ColumnPtr> offsetsptr_by_depth;
 
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
@@ -218,17 +200,23 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             {
                 if (*offsets_by_depth[col_depth] != array->getOffsets())
                 {
-                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "Lengths and effective depths of all arrays passed to {} must be equal.", getName());
+                    throw Exception(
+                        ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                        "Lengths and effective depths of all arrays passed to {} must be equal",
+                        getName());
                 }
             }
         }
 
         if (col_depth < arrays_depths.depths[array_num])
         {
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                            "{}: Passed array number {} depth ({}) is more than the actual array depth ({}).",
-                            getName(), array_num, std::to_string(arrays_depths.depths[array_num]), col_depth);
+            throw Exception(
+                ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                "{}: Passed array number {} depth ({}) is more than the actual array depth ({})",
+                getName(),
+                array_num,
+                std::to_string(arrays_depths.depths[array_num]),
+                col_depth);
         }
 
         auto * array_data = &array->getData();
@@ -237,7 +225,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     }
 
     if (offsets_by_depth.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "No arrays passed to function {}", getName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No arrays passed to function {}", getName());
 
     auto res_nested = ColumnUInt32::create();
 
@@ -292,7 +280,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
 template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
-    const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
+    const VectorWithMemoryTracking<const ColumnArray::Offsets *> & offsets_by_depth,
     const ColumnRawPtrs & columns,
     const ArraysDepths & arrays_depths,
     ColumnUInt32::Container & res_values) const
@@ -306,14 +294,14 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
     Container indices;
 
-    std::vector<size_t> indices_by_depth(depth_to_look);
-    std::vector<size_t> current_offset_n_by_depth(depth_to_look);
-    std::vector<size_t> last_offset_by_depth(depth_to_look, 0); // For skipping empty arrays
+    VectorWithMemoryTracking<size_t> indices_by_depth(depth_to_look);
+    VectorWithMemoryTracking<size_t> current_offset_n_by_depth(depth_to_look);
+    VectorWithMemoryTracking<size_t> last_offset_by_depth(depth_to_look, 0); // For skipping empty arrays
 
     /// For arrayEnumerateDense variant: to calculate every distinct value.
     UInt32 rank = 0;
 
-    std::vector<size_t> columns_indices(columns.size());
+    VectorWithMemoryTracking<size_t> columns_indices(columns.size());
 
     /// For each array at the depth we want to look.
     ColumnArray::Offset prev_off = 0;

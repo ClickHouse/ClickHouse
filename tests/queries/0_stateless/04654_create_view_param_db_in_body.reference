@@ -1,0 +1,12 @@
+from	own	other
+subquery	other
+join	other
+union	2
+columns	other
+renamed	other
+in	own
+dictget	looked_up
+literal dependency enforced, released with the view
+parameterized body records no dependency on the current database
+materialized body substituted	1
+ordinary body keeps placeholder	1

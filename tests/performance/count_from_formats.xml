@@ -1,0 +1,68 @@
+<test>
+
+<settings>
+        <use_cache_for_count_from_files>0</use_cache_for_count_from_files>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>format</name>
+        <values>
+            <value>TabSeparated</value>
+            <value>TabSeparatedWithNames</value>
+            <value>TabSeparatedWithNamesAndTypes</value>
+            <value>CSV</value>
+            <value>CSVWithNames</value>
+            <value>CSVWithNamesAndTypes</value>
+            <value>CustomSeparated</value>
+            <value>CustomSeparatedWithNames</value>
+            <value>CustomSeparatedWithNamesAndTypes</value>
+            <value>Values</value>
+            <value>JSONEachRow</value>
+            <value>JSONCompactEachRow</value>
+            <value>JSONCompactEachRowWithNames</value>
+            <value>JSONCompactEachRowWithNamesAndTypes</value>
+            <value>JSON</value>
+            <value>JSONCompact</value>
+            <value>JSONColumns</value>
+            <value>JSONCompactColumns</value>
+            <value>JSONColumnsWithMetadata</value>
+            <value>JSONObjectEachRow</value>
+            <value>BSONEachRow</value>
+            <value>TSKV</value>
+            <value>Avro</value>
+            <value>MsgPack</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>format_fast</name>
+        <values>
+            <value>Protobuf</value>
+            <value>ProtobufList</value>
+            <value>CapnProto</value>
+            <value>ORC</value>
+            <value>Parquet</value>
+        </values>
+    </substitution>
+</substitutions>
+    
+<create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
+<create_query>CREATE TABLE IF NOT EXISTS table_{format_fast} (s String) ENGINE = File({format_fast})</create_query>
+
+<fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000 SETTINGS engine_file_truncate_on_insert=1</fill_query>
+<fill_query>INSERT INTO table_{format_fast} SELECT randomString(1000) FROM numbers(1000000) SETTINGS engine_file_truncate_on_insert=1</fill_query>
+
+<query>SELECT count() FROM table_{format} FORMAT Null</query>
+<query>SELECT count() FROM table_{format_fast} FORMAT Null</query>
+
+<query>SELECT count() FROM table_{format} group by _file, _path FORMAT Null</query>
+<query>SELECT count() FROM table_{format_fast} group by _file, _path FORMAT Null</query>
+
+<query>SELECT _path, _file FROM table_{format} group by _file, _path FORMAT Null</query>
+<query>SELECT _path, _file FROM table_{format_fast} group by _file, _path FORMAT Null</query>
+
+<drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
+<drop_query>DROP TABLE IF EXISTS table_{format_fast}</drop_query>
+
+</test>
+

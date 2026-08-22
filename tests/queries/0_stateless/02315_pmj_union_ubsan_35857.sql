@@ -1,4 +1,3 @@
--- Tags: no-upgrade-check
 
 SET join_algorithm = 'partial_merge';
 

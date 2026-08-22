@@ -3,7 +3,7 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/SortDescription.h>
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Common/ThreadPool.h>
 
 namespace DB
@@ -38,16 +38,20 @@ class FinishAggregatingInOrderAlgorithm final : public IMergingAlgorithm
 {
 public:
     FinishAggregatingInOrderAlgorithm(
-        const Block & header_,
+        SharedHeader header_,
         size_t num_inputs_,
         AggregatingTransformParamsPtr params_,
         const SortDescription & description_,
         size_t max_block_size_rows_,
-        size_t max_block_size_bytes_);
+        size_t max_block_size_bytes_,
+        size_t limit_hint_ = 0);
 
+    const char * getName() const override { return "FinishAggregatingInOrderAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
+
+    MergedStats getMergedStats() const override { return {.bytes = accumulated_bytes, .rows = accumulated_rows, .blocks = chunk_num}; }
 
 private:
     Chunk prepareToMerge();
@@ -75,7 +79,6 @@ private:
         bool isValid() const { return current_row < num_rows; }
     };
 
-    Block header;
     size_t num_inputs;
     AggregatingTransformParamsPtr params;
     SortDescriptionWithPositions description;
@@ -91,6 +94,12 @@ private:
     UInt64 chunk_num = 0;
     size_t accumulated_rows = 0;
     size_t accumulated_bytes = 0;
+
+    size_t total_merged_rows = 0;
+    size_t total_merged_bytes = 0;
+
+    size_t limit_hint = 0;
+    size_t finalized_group_batches = 0;
 };
 
 }

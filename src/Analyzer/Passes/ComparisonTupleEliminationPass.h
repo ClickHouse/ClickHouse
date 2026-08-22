@@ -17,7 +17,7 @@ public:
 
     String getDescription() override { return "Rewrite tuples comparison into equivalent comparison of tuples arguments"; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

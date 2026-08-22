@@ -1,0 +1,92 @@
+-- single level: the mismatched column is already rejected for PREWHERE --
+-- nested: must be rejected too, not abort in ActionsDAG --
+-- a column whose type matches all the way down still supports PREWHERE --
+10
+0	1
+1	2
+2	3
+-- the same predicate as WHERE keeps working --
+9
+10
+1	2
+2	3
+3	4
+-- view over a mismatched target is already rejected --
+-- view over a view must be rejected too --
+-- a matching column still supports PREWHERE through the chain --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+1	2
+2	3
+3	4
+-- Merge over a materialized view must be rejected too --
+-- and a matching column still works --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+1	2
+2	3
+3	4
+-- Buffer over a Merge with a mismatched leaf must be rejected too --
+-- a matching column still supports PREWHERE through the Buffer --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+1	2
+2	3
+3	4
+-- a column the destination rejects stays rejected, whatever the Buffer declares --
+-- a Buffer-only type drift converts at read: PREWHERE fails like the WHERE twin, not with an abort --
+-- reading a destination-drifted column next to a clean PREWHERE must not abort --
+10
+0	1
+1	2
+2	3
+-- a row policy is a filter too: same converting prefix, same pruning --
+0	1
+1	2
+2	3
+-- a policy on a destination-drifted column is filtered above the read, not pushed --
+1	2
+2	3
+3	4
+-- a destination ALIAS twin is rejected for PREWHERE, not forwarded --
+-- a MATERIALIZED twin is physical in the destination and stays supported --
+5
+5
+5
+-- a target ALIAS twin behind a view is rejected for PREWHERE too --
+-- a column missing from one child is rejected for PREWHERE --
+-- a column every child declares still supports PREWHERE, and WHERE sees the defaults --
+5
+5
+-- a policy on the missing column filters above the read instead of failing inside it --
+5
+5
+-- a policy on the shared column still pushes --
+5
+-- Alias over a nested Merge must be rejected too --
+-- a matching column still supports PREWHERE through the Alias --
+10
+0	1
+1	2
+2	3
+-- the same predicates as WHERE keep working --
+9
+10
+1	2
+2	3
+3	4

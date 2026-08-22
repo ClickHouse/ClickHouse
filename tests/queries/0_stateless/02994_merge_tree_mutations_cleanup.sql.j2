@@ -1,0 +1,16 @@
+-- Tags: no-fasttest
+-- no-fasttest: Slow wait
+drop table if exists data_rmt;
+drop table if exists data_mt;
+
+create table data_rmt (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', '{table}') order by tuple() settings finished_mutations_to_keep=0, merge_tree_clear_old_parts_interval_seconds=1;
+create table data_mt (key Int) engine=MergeTree() order by tuple() settings finished_mutations_to_keep=0, merge_tree_clear_old_parts_interval_seconds=1;
+
+{% for table in ['data_rmt', 'data_mt'] %}
+alter table {{table}} delete where 1 settings mutations_sync = 1;
+select 'mutations after ALTER for {{table}}', count() from system.mutations where database = currentDatabase() and table = '{{table}}';
+-- merge_tree_clear_old_parts_interval_seconds=1, but wait few seconds more
+select sleep(5) settings function_sleep_max_microseconds_per_block=10e6 format Null;
+select 'mutations after cleanup for {{table}}', count() from system.mutations where database = currentDatabase() and table = '{{table}}';
+drop table {{table}};
+{% endfor %}

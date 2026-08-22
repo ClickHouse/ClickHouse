@@ -1,5 +1,7 @@
 import os
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -41,7 +43,7 @@ def started_cluster():
             CREATE TABLE mydb.filtered_table2 (a UInt8, b UInt8, c UInt8, d UInt8) ENGINE MergeTree ORDER BY a;
             INSERT INTO mydb.filtered_table2 values (0, 0, 0, 0), (1, 2, 3, 4), (4, 3, 2, 1), (0, 0, 6, 0);
 
-            CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
+            CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, bb ALIAS b + 1, c UInt16 ALIAS a + bb - 1) ENGINE MergeTree ORDER BY a;
             INSERT INTO mydb.filtered_table3 values (0, 0), (0, 1), (1, 0), (1, 1);
 
             CREATE TABLE mydb.`.filtered_table4` (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
@@ -76,7 +78,7 @@ def test_introspection():
             "mydb",
             "filtered_table1",
             "6068883a-0e9d-f802-7e22-0144f8e66d3c",
-            "users.xml",
+            "users_xml",
             "1",
             0,
             0,
@@ -89,7 +91,7 @@ def test_introspection():
             "mydb",
             "filtered_table2",
             "c019e957-c60b-d54e-cc52-7c90dac5fb01",
-            "users.xml",
+            "users_xml",
             "1",
             0,
             0,
@@ -102,7 +104,7 @@ def test_introspection():
             "mydb",
             "filtered_table3",
             "4cb080d0-44e8-dbef-6026-346655143628",
-            "users.xml",
+            "users_xml",
             "1",
             0,
             0,
@@ -115,7 +117,7 @@ def test_introspection():
             "mydb",
             "local",
             "5b23c389-7e18-06bf-a6bc-dd1afbbc0a97",
-            "users.xml",
+            "users_xml",
             "a = 1",
             0,
             0,
@@ -128,7 +130,7 @@ def test_introspection():
             "mydb",
             "filtered_table1",
             "9e8a8f62-4965-2b5e-8599-57c7b99b3549",
-            "users.xml",
+            "users_xml",
             "a = 1",
             0,
             0,
@@ -141,7 +143,7 @@ def test_introspection():
             "mydb",
             "filtered_table2",
             "cffae79d-b9bf-a2ef-b798-019c18470b25",
-            "users.xml",
+            "users_xml",
             "a + b < 1 or c - d > 5",
             0,
             0,
@@ -154,7 +156,7 @@ def test_introspection():
             "mydb",
             "filtered_table3",
             "12fc5cef-e3da-3940-ec79-d8be3911f42b",
-            "users.xml",
+            "users_xml",
             "c = 1",
             0,
             0,
@@ -167,7 +169,7 @@ def test_introspection():
             "mydb",
             "local",
             "cdacaeb5-1d97-f99d-2bb0-4574f290629c",
-            "users.xml",
+            "users_xml",
             "1",
             0,
             0,

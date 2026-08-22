@@ -1,9 +1,9 @@
 import logging
+import random
+import threading
 import time
 
 import pytest
-import threading
-import random
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -34,6 +34,16 @@ def cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def drop_table(node, table_name, replicated):
+
+    create_table_statement = f"DROP TABLE {table_name} SYNC"
+
+    if replicated:
+        node.query_with_retry(create_table_statement)
+    else:
+        node.query(create_table_statement)
 
 
 def create_table(node, table_name, replicated, additional_settings):
@@ -70,11 +80,11 @@ def create_table(node, table_name, replicated, additional_settings):
 
 
 @pytest.mark.parametrize(
-    "allow_remote_fs_zero_copy_replication,replicated_engine",
-    [(False, False), (False, True), (True, True)],
+    "replicated_engine",
+    [False, True],
 )
 def test_alter_moving(
-    cluster, allow_remote_fs_zero_copy_replication, replicated_engine
+    cluster, replicated_engine
 ):
     """
     Test that we correctly move parts during ALTER TABLE
@@ -89,9 +99,6 @@ def test_alter_moving(
 
     # Different names for logs readability
     table_name = "test_table"
-    if allow_remote_fs_zero_copy_replication:
-        table_name = "test_table_zero_copy"
-        additional_settings["allow_remote_fs_zero_copy_replication"] = 1
     if replicated_engine:
         table_name = table_name + "_replicated"
 
@@ -158,6 +165,9 @@ def test_alter_moving(
 
     assert data_digest == "1000\n"
 
+    for node in nodes:
+        drop_table(node, table_name, replicated_engine)
+
 
 def test_delete_race_leftovers(cluster):
     """
@@ -218,23 +228,34 @@ def test_delete_race_leftovers(cluster):
         time.sleep(5)
 
     # Check that we correctly deleted all outdated parts and no leftovers on s3
-    known_remote_paths = set(
-        node.query(
-            f"SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 's32'"
-        ).splitlines()
-    )
-
-    all_remote_paths = set(
-        obj.object_name
-        for obj in cluster.minio_client.list_objects(
-            cluster.minio_bucket, "data2/", recursive=True
+    # Do it with retries because we delete blobs in the background
+    # and it can be race condition between removing from remote_data_paths and deleting blobs
+    all_remote_paths = set()
+    known_remote_paths = set()
+    for i in range(100):
+        known_remote_paths = set(
+            node.query(
+                "SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 's32'"
+            ).splitlines()
         )
-    )
 
-    # Some blobs can be deleted after we listed remote_data_paths
-    # It's alright, thus we check only that all remote paths are known
-    # (in other words, all remote paths is subset of known paths)
+        all_remote_paths = set(
+            obj.object_name
+            for obj in cluster.minio_client.list_objects(
+                cluster.minio_bucket, "data2/", recursive=True
+            )
+        )
+
+        # Some blobs can be deleted after we listed remote_data_paths
+        # It's alright, thus we check only that all remote paths are known
+        # (in other words, all remote paths is subset of known paths)
+        if all_remote_paths == {p for p in known_remote_paths if p in all_remote_paths}:
+            break
+
+        time.sleep(1)
+
     assert all_remote_paths == {p for p in known_remote_paths if p in all_remote_paths}
 
     # Check that we have all data
     assert table_digest == node.query(table_digest_query)
+    drop_table(node, table_name, replicated=True)

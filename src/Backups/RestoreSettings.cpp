@@ -7,7 +7,10 @@
 #include <Parsers/ASTSetQuery.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Backups/SettingsFieldOptionalBool.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
+#include <Backups/SettingsFieldOptionalString.h>
+#include <Backups/SettingsFieldOptionalUInt64.h>
 
 
 namespace DB
@@ -30,7 +33,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                const String & str = field.get<const String &>();
+                const String & str = field.safeGet<String>();
                 if (str == "1" || boost::iequals(str, "true") || boost::iequals(str, "create"))
                 {
                     value = RestoreTableCreationMode::kCreate;
@@ -53,7 +56,7 @@ namespace
 
             if (field.getType() == Field::Types::UInt64)
             {
-                UInt64 number = field.get<UInt64>();
+                UInt64 number = field.safeGet<UInt64>();
                 if (number == 1)
                 {
                     value = RestoreTableCreationMode::kCreate;
@@ -80,6 +83,17 @@ namespace
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreTableCreationMode: {}", static_cast<int>(value));
         }
+
+        String toString() const
+        {
+            switch (value)
+            {
+                case RestoreTableCreationMode::kCreate: return "true";
+                case RestoreTableCreationMode::kMustExist: return "false";
+                case RestoreTableCreationMode::kCreateIfNotExists: return "if-not-exists";
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreTableCreationMode: {}", static_cast<int>(value));
+        }
     };
 
     using SettingFieldRestoreDatabaseCreationMode = SettingFieldRestoreTableCreationMode;
@@ -94,7 +108,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                const String & str = field.get<const String &>();
+                const String & str = field.safeGet<String>();
                 if (str == "1" || boost::iequals(str, "true") || boost::iequals(str, "create"))
                 {
                     value = RestoreAccessCreationMode::kCreate;
@@ -117,7 +131,7 @@ namespace
 
             if (field.getType() == Field::Types::UInt64)
             {
-                UInt64 number = field.get<UInt64>();
+                UInt64 number = field.safeGet<UInt64>();
                 if (number == 1)
                 {
                     value = RestoreAccessCreationMode::kCreate;
@@ -138,6 +152,17 @@ namespace
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreAccessCreationMode: {}", static_cast<int>(value));
         }
+
+        String toString() const
+        {
+            switch (value)
+            {
+                case RestoreAccessCreationMode::kCreate: return "true";
+                case RestoreAccessCreationMode::kCreateIfNotExists: return "if-not-exists";
+                case RestoreAccessCreationMode::kReplace: return "replace";
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreAccessCreationMode: {}", static_cast<int>(value));
+        }
     };
 
     using SettingFieldRestoreUDFCreationMode = SettingFieldRestoreAccessCreationMode;
@@ -148,6 +173,9 @@ namespace
     M(String, id) \
     M(String, password) \
     M(Bool, structure_only) \
+    M(OptionalBool, restore_table_data) \
+    M(OptionalBool, restore_access_entities) \
+    M(OptionalBool, restore_functions) \
     M(RestoreTableCreationMode, create_table) \
     M(RestoreDatabaseCreationMode, create_database) \
     M(Bool, allow_different_table_def) \
@@ -159,11 +187,18 @@ namespace
     M(UInt64, replica_num_in_backup) \
     M(Bool, allow_non_empty_tables) \
     M(RestoreAccessCreationMode, create_access) \
-    M(Bool, allow_unresolved_access_dependencies) \
+    M(Bool, skip_unresolved_access_dependencies) \
+    M(Bool, restore_access_entities_with_current_grants) \
+    M(Bool, update_access_entities_dependents) \
     M(RestoreUDFCreationMode, create_function) \
+    M(Bool, allow_azure_native_copy) \
     M(Bool, allow_s3_native_copy) \
+    M(Bool, use_same_s3_credentials_for_base_backup) \
+    M(Bool, use_same_password_for_base_backup) \
+    M(Bool, restore_broken_parts_as_detached) \
     M(Bool, internal) \
     M(String, host_id) \
+    M(OptionalString, storage_policy) \
     M(OptionalUUID, restore_uuid)
 
 
@@ -176,13 +211,23 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
         const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
         for (const auto & setting : settings)
         {
-#define GET_SETTINGS_FROM_RESTORE_QUERY_HELPER(TYPE, NAME) \
+#define GET_RESTORE_SETTINGS_FROM_QUERY(TYPE, NAME) \
             if (setting.name == #NAME) \
                 res.NAME = SettingField##TYPE{setting.value}.value; \
             else
 
-            LIST_OF_RESTORE_SETTINGS(GET_SETTINGS_FROM_RESTORE_QUERY_HELPER)
-            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
+            LIST_OF_RESTORE_SETTINGS(GET_RESTORE_SETTINGS_FROM_QUERY)
+            /// else
+            /// `allow_unresolved_access_dependencies` is an obsolete name.
+            if (setting.name == "allow_unresolved_access_dependencies")
+            {
+                res.skip_unresolved_access_dependencies = SettingFieldBool{setting.value}.value;
+            }
+            else
+            {
+                /// (if setting.name is not the name of a field of BackupSettings)
+                res.core_settings.emplace_back(setting);
+            }
         }
     }
 
@@ -195,24 +240,56 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
     return res;
 }
 
-void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
+SettingsChanges RestoreSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
 {
-    auto query_settings = std::make_shared<ASTSetQuery>();
-    query_settings->is_standalone = false;
+    SettingsChanges core;
 
-    static const RestoreSettings default_settings;
-    bool all_settings_are_default = true;
+    if (!query.settings)
+        return core;
 
-#define SET_SETTINGS_IN_RESTORE_QUERY_HELPER(TYPE, NAME) \
-    if ((NAME) != default_settings.NAME) \
-    { \
-        query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
-        all_settings_are_default = false; \
+    const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
+    for (const auto & setting : settings)
+    {
+        /// `allow_unresolved_access_dependencies` is an obsolete name handled
+        /// specially in `fromRestoreQuery`, so it is not part of
+        /// `LIST_OF_RESTORE_SETTINGS` and must be listed explicitly.
+        if (setting.name == "allow_unresolved_access_dependencies")
+            continue;
+
+        bool is_restore_specific = false;
+
+#define CHECK_RESTORE_SETTING_NAME(TYPE, NAME) \
+        if (setting.name == #NAME) \
+            is_restore_specific = true;
+
+        LIST_OF_RESTORE_SETTINGS(CHECK_RESTORE_SETTING_NAME)
+#undef CHECK_RESTORE_SETTING_NAME
+
+        if (!is_restore_specific)
+            core.emplace_back(setting);
     }
 
-    LIST_OF_RESTORE_SETTINGS(SET_SETTINGS_IN_RESTORE_QUERY_HELPER)
+    return core;
+}
 
-    if (all_settings_are_default)
+void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
+{
+    auto query_settings = make_intrusive<ASTSetQuery>();
+    query_settings->is_standalone = false;
+
+    /// Copy the fields of the RestoreSettings to the query.
+    static const RestoreSettings default_settings;
+
+#define COPY_RESTORE_SETTINGS_TO_QUERY(TYPE, NAME) \
+    if ((NAME) != default_settings.NAME) \
+        query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
+
+    LIST_OF_RESTORE_SETTINGS(COPY_RESTORE_SETTINGS_TO_QUERY)
+
+    /// Copy the core settings to the query too.
+    query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
+
+    if (query_settings->changes.empty())
         query_settings = nullptr;
 
     query.settings = query_settings;
@@ -224,6 +301,33 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
         query.reset(query.base_backup_name);
 
     query.cluster_host_ids = !cluster_host_ids.empty() ? BackupSettings::Util::clusterHostIDsToAST(cluster_host_ids) : nullptr;
+}
+
+std::map<String, String> RestoreSettings::getSerializedSettings() const
+{
+    std::map<String, String> res;
+
+    /// Serialize via the setting field's own `toString` (the canonical representation, consistent with
+    /// `system.query_log.Settings` and `engine_settings`) rather than going through `FieldVisitorToString`.
+#define SERIALIZE_RESTORE_SETTING(TYPE, NAME) \
+    res[#NAME] = SettingField##TYPE{NAME}.toString();
+
+    LIST_OF_RESTORE_SETTINGS(SERIALIZE_RESTORE_SETTING)
+#undef SERIALIZE_RESTORE_SETTING
+
+    /// The three granular restore settings default to the effective inverse of `structure_only`.
+    /// Log those effective values rather than the unset optional values so `system.backups` and
+    /// `system.backup_log` accurately describe the behavior of a restore operation.
+    res["restore_table_data"] = shouldRestoreTableData() ? "1" : "0";
+    res["restore_access_entities"] = shouldRestoreAccessEntities() ? "1" : "0";
+    res["restore_functions"] = shouldRestoreFunctions() ? "1" : "0";
+
+    /// Never expose the password; drop purely internal fields that are not user-facing settings
+    /// (`id` has its own column, the rest are internal plumbing for RESTORE ON CLUSTER).
+    for (const auto * key : {"password", "id", "internal", "host_id", "restore_uuid"})
+        res.erase(key);
+
+    return res;
 }
 
 }

@@ -19,8 +19,8 @@ SOURCE(CLICKHOUSE(TABLE '02181_test_table'))
 LAYOUT(HASHED())
 LIFETIME(0);
 
-DETACH TABLE 02181_test_dictionary; --{serverError 520}
-ATTACH TABLE 02181_test_dictionary; --{serverError 80}
+DETACH TABLE 02181_test_dictionary; --{serverError CANNOT_DETACH_DICTIONARY_AS_TABLE}
+ATTACH TABLE 02181_test_dictionary; --{serverError INCORRECT_QUERY}
 
 DETACH DICTIONARY 02181_test_dictionary;
 ATTACH DICTIONARY 02181_test_dictionary;

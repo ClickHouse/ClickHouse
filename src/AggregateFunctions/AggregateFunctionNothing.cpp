@@ -8,14 +8,36 @@ namespace DB
 
 struct Settings;
 
+void registerAggregateFunctionNothing(AggregateFunctionFactory & factory);
 void registerAggregateFunctionNothing(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("nothing", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-    {
-        assertNoParameters(name, parameters);
+    factory.registerFunction(NameAggregateFunctionNothing::name, {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            return std::make_shared<AggregateFunctionNothing>(argument_types, parameters);
+        },
+        {.description = R"DOC(Internal aggregate function that accepts any arguments and returns a value of type Nothing; used as a placeholder, for example for the state of an aggregation over an empty set.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}
+    });
 
-        auto result_type = argument_types.empty() ? std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()) : argument_types.front();
-        return std::make_shared<AggregateFunctionNothing>(argument_types, parameters, result_type);
+    factory.registerFunction(NameAggregateFunctionNothingNull::name, {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            return std::make_shared<AggregateFunctionNothingNull>(argument_types, parameters);
+        },
+        {.description = R"DOC(Internal aggregate function that accepts any arguments and returns a value of type Nullable(Nothing); the nullable variant of the nothing aggregate function.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}
+    });
+
+
+    factory.registerFunction(NameAggregateFunctionNothingUInt64::name, {
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            return std::make_shared<AggregateFunctionNothingUInt64>(argument_types, parameters);
+        },
+        {.description = R"DOC(Internal aggregate function that accepts any arguments and returns a UInt64; a variant of the nothing aggregate function used where a default numeric value is required.)DOC", .category = FunctionDocumentation::Category::AggregateFunction},
+        AggregateFunctionProperties{ .returns_default_when_only_null = true }
     });
 }
 

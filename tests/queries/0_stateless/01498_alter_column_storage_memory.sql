@@ -5,7 +5,9 @@ CREATE TABLE defaults
 	s String
 )ENGINE = Memory();
 
-ALTER TABLE defaults ADD COLUMN m Int8; -- { serverError 48 }
-ALTER TABLE defaults DROP COLUMN n; -- { serverError 48 }
+ALTER TABLE defaults ADD COLUMN m Int8;
+ALTER TABLE defaults DROP COLUMN n;
+
+DESC TABLE defaults;
 
 DROP TABLE defaults;
