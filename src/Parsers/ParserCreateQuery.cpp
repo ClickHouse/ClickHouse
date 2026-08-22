@@ -872,6 +872,17 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     bool short_attach = attach && !from_path;
     if (short_attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
     {
+        /// The short `ATTACH` form takes the whole table definition from the stored metadata, so it has
+        /// nowhere to keep the parsed `TO INNER UUID` value: only the presence flag would survive, and
+        /// `formatQueryImpl` prints the clause from `targets`, which this form never builds. The clause
+        /// would therefore be silently dropped by formatting - and the query is rejected downstream
+        /// anyway (`InterpreterCreateQuery` refuses to change the definition of a short `ATTACH`).
+        /// Reject it here so that no `ASTCreateQuery` that cannot be formatted back is ever produced.
+        if (to_inner_uuid)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ATTACH applies the table definition from stored metadata, so a 'TO INNER UUID' clause "
+                "cannot be specified in the query itself");
+
         auto query = make_intrusive<ASTCreateQuery>();
         node = query;
 
@@ -884,7 +895,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
         query->has_uuid_clause = table_id->has_uuid;
-        query->has_inner_uuid_clause = to_inner_uuid != nullptr;
         query->setIsTemporary(is_temporary);
 
         query->attach_as_replicated = attach_as_replicated;
