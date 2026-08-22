@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'Visualisations et tableaux de bord avec ClickStack'
-sidebarTitle: 'Tableaux de bord'
+sidebarTitle: 'Vue d’ensemble'
 description: 'Visualisations et tableaux de bord avec ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'tableaux de bord', 'visualisation', 'monitoring', 'observabilité']
@@ -55,7 +55,7 @@ Pour les exemples ci-dessous, nous utilisons le jeu de données distant disponib
 
     Notez que vous pouvez filtrer les événements soit avec une clause SQL `WHERE`, soit avec la syntaxe Lucene, et définir la plage de temps sur laquelle les événements doivent être visualisés. Les visualisations avec plusieurs séries sont également prises en charge.
 
-    Par exemple, filtrez sur le service `frontend` en ajoutant le filtre `ServiceName:"frontend"`. Ajoutez une deuxième série pour le nombre d&#39;événements au fil du temps avec l&#39;alias `Count` en cliquant sur `Add Series`.
+    Par exemple, filtrez sur le service `frontend` en ajoutant le filtre `ServiceName:\"frontend\"`. Ajoutez une deuxième série pour le nombre d&#39;événements au fil du temps avec l&#39;alias `Count` en cliquant sur `Add Series`.
 
     <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Visualisation simple 2" size="lg" />
 
@@ -63,12 +63,8 @@ Pour les exemples ci-dessous, nous utilisons le jeu de données distant disponib
 
     <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="L'icône de copie Duplicate series et son infobulle sur une ligne de série de graphique" size="lg" />
 
-    Pour créer une série semblable à une série existante, vous pouvez la dupliquer au lieu de repartir de zéro. Cliquez sur l&#39;icône de copie (`Duplicate series`) sur une ligne de série pour insérer une copie directement en dessous. La copie conserve les paramètres de la série source, tels que la métrique, la colonne et le filtre. Vous n&#39;avez ensuite plus qu&#39;à modifier les champs qui diffèrent (par exemple l&#39;agrégation) et à donner à la copie son propre alias. La duplication est disponible partout où plusieurs séries sont prises en charge. Elle est masquée pour les types de visualisation qui n&#39;autorisent qu&#39;une seule série, comme `Number`, `Pie` et `Heatmap`.
-
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="L'icône de copie Duplicate series et son infobulle sur une ligne de série de graphique" size="lg" />
-
     <Note>
-      Les visualisations peuvent être créées à partir de n&#39;importe quelle source de données — métriques, traces ou logs. ClickStack traite tous ces éléments comme des wide events. Toute **colonne numérique** peut être représentée sur un graphique dans le temps, et les colonnes **chaîne**, **date** ou **numériques** peuvent être utilisées pour les regroupements.
+      Les visualisations peuvent être créées à partir de n&#39;importe quelle source de données — métriques, traces ou logs. ClickStack traite tous ces éléments comme des événements wide. Toute **colonne numérique** peut être représentée sur un graphique dans le temps, et les colonnes **chaîne**, **date** ou **numériques** peuvent être utilisées pour les regroupements.
 
       Cette approche unifiée vous permet de créer des tableaux de bord couvrant différents types de données de télémétrie à l&#39;aide d&#39;un modèle cohérent et flexible.
     </Note>
@@ -212,6 +208,14 @@ Avec une tuile Number sélectionnée, ouvrez **Paramètres d’affichage** et d�
 
 Les graphiques d’arrière-plan s’appliquent aux tuiles Number créées avec le générateur de requêtes. Les tuiles Number en Raw SQL renvoient une valeur unique, sans dimension temporelle à regrouper, donc l’option apparaît mais reste désactivée pour elles.
 
+Les tuiles de tableau peuvent alterner l’arrière-plan de leurs lignes avec **Arrière-plan alterné des lignes**, ce qui teinte une ligne sur deux pour rendre les tables larges plus faciles à parcourir. Cette option est désactivée par défaut.
+
+Avec une tuile de tableau sélectionnée, ouvrez **Paramètres d’affichage** et activez **Arrière-plan alterné des lignes**. Cette alternance est purement visuelle, elle fonctionne donc aussi bien sur les tuiles de tableau du générateur de requêtes que sur celles en Raw SQL.
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Volet Paramètres d’affichage pour une tuile de tableau, avec Arrière-plan alterné des lignes activé" size="lg" />
+
+Les tuiles de tableau conservent également un séparateur entre la ligne d’en-tête et les données pendant le défilement, afin que les en-têtes de colonnes restent bien distincts.
+
 <div id="dashboard-listing-search">
   ## Tableaux de bord - liste et recherche
 </div>
@@ -306,7 +310,7 @@ Ce tableau de bord utilise des onglets pour distinguer le suivi de **Selects**, 
 <Info>
   **Accès requis aux tables système**
 
-  Ce tableau de bord interroge les [tables système](/fr/reference/system-tables/index) de ClickHouse pour afficher les principales métriques. Les autorisations suivantes sont requises :
+  Ce tableau de bord interroge les [tables système](/fr/reference/system-tables/overview) de ClickHouse pour afficher les principales métriques. Les autorisations suivantes sont requises :
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

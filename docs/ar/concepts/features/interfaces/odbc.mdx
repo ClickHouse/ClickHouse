@@ -147,16 +147,16 @@ BI، الاستعلامات بدلًا من أن يكتبها المستخدمو
 لمواءمة سلوك ClickHouse بشكل أكبر مع SQL القياسي.
 
 <div id="sql-compatibility-settings-list">
-  ### إعدادات ClickHouse التي تفعّلها معلمة التهيئة SqlCompatibilitySettings
+  ### إعدادات ClickHouse التي تفعّلها معلمة التكوين SqlCompatibilitySettings
 </div>
 
 يوضح هذا القسم الإعدادات التي يعدّلها برنامج تشغيل ODBC وسبب ذلك.
 
-**[cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings#cast_keep_nullable)**
+**[cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings/cast#cast_keep_nullable)**
 
-بشكل افتراضي، لا يسمح ClickHouse بتحويل الأنواع القابلة لـ NULL إلى أنواع غير قابلة لـ NULL. ومع ذلك، لا تميّز العديد من أدوات BI
+بشكل افتراضي، لا يسمح ClickHouse بتحويل الأنواع القابلة لـ NULL إلى أنواع غير قابلة لـ NULL. ومع ذلك، لا تميّز العديد من أدوات ذكاء الأعمال
 بين الأنواع القابلة لـ NULL وغير القابلة لـ NULL عند إجراء تحويلات الأنواع. ونتيجةً لذلك، ليس من غير المعتاد
-رؤية استعلامات مثل الاستعلام التالي تُنشئها أدوات BI:
+رؤية استعلامات مثل الاستعلام التالي تُنشئها أدوات ذكاء الأعمال:
 
 ```sql
 SELECT sum(CAST(value, 'Int32'))
@@ -173,7 +173,7 @@ DB::Exception: Cannot convert NULL value to non-Nullable type: while executing '
 يؤدي تفعيل `cast_keep_nullable` إلى تغيير سلوك `CAST` بحيث يحافظ على قابلية القيم في معاملاته لأن تكون فارغة. وهذا
 يجعل سلوك ClickHouse أقرب إلى سلوك قواعد البيانات الأخرى وإلى معيار SQL لهذا النوع من التحويل.
 
-**[prefer&#95;column&#95;name&#95;to&#95;alias](/ar/reference/settings/session-settings#prefer_column_name_to_alias)**
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/ar/reference/settings/session-settings/prefer#prefer_column_name_to_alias)**
 
 يتيح ClickHouse الإشارة إلى التعبيرات في قائمة `SELECT` نفسها باستخدام أسمائها المستعارة. على سبيل المثال، يجنّب هذا الاستعلام
 التكرار ويكون أسهل في الكتابة:
@@ -227,7 +227,7 @@ inside another aggregate function in query. (ILLEGAL_AGGREGATION)
 
 في معظم الحالات، لا ينبغي أن يسبب تمكين هذه الإعدادات أي مشكلة. ومع ذلك، فإن المستخدمين الذين يكون إعداد `readonly` مضبوطًا على `1`
 لا يمكنهم تغيير أي إعدادات، حتى في استعلامات `SELECT`. وبالنسبة لهؤلاء المستخدمين، فإن تمكين `SqlCompatibilitySettings` سيؤدي
-إلى حدوث خطأ. يوضح القسم التالي كيفية جعل معلمة التهيئة هذه تعمل مع مستخدمي القراءة فقط.
+إلى حدوث خطأ. يوضح القسم التالي كيفية جعل معلمة التكوين هذه تعمل مع مستخدمي القراءة فقط.
 
 <div id="readonly-users">
   ## تشغيل إعدادات توافق SQL مع المستخدمين ذوي صلاحية القراءة فقط

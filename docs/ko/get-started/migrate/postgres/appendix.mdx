@@ -92,7 +92,7 @@ OSS에서 이러한 동작을 구현하는 방법은 세그먼트와 레플리�
 
 여러 세그먼트와 레플리카로 이루어진 토폴로지는 분산 테이블 없이도 가능하지만, 이러한 고급 배포는 일반적으로 자체 라우팅 인프라를 갖추고 있습니다. 따라서 세그먼트가 2개 이상인 배포는 분산 테이블을 사용한다고 가정합니다(분산 테이블은 단일 세그먼트 배포에도 사용할 수 있지만, 보통은 필요하지 않습니다).
 
-이 경우 `session_id` 또는 `user_id` 같은 값을 기준으로 일관된 노드 라우팅이 수행되도록 해야 합니다. 설정 [`prefer_localhost_replica=0`](/ko/reference/settings/session-settings#prefer_localhost_replica), [`load_balancing=in_order`](/ko/reference/settings/session-settings#load_balancing)는 [쿼리에서 설정](/ko/concepts/features/configuration/settings/settings-query-level)해야 합니다. 이렇게 하면 각 세그먼트의 로컬 레플리카가 우선 선택되고, 로컬 레플리카가 없으면 구성에 나열된 순서대로 레플리카가 우선 선택됩니다. 단, 오류 수가 같아야 하며, 오류 수가 더 많으면 failover가 발생하고 무작위로 선택됩니다. 이러한 결정적 세그먼트 선택의 대안으로 [`load_balancing=nearest_hostname`](/ko/reference/settings/session-settings#load_balancing)도 사용할 수 있습니다.
+이 경우 `session_id` 또는 `user_id` 같은 값을 기준으로 일관된 노드 라우팅이 수행되도록 해야 합니다. 설정 [`prefer_localhost_replica=0`](/ko/reference/settings/session-settings/prefer#prefer_localhost_replica), [`load_balancing=in_order`](/ko/reference/settings/session-settings/load-balancing#load_balancing)는 [쿼리에서 설정](/ko/concepts/features/configuration/settings/settings-query-level)해야 합니다. 이렇게 하면 각 세그먼트의 로컬 레플리카가 우선 선택되고, 로컬 레플리카가 없으면 구성에 나열된 순서대로 레플리카가 우선 선택됩니다. 단, 오류 수가 같아야 하며, 오류 수가 더 많으면 failover가 발생하고 무작위로 선택됩니다. 이러한 결정적 세그먼트 선택의 대안으로 [`load_balancing=nearest_hostname`](/ko/reference/settings/session-settings/load-balancing#load_balancing)도 사용할 수 있습니다.
 
 > 분산 테이블을 만들 때는 cluster를 지정해야 합니다. `config.xml`에 지정하는 이 cluster 정의에는 세그먼트(및 해당 레플리카)가 나열되므로, 사용자는 각 노드에서 사용 순서를 제어할 수 있습니다. 이를 통해 선택이 항상 같은 방식으로 이루어지도록 할 수 있습니다.
 
@@ -109,7 +109,7 @@ OSS에서 이러한 동작을 구현하는 방법은 세그먼트와 레플리�
 
 1. **동일한 노드에서 읽기/쓰기** - 네이티브 프로토콜을 사용하거나 [HTTP를 통해 쓰기/읽기를 수행하는 세션](/ko/concepts/features/interfaces/http#default-database)을 사용하는 경우, 동일한 레플리카에 연결되어 있어야 합니다. 이 경우 쓰기를 수행한 노드에서 직접 읽으므로 읽기 결과는 항상 일관됩니다.
 2. **레플리카를 수동으로 동기화** - 한 레플리카에 쓰고 다른 레플리카에서 읽는 경우, 읽기 전에 `SYSTEM SYNC REPLICA LIGHTWEIGHT`를 실행할 수 있습니다.
-3. **순차 일관성 활성화** - 쿼리 설정 [`select_sequential_consistency = 1`](/ko/reference/settings/session-settings#select_sequential_consistency)로 활성화할 수 있습니다. OSS에서는 `insert_quorum = 'auto'` 설정도 함께 지정해야 합니다.
+3. **순차 일관성 활성화** - 쿼리 설정 [`select_sequential_consistency = 1`](/ko/reference/settings/session-settings/other#select_sequential_consistency)로 활성화할 수 있습니다. OSS에서는 `insert_quorum = 'auto'` 설정도 함께 지정해야 합니다.
 
 <br />
 
@@ -175,9 +175,9 @@ GROUP BY `table`
   ## 데이터 타입 매핑
 </div>
 
-다음 표는 Postgres에 대응하는 ClickHouse 데이터 타입을 보여줍니다.
+다음 표는 Postgres와 대응되는 ClickHouse 데이터 타입을 보여줍니다.
 
-| Postgres 데이터 타입      | ClickHouse 타입                                                                                                                                                                          |
+| Postgres 데이터 타입      | ClickHouse 유형                                                                                                                                                                          |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATE`               | [Date](/ko/reference/data-types/date)                                                                                                                                                     |
 | `TIMESTAMP`          | [DateTime](/ko/reference/data-types/datetime)                                                                                                                                             |
@@ -207,6 +207,5 @@ GROUP BY `table`
 | `HSTORE`             | [Map(K, V)](/ko/reference/data-types/map), [Map](/ko/reference/data-types/map)(K,[Variant](/ko/reference/data-types/variant))                                                                   |
 | `UUID`               | [UUID](/ko/reference/data-types/uuid)                                                                                                                                                     |
 | `ARRAY<T>`           | [ARRAY(T)](/ko/reference/data-types/array)                                                                                                                                                |
-| `JSON`               | [String](/ko/reference/data-types/string), [Variant](/ko/reference/data-types/variant), [Nested](/ko/reference/data-types/nested-data-structures/index), [Tuple](/ko/reference/data-types/tuple)   |
 | `JSON`               | [String](/ko/reference/data-types/string), [Variant](/ko/reference/data-types/variant), [Nested](/ko/reference/data-types/nested-data-structures), [Tuple](/ko/reference/data-types/tuple)         |
 | `JSONB`              | [String](/ko/reference/data-types/string)                                                                                                                                                 |
