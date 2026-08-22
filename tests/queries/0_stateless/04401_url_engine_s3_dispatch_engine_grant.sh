@@ -56,9 +56,17 @@ ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TABLE, DROP TABLE ON ${CLICKHOUSE_DATABASE
 ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON URL TO ${USER}"
 
 echo "--- TABLE ENGINE ON URL grant alone: ENGINE = URL('http://...') is allowed (URL engine) ---"
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_http"
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_http (a UInt32) ENGINE = URL('http://example.com/data.csv', 'CSV')" 2>&1 \
-    | grep -qiE "Not enough privileges|ACCESS_DENIED" && echo "http-DENIED (unexpected)" || echo "http-allowed"
+# Dropped as the admin, so the precondition holds whatever the test user's grants are at this point.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_http SYNC"
+out=$(${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_http (a UInt32) ENGINE = URL('http://example.com/data.csv', 'CSV')" 2>&1)
+rc=$?
+if echo "$out" | grep -qiE "Not enough privileges|ACCESS_DENIED"; then
+    echo "http-DENIED (unexpected)"
+elif [ "$rc" -eq 0 ] && attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_http"; then
+    echo "http-allowed"
+else
+    echo "http-FAILED (unexpected): rc=$rc $out"
+fi
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_http"
 
 echo "--- TABLE ENGINE ON URL grant alone: ENGINE = URL('s3://...') is denied (dispatches to S3) ---"
