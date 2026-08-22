@@ -113,7 +113,7 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesInstantValue, Traits>;
     using Base::Base;
 
-    typename Traits::Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    typename Traits::Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return typename Traits::Aggregator{Base::timestamp_scale_multiplier};
     }

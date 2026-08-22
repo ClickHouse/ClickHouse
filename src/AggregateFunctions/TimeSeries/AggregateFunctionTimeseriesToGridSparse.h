@@ -135,7 +135,7 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesToGridSparse, Traits>;
     using Base::Base;
 
-    typename Traits::Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    typename Traits::Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return {};
     }

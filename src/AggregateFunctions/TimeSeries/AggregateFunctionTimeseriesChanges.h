@@ -155,7 +155,7 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesChanges, Traits>;
     using Base::Base;
 
-    Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return {};
     }

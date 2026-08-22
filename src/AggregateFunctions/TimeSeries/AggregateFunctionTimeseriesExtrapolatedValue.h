@@ -246,7 +246,7 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue, Traits>;
     using Base::Base;
 
-    Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return Aggregator{Base::window, Base::timestamp_scale_multiplier};
     }
