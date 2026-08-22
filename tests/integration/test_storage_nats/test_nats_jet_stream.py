@@ -1305,6 +1305,10 @@ def test_nats_jet_stream_streaming_drains_local_backlog_after_in_source_recovery
     # subscribed and the following streaming cycles drained the local queue.
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
 
+    # Anchored before the table exists, so the first streaming cycle counts however quickly it
+    # starts. A cycle here spans a whole 60 second flush interval, longer than the wait itself, so
+    # a first cycle the wait fails to recognize has no successor to fall back on.
+    created = nats_helpers.log_line_count(instance)
     instance.query(
         """
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -1325,7 +1329,7 @@ def test_nats_jet_stream_streaming_drains_local_backlog_after_in_source_recovery
             SELECT * FROM test.consume;
         """
     )
-    nats_helpers.wait_for_streaming_started(instance, "test.consume")
+    nats_helpers.wait_for_streaming_started(instance, "test.consume", anchor = created)
 
     # A streaming cycle spans the whole 60 second flush interval, so a reconnect all but always
     # lands mid-cycle, where the source performs the recovery itself. Only that in-source recovery
