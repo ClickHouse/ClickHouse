@@ -62,8 +62,12 @@ namespace ErrorCodes
   *
   * The wide set has to be maintained from the first insertion: the high bits of the hashes
   * of the already consumed elements cannot be recovered later. In particular, a state written
-  * in the legacy format (state version 0) carries no wide set, so merging it into a state
-  * of the new format keeps only the 32-bit precision for the merged-in elements.
+  * in the legacy format (state version 0) carries no wide set, and its elements were never
+  * offered to one. Such a state is marked as having an incomplete wide sample: it drops its own
+  * wide set, never starts a new one, and propagates the mark through merges, so that size()
+  * of anything it is merged into falls back to the legacy 32-bit estimator. Estimating from
+  * a wide set that covers only a part of the elements would undercount the rest entirely,
+  * which is much worse than the degrading precision of the 32-bit estimate.
   */
 
 /// The maximum degree of buffer size before the values are discarded
@@ -155,6 +159,12 @@ private:
 
     /// nullptr while no hash has passed the wide thinning (i.e. for most of the states).
     WideSet * wide = nullptr;
+
+    /** Some of the elements of this set were never offered to the wide set, so a wide estimate
+      * would miss them. This happens when a state serialized in the legacy format (state version 0)
+      * is read or merged in. The mark is sticky: the missing high bits cannot be recovered.
+      */
+    bool wide_incomplete = false;
 
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
     /// For profiling.
@@ -379,6 +389,13 @@ private:
         wide = nullptr;
     }
 
+    /// The wide set no longer represents all the elements - drop it and never start a new one.
+    void markWideIncomplete()
+    {
+        wide_incomplete = true;
+        freeWide();
+    }
+
     /// Copy the wide set with a table of the given size (the values are reinserted, not memcpy'd).
     static WideSet * resizeWideSet(const WideSet * old, UInt8 new_size_degree)
     {
@@ -437,6 +454,9 @@ private:
 
     void wideInsert(UInt64 x)
     {
+        if (unlikely(wide_incomplete))
+            return;
+
         /// The caller may have checked the value against a stale (smaller) thinning mask
         /// for the sake of the hot loop, so the check is repeated here.
         if (x & ((1ULL << wideSkipDegree()) - 1))
@@ -539,7 +559,7 @@ public:
     }
 
     UniquesHashSet(const UniquesHashSet & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
-        : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
+        : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero), wide_incomplete(rhs.wide_incomplete)
     {
         alloc(rhs.size_degree);
         memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
@@ -568,6 +588,7 @@ public:
         m_size = rhs.m_size;
         skip_degree = rhs.skip_degree;
         has_zero = rhs.has_zero;
+        wide_incomplete = rhs.wide_incomplete;
 
         memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
 
@@ -728,7 +749,9 @@ public:
     size_t size() const
     {
         /** The wide set gives a reliable estimate once it has enough values;
-          * below that the 32-bit main set is more precise.
+          * below that the 32-bit main set is more precise. If the wide sample does not cover
+          * all the elements (see `wide_incomplete`), it is not there at all and the legacy
+          * estimator is used, because a partial wide estimate would silently lose the rest.
           */
         if (wide && wide->m_size >= UNIQUES_HASH_SET_WIDE_MIN_SIZE_FOR_ESTIMATE)
         {
@@ -766,9 +789,14 @@ public:
 
     /// For tests.
     size_t wideSetSize() const { return wide ? wide->m_size : 0; }
+    bool isWideIncomplete() const { return wide_incomplete; }
 
     void merge(const UniquesHashSet & rhs)
     {
+        /// The elements of `rhs` that are missing from its wide set are missing from ours as well.
+        if (rhs.wide_incomplete)
+            markWideIncomplete();
+
         if (rhs.skip_degree > skip_degree)
         {
             skip_degree = rhs.skip_degree;
@@ -816,7 +844,8 @@ public:
     /** Two serialization formats exist.
       * The legacy format (state version 0): skip_degree, then the number of values, then the 32-bit values
       * of the main set.
-      * The new format (state version 1): a flags byte (bit 0 - a wide set follows the main set),
+      * The new format (state version 1): a flags byte (bit 0 - a wide set follows the main set,
+      * bit 1 - the wide sample is incomplete, see `wide_incomplete`; the two are mutually exclusive),
       * then the main set in the legacy layout, then, if present, the wide set: its skip_degree,
       * the number of values, and the 64-bit values.
       */
@@ -830,7 +859,7 @@ public:
 
         if (!use_legacy_format)
         {
-            UInt8 flags = wide ? 1 : 0;
+            UInt8 flags = (wide ? 1 : 0) | (wide_incomplete ? 2 : 0);
             DB::writeBinaryLittleEndian(flags, wb);
         }
 
@@ -867,6 +896,7 @@ public:
     void read(DB::ReadBuffer & rb, bool use_legacy_format)
     {
         has_zero = false;
+        wide_incomplete = false;
         freeWide();
 
         bool has_wide = false;
@@ -874,9 +904,10 @@ public:
         {
             UInt8 flags = 0;
             DB::readBinaryLittleEndian(flags, rb);
-            if (flags & ~1)
+            if (flags & ~3)
                 throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Cannot read UniquesHashSet: unknown flags");
             has_wide = flags & 1;
+            wide_incomplete = flags & 2;
         }
 
         DB::readBinaryLittleEndian(skip_degree, rb);
@@ -890,6 +921,13 @@ public:
 
         if (m_size > UNIQUES_HASH_MAX_SIZE)
             throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
+
+        /** A non-empty state written in the legacy format carries elements that were never offered
+          * to a wide set, so no wide estimate of this state (or of anything it is merged into)
+          * can be trusted. An empty legacy state contributes nothing and does not spoil a merge.
+          */
+        if (use_legacy_format && m_size > 0)
+            wide_incomplete = true;
 
         free();
 
@@ -972,7 +1010,7 @@ public:
         {
             UInt8 flags = 0;
             DB::readBinaryLittleEndian(flags, rb);
-            if (flags & ~1)
+            if (flags & ~3)
                 throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Cannot read UniquesHashSet: unknown flags");
             has_wide = flags & 1;
         }

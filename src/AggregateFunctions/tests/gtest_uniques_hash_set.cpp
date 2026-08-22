@@ -237,7 +237,7 @@ TEST(UniquesHashSet, WideSetsMergeAndThinOut)
     EXPECT_EQ(b2.size(), a.size());
 }
 
-TEST(UniquesHashSet, MergingLegacyStateKeepsTheWideSet)
+TEST(UniquesHashSet, MergingLegacyStateDropsTheWideSet)
 {
     constexpr UInt8 wide_skip_degree = 20;
     auto main_values = randomSampledValues<UInt32>(50000, 16, 6);
@@ -246,12 +246,66 @@ TEST(UniquesHashSet, MergingLegacyStateKeepsTheWideSet)
     TestSet with_wide = deserialize(craftState(16, main_values, false, wide_skip_degree, wide_values), false);
     TestSet legacy = deserialize(craftState(16, randomSampledValues<UInt32>(30000, 16, 8), true), true);
 
+    EXPECT_TRUE(legacy.isWideIncomplete());
+    EXPECT_FALSE(with_wide.isWideIncomplete());
+
     /// A legacy state carries no wide set: its elements are known by 32 bits of the hash only,
-    /// so they cannot contribute to the wide set of the merged state, and the estimate
-    /// keeps only the 32-bit precision for them.
-    size_t wide_before = with_wide.wideSetSize();
+    /// so they cannot contribute to the wide set of the merged state. An estimate from a wide set
+    /// that covers only a part of the elements would lose the rest, so the merged state drops
+    /// the wide set altogether and falls back to the 32-bit estimator.
     with_wide.merge(legacy);
-    EXPECT_EQ(with_wide.wideSetSize(), wide_before);
+    EXPECT_TRUE(with_wide.isWideIncomplete());
+    EXPECT_EQ(with_wide.wideSetSize(), 0u);
+
+    /// And it stays incomplete: the elements consumed later are not enough to make the sample whole.
+    for (UInt64 i = 0; i < 1000000; ++i)
+        with_wide.insert(i);
+    EXPECT_EQ(with_wide.wideSetSize(), 0u);
+
+    /// The mark travels with the state: a version-1 state whose wide sample is incomplete
+    /// says so in bit 1 of its flags byte, so a reader does not start estimating from a wide set
+    /// that it would build after the incomplete elements were already consumed.
+    std::string serialized = serialize(with_wide, /*use_legacy_format=*/ false);
+    EXPECT_EQ(serialized[0], 2);
+    EXPECT_TRUE(deserialize(serialized, /*use_legacy_format=*/ false).isWideIncomplete());
+
+    /// An empty legacy state contributes nothing, so it does not spoil the wide set.
+    TestSet clean = deserialize(craftState(16, main_values, false, wide_skip_degree, wide_values), false);
+    clean.merge(deserialize(craftState(0, {}, true), true));
+    EXPECT_FALSE(clean.isWideIncomplete());
+    EXPECT_EQ(clean.wideSetSize(), wide_values.size());
+}
+
+TEST(UniquesHashSet, MergingLegacyStateDoesNotLoseItsElements)
+{
+    /** The rolling-upgrade case: one shard is new and reports a version-1 state for about
+      * three billion distinct values, the other is old and reports a version-0 state for another
+      * disjoint three billion. The merged estimate has to account for both: taking it from
+      * the wide set - which only ever saw the new shard's half - would report three billion.
+      * The 32-bit sample saw both halves (that is what the random overlap of the crafted
+      * values models), so it is the one to use.
+      */
+    constexpr UInt8 wide_skip_degree = 18;
+    constexpr size_t sampled_main_values = 32950;   /// 3e9 distinct values sampled at 2 ^ 16.
+    constexpr size_t sampled_wide_values = 11444;   /// The same 3e9 sampled at 2 ^ 18.
+
+    TestSet versioned = deserialize(
+        craftState(
+            16, randomSampledValues<UInt32>(sampled_main_values, 16, 11), false,
+            wide_skip_degree, randomSampledValues<UInt64>(sampled_wide_values, wide_skip_degree, 12)),
+        false);
+
+    TestSet legacy = deserialize(craftState(16, randomSampledValues<UInt32>(sampled_main_values, 16, 13), true), true);
+
+    /// Above the switch threshold the version-1 state alone is estimated from the wide set.
+    EXPECT_GE(versioned.wideSetSize(), 8192u);
+    EXPECT_GT(versioned.size(), 2500000000ULL);
+    EXPECT_LT(versioned.size(), 3500000000ULL);
+
+    versioned.merge(legacy);
+
+    EXPECT_GT(versioned.size(), 5000000000ULL);
+    EXPECT_LT(versioned.size(), 7000000000ULL);
 }
 
 TEST(UniquesHashSet, InsertPathFeedsTheWideSet)
@@ -285,7 +339,7 @@ TEST(UniquesHashSet, RejectsCorruptedStates)
     {
         /// Unknown flags.
         WriteBufferFromOwnString out;
-        writeBinaryLittleEndian(static_cast<UInt8>(2), out);
+        writeBinaryLittleEndian(static_cast<UInt8>(4), out);
         std::string data = out.str();
         ReadBufferFromString in(data);
         TestSet set;
