@@ -52,7 +52,7 @@ namespace
 
     void checkJSONDepth(const TrackedValue & root)
     {
-        std::vector<std::pair<const TrackedValue *, size_t>> to_visit;
+        VectorWithMemoryTracking<std::pair<const TrackedValue *, size_t>> to_visit;
         to_visit.emplace_back(&root, 1);
 
         while (!to_visit.empty())
@@ -72,7 +72,7 @@ namespace
             }
             else if (value->IsArray())
             {
-                for (auto it = value->Begin(); it != value->End(); ++it)
+                for (const auto * it = value->Begin(); it != value->End(); ++it)
                     to_visit.emplace_back(&*it, depth + 1);
             }
         }
