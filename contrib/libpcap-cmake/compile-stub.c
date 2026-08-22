@@ -1,5 +1,5 @@
 /*
- * Minimal stub for the libpcap BPF filter compiler.
+ * Minimal stubs for the libpcap BPF filter compiler and filter engine.
  *
  * ClickHouse uses libpcap only to READ capture files (pcap / pcapng); it never
  * compiles BPF filter expressions. The real implementation lives in gencode.c
@@ -59,4 +59,35 @@ pcap_freecode(struct bpf_program *program)
 		free((char *)program->bf_insns);
 		program->bf_insns = NULL;
 	}
+}
+
+/*
+ * The BPF filter engine (bpf_filter.c, together with bpf_image.c and bpf_dump.c)
+ * is excluded from the build as well: on Linux it includes <linux/filter.h>,
+ * which is missing from some cross-compilation sysroots, and it is reachable
+ * only through a compiled filter program, which this build cannot produce
+ * anyway - pcap_compile above always fails.
+ *
+ * pcapint_validate_filter therefore rejects every program, so pcap_setfilter
+ * fails with "BPF program is not valid" instead of silently dropping packets,
+ * and pcapint_filter - which the read path calls only after a filter has been
+ * installed - is unreachable.
+ */
+int
+pcapint_validate_filter(const struct bpf_insn *f, int len)
+{
+	(void)f;
+	(void)len;
+	return (0);
+}
+
+u_int
+pcapint_filter(const struct bpf_insn *pc, const u_char *p, u_int wirelen,
+	       u_int buflen)
+{
+	(void)pc;
+	(void)p;
+	(void)wirelen;
+	(void)buflen;
+	abort();
 }

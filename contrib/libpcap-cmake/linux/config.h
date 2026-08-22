@@ -41,9 +41,11 @@
 #define NETINET_ETHER_H_DECLARES_ETHER_HOSTTON 1
 #define HAVE_STRUCT_ETHER_ADDR 1
 
-/* Linux getprotobyname_r / getnetbyname_r flavors. */
-#define HAVE_LINUX_GETNETBYNAME_R 1
-#define HAVE_LINUX_GETPROTOBYNAME_R 1
+/*
+ * The Linux flavors of `getnetbyname_r` / `getprotobyname_r` are a glibc extension
+ * that musl does not provide, so `HAVE_LINUX_GETNETBYNAME_R` /
+ * `HAVE_LINUX_GETPROTOBYNAME_R` are defined by CMake instead.
+ */
 
 /* Compiler atomics (clang / gcc). */
 #define HAVE___ATOMIC_LOAD_N 1

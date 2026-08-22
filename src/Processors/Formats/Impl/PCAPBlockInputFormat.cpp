@@ -18,8 +18,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromVector.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
+#include <Common/ErrnoException.h>
 
 #include <tins/tins.h>
 #include <tins/sniffer.h>
@@ -43,8 +44,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
 /// One row per packet; up to this many packets per Chunk.
@@ -159,11 +162,11 @@ PCAPBlockInputFormat::~PCAPBlockInputFormat()
 void PCAPBlockInputFormat::closeFile()
 {
     sniffer.reset();
-    if (mem_file != nullptr)
+    if (capture_file != nullptr)
     {
-        /// The stream is backed by memory, so there is nothing to flush and nothing that can fail.
-        [[maybe_unused]] int rc = fclose(mem_file);
-        mem_file = nullptr;
+        /// The stream is only ever read through, so there is nothing to flush and nothing that can fail.
+        [[maybe_unused]] int rc = fclose(capture_file);
+        capture_file = nullptr;
     }
 }
 
@@ -186,22 +189,27 @@ void PCAPBlockInputFormat::initializeIfNeeded()
         }
     }
 
-    /// Otherwise read the whole stream into memory and open it via fmemopen().
+    /// Otherwise copy the whole stream into a temporary file: `libpcap` reads a capture only
+    /// from a path or from a `FILE *`, and it seeks, while the input stream is not seekable.
+    capture_file = tmpfile();
+    if (capture_file == nullptr)
+        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create a temporary file to read a PCAP capture");
+
     {
-        auto buf = WriteBufferFromVector<PODArray<char>>(file_contents);
-        copyData(*in, buf, is_stopped);
+        WriteBufferFromFileDescriptor out(fileno(capture_file));
+        copyData(*in, out, is_stopped);
+        out.finalize();
     }
 
-    /// The stream was only partially copied if the query has been cancelled;
-    /// do not open a sniffer over a truncated buffer.
+    /// The stream is only partially copied if the query has been cancelled;
+    /// do not open a sniffer over a truncated capture.
     if (is_stopped)
         return;
 
-    mem_file = fmemopen(file_contents.data(), file_contents.size(), "rb");
-    if (mem_file == nullptr)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to open in-memory PCAP buffer");
+    if (fseek(capture_file, 0, SEEK_SET) != 0)
+        throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot rewind the temporary file with a PCAP capture");
 
-    sniffer = std::make_unique<Tins::FileSniffer>(mem_file, config);
+    sniffer = std::make_unique<Tins::FileSniffer>(capture_file, config);
 }
 
 namespace
@@ -224,6 +232,38 @@ void writeIPv6(const Tins::IPv6Address & addr, IPv6 & out)
     size_t i = 0;
     for (auto byte : addr)
         buf[i++] = byte;
+}
+
+/// Name of the IANA protocol number found in the IPv4 `protocol` or IPv6 `next header` field.
+/// Numbers without a well-known name are rendered in decimal.
+String ipProtocolName(UInt8 protocol)
+{
+    switch (protocol)
+    {
+        case 0: return "HOPOPT";
+        case 1: return "ICMP";
+        case 2: return "IGMP";
+        case 4: return "IPv4";
+        case 6: return "TCP";
+        case 17: return "UDP";
+        case 41: return "IPv6";
+        case 43: return "IPv6-Route";
+        case 44: return "IPv6-Frag";
+        case 47: return "GRE";
+        case 50: return "ESP";
+        case 51: return "AH";
+        case 58: return "ICMPv6";
+        case 59: return "IPv6-NoNxt";
+        case 60: return "IPv6-Opts";
+        case 89: return "OSPF";
+        case 103: return "PIM";
+        case 112: return "VRRP";
+        case 115: return "L2TP";
+        case 132: return "SCTP";
+        case 136: return "UDPLite";
+        case 137: return "MPLS-in-IP";
+        default: return std::to_string(protocol);
+    }
 }
 
 String formatTCPFlags(const Tins::TCP & tcp)
@@ -410,12 +450,20 @@ Chunk PCAPBlockInputFormat::read()
             }
         }
 
-        /// Ethernet type (name of the layer just under Ethernet, or empty).
+        /// Protocol carried by the Ethernet frame, or empty for a non-Ethernet packet.
+        /// 802.1Q tags are unwrapped, so a VLAN-tagged IPv4 frame reports `IP` and not
+        /// `DOT1Q`; the tag itself is exposed separately as `vlan_id`.
         if (need[COL_ETH_TYPE])
         {
             String name;
-            if (const auto * eth = pdu->find_pdu<Tins::EthernetII>(); eth && eth->inner_pdu())
-                name = Tins::Utils::to_string(eth->inner_pdu()->pdu_type());
+            if (const auto * eth = pdu->find_pdu<Tins::EthernetII>())
+            {
+                const Tins::PDU * inner = eth->inner_pdu();
+                while (inner != nullptr && inner->pdu_type() == Tins::PDU::DOT1Q)
+                    inner = inner->inner_pdu();
+                if (inner != nullptr)
+                    name = Tins::Utils::to_string(inner->pdu_type());
+            }
             col_eth_type->insertData(name.data(), name.size());
         }
 
@@ -464,13 +512,16 @@ Chunk PCAPBlockInputFormat::read()
         auto * tcp = dynamic_cast<Tins::TCP *>(ip_inner);
         auto * udp = dynamic_cast<Tins::UDP *>(ip_inner);
 
+        /// Taken from the IP header itself (the IPv4 `protocol` field or the IPv6 `next header`
+        /// field), so it stays correct when the transport header was not captured (a truncated
+        /// snapshot) or is not decodable (a non-first IPv4 fragment).
         if (need[COL_IP_PROTOCOL])
         {
             String name;
-            if (tcp) name = "TCP";
-            else if (udp) name = "UDP";
-            else if (ipv4 && ipv4->inner_pdu()) name = Tins::Utils::to_string(ipv4->inner_pdu()->pdu_type());
-            else if (ipv6 && ipv6->inner_pdu()) name = Tins::Utils::to_string(ipv6->inner_pdu()->pdu_type());
+            if (ipv4)
+                name = ipProtocolName(ipv4->protocol());
+            else if (ipv6)
+                name = ipProtocolName(ipv6->next_header());
             col_ip_protocol->insertData(name.data(), name.size());
         }
 
@@ -581,7 +632,6 @@ void PCAPBlockInputFormat::resetParser()
 {
     closeFile();
     initialized = false;
-    file_contents.clear();
     packet_number = 0;
     approx_bytes_read_for_chunk = 0;
 
@@ -663,12 +713,12 @@ The `PCAP` format produces the following columns:
 | `protocols` | `Array(LowCardinality(String))` | Ordered list of protocols in the packet, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']` |
 | `eth_src` | `Nullable(String)` | Source MAC address, or `NULL` for non-Ethernet packets |
 | `eth_dst` | `Nullable(String)` | Destination MAC address |
-| `eth_type` | `LowCardinality(String)` | Protocol carried by the Ethernet frame, for example `IP` |
+| `eth_type` | `LowCardinality(String)` | Protocol carried by the Ethernet frame, for example `IP`. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q` |
 | `vlan_id` | `Nullable(UInt16)` | 802.1Q VLAN identifier, if present |
 | `ip_version` | `Nullable(UInt8)` | `4` or `6`, or `NULL` for non-IP packets |
 | `src_addr` | `Nullable(IPv6)` | Source IP address; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`) |
 | `dst_addr` | `Nullable(IPv6)` | Destination IP address |
-| `ip_protocol` | `LowCardinality(String)` | Transport protocol, for example `TCP`, `UDP` or `ICMP` |
+| `ip_protocol` | `LowCardinality(String)` | Protocol carried by the IP packet, taken from the IPv4 `protocol` field or the IPv6 `next header` field, for example `TCP`, `UDP` or `ICMP`. It is filled even when the transport header itself was not captured or is not decodable, in which case `src_port`, `dst_port` and the TCP columns stay `NULL`. Numbers without a well-known name are rendered in decimal. Empty for non-IP packets |
 | `ip_ttl` | `Nullable(UInt16)` | IPv4 TTL or IPv6 hop limit |
 | `src_port` | `Nullable(UInt16)` | TCP/UDP source port |
 | `dst_port` | `Nullable(UInt16)` | TCP/UDP destination port |

@@ -5,7 +5,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Common/PODArray.h>
 
 #include <cstdio>
 #include <atomic>
@@ -33,7 +32,7 @@ public:
     void resetParser() override;
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
-    void onCancel() noexcept override { is_stopped = true; }
+    void onCancel() noexcept override { is_stopped = 1; }
 
 protected:
     Chunk read() override;
@@ -45,15 +44,14 @@ private:
     bool initialized = false;
     std::unique_ptr<Tins::FileSniffer> sniffer;
 
-    /// When the input is not a local file, we slurp it into memory and open it
-    /// with fmemopen(); the FILE* and buffer must outlive the sniffer.
-    PODArray<char> file_contents;
-    FILE * mem_file = nullptr;
+    /// When the input is not a local file, we copy it into a temporary file;
+    /// the FILE * must outlive the sniffer.
+    FILE * capture_file = nullptr;
 
     /// 1-based packet counter across the whole capture.
     size_t packet_number = 0;
     size_t approx_bytes_read_for_chunk = 0;
-    std::atomic_bool is_stopped = false;
+    std::atomic<int> is_stopped{0};
 
     void initializeIfNeeded();
     void closeFile();

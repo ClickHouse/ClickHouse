@@ -6,8 +6,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-DATA_DIR="$CUR_DIR/data_pcap"
-python3 "$DATA_DIR/generate.py"
+# Generate the fixtures into a private directory: the flaky check runs several
+# copies of the test at the same time, and a shared directory would be rewritten
+# while another copy is reading it.
+DATA_DIR="$CLICKHOUSE_TMP/${CLICKHOUSE_TEST_UNIQUE_NAME}_pcap"
+trap 'rm -rf "$DATA_DIR"' EXIT
+rm -rf "$DATA_DIR"
+mkdir -p "$DATA_DIR"
+python3 "$CUR_DIR/data_pcap/generate.py" "$DATA_DIR"
 
 echo "--- schema ---"
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('$DATA_DIR/packets.pcap', PCAP) FORMAT TSV" | cut -f1,2
@@ -52,6 +58,20 @@ SELECT
     (SELECT groupArray(tuple(*)) FROM (SELECT * FROM file('$DATA_DIR/packets.pcap', PCAP) ORDER BY number))
     = (SELECT groupArray(tuple(*)) FROM (SELECT * FROM file('$DATA_DIR/packets.pcapng', PCAP) ORDER BY number)) FORMAT TSV"
 
+echo "--- VLAN-tagged frame: eth_type unwraps the 802.1Q tag ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, protocols, eth_type, vlan_id, ip_protocol, src_port, dst_port
+FROM file('$DATA_DIR/packets.pcap', PCAP)
+WHERE vlan_id IS NOT NULL
+ORDER BY number FORMAT TSV"
+
+echo "--- non-first IPv4 fragment: ip_protocol comes from the IPv4 header ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, protocols, ip_protocol, src_port, dst_port, tcp_flags
+FROM file('$DATA_DIR/packets.pcap', PCAP)
+WHERE ip_protocol = 'TCP' AND src_port IS NULL
+ORDER BY number FORMAT TSV"
+
 echo "--- truncated capture (snaplen 34: original_length > capture_length) ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT number, capture_length, original_length, protocols, ip_protocol, length(raw)
@@ -72,6 +92,16 @@ done
 echo "--- subset of columns (only number, dst_port) ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT number, dst_port FROM file('$DATA_DIR/packets.pcap', PCAP) ORDER BY number FORMAT TSV"
+
+# A capture that does not come from a plain local file is copied into a
+# temporary file first, because libpcap reads only from a file.
+echo "--- from a stream: standard input ---"
+$CLICKHOUSE_LOCAL --input-format PCAP -q "SELECT count(), countIf(ip_protocol = 'TCP') FROM table FORMAT TSV" < "$DATA_DIR/packets.pcap"
+
+echo "--- from a stream: compressed file ---"
+gzip -c "$DATA_DIR/packets.pcap" > "$DATA_DIR/packets.pcap.gz"
+$CLICKHOUSE_LOCAL -q "
+SELECT count(), countIf(ip_protocol = 'TCP') FROM file('$DATA_DIR/packets.pcap.gz', PCAP) FORMAT TSV"
 
 echo "--- schema inference via file() extension is PCAP-explicit only (count) ---"
 $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_DIR/packets.pcap', PCAP)"

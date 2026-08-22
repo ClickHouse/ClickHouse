@@ -56,12 +56,12 @@ The `PCAP` format produces the following columns:
 | `protocols` | `Array(LowCardinality(String))` | Ordered list of protocols in the packet, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']` |
 | `eth_src` | `Nullable(String)` | Source MAC address, or `NULL` for non-Ethernet packets |
 | `eth_dst` | `Nullable(String)` | Destination MAC address |
-| `eth_type` | `LowCardinality(String)` | Protocol carried by the Ethernet frame, for example `IP`; empty for non-Ethernet packets |
+| `eth_type` | `LowCardinality(String)` | Protocol carried by the Ethernet frame, for example `IP`; empty for non-Ethernet packets. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q`; the tag itself is exposed as `vlan_id` |
 | `vlan_id` | `Nullable(UInt16)` | 802.1Q VLAN identifier, if present |
 | `ip_version` | `Nullable(UInt8)` | `4` or `6`, or `NULL` for non-IP packets |
 | `src_addr` | `Nullable(IPv6)` | Source IP address; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`) |
 | `dst_addr` | `Nullable(IPv6)` | Destination IP address |
-| `ip_protocol` | `LowCardinality(String)` | Protocol immediately inside the outer IP header, for example `TCP`, `UDP` or `ICMP`; empty for non-IP packets |
+| `ip_protocol` | `LowCardinality(String)` | Protocol carried by the outer IP packet, taken from the IPv4 `protocol` field or the IPv6 `next header` field, for example `TCP`, `UDP` or `ICMP`; empty for non-IP packets. It is filled even when the transport header itself was not captured or is not decodable, in which case `src_port`, `dst_port` and the TCP columns stay `NULL`. Numbers without a well-known name are rendered in decimal |
 | `ip_ttl` | `Nullable(UInt16)` | IPv4 TTL or IPv6 hop limit |
 | `src_port` | `Nullable(UInt16)` | TCP/UDP source port |
 | `dst_port` | `Nullable(UInt16)` | TCP/UDP destination port |
