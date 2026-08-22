@@ -4,8 +4,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 
 
@@ -272,19 +270,8 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
         String name = String(name_ref);
         if (has_value)
         {
-            const size_t bytes_before = in.count();
             readEscapedString(value, in);
-            /// This reader decodes escape sequences while the value path parses the original bytes, so a
-            /// field whose escapes were decoded must not infer a number: the number readers would stop at
-            /// the backslash. A decoded escape always changes the byte count, and the one escape branch
-            /// that does not keeps the backslash in the value, which never infers a number.
-            const bool had_escape = (in.count() - bytes_before) != value.size();
-
-            auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped);
-            if (had_escape && type && isNumber(removeNullable(recursiveRemoveLowCardinality(type))))
-                type = std::make_shared<DataTypeString>();
-
-            names_and_types.emplace_back(std::move(name), std::move(type));
+            names_and_types.emplace_back(std::move(name), tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
         }
         else
         {
@@ -323,8 +310,8 @@ void registerInputFormatTSKV(FormatFactory & factory)
 
 ## Description {#description}
 
-Similar to the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format, but outputs a value in `name=value` format.
-Names are escaped the same way as in the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format, and the `=` symbol is also escaped.
+Similar to the [`TabSeparated`](./TabSeparated.md) format, but outputs a value in `name=value` format. 
+Names are escaped the same way as in the [`TabSeparated`](./TabSeparated.md) format, and the `=` symbol is also escaped.
 
 ```text
 SearchPhrase=   count()=8267016
@@ -349,7 +336,7 @@ x=1    y=\N
 
 :::note
 When there are a large number of small columns, this format is ineffective, and there is generally no reason to use it. 
-Nevertheless, it is no worse than the [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) format in terms of efficiency.
+Nevertheless, it is no worse than the [`JSONEachRow`](../JSON/JSONEachRow.md) format in terms of efficiency.
 :::
 
 For parsing, any order is supported for the values of the different columns. 
@@ -360,9 +347,9 @@ Complex values that could be specified in the table are not supported as default
 Parsing allows an additional field `tskv` to be added without the equal sign or a value. This field is ignored.
 
 During import, columns with unknown names will be skipped, 
-if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
+if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
 
-[NULL](/reference/syntax) is formatted as `\N`.
+[NULL](/sql-reference/syntax.md) is formatted as `\N`.
 
 ## Example usage {#example-usage}
 

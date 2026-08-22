@@ -2,7 +2,6 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
-#include <IO/parseHTTPDate.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -188,7 +187,6 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
-    RedirectCallback redirect_callback_,
     bool delay_initialization,
     std::optional<HTTPFileInfo> file_info_)
     : SeekableReadBuffer(nullptr, 0)
@@ -206,7 +204,6 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , use_external_buffer(use_external_buffer_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , out_stream_callback(std::move(out_stream_callback_))
-    , redirect_callback(std::move(redirect_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
     , file_info(file_info_)
@@ -291,9 +288,6 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
                 " Example: `SET max_http_get_redirects = 10`."
                 " Redirects are restricted to prevent possible attack when a malicious server redirects to an internal resource, bypassing the authentication or firewall.",
                 initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
-
-        if (redirect_callback)
-            redirect_callback(current_uri, uri_redirect);
 
         current_uri = uri_redirect;
         result = callImpl(response, method_, range, true);
@@ -694,13 +688,6 @@ Map ReadWriteBufferFromHTTP::getResponseHeaders() const
     return map;
 }
 
-std::optional<Field> ReadWriteBufferFromHTTP::getMetadata(const String & name) const
-{
-    if (name == "headers")
-        return Field(getResponseHeaders());
-    return std::nullopt;
-}
-
 void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)
 {
     next_callback = next_callback_;
@@ -744,9 +731,6 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
-    if (file_info)
-        return *file_info;
-
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.
     if (!read_settings.http_settings.make_head_request)
@@ -776,8 +760,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
         throw;
     }
 
-    file_info = parseFileInfo(response, 0);
-    return *file_info;
+    return parseFileInfo(response, 0);
 }
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin)
@@ -800,25 +783,18 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     }
 
     if (response.has("Last-Modified"))
-        res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
+    {
+        String date_str = response.get("Last-Modified");
+        struct tm info{};
+        char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
+        if (end == date_str.data() + date_str.size())
+            res.last_modified = timegm(&info);
+    }
 
     return res;
 }
 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTPBasicCredentials & credentials_)
-{
-    return createWithBearerToken(/*bearer_token_=*/ "", credentials_);
-}
-
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const std::string & bearer_token_)
-{
-    /// The buffer keeps a reference to the credentials, hence the immutable static empty object.
-    static const Poco::Net::HTTPBasicCredentials no_credentials;
-    return createWithBearerToken(bearer_token_, no_credentials);
-}
-
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
-    const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
 {
     ProxyConfiguration proxy_configuration;
 
@@ -828,17 +804,6 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
     }
 
-    /// A non-empty bearer token takes precedence: it and the Basic credentials occupy the
-    /// same `Authorization` header. The buffer keeps a reference to the credentials, hence
-    /// the immutable static for the bearer case (the fallback is then unused).
-    static const Poco::Net::HTTPBasicCredentials no_credentials;
-
-    /// Append the bearer header to a local copy so this does not mutate the builder:
-    /// the same builder can be reused without carrying over a stale `Authorization` header.
-    HTTPHeaderEntries header_entries = http_header_entries;
-    if (!bearer_token_.empty())
-        header_entries.emplace_back("Authorization", "Bearer " + bearer_token_);
-
     // todo it could be a problem if ReadWriteBufferFromHTTP throws
     std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(
         connection_group,
@@ -847,7 +812,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         proxy_configuration,
         read_settings,
         timeouts,
-        bearer_token_.empty() ? fallback_credentials_ : no_credentials,
+        credentials_,
         remote_host_filter,
         buffer_size,
         max_redirects,
@@ -855,31 +820,10 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         out_stream_callback,
         use_external_buffer,
         http_skip_not_found_url,
-        header_entries,
-        redirect_callback,
+        http_header_entries,
         delay_initialization,
         /*file_info_=*/ std::nullopt));
     return ptr;
-}
-
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri)
-{
-    credentials.clear();
-
-    const auto & user_info = uri.getUserInfo();
-    if (user_info.empty())
-        return;
-
-    const auto n = user_info.find(':');
-    if (n != std::string::npos)
-    {
-        credentials.setUsername(user_info.substr(0, n));
-        credentials.setPassword(user_info.substr(n + 1));
-    }
-    else
-    {
-        credentials.setUsername(user_info);
-    }
 }
 
 }

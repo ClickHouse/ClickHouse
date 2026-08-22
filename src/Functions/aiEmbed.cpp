@@ -24,7 +24,8 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 
-#include <string_view>
+#include <exception> /// std::current_exception for retry classification
+#include <thread> /// thread::sleep for retry backoff
 
 namespace ProfileEvents
 {
@@ -93,7 +94,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
+            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
             {"model", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -104,11 +105,20 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
+    /// Parameters accepted in the optional trailing `Map(String, String)` argument.
+    static AIParamSpecs embeddingParams()
+    {
+        return {
+            {"credentials", AIParamKind::String, std::nullopt},
+            {"dimensions", AIParamKind::UInt, Field(UInt64(0))},
+        };
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & settings = getContext()->getSettingsRef();
         auto params = FunctionBaseAI::resolveAIParams(
-            getContext(), arguments, FunctionBaseAI::embeddingParams(), settings[Setting::ai_function_embedding_default_credentials]);
+            getContext(), arguments, embeddingParams(), settings[Setting::ai_function_embedding_default_credentials]);
 
         UInt64 dimensions = params.getUInt("dimensions");
         String model(arguments[model_arg_index].column->getDataAt(0));
@@ -134,37 +144,31 @@ public:
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
-        /// `isNullAt` and `getDataAt` are virtual on `IColumn`, so a single path covers `ColumnString`,
-        /// `ColumnConst(ColumnString)`, `ColumnNullable` and `ColumnConst(ColumnNullable)` (e.g.
-        /// `NULL::Nullable(String)`). A constant is read at index 0 rather than materialized.
-        const IColumn & text_column = *arguments[text_arg_index].column;
-
-        /// A row needs an HTTP call only when non-null and non-empty; both null and empty-string rows map
-        /// to `[]` in the output. The `isNullAt` check also guards the only case where
-        /// `ColumnNullable::getDataAt` throws (a NULL value).
-        auto get_value = [](const IColumn & column, size_t row, std::string_view & out) -> bool
+        /// A Nullable text column can arrive as `ColumnNullable` or as `ColumnConst(ColumnNullable)` (e.g. `NULL::Nullable(String)`).
+        /// `convertToFullColumnIfConst` unwraps the latter into the former, so a single null-map path handles both.
+        ColumnPtr text_column;
+        const ColumnNullable * text_nullable = nullptr;
+        if (arguments[text_arg_index].type->isNullable())
         {
-            if (column.isNullAt(row))
-                return false;
-            out = column.getDataAt(row);
-            return !out.empty();
-        };
+            text_column = arguments[text_arg_index].column->convertToFullColumnIfConst();
+            text_nullable = typeid_cast<const ColumnNullable *>(text_column.get());
+        }
+        const IColumn & text_data_column = text_nullable
+            ? text_nullable->getNestedColumn()
+            : *arguments[text_arg_index].column;
 
+        /// Collect the indices of rows that actually need an HTTP call: non-null and non-empty.
+        /// Both null and empty-string rows map to `[]` in the output
         VectorWithMemoryTracking<size_t> live_rows;
-        VectorWithMemoryTracking<std::string_view> inputs;
         live_rows.reserve(input_rows_count);
-        inputs.reserve(input_rows_count);
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view value;
-            if (!get_value(text_column, i, value))
+            if (text_nullable && text_nullable->getNullMapData()[i])
+                continue;
+            if (text_data_column.getDataAt(i).empty())
                 continue;
             live_rows.push_back(i);
-            inputs.push_back(value);
         }
-
-        auto embedding_result = FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();
@@ -176,30 +180,101 @@ public:
         if (dimensions > 0)
             data_vec.reserve(live_rows.size() * dimensions);
 
+        UInt64 total_api_calls = 0;
+        UInt64 total_input_tokens = 0;
+        UInt64 rows_processed = 0; /// rows that received an AI result
+        UInt64 rows_skipped = 0; /// rows that received a default value due to quota or error
         UInt64 current_offset = 0;
-        size_t cursor = 0;
-        for (size_t k = 0; k < live_rows.size(); ++k)
-        {
-            /// fill pre-filtered (NULL/empty) input rows that sit between consecutive live rows
-            for (; cursor < live_rows[k]; ++cursor)
-                offsets_vec.push_back(current_offset);
 
-            /// a skipped input (quota/error) has an empty embedding, so its row also becomes `[]`
-            const auto & v = embedding_result.embeddings[k];
-            data_vec.insert(data_vec.end(), v.begin(), v.end());
-            current_offset += v.size();
-            offsets_vec.push_back(current_offset);
-            ++cursor;
+        size_t cursor = 0;
+
+        for (size_t batch_start = 0; batch_start < live_rows.size(); batch_start += max_batch_size)
+        {
+            if (quota_tracker->checkQuotas())
+            {
+                rows_skipped += live_rows.size() - batch_start;
+                break;
+            }
+
+            size_t batch_end = std::min(batch_start + max_batch_size, live_rows.size());
+
+            AIEmbeddingRequest ai_embedding_request;
+            ai_embedding_request.model = model;
+            ai_embedding_request.dimensions = dimensions;
+            ai_embedding_request.function_name = getName();
+            ai_embedding_request.inputs.reserve(batch_end - batch_start);
+
+            for (size_t k = batch_start; k < batch_end; ++k)
+                ai_embedding_request.inputs.emplace_back(text_data_column.getDataAt(live_rows[k]));
+
+            AIEmbeddingResponse ai_embedding_response;
+            bool batch_ok = false;
+            for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
+            {
+                /// Reserve an API-call slot before each request; this also performs a quota check.
+                /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
+                if (!quota_tracker->recordApiCall())
+                    break;
+
+                try
+                {
+                    ++total_api_calls;
+                    ai_embedding_response = provider->embed(ai_embedding_request, timeouts);
+                    total_input_tokens += ai_embedding_response.input_tokens;
+                    quota_tracker->recordTokens(ai_embedding_response.input_tokens, 0);
+                    batch_ok = true;
+                    break;
+                }
+                catch (...)
+                {
+                    /// Retry transient failures (network errors, provider-side HTTP errors) like the
+                    /// `url` table function does; deterministic errors are surfaced immediately.
+                    if (attempt < max_retries && FunctionBaseAI::isRetriableProviderError(std::current_exception()))
+                    {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(FunctionBaseAI::computeRetryBackoffMs(retry_delay_ms, attempt)));
+                        continue;
+                    }
+
+                    if (!throw_on_error) /// just skip to next batch, this batch's rows will be filled with empty arrays
+                        break;
+
+                    throw;
+                }
+            }
+
+            if (!batch_ok) /// failed batch's rows are filled in by the next batch (or the final tail fill)
+            {
+                rows_skipped += batch_end - batch_start;
+                continue;
+            }
+
+            chassert(ai_embedding_response.embeddings.size() == ai_embedding_request.inputs.size(),
+                "Number of inputs does not match number of output embeddings");
+
+            for (size_t k = 0; k < ai_embedding_response.embeddings.size(); ++k)
+            {
+                /// fill pre-filtered (NULL/empty) input rows that sit between consecutive live rows
+                size_t last_row_in_batch = live_rows[batch_start + k];
+                for (; cursor < last_row_in_batch; ++cursor)
+                    offsets_vec.push_back(current_offset);
+
+                const auto & v = ai_embedding_response.embeddings[k];
+                data_vec.insert(data_vec.end(), v.begin(), v.end());
+                current_offset += v.size();
+                offsets_vec.push_back(current_offset);
+                ++cursor;
+                ++rows_processed;
+            }
         }
 
-        /// fill final empties (pre-filtered tail rows and any trailing skipped inputs)
+        /// fill final empties (pre-filtered tail rows, plus any live rows already counted into rows_skipped)
         for (; cursor < input_rows_count; ++cursor)
             offsets_vec.push_back(current_offset);
 
-        ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
-        ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
-        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, embedding_result.texts_embedded);
-        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, embedding_result.texts_skipped);
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
+        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
+        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
 
         return ColumnArray::create(std::move(data_col), std::move(offsets_col));
     }
@@ -222,7 +297,7 @@ Generates an embedding vector for the given text using the configured AI provide
 
 The function sends the text to the configured embedding endpoint and returns the resulting vector as `Array(Float32)`.
 Within a single block of rows, inputs are grouped into batches of up to
-[`ai_function_embedding_max_batch_size`](/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
+[`ai_function_embedding_max_batch_size`](/operations/settings/settings#ai_function_embedding_max_batch_size)
 entries per HTTP request to reduce per-call overhead.
 
 Credentials (a named collection specifying the provider, endpoint, and optionally an API key)
@@ -242,7 +317,7 @@ requests a vector of the given size; otherwise the model's native size is return
         .arguments
         = {{"text", "Text to embed.", {"String"}},
            {"model", "Embedding model name.", {"const String"}},
-           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}}},
+           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The embedding vector, or an empty array if the input is NULL or empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
         .examples
         = {{"Embed a single string (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},
@@ -250,8 +325,6 @@ requests a vector of the given size; otherwise the model's native size is return
            {"Embed a column of texts", "SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10", ""}},
         .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::AI});
-
-    factory.registerAlias("AIEmbed", "aiEmbed");
 }
 
 }

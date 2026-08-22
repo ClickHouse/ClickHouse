@@ -105,13 +105,6 @@ public:
     ContextMutablePtr makeQueryContext(const ClientInfo & query_client_info) const;
     ContextMutablePtr makeQueryContext(ClientInfo && query_client_info) const;
 
-    /// Makes a query context for a query that outlives the session. It is always created from a copy of
-    /// a global context, so it does not share the session state (temporary tables, transaction), but the
-    /// function assigns the session's user, current roles, settings, current database and query parameters
-    /// to this context.
-    ContextMutablePtr makeDetachedQueryContext() const { return makeDetachedQueryContext(getClientInfo()); }
-    ContextMutablePtr makeDetachedQueryContext(const ClientInfo & query_client_info) const;
-
     /// Releases the currently used session ID so it becomes available for reuse by another session.
     void releaseSessionID();
 
@@ -119,7 +112,7 @@ public:
     void closeSession(const String & session_id);
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
-    ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move, bool detached = false) const;
+    ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
     void recordLoginSuccess(ContextPtr login_context) const;
 
     mutable bool notified_session_log_about_login = false;

@@ -1,14 +1,10 @@
 #pragma once
 
-#include <memory>
-#include <string_view>
-#include <unordered_map>
+#include <cstddef>
+#include <Analyzer/IQueryTreeNode.h>
 
 namespace DB
 {
-
-class IQueryTreeNode;
-using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
 /// Validate PREWHERE, WHERE, HAVING in query node
 void validateFilters(const QueryTreeNodePtr & query_node);

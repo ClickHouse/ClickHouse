@@ -166,9 +166,7 @@ void StreamingStorageRegistry::shutdown()
     {
         runner.enqueueAndKeepTrack([&]()
         {
-            /// The StorageID may remain in `StreamingStorageRegistry::storages` while the table is gone from `DatabaseCatalog`.
-            if (auto table = DatabaseCatalog::instance().tryGetTable(storage, Context::getGlobalContextInstance()))
-                table->shutdown();
+            DatabaseCatalog::instance().tryGetTable(storage, Context::getGlobalContextInstance())->shutdown();
         });
     }
 
@@ -252,18 +250,11 @@ void ObjectStorageQueueMetadataFactory::remove(
 std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> ObjectStorageQueueMetadataFactory::getAll()
 {
     std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> result;
-    std::lock_guard lock(mutex);
     for (const auto & [key, metadata] : metadata_by_path)
     {
         result.emplace(key, metadata.metadata);
     }
     return result;
-}
-
-bool ObjectStorageQueueMetadataFactory::isRegistered(const std::string & key)
-{
-    std::lock_guard lock(mutex);
-    return metadata_by_path.contains(key);
 }
 
 }

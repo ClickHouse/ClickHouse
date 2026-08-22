@@ -20,25 +20,14 @@ SELECT toString(toDateTime(1636264799, 'America/New_York')), toString(toDateTime
 SELECT count() FROM t_dst WHERE toString(x) >= '2021-11-07 01:59:00';
 SELECT toString(x) FROM t_dst ORDER BY toString(x) SETTINGS optimize_read_in_order = 1;
 
--- A fixed-offset time zone preserves order, and `toString` is strict there, so `y` stays in the prefix.
-DROP TABLE IF EXISTS t_utc;
-CREATE TABLE t_utc (x DateTime('UTC'), y UInt32) ENGINE = MergeTree ORDER BY (x, y);
-INSERT INTO t_utc SELECT toDateTime(1636264798 + intDiv(number, 4), 'UTC'), number % 4 FROM numbers(20);
-
-SELECT count() FROM t_utc WHERE toString(x) >= '2021-11-07 06:00:00';
-SELECT trimLeft(explain) FROM (
-    EXPLAIN PLAN SELECT * FROM t_utc ORDER BY toString(x), y SETTINGS optimize_read_in_order = 1
-) WHERE explain LIKE '%sort description%';
-
 DROP TABLE IF EXISTS t_date;
 CREATE TABLE t_date (d Date, y UInt32) ENGINE = MergeTree ORDER BY (d, y);
 INSERT INTO t_date SELECT toDate('2021-01-01') + intDiv(number, 4), number % 4 FROM numbers(20);
 
 SELECT trimLeft(explain) FROM (
-    EXPLAIN PLAN SELECT * FROM t_date ORDER BY toString(d), y SETTINGS optimize_read_in_order = 1
+    EXPLAIN PLAN actions = 1, compact = 1, pretty = 1 SELECT * FROM t_date ORDER BY toString(d), y SETTINGS optimize_read_in_order = 1
 ) WHERE explain LIKE '%sort description%';
 
 DROP TABLE t_time;
 DROP TABLE t_dst;
-DROP TABLE t_utc;
 DROP TABLE t_date;

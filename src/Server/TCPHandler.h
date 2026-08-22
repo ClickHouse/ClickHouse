@@ -119,7 +119,6 @@ struct QueryState
     /// If true, the data packets will be skipped instead of reading. Used to recover after errors.
     bool skipping_data = false;
     bool query_duration_already_logged = false;
-    bool run_query_in_background = false;
 
     ProfileEvents::ThreadIdToCountersSnapshot last_sent_snapshots;
 
@@ -285,8 +284,6 @@ private:
     ClusterFunctionReadTaskResponsePtr receiveClusterFunctionReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
-
-    InitialAllRangesAnnouncementResponse receiveAllRangesAnnouncementResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
     void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
     void processQuery(std::shared_ptr<QueryState> & state);
