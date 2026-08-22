@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/Exception.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTToJSON.h>
@@ -540,6 +541,91 @@ TEST(TreeHashCompleteness, ExplicitNilUuidClausesAreRejected)
     ASSERT_NE(pos, String::npos);
     json.replace(pos, key.size(), R"("has_uuid_clause":true)");
     expectJSONRejected(json);
+}
+
+TEST(TreeHashCompleteness, ShortAttachRejectsAToInnerUuidItCannotFormat)
+{
+    /// The short `ATTACH` form has nowhere to keep the parsed inner UUID: it builds no `targets`,
+    /// which is what formatting prints the clause from, so only the presence flag would survive and
+    /// the clause would disappear on format. Reject it at parsing instead.
+    EXPECT_THROW(parse("ATTACH TABLE t TO INNER UUID '00000000-0000-0000-0000-000000000001'"), Exception);
+    EXPECT_THROW(parse("ATTACH TABLE t TO INNER UUID '00000000-0000-0000-0000-000000000000'"), Exception);
+
+    /// The long form keeps it in `targets` and formats it back.
+    const std::string query = "ATTACH TABLE t TO INNER UUID '00000000-0000-0000-0000-000000000001' "
+                              "(x UInt32) ENGINE = SharedSet('/z', 'r')";
+    ASTPtr ast = parse(query);
+    EXPECT_TRUE(ast->formatWithSecretsOneLine().contains("TO INNER UUID"));
+    EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), ast->getTreeHash(/*ignore_aliases=*/ false));
+}
+
+TEST(TreeHashCompleteness, CreateQueryUpdatesEveryDirectChildPointer)
+{
+    /// `forEachPointerToChild` must name every member that also lives in `children`. A visitor that
+    /// replaces a child - `ReplaceQueryParameterVisitor` is the one in the server - swaps the entry
+    /// in `children` and then asks the node to update its member pointer; a member missing here
+    /// keeps pointing at the node that was just released.
+    const std::string query =
+        "CREATE WINDOW VIEW v ENGINE = Memory WATERMARK = INTERVAL 1 SECOND "
+        "ALLOWED_LATENESS = INTERVAL 2 SECOND AS SELECT count(a) FROM t "
+        "GROUP BY tumble(timestamp, INTERVAL 5 SECOND) AS wid";
+    ASTPtr ast = parse(query);
+    auto & create = ast->as<ASTCreateQuery &>();
+    ASSERT_TRUE(create.watermark_function);
+    ASSERT_TRUE(create.lateness_function);
+
+    for (IAST ** member : {&create.watermark_function, &create.lateness_function})
+    {
+        ASTPtr replacement = (*member)->clone();
+        ast->updatePointerToChild(*member, replacement);
+        EXPECT_EQ(*member, replacement.get());
+    }
+}
+
+TEST(TreeHashCompleteness, JSONRejectsPopulateAndEmptyTheParserCannotProduce)
+{
+    /// `POPULATE` / `EMPTY` decide whether the initial `INSERT SELECT` runs, and formatting prints
+    /// them unconditionally, so a JSON payload must not be able to reach a combination that the SQL
+    /// parser rejects: it would both format into unparsable SQL and change what execution does.
+    const auto reject_with_flag = [](const std::string & query, const String & flag)
+    {
+        String json = serializeASTToJSON(*parse(query));
+        const String key = "\"" + flag + "\":false";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos) << query;
+        json.replace(pos, key.size(), "\"" + flag + "\":true");
+        expectJSONRejected(json);
+    };
+
+    /// A plain table and an ordinary view never carry `POPULATE`.
+    reject_with_flag("CREATE TABLE t ENGINE = Memory EMPTY AS SELECT 1 AS x", "is_populate");
+    reject_with_flag("CREATE VIEW v AS SELECT 1", "is_populate");
+    /// An ordinary view never carries `EMPTY` either.
+    reject_with_flag("CREATE VIEW v AS SELECT 1", "is_create_empty");
+    /// The first refresh of a refreshable materialized view already fills it.
+    reject_with_flag("CREATE MATERIALIZED VIEW v REFRESH EVERY 1 HOUR TO t AS SELECT 1", "is_populate");
+    /// With an external target and no refresh strategy there is no initial load for `EMPTY` to skip.
+    reject_with_flag("CREATE MATERIALIZED VIEW v TO t AS SELECT 1", "is_create_empty");
+
+    /// The two are mutually exclusive.
+    {
+        String json = serializeASTToJSON(*parse("CREATE MATERIALIZED VIEW v ENGINE = Memory POPULATE AS SELECT 1"));
+        const String key = R"("is_create_empty":false)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.replace(pos, key.size(), R"("is_create_empty":true)");
+        expectJSONRejected(json);
+    }
+
+    /// Nothing to fill from: formatting would emit a trailing `EMPTY` that cannot be parsed back.
+    {
+        String json = serializeASTToJSON(*parse("CREATE TABLE t (x UInt8) ENGINE = Memory"));
+        const String key = R"("is_create_empty":false)";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.replace(pos, key.size(), R"("is_create_empty":true)");
+        expectJSONRejected(json);
+    }
 }
 
 TEST(TreeHashCompleteness, ExplicitUuidIsSignificant)

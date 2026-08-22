@@ -218,10 +218,14 @@ protected:
         f(reinterpret_cast<IAST **>(&columns_list), nullptr);
         f(reinterpret_cast<IAST **>(&aliases_list), nullptr);
         f(reinterpret_cast<IAST **>(&storage), nullptr);
+        f(&watermark_function, nullptr);
+        f(&lateness_function, nullptr);
         f(reinterpret_cast<IAST **>(&targets), nullptr);
         f(&as_table_function, nullptr);
         f(reinterpret_cast<IAST **>(&select), nullptr);
         f(&comment, nullptr);
+        f(&sql_security, nullptr);
+        f(reinterpret_cast<IAST **>(&refresh_strategy), nullptr);
         f(reinterpret_cast<IAST **>(&table_overrides), nullptr);
         f(reinterpret_cast<IAST **>(&dictionary_attributes_list), nullptr);
         f(reinterpret_cast<IAST **>(&dictionary), nullptr);

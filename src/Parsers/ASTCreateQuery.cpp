@@ -900,6 +900,56 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` has 'watermark_function' set without a bounded watermark strategy during AST JSON deserialization");
 
+    /// `POPULATE` / `EMPTY` are not free-floating flags: every SQL parser path constrains them, and
+    /// `InterpreterCreateQuery` still consults them (they decide whether the initial `INSERT SELECT`
+    /// runs), so malformed `clickhouse_json` must not be able to reach a combination the parser
+    /// rejects. `formatQueryImpl` prints ` POPULATE` / ` EMPTY` unconditionally, so such a payload
+    /// would also format into SQL that no longer parses back.
+    ///
+    /// The parser can set at most one of them (an `if`/`else if` over the two keywords).
+    if (is_populate && is_create_empty)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` sets both 'is_populate' and 'is_create_empty' during AST JSON deserialization, "
+            "but they are mutually exclusive");
+
+    /// `POPULATE` is accepted only by `ParserCreateViewQuery` for a materialized view and by
+    /// `ParserCreateWindowViewQuery`. A plain table, an ordinary view and a dictionary never carry it.
+    if (is_populate && !is_materialized_view && !is_window_view)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'is_populate' set but is neither a materialized view nor a window view "
+            "during AST JSON deserialization");
+
+    /// The first refresh of a refreshable materialized view already fills it with data, so `POPULATE`
+    /// would load the initial data twice; the parser rejects the combination outright.
+    if (is_populate && refresh_strategy)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` declares 'is_populate' together with 'refresh_strategy' during AST JSON "
+            "deserialization, but a refreshable materialized view is filled by its first refresh");
+
+    /// `EMPTY` is accepted by `ParserCreateTableQuery` (`CREATE TABLE ... EMPTY AS ...`), by
+    /// `ParserCreateViewQuery` for a materialized view and by `ParserCreateWindowViewQuery`.
+    /// An ordinary view and a dictionary never carry it.
+    if (is_create_empty && (is_ordinary_view || is_dictionary))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'is_create_empty' set on an ordinary view or a dictionary during AST JSON "
+            "deserialization, but the parser accepts `EMPTY` only for tables, materialized views and window views");
+
+    /// For a materialized view with an external target the parser accepts `EMPTY` only together with a
+    /// refresh strategy, where it means "skip the initial refresh". Without one there is no initial load
+    /// to skip, so the flag would be silently ignored on one side and printed on the other.
+    if (is_create_empty && is_materialized_view_with_external_target() && !refresh_strategy)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` declares 'is_create_empty' for a materialized view with 'TO [db].[table]' but "
+            "without 'refresh_strategy' during AST JSON deserialization");
+
+    /// The parser reaches `POPULATE` / `EMPTY` only on paths that go on to require a source: `AS SELECT`
+    /// for the view forms, and `AS <table>` / `AS <table function>` / `AS SELECT` for `CREATE TABLE`.
+    /// Without one, formatting emits a trailing ` POPULATE` / ` EMPTY` that cannot be reparsed.
+    if ((is_populate || is_create_empty) && !select && !as_table_function && as_table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` declares 'is_populate' or 'is_create_empty' without a source to fill from "
+            "during AST JSON deserialization");
+
     readOutputOptionsJSON(r);
 }
 
