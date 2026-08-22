@@ -107,7 +107,7 @@ FieldMatcher::Result FieldMatcher::generateResult(NamesAndFields & fields, size_
     unsigned type_score{0}, score{0};
     for (auto & [col, field] : fields)
     {
-        if (field.size() <= 1 && isPunctuationASCII(field[0]))
+        if (field.empty() || (field.size() == 1 && isPunctuationASCII(field[0])))
             return makeFailedResult();
 
         auto type = getDataTypeFromField(field);
