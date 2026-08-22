@@ -12,9 +12,13 @@ ClickHouse では、クエリのパース時に、演算子の優先度・優先
   ## アクセス演算子
 </div>
 
-`a[N]` – 配列の要素にアクセスします。`arrayElement(a, N)` 関数。
+`a[N]` – 配列要素へのアクセス。`arrayElement(a, N)` 関数。
+`N` には整数の配列も指定でき、その場合はそれらすべての位置の要素が配列として返されます。
+これは `arrayMap(i -> a[i], N)` と同じです。位置は Nullable にできます。要素型を `Nullable` でラップできる場合、`NULL` の位置は `NULL` になります。
+`Nullable` に含められない要素型 (`Array`、`Map` など) の場合は、スカラーの `NULL` 索引と同様に、
+要素型のデフォルト値になります。
 
-`a.N` – タプルの要素にアクセスします。`tupleElement(a, N)` 関数。
+`a.N` – タプル要素へのアクセス。`tupleElement(a, N)` 関数。
 
 <div id="numeric-negation-operator">
   ## 数値の否定演算子
