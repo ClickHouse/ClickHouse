@@ -71,9 +71,19 @@ struct QueryPlanCacheDependency
     /// into the cached plan as filter steps, so a policy change must invalidate the entry.
     IASTHash row_policy_hash{};
 
-    /// Columns the plan reads from this storage; rechecked for SELECT access on every hit.
+    /// Columns the plan reads from this storage, i.e. the physical columns of the leaf read.
+    /// Reported to `system.query_log` on a hit, mirroring what a miss records.
     /// Empty means no specific columns were read at this leaf (e.g. a `count()` over the table).
     Names columns;
+
+    /// Columns whose `SELECT` privilege the planner verified for this storage; rechecked for
+    /// SELECT access on every hit. This is the *logical* set the query selects, `ALIAS` columns
+    /// included, which differs from `columns`: `SELECT b FROM t` with `b ALIAS a + 1` checks
+    /// `SELECT(b)` while reading `a`. Rechecking the physical set instead would let a hit serve
+    /// `b` after `REVOKE SELECT(b)`, and falsely deny a user who only holds `SELECT(b)`.
+    /// Empty (with `columns_unknown` false) means no specific column was required, in which case
+    /// the recheck applies the same "SELECT on at least one column" rule as planning.
+    Names access_checked_columns;
 
     /// True when the exact set of columns read from this storage is unknown because the storage
     /// was discovered through the AST closure rather than a plan leaf: a view body, or a table

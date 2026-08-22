@@ -2488,6 +2488,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// an empty projection and is not a required column of this read (see
                         /// `ReadFromTableStep::readsOnlyInjectedColumn`).
                         reading_from_table->setReadsOnlyInjectedColumn(table_expression_data.readsOnlyInjectedColumn());
+                        /// The plan cache records the dependency's required columns from this set, not
+                        /// from the step's output header: access was checked for the selected columns
+                        /// (`ALIAS` columns included), while the header lists the physical read columns
+                        /// (see `ReadFromTableStep::getAccessCheckedColumns`).
+                        reading_from_table->setAccessCheckedColumns(table_expression_data.getSelectedColumnsNames());
 
                         query_plan.addStep(std::move(reading_from_table));
                     }

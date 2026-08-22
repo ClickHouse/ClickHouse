@@ -619,7 +619,13 @@ bool collectPlanDependencies(
             /// succeeds with any granted column. Leave the columns empty (and known): the hit
             /// re-check then applies the same "SELECT on at least one column" rule as planning.
             if (!read_from_table->readsOnlyInjectedColumn())
+            {
                 dep.columns = read_from_table->getOutputHeader()->getNames();
+                /// The access re-check must use the columns whose privileges planning verified,
+                /// not the physical read set: they differ for `ALIAS` columns (see
+                /// `ReadFromTableStep::getAccessCheckedColumns`).
+                dep.access_checked_columns = read_from_table->getAccessCheckedColumns();
+            }
             dependencies.push_back(std::move(dep));
         }
         else
@@ -796,6 +802,8 @@ std::optional<std::vector<QueryPlanCacheDependency>> collectQueryPlanCacheDepend
         target.columns_unknown = target.columns_unknown || dep.columns_unknown;
         target.is_view = target.is_view || dep.is_view;
         target.columns.insert(target.columns.end(), dep.columns.begin(), dep.columns.end());
+        target.access_checked_columns.insert(
+            target.access_checked_columns.end(), dep.access_checked_columns.begin(), dep.access_checked_columns.end());
     }
 
     std::vector<QueryPlanCacheDependency> result;
@@ -885,9 +893,12 @@ void checkAccessForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, const Co
             continue;
         }
 
-        if (!dep.columns.empty())
+        /// Recheck the columns planning checked (`ALIAS` columns as selected, not as read - see
+        /// `QueryPlanCacheDependency::access_checked_columns`), so that a hit enforces exactly the
+        /// grants a miss enforces.
+        if (!dep.access_checked_columns.empty())
         {
-            context->checkAccess(AccessType::SELECT, StorageID{dep.database, dep.table}, dep.columns);
+            context->checkAccess(AccessType::SELECT, StorageID{dep.database, dep.table}, dep.access_checked_columns);
             continue;
         }
 

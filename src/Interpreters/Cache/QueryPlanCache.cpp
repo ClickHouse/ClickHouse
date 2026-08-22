@@ -85,6 +85,7 @@ bool QueryPlanCacheDependency::operator==(const QueryPlanCacheDependency & other
         && metadata_version == other.metadata_version
         && row_policy_hash == other.row_policy_hash
         && columns == other.columns
+        && access_checked_columns == other.access_checked_columns
         && columns_unknown == other.columns_unknown
         && is_view == other.is_view;
 }
