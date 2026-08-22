@@ -283,8 +283,46 @@ APT_MIRROR_ERRORS = [
 ]
 
 
+# `--progress=plain` prints the whole build, so a signature found anywhere in the
+# output says nothing about what stopped the build: `apt-get update` warns with
+# `W: Failed to fetch ...` and carries on, and the step that actually failed can be a
+# later `wget` or `dpkg` with a genuine packaging error. Two things narrow the match
+# to the failure itself - the fenced context block that buildx prints for the step it
+# stopped on, and apt's own `E:` severity, which distinguishes "could not get the
+# file" from a miss apt recovered from.
+BUILDX_FAILURE_FENCE = "------"
+BUILDX_SOLVE_ERROR = "ERROR: failed to solve:"
+APT_ERROR_SEVERITY = "E: "
+
+
+def terminal_build_failure(info: str) -> str:
+    """Output of the step the build stopped on, fences included.
+
+    A failed `docker buildx build --progress=plain` ends with the failing step's own
+    output fenced between `------` lines and then `ERROR: failed to solve: ...`.
+    Everything above that fence belongs to steps that succeeded. Empty when the shape
+    is absent - a timed-out or truncated log - so callers fail closed.
+    """
+    lines = info.splitlines()
+    # Retries append their whole output, so only the last attempt is the terminal one.
+    ends = [i for i, line in enumerate(lines) if BUILDX_SOLVE_ERROR in line]
+    if not ends:
+        return ""
+    end = ends[-1]
+    fences = [
+        i for i, line in enumerate(lines[:end]) if line.strip() == BUILDX_FAILURE_FENCE
+    ]
+    if len(fences) < 2:
+        return ""
+    return "\n".join(lines[fences[-2] : end + 1])
+
+
 def is_apt_mirror_failure(info: str) -> bool:
-    return any(error in info for error in APT_MIRROR_ERRORS)
+    """Did the step that stopped the build fail because a mirror withheld a file?"""
+    return any(
+        APT_ERROR_SEVERITY in line and any(error in line for error in APT_MIRROR_ERRORS)
+        for line in terminal_build_failure(info).splitlines()
+    )
 
 
 def apt_mirror_variants(apt_mirror_region: str) -> List[List[str]]:
@@ -345,6 +383,23 @@ def with_timeout(cmd: str, seconds: int = BUILDX_TIMEOUT) -> str:
         f'rc=$?; if [ "$rc" = 124 ]; then '
         f'echo "{BUILDX_TIMEOUT_MESSAGE} after {seconds}s" >&2; fi; exit $rc; }}'
     )
+
+
+def is_buildx_timeout(info: str) -> bool:
+    return BUILDX_TIMEOUT_MESSAGE in info or BUILDX_TIMEOUT_KILL_DIAG in info
+
+
+def should_try_next_mirror(info: str) -> bool:
+    """After the retries against one mirror are gone: is that mirror a plausible cause?
+
+    A mirror breaks in two shapes, and each is bounded by a different mechanism. It
+    refuses the file, which apt reports and `BUILDX_RETRIES` then burns through; or it
+    trickles the file, which apt's inactivity timeout never bounds and `with_timeout`
+    kills. The second shape is the one that reded the arm64 server image, so an expiry
+    has to reach the next mirror too - it is only reached once the build is failing
+    anyway, and `buildx_timeout` keeps the extra attempt inside the job's own cap.
+    """
+    return is_apt_mirror_failure(info) or is_buildx_timeout(info)
 
 
 def buildx_args(
@@ -477,11 +532,11 @@ def build_and_push_image(
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
             )
-            if build_result.is_ok() or not is_apt_mirror_failure(build_result.info):
+            if build_result.is_ok() or not should_try_next_mirror(build_result.info):
                 break
             logging.info(
-                "Image %s:%s for arch %s exhausted its retries on an apt download "
-                "failure; %s",
+                "Image %s:%s for arch %s exhausted its retries on a failure the apt "
+                "mirror can explain; %s",
                 image.name,
                 tag,
                 arch,
