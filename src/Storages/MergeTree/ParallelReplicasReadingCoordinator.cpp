@@ -939,6 +939,7 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         assigned_to_me,
         stolen_by_hash,
         stolen_unassigned);
+    LOG_TEST(log, "Response ranges for replica {}: {}", request.replica_num, response.description.describe());
 
     return response;
 }
@@ -1108,6 +1109,7 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
         = announced_min_marks_per_request > 0 ? announced_min_marks_per_request : request.min_marks_per_request;
 
     LOG_TRACE(log, "Got read request: {}", request.describe());
+    LOG_TEST(log, "Read request ranges: {}", request.description.describe());
 
     ParallelReadResponse response;
     response.description = request.description;
@@ -1197,6 +1199,7 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
     stats[request.replica_num].sum_marks += overall_number_of_marks;
 
     LOG_TRACE(log, "Going to respond to replica {} with {}", request.replica_num, response.describe());
+    LOG_TEST(log, "Response ranges for replica {}: {}", request.replica_num, response.description.describe());
     return response;
 }
 

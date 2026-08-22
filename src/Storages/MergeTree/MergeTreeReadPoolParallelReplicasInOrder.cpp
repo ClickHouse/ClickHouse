@@ -226,6 +226,7 @@ std::optional<MarkRanges> MergeTreeReadPoolParallelReplicasInOrder::cutRangesToR
         if (response)
         {
             LOG_DEBUG(log, "Got response: {}", response->describe());
+            LOG_TEST(log, "Response ranges: {}", response->description.describe());
             if (response->description.empty() || response->finish)
                 no_more_tasks = true;
         }

@@ -102,7 +102,7 @@ void ParallelReadResponse::serialize(WriteBuffer & out, UInt64 replica_pr_protoc
 
 String ParallelReadResponse::describe() const
 {
-    return fmt::format("{}. Finish: {}", description.describe(), finish);
+    return fmt::format("{}. Finish: {}", description.describeShort(), finish);
 }
 
 void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
