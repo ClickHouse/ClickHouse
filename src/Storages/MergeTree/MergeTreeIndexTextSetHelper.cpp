@@ -49,10 +49,9 @@ bool textIndexSetElementIsComparable(
     auto index_unwrapped = unwrapTextIndexType(index_type);
 
     /// A preprocessor reads a set element as `String` but the index column as the type it receives
-    /// there: an `Array` carrier's element type, since it is rewritten through `arrayMap`, and the
-    /// declared type otherwise. Case folding maps bytes without consulting their type, so it yields
-    /// the same tokens on both. A cast to `String` does so only where the input already carries a
-    /// `String` payload: from `FixedString` it drops the padding a set element still holds.
+    /// there: an `Array` carrier's element type, rewritten through `arrayMap`, else the declared one.
+    /// Case folding maps bytes without consulting their type; a cast to `String` does so only for a
+    /// `String` payload, since from `FixedString` it drops padding a set element still holds.
     if (has_preprocessor && !preprocessor_is_case_folding)
     {
         auto input = preprocessorInputType(index_type);

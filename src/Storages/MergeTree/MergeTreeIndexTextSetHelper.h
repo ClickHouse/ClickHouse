@@ -9,9 +9,9 @@ namespace DB
 /// Whether an `IN` set element of `set_type` can be matched against the tokens a text or token bloom
 /// filter index built from `index_type` with `tokenizer`. The element bytes are tokenized as they
 /// arrive, so another representation requires tokens no granule holds and prunes a matching granule.
-/// `preprocessor_is_case_folding` marks a preprocessor that maps bytes without consulting their
-/// type, so it tokenizes a set element and the index column alike. `preprocessor_is_cast_to_string`
-/// marks a cast to `String`, which does so only for an input already carrying a `String` payload.
+/// `preprocessor_is_case_folding` maps bytes without consulting their type, so it tokenizes a set
+/// element and the index column alike; `preprocessor_is_cast_to_string` does so only for an input
+/// that already carries a `String` payload.
 bool textIndexSetElementIsComparable(
     const DataTypePtr & set_type,
     const DataTypePtr & index_type,
