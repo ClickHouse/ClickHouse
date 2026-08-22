@@ -154,8 +154,8 @@ void hilbertIntervalToHyperrectangles2D(UInt64 first, UInt64 last, F && callback
         callback(unpacked_range);
     };
 
-    /// A single-point interval covers a single point. The partitioning below is driven by the
-    /// number of significant bits of the bounds, and there are none of them in [0, 0].
+    /// A single-code interval is its own cover. The partitioning below is sized from the number of
+    /// significant bits in the bounds, and emits nothing when that count is zero, as it is for [0, 0].
     if (first == last)
     {
         unpack_segment(HilbertDetails::Segment{.begin = first, .end = last});
