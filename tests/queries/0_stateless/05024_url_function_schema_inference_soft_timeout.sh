@@ -77,6 +77,17 @@ for _ in {1..300}; do
     sleep 0.1
 done
 
+# The wait for a failpoint to pause has no timeout of its own: bound it, so that a sequence which
+# did not happen fails the test with a diagnostic instead of hanging it - and leaving the
+# server-wide failpoint armed for the tests which run after it.
+wait_for_pause()
+{
+    if ! timeout 300 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $1 PAUSE"; then
+        echo "FAIL: the failpoint $1 was not reached"
+        exit 1
+    fi
+}
+
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_before_read_buffer_creation"
 
 QUERY_ID="${CLICKHOUSE_DATABASE}_schema_inference_soft_timeout"
@@ -89,7 +100,7 @@ $CLICKHOUSE_CLIENT \
     >/dev/null 2>/dev/null &
 CLIENT_PID=$!
 
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT storage_url_pause_before_read_buffer_creation PAUSE"
+wait_for_pause storage_url_pause_before_read_buffer_creation
 
 # Ensure that `max_execution_time` expires while the inference is held precisely before `create`.
 sleep 2

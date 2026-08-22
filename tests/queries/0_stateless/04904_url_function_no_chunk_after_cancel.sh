@@ -46,6 +46,17 @@ for _ in {1..300}; do
 done
 HTTP_PORT=$(cat "$PORT_FILE")
 
+# The wait for a failpoint to pause has no timeout of its own: bound it, so that a sequence which
+# did not happen fails the test with a diagnostic instead of hanging it - and leaving the
+# server-wide failpoint armed for the tests which run after it.
+wait_for_pause()
+{
+    if ! timeout 300 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $1 PAUSE"; then
+        echo "FAIL: the failpoint $1 was not reached"
+        exit 1
+    fi
+}
+
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_after_pull"
 
 QUERY_ID="${CLICKHOUSE_DATABASE}_no_chunk_after_cancel"
@@ -57,7 +68,7 @@ $CLICKHOUSE_CLIENT \
     >"$OUTPUT_FILE" 2>/dev/null &
 CLIENT_PID=$!
 
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT storage_url_pause_after_pull PAUSE"
+wait_for_pause storage_url_pause_after_pull
 kill -SIGINT $CLIENT_PID
 
 DELIVERED=0
