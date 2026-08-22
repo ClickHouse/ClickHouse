@@ -4577,9 +4577,39 @@ static std::vector<RangesInDataPartsDescription> sliceMarksAcrossBuckets(const R
     return result;
 }
 
+Pipe ReadFromMergeTree::createEmptyPipe(size_t num_streams) const
+{
+    Pipes pipes;
+    pipes.reserve(num_streams);
+    for (size_t i = 0; i < num_streams; ++i)
+        pipes.emplace_back(std::make_shared<NullSource>(getOutputHeader()));
+
+    return Pipe::unitePipes(std::move(pipes));
+}
+
+size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & result) const
+{
+    /// The layers are a static pre-split of the parts made by `optimizeJoinByShards`, and the number of
+    /// output ports is a part of that plan: the JOIN above consumes exactly one port per layer and pairs
+    /// the ports of its two sides positionally. The layers are built from the parts of all the sources at
+    /// once, so both sides always get the same number of them, even when a source contributes no parts to
+    /// a layer. That is why an empty layer still occupies its port instead of being dropped, and why a
+    /// source that reads nothing at all must produce one port per layer as well: collapsing it to a single
+    /// port makes the two sides disagree on the number of shards. The same reasoning does not apply to a
+    /// read coordinated across parallel replicas, which ignores the layers (see `spreadMarkRanges`).
+    if (result.split_parts.layers.empty() || is_parallel_reading_from_replicas)
+        return 1;
+
+    return result.split_parts.layers.size();
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
+
+    /// `spreadMarkRanges` consumes `result.split_parts`, so remember the number of ports the plan expects
+    /// before it is moved from.
+    const size_t num_streams_when_nothing_to_read = getNumStreamsWhenNothingToRead(result);
 
     logPredicateStatistics(result);
 
@@ -4777,7 +4807,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (result.parts_with_ranges.empty() && !query_info.isStream())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
+        pipeline.init(createEmptyPipe(num_streams_when_nothing_to_read));
         return;
     }
 
@@ -5014,7 +5044,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (pipe.empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
+        pipeline.init(createEmptyPipe(num_streams_when_nothing_to_read));
         return;
     }
 
