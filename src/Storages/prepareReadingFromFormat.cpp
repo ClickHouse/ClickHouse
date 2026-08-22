@@ -72,7 +72,10 @@ void appendDeferredFilterInputs(
     const ColumnsDescription & columns_description)
 {
     /// Ancestors first, so that inserting `t` after `t.a` cannot leave both in the header.
-    std::vector<NameAndTypePair> required_columns(dag.getRequiredColumns().begin(), dag.getRequiredColumns().end());
+    /// `getRequiredColumns` returns by value: bind it, or the two iterators come from different
+    /// temporaries.
+    const auto dag_required_columns = dag.getRequiredColumns();
+    std::vector<NameAndTypePair> required_columns(dag_required_columns.begin(), dag_required_columns.end());
     std::sort(required_columns.begin(), required_columns.end(), [](const auto & lhs, const auto & rhs)
     {
         const auto depth = [](const String & name) { return std::count(name.begin(), name.end(), '.'); };
