@@ -7963,7 +7963,9 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
 Query Iceberg table using the specific snapshot id.
 )", 0) \
     DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
-Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
+Allow reading Iceberg `geometry` and `geography` field types, exposed as the ClickHouse `Geometry`
+(Variant) type. Required on the query that reads such a column, not on the query that created or
+attached the table.
 )", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
 Enables showing data lake catalogs in system tables.

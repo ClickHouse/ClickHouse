@@ -18,6 +18,17 @@ MERGE_PLAIN="mp_${CLICKHOUSE_DATABASE}_${RANDOM}"
 
 GEO_REFUSED="allow_experimental_geo_types_in_iceberg"
 
+# An arm whose passing answer is "not refused" needs the query's exit status as well as the error
+# token: a token-presence test alone reports an unrelated failure as a permitted read.
+run_allowed() {
+    local out rc
+    out=$(${CLICKHOUSE_CLIENT} "$@" 2>&1)
+    rc=$?
+    if echo "$out" | grep -qF "${GEO_REFUSED}"; then echo REFUSED
+    elif [ $rc -eq 0 ]; then echo NOT_REFUSED
+    else echo "QUERY_FAILED: $out"; fi
+}
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "
     CREATE TABLE ${TABLE} (id Int64, g Geometry)
@@ -65,26 +76,31 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${NESTED}" 2>&1 | grep -qF "${
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_GEO}"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${MERGE_GEO} ENGINE = Merge(currentDatabase(), '^${TABLE}\$')"
 
-# Cold: no query has read this table since it was attached.
+# Cold: no query has read this table since it was attached. The count() arms pin
+# optimize_trivial_count_query: with it off the count runs as an ordinary scan and is answered by the
+# other gated path, so the arm would no longer be about the trivial-count path it is here to cover.
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${TABLE}"
 ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${TABLE}"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+${CLICKHOUSE_CLIENT} --optimize_trivial_count_query=1 --query "SELECT count() FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
 ${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
 
 # A query that enables the flag reads through Merge, and pins the table state. Asserted as "not
 # refused" rather than as a row count: the trivial count() of a just-written Iceberg table read
 # through Merge races with snapshot visibility and returns 0 instead of 1 in about 6 runs in 100,
 # equally on master. What this test is about is who is allowed to read, so it asserts exactly that.
-${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT count() FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+run_allowed --optimize_trivial_count_query=1 --allow_experimental_geo_types_in_iceberg=1 --query "SELECT count() FROM ${MERGE_GEO}"
 ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT id, wkt(g) FROM ${MERGE_GEO}"
 
 # Warm: the same two flag-less reads must still be refused. Enforcement that depends on whether an
 # earlier query happened to warm the state is the defect this test guards against.
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+${CLICKHOUSE_CLIENT} --optimize_trivial_count_query=1 --query "SELECT count() FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
 ${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM ${MERGE_GEO}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
 
-# system.tables reads total_rows of every table, and must not be broken by a refused one.
-${CLICKHOUSE_CLIENT} --query "SELECT count() >= 2 FROM system.tables WHERE database = currentDatabase()"
+# system.tables answers total_rows for a table it may not read as NULL rather than failing the whole
+# query. The column has to be named for the row count to be reached at all. Reaching it means
+# system.tables logs the refusal it swallows, so silence the log channel the client forwards to its
+# stderr, as the adjacent Iceberg tests do.
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "SELECT total_rows IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${TABLE}'"
 
 # A table without a geometry column is unaffected on each of the three paths gated above: the
 # trivial count() through Merge, a direct read, and a scan through Merge of a pinned snapshot.
@@ -96,9 +112,13 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${PLAIN} SELECT 7, 'x'"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_PLAIN}"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${MERGE_PLAIN} ENGINE = Merge(currentDatabase(), '^${PLAIN}\$')"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${MERGE_PLAIN}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+run_allowed --optimize_trivial_count_query=1 --query "SELECT count() FROM ${MERGE_PLAIN}"
 ${CLICKHOUSE_CLIENT} --query "SELECT id, s FROM ${PLAIN}"
 ${CLICKHOUSE_CLIENT} --query "SELECT id, s FROM ${MERGE_PLAIN}"
+
+# And its total_rows is a number, so the NULL asserted above is this table being unreadable by that
+# query rather than how system.tables always answers for Iceberg.
+${CLICKHOUSE_CLIENT} --query "SELECT total_rows IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${PLAIN}'"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_GEO}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_PLAIN}"
