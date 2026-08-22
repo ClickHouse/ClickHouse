@@ -2,14 +2,14 @@
 
 #include <optional>
 #include <IO/PeekableReadBuffer.h>
-#include "Core/NamesAndTypes.h"
-#include "DataTypes/IDataType.h"
-#include "DataTypes/Serializations/SerializationInfo.h"
-#include "Formats/EscapingRuleUtils.h"
-#include "Formats/FormatSettings.h"
-#include "Formats/SchemaInferenceUtils.h"
-#include "Processors/Formats/IRowInputFormat.h"
-#include "Processors/Formats/ISchemaReader.h"
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatSettings.h>
+#include <Formats/SchemaInferenceUtils.h>
+#include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 
 namespace DB
 {
