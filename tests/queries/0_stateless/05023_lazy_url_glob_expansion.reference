@@ -8,3 +8,7 @@ too many result addresses
 20	190
 --- a hundred million addresses under the default limit
 0
+--- a _path predicate is applied to every generated address, which counts against the limit
+too many result addresses
+--- with room for the whole pattern the predicate prunes every address and nothing is read
+0
