@@ -1,9 +1,0 @@
-observed_between	10	45	450
-empty	0
-bounded	10	45	450
-bounded_unordered	10	45	450
-bounded_cursor_from_start	10	45	450
-bounded_cursor_resumed	5	35	350
-bounded_cursor_exhausted	0	0	0
-cancelled	1
-disabled_before_round	0

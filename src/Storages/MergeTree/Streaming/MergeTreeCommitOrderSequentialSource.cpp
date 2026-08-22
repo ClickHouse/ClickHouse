@@ -30,7 +30,6 @@
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <base/defines.h>
@@ -40,12 +39,6 @@
 
 namespace DB
 {
-
-namespace FailPoints
-{
-    /// Pauses a bounded reader after both of its observations are taken.
-    extern const char streaming_bounded_pause_after_snapshot_observed[];
-}
 
 namespace
 {
@@ -410,13 +403,9 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
 
 IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfiguration()
 {
-    /// Read before the snapshot below: a round records itself only after advancing every partition it
-    /// owes, so a count observed first can never describe more than the snapshot that follows.
     const bool round_applied = subscription->updatesCount() > 0;
 
     const auto result = handleReconfiguration();
-
-    FailPointInjection::pauseFailPoint(FailPoints::streaming_bounded_pause_after_snapshot_observed);
 
     // Finish after the first completed snapshot, or once the first enrichment shows nothing (more) to read.
     if (round_applied && (finished_snapshots > 0 || result == Status::Async))
