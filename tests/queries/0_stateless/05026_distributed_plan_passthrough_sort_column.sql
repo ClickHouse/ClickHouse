@@ -124,9 +124,9 @@ SELECT 'rewrite off keeps the gather below', count() > 0 FROM
 WHERE explain ILIKE '%GatherExchange (sorted by (a ASC, v ASC))%'
 SETTINGS make_distributed_plan = 0;
 
--- The distributed result for the branch-reaching shape, and the same query planned locally. Plan
--- optimization is whole-statement, so the local reference needs its own statement: a `SETTINGS` clause
--- on a FROM-subquery does not exempt that subquery's subtree from being distributed.
+-- The distributed result for the branch-reaching shape, and the same query planned locally. The local
+-- reference needs its own statement: optimization is whole-statement, so a FROM-subquery `SETTINGS` does
+-- not exempt its subtree. Measured equal for both candidate answers: regression coverage, not a witness.
 SELECT 'window values distributed', sum(cityHash64(a, v, s, r)) FROM
 (
     SELECT a, v, s, uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
