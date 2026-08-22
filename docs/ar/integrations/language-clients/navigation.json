@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Home",
+      "group": "الصفحة الرئيسية",
       "icon": "house",
       "pages": [
         "ar/integrations/language-clients/index"
@@ -32,7 +32,7 @@
       "$ref": "c/navigation.json"
     },
     {
-      "group": "Third-party clients",
+      "group": "برامج عميلة تابعة لجهات خارجية",
       "icon": "users",
       "pages": [
         "ar/integrations/language-clients/third-party/client-libraries"
@@ -40,5 +40,5 @@
     }
   ],
   "icon": "/images/icons/icon-language-clients.svg",
-  "item": "Language clients"
+  "item": "مكتبات العملاء للغات البرمجة"
 }

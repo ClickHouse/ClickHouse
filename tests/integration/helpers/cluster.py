@@ -5153,6 +5153,10 @@ class ClickHouseInstance:
         build_opts = self.query(
             "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
         )
+        if not sanitizer_name:
+            # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). -fsanitize=
+            # also matches CFI, which traps on a bad vcall or cast with no sanitizer runtime attached.
+            return "-DSANITIZER" in build_opts
         return "-fsanitize={}".format(sanitizer_name) in build_opts
 
     def is_debug_build(self):
