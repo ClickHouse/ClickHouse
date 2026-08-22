@@ -84,6 +84,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
@@ -273,6 +274,19 @@ static NameSet collectIndicesRebuiltByMutation(
     bool rebuilds_every_index = std::ranges::any_of(
         commands, [](const auto & command) { return command.affectsAllColumns(); });
 
+    /// `MutationsInterpreter::prepare` ignores the setting as soon as the same command set updates
+    /// or deletes rows, because then it rewrites the data anyway. Take the same decision here, or a
+    /// `MATERIALIZE TTL` next to an `UPDATE` would be read as leaving the granules alone.
+    if (std::ranges::any_of(commands, [](const auto & command)
+            { return command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::DELETE; }))
+        materialize_ttl_recalculate_only = false;
+
+    /// Columns whose indices `MutationsInterpreter::prepare` rebuilds or drops outright, rather than
+    /// carrying their granules over: a column this mutation reads at a type the part does not have
+    /// (`MODIFY COLUMN`), and a column it clears (`CLEAR COLUMN`).
+    NameSet type_changed_columns;
+    NameSet cleared_columns;
+
     /// Exactly the set `MutationsInterpreter` derives from the same commands. A wider one here would
     /// claim a rebuild it does not perform.
     NameSet updated_columns;
@@ -285,6 +299,16 @@ static NameSet collectIndicesRebuiltByMutation(
         if (auto alter = command.ast(); alter && alter->update_assignments)
             for (const auto & child : alter->update_assignments->children)
                 updated_columns.insert(child->as<ASTAssignment &>().column_name);
+
+        if (command.type == MutationCommand::Type::READ_COLUMN)
+        {
+            auto part_column = part->tryGetColumn(command.column_name);
+            if (part_column && command.data_type && !part_column->type->equals(*command.data_type))
+                type_changed_columns.insert(command.column_name);
+        }
+
+        if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear && part->tryGetColumn(command.column_name))
+            cleared_columns.insert(command.column_name);
 
         if (command.type != MutationCommand::Type::MATERIALIZE_TTL
             || materialize_ttl_recalculate_only
@@ -381,6 +405,8 @@ static NameSet collectIndicesRebuiltByMutation(
                 changed_columns.insert(dependency.column_name);
     }
 
+    const auto index_mode = (*part->storage.getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
+
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
         if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
@@ -393,6 +419,20 @@ static NameSet collectIndicesRebuiltByMutation(
         }
 
         const auto & index_columns = index.expression->getRequiredColumns();
+
+        /// An index over a cleared column is dropped, and one over a column whose type changes is
+        /// rebuilt or dropped depending on the mode; only the two modes that refuse the `ALTER`
+        /// outright leave it alone, and then no part is written at all.
+        if (std::ranges::any_of(index_columns, [&](const auto & column) { return cleared_columns.contains(column); })
+            || (std::ranges::any_of(index_columns, [&](const auto & column) { return type_changed_columns.contains(column); })
+                && (index_mode == AlterColumnSecondaryIndexMode::REBUILD
+                    || index_mode == AlterColumnSecondaryIndexMode::DROP
+                    || index.isImplicitlyCreated())))
+        {
+            rebuilt.insert(index.name);
+            continue;
+        }
+
         if (std::ranges::any_of(index_columns, [&](const auto & column)
                 { return updated_columns.contains(column) || changed_columns.contains(column); }))
             rebuilt.insert(index.name);
