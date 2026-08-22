@@ -23,7 +23,7 @@ import shutil
 from pathlib import Path
 
 from ci.praktika.result import Result
-from ci.praktika.utils import Utils
+from ci.praktika.utils import Shell, Utils
 
 current_directory = Utils.cwd()
 source_dir = f"{current_directory}/utils/wasm-parser"
@@ -76,6 +76,25 @@ CHECKOUT_SUBMODULES = (
 )
 
 
+# The deleted `test_wasm_parser` fixture mounted the checkout read-only, so a build that wrote
+# anything into the source tree failed on the spot. Praktika hands the job a writable checkout
+# instead, so the contract is asserted afterwards: an out-of-tree build leaves the sources it
+# reads exactly as it found them. Submodules are ignored - the checkout step above is what
+# touched them.
+def check_source_tree_is_clean():
+    def check():
+        dirty = Shell.get_output(
+            f"{GIT} status --porcelain --untracked-files=all --ignore-submodules=all"
+            " -- utils/wasm-parser src base"
+        )
+        if dirty:
+            print(f"The build wrote into the source tree:\n{dirty}")
+            return False
+        return True
+
+    return Result.from_commands_run(name="Source tree is clean", command=check)
+
+
 def main():
     wasi_sdk = os.getenv("WASI_SDK")
     assert wasi_sdk, (
@@ -125,6 +144,8 @@ def main():
         published = f"{build_dir}/{artifact}"
         shutil.copy2(f"{config_dir}/parser.wasm", published)
         results[-1].set_info(f"{artifact}: {Path(published).stat().st_size} bytes")
+
+    results.append(check_source_tree_is_clean())
 
     Result.create_from(results=results).complete_job()
 
