@@ -96,6 +96,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
 
     /// The cap holds back input unless the sole demand is an empty port with nothing
     /// drainable: that port can only be fed from input, so the cap yields to it.
+    /// See `MAX_QUEUE_LENGTH` for why yielding is the only non-deadlocking option here.
     if (any_queue_at_capacity && !(has_pushable_empty_port && !has_pushable_queued_chunks))
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
 
