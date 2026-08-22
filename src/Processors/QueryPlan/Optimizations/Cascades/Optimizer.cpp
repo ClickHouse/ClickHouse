@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
@@ -35,6 +36,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -84,6 +86,12 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
             "make_distributed_plan with enable_cascades_optimizer cannot determine how many nodes will "
             "run the query. Configure a stateless worker cluster, or set `distributed_plan_workers_num` "
             "(also required for `distributed_plan_execute_locally` without a configured cluster).");
+    /// The count sizes the read buckets and the exchange fan-out, so the read-bucket ceiling bounds it
+    /// too: above it a plan would scatter to more destinations than a bucketed read may have.
+    if (context.cluster_node_count > ReadFromMergeTree::max_distributed_read_buckets)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "make_distributed_plan with enable_cascades_optimizer cannot plan for {} nodes, the maximum "
+            "is {}.", context.cluster_node_count, ReadFromMergeTree::max_distributed_read_buckets);
 
     /// If the cost-config override is set but invalid, let the error propagate instead of silently
     /// using the defaults, so a query that set it does not get a different cost model than it asked for.
