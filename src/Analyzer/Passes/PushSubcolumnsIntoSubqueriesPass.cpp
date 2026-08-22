@@ -42,6 +42,11 @@ namespace Setting
     extern const SettingsBool optimize_push_subcolumns_into_subqueries;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -60,6 +65,26 @@ enum class ClauseKind
     Interpolate,
 };
 
+/// How a matched occurrence is rewritten once the subcolumn is exported by the subquery.
+/// Most carriers collapse to the projected subcolumn itself (with an optional cast), but some
+/// need a richer outer expression built around it, mirroring what `FunctionToSubcolumnsPass`
+/// does for columns read directly from a table.
+enum class ReplacementKind
+{
+    /// The subcolumn itself, cast to the result type of the original function when they differ.
+    Direct,
+    /// `empty(x)` -> `equals(x.size0, 0)`.
+    EqualsZero,
+    /// `notEmpty(x)` -> `notEquals(x.size0, 0)`.
+    NotEqualsZero,
+    /// `isNotNull(x)` -> `not(x.null)`.
+    Not,
+    /// `mapContainsKey(x, key)` -> `has(x.keys, key)`.
+    Has,
+    /// `count(x)` -> `sum(not(x.null))`.
+    SumNot,
+};
+
 /// A pending addition of the subcolumn projection to one leaf query of the pushdown target.
 /// The projection node is null when an identical projection column already exists and is reused.
 struct LeafApplication
@@ -76,11 +101,11 @@ struct PushdownGroup
     String subcolumn_path;
     /// Type of the column argument of getSubcolumn.
     DataTypePtr column_type;
-    /// Result type of the getSubcolumn function.
+    /// Type of the projected subcolumn. The result type of the original function can differ
+    /// from it (e.g. `variantElement` wraps the alternative in Nullable, and the carriers that
+    /// need a richer outer expression return a boolean); it is recomputed per occurrence when
+    /// the replacement is built.
     DataTypePtr subcolumn_type;
-    /// Result type of the original function. It differs from the subcolumn type for
-    /// `variantElement`, which wraps the selected variant alternative in Nullable.
-    DataTypePtr result_type;
     /// `tupleElement` requires additional storage capability and ambiguity checks.
     bool requires_tuple_element_guards = false;
     ContextPtr context;
@@ -143,6 +168,7 @@ struct CandidateMatch
     QueryTreeNodePtr column_source;
     String subcolumn_path;
     DataTypePtr subcolumn_type;
+    ReplacementKind replacement_kind = ReplacementKind::Direct;
     bool requires_tuple_element_guards = false;
 };
 
@@ -171,7 +197,26 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         return {};
 
     String subcolumn_path;
+    auto replacement_kind = ReplacementKind::Direct;
+    /// `tupleElement` over a Tuple needs additional storage capability and ambiguity checks,
+    /// while `tupleElement` over a QBit (which uses it for its bit-plane subcolumns) does not.
+    bool requires_tuple_element_guards = false;
+    /// Type of the subcolumn to project, when it is not the result type of the original function.
+    DataTypePtr subcolumn_type_override;
     const auto & function_name = function_node.getFunctionName();
+
+    /// The carriers below are rewritten into an expression over the subcolumn instead of the
+    /// subcolumn itself, so the subcolumn type has to be taken from the type system rather than
+    /// from the result type of the original function.
+    auto declared_subcolumn_type = [&](std::string_view subcolumn_name, const DataTypePtr & expected_type) -> DataTypePtr
+    {
+        auto declared_type = column_node->getColumnType()->tryGetSubcolumnType(subcolumn_name);
+        if (!declared_type || !declared_type->equals(*expected_type))
+            return nullptr;
+        return declared_type;
+    };
+
+    auto result_is_boolean = [&] { return function_node.getResultType()->equals(*std::make_shared<DataTypeUInt8>()); };
 
     if (function_name == "getSubcolumn")
     {
@@ -270,6 +315,24 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
             return {};
 
         subcolumn_path = element_names[*position];
+        requires_tuple_element_guards = true;
+    }
+    else if (function_name == "tupleElement" && function_arguments.size() == 2 && column_node->getColumnType()->getTypeId() == TypeIndex::QBit)
+    {
+        /// A QBit exposes its bit planes as subcolumns named by the one-based element index,
+        /// and `tupleElement` is the syntax used to read them.
+        const auto * constant_node = function_arguments[1]->as<ConstantNode>();
+        if (!constant_node || constant_node->getValue().getType() != Field::Types::UInt64)
+            return {};
+
+        auto index = constant_node->getValue().safeGet<UInt64>();
+        if (index == 0)
+            return {};
+
+        subcolumn_path = toString(index);
+        subcolumn_type_override = column_node->getColumnType()->tryGetSubcolumnType(subcolumn_path);
+        if (!subcolumn_type_override || !function_node.getResultType()->equals(*subcolumn_type_override))
+            return {};
     }
     else if (function_name == "variantElement" && function_arguments.size() == 2 && column_node->getColumnType()->getTypeId() == TypeIndex::Variant)
     {
@@ -285,13 +348,74 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
 
         subcolumn_path = variant_name;
     }
+    else if ((function_name == "empty" || function_name == "notEmpty") && function_arguments.size() == 1)
+    {
+        const auto type_id = column_node->getColumnType()->getTypeId();
+        if ((type_id != TypeIndex::String && type_id != TypeIndex::Array && type_id != TypeIndex::Map) || !result_is_boolean())
+            return {};
+
+        subcolumn_path = type_id == TypeIndex::String ? "size" : "size0";
+        subcolumn_type_override = declared_subcolumn_type(subcolumn_path, std::make_shared<DataTypeUInt64>());
+        if (!subcolumn_type_override)
+            return {};
+
+        replacement_kind = function_name == "empty" ? ReplacementKind::EqualsZero : ReplacementKind::NotEqualsZero;
+    }
+    else if (function_name == "isNotNull" && function_arguments.size() == 1 && column_node->getColumnType()->getTypeId() == TypeIndex::Nullable)
+    {
+        const auto & nullable_type = assert_cast<const DataTypeNullable &>(*column_node->getColumnType());
+        if (nullable_type.getNestedType()->hasSubcolumn("null") || !result_is_boolean())
+            return {};
+
+        subcolumn_path = "null";
+        subcolumn_type_override = declared_subcolumn_type(subcolumn_path, std::make_shared<DataTypeUInt8>());
+        if (!subcolumn_type_override)
+            return {};
+
+        replacement_kind = ReplacementKind::Not;
+    }
+    else if (function_name == "mapContainsKey" && function_arguments.size() == 2 && column_node->getColumnType()->getTypeId() == TypeIndex::Map)
+    {
+        if (!result_is_boolean())
+            return {};
+
+        /// A Nullable key would make the result of `has` Nullable while `mapContainsKey`
+        /// stays UInt8, so the rewritten expression would not be equivalent.
+        const auto & key_argument_type = function_arguments[1]->getResultType();
+        if (!key_argument_type || key_argument_type->isNullable() || key_argument_type->isLowCardinalityNullable())
+            return {};
+
+        const auto & map_type = assert_cast<const DataTypeMap &>(*column_node->getColumnType());
+        subcolumn_path = "keys";
+        subcolumn_type_override = declared_subcolumn_type(subcolumn_path, std::make_shared<DataTypeArray>(map_type.getKeyType()));
+        if (!subcolumn_type_override)
+            return {};
+
+        replacement_kind = ReplacementKind::Has;
+    }
+    else if (
+        function_name == "count" && function_arguments.size() == 1 && function_node.isAggregateFunction()
+        && !function_node.isWindowFunction() && column_node->getColumnType()->getTypeId() == TypeIndex::Nullable)
+    {
+        const auto & nullable_type = assert_cast<const DataTypeNullable &>(*column_node->getColumnType());
+        if (nullable_type.getNestedType()->hasSubcolumn("null")
+            || !function_node.getResultType()->equals(*std::make_shared<DataTypeUInt64>()))
+            return {};
+
+        subcolumn_path = "null";
+        subcolumn_type_override = declared_subcolumn_type(subcolumn_path, std::make_shared<DataTypeUInt8>());
+        if (!subcolumn_type_override)
+            return {};
+
+        replacement_kind = ReplacementKind::SumNot;
+    }
     else
         return {};
 
     if (subcolumn_path.empty())
         return {};
 
-    auto subcolumn_type = function_node.getResultType();
+    auto subcolumn_type = subcolumn_type_override ? subcolumn_type_override : function_node.getResultType();
     if (function_name == "variantElement")
     {
         const auto & variant_type = assert_cast<const DataTypeVariant &>(*column_node->getColumnType());
@@ -305,7 +429,8 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         std::move(column_source),
         std::move(subcolumn_path),
         std::move(subcolumn_type),
-        function_name == "tupleElement"};
+        replacement_kind,
+        requires_tuple_element_guards};
 }
 
 bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const String & element_name)
@@ -507,7 +632,6 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
                             .subcolumn_path = match->subcolumn_path,
                             .column_type = match->column_node->getColumnType(),
                             .subcolumn_type = match->subcolumn_type,
-                            .result_type = function_node->getResultType(),
                             .requires_tuple_element_guards = match->requires_tuple_element_guards,
                             .context = getTargetContext(target_it->second),
                             .viable = true,
@@ -523,11 +647,13 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
                     /// and counted in column_references; the occurrence counter compensates it.
                     ++group->occurrences;
 
-                    /// All occurrences must have the same types. Types can diverge e.g. when
-                    /// group_by_use_nulls wraps an occurrence used as a GROUP BY key into Nullable.
+                    /// All occurrences must project the same subcolumn of the same column type.
+                    /// Types can diverge e.g. when group_by_use_nulls wraps an occurrence used as a
+                    /// GROUP BY key into Nullable. The result type of the original function is not
+                    /// compared: different carriers of the same subcolumn (`length` and `empty` of
+                    /// the same array) share the projection and rebuild their own replacement.
                     if (!group->column_type->equals(*match->column_node->getColumnType())
                         || !group->subcolumn_type->equals(*match->subcolumn_type)
-                        || !group->result_type->equals(*function_node->getResultType())
                         || group->requires_tuple_element_guards != match->requires_tuple_element_guards)
                         group->viable = false;
 
@@ -535,8 +661,11 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
                     /// directly over the rows exported by the subquery: anywhere if the query has no
                     /// aggregation, otherwise before the aggregation step (WHERE, JOIN TREE, arguments
                     /// of aggregate functions) or when the whole expression is an aggregation key.
+                    /// An aggregate carrier (`count`) is replaced by another aggregate function
+                    /// over the same rows, so it stays valid exactly where the original was.
                     bool replaceable = clause_kind != ClauseKind::Interpolate
-                        && (!state.query_has_aggregation
+                        && (match->replacement_kind == ReplacementKind::SumNot
+                            || !state.query_has_aggregation
                             || inside_aggregate_function
                             || clause_kind == ClauseKind::PreAggregation
                             || std::ranges::any_of(
@@ -569,7 +698,10 @@ QueryTreeNodePtr unwrapSubcolumnFunctions(QueryTreeNodePtr node, String & subcol
     while (const auto * function_node = node->as<FunctionNode>())
     {
         auto match = matchCandidate(const_cast<FunctionNode &>(*function_node));
-        if (!match)
+        /// Only carriers that are the subcolumn itself compose into a deeper path. A carrier
+        /// rewritten into an expression over the subcolumn (`empty`, `isNotNull`, ...) is not
+        /// a subcolumn read of its argument, so its path must not be prepended.
+        if (!match || match->replacement_kind != ReplacementKind::Direct)
             return nullptr;
 
         auto path_prefix = std::move(match->subcolumn_path);
@@ -953,6 +1085,57 @@ std::vector<std::unordered_map<String, CanonicalColumn>> collectCanonicalExports
     return result;
 }
 
+/// Build the expression that replaces a matched occurrence with a read of the subcolumn that the
+/// target subquery now exports. Its result type is equal to the result type of the original
+/// function by construction: `matchCandidate` accepts a carrier only when its result type is the
+/// one the built expression produces.
+QueryTreeNodePtr buildReplacementNode(const CandidateMatch & match, const PushdownGroup & group, const FunctionNode & function_node)
+{
+    QueryTreeNodePtr subcolumn_node = std::make_shared<ColumnNode>(
+        NameAndTypePair{group.new_column_name, group.subcolumn_type},
+        std::static_pointer_cast<ITableExpressionNode>(group.source));
+
+    auto make_function = [&](const String & name, QueryTreeNodes arguments, bool is_operator)
+    {
+        auto result = std::make_shared<FunctionNode>(name);
+        if (is_operator)
+            result->markAsOperator();
+        result->getArguments().getNodes() = std::move(arguments);
+        resolveOrdinaryFunctionNodeByName(*result, name, group.context);
+        return result;
+    };
+
+    switch (match.replacement_kind)
+    {
+        case ReplacementKind::Direct:
+        {
+            const auto & result_type = function_node.getResultType();
+            if (!result_type->equals(*group.subcolumn_type))
+                return buildCastFunction(subcolumn_node, result_type, group.context);
+            return subcolumn_node;
+        }
+        case ReplacementKind::EqualsZero:
+        case ReplacementKind::NotEqualsZero:
+        {
+            const auto * name = match.replacement_kind == ReplacementKind::EqualsZero ? "equals" : "notEquals";
+            return make_function(name, {std::move(subcolumn_node), std::make_shared<ConstantNode>(static_cast<UInt64>(0))}, true);
+        }
+        case ReplacementKind::Not:
+            return make_function("not", {std::move(subcolumn_node)}, true);
+        case ReplacementKind::Has:
+            return make_function("has", {std::move(subcolumn_node), function_node.getArguments().getNodes()[1]}, false);
+        case ReplacementKind::SumNot:
+        {
+            auto negated = make_function("not", {std::move(subcolumn_node)}, true);
+
+            auto result = std::make_shared<FunctionNode>("sum");
+            result->getArguments().getNodes().push_back(std::move(negated));
+            resolveAggregateFunctionNodeByName(*result, "sum");
+            return result;
+        }
+    }
+}
+
 void replaceCandidates(QueryTreeNodePtr & node, QueryProcessingState & state)
 {
     if (!node || isQueryOrUnionNode(node))
@@ -965,11 +1148,21 @@ void replaceCandidates(QueryTreeNodePtr & node, QueryProcessingState & state)
             const auto * group = state.findGroup(match->column_source.get(), match->column_node->getColumnName(), match->subcolumn_path);
             if (group && group->applied)
             {
-                node = std::make_shared<ColumnNode>(
-                    NameAndTypePair{group->new_column_name, group->subcolumn_type},
-                    std::static_pointer_cast<ITableExpressionNode>(group->source));
-                if (!group->result_type->equals(*group->subcolumn_type))
-                    node = buildCastFunction(node, group->result_type, group->context);
+                auto replacement = buildReplacementNode(*match, *group, *function_node);
+                if (!replacement->getResultType()->equals(*function_node->getResultType()))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Replacement of {} has type {}, expected {}",
+                        function_node->getFunctionName(),
+                        replacement->getResultType()->getName(),
+                        function_node->getResultType()->getName());
+
+                node = std::move(replacement);
+
+                /// A carrier can keep arguments of the original function (the key of
+                /// `mapContainsKey`), and they can contain occurrences of their own.
+                for (auto & child : node->getChildren())
+                    replaceCandidates(child, state);
                 return;
             }
         }
