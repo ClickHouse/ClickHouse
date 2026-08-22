@@ -113,7 +113,7 @@ find_clickhouse_root () {
         fi
         DIR="`dirname $DIR`"
     done
-    echo "error: unable to find ClickHouse root folder"
+    echo "error: unable to find Clickhouse root folder"
     return 1
 }
 

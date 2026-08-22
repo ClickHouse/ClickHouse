@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import shutil
@@ -6,6 +7,7 @@ from datetime import datetime
 import pyspark
 import pytest
 from pyspark.sql.functions import (
+    current_timestamp,
     monotonically_increasing_id,
     row_number,
 )
@@ -17,11 +19,14 @@ from pyspark.sql.types import (
     StringType,
     StructField,
     StructType,
+    TimestampType,
 )
 from pyspark.sql.window import Window
 
-from helpers.cluster import ClickHouseCluster
+import helpers.client
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.s3_tools import (
+    get_file_contents,
     prepare_s3_bucket,
     remove_directory,
     upload_directory,

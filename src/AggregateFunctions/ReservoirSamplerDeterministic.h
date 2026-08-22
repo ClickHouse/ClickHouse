@@ -8,6 +8,8 @@
 #include <base/sort.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
@@ -142,7 +144,7 @@ public:
         total_values += b.total_values;
     }
 
-    void read(DB::ReadBuffer & buf, size_t version = 0)
+    void read(DB::ReadBuffer & buf)
     {
         size_t size = 0;
         readBinaryLittleEndian(size, buf);
@@ -160,32 +162,10 @@ public:
         for (size_t i = 0; i < size; ++i)
             readBinaryLittleEndian(samples[i], buf);
 
-        /// Since version 1 the skip degree is a part of the state. Reading it back is what makes the
-        /// result of a merge independent of how the data was partitioned between the merged states:
-        /// without it, an already thinned out sample is indistinguishable from a complete one, and
-        /// `merge` under-samples the states that were thinned out the most. See `setSkipDegree`.
-        /// A state written by version 0 is only correct to merge with when nothing was skipped, and
-        /// `skip_degree` stays 0 - the pre-existing behaviour.
-        UInt8 new_skip_degree = 0;
-        if (version >= 1)
-        {
-            readBinaryLittleEndian(new_skip_degree, buf);
-
-            if (unlikely(new_skip_degree > detail::MAX_SKIP_DEGREE))
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Skip degree in `quantileDeterministic` state is {}, which exceeds the maximum value of {}",
-                    static_cast<size_t>(new_skip_degree), detail::MAX_SKIP_DEGREE);
-        }
-
-        /// The samples that have just been read are already thinned out to `new_skip_degree`, so assign
-        /// the fields directly instead of going through `setSkipDegree`, which would walk them again.
-        skip_degree = new_skip_degree;
-        skip_mask = skip_degree == detail::MAX_SKIP_DEGREE ? static_cast<UInt32>(-1) : (1 << skip_degree) - 1;
-
         sorted = false;
     }
 
-    void write(DB::WriteBuffer & buf, size_t version = 0) const
+    void write(DB::WriteBuffer & buf) const
     {
         const size_t size = samples.size();
         writeBinaryLittleEndian(size, buf);
@@ -211,10 +191,6 @@ public:
             DB::transformEndianness<std::endian::little>(elem);
             DB::writeString(reinterpret_cast<const char*>(&elem), sizeof(elem), buf);
         }
-
-        /// Appended after the samples so that the prefix stays byte-identical to version 0.
-        if (version >= 1)
-            writeBinaryLittleEndian(skip_degree, buf);
     }
 
 private:

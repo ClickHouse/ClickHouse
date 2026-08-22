@@ -2,12 +2,9 @@
 
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <base/unit.h>
 
 namespace DB
 {
-
-class ColumnString;
 
 struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization::DeserializeBinaryBulkState
 {
@@ -18,25 +15,12 @@ struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization
     bool need_string_data = false;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override;
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (column)
-            callback(column);
-    }
 };
 
 class SerializationString final : public ISerialization
 {
-private:
-    explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
-
 public:
-    /// Arbitrary guard against absurd sizes from corrupted input, large enough for any real string.
-    static constexpr size_t MAX_STRING_SIZE = 16_GiB;
-
-    static UInt128 getHash(MergeTreeStringSerializationVersion version_);
-    static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
+    explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -86,7 +70,6 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
@@ -114,17 +97,6 @@ private:
     /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
     void deserializeBinaryBulkWithSizeStream(
         ColumnPtr & column,
-        size_t rows_offset,
-        size_t limit,
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsCache * cache) const;
-    /// Deserializes the size/offset stream (checking `position_independent_encoding`), appends the
-    /// [rows_offset, ...) range to `column`'s offsets and returns {bytes_to_skip, bytes_to_read} for
-    /// the data stream ({0, 0} when the size-stream getter yields nothing).
-    /// Precondition: settings.path.back() == Substream::StringSizes.
-    std::pair<size_t, size_t> deserializeStringOffsetsAndGetDataRange(
-        ColumnString & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
