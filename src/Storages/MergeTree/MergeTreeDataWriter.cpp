@@ -1592,7 +1592,7 @@ static DataTypePtr descendJSONPolicySourceIntoMember(DataTypePtr type, std::stri
 /// resolves any dotted tail as a path subcolumn, which would donate a policy-free Dynamic type.
 static bool containsSubscriptMemberStep(std::string_view name)
 {
-    return name.find(String(".") + String(SUBSCRIPT_MEMBER)) != std::string_view::npos;
+    return name.contains(String(".") + String(SUBSCRIPT_MEMBER));
 }
 
 /// Resolves a member-qualified candidate ("t.doc", "m.values", "t.2") against `try_get_column`: takes
