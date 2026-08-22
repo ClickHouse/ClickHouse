@@ -3232,6 +3232,36 @@ TEST(MergeTreeDeduplicationLog, UnpublishFailedPartAfterDisablingDeduplication)
 }
 #endif
 
+/// Regression test: disabling deduplication before the log has any file must not walk
+/// off the end of the empty history. `load` leaves it empty when the log directory does
+/// not exist yet - a table that has never inserted anything, on a disk whose metadata
+/// storage has no directories - and `setDeduplicationWindowSize(0)` still runs the
+/// retention pass, while a zero window makes `rotate` create no file either.
+TEST(MergeTreeDeduplicationLog, DisableDeduplicationWithEmptyHistory)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_disable_empty/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+    auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+
+    /// Deliberately not loaded: that is exactly the state `load` leaves behind when the
+    /// log directory is absent - no log files and no writer.
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+
+    EXPECT_NO_THROW(log.setDeduplicationWindowSize(0));
+
+    /// Re-enabling from that state must still give a usable log.
+    EXPECT_NO_THROW(log.setDeduplicationWindowSize(2));
+    EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+    EXPECT_FALSE(log.addPart({"block1"}, part("all_2_2_0")).empty());
+    log.shutdown();
+
+    std::filesystem::remove_all(work_dir);
+}
+
 /// A stopped log must reject even otherwise no-op operations. In particular, they
 /// must not run the recovery barrier after `shutdown`, because it can reopen a writer
 /// which the already completed shutdown cannot finalize.

@@ -511,6 +511,15 @@ void MergeTreeDeduplicationLog::rotate()
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
 {
+    /// No history at all: nothing to retain, and `std::prev(existing_logs.end())` below
+    /// would be undefined behaviour. `load` leaves the map empty when the log directory
+    /// does not exist yet (a table that has never inserted anything, on a disk whose
+    /// metadata storage has no directories), and `setDeduplicationWindowSize(0)` still
+    /// reaches here through `rotateAndDropIfNeeded` - with a zero window `rotate` is a
+    /// no-op, so it creates no file either.
+    if (existing_logs.empty())
+        return;
+
     /// Retain every file from the oldest live ADD onwards. A surviving DROP is not a
     /// live entry: counting it as one can discard an older file that contains a block
     /// ID which the newer DROP does not replace, so a restart forgets that block ID.
@@ -1578,8 +1587,11 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
     });
     rotateAndDropIfNeeded();
 
-    /// Can happen in case we have unfinished log
-    if (!current_writer)
+    /// Can happen in case we have unfinished log. Only when deduplication is enabled:
+    /// with a zero window nothing is ever written, `rotate` creates no file, and
+    /// `existing_logs` can be empty - a table that has never inserted anything, whose
+    /// log directory does not exist yet - so there would be no file to reopen either.
+    if (deduplication_window != 0 && !current_writer)
     {
         /// `load` with a zero window deliberately does not inspect the log contents.
         /// Therefore its newest file may end in an unreadable tail; appending behind
