@@ -157,28 +157,6 @@ def _orchestration_verb(argv: list):
     return None
 
 
-def _timed_out_orchestration_verbs(info: str) -> set:
-    """The docker subcommands that a raised exception reports as timing out."""
-    verbs = set()
-    for line in _raising_exception_lines(info):
-        if not any(p in line for p in TIMEOUT_ERROR_PATTERNS):
-            continue
-        for argv in _argv_lists(line):
-            verb = _orchestration_verb(argv)
-            if verb is not None:
-                verbs.add(verb)
-    return verbs
-
-
-def _is_docker_compose_timeout(info: str) -> bool:
-    """Whether a raised exception is a docker orchestration command timing out.
-
-    Answers only "was it orchestration?", not "should it be relabelled?": the two are
-    separate questions and only this one is about how the argv was rendered.
-    """
-    return bool(_timed_out_orchestration_verbs(info))
-
-
 def _is_orchestration_lifecycle_timeout(info: str) -> bool:
     """Whether the timeout is docker's or the registry's rather than the server's.
 
