@@ -1,30 +1,21 @@
 """
-Tests that `ClickHouseInstance.wait_for_log_line` gives the container-side wait a python-side
-budget that outlives it.
+Tests the two budget invariants of `ClickHouseInstance.wait_for_log_line`.
 
 `wait_for_log_line(timeout=N)` interpolates N into a container-side shell command
-(`timeout N ... tail | tee | grep`). That command runs through
-`exec_in_container` -> `subprocess_check_call` -> `run_and_check`, and
-`run_and_check`'s `timeout` parameter defaults to 300. If no python-side timeout is
-forwarded, `subprocess.run` kills the `docker exec` at 300 s, so any caller asking for
-more than 300 s silently gets 300 s and its own value never takes effect.
-
-The invariant pinned here: for every `wait_for_log_line` call the container-side budget
-expires strictly before the python-side one, so the pipeline can exit and the lines it
-collected can be returned. The `repetitions > 1` branch reads those lines, so a
-python-side kill (which raises instead of returning output) is not an equivalent outcome.
+(`timeout N ... tail | tee | grep`), which runs through `exec_in_container` ->
+`subprocess_check_call` -> `run_and_check`. The python-side budget must therefore
+(1) outlive the container-side one, so the pipeline can exit and the lines it collected
+can be returned -- the `repetitions > 1` branch reads those lines, and a python-side kill
+raises instead of returning output -- and (2) never fall below `run_and_check`'s own
+default, which is what a command that forwards nothing already gets.
 
 Static analysis rather than execution: `wait_for_log_line` needs a live container, while
 the property under test is a property of the call it makes. `test_integration_test_name_quoting`
 is the precedent for pinning a property of `tests/integration` code from `ci/tests`.
-
-Related: ClickHouse/ClickHouse#114552, which raised a caller to `timeout=600`.
 """
 
 import ast
 import os
-import subprocess
-import sys
 
 import pytest
 
@@ -81,23 +72,33 @@ def _current_source():
         return f.read()
 
 
-def _prefix_source():
-    """`cluster.py` as of HEAD, for the negative control.
+# `wait_for_log_line` as it stood before this change, inlined verbatim rather than read
+# out of git: in PR CI the checkout already carries the change, so a control derived from
+# the working tree or from HEAD compares the new code against itself and asserts nothing.
+PREFIX_SOURCE = '''
+class ClickHouseInstance:
+    def wait_for_log_line(
+        self,
+        regexp,
+        filename="/var/log/clickhouse-server/clickhouse-server.log",
+        timeout=30,
+        repetitions=1,
+        look_behind_lines=10000,
+    ):
+        start_time = time.time()
+        result = self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"timeout {timeout} stdbuf -o0 -e0 tail -Fn{look_behind_lines} {shlex.quote(filename)} | stdbuf -o0 -e0 tee -a {filename}.wait_for_log_line | grep -Em {repetitions} {shlex.quote(regexp)}",
+            ]
+        )
+'''
 
-    Read via `git show`, never `git stash`: `refs/stash` lives in a git store shared by
-    many worktrees, so pushing or popping there mutates other checkouts.
-    """
-    res = subprocess.run(
-        ["git", "show", "HEAD:tests/integration/helpers/cluster.py"],
-        cwd=REPO_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=120,
-        check=False,
-    )
-    if res.returncode != 0:
-        pytest.skip(f"git show failed: {res.stderr.decode('utf-8', 'ignore')[:200]}")
-    return res.stdout.decode("utf-8")
+
+def _prefix_source():
+    """`cluster.py`'s `wait_for_log_line` before this change, from the copy above."""
+    return PREFIX_SOURCE
 
 
 def _outer_timeout_for(source, inner):
@@ -117,8 +118,46 @@ def _outer_timeout_for(source, inner):
     }
     env = {n: ast.literal_eval(d) for n, d in names.items()}
     env["timeout"] = inner
+    # Module-level names the expression may reference, resolved from the same source so
+    # a renamed or re-valued constant cannot silently keep this passing.
+    env.update(_module_int_constants(source))
     expr = ast.Expression(body=kw.value)
-    return eval(compile(expr, "<forwarded-timeout>", "eval"), {"__builtins__": {}}, env)
+    return eval(
+        compile(expr, "<forwarded-timeout>", "eval"), {"__builtins__": {"max": max}}, env
+    )
+
+
+def _module_int_constants(source):
+    """Module-level `NAME = <int>` assignments, e.g. `RUN_AND_CHECK_DEFAULT_TIMEOUT`."""
+    out = {}
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name) and isinstance(node.value, ast.Constant):
+                if isinstance(node.value.value, int):
+                    out[target.id] = node.value.value
+    return out
+
+
+def test_run_and_check_default_matches_the_constant_pinned_here():
+    """`RUN_AND_CHECK_DEFAULT_TIMEOUT` below is a copy of the suite's own default; if the
+    two drift, every budget assertion in this file is measured against the wrong number."""
+    source = _current_source()
+    run_and_check = next(
+        n
+        for n in ast.parse(source).body
+        if isinstance(n, ast.FunctionDef) and n.name == "run_and_check"
+    )
+    names = [a.arg for a in run_and_check.args.args]
+    defaults = dict(
+        zip(names[len(names) - len(run_and_check.args.defaults) :], run_and_check.args.defaults)
+    )
+    kw = defaults["timeout"]
+    if isinstance(kw, ast.Constant):
+        actual = kw.value
+    else:
+        actual = _module_int_constants(source)[kw.id]
+    assert actual == RUN_AND_CHECK_DEFAULT_TIMEOUT
 
 
 # --- arm 1: the plumbing exists, and is derived from the caller's own value -----------
@@ -174,6 +213,20 @@ def test_callers_above_the_default_are_no_longer_capped(inner):
         )
 
 
+@pytest.mark.parametrize("inner", SAMPLE_INNER_TIMEOUTS)
+def test_outer_budget_is_never_shorter_than_the_suite_default(inner):
+    """No caller may end up with less python-side patience than a command that forwards
+    nothing at all. The container-side `timeout` signals only its direct child, while
+    `docker exec` returns only once the whole pipeline has exited, so a short inner value
+    does not bound the outer wait and must not shorten its budget."""
+    outer = _outer_timeout_for(_current_source(), inner)
+    assert outer is not None
+    assert outer >= RUN_AND_CHECK_DEFAULT_TIMEOUT, (
+        f"inner={inner} yields {outer}, below the suite-wide default of "
+        f"{RUN_AND_CHECK_DEFAULT_TIMEOUT}"
+    )
+
+
 # --- arm 3: negative control. These must FAIL against the pre-fix source -------------
 
 
@@ -183,18 +236,30 @@ def test_negative_control_prefix_source_lacks_the_forward():
     prefix = _prefix_source()
     func = _find_function(prefix, "ClickHouseInstance", "wait_for_log_line")
     kw = _timeout_keyword(_exec_in_container_call(func))
-    if kw is not None:
-        pytest.skip("HEAD already carries the fix; control is not meaningful here")
+    assert kw is None, "the pre-fix copy must not forward a timeout"
     assert _outer_timeout_for(prefix, 600) is None
 
 
 def test_negative_control_prefix_source_capped_large_callers():
     prefix = _prefix_source()
-    if _outer_timeout_for(prefix, 600) is not None:
-        pytest.skip("HEAD already carries the fix; control is not meaningful here")
+    assert _outer_timeout_for(prefix, 600) is None
     # With nothing forwarded the effective budget is run_and_check's default, so a
     # caller asking for more than that got less than it asked for.
     assert RUN_AND_CHECK_DEFAULT_TIMEOUT < 600
+
+
+def test_prefix_copy_is_faithful_to_the_shipped_container_side_command():
+    """The inlined pre-fix copy is only a control if it differs from the current source in
+    exactly the forwarded kwarg. Compares the container-side command, which the change
+    does not touch: a copy that had drifted there would be a different function."""
+    shell_of = lambda src: [
+        seg
+        for n in ast.walk(_find_function(src, "ClickHouseInstance", "wait_for_log_line"))
+        if isinstance(n, ast.JoinedStr)
+        for seg in [ast.get_source_segment(src, n)]
+        if seg
+    ]
+    assert shell_of(_prefix_source()) == shell_of(_current_source())
 
 
 # --- arm 4: the container-side timeout must not be removed ---------------------------
