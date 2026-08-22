@@ -1,5 +1,7 @@
 #include <Storages/StorageBuffer.h>
 
+#include <algorithm>
+
 #include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnConst.h>
 #include <Analyzer/TableNode.h>
@@ -902,6 +904,8 @@ private:
               */
 
             LOG_DEBUG(storage.log, "Flush buffer by threshold");
+            /// The flush writes out what is in the buffer now, which is not this block; whether the gates
+            /// of this query apply to it is decided in `flushBuffer` from the origin of the buffered rows.
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */, insert_start_gates);
             buffer.metadata_version = metadata_version;
         }
@@ -913,6 +917,13 @@ private:
         size_t old_bytes = buffer.data.allocatedBytes();
 
         appendBlock(storage.log, sorted_block, buffer.data);
+
+        /// Remember that the buffer now holds rows of this query, so that a later flush of them - by
+        /// this query or by another one - shares the `Too many parts` gates of this query.
+        if (insert_start_gates
+            && std::find(buffer.contributing_gates.begin(), buffer.contributing_gates.end(), insert_start_gates)
+                == buffer.contributing_gates.end())
+            buffer.contributing_gates.push_back(insert_start_gates);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
         storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
@@ -1172,6 +1183,10 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     buffer.data.swap(block_to_write);
     buffer.first_write_time = 0;
 
+    /// The rows that are being written out were inserted on behalf of these queries.
+    std::vector<InsertStartGatesPtr> flushed_gates;
+    flushed_gates.swap(buffer.contributing_gates);
+
     size_t block_rows = block_to_write.rows();
     size_t block_bytes = block_to_write.bytes();
     size_t block_allocated_bytes_delta = block_to_write.allocatedBytes() - buffer.data.allocatedBytes();
@@ -1197,10 +1212,19 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         * - this could lead to infinite memory growth.
         */
 
+    /// The gates of the query on behalf of which the flush runs apply only to writing the rows of that
+    /// query. When it evicts rows buffered by an earlier query, the nested INSERT of the eviction has to
+    /// run the `Too many parts` check on its own: otherwise it would spend the gate of the current query
+    /// before that query has written anything of its own, and the query's first write would skip the
+    /// check and could go past `parts_to_throw_insert`.
+    InsertStartGatesPtr gates_for_write;
+    if (insert_start_gates && std::find(flushed_gates.begin(), flushed_gates.end(), insert_start_gates) != flushed_gates.end())
+        gates_for_write = insert_start_gates;
+
     Stopwatch watch;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable(), insert_start_gates);
+        writeBlockToDestination(block_to_write, getDestinationTable(), gates_for_write);
     }
     catch (...)
     {
@@ -1212,6 +1236,14 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
         buffer.data.swap(block_to_write);
+
+        /// The rows are back in the buffer, and so is the record of the queries they came from.
+        for (auto & gates : flushed_gates)
+        {
+            if (std::find(buffer.contributing_gates.begin(), buffer.contributing_gates.end(), gates)
+                == buffer.contributing_gates.end())
+                buffer.contributing_gates.push_back(gates);
+        }
 
         if (!buffer.first_write_time)
             buffer.first_write_time = current_time;

@@ -165,6 +165,12 @@ private:
         ///    usually don't produce lots of small blocks.
         int32_t metadata_version = 0;
 
+        /// The registries of the INSERT queries whose rows are currently in `data`. A threshold flush
+        /// evicts whatever the buffer holds, which is not necessarily the data of the query that
+        /// triggered it, and the `Too many parts` gate of a query may only be spent on writing that
+        /// query's own rows. See `StorageBuffer::flushBuffer`.
+        std::vector<InsertStartGatesPtr> contributing_gates;
+
         std::unique_lock<std::mutex> lockForReading() const;
         std::unique_lock<std::mutex> lockForWriting() const;
         std::unique_lock<std::mutex> tryLock() const;
