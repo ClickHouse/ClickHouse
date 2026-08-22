@@ -8,7 +8,6 @@
 #include <Parsers/IAST.h>
 #include <base/extended_types.h>
 #include <base/unaligned.h>
-#include <Common/SipHash.h>
 
 #include <boost/integer/common_factor.hpp>
 #include <libdivide-config.h>
