@@ -99,6 +99,11 @@ SELECT count() FROM (
 -- Locality: a query counted by ParallelReplicasQueryCount reached the replica-reading coordinator,
 -- so the pair below distinguishes "ran on the initiator" from "did not run at all". Both aggregate
 -- over the parts rather than answering from part counters, which never reach the coordinator.
+--
+-- Each measured query must be executed exactly once, so `ast_fuzzer_runs` is pinned: the stress
+-- profile enables the server-side AST fuzzer for any query, and a re-execution inherits
+-- `log_comment`. The `argMax` keeps the projection idempotent when the test itself is repeated
+-- against one database, which the stress `--database` mode does.
 SELECT '-- ParallelReplicasQueryCount: 0 for the recursive CTE, non-zero for the plain query';
 SELECT sum(span_id) FROM rcte_pr
 SETTINGS enable_analyzer = 1,
@@ -107,6 +112,7 @@ SETTINGS enable_analyzer = 1,
          cluster_for_parallel_replicas = 'parallel_replicas',
          parallel_replicas_for_non_replicated_merge_tree = 1,
          automatic_parallel_replicas_mode = 0,
+         ast_fuzzer_runs = 0,
          log_comment = 'rcte_pr_ships';
 
 WITH RECURSIVE d AS
@@ -123,6 +129,7 @@ SETTINGS enable_analyzer = 1,
          parallel_replicas_for_non_replicated_merge_tree = 1,
          automatic_parallel_replicas_mode = 0,
          max_recursive_cte_evaluation_depth = 10,
+         ast_fuzzer_runs = 0,
          log_comment = 'rcte_pr_stays_local';
 
 SELECT '-- the same pair with the settings on the subquery instead of the top-level query';
@@ -134,10 +141,12 @@ SELECT * FROM
              max_parallel_replicas = 3,
              cluster_for_parallel_replicas = 'parallel_replicas',
              parallel_replicas_for_non_replicated_merge_tree = 1,
-             automatic_parallel_replicas_mode = 0
+             automatic_parallel_replicas_mode = 0,
+             ast_fuzzer_runs = 0
 )
 SETTINGS enable_analyzer = 1,
          allow_experimental_parallel_reading_from_replicas = 0,
+         ast_fuzzer_runs = 0,
          log_comment = 'rcte_pr_nested_ships';
 
 SELECT * FROM
@@ -155,22 +164,29 @@ SELECT * FROM
              cluster_for_parallel_replicas = 'parallel_replicas',
              parallel_replicas_for_non_replicated_merge_tree = 1,
              automatic_parallel_replicas_mode = 0,
-             max_recursive_cte_evaluation_depth = 10
+             max_recursive_cte_evaluation_depth = 10,
+             ast_fuzzer_runs = 0
 )
 SETTINGS enable_analyzer = 1,
          allow_experimental_parallel_reading_from_replicas = 0,
+         ast_fuzzer_runs = 0,
          log_comment = 'rcte_pr_nested_stays_local';
 
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['ParallelReplicasQueryCount'] > 0
+SELECT log_comment,
+       argMax(ProfileEvents['ParallelReplicasQueryCount'], event_time_microseconds) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND event_date >= yesterday()
+  AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND is_initial_query
   AND log_comment IN ('rcte_pr_ships', 'rcte_pr_stays_local',
                       'rcte_pr_nested_ships', 'rcte_pr_nested_stays_local')
+GROUP BY log_comment
 ORDER BY log_comment
-SETTINGS enable_analyzer = 1, allow_experimental_parallel_reading_from_replicas = 0;
+SETTINGS enable_analyzer = 1,
+         allow_experimental_parallel_reading_from_replicas = 0,
+         ast_fuzzer_runs = 0;
 
 DROP TABLE rcte_pr;
