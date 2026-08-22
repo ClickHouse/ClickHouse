@@ -15,6 +15,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
@@ -2264,7 +2265,7 @@ static void addStreamInQueryResultCacheStepIfNeeded(
         return;
 
     auto created_at = std::chrono::system_clock::now();
-    auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+    auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
 
     QueryResultCache::Key key(
         ast, query_context->getCurrentDatabase(), settings_for_key, query_plan.getRootNode()->step->getOutputHeader(),
