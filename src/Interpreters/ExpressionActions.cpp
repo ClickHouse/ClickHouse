@@ -1196,11 +1196,12 @@ AdaptiveExpressionActions::AdaptiveExpressionActions(
     {
         const auto & action = actions[i];
         IFunctionBase::ShortCircuitSettings short_circuit_settings;
+        action_states[i].is_short_circuit_function
+            = action.node->type == ActionsDAG::ActionType::FUNCTION && !action.node->children.empty()
+            && action.node->function_base->isShortCircuit(short_circuit_settings, action.node->children.size());
         /// Start from the static decision: an action which may be executed lazily is executed lazily, and a
         /// short circuit function itself is always "efficient" - it is never wrapped into a ColumnFunction.
-        action_states[i].is_lazy_execution_efficient = action.is_lazy_executed
-            || (action.node->type == ActionsDAG::ActionType::FUNCTION && !action.node->children.empty()
-                && action.node->function_base->isShortCircuit(short_circuit_settings, action.node->children.size()));
+        action_states[i].is_lazy_execution_efficient = action.is_lazy_executed || action_states[i].is_short_circuit_function;
     }
 }
 
@@ -1376,10 +1377,14 @@ void AdaptiveExpressionActions::updateActionParentProfile(size_t action_index, s
 
             visited[parent_action_index] = true;
             action_states[parent_action_index].current_round_profile.execution_elapsed += extra_elapsed;
-            /// `ALIAS` actions do not execute lazily themselves, but they are transparent wrappers in the actions DAG.
-            /// Continue through them so a lazy ancestor includes the cost of an eager descendant.
-            const bool is_transparent_alias = actions[parent_action_index].node->type == ActionsDAG::ActionType::ALIAS;
-            if (shouldExecuteLazily(parent_action_index) || is_transparent_alias)
+            /// `ALIAS` actions and short-circuit functions such as `and`, `or`, `if` and `multiIf` never
+            /// execute lazily themselves, but they are transparent wrappers in the actions DAG: the cost of
+            /// an eager descendant is paid by whoever executes them. Continue through them, otherwise a lazy
+            /// ancestor above such a wrapper keeps comparing against an underestimated eager cost.
+            const bool is_transparent_wrapper
+                = actions[parent_action_index].node->type == ActionsDAG::ActionType::ALIAS
+                || action_states[parent_action_index].is_short_circuit_function;
+            if (shouldExecuteLazily(parent_action_index) || is_transparent_wrapper)
                 self(self, parent_action_index);
         }
     };

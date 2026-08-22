@@ -246,6 +246,10 @@ private:
         /// If the cost of filtering out unnecessary rows and expanding back to a full column is greater
         /// than the cost of fully executing the column, then it is not worth executing lazily.
         bool is_lazy_execution_efficient = false;
+        /// Whether the action is a short-circuit function (`and`, `or`, `if`, `multiIf`). Such an action is
+        /// never lazily executed itself, but it is a transparent wrapper for the cost of its arguments.
+        /// Unlike the field above, this one is computed once and never changes.
+        bool is_short_circuit_function = false;
         /// The execution profile of the current round. `is_lazy_execution_efficient` is updated after each round.
         FunctionExecutionProfile current_round_profile;
         /// The execution profile of all the rounds.
