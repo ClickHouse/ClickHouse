@@ -1224,7 +1224,7 @@ protected:
             request_settings,
             /* blob_storage_log= */ nullptr,
             /* schedule= */ {},
-            std::move(object_metadata));
+            object_metadata);
     }
 };
 
