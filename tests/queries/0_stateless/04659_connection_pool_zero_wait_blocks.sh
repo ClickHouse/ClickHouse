@@ -213,19 +213,24 @@ function cancel_waiter() {
     " < /dev/null > /dev/null 2>&1 &
     waiter_pid=$!
 
-    # Sampling for both at once is sound on these arms, unlike on the one above that gives up: here
-    # nothing ever releases the connection, so the waiter stays in the wait until it is cancelled.
-    wait_running 2 "'${holder}', '${waiter}'" 60 \
-        || echo "the queries never ran at the same time, so the pool was never full"
-
-    # Being in system.processes only means the waiter has started, so give it time to reach the pool.
-    sleep 2
-
     if [[ ${mode} == kill ]]; then
+        # Sound here: nothing releases the connection, so this waiter stays in the wait until the
+        # kill below ends it, and the overlap is observable at any polling granularity.
+        wait_running 2 "'${holder}', '${waiter}'" 60 \
+            || echo "the queries never ran at the same time, so the pool was never full"
+
+        # Being in system.processes only means the waiter has started, so give it time to reach the
+        # pool: a kill that arrives before the wait would not exercise the wait at all.
+        sleep 2
+
         timeout 12 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '${waiter}' SYNC" > /dev/null 2>&1 || rc=$?
         [[ ${rc} == 0 ]] || echo "the waiter did not stop when it was killed"
     fi
 
+    # This waiter ends on its own limit rather than on anything done to it, so its whole lifetime is
+    # bounded and polling for it while it lasts would sample a window that can be shorter than one
+    # poll. It is waited for instead, and that it reached the pool at all is asserted below from the
+    # wait it accumulated, which outlives the wait itself.
     wait "$waiter_pid" || rc=$?
     # 124 is the bound above firing, i.e. the waiter was still in the pool wait when it was taken out.
     [[ ${rc} != 124 ]] || echo "the waiter stayed in the pool wait past its own end"
@@ -251,11 +256,17 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 # The codes are pinned as well as the timing, so an arm that stopped reporting the cancellation and
 # started reporting something else (a pool error of its own, say) is not silently accepted. One column
 # per arm, so a single arm regressing stays legible.
+#
+# Each arm also has to have reached the pool, or its code would say only that the query was stopped,
+# not that a pool wait was what got stopped. The accumulated wait is what says so, and unlike being
+# in system.processes it is still readable after the waiter has gone, so it holds for the arm that
+# ends on its own limit as much as for the ones that are killed.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
         countIf(query_id = '${QUERY_PREFIX}_cancelled_waiter' AND exception_code = 394) AS cancelled_by_kill,
         countIf(query_id = '${QUERY_PREFIX}_softlimit_waiter' AND exception_code = 159) AS stopped_by_time_limit,
-        countIf(query_id = '${QUERY_PREFIX}_cancelledfinite_waiter' AND exception_code = 394) AS finite_cancelled_by_kill
+        countIf(query_id = '${QUERY_PREFIX}_cancelledfinite_waiter' AND exception_code = 394) AS finite_cancelled_by_kill,
+        countIf(ProfileEvents['ConnectionPoolIsFullMicroseconds'] > 0) AS all_three_waited_on_a_full_pool
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase()
       AND query_id IN ('${QUERY_PREFIX}_cancelled_waiter', '${QUERY_PREFIX}_softlimit_waiter',
