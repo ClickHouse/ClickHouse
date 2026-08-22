@@ -25,7 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int FILE_CHANGED_WHILE_READING;
+    extern const int FILE_CHANGED_DURING_READ;
 }
 
 static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
@@ -81,14 +81,14 @@ static void checkFileMatchesBucketAssignment(const ParquetFileBucketInfo & bucke
 {
     if (bucket.file_num_row_groups != 0 && file_metadata.row_groups.size() != bucket.file_num_row_groups)
         throw Exception(
-            ErrorCodes::FILE_CHANGED_WHILE_READING,
+            ErrorCodes::FILE_CHANGED_DURING_READ,
             "The Parquet file has {} row groups, but the parallel single-file bucket assignment was computed for a file "
             "with {} row groups. The file was likely modified concurrently while a parallel single-file read was in progress",
             file_metadata.row_groups.size(), bucket.file_num_row_groups);
 
     if (bucket.footer_digest != 0 && computeParquetFooterDigest(file_metadata) != bucket.footer_digest)
         throw Exception(
-            ErrorCodes::FILE_CHANGED_WHILE_READING,
+            ErrorCodes::FILE_CHANGED_DURING_READ,
             "The Parquet file's footer differs from the one the parallel single-file bucket assignment was computed from. "
             "The file was likely modified concurrently while a parallel single-file read was in progress");
 }
@@ -238,7 +238,7 @@ Chunk ParquetV3BlockInputFormat::read()
             {
                 if (rg >= file_metadata.row_groups.size())
                     throw Exception(
-                        ErrorCodes::FILE_CHANGED_WHILE_READING,
+                        ErrorCodes::FILE_CHANGED_DURING_READ,
                         "Row group {} from the bucket assignment is out of range: the file has only {} row groups. "
                         "The file was likely modified concurrently while a parallel single-file read was in progress",
                         rg, file_metadata.row_groups.size());

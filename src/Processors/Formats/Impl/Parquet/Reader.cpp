@@ -41,7 +41,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_DECOMPRESS;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
-    extern const int FILE_CHANGED_WHILE_READING;
+    extern const int FILE_CHANGED_DURING_READ;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -636,7 +636,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         for (UInt64 rg : *row_groups_to_read)
             if (rg >= file_metadata.row_groups.size())
                 throw Exception(
-                    ErrorCodes::FILE_CHANGED_WHILE_READING,
+                    ErrorCodes::FILE_CHANGED_DURING_READ,
                     "Row group {} from the bucket assignment is out of range: the file has only {} row groups. "
                     "The file was likely modified concurrently while a parallel single-file read was in progress",
                     rg, file_metadata.row_groups.size());

@@ -46,7 +46,7 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     /// Every per-bucket source therefore parses the footer of the bytes it actually opened (the
     /// format metadata cache is bypassed unless the read is pinned to the generation the cache key
     /// names) and compares this digest, so an assignment computed from a stale cached footer - or
-    /// from a different generation of the same path - fails close with `FILE_CHANGED_WHILE_READING`
+    /// from a different generation of the same path - fails close with `FILE_CHANGED_DURING_READ`
     /// instead of silently applying another generation's row-group layout. A pruning restriction
     /// derived from the query condition cache (`omitted_row_groups_are_pruned`) carries the digest
     /// stored with the cache entry - the footer its marks were computed from - and fails close by
