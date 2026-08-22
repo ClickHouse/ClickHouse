@@ -620,6 +620,18 @@ FROM
     SELECT exponentialTimeDecayedSumState(10)(toFloat64(1), toFloat64(0)) AS state
 ); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- Malformed reconstructed constants are rejected before hash-key materialization.
+SELECT count()
+FROM
+(
+    SELECT _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS value
+)
+GROUP BY value; -- { serverError BAD_ARGUMENTS }
+
+SELECT DISTINCT _CAST(
+    [(1., 0., 20.)],
+    'Array(ExponentialTimeDecayingFloat64(10))'); -- { serverError BAD_ARGUMENTS }
+
 -- Generic tuple comparison and sorting must validate every reconstructed row.
 WITH
     _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS malformed,
