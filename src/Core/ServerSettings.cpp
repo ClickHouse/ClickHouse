@@ -1322,7 +1322,9 @@ When disabled, `max_server_memory_usage_to_ram_ratio` only caps the hard memory 
 Has no effect when `max_server_memory_usage_to_ram_ratio` is `0`.
 )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
-Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.
+Disables `INSERT`, `ALTER`, and `DELETE` queries so read-only replicas do not create data parts, mutations, or merge work that affects read performance.
+
+Writes to external storage through engines such as `S3`, `DataLake`, `MySQL`, `PostgreSQL`, and `Kafka` remain allowed. Background streaming from `Kafka`, `RabbitMQ`, `NATS`, and `S3Queue` tables into attached materialized views is disabled because it produces `MergeTree` parts and merge work on this replica.
 )", 0) \
     DECLARE(UInt64, parts_kill_delay_period, 30, R"(
 Period to completely remove parts for SharedMergeTree. Only available in ClickHouse Cloud
@@ -3549,8 +3551,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
             {"s3queue_disable_streaming",
              {std::to_string(context->getServerSettingsCopy().get("s3queue_disable_streaming").safeGet<bool>()), ChangeableWithoutRestart::Yes}},
-            {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::Yes}},
-
+            {"message_queue_disable_insertion", {std::to_string(context->getMessageQueueDisableInsertion()), ChangeableWithoutRestart::No}},
             {"max_remote_read_network_bandwidth_for_server",
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
