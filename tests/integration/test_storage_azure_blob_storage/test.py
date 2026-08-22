@@ -2028,3 +2028,36 @@ def test_max_blocks_in_multipart_upload_is_enforced(cluster):
     )
 
     azure_query(node, "DROP TABLE test_max_blocks_enforced")
+
+
+def test_invalid_upload_settings_do_not_affect_reads(cluster):
+    # The multipart upload settings are consumed by the blob multipart writer
+    # (`WriteBufferFromAzureBlobStorage`) only, so they must be validated there and not where
+    # the settings are resolved (`getRequestSettings`). The latter runs before the backend is
+    # chosen and is shared with the ADLS Gen2 / OneLake (`*.fabric.microsoft.com`) endpoints,
+    # whose writes route to `WriteBufferFromAzureDataLakeStorage` and never consult multipart
+    # sizing - and with read-only queries, which never upload anything at all.
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        f"CREATE TABLE test_reads_with_invalid_upload_settings (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
+        f" 'cont', 'test_reads_with_invalid_upload_settings.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+    )
+    azure_query(
+        node, "INSERT INTO test_reads_with_invalid_upload_settings VALUES (1, 'a')"
+    )
+
+    invalid_upload_settings = {
+        "azure_min_upload_part_size": 0,
+        "azure_upload_part_size_multiply_factor": 0,
+    }
+    assert (
+        azure_query(
+            node,
+            "SELECT count() FROM test_reads_with_invalid_upload_settings",
+            settings=invalid_upload_settings,
+        ).strip()
+        == "1"
+    )
+
+    azure_query(node, "DROP TABLE test_reads_with_invalid_upload_settings")
