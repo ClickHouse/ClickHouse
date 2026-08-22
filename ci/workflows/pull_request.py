@@ -131,6 +131,10 @@ workflow = Workflow.Config(
         # Like the sibling FT/IT jobs, it is deferred behind the core blocking jobs.
         JobConfigs.bugfix_validation_ut_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
         *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_tests_distributed_plan_pr_jobs
+        ],
+        *[
             j.set_run_after(
                 CORE_BLOCKING_JOB_NAMES
                 if j.name not in CORE_BLOCKING_JOB_NAMES

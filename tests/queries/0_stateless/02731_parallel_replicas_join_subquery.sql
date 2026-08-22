@@ -52,7 +52,7 @@ PREWHERE (id = '833c9e22-c245-4eb5-8745-117a9a1f26b1') AND (number > toUInt64('1
 GROUP BY key, value1, value2
 ORDER BY key, value1, value2
 LIMIT 10
-SETTINGS enable_parallel_replicas = 1, enable_analyzer=0, parallel_replicas_only_with_analyzer=0;
+SETTINGS enable_parallel_replicas = 1, enable_analyzer=0, parallel_replicas_only_with_analyzer=0, serialize_query_plan=0;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
@@ -186,7 +186,7 @@ FROM
         )
 GROUP BY value1, value2
 ORDER BY value1, value2
-SETTINGS enable_parallel_replicas = 1, enable_analyzer=0, parallel_replicas_only_with_analyzer=0;
+SETTINGS enable_parallel_replicas = 1, enable_analyzer=0, parallel_replicas_only_with_analyzer=0, serialize_query_plan=0;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ParallelReplicasQueryCount'], replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query

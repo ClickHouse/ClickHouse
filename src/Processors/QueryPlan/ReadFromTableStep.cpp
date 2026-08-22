@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -16,10 +17,14 @@ ReadFromTableStep::ReadFromTableStep(
     SharedHeader header,
     String table_name_,
     TableExpressionModifiers table_expression_modifiers_,
+    bool is_merge_tree_,
+    FilterDAGInfoPtr row_policy_filter_,
     bool use_parallel_replicas_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
+    , is_merge_tree(is_merge_tree_)
+    , row_policy_filter(std::move(row_policy_filter_))
     , use_parallel_replicas(use_parallel_replicas_)
 {
 }
@@ -40,8 +45,12 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= 2;
     if (table_expression_modifiers.hasSampleOffsetRatio())
         flags |= 4;
-    if (use_parallel_replicas)
+    if (is_merge_tree)
         flags |= 8;
+    if (use_parallel_replicas)
+        flags |= 16;
+    if (row_policy_filter)
+        flags |= 32;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -50,8 +59,8 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
     if (table_expression_modifiers.hasSampleOffsetRatio())
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
 
-    if (use_parallel_replicas)
-        writeIntBinary(use_parallel_replicas, ctx.out);
+    if (row_policy_filter)
+        row_policy_filter->serialize(ctx);
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -75,17 +84,22 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 4)
         sample_offset_ratio = deserializeRational(ctx.in);
 
-    char use_parallel_replicas = 0;
-    if (flags & 8)
-        readIntBinary(use_parallel_replicas, ctx.in);
+    const bool is_merge_tree = flags & 8;
+    const bool use_parallel_replicas = flags & 16;
+
+    FilterDAGInfoPtr row_policy_filter;
+    if (flags & 32)
+        row_policy_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(
+        ctx.output_header, table_name, table_expression_modifiers, is_merge_tree, row_policy_filter, use_parallel_replicas);
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
-    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(
+        getOutputHeader(), table_name, table_expression_modifiers, is_merge_tree, row_policy_filter, use_parallel_replicas);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
