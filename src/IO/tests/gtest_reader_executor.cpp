@@ -963,6 +963,42 @@ TEST_F(ReaderExecutorTest, SequentialScanOpensAndReusesConnection)
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
 }
 
+TEST_F(ReaderExecutorTest, LongConnectionAdmissionFollowsThePressureWindow)
+{
+    /// Admission is "the run outlives the current window", so it must weigh the run against the
+    /// pressure-adjusted window rather than the base one. The same scan is run twice over the same
+    /// file, and the only difference is the window the rule is measured against: at `Normal` the run
+    /// never outlives an 8 MiB window before the file ends, while at `Elevated` it outgrows a 2 MiB
+    /// window part way in. Measuring against the base window at `Elevated` gives one-shot reads
+    /// throughout, which is what this pins.
+    /// See `WindowShrinksUnderMemoryPressure` for how the pressure level is driven.
+    constexpr size_t base_window = 8 * 1024 * 1024;
+    constexpr size_t size = 12 * 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+
+    auto connectionsOpened = [&](UInt64 pct) -> UInt64
+    {
+        TestThreadGroup tg;
+        MemoryTracker & mt = tg.thread_group->memory_tracker;
+        constexpr Int64 limit = Int64(8) << 30;   /// 8 GiB, far above anything the read tracks
+        mt.setHardLimit(limit);
+        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
+        mt.adjustWithUntrackedMemory(amount);
+
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+            .window_size = base_window, .min_bytes_for_seek = 2 * 1024 * 1024,
+            .max_tail_for_drain = 1024 * 1024,
+            .long_connection_limit = std::make_shared<LongConnectionLimit>(4)});
+        EXPECT_EQ(drain(ex).size(), size);
+
+        mt.adjustWithUntrackedMemory(-amount);
+        return tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened);
+    };
+
+    EXPECT_EQ(connectionsOpened(50), 0u);   /// Normal: no run outlives an 8 MiB window here
+    EXPECT_GE(connectionsOpened(80), 1u);   /// Elevated: the run outlives the 2 MiB window
+}
+
 TEST_F(ReaderExecutorTest, InBufferSeekIsServedWithoutRefetch)
 {
     /// Regression for PipelineReadBuffer::seek absorbing in-buffer seeks. A seek whose target is

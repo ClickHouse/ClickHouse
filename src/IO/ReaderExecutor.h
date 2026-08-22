@@ -53,6 +53,15 @@ public:
         CacheChain cache_chain = {};
     };
 
+    /// The sizes one window is read with. Sampled once per window from the memory-pressure level, so
+    /// they are at or below `window_size` / `block_size`, and travel together: every rule stated in
+    /// terms of "the current window" must use `window_bytes`, not the base `window_size`.
+    struct WindowSizes
+    {
+        size_t window_bytes;
+        size_t block_bytes;
+    };
+
     ReaderExecutor(
         std::shared_ptr<IFileBasedSourceReader> source,
         const StoredObjects & objects,
@@ -179,17 +188,19 @@ private:
     }
 
     size_t clampReach(size_t predicted_end, size_t phys_pos) const;
-    bool shouldOpenLongConnection() const;
+    /// `window_bytes` is the window this read serves, so the admission rule ("the run outlives the
+    /// current window") holds at every pressure level, not only where the window equals `window_size`.
+    bool shouldOpenLongConnection(size_t window_bytes) const;
     bool tryOpenLongConnection(const StoredObject & object, size_t object_offset);
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
-    ChainedBuffers readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base, size_t block_bytes);
+    ChainedBuffers readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base, WindowSizes sizes);
     /// The single source-read entry point; spans object boundaries via `OffsetMap::map`. A
     /// known-size short read is truncation and throws.
-    ChainedBuffers readSource(size_t file_offset, size_t want, size_t block_bytes);
+    ChainedBuffers readSource(size_t file_offset, size_t want, WindowSizes sizes);
     /// Serve the window through the cache chain: serve the cached prefix, then claim and fetch the
     /// miss ranges and populate them. A range another thread is already downloading is fetched
     /// through from source. Precondition: `!cache_chain.empty()`.
-    ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve, size_t serve_block);
+    ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve, WindowSizes sizes);
     void dropLongConnection();
 
     /// The only logical<->physical converters: physical = header-inclusive file coords; logical =
