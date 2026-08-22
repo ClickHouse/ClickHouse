@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS t_coordinator_log_volume;
 -- every part. `index_granularity = 1` turns every row into a separate granule, so a sparse `IN` set gives a
 -- working set of hundreds of non-adjacent ranges without writing a table that is expensive to create.
 CREATE TABLE t_coordinator_log_volume (k UInt32) ENGINE = MergeTree ORDER BY k PARTITION BY intDiv(k, 300)
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+    SETTINGS index_granularity = 1;
 INSERT INTO t_coordinator_log_volume SELECT number FROM numbers(1200);
 
 SET automatic_parallel_replicas_mode = 0;
