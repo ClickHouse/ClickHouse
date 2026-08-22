@@ -772,6 +772,11 @@ bool StorageKeeperMap::isMetadataStringCompatible(
                 return true;
         }
     }
+    catch (const std::bad_alloc &)
+    {
+        /// `operator new` signals allocation failure by throwing this directly, so it carries no error code.
+        throw;
+    }
     catch (...)
     {
         if (throw_on_error)

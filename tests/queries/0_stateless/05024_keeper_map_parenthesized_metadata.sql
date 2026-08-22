@@ -158,6 +158,11 @@ ATTACH TABLE 05024_keeper_map_parenthesized_metadata_unparsable;
 SELECT * FROM 05024_keeper_map_parenthesized_metadata_unparsable; -- { serverError INVALID_STATE }
 INSERT INTO 05024_keeper_map_parenthesized_metadata_unparsable VALUES (2, 'value'); -- { serverError INVALID_STATE }
 
+-- A single-key lookup is refused too, not only a whole-table read.
+SELECT * FROM (SELECT toUInt64(1) AS key) AS probe
+ANY LEFT JOIN 05024_keeper_map_parenthesized_metadata_unparsable USING key
+SETTINGS join_algorithm = 'direct'; -- { serverError INVALID_STATE }
+
 CREATE TABLE 05024_keeper_map_parenthesized_metadata_unparsable_second (key UInt64, value String)
 ENGINE = KeeperMap('/' || currentDatabase() || '/05024_keeper_map_parenthesized_metadata_unparsable')
 PRIMARY KEY key; -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
