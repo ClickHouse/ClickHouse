@@ -59,10 +59,10 @@ dictGetIPv6
 dictGetIPv6, opt off
 1	x
 dictGetOrNull(String), no rewrite (dictGetOrNull is not supported by the optimization) - plan
-SELECT\n    __table1.id AS id,\n    __table1.payload AS payload\nFROM default.tab AS __table1\nWHERE equals(dictGetOrNull(\'dictionary_all\', \'name\', __table1.id), \'alpha\')\nORDER BY\n    __table1.id ASC,\n    __table1.payload ASC
+SELECT\n    __table1.id AS id,\n    __table1.payload AS payload\nFROM default.tab AS __table1\nWHERE equals(dictGetOrNull(\'default.dictionary_all\', \'name\', __table1.id), \'alpha\')\nORDER BY\n    __table1.id ASC,\n    __table1.payload ASC
 dictGetOrNull(String), no rewrite (dictGetOrNull is not supported by the optimization)
 1	x
 dictGetOrNull(String) IS NULL, no rewrite (dictGetOrNull is not supported by the optimization) - plan
-SELECT\n    __table1.id AS id,\n    __table1.payload AS payload\nFROM default.tab AS __table1\nWHERE isNull(dictGetOrNull(\'dictionary_all\', \'name\', __table1.id))\nORDER BY\n    __table1.id ASC,\n    __table1.payload ASC
+SELECT\n    __table1.id AS id,\n    __table1.payload AS payload\nFROM default.tab AS __table1\nWHERE isNull(dictGetOrNull(\'default.dictionary_all\', \'name\', __table1.id))\nORDER BY\n    __table1.id ASC,\n    __table1.payload ASC
 dictGetOrNull(String) IS NULL, no rewrite (dictGetOrNull is not supported by the optimization)
 99	z
