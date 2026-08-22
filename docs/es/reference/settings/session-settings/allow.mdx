@@ -271,6 +271,17 @@ Cuando está habilitada, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` aplica
 
 Permite CREATE MATERIALIZED VIEW con una consulta SELECT que haga referencia a tablas o columnas inexistentes. Debe seguir siendo sintácticamente válida. No se aplica a las MV refrescables. No se aplica si el esquema de la MV debe inferirse a partir de la consulta SELECT (es decir, si CREATE no tiene lista de columnas ni cláusula TO). Puede usarse para crear una MV antes de su tabla de origen.
 
+<div id="allow_metadata_only_named_tuple_alter">
+  ## allow_metadata_only_named_tuple_alter
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para controlar ALTER de solo metadatos al añadir subcampos a Tuple con nombre."}]}]} />
+
+Si es true, ALTER MODIFY COLUMN en una Tuple con nombre que solo añade nuevos subcampos es una operación de solo metadatos (sin mutación de datos).
+Establézcalo en false para forzar el comportamiento anterior de mutación completa.
+
 <div id="allow_minmax_index_for_json">
   ## allow_minmax_index_for_json
 </div>
