@@ -739,6 +739,13 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "CREATE USER user1 VALID UNTIL '2025-01-01'"
         },
         {
+            /// The `GRANTS` clause of an authentication method is parsed after its deadline clause, and the
+            /// `VALID FOR` interval is parsed as a general expression - which must not swallow the `GRANTS`
+            /// keyword and its parenthesized list as a function call.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR INTERVAL 1 DAY GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID FOR toIntervalDay\(1\) GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
             /// The expected output is matched as a regular expression, so the parentheses and the
             /// plus sign of the interval functions are escaped below.
             "CREATE USER user1 VALID FOR INTERVAL 1 DAY",
