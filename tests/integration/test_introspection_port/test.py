@@ -59,6 +59,16 @@ def test_introspection_port(started_cluster):
     assert introspection_client().query("EXISTS TABLE system.one") == "1\n"
     introspection_client().query("SHOW PROCESSLIST")
 
+    # Reaches the interpreter and fails on its argument instead of being refused.
+    assert "There is no cache by name" in introspection_client().query_and_get_error(
+        "DESCRIBE FILESYSTEM CACHE 'nonexistent'"
+    )
+    # Impersonating another user is not a diagnostic query, so it stays refused.
+    # On a regular port the same statement reports UNKNOWN_USER instead.
+    assert "QUERY_IS_PROHIBITED" in introspection_client().query_and_get_error(
+        "EXECUTE AS foo"
+    )
+
     node.query("SYSTEM STOP LISTEN CUSTOM 'introspection_native'")
     assert introspection_client().query("SELECT 1") == "1\n"
 
