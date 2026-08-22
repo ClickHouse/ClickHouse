@@ -97,8 +97,9 @@ struct StringLikeNeedle
     }
 };
 
-/// Zero-padded comparison does not order values the way their stored bytes do, so an array sorted
-/// by value is not sorted under it and a binary search can step past a match.
+/// Marks a needle that is compared zero-padded. No `lessOrEqual` overload accepts such a needle, so
+/// excluding it from the binary search below keeps `lowerBound` instantiable only where an ordering
+/// comparison exists.
 template <typename T> constexpr bool is_zero_padded_needle_v = false;
 template <> inline constexpr bool is_zero_padded_needle_v<StringLikeNeedle> = true;
 
@@ -317,7 +318,7 @@ private:
         /** Use binary search if the following conditions are met.
           *   1. The array type is not nullable. (Case = 1)
           *   2. Target is not a column or an array.
-          *   3. The comparison agrees with the order the array is sorted in.
+          *   3. An ordering comparison exists for the target.
           */
         if constexpr (
             std::is_same_v<ConcreteAction, IndexOfAssumeSorted> && !std::is_same_v<Target, PaddedPODArray<Result>>

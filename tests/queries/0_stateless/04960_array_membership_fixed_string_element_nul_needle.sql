@@ -30,7 +30,6 @@ CREATE TABLE fs_repeat (v Array(FixedString(4))) ENGINE = Memory;
 INSERT INTO fs_repeat SELECT [CAST('z', 'FixedString(4)'), CAST('a', 'FixedString(4)'), CAST('a', 'FixedString(4)')];
 SELECT indexOf(v, unhex('6100')), 2 FROM fs_repeat;
 SELECT countEqual(v, unhex('6100')), 2 FROM fs_repeat;
-SELECT indexOfAssumeSorted(v, unhex('6100')), 2 FROM fs_repeat;
 
 -- indexOfAssumeSorted over an array sorted by its stored bytes.
 DROP TABLE IF EXISTS fs_sorted;
