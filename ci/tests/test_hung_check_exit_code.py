@@ -238,6 +238,9 @@ def _make_test_case(tmp_path, stop=True):
     case.stderr_file = str(tmp_path / "stderr")
     case.fatal_sanitizer_prefix = str(tmp_path / "sanitizer_")
     case.tags = set()
+    # Normally set by `TestCase.__init__`, which these fixtures bypass; `add_info_about_settings`
+    # reads it on the failure paths exercised here.
+    case.randomize_detach = False
     return case
 
 
