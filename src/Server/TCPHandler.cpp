@@ -1563,6 +1563,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         if (!header.empty())
         {
             sendData(state, header);
+            out->sync();
         }
     }
 
@@ -1603,6 +1604,8 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
                         sendData(state, block);
+
+                    out->sync();
                 }
             }
         }
