@@ -84,16 +84,19 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     }
 
     std::vector<Target> targets;
-    constexpr auto base_kinds = getTargetKinds();
-    std::vector<ViewTarget::Kind> kinds(base_kinds.begin(), base_kinds.end());
-
-    /// The optional "histograms" target exists only when the normalized create query declares it
-    /// (an external table, or inner columns added by normalizeTimeSeriesDefinition()).
-    if (create_query.hasTargetTableID(ViewTarget::Histograms) || create_query.getTargetInnerColumns(ViewTarget::Histograms))
-        kinds.push_back(ViewTarget::Histograms);
-
-    for (auto target_kind : kinds)
+    for (auto target_kind : getAllTargetKinds())
     {
+        /// The recent samples target exists only if the normalized create query has a RECENT SAMPLES clause.
+        if ((target_kind == ViewTarget::RecentSamples)
+            && (!create_query.targets || !create_query.targets->tryGetTarget(target_kind)))
+            continue;
+
+        /// The optional "histograms" target exists only when the normalized create query declares it
+        /// (an external table, or inner columns added by normalizeTimeSeriesDefinition()).
+        if ((target_kind == ViewTarget::Histograms)
+            && !create_query.hasTargetTableID(ViewTarget::Histograms) && !create_query.getTargetInnerColumns(ViewTarget::Histograms))
+            continue;
+
         Target target;
         target.kind = target_kind;
 
@@ -125,6 +128,7 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
 
         targets.emplace_back(std::move(target));
     }
+
     return targets;
 }
 
@@ -169,6 +173,33 @@ StorageTimeSeries::StorageTimeSeries(
 StorageTimeSeries::~StorageTimeSeries() = default;
 
 
+std::vector<ViewTarget::Kind> StorageTimeSeries::getTargetKinds() const
+{
+    std::vector<ViewTarget::Kind> kinds;
+    kinds.reserve(targets.size());
+    for (const auto & target : targets)
+        kinds.push_back(target.kind);
+    return kinds;
+}
+
+
+const StorageTimeSeries::Target * StorageTimeSeries::tryGetTarget(ViewTarget::Kind target_kind) const
+{
+    for (const auto & target : targets)
+    {
+        if (target.kind == target_kind)
+            return &target;
+    }
+    return nullptr;
+}
+
+
+bool StorageTimeSeries::hasTarget(ViewTarget::Kind target_kind) const
+{
+    return tryGetTarget(target_kind) != nullptr;
+}
+
+
 StoragePtr StorageTimeSeries::getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const
 {
     return getTargetTableImpl(target_kind, local_context, /* throw_if_not_found = */ true);
@@ -179,33 +210,22 @@ StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, co
     return getTargetTableImpl(target_kind, local_context, /* throw_if_not_found = */ false);
 }
 
-const StorageTimeSeries::Target * StorageTimeSeries::tryGetTargetInfo(ViewTarget::Kind target_kind) const
-{
-    /// `targets` is populated in the `getTargetKinds()` order, with the optional Histograms target last.
-    auto index = static_cast<size_t>(target_kind - ViewTarget::Samples);
-    if (index < targets.size() && targets[index].kind == target_kind)
-        return &targets[index];
-    if (target_kind != ViewTarget::Histograms)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {} (index={})", target_kind, index);
-    return nullptr;
-}
-
-bool StorageTimeSeries::hasTarget(ViewTarget::Kind target_kind) const
-{
-    return tryGetTargetInfo(target_kind) != nullptr;
-}
-
 StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const
 {
-    const auto * target_info = tryGetTargetInfo(target_kind);
-    if (!target_info)
+    const auto * target_ptr = tryGetTarget(target_kind);
+    if (!target_ptr)
     {
-        if (throw_if_not_found)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries table {} has no {} target table",
-                            getStorageID().getNameForLogs(), target_kind);
-        return nullptr;
+        /// The recent samples and histograms targets are optional.
+        if (target_kind == ViewTarget::RecentSamples || target_kind == ViewTarget::Histograms)
+        {
+            if (throw_if_not_found)
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries table {} has no {} target table",
+                                getStorageID().getNameForLogs(), target_kind);
+            return nullptr;
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {}", target_kind);
     }
-    const auto & target = *target_info;
+    const auto & target = *target_ptr;
 
     auto lookup = [&](const StorageID & id) -> StoragePtr
     {
@@ -278,8 +298,15 @@ StorageID StorageTimeSeries::tryGetTargetTableID(ViewTarget::Kind target_kind, c
 
 bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 {
-    const auto * target_info = tryGetTargetInfo(target_kind);
-    return target_info && target_info->is_inner_table;
+    const auto * target = tryGetTarget(target_kind);
+    if (!target)
+    {
+        /// The recent samples and histograms targets are optional.
+        if (target_kind == ViewTarget::RecentSamples || target_kind == ViewTarget::Histograms)
+            return false;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {}", target_kind);
+    }
+    return target->is_inner_table;
 }
 
 
@@ -1142,7 +1169,10 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `store_native_histograms` | Bool | false | If set to true then the table gets a fourth target table [histograms](#histograms-table) storing Prometheus native histogram samples. An explicit `HISTOGRAMS` clause in the `CREATE` query enables it too |
+| `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
+| `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `store_native_histograms` | Bool | false | If set to true then the table gets an additional target table [histograms](#histograms-table) storing Prometheus native histogram samples. An explicit `HISTOGRAMS` clause in the `CREATE` query enables it too |
 | `histograms_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [histograms](#histograms-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external histograms table and a non-MergeTree engine |
 
 # Functions {#functions}

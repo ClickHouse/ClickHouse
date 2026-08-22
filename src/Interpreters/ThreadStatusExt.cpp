@@ -28,6 +28,7 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
+#include <Common/MemorySpillScheduler.h>
 
 #if defined(OS_LINUX)
 #   include <sys/time.h>
