@@ -18,6 +18,12 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 
+/// True if `base` already has a column that covers `name` - either `name` itself, or an ancestor
+/// of it (e.g. `t` covers subcolumn `t.a`). Requesting both the ancestor and the subcolumn from a
+/// format reader is redundant and some readers (e.g. Parquet's SchemaConverter) reject it as
+/// COLUMN_QUERIED_MORE_THAN_ONCE.
+bool blockHasColumnOrAncestor(const Block & base, const String & name);
+
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
 class ColumnMapper
 {

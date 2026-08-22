@@ -19,6 +19,7 @@
 #include <base/scope_guard.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
+#include <algorithm>
 #include <unordered_map>
 
 namespace DB
@@ -70,9 +71,25 @@ void appendDeferredFilterInputs(
     const ActionsDAG & dag,
     const ColumnsDescription & columns_description)
 {
-    for (const auto & required : dag.getRequiredColumns())
+    /// Ancestors first, so that inserting `t` after `t.a` cannot leave both in the header.
+    std::vector<NameAndTypePair> required_columns(dag.getRequiredColumns().begin(), dag.getRequiredColumns().end());
+    std::sort(required_columns.begin(), required_columns.end(), [](const auto & lhs, const auto & rhs)
     {
-        if (reader_header.has(required.name))
+        const auto depth = [](const String & name) { return std::count(name.begin(), name.end(), '.'); };
+        const auto lhs_depth = depth(lhs.name);
+        const auto rhs_depth = depth(rhs.name);
+        if (lhs_depth != rhs_depth)
+            return lhs_depth < rhs_depth;
+        return lhs.name < rhs.name;
+    });
+
+    for (const auto & required : required_columns)
+    {
+        /// An ancestor in the header already covers the subcolumn, and
+        /// `tryCreateFilterSubcolumnExtractionActions` materializes it from that ancestor. Asking the
+        /// reader for both is redundant, and readers either reject it (COLUMN_QUERIED_MORE_THAN_ONCE)
+        /// or resolve the subcolumn name against the file schema and return the wrong values.
+        if (blockHasColumnOrAncestor(reader_header, required.name))
             continue;
 
         /// A file that omits `t` cannot produce `t.x` either, so read the parent and let
@@ -80,8 +97,7 @@ void appendDeferredFilterInputs(
         const auto storage_name = storageColumnNameForDefaults(columns_description, required.name);
         if (storage_name != required.name && columns_description.hasDefault(storage_name))
         {
-            if (!reader_header.has(storage_name))
-                reader_header.insert({columns_description.get(storage_name).type, storage_name});
+            reader_header.insert({columns_description.get(storage_name).type, storage_name});
             continue;
         }
 
