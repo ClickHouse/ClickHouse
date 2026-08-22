@@ -24,6 +24,7 @@ Test 5: Dynamic setting changes
 Test 6: Master switch off
 500	1249500
 500	1249500
+0
 Test 7: Re-enable cache
 500	1249500
 500	1249500
@@ -47,4 +48,5 @@ ProfileEvents checks
 04070_test1_read2	1
 04070_test3_read2	0
 04070_test3_read3	0
+04070_test6_read2	0
 All read/write settings tests passed

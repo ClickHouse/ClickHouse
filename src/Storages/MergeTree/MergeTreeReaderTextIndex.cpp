@@ -200,6 +200,14 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
 
     if (!fallback_columns_list.empty())
     {
+        /// The physical columns of the fallback expression are discovered here, long after
+        /// `MergeTreeReadPoolBase` sized the query's columns cache write estimate over the
+        /// columns of the read task. Writing them to the cache would therefore write bytes no
+        /// budget accounted for, so the fallback reader only reads from the cache (entries an
+        /// ordinary reader of the same columns put there) and never writes to it.
+        auto fallback_settings = main_reader->settings;
+        fallback_settings.enable_columns_cache_writes = false;
+
         fallback_reader = createMergeTreeReader(
             main_reader->data_part_info_for_read,
             fallback_columns_list,
@@ -211,7 +219,7 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
             main_reader->columns_cache,
             main_reader->mark_cache,
             /*deserialization_prefixes_cache=*/nullptr,
-            main_reader->settings,
+            fallback_settings,
             /*avg_value_size_hints=*/{},
             /*profile_callback=*/{});
     }

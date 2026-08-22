@@ -157,7 +157,13 @@ SET enable_writes_to_columns_cache = 1;
 SELECT count(), sum(number) FROM t_cache_settings WHERE id >= 2000 AND id < 3000;
 
 -- Second read: still from disk (cache disabled)
-SELECT count(), sum(number) FROM t_cache_settings WHERE id >= 2000 AND id < 3000;
+SELECT count(), sum(number) FROM t_cache_settings WHERE id >= 2000 AND id < 3000
+SETTINGS log_comment = '04070_test6_read2';
+
+-- Observe that the master switch is really enforced, not only that the results are the same:
+-- the reads above must have left nothing of this table in the cache, and the repeated read
+-- must not have been served from it (checked through `ColumnsCacheHits` below).
+SELECT count() FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_cache_settings';
 
 -- =============================================================================
 -- Test 7: Re-enable cache after it was disabled
@@ -281,7 +287,7 @@ SELECT log_comment, ProfileEvents['ColumnsCacheHits'] > 0 AS has_hits
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
-    AND log_comment IN ('04070_test1_read2', '04070_test3_read2', '04070_test3_read3')
+    AND log_comment IN ('04070_test1_read2', '04070_test3_read2', '04070_test3_read3', '04070_test6_read2')
 ORDER BY event_time_microseconds;
 
 SELECT 'All read/write settings tests passed';

@@ -75,9 +75,9 @@ TEST(ColumnsCache, ClearAllAndRemoveTableGenerationsDoNotCancelOut)
 
     const auto [table_generation, part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
 
-    /// Both kinds of invalidation happen while a reader is in flight. The token is
-    /// a sum of two monotonically increasing counters, so no combination of bumps
-    /// can bring it back to a previously observed value.
+    /// Both kinds of invalidation happen while a reader is in flight. Every stamp comes from
+    /// a single monotonically increasing counter and the token is the later of the two, so no
+    /// combination of bumps can bring it back to a previously observed value.
     cache.clearAll();
     cache.removeTable(table_uuid);
     EXPECT_NE(cache.getInvalidationGenerations(table_uuid, "part_1").first, table_generation);
@@ -230,17 +230,55 @@ TEST(ColumnsCache, EntriesAreNotVisibleAcrossTableGenerations)
     EXPECT_TRUE(cache.getIntersecting(table_uuid, "part_1", "col", 0, 100, table_generation + 1).empty());
 }
 
-TEST(ColumnsCache, DisabledCacheDoesNotRememberInvalidations)
+TEST(ColumnsCache, DisabledCacheStillInvalidatesInFlightReaders)
+{
+    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
+        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    const UUID table_uuid = UUIDHelpers::generateV4();
+
+    /// A reader that started while the cache was enabled holds a token.
+    const auto [table_generation, part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
+
+    /// The cache is disabled by a config reload, the table is altered, and the cache is
+    /// enabled again before the reader gets to its deferred write. The invalidation happened
+    /// while the cache was disabled, but it still has to reject that write.
+    cache.setMaxSizeInBytesAndCompact(0);
+    cache.removeTable(table_uuid);
+    cache.setMaxSizeInBytesAndCompact(1 << 20);
+
+    ColumnsCacheKey key{table_uuid, "part_1", "col", 0, 100, 0};
+    EXPECT_FALSE(cache.set(key, makeEntry(100), table_generation, part_generation));
+
+    /// The same for a part that was removed while the cache was disabled.
+    const auto [table_generation2, part_generation2] = cache.getInvalidationGenerations(table_uuid, "part_1");
+    cache.setMaxSizeInBytesAndCompact(0);
+    cache.removePart(table_uuid, "part_1");
+    cache.setMaxSizeInBytesAndCompact(1 << 20);
+    EXPECT_FALSE(cache.set(key, makeEntry(100), table_generation2, part_generation2));
+
+    /// A reader that starts after all of it can write again.
+    const auto [fresh_table_generation, fresh_part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
+    EXPECT_TRUE(cache.set(key, makeEntry(100), fresh_table_generation, fresh_part_generation));
+}
+
+TEST(ColumnsCache, DisabledCacheDoesNotAccumulatePerTableInvalidationMetadata)
 {
     ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
         /*max_size_in_bytes=*/ 0, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
-    const UUID table_uuid = UUIDHelpers::generateV4();
 
     /// A cache that admits nothing must not accumulate invalidation metadata for every table
-    /// and part of the server.
-    cache.removeTable(table_uuid);
-    cache.removePart(table_uuid, "part_1");
-    EXPECT_EQ(cache.getInvalidationGenerations(table_uuid, "part_1"), std::make_pair(UInt64(0), UInt64(0)));
+    /// and part of the server: the invalidations are folded into the single cache-wide stamp,
+    /// so every table observes the same one and no per-table entry is kept.
+    const UUID first_table = UUIDHelpers::generateV4();
+    const UUID second_table = UUIDHelpers::generateV4();
+    cache.removeTable(first_table);
+    cache.removePart(second_table, "part_1");
+
+    const auto [first_generation, first_part_generation] = cache.getInvalidationGenerations(first_table, "part_1");
+    const auto [second_generation, second_part_generation] = cache.getInvalidationGenerations(second_table, "part_1");
+    EXPECT_EQ(first_generation, second_generation);
+    EXPECT_EQ(first_part_generation, 0u);
+    EXPECT_EQ(second_part_generation, 0u);
 }
 
 TEST(ColumnsCache, RemoveTableReclaimsPartGenerationTombstones)

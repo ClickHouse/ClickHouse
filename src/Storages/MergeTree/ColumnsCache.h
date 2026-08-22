@@ -31,14 +31,17 @@ struct ColumnsCacheKey
     String column_name;
     size_t row_begin = 0;
     size_t row_end = 0;
-    /// The table's invalidation stamp at the time the column was read, see
-    /// getInvalidationGenerations. Cache data from an earlier schema must not be used after
-    /// an `ALTER` makes the same column name refer to a different column: such an `ALTER`
-    /// advances the stamp, so entries written before it can no longer be looked up, even if
-    /// they were written by a reader that had already observed the new metadata but the old
-    /// stamp. The stamp is stable while the table is not invalidated, so a repeated read of
-    /// an unchanged table finds its entries.
-    UInt64 table_generation = 0;
+    /// Identity of the schema the column was read with: a hash of the table's column list
+    /// (names, types, defaults) taken from the very metadata snapshot the reader uses, see
+    /// `getColumnsCacheSchemaIdentity`. Cache data of an earlier schema must not be served
+    /// after an `ALTER` makes the same column name refer to a different column, as in
+    /// `RENAME a TO b, ADD COLUMN a`: the column list changes, so the entries written before
+    /// the `ALTER` are no longer reachable. Because the identity is a function of the
+    /// metadata snapshot itself and not of a separately maintained counter, it needs no
+    /// coordination with the moment the new metadata is published: a reader can never hold
+    /// the new schema together with the identity of the old one. It is stable across reads
+    /// of an unchanged table, so repeated reads find their entries.
+    UInt64 schema_identity = 0;
 
     bool operator==(const ColumnsCacheKey & other) const = default;
 
@@ -62,7 +65,7 @@ struct ColumnsCacheKeyHash
         hash.update(key.column_name);
         hash.update(key.row_begin);
         hash.update(key.row_end);
-        hash.update(key.table_generation);
+        hash.update(key.schema_identity);
         return hash.get64();
     }
 };
@@ -210,7 +213,7 @@ public:
         const String & column_name,
         size_t row_begin,
         size_t row_end,
-        UInt64 table_generation = 0);
+        UInt64 schema_identity = 0);
 
     /// Insert a column into the cache.
     /// Maintains a non-overlapping invariant on the per-column interval map so

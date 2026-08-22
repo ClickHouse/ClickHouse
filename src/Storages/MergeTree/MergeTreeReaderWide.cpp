@@ -194,10 +194,12 @@ size_t MergeTreeReaderWide::readRows(
             cache_write_pending = false;
 
         /// Capture the invalidation generations before anything is read, so that any
-        /// invalidation racing with this read is observed. They are used both as the schema
-        /// token of the cache keys and by the deferred write below, which passes them to
-        /// `set()`: the write is dropped if the table was invalidated, its part removed, or
-        /// the whole cache dropped, after this point.
+        /// invalidation racing with this read is observed. They are passed to `set()` by the
+        /// deferred write below: the write is dropped if the table was invalidated, its part
+        /// removed, or the whole cache dropped, after this point. The schema token of the
+        /// cache keys is not taken from here but from the metadata snapshot of the query
+        /// (`settings.columns_cache_schema_identity`), so that it cannot disagree with the
+        /// schema this read actually uses, see `ColumnsCacheKey::schema_identity`.
         if (cache_enabled && (settings.enable_columns_cache_reads || settings.enable_columns_cache_writes))
         {
             std::tie(cache_table_generation, cache_part_generation) = columns_cache->getInvalidationGenerations(
@@ -266,7 +268,7 @@ size_t MergeTreeReaderWide::readRows(
                     column_name,
                     row_begin,
                     row_end_query,
-                    cache_table_generation);
+                    settings.columns_cache_schema_identity);
 
                 /// We can serve from cache if we find exactly one block that fully contains
                 /// the requested range [row_begin, row_end_query).
@@ -524,7 +526,7 @@ size_t MergeTreeReaderWide::readRows(
             }
 
             /// The query-wide estimate gate can disable cache writes while reads
-            /// are already in flight: the estimate is accumulated per part as read
+            /// are already in flight: the estimate is accumulated as read
             /// pools build their tasks, and another pool of the same query may
             /// exceed the budget after this reader armed its deferred write.
             /// Consult the shared flag before writing so the estimate budget
@@ -608,7 +610,7 @@ size_t MergeTreeReaderWide::readRows(
                                 columns_to_read[pos].name,
                                 cache_row_begin,
                                 column_row_end,
-                                cache_table_generation};
+                                settings.columns_cache_schema_identity};
 
                             auto entry = std::make_shared<ColumnsCacheEntry>(
                                 ColumnsCacheEntry{std::move(column_to_cache), rows_to_cache});

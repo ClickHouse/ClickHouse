@@ -102,7 +102,7 @@ ColumnsCache::getIntersecting(
     const String & column_name,
     size_t row_begin,
     size_t row_end,
-    UInt64 table_generation)
+    UInt64 schema_identity)
 {
     std::vector<std::pair<Key, MappedPtr>> result;
 
@@ -133,7 +133,7 @@ ColumnsCache::getIntersecting(
         if (it != intervals.begin())
         {
             auto prev_it = std::prev(it);
-            if (prev_it->second.row_end > row_begin && prev_it->second.table_generation == table_generation)
+            if (prev_it->second.row_end > row_begin && prev_it->second.schema_identity == schema_identity)
                 intersecting_keys.push_back(prev_it->second);
         }
 
@@ -147,7 +147,7 @@ ColumnsCache::getIntersecting(
                 break;
 
             /// Check if this interval actually intersects
-            if (key.row_end > row_begin && key.table_generation == table_generation)
+            if (key.row_end > row_begin && key.schema_identity == schema_identity)
             {
                 intersecting_keys.push_back(key);
             }
@@ -332,15 +332,22 @@ bool ColumnsCache::set(
 
 void ColumnsCache::removeTable(const UUID & table_uuid)
 {
-    /// A cache that cannot hold anything has nothing to invalidate: a zero-sized cache admits
-    /// no writes, so no deferred write can resurrect stale data. Remembering a stamp for every
-    /// table would otherwise grow forever on a server where the columns cache is disabled.
-    if (Base::maxSizeInBytes() == 0)
-        return;
-
     /// Lock ordering matches removePart: interval_index_mutex first, then the
     /// CacheBase mutex (taken inside Base::remove). No lock-order cycle.
     std::lock_guard lock(interval_index_mutex);
+
+    /// A zero-sized cache holds no entries, but readers that started while it was still
+    /// enabled do hold a stamp and can insert once a config reload re-enables it, so the
+    /// invalidation still has to be remembered. Advance the cache-wide stamp instead of a
+    /// per-table one: it invalidates every stamp handed out so far just as well, and it
+    /// keeps the per-table map from growing forever on a server where the cache is off.
+    if (Base::maxSizeInBytes() == 0)
+    {
+        global_generation = nextGeneration();
+        table_generations.clear();
+        part_generations.clear();
+        return;
+    }
 
     /// Advance the table's invalidation generation before clearing entries, so a
     /// deferred set() from a reader that captured an older generation is rejected
@@ -370,10 +377,6 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
 
 void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 {
-    /// Nothing to invalidate while the cache is disabled, see removeTable.
-    if (Base::maxSizeInBytes() == 0)
-        return;
-
     /// Hold interval_index_mutex across both the index erase and the Base::remove
     /// calls so that a concurrent set() for the same key cannot re-insert between
     /// the two steps and end up with the Base entry deleted but the interval_index
@@ -383,6 +386,16 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
     /// Base::set (which briefly takes the CacheBase lock). removePart follows the
     /// same order, so there is no lock-order cycle.
     std::lock_guard lock(interval_index_mutex);
+
+    /// While the cache is disabled, advance the cache-wide stamp instead of a per-part one,
+    /// see removeTable.
+    if (Base::maxSizeInBytes() == 0)
+    {
+        global_generation = nextGeneration();
+        table_generations.clear();
+        part_generations.clear();
+        return;
+    }
 
     PartIdentifier part_id{table_uuid, part_name};
     part_generations[part_id] = nextGeneration();

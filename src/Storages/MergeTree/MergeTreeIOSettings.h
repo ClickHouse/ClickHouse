@@ -67,6 +67,12 @@ struct MergeTreeReaderSettings
     bool use_query_condition_cache = false;
     bool enable_columns_cache_reads = false;
     bool enable_columns_cache_writes = false;
+    /// Identity of the schema the read runs with: a hash of the column list of the metadata
+    /// snapshot of the query, computed once per read pool. It is part of every columns cache
+    /// key, so that data deserialized under one schema can never be served to a read that
+    /// runs with another one - see `ColumnsCacheKey::schema_identity`. Zero for readers that
+    /// do not use the columns cache.
+    UInt64 columns_cache_schema_identity = 0;
     /// Per-query cap on bytes written to the columns cache. 0 means no cap.
     size_t columns_cache_max_bytes_to_write_to_cache = 0;
     /// Per-query running total of bytes written to the columns cache.
@@ -75,7 +81,7 @@ struct MergeTreeReaderSettings
     /// Per-query flag that disables further columns cache writes once the
     /// estimated compressed bytes read by the query exceed the estimate budget
     /// (`columns_cache_max_estimated_compressed_bytes_to_write_to_cache`). The
-    /// estimate is accumulated per part as read tasks are built, after the full
+    /// estimate is accumulated as read tasks are built, after the full
     /// set of read columns (including prewhere, mutation and patch-part columns)
     /// is known, so readers must consult it dynamically at write time.
     std::shared_ptr<std::atomic<bool>> columns_cache_writes_disabled;
