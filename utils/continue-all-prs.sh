@@ -1074,9 +1074,14 @@ prepare_triage_worktree()
     fi
 
     # Fetching by URL avoids adding a per-fork remote to the shared Git config.
-    run_with_deadline "$deadline" git -C "$wt" fetch -q "$fetch_url" "$head_ref" || return $?
+    # Use full `refs/heads/` refspecs: a short name is ambiguous, and a fork
+    # that carries both a branch and a tag called `$head_ref` would make
+    # `FETCH_HEAD` resolve to the tag, so triage would inspect a tree that is
+    # not the PR head.  `headRefName` is controlled by the fork, so this is
+    # reachable from outside.
+    run_with_deadline "$deadline" git -C "$wt" fetch -q "$fetch_url" "refs/heads/$head_ref" || return $?
     git -C "$wt" checkout --detach -q FETCH_HEAD || return 1
-    run_with_deadline "$deadline" git -C "$wt" fetch -q origin "$base_ref" || return $?
+    run_with_deadline "$deadline" git -C "$wt" fetch -q origin "+refs/heads/$base_ref:refs/remotes/origin/$base_ref" || return $?
     push_url="$head_repo_url"
     printf '%s\t%s\t%s\t%s\t%s\n' "$(git -C "$wt" rev-parse HEAD)" "$(git -C "$wt" rev-parse "origin/$base_ref")" "$head_ref" "$push_url" "$pushable"
 }
@@ -1265,6 +1270,12 @@ run_continue_pr()
             --ro-bind "$triage_sandbox_config" "$triage_wt/.git/config"
             --tmpfs "$triage_home"
             --setenv HOME "$triage_home"
+            # `gh` resolves its configuration directory as `GH_CONFIG_DIR`,
+            # then `$XDG_CONFIG_HOME/gh`, and only then `$HOME/.config/gh`.
+            # Redirecting `XDG_CONFIG_HOME` into the private home closes that
+            # middle path: without it a triage turn can still run
+            # `gh auth token` on a host that uses an XDG configuration layout.
+            --setenv XDG_CONFIG_HOME "$triage_home/.config"
             --setenv GIT_CONFIG_GLOBAL /dev/null
             --setenv GIT_CONFIG_SYSTEM /dev/null
             --setenv GIT_CONFIG_NOSYSTEM 1
@@ -1281,6 +1292,13 @@ run_continue_pr()
         [[ ! -e "$HOME/.git-credentials" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.git-credentials")
         [[ ! -e "$HOME/.netrc" ]] || triage_sandbox_args+=(--ro-bind /dev/null "$HOME/.netrc")
         [[ "${GH_CONFIG_DIR:-}" != /* || ! -d "$GH_CONFIG_DIR" ]] || triage_sandbox_args+=(--tmpfs "$GH_CONFIG_DIR")
+        # The redirected `XDG_CONFIG_HOME` above hides these from `gh` and Git,
+        # but mask the host directories as well so their absolute paths stay
+        # unreadable even when the agent opens them directly.
+        if [[ "${XDG_CONFIG_HOME:-}" == /* ]]; then
+            [[ ! -d "$XDG_CONFIG_HOME/gh" ]] || triage_sandbox_args+=(--tmpfs "$XDG_CONFIG_HOME/gh")
+            [[ ! -d "$XDG_CONFIG_HOME/git" ]] || triage_sandbox_args+=(--tmpfs "$XDG_CONFIG_HOME/git")
+        fi
         if [[ "$AGENT" == "codex" ]]; then
             if [[ "$CUSTOM_KEY" == 1 ]]; then
                 triage_agent_home="$codex_home"

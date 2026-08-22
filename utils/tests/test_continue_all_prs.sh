@@ -160,6 +160,38 @@ triage_sandbox_flags=$(sed -n '/^            bwrap$/,/^        )$/p' "$repo/util
 grep -q -- '--unshare-pid' <<< "$triage_sandbox_flags"
 grep -q -- '--proc /proc' <<< "$triage_sandbox_flags"
 
+# `gh` resolves `GH_CONFIG_DIR`, then `$XDG_CONFIG_HOME/gh`, and only then
+# `$HOME/.config/gh`. Scrubbing `GH_CONFIG_DIR` alone therefore leaves the host
+# token readable on any machine that uses an XDG configuration layout, so the
+# sandbox must redirect `XDG_CONFIG_HOME` into the private home as well.
+grep -q -- '--setenv XDG_CONFIG_HOME "$triage_home/.config"' <<< "$triage_sandbox_flags"
+grep -q -- '--tmpfs "$XDG_CONFIG_HOME/gh"' "$repo/utils/continue-all-prs.sh"
+grep -q -- '--tmpfs "$XDG_CONFIG_HOME/git"' "$repo/utils/continue-all-prs.sh"
+
+if command -v bwrap >/dev/null 2>&1 && bwrap --ro-bind / / --dev /dev true 2>/dev/null; then
+    xdg_host="$scratch/xdg-config"
+    xdg_home="$scratch/xdg-triage-home"
+    mkdir -p "$xdg_host/gh" "$xdg_home"
+    printf 'github.com:\n  oauth_token: SECRET_XDG_TOKEN\n' > "$xdg_host/gh/hosts.yml"
+    # Sanity check: the token is readable through the XDG path outside the
+    # sandbox, so the assertions below are not vacuous.
+    grep -q SECRET_XDG_TOKEN "$xdg_host/gh/hosts.yml"
+    if env XDG_CONFIG_HOME="$xdg_host" bwrap --ro-bind / / --dev /dev \
+        --tmpfs "$xdg_home" --setenv HOME "$xdg_home" \
+        --setenv XDG_CONFIG_HOME "$xdg_home/.config" --tmpfs "$xdg_host/gh" \
+        sh -c 'cat "$XDG_CONFIG_HOME/gh/hosts.yml" 2>/dev/null' | grep -q SECRET_XDG_TOKEN; then
+        echo 'Expected the triage sandbox to hide the XDG gh configuration' >&2
+        exit 1
+    fi
+    if env XDG_CONFIG_HOME="$xdg_host" bwrap --ro-bind / / --dev /dev \
+        --tmpfs "$xdg_home" --setenv HOME "$xdg_home" \
+        --setenv XDG_CONFIG_HOME "$xdg_home/.config" --tmpfs "$xdg_host/gh" \
+        sh -c "cat '$xdg_host/gh/hosts.yml' 2>/dev/null" | grep -q SECRET_XDG_TOKEN; then
+        echo 'Expected the triage sandbox to mask the host XDG gh directory' >&2
+        exit 1
+    fi
+fi
+
 if command -v bwrap >/dev/null 2>&1 && bwrap --ro-bind / / --unshare-pid --proc /proc --dev /dev true 2>/dev/null; then
     env CONTINUE_ALL_PRS_TEST_SECRET=SECRET_ENVIRON_TOKEN sleep 30 &
     secret_pid=$!
@@ -220,6 +252,50 @@ export GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 setup_triage_submodules "$triage_clone" $(( $(date +%s) + 30 ))
 unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 [[ "$(<"$triage_clone/dependency/content")" == 'triage submodule' ]]
+
+# `headRefName` is chosen by the fork, and a short refname is ambiguous: when a
+# remote carries both `refs/heads/<name>` and `refs/tags/<name>`, `FETCH_HEAD`
+# resolves to the tag. Triage would then validate a tree that is not the PR
+# head and could report `NO-CHANGE` for an unrelated revision.
+source <(sed -n '/^prepare_triage_worktree()/,/^}/p' "$repo/utils/continue-all-prs.sh")
+collision_base="$scratch/collision-base"
+collision_head="$scratch/collision-head"
+collision_wt="$scratch/collision-worktree"
+git init -q -b master "$collision_base"
+git -C "$collision_base" config user.email test@example.com
+git -C "$collision_base" config user.name test
+printf 'base\n' > "$collision_base/content"
+git -C "$collision_base" add content
+git -C "$collision_base" commit -qm 'Add base content'
+git clone -q "$collision_base" "$collision_head"
+git -C "$collision_head" config user.email test@example.com
+git -C "$collision_head" config user.name test
+# The tag shares the branch name but points at a different, older commit.
+git -C "$collision_head" tag pr-head HEAD
+git -C "$collision_head" checkout -q -b pr-head
+printf 'head\n' > "$collision_head/content"
+git -C "$collision_head" commit -qam 'Add head content'
+git clone -q "$collision_base" "$collision_wt"
+
+collision_branch_oid=$(git -C "$collision_head" rev-parse refs/heads/pr-head)
+collision_tag_oid=$(git -C "$collision_head" rev-parse refs/tags/pr-head)
+[[ "$collision_branch_oid" != "$collision_tag_oid" ]]
+
+gh()
+{
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' master pr-head "$collision_head" ClickHouse test-user false true
+}
+GH_USER=test-user
+REPO=ClickHouse/ClickHouse
+collision_result=$(prepare_triage_worktree "$collision_wt" 1 $(( $(date +%s) + 30 )))
+unset -f gh
+
+IFS=$'\t' read -r collision_head_oid collision_base_oid collision_head_ref _ collision_pushable <<< "$collision_result"
+[[ "$collision_head_oid" == "$collision_branch_oid" ]]
+[[ "$(git -C "$collision_wt" rev-parse HEAD)" == "$collision_branch_oid" ]]
+[[ "$collision_base_oid" == "$(git -C "$collision_base" rev-parse refs/heads/master)" ]]
+[[ "$collision_head_ref" == pr-head ]]
+[[ "$collision_pushable" == 1 ]]
 
 relative_worktree_base=${worktree_base#"$repo/"}
 git -C "$repo" worktree remove --force "${worktree_base}-0" 2>/dev/null || true
