@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 -- https://github.com/ClickHouse/ClickHouse/issues/114616
 -- Row policy / PREWHERE over File tables must compute DEFAULT columns from real
 -- dependency columns, not prune those inputs away before AddingDefaultsTransform.
