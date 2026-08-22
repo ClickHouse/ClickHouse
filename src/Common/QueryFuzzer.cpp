@@ -2158,7 +2158,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         /// The parser strips ASTStorageOrderByElement wrappers when all directions are ASC
         /// (all-or-nothing rule: KeyDescription expects either all wrapped or none).
         /// So for the common all-ASC case there are no ASTStorageOrderByElement nodes and the
-        /// arm in fuzz() that toggles direction never fires.  Wrap the tuple children here to
+        /// arm in fuzz() that toggles direction never fires.  Wrap the key elements here to
         /// let the fuzzer produce mixed-direction keys from scratch.
         if (create.storage->order_by && fuzz_rand() % 5 == 0)
         {
@@ -2183,6 +2183,16 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                         child = elem;
                     }
                 }
+            }
+            /// A single key is no tuple: `ORDER BY c0` parses to the bare expression and only
+            /// `ORDER BY c0 DESC` keeps a wrapper.  DESC is the only direction worth introducing,
+            /// because formatImpl prints nothing for ASC, so such a wrapper is not even visible.
+            else if (!create.storage->order_by->as<ASTStorageOrderByElement>())
+            {
+                auto elem = make_intrusive<ASTStorageOrderByElement>();
+                elem->direction = -1;
+                elem->children.push_back(create.storage->order_by->ptr());
+                create.storage->replace(create.storage->order_by, elem);
             }
         }
 
