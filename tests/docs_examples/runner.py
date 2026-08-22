@@ -158,7 +158,7 @@ class Example:
 
     @property
     def creates_global_objects(self):
-        return any(GLOBAL_OBJECT_RE.match(statement) for statement in split_statements(self.query)) or bool(
+        return any(GLOBAL_OBJECT_RE.match(strip_leading_comments(statement)) for statement in split_statements(self.query)) or bool(
             GLOBAL_STATE_FUNCTION_RE.search(self.query)
         )
 
@@ -241,6 +241,29 @@ def split_statements(script):
     return statements
 
 
+def strip_leading_comments(statement):
+    """The statement with the comments before its first token removed.
+
+    `split_statements` keeps comments in place, so a statement may open with an explanatory `--` or
+    `/* */` comment. A classification anchored at the start of the statement must look at its first
+    token: otherwise a leading comment would hide a `CREATE USER` from the global-object check.
+    """
+    i = 0
+    n = len(statement)
+    while i < n:
+        if statement.startswith("--", i):
+            end = statement.find("\n", i)
+            i = n if end < 0 else end + 1
+        elif statement.startswith("/*", i):
+            end = statement.find("*/", i + 2)
+            i = n if end < 0 else end + 2
+        elif statement[i].isspace():
+            i += 1
+        else:
+            break
+    return statement[i:]
+
+
 class Client:
     """A minimal HTTP client for the server, with one fresh connection per statement."""
 
@@ -288,6 +311,8 @@ def load_examples(client):
     for line in body.splitlines():
         row = json.loads(line)
         for index, match in enumerate(EXAMPLE_RE.finditer(row["description"])):
+            if match.group("result") is None:
+                reject_unrecognized_response_fence(row, index, match)
             examples.append(
                 Example(
                     row["type"],
@@ -299,6 +324,25 @@ def load_examples(client):
                 )
             )
     return examples
+
+
+def reject_unrecognized_response_fence(row, index, match):
+    """Fail closed on a response fence that follows a query but was not recognized as its response.
+
+    `EXAMPLE_RE` makes the response block optional, because an example is allowed to document no
+    response. Left alone, that fails open: if `FunctionDocumentation::examplesAsString` changes how
+    it spells the response fence, every query still matches on its own, and the run silently
+    degrades from comparing the output to merely checking that the query runs. A response fence
+    right after the query can only be the rendered response of that query, so an unrecognized one
+    is renderer drift and stops the run.
+    """
+    following = row["description"][match.end():].lstrip()
+    if following.startswith("```response"):
+        fence = following.splitlines()[0]
+        raise RuntimeError(
+            f"{row['type']}/{row['name']}: example {index} is followed by a response fence the parser does not recognize: {fence!r}."
+            f"\nThe way the documentation renders responses has probably changed; update EXAMPLE_RE in {__file__}."
+        )
 
 
 def normalize(text):

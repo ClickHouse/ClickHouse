@@ -1,4 +1,7 @@
 import http.client
+import json
+
+import pytest
 
 from tests.docs_examples import runner
 from tests.docs_examples.runner import Example
@@ -6,6 +9,17 @@ from tests.docs_examples.runner import Example
 
 def make_example(query):
     return Example("function", "test", "", 0, query, "")
+
+
+class FakeDocumentationClient:
+    """A client whose `system.documentation` holds one entity with the given description."""
+
+    def __init__(self, description):
+        self.description = description
+
+    def query(self, sql, **params):
+        row = {"name": "test", "type": "Function", "description": self.description, "source": "src/test.cpp"}
+        return True, json.dumps(row) + "\n"
 
 
 def test_external_call_detection_matches_registered_ai_aliases():
@@ -24,6 +38,39 @@ def test_global_object_detection_matches_generate_serial_id():
 
 def test_global_object_detection_ignores_other_functions():
     assert not make_example("SELECT generateUUIDv4()").creates_global_objects
+
+
+def test_global_object_detection_sees_through_leading_comments():
+    assert make_example("-- note\nCREATE USER u IDENTIFIED WITH no_password").creates_global_objects
+    assert make_example("/* note */ CREATE DATABASE db").creates_global_objects
+    assert make_example("-- first\n/* second */\nGRANT SELECT ON *.* TO u").creates_global_objects
+
+
+def test_global_object_detection_does_not_read_the_comment_text():
+    assert not make_example("-- CREATE USER appears in a comment only\nSELECT 1").creates_global_objects
+
+
+def test_load_examples_takes_the_documented_response():
+    description = "```sql title=Query\nSELECT 1\n```\n\n```response title=Response\n1\n```\n"
+    examples = runner.load_examples(FakeDocumentationClient(description))
+    assert len(examples) == 1
+    assert examples[0].query == "SELECT 1"
+    assert examples[0].result == "1"
+
+
+def test_load_examples_accepts_an_example_that_documents_no_response():
+    description = "```sql title=Query\nSELECT 1\n```\n"
+    examples = runner.load_examples(FakeDocumentationClient(description))
+    assert len(examples) == 1
+    assert examples[0].result == ""
+
+
+def test_load_examples_rejects_an_unrecognized_response_fence():
+    # If the renderer changes the spelling of the response fence, the run must stop instead of
+    # silently downgrading every example from output comparison to "the query runs".
+    description = "```sql title=Query\nSELECT 1\n```\n\n```response title=Unexpected\n1\n```\n"
+    with pytest.raises(RuntimeError, match="response fence"):
+        runner.load_examples(FakeDocumentationClient(description))
 
 
 def test_normalize_preserves_tsv_empty_fields_and_blank_rows():
