@@ -1,6 +1,6 @@
-#include <span>
 #include <functional>
 #include <iterator>
+#include <span>
 #include <Access/ContextAccess.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -759,16 +759,9 @@ static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<Quer
         bool keep_const = true;
         for (const auto & sibling : pipelines)
         {
-            const auto & sibling_header = sibling->getHeader();
-            if (col >= sibling_header.columns())
-            {
-                keep_const = false;
-                break;
-            }
-
-            const auto & sibling_column = sibling_header.getByPosition(col).column;
-            if (!sibling_column || !isColumnConst(*sibling_column)
-                || assert_cast<const ColumnConst &>(*sibling_column).getField() != value)
+            const auto * sibling_column = sibling->getHeader().findByName(common[col].name);
+            if (!sibling_column || !sibling_column->column || !isColumnConst(*sibling_column->column)
+                || assert_cast<const ColumnConst &>(*sibling_column->column).getField() != value)
             {
                 keep_const = false;
                 break;
