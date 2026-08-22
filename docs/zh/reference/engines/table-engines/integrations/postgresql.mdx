@@ -15,7 +15,7 @@ PostgreSQL 引擎允许对存储在远程 PostgreSQL 服务器上的数据执行
 </Note>
 
 <Tip>
-  了解我们的 [Managed Postgres](/zh/products/managed-postgres/overview) 服务。它采用与计算资源物理同址的 NVMe 存储，相比使用 EBS 等网络附加存储的替代方案，对于磁盘受限型工作负载，性能最高可提升 10 倍，并且可让你通过 ClickPipes 中的 Postgres CDC 连接器将 Postgres 数据复制到 ClickHouse。
+  了解我们的 [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 服务。它采用与计算资源物理同址的 NVMe 存储，相比使用 EBS 等网络附加存储的替代方案，对于磁盘受限型工作负载，性能最高可提升 10 倍，并且可让你通过 ClickPipes 中的 Postgres CDC 连接器将 Postgres 数据复制到 ClickHouse。
 </Tip>
 
 <div id="creating-a-table">
@@ -44,7 +44,7 @@ SETTINGS
 
 * 列名应与原始 PostgreSQL 表中的列名一致，但你也可以只使用其中部分列，且顺序不限。
 * 列类型可以与原始 PostgreSQL 表中的不同。ClickHouse 会尝试将值[转换](/zh/reference/engines/database-engines/postgresql#data_types-support)为 ClickHouse 数据类型。
-* [external&#95;table&#95;functions&#95;use&#95;nulls](/zh/reference/settings/session-settings#external_table_functions_use_nulls) 设置定义了如何处理 Nullable 列。默认值：1。如果为 0，表函数不会创建 Nullable 列，而会插入默认值来代替 null。此规则也适用于数组中的 NULL 值。
+* [external&#95;table&#95;functions&#95;use&#95;nulls](/zh/reference/settings/session-settings/external-table#external_table_functions_use_nulls) 设置定义了如何处理 Nullable 列。默认值：1。如果为 0，表函数不会创建 Nullable 列，而会插入默认值来代替 null。此规则也适用于数组中的 NULL 值。
 
 **引擎参数**
 
@@ -74,6 +74,40 @@ SETTINGS
 
 ```sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+<div id="tls-ssl">
+  ### TLS/SSL
+</div>
+
+TLS/SSL 参数会传递给 `libpq`，可将其设为命名集合的键或尾随键值参数：`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca` 或 `verify-full`) ，以及两种形式之一的证书和私钥。未设置时，将使用 `libpq` 的默认值 (`sslmode=prefer`) 。
+
+* `sslrootcert` (CA 证书或特殊值 `system`) 、`sslcert` (客户端证书) 和 `sslkey` (客户端私钥) 是服务器本地文件的路径。它们只能在服务器配置文件中定义的命名集合中指定，不能在查询中覆盖：服务器会使用自身的特权打开这些文件。
+* `sslrootcert_pem`、`sslcert_pem` 和 `sslkey_pem` 接受相应文件的原始内容，而非路径。它们可在任何位置指定——查询中、通过 SQL 创建的命名集合中，或作为对命名集合的覆盖——并且会像密码一样在日志和 `SHOW` 查询中被掩码处理。
+
+例如，要强制使用加密连接并验证服务器证书：
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
+不使用配置文件，直接在查询中传入证书内容：
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
 ```
 
 <div id="settings">
@@ -161,7 +195,7 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELEC
 <Note>
   子查询形式 `(SELECT ...)` 会由 ClickHouse 解析，并在发送到服务器之前按 PostgreSQL 方言重新序列化 (包括 PostgreSQL 标识符引用和字符串字面量转义) 。因此，它必须是有效的 ClickHouse SQL。若要传递 ClickHouse 不会解析的 PostgreSQL 特有语法，请使用 `query('...')` 形式，其文本会原样发送到 PostgreSQL。
 
-  周围 ClickHouse 查询中的任何外层 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中，而是在拉取完整查询结果后由 ClickHouse 应用。要限制从 PostgreSQL 读取的数据，请将过滤器放在传入的查询内部。使用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings#external_table_strict_query) 时，无法下推的外层过滤器会直接抛出异常，而不是在本地应用。
+  周围 ClickHouse 查询中的任何外层 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中，而是在拉取完整查询结果后由 ClickHouse 应用。要限制从 PostgreSQL 读取的数据，请将过滤器放在传入的查询内部。使用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings/external-table#external_table_strict_query) 时，无法下推的外层过滤器会直接抛出异常，而不是在本地应用。
 </Note>
 
 PostgreSQL 端的 `INSERT` 查询会在 PostgreSQL 事务中以 `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` 的形式运行，并在每条 `INSERT` 语句后自动提交。

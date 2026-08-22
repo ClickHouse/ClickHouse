@@ -1389,7 +1389,7 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("CREATE TABLE table_structure.mem (n int) ENGINE=Memory")
-    dummy_node.query("DETACH DATABASE table_structure")
+    dummy_node.query("DETACH DATABASE table_structure SYNC")
 
     settings = {"distributed_ddl_task_timeout": 0}
     main_node.query(
@@ -1398,7 +1398,7 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
-    competing_node.query("DETACH DATABASE table_structure")
+    competing_node.query("DETACH DATABASE table_structure SYNC")
 
     main_node.query(
         "ALTER TABLE table_structure.rmt ADD COLUMN m int", settings=settings

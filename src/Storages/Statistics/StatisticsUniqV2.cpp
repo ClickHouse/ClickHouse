@@ -99,13 +99,18 @@ void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*ver
 
 UInt64 StatisticsUniqV2::estimateCardinality() const
 {
+    if (UInt64 cached = cached_cardinality_plus_one)
+        return cached - 1;
+
     auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
     /// When all input values are NULL the null-wrapper returns NULL (no non-null values seen).
     /// That means 0 distinct non-null values.
-    if (column->isNullAt(0))
-        return 0;
-    return column->getUInt(0);
+    const UInt64 cardinality = column->isNullAt(0) ? 0 : column->getUInt(0);
+
+    cached_cardinality_plus_one = cardinality + 1;
+
+    return cardinality;
 }
 
 bool uniqV2StatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)

@@ -103,18 +103,19 @@ ASTPtr SelectQueryBuilder::getSelectQuery()
         for (auto & subquery : with)
         {
             auto subquery_ast = make_intrusive<ASTSubquery>(std::move(subquery.ast));
-            if (subquery.subquery_type == SQLSubqueryType::TABLE)
-            {
-                auto with_element_ast = make_intrusive<ASTWithElement>();
-                with_element_ast->name = std::move(subquery.name);
-                with_element_ast->subquery = subquery_ast;
-                with_element_ast->children.push_back(std::move(subquery_ast));
-                with_expression_list_ast->children.push_back(std::move(with_element_ast));
-            }
-            else
+            if (subquery.subquery_type == SQLSubqueryType::SCALAR)
             {
                 subquery_ast->setAlias(subquery.name);
                 with_expression_list_ast->children.push_back(std::move(subquery_ast));
+            }
+            else
+            {
+                auto with_element_ast = make_intrusive<ASTWithElement>();
+                with_element_ast->name = std::move(subquery.name);
+                with_element_ast->is_materialized = (subquery.subquery_type == SQLSubqueryType::MATERIALIZED_TABLE);
+                with_element_ast->subquery = subquery_ast;
+                with_element_ast->children.push_back(std::move(subquery_ast));
+                with_expression_list_ast->children.push_back(std::move(with_element_ast));
             }
         }
         select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list_ast));

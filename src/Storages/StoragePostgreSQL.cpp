@@ -636,8 +636,12 @@ postgres::ConnectionSSLParams StoragePostgreSQL::getSSLParams(const NamedCollect
         /// An empty contents override never replaces the stored credential with another one - it can
         /// only silently drop whatever form of it the collection carries, a path or the contents
         /// alike. Checked before the empty fast path below so a credential the collection stores in
-        /// the contents form is protected too.
-        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty())
+        /// the contents form is protected too. When the collection stores no credential at all
+        /// (neither the path - a query cannot override it, so `value` is the collection's own - nor
+        /// the contents, read in its pre-override form), there is nothing to drop and the empty
+        /// override stays the no-op it is for the direct arguments.
+        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty()
+            && (!value.empty() || !named_collection.getValueBeforeQueryOverride(contents_key).value_or("").empty()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "`{}` cannot be overridden with an empty `{}`", key, contents_key);
@@ -919,7 +923,7 @@ Currently, only PostgreSQL versions 12 and up are supported for the table engine
 :::
 
 :::tip
-Check out our [ClickHouse Managed Postgres](/docs/cloud/managed-postgres) service. Backed by NVMe storage that is physically co-located with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
+Check out our [ClickHouse Managed Postgres](/products/managed-postgres/overview) service. Backed by NVMe storage that is physically co-located with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
 :::
 
 ## Creating a table {#creating-a-table}
@@ -940,7 +944,7 @@ SETTINGS
 ;
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 The table structure can differ from the original PostgreSQL table structure:
 
@@ -958,7 +962,7 @@ The table structure can differ from the original PostgreSQL table structure:
 - `schema` — Non-default table schema. Optional.
 - `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
-[Named collections](/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
+[Named collections](/concepts/features/configuration/server-config/named-collections) (available since version 21.11) are recommended for production environment. Here is an example:
 
 ```xml
 <named_collections>
@@ -1011,7 +1015,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## Settings {#settings}
 
-The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/sql-reference/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
+The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
@@ -1073,7 +1077,7 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b
 CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
-This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`postgresql`](/sql-reference/table-functions/postgresql) table function.
+This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`postgresql`](/reference/functions/table-functions/postgresql) table function.
 
 :::note
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the PostgreSQL dialect (PostgreSQL identifier quoting and string-literal escaping) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass PostgreSQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to PostgreSQL verbatim.
@@ -1147,7 +1151,7 @@ int_id | int_nullable | float | str  | float_nullable
 
 ### Creating Table in ClickHouse, and connecting to  PostgreSQL table created above {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
 
-This example uses the [PostgreSQL table engine](/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
+This example uses the [PostgreSQL table engine](/reference/engines/table-engines/integrations/postgresql) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
 
 ```sql
 CREATE TABLE default.postgresql_table
@@ -1161,7 +1165,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgr
 
 ### Inserting initial data from PostgreSQL table into ClickHouse table, using a SELECT query {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
 
-The [postgresql table function](/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
+The [postgresql table function](/reference/functions/table-functions/postgresql) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
 
 ```sql
 CREATE TABLE default.postgresql_copy
@@ -1227,7 +1231,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The `postgresql` table function](/reference/functions/table-functions/postgresql)
-- [Using PostgreSQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/postgresql)
+- [Using PostgreSQL as a dictionary source](/reference/statements/create/dictionary/sources/postgresql)
 
 ## Related content {#related-content}
 
