@@ -421,6 +421,17 @@ namespace
             return false;
         }
 
+        /// Whether the `analyze()`-mode `InterpreterSelectQuery` run on this `SELECT` will rewrite its table
+        /// expressions into generated per-table subqueries. `JoinedTables::rewriteMultipleJoins` (called from
+        /// `InterpreterSelectQuery` before the table join is built) does that for every query joining more
+        /// than two tables, replacing each top-level table expression in place. Afterwards no table
+        /// expression names a table any more, so `checkNonParameterizedViewBaseTableAccess` finds no view at
+        /// the top level at all - every one of them now sits inside one of the generated subqueries.
+        static bool tablesMayBeRewrittenIntoSubqueries(const ASTSelectQuery & select)
+        {
+            return select.tables() && select.tables()->children.size() > 2;
+        }
+
         static void collectNestedSelectQueries(const ASTPtr & node, ASTs & nested_selects, bool collect_referenced_with_subqueries)
         {
             for (const auto & child : node->children)
@@ -551,10 +562,19 @@ namespace
                 }
 
                 ASTPtr nested_select_copy = nested_select_node->clone();
+                /// Must be read before the analysis below rewrites this copy's table expressions in place.
+                const bool nested_tables_may_be_rewritten_into_subqueries = tablesMayBeRewrittenIntoSubqueries(nested_select);
                 try
                 {
                     InterpreterSelectQuery interpreter(
                         nested_select_copy, check_context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+
+                    /// See the same call in `visit` below: with more than two tables the analysis has just
+                    /// moved every table expression of this subquery - views included - into generated
+                    /// per-table subqueries, so the top-level check finds nothing and the walk has to
+                    /// descend into them.
+                    if (nested_tables_may_be_rewritten_into_subqueries)
+                        checkNestedSelectsViewBaseTableAccess(nested_select_copy, data);
 
                     checkNonParameterizedViewBaseTableAccess(
                         nested_select_copy->as<const ASTSelectQuery &>(),
@@ -592,6 +612,9 @@ namespace
             /// `StorageView::replaceWithSubquery` / `restoreViewName` round trip leaves a fake table
             /// identifier holding the view name instead of the original `pv(...)` call), so snapshot the
             /// original table expression up front and restore it afterwards.
+            /// Must be read before the analysis below rewrites the table expressions in place.
+            const bool tables_may_be_rewritten_into_subqueries = tablesMayBeRewrittenIntoSubqueries(select);
+
             ASTPtr main_table_expression_backup;
             if (const auto * main_table_expression = getTableExpression(select, 0);
                 main_table_expression && main_table_expression->table_function
@@ -602,6 +625,15 @@ namespace
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
+
+            /// The analysis above has just moved every table expression of a query joining more than two
+            /// tables into a generated per-table subquery (see `tablesMayBeRewrittenIntoSubqueries`), so the
+            /// top-level check below finds no view to check - not even the leftmost one, and regardless of
+            /// how the join was written. Reuse the nested-subquery walk on the rewritten tree to reach the
+            /// views inside those generated subqueries; it inherits the same unresolvable-query handling and
+            /// `ACCESS_DENIED` propagation, so it adds no new place where a denial could be swallowed.
+            if (tables_may_be_rewritten_into_subqueries)
+                checkNestedSelectsViewBaseTableAccess(node, data);
 
             /// `getRequiredColumns` reflects `syntax_analyzer_result->requiredSourceColumns()`, i.e. the same
             /// columns real execution would request from the FROM storage via `storage->read` (see
