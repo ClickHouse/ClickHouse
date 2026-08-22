@@ -42,6 +42,39 @@ CONFIGURATIONS = (
     ),
 )
 
+# Every contrib submodule the CMake project reaches (the rest of contrib it names is vendored
+# in-tree). The CI workspace is checked out without submodule working trees - `needs_submodules`
+# only restores the `.git/modules` metadata - so the tree handed to `cmake` would otherwise be
+# missing these sources, and the very first `add_executable` would fail on them.
+SUBMODULES = (
+    "contrib/abseil-cpp",
+    "contrib/boost",
+    "contrib/cctz",
+    "contrib/croaring",
+    "contrib/double-conversion",
+    "contrib/fast_float",
+    "contrib/fmtlib",
+    "contrib/libdivide",
+    "contrib/magic_enum",
+    "contrib/miniselect",
+    "contrib/re2",
+    "contrib/sparsehash-c11",
+    "contrib/wyhash",
+    "contrib/xxHash",
+    "contrib/zmij",
+)
+
+# A no-op when the working trees are already there (a local run). The CI checkout is owned by
+# another user while this job runs as `root` in the image, and `safe.directory` also guards every
+# submodule worktree, so trust them all - for these commands only; `-c` reaches the spawned
+# per-submodule processes. `--init` covers both the restored-cache path and a cold checkout.
+GIT = "git -c safe.directory='*'"
+CHECKOUT_SUBMODULES = (
+    f"{GIT} submodule sync -- " + " ".join(SUBMODULES),
+    f"{GIT} submodule update --init --depth 1 --single-branch --jobs 10 -- "
+    + " ".join(SUBMODULES),
+)
+
 
 def main():
     wasi_sdk = os.getenv("WASI_SDK")
@@ -52,7 +85,19 @@ def main():
 
     Path(build_dir).mkdir(parents=True, exist_ok=True)
 
-    results = []
+    results = [
+        Result.from_commands_run(
+            name="Checkout Submodules",
+            command=list(CHECKOUT_SUBMODULES),
+            with_log=True,
+            retries=3,
+        )
+    ]
+    # Without the sources there is nothing to configure, and every configuration below would
+    # fail the same way, on the same missing file.
+    if not results[-1].is_ok():
+        Result.create_from(results=results).complete_job()
+
     for name, options, artifact in CONFIGURATIONS:
         config_dir = f"{build_dir}/{name}"
         results.append(
