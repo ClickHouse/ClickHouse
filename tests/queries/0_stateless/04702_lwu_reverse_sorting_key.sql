@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS t_lwu_rev_v1 SYNC;
 SELECT '-- single reversed key column';
 
 CREATE TABLE t_lwu_rev (c0 UInt64, c1 String) ENGINE = MergeTree ORDER BY c0 DESC
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
 
 INSERT INTO t_lwu_rev SELECT number, 'v' || toString(number) FROM numbers(6);
 
@@ -28,7 +28,7 @@ SELECT '-- mixed directions in a multi-column key';
 
 CREATE TABLE t_lwu_rev_multi (c0 UInt64, c1 UInt64, c2 UInt64, c3 String)
 ENGINE = MergeTree ORDER BY (c0 DESC, c1, c2)
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
 
 INSERT INTO t_lwu_rev_multi SELECT number % 3, number, number, 'v' || toString(number) FROM numbers(6);
 
@@ -41,7 +41,7 @@ SELECT c0, c1, c2, c3 FROM t_lwu_rev_multi ORDER BY c1;
 SELECT '-- all-ascending key';
 
 CREATE TABLE t_lwu_asc (c0 UInt64, c1 String) ENGINE = MergeTree ORDER BY (c0, c1)
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
 
 INSERT INTO t_lwu_asc SELECT number, 'v' || toString(number) FROM numbers(6);
 
@@ -52,7 +52,7 @@ SELECT '-- reversed key with a non-identifier column';
 
 CREATE TABLE t_lwu_rev_expr (c0 UInt64, c1 UInt64, c2 String)
 ENGINE = MergeTree ORDER BY (c0 DESC, c1 + 1)
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
 
 INSERT INTO t_lwu_rev_expr SELECT number, number, 'v' || toString(number) FROM numbers(6);
 
@@ -65,7 +65,7 @@ SELECT c0, c1, c2 FROM t_lwu_rev_expr ORDER BY c0;
 SELECT '-- empty sorting key';
 
 CREATE TABLE t_lwu_empty (c0 UInt64, c1 String) ENGINE = MergeTree ORDER BY ()
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
 
 INSERT INTO t_lwu_empty SELECT number, 'v' || toString(number) FROM numbers(6);
 
@@ -76,7 +76,7 @@ SELECT '-- reversed key with ReplacingMergeTree';
 
 CREATE TABLE t_lwu_rev_replacing (c0 UInt64, c1 UInt64, c2 String)
 ENGINE = ReplacingMergeTree(c1) ORDER BY c0 DESC
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
 
 INSERT INTO t_lwu_rev_replacing SELECT number, number, 'v' || toString(number) FROM numbers(6);
 
@@ -89,7 +89,7 @@ SELECT c0, c1, c2 FROM t_lwu_rev_replacing ORDER BY c0;
 SELECT '-- two patches on a reversed key, then applied on merge';
 
 CREATE TABLE t_lwu_rev_merge (c0 UInt64, c1 String, c2 String) ENGINE = MergeTree ORDER BY c0 DESC
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 1, patch_parts_version = 'v2';
 
 INSERT INTO t_lwu_rev_merge SELECT number, 'a' || toString(number), 'b' || toString(number) FROM numbers(6);
 
