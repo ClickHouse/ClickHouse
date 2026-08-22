@@ -23,6 +23,9 @@
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 
 namespace DB
@@ -116,7 +119,8 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         "2) Data parts information represented as a list: "
         "\n parts(\n\tWide(path='<part_relative_path>', marks_count=n, ranges=[(x1, y1), (x2, y2), ...], has_lightweight_delete=0)\n\t...\n)\n"
         "3) Disk configuration: `disk(type=s3, endpoint='<endpoint>', ...)`\n"
-        "4) Settings: `table_settings(index_granularity_bytes=x)`",
+        "4) Settings: `table_settings(index_granularity_bytes=x, index_granularity=y, share_nested_offsets=z)`, "
+        "of which only `index_granularity_bytes` is required",
         getName(), arguments_num);
 
     const auto & func_args = ast_function->as<ASTFunction &>();
@@ -242,6 +246,19 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
                     auto [_, path_ast] = get_key_value_result(arg_num, part_function_args[0], {"path"});
                     auto literal = evaluateConstantExpressionOrIdentifierAsLiteral(path_ast, context);
                     part.relative_path = checkAndGetLiteralArgument<String>(literal, "path");
+
+                    /// The path is joined onto the root of the disk when the part is read, and
+                    /// `std::filesystem` drops the left-hand side of the join for an absolute right-hand
+                    /// side and keeps `..` components. Without this check a part path could step outside
+                    /// the disk, which is the only thing that confines the query to what the disk exposes.
+                    const fs::path part_path(part.relative_path);
+                    if (part_path.is_absolute())
+                        throw_bad_argument(arg_num, fmt::format(
+                            "`path` must be relative to the root of the disk, got an absolute path: {}", part.relative_path));
+                    for (const auto & component : part_path)
+                        if (component == "..")
+                            throw_bad_argument(arg_num, fmt::format(
+                                "`path` must not leave the root of the disk, got: {}", part.relative_path));
                 }
 
                 /// marks_count = n
@@ -293,7 +310,11 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         /// - index_granularity_bytes
         {
             const auto & settings_function_args = get_function_args(arg_num, arg, {"table_settings"});
-            static const UnorderedSetWithMemoryTracking<std::string_view> settings = {"index_granularity_bytes"};
+            static const UnorderedSetWithMemoryTracking<std::string_view> settings = {
+                "index_granularity_bytes", "index_granularity", "share_nested_offsets"};
+            /// Everything else is left at its default, but these have no default that is right for
+            /// every part: they decide how the marks and the streams of the part are laid out.
+            static const UnorderedSetWithMemoryTracking<std::string_view> required_settings = {"index_granularity_bytes"};
             UnorderedMapWithMemoryTracking<std::string, std::string> parsed_settings;
 
             for (const auto & setting_arg : settings_function_args)
@@ -303,13 +324,23 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
                 parsed_settings.emplace(key, convertFieldToString(value_literal->as<ASTLiteral>()->value));
             }
 
-            for (const auto & setting : settings)
+            for (const auto & setting : required_settings)
             {
                 if (!parsed_settings.contains(std::string(setting)))
                     throw_bad_argument(arg_num, fmt::format("setting `{}` is required, but was not found in arguments", setting));
             }
 
             read_from_parts_info.index_granularity_bytes = parse<size_t>(parsed_settings["index_granularity_bytes"]);
+
+            if (auto it = parsed_settings.find("index_granularity"); it != parsed_settings.end())
+            {
+                read_from_parts_info.index_granularity = parse<size_t>(it->second);
+                if (!read_from_parts_info.index_granularity)
+                    throw_bad_argument(arg_num, "setting `index_granularity` must not be zero");
+            }
+
+            if (auto it = parsed_settings.find("share_nested_offsets"); it != parsed_settings.end())
+                read_from_parts_info.share_nested_offsets = parse<UInt64>(it->second) != 0;
         }
 
         ++arg_num;
@@ -387,7 +418,7 @@ mergeTreeParts(structure(...), parts(...), disk(...), table_settings(...))
 | `structure`      | Column names and types to read, as a single string: `structure('x Int8, y String')`. |
 | `parts`          | The list of data parts to read, see below.                                           |
 | `disk`           | The disk holding the parts, configured the same way as in `SETTINGS disk = disk(...)` of a table definition. The disk is created read-only. |
-| `table_settings` | `table_settings(index_granularity_bytes = N)` - the `index_granularity_bytes` of the table the parts belong to. |
+| `table_settings` | The settings of the table the parts belong to that the reader cannot infer, see below. |
 
 Every part in `parts` is described by a function named after the part type, `Wide` or `Compact`, whose
 four arguments come in this order:
@@ -408,6 +439,15 @@ parts(
 | `marks_count`            | Number of marks in the part (`marks` in `system.parts`).             |
 | `ranges`                 | Mark ranges to read, as an array of half-open `(begin, end)` tuples. |
 | `has_lightweight_delete` | Whether the part has a materialized lightweight delete mask.         |
+
+`table_settings` carries the settings of the table the parts belong to that cannot be inferred from the
+parts themselves:
+
+| Setting                  | Description                                                        |
+|--------------------------|--------------------------------------------------------------------|
+| `index_granularity_bytes` | Required. The `index_granularity_bytes` of the table. `0` means the parts have non-adaptive marks, and then `index_granularity` is what the granule size is taken from. |
+| `index_granularity`       | The `index_granularity` of the table, `8192` by default. It is only used for parts with non-adaptive marks. |
+| `share_nested_offsets`    | The `share_nested_offsets` of the table, `1` by default. It decides the names of the offsets streams of a `Nested` column, so a part written with `share_nested_offsets = 0` cannot be read without passing it here. |
 
 ## Returned value {#returned-value}
 

@@ -43,3 +43,37 @@ SELECT * FROM mergeTreeParts(
     parts(),
     disk(type = local, path = '/'),
     table_settings()); -- { serverError BAD_ARGUMENTS }
+
+-- The part path must stay inside the root of the disk: an absolute path would replace the root when the
+-- two are joined, and `..` components would step out of it.
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(Wide(path = '/var/lib/clickhouse/store/aaa/', marks_count = 1, ranges = [(0, 1)], has_lightweight_delete = 0)),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 10485760)); -- { serverError BAD_ARGUMENTS }
+
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(Wide(path = '../../store/aaa/', marks_count = 1, ranges = [(0, 1)], has_lightweight_delete = 0)),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 10485760)); -- { serverError BAD_ARGUMENTS }
+
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(Wide(path = 'store/../../aaa/', marks_count = 1, ranges = [(0, 1)], has_lightweight_delete = 0)),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 10485760)); -- { serverError BAD_ARGUMENTS }
+
+-- `index_granularity` cannot be zero: it is the granule size of a part with non-adaptive marks.
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 0, index_granularity = 0)); -- { serverError BAD_ARGUMENTS }
+
+-- An unknown table setting.
+SELECT * FROM mergeTreeParts(
+    structure('x UInt8'),
+    parts(),
+    disk(type = local, path = '/'),
+    table_settings(index_granularity_bytes = 10485760, nonexistent_setting = 1)); -- { serverError BAD_ARGUMENTS }

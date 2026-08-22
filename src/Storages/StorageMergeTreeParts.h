@@ -36,7 +36,15 @@ public:
         ReadFromParts parts;
         DiskPtr disk;
 
+        /// The `index_granularity_bytes` and `index_granularity` of the table that wrote the parts.
+        /// A part with adaptive marks takes its granularity from the marks, but a part written with
+        /// `index_granularity_bytes = 0` has none there, and `index_granularity` is the only source of it.
         size_t index_granularity_bytes = 0;
+        size_t index_granularity = 8192;
+
+        /// The `share_nested_offsets` of the table that wrote the parts: it decides the names of the
+        /// offsets streams of a `Nested` column, so a part cannot be read without it.
+        bool share_nested_offsets = true;
     };
 
     StorageMergeTreeParts(
