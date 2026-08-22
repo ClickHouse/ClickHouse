@@ -6091,9 +6091,18 @@ if (pass_from_url) {
     }
 }
 
+/// The health check probes the configured endpoint itself, not just its origin: `postImpl` sends the
+/// path of `url_elem.value` verbatim, so a path-routed deployment (a reverse proxy exposing the server
+/// as e.g. `https://proxy.example/clickhouse/`) answers queries under that prefix while the origin root
+/// belongs to something else entirely. Probing the origin there would paint a working server as dead -
+/// and, since a successful ping is what arms `checkCredentials`, would also skip the credentials probe
+/// after a connection handover (see `applyConnectionFromHost`). Any query string already present in the
+/// configured address is preserved, because it selects the endpoint as well (see `sameServerAddress`).
 async function ping(url) {
     try {
-        let response = await fetch(new URL(url).origin + "?query", { method: 'OPTIONS', headers: { 'Authorization': 'never' } });
+        const target = new URL(url, location.href);
+        target.search = target.search ? target.search + '&query' : '?query';
+        let response = await fetch(target.href, { method: 'OPTIONS', headers: { 'Authorization': 'never' } });
         return response.ok;
     } catch (e) {
         return false;
@@ -6139,14 +6148,28 @@ checkURL(true);
 /// the page's own origin when `/play` is opened locally (`file://`) or pointed at a remote server.
 /// Resolve the Documentation link against that configured server (like `getTerminalURL` does for the Web
 /// Terminal) instead of leaving it hardcoded to `/docs`, and keep it in sync as the URL input changes.
+/// The path of the configured address is a prefix of the endpoint, not something to discard: a server
+/// exposed as `https://proxy.example/clickhouse/` serves its documentation at
+/// `https://proxy.example/clickhouse/docs`, so `docs` is appended to that path instead of resolving a
+/// root-absolute `/docs`. Any query string of the configured address is dropped: it selects the query
+/// endpoint (see `sameServerAddress`) and means nothing to the documentation page, which takes only the
+/// parameters added below.
 /// The non-empty Play username is carried over as a `user` query parameter so the docs page connects as
 /// the same user instead of falling back to the server default user. The password is intentionally
 /// omitted (it would leak in the URL).
+function docsURL() {
+    const url = new URL(url_elem.value, location.href);
+    url.search = '';
+    url.hash = '';
+    url.pathname = url.pathname.replace(/\/?$/, '/') + 'docs';
+    return url;
+}
+
 {
     const docs_icon = document.getElementById('docs-icon');
     function updateDocsURL() {
         try {
-            const url = new URL('/docs', url_elem.value);
+            const url = docsURL();
             if (user_elem.value) url.searchParams.set('user', user_elem.value);
             docs_icon.href = url.href;
         } catch (e) {
