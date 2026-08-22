@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -481,9 +482,14 @@ public:
         if (timeout.empty())
             return;
 
+        /// Prometheus accepts signed numeric seconds, but duration strings must be unsigned.
+        if (timeout.find_first_of("ywdhms") != String::npos
+            && (timeout.starts_with('+') || timeout.starts_with('-')))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'timeout' query parameter is not a valid Prometheus duration");
+
         const auto timeout_value = parseTimeSeriesDuration(timeout, PROMETHEUS_TIMEOUT_SCALE);
         if (timeout_value <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'timeout' query parameter must be greater than 0");
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Prometheus query timeout exceeded");
 
         const auto current_max_execution_time = context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
         Int64 effective_max_execution_time = current_max_execution_time;
@@ -503,6 +509,11 @@ public:
                 "max_execution_time",
                 Field(static_cast<Float64>(effective_max_execution_time) / MICROSECONDS_PER_SECOND));
         }
+
+        /// A Prometheus timeout must never become a successful partial result because of a
+        /// request-level ClickHouse overflow setting.
+        context->setSetting("timeout_overflow_mode", Field("throw"));
+        context->setSetting("timeout_overflow_mode_leaf", Field("throw"));
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -639,10 +650,18 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+            {
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
+                writeString(R"({"status":"error","errorType":"timeout","error":)", error_buf);
+            }
+            else
+            {
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+                writeString(R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            }
             writeJSONString(e.message(), error_buf, FormatSettings{});
             writeString("}", error_buf);
             error_buf.finalize();
