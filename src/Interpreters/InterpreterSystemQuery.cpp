@@ -96,6 +96,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <Common/typeid_cast.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -2356,7 +2357,9 @@ void InterpreterSystemQuery::syncMerges()
     const auto max_execution_time_us = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
     /// Compare the *elapsed* time against the timeout instead of building an absolute deadline:
     /// `now + max_execution_time` is not representable for the largest values `max_execution_time`
-    /// accepts, and capping it there would time the command out long before the configured limit.
+    /// accepts, and both capping the deadline at the end of the clock's range and clamping the
+    /// timeout with `saturatedMilliseconds` (a one-year bound meant for a `wait_for` slice) would
+    /// time the command out long before the configured limit.
     while (true)
     {
         if (max_execution_time_us != 0
