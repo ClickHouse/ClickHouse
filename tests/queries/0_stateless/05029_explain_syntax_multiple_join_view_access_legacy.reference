@@ -1,0 +1,42 @@
+-- Three tables, views on the second and third join positions
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- Three tables, the view is leftmost
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- Three tables joined with commas
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- Four tables
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- The multiple join is inside a nested subquery
+  reader SELECT: ACCESS_DENIED
+  reader EXPLAIN SYNTAX: ACCESS_DENIED
+  reader EXPLAIN AST optimize: ACCESS_DENIED
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- Three tables, no view at all
+  reader SELECT: OK
+  reader EXPLAIN SYNTAX: OK
+  reader EXPLAIN AST optimize: OK
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
+-- Nested three-table join, no view at all
+  reader SELECT: OK
+  reader EXPLAIN SYNTAX: OK
+  reader EXPLAIN AST optimize: OK
+  full SELECT: OK
+  full EXPLAIN SYNTAX: OK
