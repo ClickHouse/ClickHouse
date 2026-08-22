@@ -200,7 +200,7 @@ public:
     void free(char * p) override { delete[] p; }
 };
 
-static orc::MemoryPool & getORCMemoryPool()
+orc::MemoryPool & getORCMemoryPool()
 {
     static ORCMemoryPool pool;
     return pool;
