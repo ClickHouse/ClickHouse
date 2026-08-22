@@ -7,12 +7,15 @@ FROM node:22-bookworm-slim
 
 # `python3` is here because praktika runs the job script (ci/jobs/build_wasm_parser.py) inside this
 # image; `python3-minimal` would not do, since the praktika modules it imports reach across the
-# standard library that the minimal package leaves out.
+# standard library that the minimal package leaves out. `git` is here because that same script
+# populates the parser's contrib submodule working trees before configuring - the CI checkout
+# arrives without them.
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates \
         cmake \
         curl \
+        git \
         gzip \
         ninja-build \
         python3 \
@@ -35,7 +38,7 @@ RUN arch="$(dpkg --print-architecture)" \
 
 # Two thirds of the SDK is sysroots and libraries for targets this build never names, plus tooling
 # (clang-tidy, lldb, libclang) that a compile and a link do not go through. Dropping them takes the
-# SDK from 653 MB to 233 MB, which every integration-test shard that runs this test has to pull.
+# SDK from 653 MB to 233 MB, which is what the job has to pull before it can start.
 RUN cd /opt/wasi-sdk/share/wasi-sysroot \
     && find include lib -mindepth 1 -maxdepth 1 \
         ! -name wasm32-wasip1 ! -name 'c++' -exec rm -rf {} + \
