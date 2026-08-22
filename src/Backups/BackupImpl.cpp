@@ -28,6 +28,9 @@
 #include <IO/Operators.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
+#if CLICKHOUSE_CLOUD && USE_SSL
+#include <Backups/BackupEncryptionSidecar.h>
+#endif
 #include <Poco/SAX/SAXParser.h>
 #include <Poco/SAX/XMLReader.h>
 
@@ -231,6 +234,10 @@ BackupImpl::~BackupImpl()
 void BackupImpl::open()
 {
     std::lock_guard lock{mutex};
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+    encryption_sidecar = std::make_unique<BackupEncryptionSidecar>(*this);
+#endif
 
     if (open_mode == OpenMode::UNLOCK)
     {
@@ -596,6 +603,9 @@ void BackupImpl::writeBackupMetadata()
     out->finalize();
 
     uncompressed_size = size_of_entries + out->count();
+#if CLICKHOUSE_CLOUD && USE_SSL
+    uncompressed_size += encryption_sidecar->getFileSize();
+#endif
 
     LOG_TRACE(log, "Backup {}: Metadata was written", backup_name_for_logging);
 }
@@ -625,6 +635,9 @@ void BackupImpl::recalculateMetadataCounters()
     });
 
     uncompressed_size = size_of_entries + writer->getFileSize(".backup");
+#if USE_SSL
+    uncompressed_size += encryption_sidecar->getFileSize();
+#endif
 }
 #endif
 
@@ -865,6 +878,17 @@ void BackupImpl::readBackupMetadata()
         throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Metadata has no <contents>", backup_name_for_logging);
 
     uncompressed_size = size_of_entries + str.size();
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+    /// A backup written with an encryption config file next to it carries the TDE key information of that
+    /// file (a backup created from this one may carry it further, see `BACKUP FROM SNAPSHOT`), and counts
+    /// the file in its sizes the same way as when it was written.
+    if (open_mode == OpenMode::READ)
+    {
+        encryption_sidecar->read();
+        uncompressed_size += encryption_sidecar->getFileSize();
+    }
+#endif
     compressed_size = uncompressed_size;
     if (!use_archive)
         setCompressedSize();
@@ -882,6 +906,10 @@ void BackupImpl::checkBackupDoesntExist() const
 
     if (writer->fileExists(file_name_to_check_existence))
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
+#if CLICKHOUSE_CLOUD && USE_SSL
+    if (encryption_sidecar->existsInDestination())
+        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
+#endif
 
     /// Check that no other backup (excluding internal backups) is writing to the same destination.
     if (!params.is_internal_backup)
@@ -902,19 +930,25 @@ void BackupImpl::createLockFile()
         lock_file_contents = toString(*uuid);
     const String completed_file = use_archive ? archive_params.archive_name : ".backup";
     FailPointInjection::pauseFailPoint(FailPoints::backup_pause_before_lock_file_creation);
-    bool lock_created = false;
     try
     {
         auto out = writer->writeFileIfNotExists(lock_file_name);
         *out << lock_file_contents;
         out->finalize();
-        lock_created = true;
+        created_own_lock_file = true;
     }
     catch (...)
     {
         auto exception = std::current_exception();
         String actual_file_contents;
         bool lock_contents_match = false;
+        /// The write may have committed the lock, and no check below is guaranteed to observe it: each
+        /// issues its own request and can fail on its own. So the lock is this `open`'s to take back
+        /// unless it continues an earlier attempt; `removeLockFile` re-reads it and has the final say.
+#if CLICKHOUSE_CLOUD
+        if (!params.resume || !params.resume->continuing_existing_progress)
+#endif
+            created_own_lock_file = true;
         try
         {
             lock_contents_match = writer->fileContentsEqual(lock_file_name, lock_file_contents, actual_file_contents);
@@ -926,7 +960,8 @@ void BackupImpl::createLockFile()
             tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not read lock file {}", lock_file_name));
         }
 #if CLICKHOUSE_CLOUD
-        /// A continued attempt is allowed to find its own lock: it is the one that wrote it.
+        /// A resumable attempt whose own contents are already there falls through, so a later failure
+        /// lands inside `BackupResumer`'s inner try, which reports the lock and keeps its progress.
         if (lock_contents_match && !params.resume)
 #else
         if (lock_contents_match)
@@ -950,8 +985,7 @@ void BackupImpl::createLockFile()
 
     if (writer->fileExists(completed_file))
     {
-        if (lock_created)
-            removeLockFile();
+        tryRemoveOwnLockFile();
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
     }
 }
@@ -1021,15 +1055,27 @@ bool BackupImpl::tryRemoveOwnLockFile() noexcept
     /// nobody. `removeLockFile` only removes a lock this backup still owns, so a foreign lock -- which may
     /// belong to a concurrent attempt that won the race -- is deliberately left alone. Never throws: it
     /// runs from an exception handler, where throwing would hide the original error.
+    ///
+    /// At most one attempt per `open`, and a repeat call answers with what that attempt found. A second
+    /// removal could delete a lock the first attempt reported as left behind, leaving the record of that
+    /// report describing a destination it no longer matches.
+    if (own_lock_cleanup_result.has_value())
+        return *own_lock_cleanup_result;
+    /// Only a lock this `open` wrote is ours to take back: a continued attempt holds the contents of the
+    /// lock the attempt it continues wrote, which `removeLockFile` cannot tell from its own, so removing it
+    /// would leave the progress naming a lock that is gone and fail every later attempt.
+    if (!created_own_lock_file)
+        return false;
     try
     {
-        return removeLockFile();
+        own_lock_cleanup_result = removeLockFile();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        own_lock_cleanup_result = false;
     }
+    return *own_lock_cleanup_result;
 }
 
 bool BackupImpl::directoryExists(const String & directory) const
@@ -1563,6 +1609,10 @@ void BackupImpl::finalizeWriting()
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
         });
+#if CLICKHOUSE_CLOUD && USE_SSL
+        if (!use_archive)
+            uncompressed_size += encryption_sidecar->write();
+#endif
 #if CLICKHOUSE_CLOUD
         /// A continued attempt whose manifest is already in the destination republishes nothing; it only
         /// recomputes the counters it reports.
@@ -1571,6 +1621,10 @@ void BackupImpl::finalizeWriting()
         else
 #endif
             writeBackupMetadata();
+#if CLICKHOUSE_CLOUD && USE_SSL
+        if (use_archive)
+            uncompressed_size += encryption_sidecar->write();
+#endif
         closeArchive(/* finalize= */ true);
     }
 
@@ -1616,6 +1670,11 @@ void BackupImpl::setCompressedSize()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_reading_archive_size is triggered");
         });
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
+#if CLICKHOUSE_CLOUD && USE_SSL
+        /// The encryption config file is written outside of the archive, so its size must be added
+        /// to the size of the archive to get the physical footprint of the backup.
+        compressed_size += encryption_sidecar->getFileSize();
+#endif
     }
     else
         compressed_size = uncompressed_size;
@@ -1699,6 +1758,12 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
                     files_to_remove.push_back(file_info.data_file_name);
             });
         }
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+        /// The encryption config file is written outside of the archive, so it must be removed in both cases.
+        if (!encryption_sidecar->getKeyInfos().empty())
+            files_to_remove.push_back(encryption_sidecar->fileName());
+#endif
 
         if (!checkLockFile(false))
             return false;
