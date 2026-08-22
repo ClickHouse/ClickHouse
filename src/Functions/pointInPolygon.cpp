@@ -289,6 +289,11 @@ public:
         return rejectsConstGeometryKind(kind_name);
     }
 
+    /// Every rejection above is decided by `getReturnTypeImpl` from the argument's `DataType`, before
+    /// a single row is read, so a lenient `Variant`/`Dynamic` adaptor turns it into NULL rather than
+    /// an exception. See `IFunctionBase::rejectsColumnGeometryKindDuringBuild`.
+    bool rejectsColumnGeometryKindDuringBuild(size_t /*arg_index*/) const override { return true; }
+
     /// The first argument is the point being tested; a constant there (`WHERE
     /// pointInPolygon((0.5, 0.5), poly)` with `poly` indexed) is common and, unlike the polygon
     /// arguments, has a well-defined single-point bbox: `(x, y, x, y)`. `extractBboxFromFieldValue`

@@ -93,6 +93,7 @@ public:
     bool requiresValidConstGeometry() const override { return function->requiresValidConstGeometry(); }
     bool rejectsConstGeometryKind(std::string_view kind_name) const override { return function->rejectsConstGeometryKind(kind_name); }
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override { return function->rejectsColumnGeometryKind(kind_name, arg_index); }
+    bool rejectsColumnGeometryKindDuringBuild(size_t arg_index) const override { return function->rejectsColumnGeometryKindDuringBuild(arg_index); }
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return function->treatsConstTupleAsPoint(arg_index); }
 
 
@@ -157,6 +158,7 @@ public:
     bool requiresValidConstGeometry() const override { return function->requiresValidConstGeometry(); }
     bool rejectsConstGeometryKind(std::string_view kind_name) const override { return function->rejectsConstGeometryKind(kind_name); }
     bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override { return function->rejectsColumnGeometryKind(kind_name, arg_index); }
+    bool rejectsColumnGeometryKindDuringBuild(size_t arg_index) const override { return function->rejectsColumnGeometryKindDuringBuild(arg_index); }
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return function->treatsConstTupleAsPoint(arg_index); }
 
     String getName() const override { return function->getName(); }

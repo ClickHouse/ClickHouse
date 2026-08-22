@@ -87,7 +87,25 @@ public:
     }
     bool requiresValidConstGeometry() const override { return function_overload_resolver->requiresValidConstGeometry(); }
     bool rejectsConstGeometryKind(std::string_view kind_name) const override { return function_overload_resolver->rejectsConstGeometryKind(kind_name); }
-    bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override { return function_overload_resolver->rejectsColumnGeometryKind(kind_name, arg_index); }
+    /// A geometry kind the wrapped function rejects normally means "evaluating this argument is
+    /// guaranteed to raise `ILLEGAL_TYPE_OF_ARGUMENT`", which is what makes `spatial_bbox` pruning
+    /// fail closed (see `hasDeferredGeometryKindRejection` in `Common/GeoBbox.h`). That holds only
+    /// while this adaptor actually raises: with `dynamic_throw_on_type_mismatch` off,
+    /// `ExecutableFunctionDynamicAdaptor` swallows the build-time `ILLEGAL_TYPE_OF_ARGUMENT` for an incompatible alternative and
+    /// resolves those rows to NULL instead, so there is no exception left for pruning to hide and
+    /// reporting a rejection would cost pruning for nothing. Only a BUILD-time rejection at the
+    /// argument this adaptor dispatches per alternative is covered: an execute-time one (see
+    /// `rejectsColumnGeometryKindDuringBuild`) still escapes leniency, and so does a rejection at
+    /// any other argument position, which the wrapped function raises itself.
+    bool rejectsColumnGeometryKindDuringBuild(size_t arg_index) const override { return function_overload_resolver->rejectsColumnGeometryKindDuringBuild(arg_index); }
+    bool rejectsColumnGeometryKind(std::string_view kind_name, size_t arg_index) const override
+    {
+        if (!throw_on_type_mismatch && arg_index == dynamic_argument_index
+            && function_overload_resolver->rejectsColumnGeometryKindDuringBuild(arg_index))
+            return false;
+
+        return function_overload_resolver->rejectsColumnGeometryKind(kind_name, arg_index);
+    }
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return function_overload_resolver->treatsConstTupleAsPoint(arg_index); }
 
 private:
@@ -96,6 +114,9 @@ private:
     DataTypes arguments;
     DataTypePtr return_type;
     size_t dynamic_argument_index;
+    /// Resolved at construction time, like `ExecutableFunctionDynamicAdaptor`'s own flag: whether an alternative
+    /// incompatible with the wrapped function raises or resolves the row to NULL.
+    bool throw_on_type_mismatch = true;
 };
 
 

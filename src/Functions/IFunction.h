@@ -270,6 +270,21 @@ public:
       */
     virtual bool rejectsColumnGeometryKind(std::string_view kind_name, size_t /*arg_index*/) const { return rejectsConstGeometryKind(kind_name); }
 
+    /** Does `rejectsColumnGeometryKind` at `arg_index` describe a rejection raised while BUILDING the
+      * function (from the argument's `DataType`, e.g. `pointInPolygon`'s `getReturnTypeImpl`), rather
+      * than one raised while EXECUTING it on the actual geometry (e.g.
+      * `polygonsIntersectCartesian`, which accepts any geometry-shaped argument at build time and
+      * only refuses a `Point` once it reads the value)? The distinction matters for a `Variant` /
+      * `Dynamic` argument under `variant_throw_on_type_mismatch = 0` /
+      * `dynamic_throw_on_type_mismatch = 0`: `ExecutableFunctionVariantAdaptor` /
+      * `ExecutableFunctionDynamicAdaptor` swallow only the BUILD-time `ILLEGAL_TYPE_OF_ARGUMENT` of an
+      * incompatible alternative and resolve those rows to NULL, while an execute-time rejection still
+      * escapes. Only for a build-time rejection is there no exception left for bbox pruning to hide,
+      * so only then may the adaptors stop reporting the rejection (see `FunctionVariantAdaptor.h`).
+      * Default: false -- fail closed, which merely costs pruning.
+      */
+    virtual bool rejectsColumnGeometryKindDuringBuild(size_t /*arg_index*/) const { return false; }
+
     /** For a function where `isSpatialPredicate()` is true: does a constant argument at
       * `arg_index`, when it has the generic `(Float64, Float64)` `Tuple` shape that
       * `extractBboxFromFieldValue` (`Common/GeoBbox.h`) otherwise treats as opaque -- since none
@@ -510,6 +525,9 @@ public:
     /// See IFunctionBase::rejectsColumnGeometryKind.
     virtual bool rejectsColumnGeometryKind(std::string_view kind_name, size_t /*arg_index*/) const { return rejectsConstGeometryKind(kind_name); }
 
+    /// See IFunctionBase::rejectsColumnGeometryKindDuringBuild.
+    virtual bool rejectsColumnGeometryKindDuringBuild(size_t /*arg_index*/) const { return false; }
+
     /// See IFunctionBase::treatsConstTupleAsPoint.
     virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
 
@@ -741,6 +759,9 @@ public:
 
     /// See IFunctionBase::rejectsColumnGeometryKind.
     virtual bool rejectsColumnGeometryKind(std::string_view kind_name, size_t /*arg_index*/) const { return rejectsConstGeometryKind(kind_name); }
+
+    /// See IFunctionBase::rejectsColumnGeometryKindDuringBuild.
+    virtual bool rejectsColumnGeometryKindDuringBuild(size_t /*arg_index*/) const { return false; }
 
     /// See IFunctionBase::treatsConstTupleAsPoint.
     virtual bool treatsConstTupleAsPoint(size_t /*arg_index*/) const { return false; }
