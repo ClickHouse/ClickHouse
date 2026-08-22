@@ -162,6 +162,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_ctor_first SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_aux SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_aux_2 SYNC"
 
+# A Keeper client whose configured chroot is absent throws at construction, and only some test
+# flavors create this one, so make the root before the first table on it.
+${CLICKHOUSE_CLIENT} -q "INSERT INTO system.zookeeper (name, path, value) VALUES ('auxiliary_zookeeper2', '/test/chroot', '')"
+
 ${CLICKHOUSE_CLIENT} \
     -q "CREATE TABLE test_aux (date Date) ENGINE=ReplicatedMergeTree('zookeeper2:/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/aux', 'r1') ORDER BY date"
 
@@ -300,6 +304,29 @@ ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_zero_copy SYNC"
 ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
     -q "SELECT count() FROM system.zookeeper WHERE path='$ZC_ROOT/zero_copy_local_blob_storage'"
+
+#### 13 - The rollback runs even when the zero-copy lock paths cannot be named
+
+# An unresolvable macro in the zero-copy path fails the CREATE after the replica is registered, and
+# naming those paths is part of the rollback itself. Naming them must not be what decides whether
+# the registration is removed.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_zero_copy_unnamed SYNC"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_zero_copy_unnamed (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/zero_copy_unnamed', 'r1') ORDER BY date
+        SETTINGS storage_policy='local_cache', allow_remote_fs_zero_copy_replication=1,
+                 remote_fs_zero_copy_zookeeper_path='$ZC_ROOT/{no_such_macro}'" 2>&1 | grep -cm1 "No macro 'no_such_macro' in config"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX' AND name='zero_copy_unnamed'"
+
+# The retry with a resolvable path then succeeds
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_zero_copy_unnamed (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/zero_copy_unnamed', 'r1') ORDER BY date
+        SETTINGS storage_policy='local_cache', allow_remote_fs_zero_copy_replication=1,
+                 remote_fs_zero_copy_zookeeper_path='$ZC_ROOT'"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO test_zero_copy_unnamed SELECT toDate('2024-01-01')"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_zero_copy_unnamed"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_zero_copy_unnamed SYNC"
 
 # No failpoint may leak into a later run of this test
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.fail_points WHERE enabled AND name IN ('replicated_merge_tree_fail_after_creating_replica', 'database_on_disk_fail_before_commit_create_table', 'database_on_disk_fail_after_commit_create_table')"

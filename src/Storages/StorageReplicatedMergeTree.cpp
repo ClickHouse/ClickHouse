@@ -742,10 +742,18 @@ void StorageReplicatedMergeTree::tryRemoveOwnReplicaFromZooKeeper()
         if (zookeeper->exists(replica_path + "/is_active"))
             return;
 
-        /// The zero-copy lock roots live outside the table subtree that dropReplica removes, so they are
-        /// collected here and removed below, as drop() does. Reached only with zero-copy replication
-        /// enabled, where createNewZooKeeperNodes has already created them.
-        auto zero_copy_locks_paths = getZookeeperZeroCopyLockPaths();
+        /// The zero-copy lock roots live outside the table subtree dropReplica removes, so they are
+        /// collected before it and removed after; they may not exist yet, which is not an error. Naming
+        /// them needs the shared ID, and a root left behind is recoverable while a registration is not.
+        std::vector<String> zero_copy_locks_paths;
+        try
+        {
+            zero_copy_locks_paths = getZookeeperZeroCopyLockPaths();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log.load(), "Cannot determine the zero-copy lock paths of " + replica_path);
+        }
 
         /// Not drop(): the table has no parts, and loading outdated parts to discover them is pure risk on
         /// a table that never started up. This keeps the /replicas + /dropped lock protocol that lets a
