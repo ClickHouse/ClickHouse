@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.client import Client
@@ -60,7 +62,8 @@ def test_introspection_port(started_cluster):
     introspection_client().query("SHOW PROCESSLIST")
 
     # Reaches the interpreter and fails on its argument instead of being refused.
-    describe_cache_query_id = "introspection_test_describe_filesystem_cache"
+    # A fresh id per run keeps the kind assertion below scoped to this execution.
+    describe_cache_query_id = f"introspection_test_describe_cache_{uuid.uuid4()}"
     assert "There is no cache by name" in introspection_client().query_and_get_error(
         "DESCRIBE FILESYSTEM CACHE 'nonexistent'", query_id=describe_cache_query_id
     )
