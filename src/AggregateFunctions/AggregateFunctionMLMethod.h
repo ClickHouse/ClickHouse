@@ -17,7 +17,6 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
