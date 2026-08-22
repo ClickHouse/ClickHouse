@@ -418,7 +418,7 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 // - session is reused according its inner state, automatically
 /// Mirrors `Poco::Net::HTTPClientSession::bypassProxy`, which is not accessible from here; keep in
 /// sync on Poco upgrades. When it holds, Poco connects straight to the target instead of the proxy.
-bool isProxyBypassedForHost(const std::string & host, const Poco::Net::HTTPClientSession::ProxyConfig & proxy_config)
+static bool isProxyBypassedForHost(const std::string & host, const Poco::Net::HTTPClientSession::ProxyConfig & proxy_config)
 {
     return !proxy_config.nonProxyHosts.empty()
         && Poco::RegularExpression::match(
