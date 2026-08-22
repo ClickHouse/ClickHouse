@@ -380,7 +380,7 @@ def test_v3_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg
         f"ALTER TABLE {TABLE_NAME} UPDATE data = 'updated' WHERE id = 10",
     ]:
         error = instance.query_and_get_error(mutation, settings=settings)
-        assert "Iceberg DELETE and UPDATE are not supported for snapshots containing deletion vectors" in error
+        assert "Iceberg DELETE and UPDATE are not supported for format-version 3 tables" in error
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings=settings)) == 80
     instance.query(f"DROP TABLE {TABLE_NAME}")
