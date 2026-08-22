@@ -52,9 +52,16 @@ MAX_MEM_PER_WORKER = 11
 # cgroup and tripping the kernel OOM killer (see OOM_IN_DMESG_TEST_NAME).
 MAX_MEM_PER_WORKER_DIST_EACH = 20
 
-INFRASTRUCTURE_ERROR_PATTERNS = [
+# A timeout says nothing about its own origin: a container orchestration command and
+# the process under test both raise `subprocess.TimeoutExpired`, rendering the same two
+# substrings. These two are therefore matched by TIMEOUT_PATTERN_RULE below rather than
+# by a plain substring search.
+TIMEOUT_ERROR_PATTERNS = [
     "timed out after",
     "TimeoutExpired",
+]
+
+INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Cannot connect to the Docker daemon",
     "Error response from daemon",
     "Name or service not known",
@@ -69,13 +76,52 @@ INFRASTRUCTURE_ERROR_PATTERNS = [
     "Got exception pulling images:",  # docker pull failure during cluster.start()
 ]
 
+# Every orchestration command the suite runs begins with these two argv entries:
+# `ClickHouseCluster.base_cmd` is `["docker", "compose", ...]` and `compose_cmd()`
+# returns `["docker", "compose", "--project-name", ...]`. Image pulls are included,
+# `images_pull_cmd` being `base_cmd + ["pull"]`. Nothing a test body runs matches.
+# Both renderings occur: `subprocess.TimeoutExpired` repr's the argv list, while
+# `run_and_check` re-raises with the argv space-joined.
+DOCKER_COMPOSE_ARGV_RENDERINGS = [
+    "'docker', 'compose'",
+    "docker compose",
+]
+
+
+def _raising_exception_lines(info: str) -> list:
+    """The `E   <ExcType>: <msg>` lines, i.e. the exceptions actually raised.
+
+    Scoped to these lines because an embedded server stack trace can carry a timeout
+    substring tens of kilobytes away from anything that timed out.
+    """
+    return [line for line in info.splitlines() if line.startswith("E ")]
+
+
+def _is_docker_compose_timeout(info: str) -> bool:
+    """Whether a raised exception is a docker compose lifecycle command timing out."""
+    for line in _raising_exception_lines(info):
+        if not any(p in line for p in TIMEOUT_ERROR_PATTERNS):
+            continue
+        if any(r in line for r in DOCKER_COMPOSE_ARGV_RENDERINGS):
+            return True
+    return False
+
+
+def _non_timeout_patterns_match(info: str) -> bool:
+    return any(
+        p in info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        if p not in TIMEOUT_ERROR_PATTERNS
+    )
+
 
 def _is_infrastructure_error(result: Result) -> bool:
     """Returns True if the result is a failure caused by infrastructure issues."""
     if not result.info:
         return False
     if result.status == Result.Status.ERROR:
-        return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+        return _non_timeout_patterns_match(result.info) or _is_docker_compose_timeout(
+            result.info
+        )
     # Docker compose/pull infrastructure failures may appear with FAIL status
     # when pytest reports fixture (setup phase) errors as test failures.
     # Require both docker context and an infrastructure pattern to avoid
@@ -84,9 +130,9 @@ def _is_infrastructure_error(result: Result) -> bool:
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
-        return has_docker_context and any(
-            p in result.info for p in INFRASTRUCTURE_ERROR_PATTERNS
-        )
+        return (
+            has_docker_context and _non_timeout_patterns_match(result.info)
+        ) or _is_docker_compose_timeout(result.info)
     return False
 
 
