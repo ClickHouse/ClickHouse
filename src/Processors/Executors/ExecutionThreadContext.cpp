@@ -85,7 +85,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 
         Exception annotated = exception; /// NOLINT
         annotated.addMessage("While executing " + node->processor()->getName());
-        throw annotated;
+        throw annotated; /// NOLINT
     }
 }
 
