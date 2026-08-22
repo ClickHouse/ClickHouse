@@ -16,6 +16,8 @@ PLAIN_PATH="${USER_FILES_PATH}/${PLAIN}/"
 MERGE_GEO="mg_${CLICKHOUSE_DATABASE}_${RANDOM}"
 MERGE_PLAIN="mp_${CLICKHOUSE_DATABASE}_${RANDOM}"
 INFERRED="i_${CLICKHOUSE_DATABASE}_${RANDOM}"
+COMPACT="c_${CLICKHOUSE_DATABASE}_${RANDOM}"
+COMPACT_PATH="${USER_FILES_PATH}/${COMPACT}/"
 
 GEO_REFUSED="allow_experimental_geo_types_in_iceberg"
 
@@ -143,10 +145,44 @@ ${CLICKHOUSE_CLIENT} --query "SELECT id, s FROM ${MERGE_PLAIN}"
 # query rather than how system.tables always answers for Iceberg.
 ${CLICKHOUSE_CLIENT} --query "SELECT total_rows IS NULL FROM system.tables WHERE database = currentDatabase() AND name = '${PLAIN}'"
 
+# Compaction reads the data files through the table's columns and writes them back, so both OPTIMIZE
+# entrypoints are gated on those columns. Every arm below enables the compaction setting, so what is
+# measured is the geo gate rather than the refusal that guards compaction itself. The row delete is
+# what makes the rewrite happen at all: compaction only rewrites data files when the table has a
+# position delete file, so without it these arms would run the planner and rewrite nothing.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${COMPACT}"
+${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "
+    CREATE TABLE ${COMPACT} (id Int64, g Geometry)
+    ENGINE = IcebergLocal('${COMPACT_PATH}', 'Parquet')
+"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_experimental_geo_types_in_iceberg=1 --query \
+    "INSERT INTO ${COMPACT} SELECT number, readWKT(concat('POINT(', toString(number), ' ', toString(number * 2), ')')) FROM numbers(10, 40)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --allow_experimental_geo_types_in_iceberg=1 --mutations_sync=2 \
+    --query "ALTER TABLE ${COMPACT} DELETE WHERE id = 11"
+# DETACH + ATTACH without the flag: the table is reloaded as a restart would reload it.
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${COMPACT}"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${COMPACT}"
+# The rewrite is armed: a table with no position delete file would report 0 here and the arms below
+# would be about the planner rather than about reading the data.
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_experimental_geo_types_in_iceberg=1 --query "
+    SELECT count() > 0 FROM system.iceberg_files
+    WHERE database = currentDatabase() AND table = '${COMPACT}' AND content = 'POSITION_DELETE'
+"
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${COMPACT}" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${COMPACT} MANIFEST" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+# Controls: the same statement with the flag, and a table with no geometry column. Without them a
+# build that refused every OPTIMIZE would pass the two arms above.
+run_allowed --allow_experimental_iceberg_compaction=1 --allow_experimental_geo_types_in_iceberg=1 --query "OPTIMIZE TABLE ${COMPACT}"
+run_allowed --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${PLAIN}"
+# The values are intact after the compaction the control performed, so that arm rewrote the data
+# rather than declining for an unrelated reason.
+${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT count(), min(id), max(id) FROM ${COMPACT}"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${COMPACT}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_GEO}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_PLAIN}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${NESTED}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PLAIN}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${INFERRED}"
-rm -rf "${TABLE_PATH}" "${NESTED_PATH}" "${PLAIN_PATH}"
+rm -rf "${TABLE_PATH}" "${NESTED_PATH}" "${PLAIN_PATH}" "${COMPACT_PATH}"

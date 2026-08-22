@@ -473,10 +473,14 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
 }
 
 bool IcebergMetadata::optimize(
-    [[maybe_unused]] const StorageMetadataPtr & metadata_snapshot,
-    [[maybe_unused]] ContextPtr context,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
     [[maybe_unused]] const std::optional<FormatSettings> & format_settings)
 {
+    /// Compaction reads the data files through these columns and writes them back, so it needs the
+    /// same permission as any other read of them.
+    rejectGeoTypesIfNotAllowed(metadata_snapshot->getColumns().getAll(), context);
+
 #if CLICKHOUSE_CLOUD
     if (!compaction_enabled)
         throw Exception(
@@ -518,6 +522,8 @@ bool IcebergMetadata::optimizeManifestFiles(
        std::shared_ptr<DataLake::ICatalog> catalog,
        const StorageID & storage_id)
 {
+    rejectGeoTypesIfNotAllowed(metadata_snapshot->getColumns().getAll(), context);
+
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         /// Reject manifest compaction on format-version 3: the writer does not yet round-trip the row-lineage `first_row_id`, so a rewrite would drop row ids (fail-close).
