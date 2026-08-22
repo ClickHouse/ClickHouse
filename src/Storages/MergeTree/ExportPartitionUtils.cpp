@@ -849,7 +849,7 @@ namespace
 
         verifyPartitionKeyCompatibility(
             source_metadata->getPartitionKey(),
-            KeyDescription::getKeyFromAST(partition_key_ast, destination_columns, context),
+            KeyDescription::getKeyFromAST(partition_key_ast, destination_columns, /*virtuals=*/ {}, context),
             parts, partition_id, context);
     }
 #endif
