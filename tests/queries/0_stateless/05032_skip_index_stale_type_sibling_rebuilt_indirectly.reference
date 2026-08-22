@@ -1,0 +1,34 @@
+-- 30. a sibling index rebuilt through a TTL target it reads does not keep the column absent
+1
+1
+1
+1
+1
+2
+1
+1
+0
+0
+64
+64
+-- 31. a sibling index rebuilt by MATERIALIZE TTL does not keep the column absent
+1
+1
+1
+2
+1
+1
+0
+0
+64
+64
+-- 32. a sibling index rebuilt through a MATERIALIZED column does not keep the column absent
+1
+1
+2
+1
+1
+0
+0
+64
+64
