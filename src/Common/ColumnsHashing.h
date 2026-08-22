@@ -357,6 +357,178 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 };
 
+/// Hash the indexes of a `LowCardinality` column whose dictionary was verified to be
+/// the only dictionary for its `MergeTree` part. The hash table always stores `UInt64`
+/// keys so all index widths share one method.
+template <typename Value, typename Mapped, bool use_cache>
+struct HashMethodSingleLowCardinalityDictionaryIndex
+    : public columns_hashing_impl::HashMethodBase<
+          HashMethodSingleLowCardinalityDictionaryIndex<Value, Mapped, use_cache>,
+          Value,
+          Mapped,
+          use_cache>
+{
+    using Self = HashMethodSingleLowCardinalityDictionaryIndex<Value, Mapped, use_cache>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
+
+    static constexpr bool has_cheap_key_calculation = true;
+    static constexpr bool has_cheap_key_holder = true;
+    static constexpr bool has_pre_computed_hashes = false;
+
+    static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
+
+    const IColumn * indexes = nullptr;
+    const char * positions = nullptr;
+    size_t size_of_index_type = 0;
+
+    HashMethodSingleLowCardinalityDictionaryIndex(
+        const ColumnRawPtrs & key_columns_low_cardinality,
+        const Sizes &,
+        const HashMethodContextPtr &)
+        : Base()
+    {
+        const auto * low_cardinality_column
+            = typeid_cast<const ColumnLowCardinality *>(key_columns_low_cardinality[0]);
+        if (!low_cardinality_column)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid aggregation key type for HashMethodSingleLowCardinalityDictionaryIndex. "
+                "Expected LowCardinality, got {}",
+                key_columns_low_cardinality[0]->getName());
+
+        indexes = low_cardinality_column->getIndexesPtr().get();
+        positions = indexes->getRawData().data();
+        size_of_index_type = low_cardinality_column->getSizeOfIndexType();
+    }
+
+    template <typename Index>
+    ALWAYS_INLINE UInt64 getIndexAt(size_t row) const
+    {
+        return unalignedLoad<Index>(positions + row * sizeof(Index));
+    }
+
+    ALWAYS_INLINE UInt64 getKeyHolder(size_t row, Arena &) const
+    {
+        switch (size_of_index_type)
+        {
+            case sizeof(UInt8): return getIndexAt<UInt8>(row);
+            case sizeof(UInt16): return getIndexAt<UInt16>(row);
+            case sizeof(UInt32): return getIndexAt<UInt32>(row);
+            case sizeof(UInt64): return getIndexAt<UInt64>(row);
+            default:
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected size of index type for single-dictionary LowCardinality column");
+        }
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE typename Base::EmplaceResult emplaceKeyAtIndex(Data & data, UInt64 index)
+    {
+        return Base::template emplaceImpl<true>(index, data, 0);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE typename Base::FindResult findKeyAtIndex(Data & data, UInt64 index)
+    {
+        return Base::findKeyImpl(index, data);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE size_t getHashAtIndex(const Data & data, UInt64 index) const
+    {
+        return data.hash(index);
+    }
+
+    /// The index width is fixed for the whole column. Dispatch it once per hashing state so
+    /// the aggregation loops use a typed load instead of selecting the width for every row.
+    template <typename Index>
+    struct StateWithIndexType
+    {
+        static constexpr bool has_mapped = Base::has_mapped;
+        static constexpr bool has_cheap_key_calculation = Self::has_cheap_key_calculation;
+        static constexpr bool has_cheap_key_holder = Self::has_cheap_key_holder;
+        static constexpr bool has_pre_computed_hashes = Self::has_pre_computed_hashes;
+
+        Self & state;
+
+        ALWAYS_INLINE UInt64 getKeyHolder(size_t row, Arena &) const
+        {
+            return state.template getIndexAt<Index>(row);
+        }
+
+        template <typename Data>
+        ALWAYS_INLINE typename Base::EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+        {
+            return state.emplaceKeyAtIndex(data, getKeyHolder(row, pool));
+        }
+
+        template <typename Data>
+        ALWAYS_INLINE typename Base::FindResult findKey(Data & data, size_t row, Arena & pool)
+        {
+            return state.findKeyAtIndex(data, getKeyHolder(row, pool));
+        }
+
+        template <typename Data>
+        ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool) const
+        {
+            return state.getHashAtIndex(data, getKeyHolder(row, pool));
+        }
+
+        ALWAYS_INLINE bool isNullAt(size_t row) { return state.isNullAt(row); }
+        ALWAYS_INLINE void resetCache() { state.resetCache(); }
+        ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const { return state.hasOnlyOneValueSinceLastReset(); }
+        ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const { return state.getCacheMissesSinceLastReset(); }
+    };
+
+    template <typename Callback>
+    decltype(auto) dispatchIndexType(Callback & callback)
+    {
+        switch (size_of_index_type)
+        {
+            case sizeof(UInt8):
+            {
+                StateWithIndexType<UInt8> typed_state{*this};
+                return callback(typed_state);
+            }
+            case sizeof(UInt16):
+            {
+                StateWithIndexType<UInt16> typed_state{*this};
+                return callback(typed_state);
+            }
+            case sizeof(UInt32):
+            {
+                StateWithIndexType<UInt32> typed_state{*this};
+                return callback(typed_state);
+            }
+            case sizeof(UInt64):
+            {
+                StateWithIndexType<UInt64> typed_state{*this};
+                return callback(typed_state);
+            }
+            default:
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected size of index type for single-dictionary LowCardinality column");
+        }
+    }
+
+    using Base::emplaceKey;
+    using Base::findKey;
+    using Base::getHash;
+};
+
+/// Dispatch single-dictionary index widths once per hashing state. Other hashing states pass
+/// through unchanged, keeping the generic aggregation call sites shared by all methods.
+template <typename State, typename Callback>
+decltype(auto) dispatchLowCardinalityDictionaryIndex(State & state, Callback && callback)
+{
+    if constexpr (requires { state.dispatchIndexType(callback); })
+        return state.dispatchIndexType(callback);
+    else
+        return callback(state);
+}
+
 class HashMethodSerializedContext : public HashMethodContext
 {
 public:

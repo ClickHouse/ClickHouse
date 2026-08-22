@@ -4,6 +4,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 template <typename FieldType, typename TData, bool consecutive_keys_optimization, bool nullable>
 void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization, nullable>::insertKeyIntoColumns(
     const AggregationMethodOneNumber::Key & key,
@@ -131,6 +136,28 @@ template struct AggregationMethodSingleLowCardinalityColumn<AggregationMethodOne
 template struct AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel>>;
 template struct AggregationMethodSingleLowCardinalityColumn<AggregationMethodString<AggregatedDataWithNullableStringKeyTwoLevel>>;
 template struct AggregationMethodSingleLowCardinalityColumn<AggregationMethodFixedString<AggregatedDataWithNullableStringKeyTwoLevel>>;
+
+template <typename TData>
+void AggregationMethodSingleLowCardinalityDictionaryIndex<TData>::insertKeyIntoColumns(
+    const Key & key,
+    std::vector<IColumn *> & key_columns_low_cardinality,
+    const Sizes &,
+    const IColumn::SerializationSettings *) const
+{
+    if (!dictionary)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Single-dictionary aggregation method has no dictionary");
+
+    auto & column = assert_cast<ColumnLowCardinality &>(*key_columns_low_cardinality[0]);
+    if (column.empty())
+        column.setSharedDictionary(dictionary);
+    else if (column.getDictionaryPtr().get() != dictionary.get())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected dictionary in single-dictionary aggregation result");
+
+    column.insertDictionaryIndex(key);
+}
+
+template struct AggregationMethodSingleLowCardinalityDictionaryIndex<AggregatedDataWithUInt64Key>;
+template struct AggregationMethodSingleLowCardinalityDictionaryIndex<AggregatedDataWithUInt64KeyTwoLevel>;
 
 
 template <typename TData, bool has_nullable_keys, bool has_low_cardinality, bool consecutive_keys_optimization>
