@@ -2234,13 +2234,16 @@ static BlockIO executeQueryImpl(
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
     bool check_external_data_after_deferred_continue = false;
+    /// `istr` is moved into `ASTInsertQuery::tail` before this callback runs, so the buffer to
+    /// inspect is remembered separately. It stays alive as long as the query AST does.
+    ReadBuffer * external_data_buffer = nullptr;
     auto check_external_data_after_deferred_continue_callback = [&]
     {
         if (!check_external_data_after_deferred_continue)
             return;
 
         check_external_data_after_deferred_continue = false;
-        if (!istr->eof())
+        if (!external_data_buffer->eof())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Processing an INSERT query in a foreign SQL dialect together with external data "
@@ -2801,6 +2804,7 @@ static BlockIO executeQueryImpl(
                 /// `03353_http_100_continue.sh`) is fine and keeps working. Without the deferral the buffer is
                 /// authoritative.
                 check_external_data_after_deferred_continue = http_continue_callback && flags.http_request_body_is_chunked;
+                external_data_buffer = istr.get();
                 const bool has_external_data = http_continue_callback
                     ? flags.http_request_has_body
                     : !istr->eof();
