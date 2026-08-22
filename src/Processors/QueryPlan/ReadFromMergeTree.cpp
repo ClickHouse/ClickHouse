@@ -6299,6 +6299,19 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read with the STREAM modifier");
 
+    /// A TopK-stamped read must never be shipped: the dynamic `__topKFilter` in its PREWHERE is not
+    /// registered in `FunctionFactory` and its `TopKThresholdTracker` is process-local, and neither
+    /// `top_k_filter_info` nor the two query-condition-cache gates (`allow_query_condition_cache`,
+    /// `allow_top_k_prewhere_query_condition_cache`) are carried in the wire format. A worker would
+    /// therefore rebuild the read as an apparent plain read and lose the TopK/cache contract. Two
+    /// upstream guards already keep such reads local -- `tryOptimizeTopK` bails out under
+    /// `make_distributed_plan`, and `mergeTreeReadCanBeShipped` rejects
+    /// `isSelectedForTopKFilterOptimization` reads in `applyParallelReplicas` -- so this is defense in
+    /// depth at the boundary: fail closed rather than ship a read whose contract the peer cannot honour.
+    if (top_k_filter_info)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "A ReadFromMergeTree step selected for the TopK filter optimization cannot be serialized");
+
     verifyBucketedReadSupported();
     /// The replica path serializes deferred FINAL filters as ordinary read filters, which would apply them
     /// before FINAL. The coordinator only buckets a deferred-FINAL read for the stateless worker, so a
