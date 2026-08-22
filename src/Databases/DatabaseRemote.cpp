@@ -1222,11 +1222,11 @@ void registerDatabaseRemote(DatabaseFactory & factory)
             secure,
             args.uuid);
 
-        /// A chain of proxy databases on this server that refers back to itself is rejected
-        /// eagerly (see `throwIfLocalChainRefersBack`), but only on CREATE: a server that
-        /// persisted such a chain must still start, and the metadata loading of server startup
-        /// attaches the databases with the same `ATTACH` mode as the explicit query.
-        if (args.mode == LoadingStrictnessLevel::CREATE)
+        /// A chain of proxy databases on this server that refers back to itself is rejected eagerly
+        /// (see `throwIfLocalChainRefersBack`), but not on internal metadata replay: a server that
+        /// persisted such a chain must still start. An explicit `ATTACH DATABASE` is a user query and
+        /// is validated like `CREATE DATABASE`, so the invariant cannot be bypassed by attaching.
+        if (!(args.internal && args.mode >= LoadingStrictnessLevel::ATTACH))
             database->throwIfLocalChainRefersBack();
 
         return database;

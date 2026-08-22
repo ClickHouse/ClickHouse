@@ -103,6 +103,14 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.tables"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${CLUSTER_DB}_cycle_a'"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLUSTER_DB}_cycle_a"
 
+echo '-- an explicit ATTACH DATABASE is a user query and is validated exactly like CREATE'
+# Only the internal metadata replay of server startup skips the checks, so neither the experimental
+# gate, nor the cluster-name validation, nor the cycle rejection can be bypassed by attaching.
+${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${CLUSTER_DB}_attach ENGINE = Cluster(test_shard_localhost, '${CLICKHOUSE_DATABASE}')" 2>&1 | grep -c -m1 "SUPPORT_IS_DISABLED"
+${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "ATTACH DATABASE ${CLUSTER_DB}_attach ENGINE = Cluster('there_is_no_such_cluster', 'default')" 2>&1 | grep -c -m1 "CLUSTER_DOESNT_EXIST"
+${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "ATTACH DATABASE ${CLUSTER_DB}_attach ENGINE = Cluster(test_shard_localhost, '${CLUSTER_DB}_attach')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.databases WHERE name = '${CLUSTER_DB}_attach'"
+
 echo '-- a shard that is unavailable fails the SELECT with the real error, while the metadata is served by the available shard'
 # The first shard of `test_unavailable_shard` is this server, the second one points to a port that
 # is never listened on. The metadata comes from an arbitrary available shard (the local one), so the

@@ -193,7 +193,12 @@ void registerDatabaseCluster(DatabaseFactory & factory)
         const ASTFunction * engine = engine_define->engine;
         const String & engine_name = engine->name;
 
-        if (args.mode == LoadingStrictnessLevel::CREATE && !args.context->getSettingsRef()[Setting::allow_experimental_database_cluster])
+        /// Server startup and other internal metadata replay attach a database from metadata that was
+        /// already validated when it was created, and such a database must not prevent the server from
+        /// starting; every user query, including an explicit `ATTACH DATABASE`, is validated in full.
+        const bool is_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+
+        if (!is_metadata_replay && !args.context->getSettingsRef()[Setting::allow_experimental_database_cluster])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Database engine `Cluster` is experimental. To allow its usage, enable setting `allow_experimental_database_cluster`");
@@ -210,11 +215,11 @@ void registerDatabaseCluster(DatabaseFactory & factory)
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.context);
         const String remote_database = safeGetLiteralValue<String>(engine_args[1], engine_name);
 
-        /// A mistyped cluster name must fail the `CREATE DATABASE` right away. On attach (e.g. on
-        /// server startup) the check is skipped: the cluster is resolved on every access anyway, and
-        /// a database whose cluster has disappeared from the configuration must not prevent the
+        /// A mistyped cluster name must fail the DDL query right away. On internal metadata replay
+        /// (e.g. server startup) the check is skipped: the cluster is resolved on every access anyway,
+        /// and a database whose cluster has disappeared from the configuration must not prevent the
         /// server from starting.
-        if (args.mode == LoadingStrictnessLevel::CREATE)
+        if (!is_metadata_replay)
             args.context->getCluster(args.context->getMacros()->expand(cluster_name));
 
         auto database = std::make_shared<DatabaseCluster>(
@@ -226,11 +231,10 @@ void registerDatabaseCluster(DatabaseFactory & factory)
             remote_database,
             args.uuid);
 
-        /// A chain of proxy databases on this server that refers back to itself is rejected
-        /// eagerly (see `throwIfLocalChainRefersBack`), but only on CREATE: a server that
-        /// persisted such a chain must still start, and the metadata loading of server startup
-        /// attaches the databases with the same `ATTACH` mode as the explicit query.
-        if (args.mode == LoadingStrictnessLevel::CREATE)
+        /// A chain of proxy databases on this server that refers back to itself is rejected eagerly
+        /// (see `throwIfLocalChainRefersBack`), but not on internal metadata replay: a server that
+        /// persisted such a chain (e.g. because a configuration reload closed the cycle) must still start.
+        if (!is_metadata_replay)
             database->throwIfLocalChainRefersBack();
 
         return database;

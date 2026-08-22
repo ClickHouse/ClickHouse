@@ -46,6 +46,11 @@ s	String
 1
 1
 0
+-- an explicit ATTACH DATABASE is a user query and is validated exactly like CREATE
+1
+1
+1
+0
 -- a shard that is unavailable fails the SELECT with the real error, while the metadata is served by the available shard
 t
 1

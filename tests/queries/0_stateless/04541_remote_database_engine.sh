@@ -84,6 +84,14 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.tables"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${REMOTE_DB}_cycle_a'"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_cycle_a"
 
+echo '-- an explicit ATTACH DATABASE is a user query and cannot bypass the cycle rejection (prints 1 if the expected error is raised)'
+# Only the internal metadata replay of server startup skips the check; a user query is validated in
+# full, so a cycle cannot be persisted by attaching one half of it.
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_attach_a ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_attach_b', 'default', '')"
+${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${REMOTE_DB}_attach_b ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_attach_a', 'default', '')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.databases WHERE name = '${REMOTE_DB}_attach_b'"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_attach_a"
+
 echo '-- a remote failure on table resolution is reported as the real error, not as UNKNOWN_TABLE'
 # Port 1 is never listened on, so the connection is refused; the query must fail with the network
 # error instead of pretending that the table does not exist.
