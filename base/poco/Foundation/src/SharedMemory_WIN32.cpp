@@ -26,11 +26,32 @@
 namespace Poco {
 
 
+namespace
+{
+	/// `CreateFileMapping` takes the maximum size as a high/low `DWORD` pair, so that a 64-bit
+	/// size can be expressed on a 32-bit ABI. Splitting is a no-op on 32-bit, where `std::size_t`
+	/// has no high half.
+	DWORD highDWord(std::size_t size)
+	{
+		if constexpr (sizeof(std::size_t) > sizeof(DWORD))
+			return static_cast<DWORD>(size >> 32);
+		else
+			return 0;
+	}
+
+	DWORD lowDWord(std::size_t size)
+	{
+		return static_cast<DWORD>(size & 0xFFFFFFFFu);
+	}
+}
+
+
+
 SharedMemoryImpl::SharedMemoryImpl(const std::string& name, std::size_t size, SharedMemory::AccessMode mode, const void*, bool):
 	_name(name),
 	_memHandle(INVALID_HANDLE_VALUE),
 	_fileHandle(INVALID_HANDLE_VALUE),
-	_size(static_cast<DWORD>(size)),
+	_size(size),
 	_mode(PAGE_READONLY),
 	_address(0)
 {
@@ -40,9 +61,9 @@ SharedMemoryImpl::SharedMemoryImpl(const std::string& name, std::size_t size, Sh
 #if defined (POCO_WIN32_UTF8)
 	std::wstring utf16name;
 	UnicodeConverter::toUTF16(_name, utf16name);
-	_memHandle = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, _mode, 0, _size, utf16name.c_str());
+	_memHandle = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, _mode, highDWord(_size), lowDWord(_size), utf16name.c_str());
 #else
-	_memHandle = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, _mode, 0, _size, _name.c_str());
+	_memHandle = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, _mode, highDWord(_size), lowDWord(_size), _name.c_str());
 #endif
 
 	if (!_memHandle)
@@ -81,7 +102,7 @@ SharedMemoryImpl::SharedMemoryImpl(const Poco::File& file, SharedMemory::AccessM
 	if (!file.exists() || !file.isFile())
 		throw FileNotFoundException(_name);
 
-	_size = static_cast<DWORD>(file.getSize());
+	_size = static_cast<std::size_t>(file.getSize());
 
 	DWORD shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
 	DWORD fileMode  = GENERIC_READ;

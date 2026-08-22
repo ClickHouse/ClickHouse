@@ -1,5 +1,4 @@
 
-#include <base/pathToString.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Core/ServerSettings.h>
@@ -31,6 +30,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -48,8 +48,6 @@
 #include <random>
 #include <pcg_random.hpp>
 
-
-namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -244,7 +242,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         return {};
 
     String node_data;
-    String entry_path = pathToGenericString(fs::path(queue_dir) / entry_name);
+    String entry_path = zkutil::joinZooKeeperPath(queue_dir, entry_name);
 
     auto task = std::make_unique<DDLTask>(entry_name, entry_path);
 
@@ -259,7 +257,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     {
         LOG_ERROR(log, "Cannot parse DDL task {}: {}. Will try to send error status: {}", entry_name, reason, status.message);
         createStatusDirs(entry_path, zookeeper);
-        zookeeper->tryCreate(pathToGenericString(fs::path(entry_path) / "finished" / host_id), status.serializeText(), zkutil::CreateMode::Persistent);
+        zookeeper->tryCreate(zkutil::joinZooKeeperPath(entry_path, "finished", host_id), status.serializeText(), zkutil::CreateMode::Persistent);
     };
 
     auto add_to_skip_set = [&]()
@@ -358,7 +356,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 chassert(task->was_executed);
                 /// Status must be written (but finished/ node may not exist if entry was deleted).
                 /// If someone is deleting entry concurrently, then /active status dir must not exist.
-                chassert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(pathToGenericString(fs::path(task->entry_path) / "active")));
+                chassert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(zkutil::joinZooKeeperPath(task->entry_path, "active")));
                 ++task_it;
             }
             else if (task->was_executed)
@@ -473,7 +471,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             /// Return true if entry should be scheduled.
             /// There is a minor race condition: initAndCheckTask(...) may return not null
             /// if someone is deleting outdated entry right now (including finished/ nodes), so we also check active/ status dir.
-            bool maybe_concurrently_deleting = task && !zookeeper->exists(pathToGenericString(fs::path(task->entry_path) / "active"));
+            bool maybe_concurrently_deleting = task && !zookeeper->exists(zkutil::joinZooKeeperPath(task->entry_path, "active"));
             return task && !maybe_concurrently_deleting && !maybe_currently_processing;
         }
         if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
@@ -856,11 +854,11 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_single_replica_lock)
 {
     String shard_path = task.getShardNodePath();
-    String is_executed_path = pathToGenericString(fs::path(shard_path) / "executed");
-    String tries_to_execute_path = pathToGenericString(fs::path(shard_path) / "tries_to_execute");
-    String max_tries_exceeded_path = pathToGenericString(fs::path(shard_path) / "max_tries_exceeded");
-    chassert(shard_path.starts_with(pathToGenericString(fs::path(task.entry_path) / "shards" / "")));
-    zookeeper->createIfNotExists(pathToGenericString(fs::path(task.entry_path) / "shards"), "");
+    String is_executed_path = zkutil::joinZooKeeperPath(shard_path, "executed");
+    String tries_to_execute_path = zkutil::joinZooKeeperPath(shard_path, "tries_to_execute");
+    String max_tries_exceeded_path = zkutil::joinZooKeeperPath(shard_path, "max_tries_exceeded");
+    chassert(shard_path.starts_with(zkutil::joinZooKeeperPath(task.entry_path, "shards") + "/"));
+    zookeeper->createIfNotExists(zkutil::joinZooKeeperPath(task.entry_path, "shards"), "");
     zookeeper->createIfNotExists(shard_path, "");
 
     /// Leader replica creates is_executed_path node on successful query execution.
@@ -1038,7 +1036,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
             return;
 
         String node_name = *it;
-        String node_path = pathToGenericString(fs::path(queue_dir) / node_name);
+        String node_path = zkutil::joinZooKeeperPath(queue_dir, node_name);
 
         Coordination::Stat stat;
 
@@ -1052,7 +1050,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
                 continue;
 
             /// At first we remove entry/active node to prevent staled hosts from executing entry concurrently
-            auto rm_active_res = zookeeper->tryRemove(pathToGenericString(fs::path(node_path) / "active"));
+            auto rm_active_res = zookeeper->tryRemove(zkutil::joinZooKeeperPath(node_path, "active"));
             if (rm_active_res != Coordination::Error::ZOK && rm_active_res != Coordination::Error::ZNONODE)
             {
                 if (rm_active_res == Coordination::Error::ZNOTEMPTY)
@@ -1070,7 +1068,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
             /// but node_path/finished already exists, it will detect concurrent deletion and back off.
             /// This also handles the rare case when the initiator lost connection after enqueueing the entry
             /// and never created status dirs (node_path/finished didn't exist).
-            zookeeper->tryCreate(pathToGenericString(fs::path(node_path) / "finished"), {}, zkutil::CreateMode::Persistent);
+            zookeeper->tryCreate(zkutil::joinZooKeeperPath(node_path, "finished"), {}, zkutil::CreateMode::Persistent);
 
             /// We recursively delete all nodes except node_path/finished to prevent staled hosts from
             /// creating node_path/active node (see createStatusDirs(...))
@@ -1080,7 +1078,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
             Coordination::Requests ops;
             Coordination::Responses res;
             ops.emplace_back(zkutil::makeCheckRequest(node_path, -1));  /// See a comment below
-            ops.emplace_back(zkutil::makeRemoveRequest(pathToGenericString(fs::path(node_path) / "finished"), -1));
+            ops.emplace_back(zkutil::makeRemoveRequest(zkutil::joinZooKeeperPath(node_path, "finished"), -1));
             ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
             auto rm_entry_res = zookeeper->tryMulti(ops, res);
 
@@ -1117,8 +1115,8 @@ bool DDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordinatio
 void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper)
 {
     Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeCreateRequest(pathToGenericString(fs::path(node_path) / "active"), {}, zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(pathToGenericString(fs::path(node_path) / "finished"), {}, zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zkutil::joinZooKeeperPath(node_path, "active"), {}, zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zkutil::joinZooKeeperPath(node_path, "finished"), {}, zkutil::CreateMode::Persistent));
 
     Coordination::Responses responses;
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
@@ -1128,7 +1126,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     /// Failed on attempt to create node_path/active because it exists, so node_path/finished must exist too
     bool both_already_exists = responses.size() == 2 && responses[0]->error == Coordination::Error::ZNODEEXISTS
                                                      && responses[1]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY;
-    chassert(!both_already_exists || (zookeeper->exists(pathToGenericString(fs::path(node_path) / "active")) && zookeeper->exists(pathToGenericString(fs::path(node_path) / "finished"))));
+    chassert(!both_already_exists || (zookeeper->exists(zkutil::joinZooKeeperPath(node_path, "active")) && zookeeper->exists(zkutil::joinZooKeeperPath(node_path, "finished"))));
 
     /// Failed on attempt to create node_path/finished, but node_path/active does not exist
     bool is_currently_deleting = responses.size() == 2 && responses[0]->error == Coordination::Error::ZOK
@@ -1178,7 +1176,7 @@ String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
 {
     auto zookeeper = getZooKeeperFromContext();
 
-    String query_path_prefix = pathToGenericString(fs::path(queue_dir) / "query-");
+    String query_path_prefix = zkutil::joinZooKeeperPath(queue_dir, "query-");
     zookeeper->createAncestors(query_path_prefix);
 
     NameSet host_ids;
@@ -1225,7 +1223,7 @@ bool DDLWorker::initializeMainThread()
         try
         {
             auto zookeeper = getAndSetZooKeeper();
-            zookeeper->createAncestors(pathToGenericString(fs::path(queue_dir) / ""));
+            zookeeper->createAncestors(queue_dir + "/");
             initializeReplication();
             markReplicasActive(/*reinitialized=*/true);
             initialized = true;
@@ -1370,7 +1368,7 @@ void DDLWorker::runMainThread()
 void DDLWorker::initializeReplication()
 {
     auto zookeeper = getZooKeeper();
-    zookeeper->createAncestors(pathToGenericString(fs::path(replicas_dir) / ""));
+    zookeeper->createAncestors(replicas_dir + "/");
 }
 
 void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids)
@@ -1379,7 +1377,7 @@ void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet 
     for (const auto & host_id : host_ids)
     {
         LOG_INFO(log, "Creating replica dir for host id {}", host_id);
-        zookeeper->createAncestors(pathToGenericString(fs::path(replicas_dir) / host_id / ""));
+        zookeeper->createAncestors(zkutil::joinZooKeeperPath(replicas_dir, host_id) + "/");
     }
 }
 
@@ -1477,7 +1475,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         if (it != active_node_holders.end())
             continue;
 
-        String active_path = pathToGenericString(fs::path(replicas_dir) / host_id / "active");
+        String active_path = zkutil::joinZooKeeperPath(replicas_dir, host_id, "active");
         String active_id = toString(ServerUUID::get());
 
         LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
@@ -1509,7 +1507,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         Coordination::Responses res;
         ops.emplace_back(zkutil::makeCreateRequest(active_path, active_id, zkutil::CreateMode::Ephemeral));
         /// To bump node mtime
-        ops.emplace_back(zkutil::makeSetRequest(pathToGenericString(fs::path(replicas_dir) / host_id), "", -1));
+        ops.emplace_back(zkutil::makeSetRequest(zkutil::joinZooKeeperPath(replicas_dir, host_id), "", -1));
         auto code = zookeeper->tryMulti(ops, res);
 
         /// We have this tryMulti for a very weird edge case when it's related to localhost.
@@ -1541,8 +1539,8 @@ void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeper
     static constexpr Int64 REPLICA_MAX_INACTIVE_SECONDS = 86400;
     for (const auto & replica : replicas)
     {
-        auto replica_path = fs::path(replicas_dir) / replica;
-        auto responses = zookeeper->tryGet({pathToGenericString(replica_path), pathToGenericString(fs::path(replica_path) / "active")});
+        const String replica_path = zkutil::joinZooKeeperPath(replicas_dir, replica);
+        auto responses = zookeeper->tryGet({replica_path, zkutil::joinZooKeeperPath(replica_path, "active")});
         /// Replica not active
         if (responses[1].error == Coordination::Error::ZNONODE)
         {
@@ -1552,7 +1550,7 @@ void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeper
             if (stat.mtime / 1000 + REPLICA_MAX_INACTIVE_SECONDS < current_time_seconds)
             {
                 LOG_INFO(log, "Replica {} is stale, removing it", replica);
-                auto code = zookeeper->tryRemove(pathToGenericString(replica_path), -1);
+                auto code = zookeeper->tryRemove(replica_path, -1);
                 if (code != Coordination::Error::ZOK)
                     LOG_WARNING(log, "Cannot remove stale replica {}, code {}", replica, Coordination::errorMessage(code));
             }

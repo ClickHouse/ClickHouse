@@ -100,6 +100,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <base/sleep.h>
 
 #include "config.h"
@@ -1727,15 +1728,16 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
-        String remote_replica_path = pathToGenericString(fs::path(query.replica_zk_path)  / "replicas" / query.replica);
+        String remote_replica_path = zkutil::joinZooKeeperPath(query.replica_zk_path, "replicas", query.replica);
 
         /// query.replica_zk_path keeps the legacy one-slash normalization so the drop below targets the
         /// same live znode that tables store (a full collapse here would regress dropping a remote replica
         /// of a table created with a trailing slash). For the self-protection comparison, collapse both
         /// sides so a self-drop spelled with extra trailing slashes still matches the local table.
-        const String canonical_remote_replica_path
-            = pathToGenericString(fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query.replica_zk_path, /*check_starts_with_slash*/ false))
-            / "replicas" / query.replica);
+        const String canonical_remote_replica_path = zkutil::joinZooKeeperPath(
+            zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query.replica_zk_path, /*check_starts_with_slash*/ false),
+            "replicas",
+            query.replica);
 
         /// This check is actually redundant, but it may prevent from some user mistakes
         for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
@@ -1748,10 +1750,11 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                     /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
                     /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
                     /// past this guard against a query path canonicalized to "/a/replicas/...".
-                    const String local_replica_path
-                        = pathToGenericString(fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(
-                              storage_replicated->getZooKeeperPath(), /*check_starts_with_slash*/ false))
-                        / "replicas" / storage_replicated->getReplicaName());
+                    const String local_replica_path = zkutil::joinZooKeeperPath(
+                        zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(
+                            storage_replicated->getZooKeeperPath(), /*check_starts_with_slash*/ false),
+                        "replicas",
+                        storage_replicated->getReplicaName());
                     /// Match the keeper too: a table on a different keeper with the same path string is a
                     /// different znode, so it must not block a drop targeting query.zk_name.
                     if (local_replica_path == canonical_remote_replica_path
@@ -1846,7 +1849,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     {
         auto & res = table_metadata[i];
         if (res.error != Coordination::Error::ZOK)
-            throw zkutil::KeeperException::fromPath(res.error, pathToGenericString(fs::path(zookeeper_path) / "metadata"));
+            throw zkutil::KeeperException::fromPath(res.error, zkutil::joinZooKeeperPath(zookeeper_path, "metadata"));
 
         table_name_to_metadata.emplace(unescapeForFileName(escaped_table_names[i]), std::move(res.data));
     }
@@ -2066,12 +2069,12 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     /// query.replica_zk_path keeps the legacy one-slash normalization so DatabaseReplicated::dropReplica
     /// below targets the same live znode a Replicated database stores. Collapse it here only for the
     /// self-protection comparison, so a self-drop spelled with extra trailing slashes still matches.
-    const fs::path query_replica_zk_path
+    const String query_replica_zk_path
         = query.replica_zk_path.empty()
-        ? fs::path{}
-        : fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query.replica_zk_path, /*check_starts_with_slash*/ false));
+        ? String{}
+        : zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query.replica_zk_path, /*check_starts_with_slash*/ false);
     auto check_not_local_replica = [](const DatabaseReplicated * replicated, const String & full_replica_name_,
-                                       const fs::path & query_replica_zk_path_, const String & query_zk_name_)
+                                       const String & query_replica_zk_path_, const String & query_zk_name_)
     {
         /// When a ZKPATH is given, a database on a different keeper (or path) is a different znode and must
         /// not block a drop targeting query_zk_name_. Canonicalize the database path the same way we
@@ -2080,7 +2083,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         const String replicated_zk_path
             = zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(replicated->getZooKeeperPath(), /*check_starts_with_slash*/ false);
         if (!query_replica_zk_path_.empty()
-            && (fs::path(replicated_zk_path) != query_replica_zk_path_
+            && (replicated_zk_path != query_replica_zk_path_
                 || replicated->getZooKeeperName() != query_zk_name_))
             return;
         if (replicated->getFullReplicaName() != full_replica_name_)

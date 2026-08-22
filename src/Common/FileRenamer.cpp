@@ -6,13 +6,10 @@
 #include <Common/re2.h>
 
 #include <chrono>
-#include <filesystem>
 #include <map>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/replace.hpp>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {

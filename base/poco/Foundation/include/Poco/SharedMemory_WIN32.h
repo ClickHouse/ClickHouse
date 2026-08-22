@@ -76,7 +76,9 @@ private:
 	std::string _name;
 	HANDLE  _memHandle;
 	HANDLE  _fileHandle;
-	DWORD   _size;
+	std::size_t _size;
+		/// Kept 64-bit: the Win32 mapping APIs take the size as a high/low `DWORD` pair,
+		/// so storing it in a single `DWORD` would silently truncate mappings above 4 GiB.
 	DWORD   _mode;
 	char*   _address;
 };

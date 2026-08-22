@@ -36,6 +36,12 @@ String joinZooKeeperPath(std::string_view parent, std::string_view child)
     if (child.empty())
         return String(parent);
     if (parent.ends_with('/'))
+    {
+        if (child.starts_with('/'))
+            child.remove_prefix(1);
+        return String(parent) + String(child);
+    }
+    if (child.starts_with('/'))
         return String(parent) + String(child);
     return String(parent) + "/" + String(child);
 }

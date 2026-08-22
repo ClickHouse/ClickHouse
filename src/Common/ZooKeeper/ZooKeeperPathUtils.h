@@ -27,6 +27,14 @@ String extractZooKeeperName(const String & path);
 /// character.
 String joinZooKeeperPath(std::string_view parent, std::string_view child);
 
+/// The same for more than two segments, joined left to right.
+template <typename... Rest>
+String joinZooKeeperPath(std::string_view parent, std::string_view child, Rest... rest)
+{
+    const String joined = joinZooKeeperPath(parent, child);
+    return joinZooKeeperPath(std::string_view(joined), rest...);
+}
+
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
 /// Like extractZooKeeperPath, but collapses ALL trailing slashes (not just one) into a canonical form,

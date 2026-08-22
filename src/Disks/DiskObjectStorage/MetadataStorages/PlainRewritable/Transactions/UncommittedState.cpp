@@ -49,22 +49,29 @@ public:
 
     std::optional<NormalizedPath> resolveToSnapshotPath(const NormalizedPath & path) const
     {
-        auto resolved = path.string();
+        /// The whole resolution happens in generic UTF-8 strings, including the starting point:
+        /// `path.string()` is native-format on Windows, so `B\\C` would stop matching the `B/`
+        /// prefix of a recorded move and the descendants of a moved directory would resolve to
+        /// themselves rather than to their pre-move path.
+        auto resolved = pathToGenericString(path);
 
         for (const auto & event : events | std::views::reverse)
         {
             if (const Remove * remove = std::get_if<Remove>(&event))
             {
-                if (resolved == remove->path || resolved.starts_with(pathToGenericString(remove->path) + '/'))
+                const auto removed = pathToGenericString(remove->path);
+                if (resolved == removed || resolved.starts_with(removed + '/'))
                     return std::nullopt;
             }
             else if (const Move * move = std::get_if<Move>(&event))
             {
-                if (resolved == move->to)
-                    resolved = pathToGenericString(move->from);
-                else if (resolved.starts_with(pathToGenericString(move->to) + '/'))
-                    resolved = pathToGenericString(move->from) + resolved.substr(pathToGenericString(move->to).size());
-                else if (resolved == pathToGenericString(move->from) || resolved.starts_with(pathToGenericString(move->from) + '/'))
+                const auto from = pathToGenericString(move->from);
+                const auto to = pathToGenericString(move->to);
+                if (resolved == to)
+                    resolved = from;
+                else if (resolved.starts_with(to + '/'))
+                    resolved = from + resolved.substr(to.size());
+                else if (resolved == from || resolved.starts_with(from + '/'))
                     return std::nullopt;
             }
             else
@@ -73,7 +80,7 @@ public:
             }
         }
 
-        return NormalizedPath{resolved};
+        return NormalizedPath{pathFromString(resolved)};
     }
 
     bool isCreatedByTransaction(const NormalizedPath & path) const

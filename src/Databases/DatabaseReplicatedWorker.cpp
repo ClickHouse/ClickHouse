@@ -1,9 +1,7 @@
 #include <Common/timespanFromSeconds.h>
-#include <base/pathToString.h>
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <base/sleep.h>
 
-#include <filesystem>
 #include <thread>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -16,11 +14,10 @@
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTRenameQuery.h>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -155,7 +152,7 @@ void DatabaseReplicatedDDLWorker::shutdown()
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::shutdown");
     if (active_node_holder_zookeeper && !active_node_holder_zookeeper->expired())
     {
-        String active_path = pathToGenericString(fs::path(database->replica_path) / "active");
+        String active_path = zkutil::joinZooKeeperPath(database->replica_path, "active");
         active_node_holder_zookeeper->tryRemove(active_path);
     }
 
@@ -175,7 +172,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     auto zookeeper = getZooKeeper();
 
     /// Create "active" node (remove previous one if necessary)
-    String active_path = pathToGenericString(fs::path(database->replica_path) / "active");
+    String active_path = zkutil::joinZooKeeperPath(database->replica_path, "active");
     String active_id = toString(ServerUUID::get());
 
     LOG_TRACE(log, "Trying to delete emhemeral active node: active_path={}, active_id={}", active_path, active_id);
@@ -307,7 +304,7 @@ void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
     {
         auto zookeeper = getZooKeeper();
 
-        String active_path = pathToGenericString(fs::path(database->replica_path) / "active");
+        String active_path = zkutil::joinZooKeeperPath(database->replica_path, "active");
         String active_id = toString(ServerUUID::get());
 
         LOG_TRACE(log, "Trying to delete emhemeral active node: active_path={}, active_id={}", active_path, active_id);
@@ -631,7 +628,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (unsynced_after_recovery)
     {
-        UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(pathToGenericString(fs::path(database->zookeeper_path) / "max_log_ptr")));
+        UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(zkutil::joinZooKeeperPath(database->zookeeper_path, "max_log_ptr")));
         LOG_TRACE(log, "Replica was not fully synced after recovery: our_log_ptr={}, max_log_ptr={}", our_log_ptr, max_log_ptr);
         chassert(our_log_ptr < max_log_ptr);
         bool became_synced = our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
@@ -645,13 +642,13 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         }
     }
 
-    String entry_path = pathToGenericString(fs::path(queue_dir) / entry_name);
+    String entry_path = zkutil::joinZooKeeperPath(queue_dir, entry_name);
     auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
 
     String initiator_name;
     Coordination::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
 
-    String try_node_path = pathToGenericString(fs::path(entry_path) / "try");
+    String try_node_path = zkutil::joinZooKeeperPath(entry_path, "try");
     if (!dry_run && zookeeper->tryGet(try_node_path, initiator_name, nullptr, wait_committed_or_failed))
     {
         task->is_initial_query = initiator_name == task->host_id_str;
@@ -683,7 +680,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
                     throw Coordination::Exception::fromPath(code, try_node_path);
 
-                if (!zookeeper->exists(pathToGenericString(fs::path(entry_path) / "committed")))
+                if (!zookeeper->exists(zkutil::joinZooKeeperPath(entry_path, "committed")))
                 {
                     out_reason = fmt::format("Entry {} was forcefully cancelled due to timeout", entry_name);
                     return {};
@@ -692,7 +689,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         }
     }
 
-    if (!zookeeper->exists(pathToGenericString(fs::path(entry_path) / "committed")))
+    if (!zookeeper->exists(zkutil::joinZooKeeperPath(entry_path, "committed")))
     {
         out_reason = fmt::format("Entry {} hasn't been committed", entry_name);
         return {};
@@ -700,8 +697,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->is_initial_query)
     {
-        chassert(!zookeeper->exists(pathToGenericString(fs::path(entry_path) / "try")));
-        chassert(zookeeper->exists(pathToGenericString(fs::path(entry_path) / "committed")) == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
+        chassert(!zookeeper->exists(zkutil::joinZooKeeperPath(entry_path, "try")));
+        chassert(zookeeper->exists(zkutil::joinZooKeeperPath(entry_path, "committed")) == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
         out_reason = fmt::format("Entry {} has been executed as initial query", entry_name);
         return {};
     }
@@ -795,7 +792,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordination::Stat &)
 {
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(pathToGenericString(fs::path(database->zookeeper_path) / "max_log_ptr")));
+    UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(zkutil::joinZooKeeperPath(database->zookeeper_path, "max_log_ptr")));
     return entry_number + logs_to_keep < max_log_ptr;
 }
 

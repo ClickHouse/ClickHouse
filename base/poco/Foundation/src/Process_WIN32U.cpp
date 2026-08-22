@@ -345,10 +345,13 @@ bool ProcessImpl::isRunningImpl(const ProcessHandleImpl& handle)
 bool ProcessImpl::isRunningImpl(PIDImpl pid)
 {
 	HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
+	if (!hProc) return false;
 	bool result = true;
 	DWORD exitCode;
 	BOOL rc = GetExitCodeProcess(hProc, &exitCode);
 	if (!rc || exitCode != STILL_ACTIVE) result = false;
+	/// The handle is ours - not closing it here would leak a kernel handle on every poll.
+	CloseHandle(hProc);
 	return result;
 }
 
