@@ -48,7 +48,12 @@ bool parseCursorObject(IParser::Pos & pos, Expected & expected, Map & flat, cons
         /// Peek at next token: `{` starts a nested object, integer is a leaf.
         if (pos->type == TokenType::OpeningCurlyBrace)
         {
-            if (!parseCursorObject(pos, expected, flat, new_path))
+            /// This helper recurses directly instead of going through IParserBase::parse,
+            /// so the depth has to be accounted for here to keep `max_parser_depth` in effect.
+            pos.increaseDepth();
+            const bool parsed = parseCursorObject(pos, expected, flat, new_path);
+            pos.decreaseDepth();
+            if (!parsed)
                 return false;
         }
         else
