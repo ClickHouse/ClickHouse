@@ -720,7 +720,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                             provenance,
                                             ObjectAttributes{destination_properties.Metadata.begin(), destination_properties.Metadata.end()});
                                     }
-                                    catch (...) /// NOLINT(bugprone-empty-catch) An unreadable destination is treated as a foreign object.
+                                    catch (...) /// NOLINT(bugprone-empty-catch) Ok: an unreadable destination is treated as a foreign object.
                                     {
                                     }
                                     if (!own_committed_copy)
