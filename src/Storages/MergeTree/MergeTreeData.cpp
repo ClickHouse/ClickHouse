@@ -144,6 +144,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
+#include <Common/formatReadable.h>
 
 #include <boost/algorithm/string/join.hpp>
 

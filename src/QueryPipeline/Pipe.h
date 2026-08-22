@@ -2,7 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 
 #include <functional>
 

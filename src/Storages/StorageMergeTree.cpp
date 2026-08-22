@@ -62,6 +62,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/formatReadable.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
