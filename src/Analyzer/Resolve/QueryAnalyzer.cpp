@@ -6651,6 +6651,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * After scope nodes are resolved, we can compare node with duplicate alias with
       * node from scope alias table.
       */
+    /// Whether some alias with conflicting definitions was allowed because it is not used.
+    /// Only in that case can two different projection expressions end up with the same column name,
+    /// see the renaming of colliding projection columns below.
+    bool has_unused_duplicated_aliases = false;
+
     for (const auto & node_with_duplicated_alias : scope.aliases.nodes_with_duplicated_aliases)
     {
         auto node = node_with_duplicated_alias;
@@ -6675,7 +6680,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           * resolved to, conflicting definitions make the reference ambiguous.
           */
         if (!scope.aliases.used_alias_names.contains(node_alias) && !projection_alias_names.contains(node_alias))
+        {
+            has_unused_duplicated_aliases = true;
             continue;
+        }
 
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
@@ -6797,11 +6805,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// and the column name of an expression is built using the aliases of its subexpressions,
     /// so different constant projection expressions can end up with the same column name.
     /// Columns with identical names must have identical structure in a Block, so such columns
-    /// are renamed by appending a numeric suffix. Only collisions between unequal constants are
-    /// renamed: they are only reachable through repeated aliases of nested expressions (otherwise
-    /// the names, which are built from the expression text, would differ), so no previously
-    /// working query changes its column names. Other collisions (e.g. same-named columns of
-    /// joined tables) keep the historical behavior.
+    /// are renamed by appending a numeric suffix. The renaming applies only to a query that has
+    /// repeated aliases of nested expressions, and only to collisions between unequal constants,
+    /// so no previously working query changes its column names, and a collision that was an error
+    /// before (e.g. WITH 3 AS "1" SELECT 1, "1") still throws AMBIGUOUS_COLUMN_NAME.
+    /// Other collisions (e.g. same-named columns of joined tables) keep the historical behavior.
+    if (has_unused_duplicated_aliases)
     {
         const auto & projection_nodes = query_node_typed.getProjection().getNodes();
         if (projection_nodes.size() == projection_columns.size())

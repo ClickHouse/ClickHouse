@@ -35,3 +35,18 @@ SELECT tuple(1 AS x), 2 AS x; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
 SELECT 'Identical duplicate definitions of a referenced alias are still allowed';
 SELECT 1 AS x, 1 AS x, x + 1;
+
+SELECT 'Default expressions of different columns can repeat an alias of a nested expression';
+DROP TABLE IF EXISTS t_repeated_alias_in_defaults;
+CREATE TABLE t_repeated_alias_in_defaults
+(
+    str String,
+    materialized_a String MATERIALIZED concat(str, 'a' AS a)
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+ALTER TABLE t_repeated_alias_in_defaults ADD COLUMN materialized_b String MATERIALIZED concat(str, 'b' AS a);
+ALTER TABLE t_repeated_alias_in_defaults ADD COLUMN default_c String DEFAULT concat(str, 'c' AS a);
+INSERT INTO t_repeated_alias_in_defaults(str) VALUES ('x');
+SELECT materialized_a, materialized_b, default_c FROM t_repeated_alias_in_defaults;
+DROP TABLE t_repeated_alias_in_defaults;

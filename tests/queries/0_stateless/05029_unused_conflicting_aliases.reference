@@ -18,3 +18,5 @@ Referencing an alias that has conflicting definitions is an error
 Conflicting aliases that name projection columns are an error even if not referenced
 Identical duplicate definitions of a referenced alias are still allowed
 1	1	2
+Default expressions of different columns can repeat an alias of a nested expression
+xa	xb	xc
