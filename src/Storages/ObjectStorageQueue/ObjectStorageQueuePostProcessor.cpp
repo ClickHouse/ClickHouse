@@ -83,11 +83,15 @@ bool isDestinationAlreadyExistsError(const Exception & e)
 constexpr auto move_source_path_attribute = "clickhouse_move_source_path";
 constexpr auto move_source_etag_attribute = "clickhouse_move_source_etag";
 
-std::optional<ObjectAttributes> makeMoveProvenance(const String & source_path, const String & source_etag)
+/// The copy replaces the destination's metadata wholesale, so the source's own user metadata is
+/// carried along with the provenance keys rather than being dropped by the move.
+std::optional<ObjectAttributes> makeMoveProvenance(ObjectAttributes source_attributes, const String & source_path, const String & source_etag)
 {
     if (source_etag.empty())
         return std::nullopt;
-    return ObjectAttributes{{move_source_path_attribute, source_path}, {move_source_etag_attribute, source_etag}};
+    source_attributes[move_source_path_attribute] = source_path;
+    source_attributes[move_source_etag_attribute] = source_etag;
+    return source_attributes;
 }
 
 /// True when the "already existing" destination records this exact source object (key + content ETag) as its
@@ -96,10 +100,11 @@ bool destinationIsOwnCommittedCopy(const std::optional<ObjectAttributes> & prove
 {
     if (!provenance)
         return false;
-    for (const auto & [key, value] : *provenance)
+    for (const auto * key : {move_source_path_attribute, move_source_etag_attribute})
     {
-        auto it = destination_attributes.find(key);
-        if (it == destination_attributes.end() || it->second != value)
+        auto expected = provenance->find(key);
+        auto actual = destination_attributes.find(key);
+        if (expected == provenance->end() || actual == destination_attributes.end() || actual->second != expected->second)
             return false;
     }
     return true;
@@ -338,7 +343,9 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                             /// Stamped onto the destination so a later attempt can prove "this is my own
                             /// earlier copy" on a rejected precondition.
                             auto source_metadata = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/ false);
-                            auto provenance = source_metadata ? makeMoveProvenance(object_from.remote_path, source_metadata->etag) : std::nullopt;
+                            auto provenance = source_metadata
+                                ? makeMoveProvenance(source_metadata->attributes, object_from.remote_path, source_metadata->etag)
+                                : std::nullopt;
                             try
                             {
                                 object_storage->copyObject(
@@ -506,9 +513,11 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             const auto source_info = S3::getObjectInfo(
                                 *src_client,
                                 src_bucket,
-                                object_from.remote_path);
+                                object_from.remote_path,
+                                /*version_id=*/ {},
+                                /*with_metadata=*/ true);
                             /// See moveWithinBucket(): lets a later attempt recognize its own committed copy.
-                            const auto provenance = makeMoveProvenance(object_from.remote_path, source_info.etag);
+                            const auto provenance = makeMoveProvenance(source_info.metadata, object_from.remote_path, source_info.etag);
 
                             LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, source_info.size, dst_uri.bucket);
                             try
@@ -659,6 +668,11 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
                             auto properties = blobClient.GetProperties().Value;
                             auto blob_size = properties.BlobSize;
+                            /// See moveWithinBucket(): lets a later attempt recognize its own committed copy.
+                            const auto provenance = makeMoveProvenance(
+                                ObjectAttributes{properties.Metadata.begin(), properties.Metadata.end()},
+                                object_from.remote_path,
+                                properties.ETag.ToString());
                             auto request_settings = azure_storage->getSettings();
                             auto read_settings = getReadSettings();
                             const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
@@ -680,7 +694,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                     /* dest_blob */ object_to.remote_path,
                                     request_settings,
                                     read_settings,
-                                    std::optional<ObjectAttributes>(),
+                                    provenance,
                                     scheduler,
                                     /* blob_storage_log */ {},
                                     /* dest_if_none_match */ move_if_none_match
@@ -696,10 +710,27 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                     && (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
                                         || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed))
                                 {
-                                    destination_exists = true;
-                                    return;
+                                    /// See moveWithinBucket(): a destination recording this source as its
+                                    /// origin means an earlier attempt committed the copy.
+                                    bool own_committed_copy = false;
+                                    try
+                                    {
+                                        auto destination_properties = dst_client->GetBlobClient(object_to.remote_path).GetProperties().Value;
+                                        own_committed_copy = destinationIsOwnCommittedCopy(
+                                            provenance,
+                                            ObjectAttributes{destination_properties.Metadata.begin(), destination_properties.Metadata.end()});
+                                    }
+                                    catch (...) /// NOLINT(bugprone-empty-catch) An unreadable destination is treated as a foreign object.
+                                    {
+                                    }
+                                    if (!own_committed_copy)
+                                    {
+                                        destination_exists = true;
+                                        return;
+                                    }
                                 }
-                                throw;
+                                else
+                                    throw;
                             }
                             copied = true;
                         }

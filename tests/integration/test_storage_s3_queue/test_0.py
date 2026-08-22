@@ -498,6 +498,8 @@ def test_move_after_processing_basename_collision(started_cluster):
         additional_settings={"keeper_path": keeper_path},
         after_processing="move",
         move_to_prefix=processed_prefix,
+        # The files sit one directory below files_path; the default URL globs a single level.
+        hive_partitioning_path="*/",
     )
     create_mv(node, table_name, dst_table_name)
 
@@ -589,6 +591,8 @@ def test_move_after_processing_existing_destination(started_cluster, engine_name
         after_processing="move",
         move_to_prefix=processed_prefix,
         move_to_bucket=processed_bucket,
+        # The file sits one directory below files_path; the default URL globs a single level.
+        hive_partitioning_path="*/",
     )
     create_mv(node, table_name, dst_table_name)
 
