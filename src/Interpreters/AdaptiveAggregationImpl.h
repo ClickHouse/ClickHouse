@@ -430,6 +430,9 @@ struct AdaptiveAggregationProducer
             /// The global thaw: the session-wide staged-key sample proved the whole stream
             /// repeat-dominated (see `publishDelayedRecords`).
             RepeatedStagedKeys,
+            /// Dictionary indexes are local to one verified MergeTree part. Keep this producer
+            /// on the baseline path, where a dictionary change can normalize its table directly.
+            SingleLowCardinalityDictionary,
         };
         Reason reason;
     };

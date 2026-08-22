@@ -656,6 +656,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
     auto * low_cardinality_state = checkAndGetState<DeserializeStateLowCardinality>(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
+    low_cardinality_column.setHasSingleDictionaryForPart(low_cardinality_state->single_dictionary_for_part);
 
     auto read_dictionary = [this, low_cardinality_state, keys_stream]()
     {
@@ -717,7 +718,11 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             if (column_is_empty)
                 low_cardinality_column.setSharedDictionary(global_dictionary);
 
-            auto local_column = ColumnLowCardinality::create(global_dictionary, std::move(indexes_column), /*is_shared=*/true);
+            auto local_column = ColumnLowCardinality::create(
+                global_dictionary,
+                std::move(indexes_column),
+                /*is_shared=*/true,
+                low_cardinality_state->single_dictionary_for_part);
             low_cardinality_column.insertRangeFrom(*local_column, 0, num_rows);
         }
         else

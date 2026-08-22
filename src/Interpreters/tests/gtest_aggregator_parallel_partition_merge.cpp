@@ -1,10 +1,15 @@
 #include <gtest/gtest.h>
 
+#include <bit>
+#include <limits>
 #include <map>
+#include <type_traits>
 #include <vector>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -14,6 +19,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ThreadStatus.h>
+#include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
@@ -410,6 +416,100 @@ TEST_F(AggregatorParallelPartitionMerge, LowCardinalityStringKey)
     EXPECT_EQ(scenario.mergePartitions({scenario.aggregate(block_a), scenario.aggregate(block_b)}, 4), expected);
 }
 
+TEST_F(AggregatorParallelPartitionMerge, LowCardinalityNormalizationPreservesFloatEncodings)
+{
+    auto check = []<typename Float, typename Bits>(bool nullable, bool two_level, size_t batch_size)
+    {
+        DataTypePtr dictionary_type = std::make_shared<DataTypeNumber<Float>>();
+        if (nullable)
+            dictionary_type = std::make_shared<DataTypeNullable>(dictionary_type);
+        const DataTypePtr lc_type = std::make_shared<DataTypeLowCardinality>(dictionary_type);
+        SCOPED_TRACE(::testing::Message() << lc_type->getName() << ", two_level=" << two_level << ", batch_size=" << batch_size);
+
+        auto params = makeParams({"k"}, {makeAggregate("groupArray", {"v"}, {uint64_type})});
+        params.max_block_size = batch_size;
+        Scenario scenario(makeHeader(lc_type), std::move(params));
+
+        /// Construct a legacy dictionary directly: ordinary insertion canonicalizes `NaN` values.
+        /// Include signed zero and, for nullable keys, both the `NULL` and default-value slots.
+        const Bits nan = std::bit_cast<Bits>(std::numeric_limits<Float>::quiet_NaN());
+        std::vector<Float> values{Float{0}, -Float{0}, std::bit_cast<Float>(Bits(nan | 1)), std::bit_cast<Float>(Bits(nan | 2)), Float{1}};
+        if (nullable)
+            values.insert(values.begin(), Float{0});
+        auto keys = ColumnVector<Float>::create();
+        keys->getData().assign(values.begin(), values.end());
+        MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(keys));
+        auto indexes = ColumnUInt8::create();
+        for (size_t i = 0; i < values.size(); ++i)
+        {
+            indexes->getData().push_back(static_cast<UInt8>(i));
+            indexes->getData().push_back(static_cast<UInt8>(i));
+        }
+        auto key_column = ColumnLowCardinality::create(
+            std::move(dictionary), std::move(indexes), /*is_shared=*/true, /*has_single_dictionary_for_part=*/true);
+        auto source = scenario.aggregate({{std::move(key_column), makeColumn(uint64_type, std::vector<Field>(2 * values.size(), UInt64(1)))}});
+        ASSERT_EQ(source->type, AggregatedDataVariants::Type::low_cardinality_single_dictionary);
+
+        std::vector<AggregateDataPtr> states;
+        for (size_t i = 0; i < values.size(); ++i)
+        {
+            auto * cell = source->low_cardinality_single_dictionary->data.find(i);
+            ASSERT_TRUE(cell);
+            states.push_back(cell->getMapped());
+        }
+        if (two_level)
+            source->convertToTwoLevel();
+
+        /// A value-key variant forces normalization of the index-key source before merging.
+        auto other = scenario.aggregate({{makeColumn(lc_type, {Float64(1)}), makeColumn(uint64_type, {UInt64(1)})}});
+        ASSERT_FALSE(other->isSingleLowCardinalityDictionary());
+        ManyAggregatedDataVariants sources{source, other};
+        auto prepared = scenario.aggregator.prepareVariantsToMerge(std::move(sources), /*adaptive_session=*/nullptr);
+        ASSERT_EQ(prepared.size(), 2u);
+
+        auto check_table = [&](const auto & method)
+        {
+            ASSERT_TRUE(method);
+            EXPECT_EQ(method->data.size(), values.size());
+            EXPECT_EQ(method->data.hasNullKeyData(), nullable);
+            for (size_t i = 0; i < values.size(); ++i)
+            {
+                if (nullable && i == 0)
+                    EXPECT_EQ(method->data.getNullKeyData(), states[i]);
+                else
+                {
+                    auto * cell = method->data.find(std::bit_cast<Bits>(values[i]));
+                    ASSERT_TRUE(cell);
+                    EXPECT_EQ(cell->getMapped(), states[i]);
+                }
+            }
+        };
+
+        if constexpr (std::is_same_v<Float, Float32>)
+        {
+            if (two_level)
+                check_table(source->low_cardinality_key32_two_level);
+            else
+                check_table(source->low_cardinality_key32);
+        }
+        else
+        {
+            if (two_level)
+                check_table(source->low_cardinality_key64_two_level);
+            else
+                check_table(source->low_cardinality_key64);
+        }
+    };
+
+    for (bool nullable : {false, true})
+        for (bool two_level : {false, true})
+            for (size_t batch_size : {1u, 2u, 64u})
+            {
+                check.template operator()<Float32, UInt32>(nullable, two_level, batch_size);
+                check.template operator()<Float64, UInt64>(nullable, two_level, batch_size);
+            }
+}
+
 /// Heavy per-key states (`uniqExact`): first-seen keys adopt the state pointer, split keys go
 /// through the batched merge of the state sets.
 TEST_F(AggregatorParallelPartitionMerge, UniqExactHeavyStates)
@@ -559,4 +659,40 @@ TEST_F(AggregatorParallelPartitionMerge, EmptySourceAmongTables)
     auto expected = scenario.referenceOf({block.front()});
     auto empty = std::make_shared<AggregatedDataVariants>();
     EXPECT_EQ(scenario.mergePartitions({scenario.aggregate(block), empty}, 4), expected);
+}
+
+/// An adaptive producer can finish with an initialized two-level table but no rows. Its type
+/// still promotes the live table to two-level, so a non-final merge must first normalize both
+/// methods to value keys whose bucket numbers are stable outside this aggregation step.
+TEST_F(AggregatorParallelPartitionMerge, InitializedEmptyTwoLevelSingleDictionarySource)
+{
+    const DataTypePtr lc_type = std::make_shared<DataTypeLowCardinality>(string_type);
+    Scenario scenario(makeHeader(lc_type), makeParams({"k"}, {makeAggregate("sum", {"v"}, {uint64_type})}));
+
+    auto key_column = lc_type->createColumn();
+    auto value_column = uint64_type->createColumn();
+    for (size_t i = 0; i < 16; ++i)
+    {
+        key_column->insert("value_" + std::to_string(i));
+        value_column->insert(UInt64(1));
+    }
+    assert_cast<ColumnLowCardinality &>(*key_column).setHasSingleDictionaryForPart(true);
+
+    auto live = scenario.aggregate({Columns{std::move(key_column), std::move(value_column)}});
+    ASSERT_EQ(live->type, AggregatedDataVariants::Type::low_cardinality_single_dictionary);
+
+    auto initialized_empty = std::make_shared<AggregatedDataVariants>();
+    initialized_empty->init(AggregatedDataVariants::Type::low_cardinality_single_dictionary);
+    initialized_empty->convertToTwoLevel();
+
+    ManyAggregatedDataVariants sources{live, initialized_empty};
+    auto prepared = scenario.aggregator.prepareVariantsToMerge(
+        std::move(sources), /*adaptive_session=*/nullptr, /*require_stable_bucket_hash=*/true);
+
+    ASSERT_EQ(prepared.size(), 2u);
+    for (const auto & variants : prepared)
+    {
+        EXPECT_EQ(variants->type, AggregatedDataVariants::Type::low_cardinality_key_string_two_level);
+        EXPECT_FALSE(variants->isSingleLowCardinalityDictionary());
+    }
 }

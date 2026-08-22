@@ -415,8 +415,13 @@ public:
     /// reaches that, so the finish path calls this instead.
     void recordAdaptiveStagingVerdict(AdaptiveAggregationSession & shared) const;
 
+    /// `require_stable_bucket_hash` converts dictionary-index variants before they can emit
+    /// two-level bucket numbers outside this aggregation step. Single-level output is safe as-is:
+    /// its bucket number is `-1`, so the consumer partitions it again from the materialized values.
     ManyAggregatedDataVariants prepareVariantsToMerge(
-        ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
+        ManyAggregatedDataVariants && data_variants,
+        AdaptiveAggregationSession * adaptive_session,
+        bool require_stable_bucket_hash = false) const;
 
     /// Whether the variants' single-level method can be merged in hash partitions
     /// (`mergeSingleLevelPartitionAndConvertToChunk`): every method with a two-level counterpart, whose
@@ -578,6 +583,12 @@ private:
       * Used in the exception handler for aggregation, since RAII in this case is not applicable.
       */
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
+
+    bool canUseSingleLowCardinalityDictionary(AggregatedDataVariants::Type type) const;
+    static const IColumn * getSingleLowCardinalityDictionary(const AggregatedDataVariants & result);
+    bool bindSingleLowCardinalityDictionary(
+        AggregatedDataVariants & result, const ColumnRawPtrs & key_columns) const;
+    void normalizeSingleLowCardinalityDictionary(AggregatedDataVariants & result) const;
 
     void executeImpl(
         AggregatedDataVariants & result,
@@ -862,6 +873,10 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
+        TemporaryBlockStreamHolder & out) const;
+
+    void writeSingleLevelToTemporaryFileImpl(
+        AggregatedDataVariants & data_variants,
         TemporaryBlockStreamHolder & out) const;
 
     /// Parameters for parallel merge workers for single level.

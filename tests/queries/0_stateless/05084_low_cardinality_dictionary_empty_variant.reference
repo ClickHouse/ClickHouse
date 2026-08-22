@@ -1,0 +1,14 @@
+decoded, two-level threshold 0
+left	2	30	[10,20]
+right	3	600	[100,200,300]
+decoded, two-level threshold 1
+left	2	30	[10,20]
+right	3	600	[100,200,300]
+index, two-level threshold 0
+left	2	30	[10,20]
+right	3	600	[100,200,300]
+index tables: 1, value tables: 1, empty producers: 1, nonempty producers: 1
+index, two-level threshold 1
+left	2	30	[10,20]
+right	3	600	[100,200,300]
+index tables: 1, value tables: 1, empty producers: 1, nonempty producers: 1

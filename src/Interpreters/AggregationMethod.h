@@ -293,6 +293,68 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const IColumn::SerializationSettings * settings);
 };
 
+/// Aggregate by dictionary index when the `MergeTree` reader has verified one dictionary
+/// for the entire part. The method owns that dictionary so result columns can reuse it.
+template <typename TData>
+struct AggregationMethodSingleLowCardinalityDictionaryIndex
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = AggregationMethodMapped<Data>;
+
+    static_assert(std::is_same_v<Key, UInt64>);
+
+    Data data;
+    TopKAggregationHeap<Key> top_k_heap;
+    ColumnPtr dictionary;
+
+    AggregationMethodSingleLowCardinalityDictionaryIndex() = default;
+
+    explicit AggregationMethodSingleLowCardinalityDictionaryIndex(size_t size_hint) : data(size_hint) {}
+
+    template <typename Other>
+    explicit AggregationMethodSingleLowCardinalityDictionaryIndex(const Other & other)
+        : data(other.data)
+        , dictionary(other.dictionary)
+    {
+    }
+
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodSingleLowCardinalityDictionaryIndex<
+        typename Data::value_type,
+        Mapped,
+        use_cache>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
+
+    static constexpr bool low_cardinality_optimization = false;
+    static constexpr bool one_key_nullable_optimization = false;
+
+    bool bindDictionary(const ColumnLowCardinality & column)
+    {
+        if (!column.hasSingleDictionaryForPart())
+            return false;
+
+        const auto & current_dictionary = column.getDictionaryPtr();
+        if (!dictionary)
+        {
+            dictionary = current_dictionary;
+            return true;
+        }
+
+        return dictionary.get() == current_dictionary.get();
+    }
+
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
+    void insertKeyIntoColumns(
+        const Key & key,
+        std::vector<IColumn *> & key_columns_low_cardinality,
+        const Sizes & key_sizes,
+        const IColumn::SerializationSettings * settings) const;
+};
+
 /// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
 template <typename TData, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool consecutive_keys_optimization = false>
 struct AggregationMethodKeysFixed
