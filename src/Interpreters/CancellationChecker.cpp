@@ -94,7 +94,10 @@ void CancellationChecker::terminateThread()
 
 UInt64 CancellationChecker::taskDeadlineMs(std::chrono::steady_clock::time_point now, Int64 timeout_us)
 {
-    const Int64 now_us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+    /// Round the current time *up* to a whole microsecond: truncating it drops a sub-microsecond
+    /// remainder, and when `now + timeout` then lands exactly on a whole millisecond the alignment
+    /// below adds no padding, placing the deadline up to one microsecond before the exact one.
+    const Int64 now_us = std::chrono::ceil<std::chrono::microseconds>(now.time_since_epoch()).count();
 
     /// A `max_execution_time` large enough to overflow the deadline is not representable; saturate
     /// instead of truncating the timeout, so the query is never cancelled ahead of the configured limit.

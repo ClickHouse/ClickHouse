@@ -107,21 +107,29 @@ TEST(CancellationChecker, DeadlineIsNeverBeforeTheTimeout)
     /// Every sub-millisecond phase of `now`, against every phase of the grid the deadline can land on.
     for (const Int64 timeout_us : {1, 900, 1'000, 7'000, 50'000, 99'000, 100'000, 100'001, 999'000, 1'000'000, 1'000'900, 60'000'000})
     {
-        for (Int64 now_ms = 0; now_ms < 1000; ++now_ms)
+        for (Int64 now_ms = 0; now_ms < 1000; now_ms += 7)
         {
-            for (Int64 sub_ms_ns = 0; sub_ms_ns < 1'000'000; sub_ms_ns += 9'973)
+            /// Every microsecond phase, and inside it the nanosecond remainder that a conversion of
+            /// `now` to microseconds can drop - including the last microsecond of a millisecond,
+            /// which is where an exact deadline lands on a whole millisecond and the grid alignment
+            /// adds no padding to hide the loss.
+            for (Int64 sub_ms_us = 0; sub_ms_us < 1000; ++sub_ms_us)
             {
-                const Int64 now_ns = (1'000'000 + now_ms) * 1'000'000 + sub_ms_ns;
-                const auto now = std::chrono::steady_clock::time_point{
-                    std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::nanoseconds{now_ns})};
+                for (const Int64 extra_ns : {0, 1, 500, 999})
+                {
+                    const Int64 sub_ms_ns = sub_ms_us * 1000 + extra_ns;
+                    const Int64 now_ns = (1'000'000 + now_ms) * 1'000'000 + sub_ms_ns;
+                    const auto now = std::chrono::steady_clock::time_point{
+                        std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::nanoseconds{now_ns})};
 
-                const UInt64 deadline_ms = CancellationChecker::taskDeadlineMs(now, timeout_us);
+                    const UInt64 deadline_ms = CancellationChecker::taskDeadlineMs(now, timeout_us);
 
-                ASSERT_GE(static_cast<Int64>(deadline_ms) * 1'000'000, now_ns + timeout_us * 1'000)
-                    << "a task appended " << sub_ms_ns << " ns into a millisecond with a timeout of " << timeout_us
-                    << " us is cancelled "
-                    << (static_cast<double>(now_ns + timeout_us * 1'000 - static_cast<Int64>(deadline_ms) * 1'000'000) / 1e6)
-                    << " ms early";
+                    ASSERT_GE(static_cast<Int64>(deadline_ms) * 1'000'000, now_ns + timeout_us * 1'000)
+                        << "a task appended " << sub_ms_ns << " ns into a millisecond with a timeout of " << timeout_us
+                        << " us is cancelled "
+                        << (static_cast<double>(now_ns + timeout_us * 1'000 - static_cast<Int64>(deadline_ms) * 1'000'000) / 1e6)
+                        << " ms early";
+                }
             }
         }
     }
