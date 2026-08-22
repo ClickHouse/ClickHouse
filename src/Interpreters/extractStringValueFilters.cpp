@@ -142,10 +142,9 @@ std::optional<std::pair<String, String>> tryGetPosition(const ActionsDAG::Node *
     return std::make_pair(*column_name, *needle);
 }
 
-/// Evaluates the result of a comparison function assuming that `position` returned 0
-/// (i.e. the needle is not contained in the value). If the result is false, the condition
-/// filters out all values that do not contain the needle, so the needle can be used as a filter.
-std::optional<bool> evaluateComparisonAtZero(const String & function_name, const Field & constant, bool position_is_left_argument)
+}
+
+std::optional<bool> evaluatePositionComparisonAtZero(const String & function_name, const Field & constant, bool position_is_left_argument)
 {
     /// Comparisons of 0 with the constant.
     bool equals = false;
@@ -205,6 +204,9 @@ std::optional<bool> evaluateComparisonAtZero(const String & function_name, const
 
     return {};
 }
+
+namespace
+{
 
 void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByColumn & res)
 {
@@ -282,7 +284,7 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
                 return;
 
             Field constant = (*constant_node->column)[0];
-            auto result_at_zero = evaluateComparisonAtZero(name, constant, position_pos == 0);
+            auto result_at_zero = evaluatePositionComparisonAtZero(name, constant, position_pos == 0);
             if (result_at_zero && !*result_at_zero)
                 res[position->first].push_back({Condition::Type::Substring, std::move(position->second)});
             return;
@@ -290,6 +292,11 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
     }
 }
 
+}
+
+bool likePatternHasStringValueFilterConditions(const String & pattern)
+{
+    return !parseLikePattern(pattern).empty();
 }
 
 StringValueFiltersPtr extractStringValueFilters(const ActionsDAG & filter_dag, const String & filter_column_name)
