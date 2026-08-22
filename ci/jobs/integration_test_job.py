@@ -182,20 +182,32 @@ def _is_docker_compose_timeout(info: str) -> bool:
 def _is_orchestration_lifecycle_timeout(info: str) -> bool:
     """Whether the timeout is docker's or the registry's rather than the server's.
 
-    `raise ... from ex` makes pytest render both exceptions, each with its own `E `
-    prefix, and a teardown can report several commands, so a row can name more than one
-    subcommand. A product-sensitive one anywhere among them means the server is the one
-    that did not respond.
+    Every command a raised exception reports as timing out must be one docker runs on the
+    harness's behalf. A row can name several: `raise ... from ex` makes pytest render both
+    exceptions with their own `E ` prefix, a teardown reports its own commands beside the
+    body's, and captured output is embedded verbatim in the message. So anything else on a
+    timeout-bearing line -- a product-sensitive subcommand, a command that is not
+    orchestration at all, or no argv whatsoever -- means the wait that expired is not
+    known to be docker's.
 
     An unrecognised subcommand is not a lifecycle one: a new compose verb must be
     classified deliberately rather than default to suppressing the result.
     """
-    verbs = _timed_out_orchestration_verbs(info)
-    if not verbs:
-        return False
-    if verbs & ORCHESTRATION_PRODUCT_VERBS:
-        return False
-    return bool(verbs & ORCHESTRATION_LIFECYCLE_VERBS)
+    saw_lifecycle = False
+    for line in _raising_exception_lines(info):
+        if not any(p in line for p in TIMEOUT_ERROR_PATTERNS):
+            continue
+        argvs = _argv_lists(line)
+        if not argvs:
+            return False
+        for argv in argvs:
+            verb = _orchestration_verb(argv)
+            if verb is None or verb in ORCHESTRATION_PRODUCT_VERBS:
+                return False
+            if verb not in ORCHESTRATION_LIFECYCLE_VERBS:
+                return False
+            saw_lifecycle = True
+    return saw_lifecycle
 
 
 def _non_timeout_patterns_match(info: str) -> bool:

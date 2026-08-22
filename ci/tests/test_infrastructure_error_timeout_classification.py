@@ -625,6 +625,172 @@ def test_teardown_reporting_both_stop_and_kill_is_a_failure():
     assert r.status == Result.Status.FAIL
 
 
+MIXED_BODY_TEARDOWN_SOURCE = '''
+import subprocess
+import pytest
+
+EXEC = ["docker", "exec", "-i", "roottestx-gw2-node-1", "clickhouse", "client"]
+UP = ["docker", "compose", "--project-name", "roottestx-gw2", "up", "-d"]
+
+
+def run_and_check_like(argv, seconds):
+    try:
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=seconds)
+    except subprocess.TimeoutExpired as ex:
+        raise Exception(
+            "Command [%s] timed out after %ss\\nstdout:\\n\\nstderr:\\n"
+            % (" ".join(argv), seconds)
+        ) from ex
+
+
+@pytest.fixture(scope="module")
+def started():
+    yield
+    run_and_check_like(UP, 300)
+
+
+def test_body(started):
+    run_and_check_like(EXEC, 15)
+'''
+
+
+CAPTURED_OUTPUT_SOURCE = '''
+import subprocess
+
+ARGV = ["docker", "exec", "-i", "node-1", "bash", "-c", "cat /var/log/ci.log"]
+CAPTURED = (
+    "some log line\\n"
+    "Command [docker compose --project-name roottestx-gw2 up -d] timed out after 300s\\n"
+    "another log line\\n"
+)
+
+
+def run_and_check_like():
+    try:
+        raise subprocess.TimeoutExpired(cmd=ARGV, timeout=15)
+    except subprocess.TimeoutExpired as ex:
+        raise Exception(
+            "Command [%s] timed out after 15s\\nstdout:\\n%s\\nstderr:\\n"
+            % (" ".join(ARGV), CAPTURED)
+        ) from ex
+
+
+def test_body():
+    run_and_check_like()
+'''
+
+
+def _leaf_from_real_pytest(source, filename):
+    """Run pytest on `source` and return the translated leaf carrying the traceback.
+
+    The rendering these two arms turn on -- a teardown's commands beside the body's, and
+    captured output embedded verbatim -- is pytest's, so assembling it by hand would
+    measure the fixture helper instead of production.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, filename)
+        with open(src, "w") as f:
+            f.write(source)
+        report = os.path.join(d, "rl.jsonl")
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", src, "--tb=short", "-q",
+             "-p", "no:cacheprovider", f"--report-log={report}"],
+            cwd=d,
+            capture_output=True,
+        )
+        assert os.path.isfile(report), (
+            f"pytest produced no report-log (rc={proc.returncode}): "
+            f"{proc.stdout.decode()[-2000:]}"
+        )
+        real = ResultTranslator.from_pytest_jsonl(report)
+
+    candidates = real if isinstance(real, list) else [real]
+    stack, leaves = list(candidates), []
+    while stack:
+        node = stack.pop()
+        children = getattr(node, "results", None) or []
+        stack.extend(children) if children else leaves.append(node)
+    return next(l for l in leaves if l.info)
+
+
+def test_body_timeout_beside_a_teardown_compose_timeout_is_a_failure():
+    """One result can carry two phases: `ResultTranslator` appends each phase's traceback
+    to the same `info` (result.py:1928-1933) and picks one status (:1950-1957). So a
+    module fixture whose teardown times out on `compose up` and a test body that times out
+    on its own `docker exec` arrive as a single leaf naming both.
+
+    The body timed out, so the result must stay a failure even though a lifecycle verb is
+    present.
+    """
+    r = _leaf_from_real_pytest(
+        MIXED_BODY_TEARDOWN_SOURCE, "test_mixed_body_teardown.py"
+    )
+    # the fixture's own preconditions: the row really does carry the lifecycle verb, and
+    # the body's own command really is on a raising line, so the arm measures the decision
+    # rather than a rendering that dropped one of them
+    assert len(_raising_exception_lines(r.info)) == 10
+    assert _timed_out_orchestration_verbs(r.info) == {"up"}
+    assert _is_docker_compose_timeout(r.info)
+    for status in (Result.Status.FAIL, Result.Status.ERROR):
+        r.status = status
+        assert not _is_infrastructure_error(r), (
+            f"a body timeout beside a teardown compose timeout must stay a failure "
+            f"on the {status} branch"
+        )
+    r.status = Result.Status.FAIL
+    assert _mark_infrastructure_errors([r]) == 0
+    assert r.status == Result.Status.FAIL
+
+
+def test_compose_argv_only_in_captured_output_is_a_failure():
+    """`run_and_check` embeds the captured stdout/stderr verbatim into the message it
+    raises (cluster.py:220-225), and pytest prefixes every line of an exception message
+    with `E `. So a compose argv a body command merely printed lands on a raising line.
+
+    The command that expired is the body's `docker exec`, so the result must stay a
+    failure.
+    """
+    r = _leaf_from_real_pytest(CAPTURED_OUTPUT_SOURCE, "test_captured_output.py")
+    assert len(_raising_exception_lines(r.info)) == 8
+    assert _timed_out_orchestration_verbs(r.info) == {"up"}
+    # the compose text is on a raising line, so the `E `-scoping cannot be what rejects
+    # this row
+    assert any(
+        "docker compose" in line and "timed out after" in line
+        for line in _raising_exception_lines(r.info)
+    )
+    for status in (Result.Status.FAIL, Result.Status.ERROR):
+        r.status = status
+        assert not _is_infrastructure_error(r), (
+            f"a compose argv appearing only in captured output must not relabel a body "
+            f"timeout on the {status} branch"
+        )
+    r.status = Result.Status.FAIL
+    assert _mark_infrastructure_errors([r]) == 0
+    assert r.status == Result.Status.FAIL
+
+
+def test_a_non_orchestration_argv_beside_a_lifecycle_one_is_a_failure():
+    """The veto in isolation: a timeout line naming a command docker does not run on the
+    harness's behalf means the expired wait is not known to be docker's, whatever else the
+    line names."""
+    r = _run_and_check_chain(
+        "test_x/test.py::test_y",
+        [("test_x/test.py", 10, "    cluster.start()")],
+        COMPOSE_UP_ARGV,
+        cause_frames=[("helpers/cluster.py", 222, "    raise Exception(")],
+    )
+    r.info += (
+        "\nE   subprocess.TimeoutExpired: Command '['clickhouse', 'client', '--query', "
+        "'SELECT 1']' timed out after 15 seconds"
+    )
+    assert _timed_out_orchestration_verbs(r.info) == {"up"}, (
+        "the lifecycle verb must still be the only orchestration one recognised"
+    )
+    r.status = Result.Status.FAIL
+    assert not _is_infrastructure_error(r)
+
+
 def test_mixed_lifecycle_and_product_verbs_is_a_failure():
     """A product-sensitive subcommand anywhere in the row means the server is what did not
     respond, so the presence of a lifecycle verb must not outvote it.
