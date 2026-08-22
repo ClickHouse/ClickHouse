@@ -1,5 +1,5 @@
 -- Tags: no-fasttest, no-ordinary-database, no-old-analyzer, no-parallel-replicas
--- no-old-analyzer: the last query uses a correlated subquery, which only the new analyzer supports.
+-- no-old-analyzer: the last query uses a correlated subquery, which only the analyzer supports.
 -- no-parallel-replicas: the test asserts that the no-rescoring optimization applies, and with
 -- parallel replicas the optimization is disabled (vector-search read hints are produced during
 -- local index analysis).
