@@ -15,6 +15,13 @@ DROP TABLE IF EXISTS m_inner;
 DROP TABLE IF EXISTS m_outer;
 DROP TABLE IF EXISTS t_buf;
 DROP TABLE IF EXISTS m_over_buf;
+DROP TABLE IF EXISTS t_a;
+DROP TABLE IF EXISTS t_b;
+DROP TABLE IF EXISTS t_c;
+DROP TABLE IF EXISTS m_same;
+DROP TABLE IF EXISTS t_alias_a;
+DROP TABLE IF EXISTS t_alias_b;
+DROP TABLE IF EXISTS m_alias;
 
 CREATE TABLE t_leaf (s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_leaf SELECT toString(number % 3) FROM numbers(6);
@@ -58,6 +65,37 @@ CREATE TABLE m_over_buf (s String) ENGINE = Merge(currentDatabase(), '^t_buf$');
 SELECT DISTINCT _table FROM m_over_buf;
 SELECT count() FROM m_over_buf WHERE _table = 't_buf';
 
+SELECT '-- same-structure children never share a rewritten query that carries one child name';
+CREATE TABLE t_a (x UInt8) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t_b (x UInt8) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t_c (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_a VALUES (1);
+INSERT INTO t_b VALUES (2);
+INSERT INTO t_c VALUES (3);
+CREATE TABLE m_same (x UInt8) ENGINE = Merge(currentDatabase(), '^t_[abc]$');
+SELECT x FROM m_same WHERE _table = 't_b';
+SELECT x FROM m_same WHERE _table != 't_a' ORDER BY x;
+SELECT x FROM m_same WHERE substring(_table, 3, 1) = 'c';
+SELECT _table, x FROM m_same ORDER BY x;
+
+-- An `ALIAS` column whose expression is a virtual column only resolves with the analyzer.
+SET enable_analyzer = 1;
+SELECT '-- an ALIAS column over the child own _table resolves per child';
+CREATE TABLE t_alias_a (x UInt8, child String ALIAS _table) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t_alias_b (x UInt8, child String ALIAS _table) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_alias_a VALUES (1);
+INSERT INTO t_alias_b VALUES (2);
+CREATE TABLE m_alias (x UInt8, child String) ENGINE = Merge(currentDatabase(), '^t_alias_[ab]$');
+SELECT child FROM m_alias WHERE child = 't_alias_b';
+SELECT x, child FROM m_alias ORDER BY x;
+
+DROP TABLE m_alias;
+DROP TABLE t_alias_b;
+DROP TABLE t_alias_a;
+DROP TABLE m_same;
+DROP TABLE t_c;
+DROP TABLE t_b;
+DROP TABLE t_a;
 DROP TABLE m_over_buf;
 DROP TABLE t_buf;
 DROP TABLE m_outer;

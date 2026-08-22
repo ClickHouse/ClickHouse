@@ -24,3 +24,15 @@ t_leaf
 -- a Buffer child is also reported under its own name
 t_buf
 6
+-- same-structure children never share a rewritten query that carries one child name
+2
+2
+3
+3
+t_a	1
+t_b	2
+t_c	3
+-- an ALIAS column over the child own _table resolves per child
+t_alias_b
+1	t_alias_a
+2	t_alias_b

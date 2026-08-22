@@ -124,10 +124,18 @@ extern const int UNKNOWN_TABLE;
 namespace
 {
 
-/// Adds to the select query section `WITH value AS column_name`, e.g. `WITH 'mytable' AS _table`.
-/// The alias is preferred to a column of the same name, so the injected value wins over anything
-/// the child could produce. This is the pre-analyzer counterpart of the `_database`/`_table`
-/// constants that `ReadFromMerge::getModifiedQueryInfo` injects into the child query tree.
+/// Adds to the select query section `WITH identity(value) AS column_name`, e.g.
+/// `WITH identity('mytable') AS _table`. The alias is preferred to a column of the same name, so
+/// the injected value wins over anything the child could produce. This is the pre-analyzer
+/// counterpart of the `_database`/`_table` constants that `ReadFromMerge::getModifiedQueryInfo`
+/// injects into the child query tree.
+///
+/// The value is wrapped in `identity` rather than written as a bare literal because
+/// `TreeOptimizer` drops literals from `GROUP BY`, and drops the whole `GROUP BY` when nothing
+/// else is left, replacing it with the placeholder `'__unused_group_by_column'` key. A child
+/// grouped by the virtual column alone would then produce a mergeable block whose key column is
+/// that placeholder instead of the child's name. `identity` is neither injective nor suitable for
+/// constant folding, so the key survives while the value stays the same.
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
     auto & select = ast->as<ASTSelectQuery &>();
@@ -146,10 +154,10 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
         select.setExpression(ASTSelectQuery::Expression::WITH, make_intrusive<ASTExpressionList>());
     }
 
-    auto literal = make_intrusive<ASTLiteral>(value);
-    literal->alias = column_name;
-    literal->setPreferAliasToColumnName(true);
-    select.with()->children.push_back(literal);
+    auto function = makeASTFunction("identity", make_intrusive<ASTLiteral>(value));
+    function->alias = column_name;
+    function->setPreferAliasToColumnName(true);
+    select.with()->children.push_back(std::move(function));
 }
 
 bool queryHasOrderBy(const SelectQueryInfo & query_info)
@@ -828,6 +836,27 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     pipeline.addResources(resources);
 }
 
+/// Whether the query tree references the given column anywhere - in the projection, in a filter,
+/// inside an alias expression, or in any subquery. `ReadFromMerge::getModifiedQueryInfo` replaces
+/// every such reference with a constant carrying the child's own name, so a query that references
+/// the column must never reuse another child's cached rewritten query tree, even when the column
+/// is not among the columns the plan reads.
+static bool queryTreeReferencesColumn(const QueryTreeNodePtr & node, const String & column_name)
+{
+    if (!node)
+        return false;
+
+    bool found = false;
+    traverseQueryTree(node, Everything{},
+        [&](const QueryTreeNodePtr & current_node)
+        {
+            if (const auto * column_node = current_node->as<ColumnNode>())
+                found |= column_node->getColumnName() == column_name;
+        });
+
+    return found;
+}
+
 void ReadFromMerge::filterTablesAndCreateChildrenPlans()
 {
     if (child_plans)
@@ -853,6 +882,13 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
         else
             column_names.push_back(column_name);
     }
+
+    /// The `_table` substitution in `getModifiedQueryInfo` is not conditioned on the column being
+    /// requested, so the query-info cache must look at every reference to it, not only at
+    /// `has_table_virtual_column`.
+    query_references_table_virtual_column = has_table_virtual_column
+        || (merge_storage_snapshot->metadata->isVirtualColumn("_table")
+            && queryTreeReferencesColumn(query_info.query_tree, "_table"));
 
     selected_tables = getSelectedTables(context);
     child_plans = createChildrenPlans(query_info);
@@ -1068,13 +1104,15 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// The cache key includes the database name because getModifiedQueryInfo injects
             /// a _database constant into the query tree (analyzer path), so tables in
             /// different databases must not share cached entries.
-            /// `has_table_virtual_column` also blocks caching: getModifiedQueryInfo then injects a
-            /// `_table` constant carrying the table's own name into the query tree, and that name
-            /// differs between the tables of one structure bucket. `_database` needs no such guard
-            /// only because the cache key includes the database name.
+            /// `query_references_table_virtual_column` also blocks caching: getModifiedQueryInfo
+            /// then injects a `_table` constant carrying the table's own name into the query tree,
+            /// and that name differs between the tables of one structure bucket. The flag covers
+            /// every reference, not only the columns the plan reads, because the substitution is
+            /// not conditioned on the column being requested. `_database` needs no such guard only
+            /// because the cache key includes the database name.
             bool can_cache = query_info.table_expression
                 && !row_policy_data_opt
-                && !has_table_virtual_column
+                && !query_references_table_virtual_column
                 && common_processed_stage == QueryProcessingStage::FetchColumns
                 && !std::dynamic_pointer_cast<StorageMerge>(storage)
                 && !std::dynamic_pointer_cast<StorageDistributed>(storage)

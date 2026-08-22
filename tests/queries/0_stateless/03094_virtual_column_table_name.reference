@@ -66,7 +66,7 @@ d1	1	10
 d1	2	20
 d2	3	30
 d2	4	40
-SELECT _table, * FROM m3 ORDER BY key ASC;
+SELECT _table, * FROM m3 ORDER BY key ASC, _table ASC;
 m1	1	10
 m1	2	20
 d2	3	30

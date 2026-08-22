@@ -222,6 +222,11 @@ private:
     Names column_names;
     bool has_database_virtual_column = false;
     bool has_table_virtual_column = false;
+    /// Whether the query references `_table` anywhere, including places that do not make it a
+    /// column the plan reads (a filter, an alias expression, a subquery). Used to keep the
+    /// per-structure query-info cache from sharing a rewritten query tree that already carries one
+    /// particular child's name.
+    bool query_references_table_virtual_column = false;
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
