@@ -2453,7 +2453,10 @@ public:
                 /// and keeps the byte size - the same residual window every single-pass read of a
                 /// concurrently rewritten local file has. (getFileStat throws if the file is gone.)
                 auto file_stat = getFileStat(path, /*use_table_fd=*/ false, -1, storage->getName());
-                if (computeFileCacheVersionToken(file_stat) != file.file.version_token)
+                /// The token is built from `platformFileVersion`, not from this `stat`: the CRT's
+                /// `stat` has whole-second precision and no inode on Windows, which would collapse
+                /// exactly the same-size in-place rewrite the token exists to distinguish.
+                if (!fileCacheVersionTokenStillHolds(path, file.file.version_token))
                     throwFileChanged(path);
 
                 read_buf = createReadBuffer(path, file_stat, /*use_table_fd=*/ false, -1, storage->compression_method, getContext());
