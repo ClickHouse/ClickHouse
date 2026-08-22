@@ -110,8 +110,8 @@ size_t JSONColumnsBlockInputFormatBase::readColumn(
 
 void JSONColumnsBlockInputFormatBase::setReadBuffer(ReadBuffer & in_)
 {
-    reader->setReadBuffer(in_);
     IInputFormat::setReadBuffer(in_);
+    reader->setReadBuffer(*in);
 }
 
 Chunk JSONColumnsBlockInputFormatBase::read()

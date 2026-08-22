@@ -1,5 +1,6 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <IO/WithFileSize.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
