@@ -359,8 +359,7 @@ function fuzz
     # returns "Connection refused"/EOF instead -- so count repeated timeouts and
     # only declare a hang once they persist, otherwise a single transient timeout
     # turns a clean (exit 143) run into a bogus "server died" FAIL.
-    # BEGIN: server-liveness probe loop (exercised verbatim by
-    # ci/tests/test_fuzzer_liveness_loop.py)
+    # BEGIN: server-liveness probe loop
     server_died=0
     timeouts=0
     timeouts_max=12
