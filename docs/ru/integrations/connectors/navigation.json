@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Data sources",
+      "group": "Источники данных",
       "pages": [
         "ru/integrations/connectors/data-sources/index",
         {
@@ -36,15 +36,15 @@
         "ru/integrations/connectors/data-sources/gcs",
         "ru/integrations/connectors/data-ingestion/s3-minio",
         "ru/integrations/connectors/data-ingestion/s3-tigris",
+        "ru/integrations/connectors/data-ingestion/s3-seaweedfs",
         "ru/integrations/connectors/data-ingestion/emqx/index",
         "ru/integrations/connectors/data-ingestion/insert-local-files",
-        "ru/integrations/connectors/data-ingestion/jdbc-with-clickhouse",
-        "ru/integrations/connectors/data-ingestion/odbc-with-clickhouse"
+        "ru/integrations/connectors/data-ingestion/jdbc-with-clickhouse"
       ]
     },
     {
       "expanded": true,
-      "group": "Data visualization",
+      "group": "Визуализация данных",
       "pages": [
         "ru/integrations/connectors/data-visualization/index",
         {
@@ -77,7 +77,7 @@
         },
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "Интеграции сообщества",
           "pages": [
             "ru/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "ru/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
@@ -100,7 +100,7 @@
     },
     {
       "expanded": true,
-      "group": "Data ingestion",
+      "group": "Ингестия данных",
       "pages": [
         "ru/integrations/connectors/data-ingestion/index",
         "ru/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
@@ -139,7 +139,7 @@
             "ru/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow templates",
+              "group": "Шаблоны Dataflow",
               "pages": [
                 "ru/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "ru/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -180,9 +180,10 @@
         },
         {
           "expanded": false,
-          "group": "Community integrations",
+          "group": "Интеграции сообщества",
           "pages": [
             "ru/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
+            "ru/integrations/connectors/data-ingestion/community-integrations/erathos",
             {
               "group": "Estuary",
               "pages": [
@@ -197,7 +198,7 @@
     },
     {
       "expanded": true,
-      "group": "Data integrations",
+      "group": "Интеграции данных",
       "pages": [
         "ru/integrations/connectors/tools/data-integration-index",
         "ru/integrations/connectors/data-integrations/integrations/retool",
@@ -209,7 +210,7 @@
     },
     {
       "expanded": true,
-      "group": "SQL-clients",
+      "group": "SQL-клиенты",
       "pages": [
         "ru/integrations/connectors/sql-clients/index",
         "ru/integrations/connectors/sql-clients/sql-console",
@@ -225,9 +226,10 @@
     },
     {
       "expanded": true,
-      "group": "Tools",
+      "group": "Инструменты",
       "pages": [
         "ru/integrations/connectors/tools/index",
+        "ru/integrations/connectors/tools/misc-index",
         "ru/integrations/connectors/tools/gui",
         "ru/integrations/connectors/tools/proxy",
         "ru/integrations/connectors/tools/third-party-libraries"
@@ -235,5 +237,5 @@
     }
   ],
   "icon": "/images/icons/icon-connectors.svg",
-  "item": "Connectors"
+  "item": "Коннекторы"
 }

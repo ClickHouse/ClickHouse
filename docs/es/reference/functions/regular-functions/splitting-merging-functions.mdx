@@ -600,6 +600,7 @@ Tokenizadores disponibles:
 * `splitByNonAlpha` divide cadenas por caracteres ASCII no alfanuméricos (consulte también la función [splitByNonAlpha](/es/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` divide cadenas usando determinadas cadenas separadoras `S` definidas por el usuario (consulte también la función [splitByString](/es/reference/functions/regular-functions/splitting-merging-functions#splitByString)). Los separadores pueden especificarse mediante un parámetro opcional; por ejemplo, `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. Tenga en cuenta que cada cadena puede constar de varios caracteres (`', '` en el ejemplo). La lista de separadores predeterminada, si no se especifica explícitamente, es un único espacio en blanco `[' ']`.
 * `asciiCJK` divide cadenas en tokens usando reglas de límite de palabra de Unicode (similares a UAX #29). Los caracteres ASCII alfanuméricos y los guiones bajos forman tokens con conectores (`:` para letras, `.` y `'` para caracteres del mismo tipo). Los caracteres Unicode no ASCII pasan a ser tokens de un solo carácter.
+* `chinese` segmenta texto chino en palabras mediante un diccionario y un modelo oculto de Markov (el algoritmo sigue [jieba](https://github.com/fxsjy/jieba); los datos del diccionario y del modelo integrados se derivan de [cppjieba](https://github.com/yanyiwu/cppjieba)). A diferencia de `asciiCJK`, que trata cada carácter no ASCII como un token de un solo carácter, `chinese` agrupa caracteres chinos consecutivos en palabras, lo que genera tokens más significativos y una mayor calidad de búsqueda para texto chino. Un argumento opcional `granularity` puede ser `coarse_grained` (el valor predeterminado) o `fine_grained`; este último también enumera subpalabras superpuestas, lo que mejora la recuperación a costa de un índice más grande.
 * `icu(locale)` divide cadenas en tokens de palabras mediante la segmentación de palabras Unicode (UAX #29) de la biblioteca ICU. Para sistemas de escritura sin espacios entre palabras (por ejemplo, chino, japonés y tailandés), ICU aplica una segmentación basada en diccionarios, por lo que el texto se divide en palabras significativas. `locale` es la configuración regional de ICU que se pasa al segmentador (la segmentación se basa principalmente en el sistema de escritura y los diccionarios; la configuración regional selecciona la adaptación específica de ICU); es obligatoria y se pasa como argumento independiente; por ejemplo, `tokens(value, 'icu', 'ja')`.
 * `japanese` divide texto japonés en palabras mediante el analizador morfológico MeCab. Requiere un diccionario configurado en la configuración del servidor (consulte la documentación sobre el [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes)).
 * `ngrams(N)` divide cadenas en n-gramas de tamaño uniforme `N` (consulte también la función [ngrams](/es/reference/functions/regular-functions/splitting-merging-functions#ngrams)). La longitud del n-grama puede especificarse mediante un parámetro entero opcional entre 1 y 8; por ejemplo, `tokens(value, 'ngrams', 3)`. El tamaño predeterminado del n-grama, si no se especifica explícitamente, es 3.
@@ -617,6 +618,7 @@ tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
 tokens(value, 'asciiCJK')
+tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
 tokens(value, 'japanese')
 tokens(value, 'ngrams'[, n])
@@ -627,13 +629,14 @@ tokens(value, 'array')
 **Argumentos**
 
 * `value` — La cadena de entrada. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring)
-* `tokenizer` — El tokenizador que se va a usar. Los argumentos válidos son `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu`, `japanese`, `ngrams`, `sparseGrams` y `array`. Es opcional; si no se establece explícitamente, el valor predeterminado es `splitByNonAlpha`. [`const String`](/es/reference/data-types/string)
+* `tokenizer` — El tokenizador que se va a usar. Los argumentos válidos son `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams` y `array`. Es opcional; si no se establece explícitamente, el valor predeterminado es `splitByNonAlpha`. [`const String`](/es/reference/data-types/string)
 * `locale` — Solo es relevante si el argumento `tokenizer` es `icu`: la configuración regional obligatoria, por ejemplo, `'ja'`. [`const String`](/es/reference/data-types/string)
 * `n` — Solo es relevante si el argumento `tokenizer` es `ngrams`: un parámetro opcional que define la longitud de los ngrams. Si no se establece explícitamente, el valor predeterminado es `3`. [`const UInt8`](/es/reference/data-types/int-uint)
 * `separators` — Solo es relevante si el argumento `tokenizer` es `split`: un parámetro opcional que define las cadenas separadoras. Si no se establece explícitamente, el valor predeterminado es `[' ']`. [`const Array(String)`](/es/reference/data-types/array)
 * `min_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud mínima de los gramas; el valor predeterminado es 3. [`const UInt8`](/es/reference/data-types/int-uint)
 * `max_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud máxima de los gramas; el valor predeterminado es 100. [`const UInt8`](/es/reference/data-types/int-uint)
 * `min_cutoff_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud mínima de corte. [`const UInt8`](/es/reference/data-types/int-uint)
+* `granularity` — Solo es relevante si el argumento `tokenizer` es `chinese`: un parámetro opcional, `coarse_grained` (predeterminado) o `fine_grained`, que controla la granularidad de la segmentación. [`const String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -673,11 +676,17 @@ A diferencia de la función `tokens`, esta función tiene en cuenta la semántic
 (como los caracteres comodín al principio y al final) y aplica reglas específicas del tokenizador
 para extraer tokens significativos para la coincidencia de patrones.
 
-Admite los mismos conjuntos de argumentos que la función `tokens`, excepto el tokenizador `icu`,
-que no implementa la tokenización de patrones LIKE; los argumentos
-adicionales después de `tokenizer` se interpretan según el
-tokenizador seleccionado (por ejemplo, `n` para `ngrams`, `separators` para `splitByString`,
-y `min_length` / `max_length` [/ `min_cutoff_length`] para `sparseGrams`).
+Admite los mismos conjuntos de argumentos que la función `tokens`, con algunas
+excepciones: los tokenizadores `chinese` e `icu` no son compatibles aquí.
+La tokenización de patrones LIKE solo es significativa para los tokenizadores que
+optan explícitamente por la semántica LIKE (`supportsStringLike()`). Llamar a
+`tokensForLikePattern` con un tokenizador no compatible genera `BAD_ARGUMENTS`;
+utilice `tokens` sin más.
+
+Los argumentos adicionales después de `tokenizer` se interpretan según el
+tokenizador seleccionado (por ejemplo, `n` para `ngrams`, `separators` para
+`splitByString` y `min_length` / `max_length` [/ `min_cutoff_length`]
+para `sparseGrams`).
 
 Esta función está pensada principalmente para tareas de depuración y pruebas,
 y se utiliza internamente para analizar el comportamiento de la tokenización en patrones LIKE.
@@ -698,6 +707,7 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 * `min_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud mínima del grama; el valor predeterminado es 3. [`const UInt8`](/es/reference/data-types/int-uint)
 * `max_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud máxima del grama; el valor predeterminado es 100. [`const UInt8`](/es/reference/data-types/int-uint)
 * `min_cutoff_length` — Solo es relevante si el argumento `tokenizer` es `sparseGrams`: un parámetro opcional que define la longitud mínima de corte. [`const UInt8`](/es/reference/data-types/int-uint)
+* `granularity` — Solo es relevante si el argumento `tokenizer` es `chinese`: un parámetro opcional, ya sea `coarse_grained` (predeterminado) o `fine_grained`, que controla la granularidad de la segmentación. [`const String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 

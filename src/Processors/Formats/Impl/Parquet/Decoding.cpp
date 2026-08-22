@@ -3,6 +3,7 @@
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
 #include <Common/FloatUtils.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Functions/DateTimeTransforms.h>
 
 #include <arrow/util/bit_stream_utils_internal.h>
@@ -1013,17 +1014,37 @@ bool PageDecoderInfo::canReadDirectlyIntoColumn(parq::Encoding::type encoding, s
     return false;
 }
 
-void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, Field & out) const
+void PageDecoderInfo::decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const
 {
     if (!allow_stats)
         return;
 
+    std::optional<Field> field;
     if (fixed_size_converter)
-        fixed_size_converter->convertField(data, is_max, out);
+        field = fixed_size_converter->convertField(data, is_max);
     else if (string_converter)
-        string_converter->convertField(data, is_max, out);
+        field = string_converter->convertField(data, is_max);
     else
         chassert(false);
+
+    /// The converter couldn't produce a usable bound (e.g. NaN); leave `out` unchanged.
+    if (!field.has_value())
+        return;
+
+    if (cast_stats_to_output_type)
+    {
+        /// `convert_inexact_floats` opts into rounding Float64 to nearest Float32, matching the
+        /// castColumn that is applied to the values; it doesn't affect the other allowed
+        /// conversions (Decimal/DateTime64 rescaling).
+        *field = tryConvertFieldToType(*field, final_output_type, &decoded_type, /*format_settings=*/ {}, /*strict=*/ false, /*convert_inexact_floats=*/ true);
+
+        /// Conversion failed, e.g. the value overflows the output type. Leaving the bound at
+        /// infinity is always safe.
+        if (field->isNull())
+            return;
+    }
+
+    out = std::move(*field);
 }
 
 std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
@@ -1464,7 +1485,7 @@ void IntConverter::convertColumn(std::span<const char> data, size_t num_values, 
     }
 }
 
-void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> IntConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in int statistics: {} != {}", data.size(), input_size);
@@ -1485,14 +1506,15 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
 
     /// Check for overflow in signed <-> unsigned conversion.
     if (input_signed && !field_signed && Int64(val) < 0)
-        return;
+        return std::nullopt;
     if (!input_signed && field_signed && val > UInt64(INT64_MAX))
-        return;
+        return std::nullopt;
 
     if (field_ipv4)
     {
-        if (val <= UInt64(UINT32_MAX))
-            out = Field(IPv4(UInt32(val)));
+        if (val > UInt64(UINT32_MAX))
+            return std::nullopt;
+        return Field(IPv4(UInt32(val)));
     }
     else if (field_timestamp_from_millis)
     {
@@ -1503,16 +1525,17 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
         ///  seconds by castColumn, with the same rounding. So the rounded min/max stats
         ///  accurately represent min/max among the rounded values.)
         val /= 1000;
-        if (val <= UInt64(UINT32_MAX))
-            out = Field(val);
+        if (val > UInt64(UINT32_MAX))
+            return std::nullopt;
+        return Field(val);
     }
     else if (field_decimal_scale.has_value())
     {
         switch (output_size.value_or(input_size))
         {
-            case 4: out = DecimalField<Decimal32>(Int32(val), *field_decimal_scale); break;
-            case 8: out = DecimalField<Decimal64>(val, *field_decimal_scale); break;
-            default: chassert(false);
+            case 4: return Field(DecimalField<Decimal32>(Int32(val), *field_decimal_scale));
+            case 8: return Field(DecimalField<Decimal64>(val, *field_decimal_scale));
+            default: chassert(false); return std::nullopt;
         }
     }
     else if (field_signed)
@@ -1521,17 +1544,17 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
         {
             const auto [min_day, max_day] = dateTargetDayRange();
             if (Int64(val) > Int64(max_day) || Int64(val) < Int64(min_day))
-                return;
+                return std::nullopt;
         }
 
-        out = Field(Int64(val));
+        return Field(Int64(val));
     }
     else
-        out = Field(val);
+        return Field(val);
 }
 
 template<typename T>
-void FloatConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> FloatConverter<T>::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in float statistics: {} != {}", data.size(), input_size);
@@ -1551,8 +1574,9 @@ void FloatConverter<T>::convertField(std::span<const char> data, bool /*is_max*/
     ///
     /// We reject NaNs, but don't do anything about +-0 because normal Field comparisons should
     /// already treat them as equal.
-    if (!std::isnan(x))
-        out = Field(x);
+    if (std::isnan(x))
+        return std::nullopt;
+    return Field(x);
 }
 
 template struct FloatConverter<float>;
@@ -1603,20 +1627,20 @@ void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values,
     }
 }
 
-void UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of UUID in statistics: {} != {}", data.size(), input_size);
 
-    out = decodeParquetUUID(data.data());
+    return Field(decodeParquetUUID(data.data()));
 }
 
-void FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of fixed string in statistics: {} != {}", data.size(), input_size);
 
-    out = Field(String(data.data(), data.size()));
+    return Field(String(data.data(), data.size()));
 }
 
 void TrivialStringConverter::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
@@ -1644,9 +1668,9 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
     }
 }
 
-void TrivialStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> TrivialStringConverter::convertField(std::span<const char> data, bool /*is_max*/) const
 {
-    out = Field(String(data.data(), data.size()));
+    return Field(String(data.data(), data.size()));
 }
 
 /// Reverse bytes. Like std::byteswap, but works for Int128 and Int256 too.
@@ -1743,13 +1767,13 @@ void BigEndianDecimalFixedSizeConverter<T>::convertColumn(std::span<const char> 
 }
 
 template <typename T>
-void BigEndianDecimalFixedSizeConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> BigEndianDecimalFixedSizeConverter<T>::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected value size in Decimal statistics: {} != {}", data.size(), input_size);
 
     T x = helper.convertUnpaddedValue(data);
-    out = DecimalField<Decimal<T>>(Decimal<T>(x), scale);
+    return Field(DecimalField<Decimal<T>>(Decimal<T>(x), scale));
 }
 
 template struct BigEndianDecimalFixedSizeConverter<Int32>;
@@ -1832,7 +1856,7 @@ void BigEndianDecimalWideIntegerConverter<T>::convertColumn(std::span<const char
 }
 
 template <typename T>
-void BigEndianDecimalWideIntegerConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> BigEndianDecimalWideIntegerConverter<T>::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() != input_size)
         throw Exception(
@@ -1841,7 +1865,7 @@ void BigEndianDecimalWideIntegerConverter<T>::convertField(std::span<const char>
             data.size(),
             input_size);
 
-    out = Field(convertBigEndianDecimalWideInteger<T>(data));
+    return Field(convertBigEndianDecimalWideInteger<T>(data));
 }
 
 template struct BigEndianDecimalWideIntegerConverter<Int128>;
@@ -1870,9 +1894,9 @@ void BigEndianDecimalWideIntegerStringConverter<T>::convertColumn(
 }
 
 template <typename T>
-void BigEndianDecimalWideIntegerStringConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> BigEndianDecimalWideIntegerStringConverter<T>::convertField(std::span<const char> data, bool /*is_max*/) const
 {
-    out = Field(convertBigEndianDecimalWideInteger<T>(data));
+    return Field(convertBigEndianDecimalWideInteger<T>(data));
 }
 
 template struct BigEndianDecimalWideIntegerStringConverter<Int128>;
@@ -1899,13 +1923,13 @@ void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> cha
 }
 
 template <typename T>
-void BigEndianDecimalStringConverter<T>::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+std::optional<Field> BigEndianDecimalStringConverter<T>::convertField(std::span<const char> data, bool /*is_max*/) const
 {
     if (data.size() > sizeof(T))
         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpectedly wide value in Decimal statistics: {} > {} bytes", data.size(), sizeof(T));
 
     T x = BigEndianHelper<T>(data.size()).convertUnpaddedValue(data);
-    out = DecimalField<Decimal<T>>(Decimal<T>(x), scale);
+    return Field(DecimalField<Decimal<T>>(Decimal<T>(x), scale));
 }
 
 template struct BigEndianDecimalStringConverter<Int32>;

@@ -154,6 +154,8 @@ struct FunctionConvertSettings
     }
 };
 
+using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings>;
+
 namespace detail
 {
 
@@ -4936,15 +4938,14 @@ public:
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
-    FunctionCast(ContextPtr context
+    FunctionCast(const FunctionConvertSettings & settings_
             , const char * cast_name_
             , MonotonicityForRange && monotonicity_for_range_
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
             , std::optional<CastDiagnostic> diagnostic_
-            , CastType cast_type_
-            , FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
-        : settings(context, date_time_overflow_behavior)
+            , CastType cast_type_)
+        : settings(settings_)
         , cast_name(cast_name_)
         , monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_)
@@ -5154,21 +5155,17 @@ private:
 }
 
 
+/// `context` may be nullptr.
+FunctionConvertSettingsPtr createFunctionConvertSettings(
+    const ContextPtr & context,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
+
 FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context,
+    const FunctionConvertSettingsPtr & settings,
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
     CastType cast_type);
-
-FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context,
-    const char * name,
-    const ColumnsWithTypeAndName & arguments,
-    const DataTypePtr & return_type,
-    std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
 }

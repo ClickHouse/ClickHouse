@@ -199,7 +199,7 @@ export const kbIndex = {
     {
       "id": "configuration-settings/change-the-prompt-in-clickhouse-client",
       "title": "Change the prompt in clickhouse-client",
-      "description": "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      "description": "Este artículo explica cómo cambiar el prompt de :) a un prefijo seguido de :) en la ventana de terminal de su cliente de ClickHouse y de clickhouse-local",
       "href": "/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       "category": "Configuration & settings",
       "tags": [

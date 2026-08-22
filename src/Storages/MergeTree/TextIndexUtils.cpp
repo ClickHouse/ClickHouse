@@ -237,12 +237,12 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
 
 static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex & index)
 {
-    const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
+    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(index);
+    const auto * codec = text_index.getPostingListCodec();
     auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
     auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
 
-    /// The merged part is written in the current on-disk format.
-    return PostingsSerialization(std::move(codec_copy), static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    return PostingsSerialization(std::move(codec_copy), text_index.getParams().serialization_version);
 }
 
 static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
@@ -261,14 +261,14 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
     const MergeTreeReaderSettings & reader_settings_,
     const MergeTreeWriterSettings & writer_settings_,
-    bool sync_)
+    bool need_fsync_)
     : segments(std::move(segments_))
     , new_data_part(std::move(new_data_part_))
     , num_rows(num_rows_)
     , index_ptr(std::move(index_ptr_))
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
-    , sync(sync_)
+    , need_fsync(need_fsync_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
     , postings_serialization(createPostingsSerialization(*index_ptr))
 {
@@ -277,7 +277,9 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     input_streams.resize(segments.size());
 
     output_tokens = ColumnString::create();
-    params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
+
+    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(*index_ptr);
+    params = text_index.getParams();
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
@@ -594,16 +596,13 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
-
-    auto serialization_version = static_cast<MergeTreeIndexVersion>(
-        params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
-    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(params.serialization_version, sparse_index, postings_serialization.getPostingListCodec()->getType(), params.positions, index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();
 
-    /// fsync the index files, like `MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization` does.
-    if (sync)
+    /// Same as in `MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization`
+    if (need_fsync)
     {
         std::vector<const MergeTreeWriterStream *> streams_to_sync;
         streams_to_sync.reserve(output_streams_holders.size());

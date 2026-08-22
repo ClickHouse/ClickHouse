@@ -16,7 +16,7 @@ doc_type: 'reference'
 دالة تجميع تأخذ بيانات السلاسل الزمنية على شكل أزواج من الطوابع الزمنية والقيم، وتحسب [عمليات إعادة الضبط على نمط PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#resets) من هذه البيانات على شبكة زمنية منتظمة تُحدَّد بالطابع الزمني للبداية والطابع الزمني للنهاية و`step`. ولكل نقطة على هذه الشبكة، تُؤخذ العيّنات اللازمة لحساب `resets` ضمن النافذة الزمنية المحددة.
 
 <Note>
-  هذه الدالة تجريبية، ولتفعيلها اضبط `allow_experimental_ts_to_grid_aggregate_function=true`.
+  هذه الدالة تجريبية، ولتفعيلها اضبط `allow_experimental_time_series_aggregate_functions=true`.
 </Note>
 
 **البنية**
@@ -27,7 +27,10 @@ timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(tim
 
 **المعلمات**
 
-* `start_timestamp` — يحدّد بداية الشبكة. - `end_timestamp` — يحدّد نهاية الشبكة. - `grid_step` — يحدّد خطوة الشبكة بالثواني. - `staleness` — يحدّد الحد الأقصى لـ&quot;التقادم&quot; بالثواني للعينات المأخوذة في الحسبان.
+* `start_timestamp` — يحدّد بداية الشبكة. ومع وسيطة طابع زمني من النوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا أو سلسلة تحتوي على رقم أو نص للتاريخ والوقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `end_timestamp` — يحدّد نهاية الشبكة. ومع وسيطة طابع زمني من النوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا أو سلسلة تحتوي على رقم أو نص للتاريخ والوقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `grid_step` — يحدّد خطوة الشبكة بالثواني. ومع وسيطة طابع زمني من النوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `staleness` — يحدّد الحد الأقصى لـ&quot;التقادم&quot; بالثواني للعينات المأخوذة في الحسبان. ومع وسيطة طابع زمني من النوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
 
 **الوسائط**
 

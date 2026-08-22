@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Session Settings",
+  "group": "세션 설정",
   "pages": [
     "ko/reference/settings/session-settings/additional",
     "ko/reference/settings/session-settings/aggregate",
@@ -223,6 +223,7 @@
     "ko/reference/settings/session-settings/shared-merge",
     "ko/reference/settings/session-settings/short-circuit-function-evaluation",
     "ko/reference/settings/session-settings/show",
+    "ko/reference/settings/session-settings/shrink-over",
     "ko/reference/settings/session-settings/skip-unavailable-shards",
     "ko/reference/settings/session-settings/sleep-in",
     "ko/reference/settings/session-settings/split",

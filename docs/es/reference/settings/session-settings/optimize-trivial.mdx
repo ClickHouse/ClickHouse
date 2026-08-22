@@ -102,14 +102,14 @@ Véase también:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Nuevo SETTING que limita la agregación a un máximo de LIMIT claves distintas para las consultas `SELECT key_expr FROM t GROUP BY key_expr LIMIT n`."}]}]} />
 
-Activa o desactiva la optimización de una consulta trivial `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (sin funciones de agregación en la proyección, sin cláusulas `HAVING`/`ORDER BY`/`LIMIT BY`/window y sin modificadores `GROUP BY`) estableciendo `max_rows_to_group_by = n + offset` con `group_by_overflow_mode = 'any'`. La agregación se detiene en cuanto se obtienen `n + offset` claves distintas.
+Activa o desactiva la optimización de una consulta trivial `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (sin funciones de agregación, funciones de ventana ni `arrayJoin` en la proyección, sin cláusulas `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window y sin modificadores `GROUP BY`) estableciendo `max_rows_to_group_by = n + offset` con `group_by_overflow_mode = 'any'`. La agregación se detiene en cuanto se obtienen `n + offset` claves distintas.
 
 La optimización se suprime cuando el usuario ha establecido explícitamente `group_by_overflow_mode` en un valor distinto de `any` (para preservar el comportamiento explícito de `throw`/`break`), y cuando el usuario ya ha establecido un `max_rows_to_group_by` más restrictivo (la optimización no tendría efecto).
 
 Valores posibles:
 
-* 0 — Optimización desactivada.
-* 1 — Optimización activada.
+* 0 — Optimización deshabilitada.
+* 1 — Optimización habilitada.
 
 <div id="optimize_trivial_insert_select">
   ## optimize_trivial_insert_select

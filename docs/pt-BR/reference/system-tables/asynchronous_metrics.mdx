@@ -810,6 +810,18 @@ O tamanho, em bytes, da arena de memória para chaves do ClickHouse Keeper.
 
 Índice do último log confirmado no ClickHouse Keeper.
 
+<div id="keeperlastleaderelectiontime">
+  ### KeeperLastLeaderElectionTime
+</div>
+
+Duração, em milissegundos, da janela mais recente sem líder observada localmente, que terminou quando esta instância do ClickHouse Keeper se tornou líder. Transferências de liderança que não expõem um estado sem líder amostrado não são registradas. `0` se esta instância não for o líder ativo ou não tiver nenhuma janela concluída registrada.
+
+<div id="keeperlastleaderunavailabletime">
+  ### KeeperLastLeaderUnavailableTime
+</div>
+
+Duração, em milissegundos, da janela sem líder mais recente concluída e observada localmente por este líder do ClickHouse Keeper. `0` se esta instância não for o líder ativo ou não houver registro de uma janela sem líder concluída.
+
 <div id="keeperlastlogidx">
   ### KeeperLastLogIdx
 </div>
@@ -1468,7 +1480,7 @@ Soma dos picos de memória de consulta por usuário de todos os usuários rastre
   ### ReaderExecutorModeledCostMsPerRequestedMiB
 </div>
 
-Eficiência experimental do caminho de leitura do ReaderExecutor: custo modelado (ms) por MiB de bytes solicitados no último intervalo de atualização, para toda a instância -- a razão entre os deltas de ProfileEvents ReaderExecutorModeledCostMicroseconds e ReaderExecutorRequestedBytes. Quanto menor, melhor: o limite inferior da largura de banda é ~20 (uma leitura limpa da fonte), os acertos de cache tendem a 0, e a busca excessiva e as conexões incompletas aumentam esse valor. 0 significa que não houve leituras do executor no intervalo.
+Eficiência experimental do caminho de leitura do ReaderExecutor: custo modelado (ms) por MiB de bytes solicitados no último intervalo de atualização, para toda a instância -- a razão entre os deltas de ProfileEvents ReaderExecutorModeledCostMicroseconds e ReaderExecutorDeliveredBytes. Quanto menor, melhor: o limite inferior da largura de banda é ~20 (uma leitura limpa da fonte), os acertos de cache tendem a 0, e a busca excessiva e as conexões incompletas aumentam esse valor. 0 significa que não houve leituras do executor no intervalo.
 
 <div id="replicasmaxabsolutedelay">
   ### ReplicasMaxAbsoluteDelay

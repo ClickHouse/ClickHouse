@@ -84,6 +84,12 @@ and Aggregate Functions which take a group of rows and "compress" or "reduce" th
 
 All the values in the columns are simply copied, except the values in the column where this function is applied;
 these are replaced with the corresponding array value.
+
+`arrayJoin`, including via its `unnest` alias, cannot be used in a `JOIN ON` condition that is evaluated during the join, because such a condition must
+preserve the number of rows. A condition that applies to one side only, and an equality key over `arrayJoin`, are
+extracted before the join and are unaffected. A non-disjunctive `ALL INNER JOIN` condition is also unaffected,
+because there the condition is applied after the join instead.
+Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured.
 )";
     FunctionDocumentation::Syntax syntax = "arrayJoin(arr)";
     FunctionDocumentation::Arguments arguments = {

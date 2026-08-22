@@ -896,7 +896,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics}).parse(pos, targets, expected);
+            ParserViewTargets({ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics, ViewTarget::RecentSamples}).parse(pos, targets, expected);
         }
 
         return true;

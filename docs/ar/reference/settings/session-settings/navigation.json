@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Session Settings",
+  "group": "إعدادات الجلسة",
   "pages": [
     "ar/reference/settings/session-settings/additional",
     "ar/reference/settings/session-settings/aggregate",
@@ -223,6 +223,7 @@
     "ar/reference/settings/session-settings/shared-merge",
     "ar/reference/settings/session-settings/short-circuit-function-evaluation",
     "ar/reference/settings/session-settings/show",
+    "ar/reference/settings/session-settings/shrink-over",
     "ar/reference/settings/session-settings/skip-unavailable-shards",
     "ar/reference/settings/session-settings/sleep-in",
     "ar/reference/settings/session-settings/split",

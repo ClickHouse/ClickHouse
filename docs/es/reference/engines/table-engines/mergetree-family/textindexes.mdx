@@ -84,6 +84,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -140,7 +142,7 @@ ALTER TABLE table
 
 ```
 
-Si agrega un índice a una tabla existente, le recomendamos materializar el índice en las partes existentes de la tabla (de lo contrario, las búsquedas en las partes sin índice recurrirán a escaneos exhaustivos lentos).
+Si agrega un índice a una tabla existente, le recomendamos materializar el índice en las partes existentes de la tabla (de lo contrario, las búsquedas en las partes sin índice recurrirán a búsquedas exhaustivas lentas).
 
 ```sql title="Query"
 ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
@@ -160,6 +162,8 @@ ALTER TABLE table DROP INDEX text_idx;
   Tenga en cuenta que cada cadena puede constar de varios caracteres (`', '` en el ejemplo).
   La lista de separadores predeterminada, si no se especifica explícitamente (por ejemplo, `tokenizer = splitByString`), es un único espacio en blanco `[' ']`.
 * `asciiCJK` divide cadenas en tokens usando reglas de límites de palabra de Unicode (similares a [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). Los caracteres ASCII alfanuméricos y los guiones bajos forman tokens con conectores (ASCII `:` para letras, `.` y `'` para caracteres del mismo tipo). Los caracteres Unicode no ASCII, incluidos los caracteres [CJK](https://en.wikipedia.org/wiki/CJK_characters), se convierten en tokens de un solo carácter.
+* `chinese[(granularity)]` segmenta texto chino en palabras mediante un diccionario y un modelo oculto de Markov (el algoritmo sigue [jieba](https://github.com/fxsjy/jieba); los datos del diccionario y del modelo integrados derivan de [cppjieba](https://github.com/yanyiwu/cppjieba)). A diferencia de `asciiCJK`, que trata cada carácter no ASCII como un token de un solo carácter, `chinese` agrupa caracteres chinos consecutivos en palabras (por ejemplo, `北京大学` se convierte en un token `北京大学` en lugar de cuatro tokens de un solo carácter). Esto genera tokens más significativos para texto chino y una mayor calidad de búsqueda. Para texto general o mixto, use `asciiCJK`; para texto exclusivamente chino, use `chinese`. El argumento opcional `granularity` es `'coarse_grained'` (el valor predeterminado si no se especifica) o `'fine_grained'`. Este último además enumera subpalabras superpuestas; por ejemplo, `北京邮电大学` también genera `北京`, `邮电`, `大学`. La tokenización de granularidad fina mejora la exhaustividad a costa de un índice más grande.
+  Busque en un índice de texto `chinese` con [hasAnyTokens](/es/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/es/reference/functions/regular-functions/string-search-functions#hasAllTokens) (que tokenizan el patrón con el tokenizador `chinese`), no con `hasToken` (que solo divide en separadores ASCII).
 * `icu(locale)` divide cadenas en tokens de palabras mediante la segmentación de palabras Unicode (UAX #29) de la biblioteca [ICU](https://icu.unicode.org/). Para sistemas de escritura que no separan las palabras con espacios en blanco (por ejemplo, chino, japonés o tailandés), ICU aplica una segmentación basada en diccionarios, por lo que, a diferencia de `asciiCJK`, este texto se divide en palabras significativas de varios caracteres en lugar de caracteres individuales. Aquí, «diccionario» se refiere a las listas de palabras incluidas en ICU para esos sistemas de escritura (consulte [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)); ICU elige la división más probable entre esas palabras.
   `locale` es la configuración regional de ICU que se pasa al segmentador; la segmentación depende principalmente del sistema de escritura y del diccionario, y la configuración regional selecciona la adaptación específica de ICU. Es un parámetro obligatorio; por ejemplo, `tokenizer = icu('ja')` o `tokenizer = icu('zh')`.
   Las configuraciones regionales disponibles pueden enumerarse con `SELECT * FROM system.collations`.
@@ -266,6 +270,7 @@ Los índices de texto pueden crearse a partir de datos de texto en cualquier idi
 Para texto no ASCII, se recomienda el tokenizador `asciiCJK`, ya que gestiona correctamente los límites de palabra de Unicode, incluidos los caracteres CJK.
 Para idiomas que no separan las palabras mediante espacios en blanco (por ejemplo, chino, japonés o tailandés), el tokenizador `icu(locale)` genera tokens de palabras significativos de varios caracteres mediante la segmentación de palabras basada en diccionarios de ICU.
 En el caso del japonés, el tokenizador `japanese` (MeCab) segmenta el texto en palabras en lugar de caracteres individuales y, por lo general, ofrece mejores resultados de búsqueda.
+En el caso del chino, el tokenizador `chinese` (jieba) segmenta el texto en palabras en lugar de caracteres individuales y, por lo general, ofrece mejores resultados de búsqueda.
 
 <a id="preprocessor-argument-optional" />**Argumento del preprocesador (opcional)**. El preprocesador hace referencia a una expresión que se aplica a la cadena de entrada antes de la tokenización.
 
@@ -1462,6 +1467,40 @@ El mecanismo de fallback se controla mediante dos configuraciones:
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/es/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 Esta optimización solo admite las funciones `like` e `ilike`.
+
+<div id="count-queries-perf">
+  ### Consultas de recuento simples
+</div>
+
+Una consulta que solo cuenta las filas que cumplen un predicado de búsqueda de texto
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+se responde desde el índice de texto, sin leer las filas coincidentes.
+ClickHouse obtiene el recuento a partir de las cardinalidades de las listas de postings del índice, sin consultar la columna virtual que marca las filas coincidentes ni realizar la agregación sobre ella. Un único token solo requiere la cardinalidad de su diccionario, por lo que no se lee ninguna lista de postings; los predicados con varios tokens leen los postings únicamente para unirlos (`hasAnyTokens`) o intersecarlos (`hasAllTokens`). Como un índice de texto cubre toda la parte, el recuento es exacto y se mantiene rápido incluso en partes muy grandes.
+
+La optimización se aplica a un `count()` simple filtrado por un único predicado `hasToken`, `hasAnyTokens` o `hasAllTokens` (o un equivalente de `Array`/`Map`). Los predicados combinados con `AND`/`OR`/`NOT`, un filtro adicional (p. ej., `... AND id > 10`), un predicado en modo pista como `m['key'] = 'value'`, seleccionar cualquier elemento además del recuento o una búsqueda de frases o por `LIKE`/patrón hacen que la consulta lea filas en su lugar. Las partes sin un índice materializado se siguen contando correctamente mediante la lectura de sus filas.
+
+Para confirmar que la optimización está activada, busque `ReadFromTextIndexCount` en el plan de consulta:
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+La optimización se controla mediante [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/es/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (habilitada de forma predeterminada). Se basa en la [lectura directa](#direct-read), por lo que [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/es/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index), [use&#95;skip&#95;indexes](/es/reference/settings/session-settings/use-skip-indexes#use_skip_indexes) y [optimize&#95;trivial&#95;count&#95;query](/es/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) también deben estar habilitadas (todas lo están de forma predeterminada).
 
 <div id="caching">
   ### Almacenamiento en caché

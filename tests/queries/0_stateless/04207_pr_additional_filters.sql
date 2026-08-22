@@ -78,7 +78,8 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
     parallel_replicas_for_non_replicated_merge_tree = 1,
     query_plan_remove_unused_columns = 1,
     parallel_replicas_local_plan = 1,
-    serialize_query_plan = 1;
+    serialize_query_plan = 1,
+    distributed_aggregation_memory_efficient = 1; -- pin (randomized in CI): `MergingAggregated` prints its mode only when it is set
 
 SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 DROP TABLE atf_p;

@@ -463,13 +463,13 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   如果未定义文本索引，该函数会对该列执行穷举列扫描，其速度比索引查找慢几个数量级。
 </Note>
 
-在搜索之前，该函数会对文本进行标记化处理
+在搜索之前，该函数会对文本进行分词处理
 
 * `input` 参数 (始终如此) 以及
 * `needle` 参数 (如果为 [String](/zh/reference/data-types/string))
   会使用为文本索引指定的分词器进行处理。
   如果该列未定义文本索引，则会改用 `splitByNonAlpha` 分词器。
-  如果 `needle` 参数的类型为 [Array(String)](/zh/reference/data-types/array)，则数组中的每个元素都会被视为一个标记——不会再进行额外的分词。
+  如果 `needle` 参数的类型为 [Array(String)](/zh/reference/data-types/array)，则数组中的每个元素都会被视为一个标记——不会再进行额外的标记化。
   如果文本索引配置了[预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional)表达式，则会在标记化之前将预处理器应用到 needle (如果其类型为 `String`) 。
   如果文本索引配置了[后处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional)表达式，则会将后处理器应用到 needle 标记和 input 标记 (即两者都在标记化之后处理) 。
 
@@ -494,7 +494,7 @@ hasAllTokens(input, needles)
 
 * `input` — 输入列。[`String`](/zh/reference/data-types/string)、[`FixedString`](/zh/reference/data-types/fixedstring)、[`Array(String)`](/zh/reference/data-types/array) 或 [`Array(FixedString)`](/zh/reference/data-types/array)
 * `needles` — 待搜索的标记。[`String`](/zh/reference/data-types/string) 或 [`Array(String)`](/zh/reference/data-types/array)
-* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。可选；如果未显式设置，默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
+* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。可选；如果未显式设置，默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -693,21 +693,21 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
   如果未定义文本索引，该函数会对列执行穷举列扫描，其速度比索引查找慢几个数量级。
 </Note>
 
-在搜索之前，该函数会对文本进行标记化处理
+在搜索之前，该函数会对文本进行分词处理
 
 * `input` 参数 (始终如此) ，以及
 * `needle` 参数 (如果其类型为 [String](/zh/reference/data-types/string))
   会使用为文本索引指定的分词器进行分词。
   如果该列未定义文本索引，则会改用 `splitByNonAlpha` 分词器。
-  如果 `needle` 参数的类型为 [Array(String)](/zh/reference/data-types/array)，则会将数组中的每个元素视为一个标记——不会再进行额外分词。
-  如果文本索引配置了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 表达式，则会在分词前将预处理器应用于 `needle` (如果其类型为 `String`)。
-  如果文本索引配置了 [后处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 表达式，则会在分词后将后处理器应用于 `needle` 标记和 `input` 标记 (即两者都会应用)。
+  如果 `needle` 参数的类型为 [Array(String)](/zh/reference/data-types/array)，则会将数组中的每个元素视为一个标记——不会再进行额外标记化。
+  如果文本索引配置了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 表达式，则会在标记化前将预处理器应用于 `needle` (如果其类型为 `String`)。
+  如果文本索引配置了 [后处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 表达式，则会在标记化后将后处理器应用于 `needle` 标记和 `input` 标记 (即两者都会应用)。
 
 重复的标记将被忽略。
 例如，[&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] 与 [&#39;ClickHouse&#39;] 的处理方式相同。
 
 <Note>
-  当文本索引定义了[预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasAnyTokens` 会在分词前将其应用于 `input`；当 `needles` 为 [String](/zh/reference/data-types/string) 时，也会将其应用于 `needles`。当 `needles` 为 [Array(String)](/zh/reference/data-types/array) 时，其元素会按原样传递，不会对其应用预处理器。
+  当文本索引定义了[预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasAnyTokens` 会在标记化前将其应用于 `input`；当 `needles` 为 [String](/zh/reference/data-types/string) 时，也会将其应用于 `needles`。当 `needles` 为 [Array(String)](/zh/reference/data-types/array) 时，其元素会按原样传递，不会对其应用预处理器。
   预处理器仅在文本索引路径上应用，因此，使用文本索引的查询与不使用文本索引的查询之间的结果可能不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
   为了提高全文检索的易用性，可以容忍这种不一致性。
 </Note>
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — 输入列。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`Nullable(String)`](/zh/reference/data-types/nullable) 或 [`Nullable(FixedString)`](/zh/reference/data-types/nullable) 或 [`Array(String)`](/zh/reference/data-types/array) 或 [`Array(FixedString)`](/zh/reference/data-types/array) 或 [`Array(Nullable(String))`](/zh/reference/data-types/array) 或 [`Array(Nullable(FixedString))`](/zh/reference/data-types/array)
 * `needles` — 待搜索的标记。[`String`](/zh/reference/data-types/string) 或 [`Array(String)`](/zh/reference/data-types/array)
-* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数为可选项；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
+* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数为可选项；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 

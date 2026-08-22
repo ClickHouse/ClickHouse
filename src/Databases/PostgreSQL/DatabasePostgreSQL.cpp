@@ -53,6 +53,36 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_IS_DROPPED;
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int POSTGRESQL_CONNECTION_FAILURE;
+}
+
+namespace
+{
+    /// Demote only a connection failure to the (unreachable) remote, so that anything else is not
+    /// hidden. Must be called from within a catch block: it rethrows the active exception to classify it.
+    /// A failed connect arrives rewrapped by `PoolWithFailover::get` as `POSTGRESQL_CONNECTION_FAILURE`,
+    /// a connection dropped mid-query as a raw `pqxx::broken_connection`.
+    LogsLevel toleratedConnectionFailureLogLevel()
+    {
+        try
+        {
+            throw;
+        }
+        catch (const pqxx::broken_connection &)
+        {
+            return LogsLevel::warning;
+        }
+        catch (const Exception & e)
+        {
+            return e.code() == ErrorCodes::POSTGRESQL_CONNECTION_FAILURE ? LogsLevel::warning : LogsLevel::error;
+        }
+        /// Ok to not report anything here: the exception stays active and the caller logs it at the
+        /// level returned from here.
+        catch (...)
+        {
+            return LogsLevel::error;
+        }
+    }
 }
 
 static const auto suffix = ".removed";
@@ -140,7 +170,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
     }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
@@ -375,7 +405,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
 
         /** Avoid repeated interrupting other normal routines (they acquire locks!)
           * for the case of unavailable connection, since it is possible to be

@@ -132,7 +132,6 @@ find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | gr
 FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # It is OK to have WithContext for derived classes from IFunctionOverloadResolver
     -e /FunctionJoinGet.cpp
-    -e /CastOverloadResolver.cpp
     -e /reverse.cpp
     -e /formatRow.cpp
     # Store global context

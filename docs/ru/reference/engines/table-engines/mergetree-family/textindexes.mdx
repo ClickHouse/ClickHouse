@@ -84,6 +84,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -160,6 +162,8 @@ ALTER TABLE table DROP INDEX text_idx;
   Обратите внимание, что каждая строка может состоять из нескольких символов (`', '` в примере).
   Список разделителей по умолчанию, если он не указан явно (например, `tokenizer = splitByString`), — это один пробел `[' ']`.
 * `asciiCJK` разбивает строки на токены, используя правила границ слов Unicode (аналогично [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII-буквенно-цифровые символы и символы подчёркивания образуют токены с соединительными символами (ASCII `:` для букв, `.` и `'` для символов одного типа). Не-ASCII-символы Unicode, включая символы [CJK](https://en.wikipedia.org/wiki/CJK_characters), становятся односимвольными токенами.
+* `chinese[(granularity)]` сегментирует китайский текст на слова с помощью словаря и скрытой марковской модели (алгоритм следует [jieba](https://github.com/fxsjy/jieba); встроенные данные словаря и модели основаны на [cppjieba](https://github.com/yanyiwu/cppjieba)). В отличие от `asciiCJK`, который рассматривает каждый не-ASCII-символ как односимвольный токен, `chinese` объединяет последовательные китайские символы в слова (например, `北京大学` становится одним токеном `北京大学`, а не четырьмя односимвольными токенами). Это даёт более значимые токены для китайского текста и повышает качество поиска. Для общего или смешанного текста используйте `asciiCJK`, а для текста только на китайском — `chinese`. Необязательный аргумент `granularity` имеет значение `'coarse_grained'` (по умолчанию, если не указан) или `'fine_grained'`. В последнем случае дополнительно перечисляются перекрывающиеся подслова: например, для `北京邮电大学` также создаются `北京`, `邮电`, `大学`. Мелкозернистая токенизация повышает полноту за счёт увеличения размера индекса.
+  Выполняйте поиск по текстовому индексу `chinese` с помощью [hasAnyTokens](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens) (которые токенизируют искомую строку токенизатором `chinese`), а не `hasToken` (который разделяет только по ASCII-разделителям).
 * `icu(locale)` разбивает строки на слова-токены с помощью сегментации слов Unicode (UAX #29) из библиотеки [ICU](https://icu.unicode.org/). Для письменностей, в которых между словами не ставятся пробелы (например, китайской, японской, тайской), ICU применяет сегментацию на основе словаря, поэтому — в отличие от `asciiCJK` — такой текст разбивается на значимые многосимвольные слова, а не на отдельные символы. Здесь «словарь» означает поставляемые с ICU списки слов для этих письменностей (см. [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)); ICU выбирает наиболее вероятное разбиение на слова из этих списков.
   `locale` — это локаль ICU, передаваемая сегментатору; сегментация в основном определяется письменностью и словарём, а локаль выбирает специфичные для неё настройки ICU. Это обязательный параметр, например `tokenizer = icu('ja')` или `tokenizer = icu('zh')`.
   Доступные локали можно вывести с помощью `SELECT * FROM system.collations`.
@@ -266,6 +270,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 Для текста не из ASCII рекомендуется токенизатор `asciiCJK`, так как он корректно обрабатывает границы слов Unicode, включая символы CJK.
 Для языков, в которых слова не разделяются пробелами (например, китайского, японского или тайского), токенизатор `icu(locale)` создаёт значимые токены слов из нескольких символов с помощью сегментации слов на основе словаря ICU.
 Для японского языка токенизатор `japanese` (MeCab) сегментирует текст на слова, а не на отдельные символы, и обычно обеспечивает более точные результаты поиска.
+Для китайского языка токенизатор `chinese` (jieba) сегментирует текст на слова, а не на отдельные символы, и обычно обеспечивает более точные результаты поиска.
 
 <a id="preprocessor-argument-optional" />**Аргумент препроцессора (необязательно)**. Препроцессор — это выражение, которое применяется к входной строке перед токенизацией.
 
@@ -1462,6 +1467,40 @@ Fallback-механизм управляется двумя настройкам
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ru/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 Эта оптимизация поддерживает только функции `like` и `ilike`.
+
+<div id="count-queries-perf">
+  ### Тривиальные запросы подсчёта
+</div>
+
+Запрос, который только подсчитывает строки, соответствующие условию текстового поиска
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+получает ответ из текстового индекса без чтения соответствующих строк.
+ClickHouse берёт количество из мощностей списков вхождений в индексе, не обращаясь к виртуальному столбцу, отмечающему соответствующие строки, и не выполняя агрегацию по нему. Для одного токена требуется только его мощность в словаре, поэтому список вхождений не читается; предикаты с несколькими токенами считывают списки вхождений только для их объединения (`hasAnyTokens`) или пересечения (`hasAllTokens`). Поскольку текстовый индекс охватывает всю часть, подсчёт точен и остаётся быстрым даже для очень больших частей.
+
+Оптимизация применяется к простому `count()`, отфильтрованному одним предикатом `hasToken`, `hasAnyTokens` или `hasAllTokens` (либо эквивалентом для `Array`/`Map`). Предикаты, объединённые с помощью `AND`/`OR`/`NOT`, дополнительный фильтр (например, `... AND id > 10`), предикат в режиме подсказки, такой как `m['key'] = 'value'`, выбор чего-либо помимо количества, фразовый поиск или поиск с помощью `LIKE`/шаблона регулярного выражения приводят к тому, что запрос читает строки. Части без материализованного индекса по-прежнему корректно подсчитываются за счёт чтения их строк.
+
+Чтобы убедиться, что оптимизация применяется, проверьте наличие `ReadFromTextIndexCount` в плане запроса:
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+Эта оптимизация управляется параметром [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/ru/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (включен по умолчанию). Она основана на [прямом чтении](#direct-read), поэтому параметры [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ru/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index), [use&#95;skip&#95;indexes](/ru/reference/settings/session-settings/use-skip-indexes#use_skip_indexes) и [optimize&#95;trivial&#95;count&#95;query](/ru/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) также должны быть включены (все включены по умолчанию).
 
 <div id="caching">
   ### Кэширование

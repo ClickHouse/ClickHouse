@@ -14,7 +14,7 @@ ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 source /repo/tests/docker_scripts/stress_tests.lib
 
 
-install_packages package_folder
+install_binary /package_folder/clickhouse
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.

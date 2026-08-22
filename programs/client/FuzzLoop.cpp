@@ -923,7 +923,8 @@ bool Client::buzzHouse()
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::MOVE_PARTITION; }},
                               {10 * static_cast<uint32_t>(test_content && is_mt),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION; }},
-                              {15 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
+                               /// If ADD COLUMN fails, DROP column may issue NOT_FOUND_COLUMN_IN_BLOCK for some engines such as File
+                              {15 * static_cast<uint32_t>(test_content && !fuzz_config->disallowed_error_codes.contains(10)), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
                               {3
                                    * static_cast<uint32_t>(
                                        test_content && !tbl.get().isAnyS3Engine(true) && !tbl.get().isAnyAzureEngine(true)),
@@ -1239,7 +1240,7 @@ bool Client::buzzHouse()
 #else
 bool Client::buzzHouse()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse was compiled without BuzzHouse enabled");
 }
 #endif
 

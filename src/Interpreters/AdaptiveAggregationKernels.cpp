@@ -327,7 +327,92 @@ void Aggregator::executeFrozen(
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive frozen path.");
 }
 
+/// The set counterpart of the frozen kernel. A `GROUP BY` without aggregate functions has no places to
+/// record and no states to advance, so a hit costs nothing beyond the probe and a miss stages the key
+/// alone - which is all a set has to carry.
 template <typename LocalMethod, typename SharedMethod>
+requires SetAggregationMethod<LocalMethod>
+void NO_INLINE Aggregator::executeFrozenImpl(
+    LocalMethod & local_method,
+    std::type_identity<SharedMethod>,
+    Arena *,
+    const Columns & columns,
+    size_t row_begin,
+    size_t row_end,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction *,
+    AdaptiveAggregationProducer & adaptive,
+    bool all_keys_are_const) const
+{
+    Arena scratch_pool;
+
+    typename LocalMethod::StateNoCache local_find_state(key_columns, key_sizes, aggregation_state_cache);
+
+    /// The kernel runs only while the producer is frozen, and phase transitions happen between
+    /// blocks, so the reference stays valid for the whole block.
+    auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
+    const bool bypass_local_probe = frozen.bypass_local_probe;
+
+    auto stage_miss = [&]([[maybe_unused]] const auto & key, UInt64 hash, size_t row)
+    {
+        adaptive.miss_source_rows.push_back(static_cast<UInt32>(row));
+        adaptive.miss_hashes.push_back(hash);
+        adaptive.miss_buckets.push_back(static_cast<UInt8>(SharedMethod::Data::getBucketFromHash(hash)));
+        if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
+            adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(key).size());
+    };
+
+    if (all_keys_are_const)
+    {
+        auto && key_holder = local_find_state.getKeyHolder(0, scratch_pool);
+        const auto & key = keyHolderGetKey(key_holder);
+        const UInt64 hash = local_method.data.hash(key);
+
+        /// The whole range carries one key and a set stores a key once, so a single record stands
+        /// for it however many rows it spans.
+        if (!local_method.data.find(key, hash))
+        {
+            stage_miss(key, hash, row_begin);
+            publishDelayedRecords<typename SharedMethod::Key>(
+                columns, row_end, adaptive, local_find_state, scratch_pool, /*counts_only=*/false, /*key_row_override=*/0);
+        }
+        keyHolderDiscardKey(key_holder);
+        return;
+    }
+
+    size_t hits = 0;
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
+        const auto & key = keyHolderGetKey(key_holder);
+        const UInt64 hash = local_method.data.hash(key);
+
+        if (!bypass_local_probe && local_method.data.find(key, hash))
+            ++hits;
+        else
+            stage_miss(key, hash, i);
+
+        keyHolderDiscardKey(key_holder);
+    }
+
+    if (!frozen.bypass_local_probe)
+    {
+        frozen.sampled_hits += hits;
+        frozen.sampled_rows += row_end - row_begin;
+        if (frozen.sampled_rows >= adaptive_bypass_sample_rows
+            && frozen.sampled_hits * adaptive_bypass_hit_rate_inverse < frozen.sampled_rows)
+        {
+            frozen.bypass_local_probe = true;
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationProbeBypasses);
+        }
+    }
+
+    publishDelayedRecords<typename SharedMethod::Key>(
+        columns, row_end, adaptive, local_find_state, scratch_pool, /*counts_only=*/false);
+}
+
+template <typename LocalMethod, typename SharedMethod>
+requires MapAggregationMethod<LocalMethod>
 void NO_INLINE Aggregator::executeFrozenImpl(
     LocalMethod & local_method,
     std::type_identity<SharedMethod>,
@@ -1037,6 +1122,8 @@ void Aggregator::drainAdaptiveBucketForMerge(
     shared.backlog.recordDrained(drained);
 }
 
+/// Shared by both method kinds: the routing, the reserve sampling and the slicing are the same
+/// whether or not a cell carries a mapped value.
 template <AdaptiveKeyStorage key_storage, typename Method>
 size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     Method & method,
@@ -1109,7 +1196,7 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
 
         if (const auto * counts = std::get_if<StagedChunk::CountPayload>(&block.payload))
         {
-            const auto & multiplicities = counts->multiplicities;
+            [[maybe_unused]] const auto & multiplicities = counts->multiplicities;
             for (size_t j = slice_begin; j < slice_end; ++j)
             {
                 prefetchStagedKey<typename Method::Key>(impl, keys, j, slice_end);
@@ -1120,10 +1207,16 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
                 emplaceStagedKey<typename Method::Key, key_storage>(
                     impl, key_data, key_size, keys.routing_hashes[j], *arena, it, inserted);
 
-                if (inserted)
-                    getInlineCountState(it->getMapped()) = multiplicities[j];
-                else
-                    getInlineCountState(it->getMapped()) += multiplicities[j];
+                /// A set has no counter to carry the run length into: the key being present is the
+                /// whole of the record's contribution. Only the simple-count shape stages counts, and
+                /// that shape has a mapped value by construction.
+                if constexpr (MapAggregationMethod<Method>)
+                {
+                    if (inserted)
+                        getInlineCountState(it->getMapped()) = multiplicities[j];
+                    else
+                        getInlineCountState(it->getMapped()) += multiplicities[j];
+                }
             }
         }
         else
@@ -1138,7 +1231,37 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     return drained;
 }
 
+/// The set counterpart of the bucket drain: emplacing the staged key is the whole of it. There is no
+/// state to create for a new key and nothing to advance for a key already there, so the slice needs
+/// neither the places nor the aggregate instructions the mapped drain builds.
 template <AdaptiveKeyStorage key_storage, typename Method>
+requires SetAggregationMethod<Method>
+void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
+    Method & method,
+    Arena * bucket_arena,
+    const StagedChunk & block,
+    size_t slice_begin,
+    size_t slice_end,
+    PaddedPODArray<AggregateDataPtr> &,
+    size_t bucket_index) const
+{
+    auto & impl = method.data.impls[bucket_index];
+    const auto & keys = block.keys;
+
+    for (size_t j = slice_begin; j < slice_end; ++j)
+    {
+        prefetchStagedKey<typename Method::Key>(impl, keys, j, slice_end);
+
+        const auto [key_data, key_size] = stagedKeyAt<typename Method::Key>(keys, j);
+        typename Method::Data::LookupResult it;
+        [[maybe_unused]] bool inserted = false;
+        emplaceStagedKey<typename Method::Key, key_storage>(
+            impl, key_data, key_size, keys.routing_hashes[j], *bucket_arena, it, inserted);
+    }
+}
+
+template <AdaptiveKeyStorage key_storage, typename Method>
+requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     Method & method,
     Arena * bucket_arena,

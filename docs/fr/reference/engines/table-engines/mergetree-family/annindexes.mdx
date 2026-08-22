@@ -331,8 +331,8 @@ Si les conditions de filtre supplémentaires ne peuvent pas être évaluées à 
 
 Si les conditions de filtre supplémentaires peuvent être évaluées à l’aide de la [clé primaire](/fr/reference/engines/table-engines/mergetree-family/mergetree#primary-key) (c’est-à-dire qu’elles forment un préfixe de la clé primaire) et
 
-* la condition de filtre élimine au moins une ligne dans une partie, ClickHouse basculera vers le préfiltrage pour les plages « survivantes » au sein de la partie,
-* la condition de filtre n’élimine aucune ligne dans une partie, ClickHouse effectuera un post-filtrage pour la partie.
+* la condition de filtre élimine au moins une ligne dans une part, ClickHouse basculera vers le préfiltrage pour les plages « survivantes » au sein de la part,
+* la condition de filtre n’élimine aucune ligne dans une part, ClickHouse effectuera un post-filtrage pour la part.
 
 En pratique, ce dernier cas est plutôt peu probable.
 
@@ -371,11 +371,11 @@ LIMIT 10
 SETTING vector_search_index_fetch_multiplier = 3.0;
 ```
 
-ClickHouse récupérera 3,0 x 10 = 30 plus proches voisins dans l’index vectoriel de chaque fragment, puis appliquera les filtres supplémentaires.
+ClickHouse récupérera 3,0 x 10 = 30 plus proches voisins dans l’index vectoriel de chaque part, puis appliquera les filtres supplémentaires.
 Seuls les dix voisins les plus proches seront renvoyés.
 À noter que le paramètre `vector_search_index_fetch_multiplier` peut atténuer ce problème, mais dans des cas extrêmes (condition WHERE très sélective), il reste possible que moins de N lignes demandées soient renvoyées.
 
-**Réévaluation du score**
+**rescoring**
 
 Les index de saut de données dans ClickHouse filtrent généralement au niveau de la granule, c.-à-d. qu’une recherche dans un index de saut de données renvoie (en interne) une liste de granules potentiellement correspondantes, ce qui réduit la quantité de données lues lors de l’analyse qui suit.
 Cela fonctionne bien pour les index de saut de données en général, mais dans le cas des index de similarité vectorielle, cela crée un &quot;décalage de granularité&quot;.

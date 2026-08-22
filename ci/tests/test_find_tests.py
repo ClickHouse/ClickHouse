@@ -193,6 +193,12 @@ def test_existing_stateless_test_still_exists():
     assert targeter._test_exists("00001_select_1")
 
 
+def test_rendered_stateless_template_test_still_exists():
+    targeter = _targeting_with_job_type(Targeting.STATELESS_JOB_TYPE)
+    assert targeter._test_exists("00172_hits_joins.gen")
+    assert targeter._test_exists("00172_hits_joins.gen.sql")
+
+
 def test_deleted_stateless_test_no_longer_exists():
     # PR #110958 reproducer: `04648_geohashes_in_box_cancellation` failed on
     # the PR, was then deleted from master as flaky, and the targeted job kept

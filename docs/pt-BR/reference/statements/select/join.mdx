@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## Junção com condições de desigualdade para colunas de tabelas diferentes
 </div>
 
-Atualmente, o ClickHouse oferece suporte a `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` com condições de desigualdade, além das condições de igualdade. As condições de desigualdade são compatíveis apenas com os algoritmos de junção `hash` e `grace_hash`. As condições de desigualdade não são compatíveis com `join_use_nulls`.
+Atualmente, o ClickHouse oferece suporte a `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` com condições de desigualdade, além das condições de igualdade. As condições de desigualdade são compatíveis apenas com os algoritmos de junção `hash`, `parallel_hash` e `grace_hash`. Uma condição de não igualdade avaliada durante a junção não pode conter `arrayJoin`, pois deve preservar o número de linhas; uma condição aplicada a apenas um lado e uma chave de igualdade baseada em `arrayJoin` são extraídas antes da junção e não são afetadas; uma condição não disjuntiva de `ALL INNER JOIN` também não é afetada, pois, nesse caso, a condição é aplicada após a junção. Quando a expansão depende de apenas um lado, mova-a para um `ARRAY JOIN` em uma subconsulta antes da junção; uma condição cujo argumento de `arrayJoin` lê colunas de ambos os lados precisa ser reestruturada.
 
 **Exemplo**
 

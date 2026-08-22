@@ -30,30 +30,9 @@ Native 格式是 ClickHouse 用于传输表格数据的列式传输格式。它�
 
 列的 `data` 布局取决于其类型所属的 *家族*。这些家族按解码复杂度从低到高依次为：
 
-```mermaid
-flowchart TD
-    B[Block]
-    B --> BI[BlockInfo]
-    B --> NC[num_columns]
-    B --> NR[num_rows]
-    B --> Cs["columns[ ]"]
+<img className="w-full h-auto" src="/images/interfaces/native-format/block-structure.webp" alt="列式传输块的结构及其数据布局家族" width="1568" height="976" loading="lazy" />
 
-    Cs --> Col[Column]
-    Col --> Cname[name]
-    Col --> Ctype[type]
-    Col --> Chcs[has_custom_serialization]
-    Col --> Cdata["data — layout depends on type family"]
-
-    Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
-    Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
-
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
-    Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
-    Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
-```
-
-* **固定宽度**类型将 `data` 排布为 `bytes_per_value × num_rows` 个原始字节，不带任何按行分帧。
+* **定宽**类型将 `data` 排布为 `bytes_per_value × num_rows` 个原始字节，不带任何按行分帧。
 * **复合**类型 (`Nullable`、`Array`、`Tuple`、`Map`、`Nested`) 具有一种可由类型字符串完全递归推导出的结构形态，没有版本前缀，也不存在跨块状态。
 * **带版本 / 有状态**类型 (`LowCardinality`、`JSON`、`Variant`、`Dynamic`) 会在每个非空块开头带有序列化版本/状态前缀。在 `Native` 传输格式中，这个前缀以及任何字典都**仅限于当前块**——该格式不会携带*跨*块状态 (写入器会为每个块创建全新的序列化状态，并将 `low_cardinality_max_dictionary_size = 0`) 。跨块状态是 MergeTree 磁盘存储层面的问题，不属于 Native 传输布局。
 
@@ -191,7 +170,7 @@ BlockInfo 是一组字段序列：每个字段前都有一个 VarUInt 类型的�
   ### 列的线协议布局
 </div>
 
-在一个 Block 中，Column 会出现 `num_columns` 次。
+在一个 块 中，列 会出现 `num_columns` 次。
 
 | # | Field                            | Type               | Condition                              | Description                                                                                                                                      |
 | - | -------------------------------- | ------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -209,16 +188,7 @@ BlockInfo 是一组字段序列：每个字段前都有一个 VarUInt 类型的�
   `type` 字段仅在默认模式下是文本 `String`。当查询设置 `output_format_native_encode_types_in_binary_format = 1` 时，该字段会改为**二进制类型编码**——也就是[数据类型二进制编码](/zh/reference/data-types/data-types-binary-encoding)文档中说明的同一种基于标签的编码——而扁平化后的 `Dynamic` 类型列表也会对各个类型名称使用相同的二进制编码。如果解码器始终将字段 2 读取为带长度前缀的字符串，就会把第一个二进制类型标签误当作字符串长度，从而失去同步，因此它必须知道该数据流使用的是哪种模式。
 </Info>
 
-```mermaid
-flowchart TD
-    T["type string<br/>(e.g. Array(String))"]
-    T --> P["strip outer (...)<br/>to find the base type"]
-    P --> F{"base type family?"}
-    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
-    F -->|variable-length| VL["read per-value length prefixes"]
-    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="从类型描述到其编码家族的解码器路由" width="1568" height="854" loading="lazy" />
 
 <div id="kind-stack-and-sparse-encoding">
   #### kind_stack 和稀疏编码
@@ -911,7 +881,7 @@ values stream 包含内部类型对**全部** `num_rows` 行的标准编码，�
 
 类型字符串：`Array(InnerType)`。示例：`Array(UInt32)`、`Array(String)`、`Array(Nullable(UInt32))`、`Array(Array(UInt8))`。
 
-传输布局由内部 [prefix 阶段](#composite-types) (除非内部类型带版本信息，否则为空) 以及随后拼接在一起的两个流组成，其中 offsets 在前：
+传输布局由内部 [前缀阶段](#composite-types) (除非内部类型带版本信息，否则为空) 以及随后拼接在一起的两个流组成，其中 offsets 在前：
 
 ```text
 [inner type's state prefix]   empty for leaf/non-versioned inners; emitted first when the inner is versioned
@@ -947,16 +917,7 @@ Values (5 × UInt32 LE = 20 bytes):
 
 每个偏移量都是共享 values 流中某一行切片的累计*结束位置*；其起始位置是前一个偏移量 (第 0 行则为 `0`) 。连续相等的偏移量表示空行：
 
-```mermaid
-flowchart LR
-    subgraph V["values stream: [10, 20, 30, 40, 50]"]
-        direction LR
-        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
-    end
-    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
-    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
-    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/array-offsets.webp" alt="将行映射到共享 values 流中的偏移量" width="1568" height="388" loading="lazy" />
 
 `Array(String)`，对应的行 `[["a", "bb"], []]` (共 20 字节) ：
 
@@ -976,7 +937,7 @@ Values (2 strings, 4 bytes total):
 * 中间层 `Array(UInt32)` 解码为 3 行，偏移量为 `[2, 3, 5]`。
 * 最内层 `UInt32` 解码为 5 个值：`[1, 2, 3, 4, 5]`。
 
-总共是 24 (外层偏移量) + 24 (中间偏移量) + 20 (值) = 68 字节。
+总计 24 (外层偏移量) + 24 (中间层偏移量) + 20 (值) = 68 字节。
 
 <div id="tuple">
   #### Tuple(T1, T2, ...)
@@ -1080,13 +1041,7 @@ Values (2 × UInt32 LE = 8 bytes):
 
 `Nested` 在线上传输中的表示形式取决于服务端的 `flatten_nested` 设置，因此分为两种情况。
 
-```mermaid
-flowchart TD
-    N["column declared Nested(a T1, b T2, ...)"]
-    N --> Q{"flatten_nested?"}
-    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
-    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/nested-layout.webp" alt="扁平化与非扁平化的复合列布局" width="1172" height="1068" loading="lazy" />
 
 **情况 A：`flatten_nested = 1` (server 默认值) 。** 当表在默认设置下创建时，`Nested` **不是一种 wire 类型**。server 会将该列存储并显示为 N 个并行的 `Array(T_i)` 列，并使用**点分名称** (`outer.field1`、`outer.field2` 等) 。对于 format 层来说，这里没有任何变化——每个点分列都只是一个普通的 [Array](#array)：
 
@@ -1200,19 +1155,7 @@ Native 写入器和读取器**不会**在块之间保留序列化状态：`Nativ
 
 因此，头部块 (rows = 0) 和空块都不会输出任何内容，解码器必须在每个非空块开头重新读取状态前缀。如果解码器只读取一次前缀，并把后续块都当作仅包含载荷，那么它会把下一个块的前缀当作数据读取，从而导致失步：
 
-```mermaid
-sequenceDiagram
-    participant S as Server (writer)
-    participant C as Client (decoder)
-    S->>C: Header block (num_rows = 0)
-    Note right of C: no state prefix
-    S->>C: First block with rows > 0
-    Note right of C: read state prefix,<br/>then block payload
-    S->>C: Next block with rows > 0
-    Note right of C: read state prefix again,<br/>then block payload
-    S->>C: Empty block (end marker)
-    Note right of C: no state prefix
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block.webp" alt="每个非空块都会重复状态前缀" width="1226" height="1162" loading="lazy" />
 
 <div id="serialization-version-reference">
   #### 序列化版本参考
@@ -1388,24 +1331,7 @@ ClickHouse 的 `JSON` 类型有多种线传输编码 (请参阅[序列化版本�
 
 判别值流就是索引；每个非 NULL 判别值都会从其类型对应的稠密 run 中取出下一个值，而 `255` (NULL) 则不消耗任何值。沿用同样的遍历过程也可以重建 [Dynamic](#dynamic)，二者唯一的区别只在于 NULL 的编码方式：
 
-```mermaid
-flowchart LR
-    subgraph D["discriminators (one per row)"]
-        direction TB
-        d0["row 0 → 1"]
-        d1["row 1 → 0"]
-        d2["row 2 → 255"]
-    end
-    subgraph SR["String run (discriminator 0)"]
-        s0["[0] = hi"]
-    end
-    subgraph UR["UInt64 run (discriminator 1)"]
-        u0["[0] = 42"]
-    end
-    d0 -->|"counter[1] = 0"| u0
-    d1 -->|"counter[0] = 0"| s0
-    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/variant-discriminators.webp" alt="判别值从稠密的特定类型序列中选择值" width="1568" height="624" loading="lazy" />
 
 <div id="dynamic">
   #### Dynamic
@@ -1552,19 +1478,7 @@ ClickHouse 可以使用内部帧格式压缩 `Native` stream 中的列数据。�
 
 总帧大小为 `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`。注意这里涉及两个范围：校验和覆盖 9 字节的头部加上数据体，而 `compressed_size` 计算的是头部加数据体，但**不**包括校验和本身：
 
-```mermaid
-flowchart LR
-    CK["checksum<br/>16 B<br/>CityHash128"]
-    subgraph SPAN["counted by compressed_size (9 + N)"]
-        direction LR
-        M["method<br/>1 B"]
-        CS["compressed_size<br/>4 B LE"]
-        US["uncompressed_size<br/>4 B LE"]
-        BODY["compressed body<br/>N = compressed_size − 9 B"]
-        M --> CS --> US --> BODY
-    end
-    CK --> M
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="压缩帧字段和压缩大小边界" width="1568" height="206" loading="lazy" />
 
 <div id="method-byte-values">
   ### 方法字节值

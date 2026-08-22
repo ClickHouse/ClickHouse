@@ -463,7 +463,7 @@ Comme [`hasAnyTokens`](#hasAnyTokens), mais renvoie 1 si tous les tokens de la c
   Si aucun index de texte n&#39;est défini, la fonction effectue un balayage exhaustif de la colonne, plusieurs ordres de grandeur plus lent qu&#39;une recherche via l&#39;index.
 </Note>
 
-Avant la recherche, la fonction effectue la tokenisation de
+Avant la recherche, la fonction tokenise
 
 * l&#39;argument `input` (toujours), et
 * l&#39;argument `needle` (s&#39;il est fourni sous forme de [String](/fr/reference/data-types/string))
@@ -473,12 +473,12 @@ Avant la recherche, la fonction effectue la tokenisation de
   Si l&#39;index de texte a une expression de [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) configurée, le preprocessor est appliqué à `needle` (s&#39;il est fourni en tant que `String`) avant la tokenisation.
   Si l&#39;index de texte a une expression de [postprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) configurée, le postprocessor est appliqué aux tokens de `needle` et à ceux de `input` (c&#39;est-à-dire aux deux après la tokenisation).
 
-Les tokens en double sont ignorés.
+Les tokens dupliqués sont ignorés.
 Par exemple, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité de la même manière que [&#39;ClickHouse&#39;].
 
 <Note>
   Lorsqu&#39;un index de texte définit un [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (par exemple `lowerUTF8`), `hasAllTokens` l&#39;applique à `input` et, lorsque `needles` est un [String](/fr/reference/data-types/string), à `needles` avant la tokenisation. Lorsque `needles` est un [Array(String)](/fr/reference/data-types/array), ses éléments sont transmis tels quels et le preprocessor ne leur est pas appliqué.
-  Le preprocessor n&#39;est appliqué que sur le chemin de l&#39;index de texte, de sorte que les résultats peuvent différer entre les requêtes qui utilisent l&#39;index de texte et celles qui ne l&#39;utilisent pas (par ex. `SETTINGS use_skip_indexes = 0`).
+  Le preprocessor n&#39;est appliqué que lors de l’utilisation de l’index de texte, de sorte que les résultats peuvent différer entre les requêtes qui utilisent l&#39;index de texte et celles qui ne l&#39;utilisent pas (par ex. `SETTINGS use_skip_indexes = 0`).
   Cette incohérence est tolérée afin d&#39;améliorer la facilité d&#39;utilisation de la recherche en texte intégral.
 </Note>
 
@@ -494,7 +494,7 @@ hasAllTokens(input, needles)
 
 * `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array)
 * `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
-* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -708,7 +708,7 @@ Par exemple, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité de la mêm
 
 <Note>
   Lorsqu&#39;un index de texte définit un [preprocessor](/fr/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (par exemple `lowerUTF8`), `hasAnyTokens` l&#39;applique à `input` et, lorsque `needles` est une [String](/fr/reference/data-types/string), à `needles` avant la tokenisation. Lorsque `needles` est un [Array(String)](/fr/reference/data-types/array), ses éléments sont transmis tels quels et le preprocessor ne leur est pas appliqué.
-  Le preprocessor n&#39;est appliqué que sur le chemin de l&#39;index de texte. Les résultats peuvent donc différer entre les requêtes qui utilisent l&#39;index de texte et celles qui ne l&#39;utilisent pas (par ex. `SETTINGS use_skip_indexes = 0`).
+  Le preprocessor n&#39;est appliqué que lors de l’utilisation de l’index de texte. Les résultats peuvent donc différer entre les requêtes qui utilisent l&#39;index de texte et celles qui ne l&#39;utilisent pas (par ex. `SETTINGS use_skip_indexes = 0`).
   Cette incohérence est tolérée afin d&#39;améliorer la facilité d&#39;utilisation de la recherche en texte intégral.
 </Note>
 
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
 * `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
-* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Ce paramètre est facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
+* `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Ce paramètre est facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 

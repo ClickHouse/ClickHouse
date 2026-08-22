@@ -79,7 +79,7 @@ Estimation:
 لتجاوز الفحص التجريبي داخل الذاكرة والاعتماد بدلًا من ذلك على [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)، عرّفها أولًا للأعمدة المعنية (فهي معطّلة افتراضيًا)، ثم انتظر حتى تكتمل عملية التعديل `materialize`، وبعدها عطّل المسار التجريبي:
 
 ```sql
-ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t ADD STATISTICS b TYPE tdigest;
 ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;

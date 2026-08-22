@@ -293,4 +293,26 @@ bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset, size_t size)
 
     return false;
 }
+
+bool ReadBufferFromRemoteFSGather::supportsReadAt()
+{
+    if (blobs_to_read.size() != 1)
+        return false;
+
+    if (!current_buf)
+        initialize();
+
+    /// initialize leaves current_buf empty if the blob is empty or the current offset is at the
+    /// end of the file.
+    return current_buf && current_buf->supportsReadAt();
+}
+
+size_t ReadBufferFromRemoteFSGather::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const
+{
+    if (blobs_to_read.size() != 1 || !current_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "readBigAt called without a supportsReadAt check");
+
+    /// With a single blob, offsets in the file coincide with offsets in the blob.
+    return current_buf->readBigAt(to, n, range_begin, progress_callback);
+}
 }

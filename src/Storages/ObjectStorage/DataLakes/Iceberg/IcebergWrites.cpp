@@ -1142,16 +1142,37 @@ bool IcebergStorageSink::initializeMetadata()
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
     {
+        auto best_effort_remove = [&](const String & path)
+        {
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(path));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Best-effort cleanup failed for {}", path));
+            }
+        };
+
         if (!retry_because_of_metadata_conflict)
         {
             for (const auto & [_, writer] : writer_per_partition_key)
-                writer.clearAllDataFiles();
+            {
+                try
+                {
+                    writer.clearAllDataFiles();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Best-effort cleanup of data files failed");
+                }
+            }
         }
 
         for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
-            object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
+            best_effort_remove(manifest_filename_in_storage);
 
-        object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+        best_effort_remove(storage_manifest_list_name);
 
         if (retry_because_of_metadata_conflict)
         {
