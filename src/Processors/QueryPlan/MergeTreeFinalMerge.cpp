@@ -215,6 +215,15 @@ Pipe buildDistributedFinalPipe(
                 "Distributed FINAL got primary-key-range layers for a table whose primary key cannot be range-split");
 
         Pipe pipe = read_lane_in_order(lane.marks);
+
+        /// A lane may carry an empty primary-key-range layer (the layer split may produce layers with
+        /// no parts, and older initiators serialize them all). The in-order getter creates one source
+        /// per part, so such a lane yields an empty pipe, which has no header and must not reach the
+        /// transforms below. Dropping it is safe: the merge lanes are simply united, so their positions
+        /// carry no meaning.
+        if (pipe.empty())
+            continue;
+
         pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
                                 { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
         addLayerRangeFilterToPipe(pipe, primary_key, lane.borders, lane.index, *in_reverse_order, context);

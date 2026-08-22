@@ -1,0 +1,11 @@
+flowchart LR
+    CK["checksum<br/>16 B<br/>CityHash128"]
+    subgraph SPAN["counted by compressed_size (9 + N)"]
+        direction LR
+        M["method<br/>1 B"]
+        CS["compressed_size<br/>4 B LE"]
+        US["uncompressed_size<br/>4 B LE"]
+        BODY["compressed body<br/>N = compressed_size − 9 B"]
+        M --> CS --> US --> BODY
+    end
+    CK --> M

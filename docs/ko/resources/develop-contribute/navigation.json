@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Introduction",
+      "group": "소개",
       "pages": [
         "ko/resources/develop-contribute/introduction/developer-instruction",
         "ko/resources/develop-contribute/introduction/architecture"
       ]
     },
     {
-      "group": "Building",
+      "group": "빌드",
       "pages": [
         "ko/resources/develop-contribute/build/build",
         "ko/resources/develop-contribute/build/build-osx",
@@ -21,7 +21,7 @@
       ]
     },
     {
-      "group": "Native protocol",
+      "group": "네이티브 프로토콜",
       "pages": [
         "ko/resources/develop-contribute/native-protocol/basics",
         "ko/resources/develop-contribute/native-protocol/client",
@@ -31,7 +31,7 @@
       ]
     },
     {
-      "group": "Contributing",
+      "group": "기여",
       "pages": [
         "ko/resources/develop-contribute/contribute/tests",
         "ko/resources/develop-contribute/contribute/continuous-integration",
@@ -44,7 +44,7 @@
       ]
     },
     {
-      "group": "Integration development",
+      "group": "통합 개발",
       "pages": [
         "ko/resources/develop-contribute/integrations/index",
         "ko/resources/develop-contribute/integrations/building-integrations",
@@ -53,13 +53,13 @@
       ]
     },
     {
-      "group": "Roadmap",
+      "group": "로드맵",
       "pages": [
         "ko/resources/develop-contribute/roadmap"
       ]
     }
   ],
   "icon": "/images/icons/icon-contribute.svg",
-  "item": "Development & contributing",
+  "item": "개발 및 기여",
   "root": "ko/resources/develop-contribute/index"
 }
