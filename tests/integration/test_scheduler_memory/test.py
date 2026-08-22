@@ -267,6 +267,10 @@ def test_precedence_kills_lower_priority():
                 ).strip()
                 == "0"
             ):
+                # A settled result means production will never appear here: it was
+                # either refused admission or already finished.
+                if results["production"] is not None:
+                    return
                 time.sleep(0.1)
             # A VIP query with higher precedence that needs memory
             node.query(
