@@ -158,6 +158,61 @@ def test_range_query_accepts_positive_step_for_equal_start_and_end():
     assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
 
 
+def assert_query_timeout_setting(query_id, expected_max_execution_time):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        "SELECT toFloat64(Settings['max_execution_time']) = "
+        f"{expected_max_execution_time}, mapContains(Settings, 'timeout') "
+        f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+        "1\t0\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+
+
+def test_query_timeout_is_applied_to_instant_and_range_queries():
+    for path, time_params in (
+        ("/api/v1/query", "time=1000"),
+        ("/api/v1/query_range", "start=999&end=1002&step=1"),
+    ):
+        query_id = f"promql-timeout-{uuid.uuid4()}"
+        url = (
+            f"http://{node.ip_address}:9093{path}"
+            f"?query=post_body_metric&{time_params}&timeout=500ms"
+        )
+        response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
+        extract_data_from_http_api_response(response)
+
+        assert_query_timeout_setting(query_id, "0.5")
+
+
+def test_query_timeout_does_not_loosen_a_stricter_query_limit():
+    query_id = f"promql-timeout-{uuid.uuid4()}"
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query"
+        f"?query=post_body_metric&time=1000&max_execution_time=5&timeout=10s"
+    )
+    response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
+    extract_data_from_http_api_response(response)
+
+    assert_query_timeout_setting(query_id, "5.0")
+
+
+@pytest.mark.parametrize("timeout", ["0s", "-1s", "banana"])
+def test_query_timeout_rejects_non_positive_or_malformed_values(timeout):
+    error = execute_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        "post_body_metric",
+        timestamp=1000,
+        params={"timeout": timeout},
+        expect_error=True,
+    )
+    assert "timeout" in error.lower() or "duration" in error.lower()
+
+
 def test_query_lookback_delta():
     query = 'foo{shape="circle"}'
     timestamp = 151

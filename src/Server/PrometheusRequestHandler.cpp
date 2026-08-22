@@ -34,6 +34,7 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Core/Settings.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
@@ -46,6 +47,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 http_response_buffer_size;
+    extern const SettingsSeconds max_execution_time;
 }
 
 namespace ErrorCodes
@@ -55,6 +57,12 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
+}
+
+namespace
+{
+constexpr UInt32 PROMETHEUS_TIMEOUT_SCALE = 6;
+constexpr Float64 MICROSECONDS_PER_SECOND = 1'000'000.0;
 }
 
 /// Base implementation of a prometheus protocol.
@@ -201,6 +209,7 @@ protected:
     void makeContext(HTTPServerRequest & request)
     {
         context = session->makeQueryContext();
+        max_execution_time_before_query_settings = context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
 
         /// Anything else beside HTTP POST should be readonly queries.
         setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
@@ -284,6 +293,7 @@ protected:
     std::unique_ptr<Session> session;
     std::unique_ptr<Credentials> request_credentials;
     ContextMutablePtr context;
+    Int64 max_execution_time_before_query_settings = 0;
 };
 
 
@@ -445,7 +455,7 @@ public:
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "timeout", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -463,6 +473,36 @@ public:
                             "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
                             limit_param);
         return static_cast<UInt64>(parsed_limit);
+    }
+
+    void applyTimeout()
+    {
+        const String timeout = params->get("timeout", "");
+        if (timeout.empty())
+            return;
+
+        const auto timeout_value = parseTimeSeriesDuration(timeout, PROMETHEUS_TIMEOUT_SCALE);
+        if (timeout_value <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'timeout' query parameter must be greater than 0");
+
+        const auto current_max_execution_time = context->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
+        Int64 effective_max_execution_time = current_max_execution_time;
+
+        /// A timeout must not loosen the limit inherited from the user's profile, even if the request
+        /// also supplies a less restrictive `max_execution_time` setting.
+        if (max_execution_time_before_query_settings > 0
+            && (effective_max_execution_time <= 0 || max_execution_time_before_query_settings < effective_max_execution_time))
+            effective_max_execution_time = max_execution_time_before_query_settings;
+
+        if (effective_max_execution_time <= 0 || timeout_value.value < effective_max_execution_time)
+            effective_max_execution_time = timeout_value.value;
+
+        if (effective_max_execution_time != current_max_execution_time)
+        {
+            context->setSetting(
+                "max_execution_time",
+                Field(static_cast<Float64>(effective_max_execution_time) / MICROSECONDS_PER_SECOND));
+        }
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -490,6 +530,9 @@ public:
             /// percent-encoded label name in ".../label/<name>/values" is read correctly.
             const String uri_path = Poco::URI(uri).getPath();
 
+            if (uri_path.ends_with("/query_range") || uri_path.ends_with("/query"))
+                applyTimeout();
+
             if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
@@ -498,9 +541,7 @@ public:
                 String step = params->get("step", "");
                 String lookback_delta = params->get("lookback_delta", "");
 
-                /// TODO: Support the following **optional** query parameters:
-                /// - timeout=<duration>: Evaluation timeout
-                /// - limit=<number>: Maximum number of returned series
+                /// TODO: Support limit=<number>: Maximum number of returned series
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -521,7 +562,7 @@ public:
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
 
-                /// TODO: Support optional parameters same as for the range query.
+                /// TODO: Support limit=<number>: Maximum number of returned series
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
