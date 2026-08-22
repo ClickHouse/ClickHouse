@@ -91,6 +91,11 @@ SELECT hex(sumCountOrDefaultState(x)) FROM (SELECT CAST(1, 'Nullable(UInt8)') AS
 -- sumCountOrDefault: LowCardinality(Nullable) same format.
 SELECT hex(sumCountOrDefaultState(x)) FROM (SELECT CAST(number, 'LowCardinality(Nullable(UInt8))') AS x FROM numbers(5));
 0A000000000000000501
+-- Stacked Distinct and OrDefault preserve the non-Nullable result and state format.
+SELECT sumCountOrDefaultDistinct(x), hex(sumCountOrDefaultDistinctState(x)) FROM (SELECT CAST(NULL, 'Nullable(UInt8)') AS x);
+(0,0)	00
+SELECT sumCountDistinctOrDefault(x), hex(sumCountDistinctOrDefaultState(x)) FROM (SELECT CAST(NULL, 'Nullable(UInt8)') AS x);
+(0,0)	0000
 -- sumCountOrNull: round-trip (no backward compat concern — didn't exist pre-Nullable(Tuple)).
 SELECT finalizeAggregation(CAST(unhex('0A000000000000000501'), 'AggregateFunction(sumCountOrNull, Nullable(UInt8))'));
 (10,5)

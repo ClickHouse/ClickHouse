@@ -1,0 +1,26 @@
+Tuple(\n    `values` Array(UInt64),\n    overflowed Bool)
+[0,1,2]	false
+([],true)
+([],false)
+([],false)
+[]
+2
+([],false)
+([],false)
+([],false)
+([],false)
+([],false)	[]
+[0,1,2]	false
+([],true)
+['0','1','2']	false
+([],true)
+[40,40,40]	false
+([],true)
+[('0',0),('1',1),('2',2)]	false
+([],true)
+2
+[0,1,2]	false
+([],true)
+([],true)
+[40,40,40]	false
+([],true)

@@ -384,11 +384,14 @@ public:
         ///   - multi-arg: from `<false, true>` to `<true, true>` (flag byte was already present).
         /// Only single-arg functions are affected because the multi-arg (variadic) Null combinator
         /// always serialized the flag byte unconditionally, so its serialization format did not change.
-        /// Currently, the only single-arg Tuple-returning aggregate function is `sumCount`.
-        /// We hardcode the check for `sumCount` rather than matching all single-arg Tuple-returning
-        /// functions, so that future functions with the same shape get the correct new behavior
-        /// (`<true, true>`) by default and are not silently forced into the legacy adapter.
-        if (nested_func->getName() == "sumCount")
+        /// `sumCount` needs the legacy adapter for serialization compatibility, while
+        /// `groupUniqArrayUpTo` needs it to return its default tuple for an all-NULL group.
+        /// We hardcode these functions rather than matching all single-arg Tuple-returning functions,
+        /// so that future functions with the same shape get the correct new behavior (`<true, true>`)
+        /// by default and are not silently forced into this adapter.
+        const auto nested_name = nested_func->getName();
+        /// Aggregate combinators append suffixes to the base function name.
+        if (arguments.size() == 1 && (nested_name.starts_with("sumCount") || nested_name.starts_with("groupUniqArrayUpTo")))
             return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
         return nullptr;
     }

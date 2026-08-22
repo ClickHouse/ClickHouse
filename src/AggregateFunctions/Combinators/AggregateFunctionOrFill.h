@@ -394,10 +394,11 @@ public:
     /// always serialized the flag byte unconditionally, so its serialization format did not change.
     /// Only OrDefault is affected. OrNull also has no backward compat concern since it
     /// didn't work for Tuple-returning functions before `Nullable(Tuple)` was introduced.
-    /// Currently, the only single-arg Tuple-returning aggregate function is `sumCount`.
-    /// We hardcode the check for `sumCount` rather than matching all single-arg Tuple-returning
-    /// functions, so that future functions with the same shape get the correct new behavior
-    /// (`<true, true>`) by default and are not silently forced into the legacy adapter.
+    /// `sumCount` needs the legacy adapter for serialization compatibility, while
+    /// `groupUniqArrayUpTo` needs it to return its default tuple for an all-NULL group.
+    /// We hardcode these functions rather than matching all single-arg Tuple-returning functions,
+    /// so that future functions with the same shape get the correct new behavior (`<true, true>`)
+    /// by default and are not silently forced into this adapter.
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function_,
         const DataTypes & arguments,
@@ -406,7 +407,9 @@ public:
     {
         if constexpr (!UseNull) /// OrDefault only
         {
-            if (nested_function->getName() == "sumCount")
+            const auto nested_name = nested_function->getName();
+            /// Aggregate combinators append suffixes to the base function name.
+            if (arguments.size() == 1 && (nested_name.starts_with("sumCount") || nested_name.starts_with("groupUniqArrayUpTo")))
                 return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function_, arguments, params);
         }
         return nullptr;
