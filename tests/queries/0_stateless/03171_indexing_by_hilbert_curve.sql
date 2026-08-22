@@ -39,3 +39,40 @@ SELECT count() FROM test_hilbert_encode WHERE y = 10 AND x <= 10 SETTINGS max_ro
 SELECT count() FROM test_hilbert_encode PREWHERE x >= 10 WHERE x < 11 AND y = 10 SETTINGS max_rows_to_read = 2;
 
 DROP TABLE test_hilbert_encode;
+
+-- A part holding a single distinct point must not be skipped
+
+SET max_rows_to_read = 0, force_primary_key = 0;
+
+DROP TABLE IF EXISTS test_hilbert_encode_zero;
+
+CREATE TABLE test_hilbert_encode_zero (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY hilbertEncode(x, y);
+INSERT INTO test_hilbert_encode_zero SELECT 0, 0 FROM numbers(1000);
+
+SELECT count() FROM test_hilbert_encode_zero WHERE x = 0 AND y = 0 SETTINGS analyze_index_with_space_filling_curves = 1;
+SELECT count() FROM test_hilbert_encode_zero WHERE x = 0 AND y = 0 SETTINGS analyze_index_with_space_filling_curves = 0;
+SELECT count() FROM test_hilbert_encode_zero WHERE x <= 3 AND y <= 3 SETTINGS analyze_index_with_space_filling_curves = 1;
+
+-- ... while a condition that point cannot satisfy still skips it
+
+SELECT count() FROM test_hilbert_encode_zero WHERE x = 100 AND y = 100 SETTINGS analyze_index_with_space_filling_curves = 1, force_primary_key = 1, max_rows_to_read = 1;
+
+DROP TABLE test_hilbert_encode_zero;
+
+-- Single-point parts away from the origin, and a part that merely contains the origin
+
+CREATE TABLE test_hilbert_encode_zero (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY hilbertEncode(x, y);
+INSERT INTO test_hilbert_encode_zero SELECT 0, 1 FROM numbers(1000);
+SELECT count() FROM test_hilbert_encode_zero WHERE x = 0 AND y = 1 SETTINGS analyze_index_with_space_filling_curves = 1;
+DROP TABLE test_hilbert_encode_zero;
+
+CREATE TABLE test_hilbert_encode_zero (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY hilbertEncode(x, y);
+INSERT INTO test_hilbert_encode_zero SELECT 1, 0 FROM numbers(1000);
+SELECT count() FROM test_hilbert_encode_zero WHERE x = 1 AND y = 0 SETTINGS analyze_index_with_space_filling_curves = 1;
+DROP TABLE test_hilbert_encode_zero;
+
+CREATE TABLE test_hilbert_encode_zero (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY hilbertEncode(x, y);
+INSERT INTO test_hilbert_encode_zero VALUES (0, 0), (1, 1), (2, 2), (3, 3);
+SELECT count() FROM test_hilbert_encode_zero WHERE x = 0 AND y = 0 SETTINGS analyze_index_with_space_filling_curves = 1;
+SELECT count() FROM test_hilbert_encode_zero WHERE x <= 3 AND y <= 3 SETTINGS analyze_index_with_space_filling_curves = 1;
+DROP TABLE test_hilbert_encode_zero;
