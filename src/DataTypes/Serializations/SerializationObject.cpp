@@ -1331,6 +1331,9 @@ void SerializationObject::restoreColumnObject(ColumnObject & column_object, size
 
 void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// See the same check in SerializationDynamic::deserializeBinary: the two recurse into each other.
+    checkStackSize();
+
     updateMaxDynamicPathsLimitIfNeeded(col, settings);
 
     if (settings.binary.read_json_as_string)

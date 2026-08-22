@@ -861,6 +861,9 @@ void SerializationDynamic::deserializeBinary(IColumn & column, ReadBuffer & istr
 
 void SerializationDynamic::deserializeBinary(ColumnDynamic & dynamic_column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// See the comment in the Field overload: this is the same recursion on the column-building path.
+    checkStackSize();
+
     auto variant_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(variant_type))
     {

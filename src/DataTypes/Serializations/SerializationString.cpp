@@ -36,6 +36,27 @@ namespace ErrorCodes
 
 static constexpr UInt64 MAX_TOTAL_STRING_SIZE = 1ULL << 48;
 
+/// The size of a string comes from the data, so it has to be validated before it is used to resize anything.
+/// `format_binary_max_string_size` is a user-facing limit that can be disabled by setting it to `0`,
+/// while `MAX_STRING_SIZE` is a hard limit that is always enforced.
+static void checkStringSize(UInt64 size, const FormatSettings & settings)
+{
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_string_size",
+            size,
+            settings.binary.max_binary_string_size);
+
+    if (size > SerializationString::MAX_STRING_SIZE)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}.",
+            size,
+            SerializationString::MAX_STRING_SIZE);
+}
+
 UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version_)
 {
     SipHash hash;
@@ -69,13 +90,7 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 {
     UInt64 size = 0;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_string_size",
-            size,
-            settings.binary.max_binary_string_size);
+    checkStringSize(size, settings);
 
     field = String();
     String & s = field.safeGet<String>();
@@ -108,20 +123,7 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
 
     UInt64 size = 0;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_string_size",
-            size,
-            settings.binary.max_binary_string_size);
-
-    if (size > SerializationString::MAX_STRING_SIZE)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}.",
-            size,
-            SerializationString::MAX_STRING_SIZE);
+    checkStringSize(size, settings);
 
     size_t old_chars_size = data.size();
     size_t offset = old_chars_size + size;
