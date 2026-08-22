@@ -46,8 +46,8 @@ run_case() {
 
     local local_id="local-${suffix}-$CLICKHOUSE_DATABASE"
     local objstore_id="objstore-${suffix}-$CLICKHOUSE_DATABASE"
-    $CLICKHOUSE_CLIENT --query_id "$local_id" -q "insert into local_${suffix} select number, toString(number) from numbers(20000)"
-    $CLICKHOUSE_CLIENT --query_id "$objstore_id" -q "insert into objstore_${suffix} select number, toString(number) from numbers(20000)"
+    $CLICKHOUSE_CLIENT --query_id "$local_id" -q "insert into local_${suffix} select number, toString(number) from numbers(2000)"
+    $CLICKHOUSE_CLIENT --query_id "$objstore_id" -q "insert into objstore_${suffix} select number, toString(number) from numbers(2000)"
 
     local local_files local_dirs objstore_files objstore_dirs
     read -r local_files local_dirs <<<"$(fsync_events "$local_id")"
@@ -102,10 +102,10 @@ run_merge_case() {
         settings disk = disk(name = '${disk_name}', type = object_storage,
                              object_storage_type = local_blob_storage, path = '${disk_name}/'),
                  ${common};
-        insert into local_${suffix} select number, toString(number) from numbers(10000);
-        insert into local_${suffix} select number + 10000, toString(number) from numbers(10000);
-        insert into objstore_${suffix} select number, toString(number) from numbers(10000);
-        insert into objstore_${suffix} select number + 10000, toString(number) from numbers(10000);
+        insert into local_${suffix} select number, toString(number) from numbers(1000);
+        insert into local_${suffix} select number + 1000, toString(number) from numbers(1000);
+        insert into objstore_${suffix} select number, toString(number) from numbers(1000);
+        insert into objstore_${suffix} select number + 1000, toString(number) from numbers(1000);
     "
 
     local local_id="local-${suffix}-$CLICKHOUSE_DATABASE"
@@ -160,8 +160,8 @@ run_alter_case() {
         settings disk = disk(name = '${disk_name}', type = object_storage,
                              object_storage_type = local_blob_storage, path = '${disk_name}/'),
                  ${common};
-        insert into local_${suffix} select number, number from numbers(2000);
-        insert into objstore_${suffix} select number, number from numbers(2000);
+        insert into local_${suffix} select number, number from numbers(500);
+        insert into objstore_${suffix} select number, number from numbers(500);
     "
 
     local local_id="local-${suffix}-$CLICKHOUSE_DATABASE"
@@ -194,7 +194,7 @@ $CLICKHOUSE_CLIENT -m -q "
                          object_storage_type = local_blob_storage, path = 'objd_dir_${CLICKHOUSE_DATABASE}/'),
              min_bytes_for_wide_part = 0, fsync_after_insert = 0, fsync_part_directory = 1;
 "
-$CLICKHOUSE_CLIENT --query_id "dironly-$CLICKHOUSE_DATABASE" -q "insert into dir_only select number, toString(number) from numbers(20000)"
+$CLICKHOUSE_CLIENT --query_id "dironly-$CLICKHOUSE_DATABASE" -q "insert into dir_only select number, toString(number) from numbers(2000)"
 read -r dir_only_files dir_only_dirs <<<"$(fsync_events "dironly-$CLICKHOUSE_DATABASE")"
 echo "wide, dir only: FileSync=$((dir_only_files)) DirectorySync=$((dir_only_dirs))"
 $CLICKHOUSE_CLIENT -q "drop table dir_only"
