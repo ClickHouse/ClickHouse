@@ -979,6 +979,27 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output
     -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT Pretty' \
     | grep -o -m1 'is not compatible with the output format Pretty'
 
+# The subcolumns display only splits bare named `Tuple` columns (see `flattenColumn`), so the element
+# names of a `Tuple` wrapped in an `Array` or a `Map` never reach the header. With
+# the JSON-object rendering inside a cell off, such a query carries no element names at all and must be
+# accepted - the raw-bytes checker mirrors the same splitting predicate.
+echo '--- JSONEachPacketString accepts PrettyCompact with a non-UTF-8 named Tuple element inside an Array when the JSON rendering is off'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_pretty_named_tuples_as_json=0" \
+    -d 'SELECT CAST([(1, 2)] AS Array(Tuple(`a\xFFb` UInt8, c UInt8))) AS t FORMAT PrettyCompact' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'PrettyCompact (Array of named tuples, no element names written) accepted: OK'
+
+echo '--- JSONEachPacketString accepts Pretty with a non-UTF-8 named Tuple element inside a Map when the JSON rendering is off'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_pretty_named_tuples_as_json=0" \
+    -d 'SELECT map(1, (1, 2))::Map(UInt8, Tuple(`a\xFFb` UInt8, c UInt8)) AS m FORMAT Pretty' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'Pretty (named tuple inside a Map, no element names written) accepted: OK'
+
+# A named `Tuple` nested inside a bare named `Tuple` is split recursively, so its element names do
+# reach the header and the query must still be rejected.
+echo '--- JSONEachPacketString still rejects Pretty with a non-UTF-8 element of a nested named Tuple written as subcolumn names'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_pretty_named_tuples_as_json=0" \
+    -d 'SELECT CAST((1, (2, 3)) AS Tuple(x UInt8, y Tuple(`a\xFFb` UInt8, c UInt8))) AS t FORMAT Pretty' \
+    | grep -o -m1 'is not compatible with the output format Pretty'
+
 # `Pretty` resets the JSON sub-settings to their defaults in its constructor, so
 # `output_format_json_named_tuples_as_objects = 0` does NOT turn the element names off there - the
 # query must still be rejected (the checker mirrors that reset).

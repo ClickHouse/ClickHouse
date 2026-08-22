@@ -133,6 +133,35 @@ namespace
 
         return flattened;
     }
+
+    /// Whether the subcolumn names written verbatim in the header (see `flattenColumn`) are not
+    /// valid UTF-8. It mirrors the splitting rules of `flattenColumn` exactly: only a bare named
+    /// `Tuple` is split, recursively, so the element names of a `Tuple` under an `Array`, a
+    /// `Nullable`, or a custom type name are never written as subcolumn names.
+    bool subcolumnNamesMayProduceRawBytes(const DataTypePtr & type)
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+        if (!tuple_type || !tuple_type->hasExplicitNames() || tuple_type->getElements().empty() || type->hasCustomName())
+            return false;
+
+        for (const auto & element_name : tuple_type->getElementNames())
+            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(element_name.data()), element_name.size()))
+                return true;
+
+        for (const auto & element_type : tuple_type->getElements())
+            if (subcolumnNamesMayProduceRawBytes(element_type))
+                return true;
+
+        return false;
+    }
+
+    bool subcolumnNamesMayProduceRawBytes(const Block & header)
+    {
+        for (const auto & type : header.getDataTypes())
+            if (subcolumnNamesMayProduceRawBytes(type))
+                return true;
+        return false;
+    }
 }
 
 void PrettyBlockOutputFormat::writePaddingSpace()
@@ -1127,7 +1156,10 @@ void registerOutputFormatPretty(FormatFactory & factory)
                 /// here, only `output_format_pretty_named_tuples_as_json` does.
                 /// With `output_format_pretty_named_tuples_as_subcolumns` (on by default), the element
                 /// names of the named `Tuple` columns are also written verbatim, as subcolumn names in
-                /// the header; the same recursive scan over the element names covers that case.
+                /// the header - but only for the columns that `flattenColumn` actually splits, which
+                /// is why that case uses `subcolumnNamesMayProduceRawBytes` (mirroring the same
+                /// predicate) instead of the recursive scan of the JSON check: the element names of a
+                /// `Tuple` under an `Array`, a `Nullable`, or a custom type name never reach the header.
                 /// The text framings reject or base64-encode the output in these cases (see
                 /// `checkIfOutputFormatMayProduceRawBytes`). `Pretty` does not write the data type names.
                 factory.registerOutputFormatMayProduceRawBytesChecker(
@@ -1138,8 +1170,9 @@ void registerOutputFormatPretty(FormatFactory & factory)
                         tuple_settings.json = FormatSettings::JSON{};
                         return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
                             || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None)
-                            || ((settings.pretty.named_tuples_as_json || settings.pretty.named_tuples_as_subcolumns)
-                                && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, tuple_settings, /*validate_utf8=*/ false));
+                            || (settings.pretty.named_tuples_as_json
+                                && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, tuple_settings, /*validate_utf8=*/ false))
+                            || (settings.pretty.named_tuples_as_subcolumns && subcolumnNamesMayProduceRawBytes(header));
                     });
             }
         }
