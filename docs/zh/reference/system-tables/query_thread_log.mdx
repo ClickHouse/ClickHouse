@@ -53,19 +53,19 @@ ClickHouse 不会自动删除表中的数据。更多详情，请参见 [Introdu
 * `current_database` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 当前 database 的名称。
 * `query` ([String](/zh/reference/data-types/string)) — 查询字符串。
 * `normalized_query_hash` ([UInt64](/zh/reference/data-types/int-uint)) — 归一化查询的哈希值——其中的常量等已被去除。
-* `is_initial_query` ([UInt8](/zh/reference/data-types/int-uint)) — 查询类型。可能的值：1 — 查询由客户端发起，0 — 查询由另一个查询为进行分布式查询执行而发起。
+* `is_initial_query` ([UInt8](/zh/reference/data-types/int-uint)) — 查询是否为初始查询。可能的值：1 — 初始 (顶层) 查询，0 — 由另一个查询发起的子查询，包括用于分布式执行的查询和内部子查询。
 * `connection_address` ([IPv6](/zh/reference/data-types/ipv6)) — 建立 connection 的客户端 IP 地址。若通过 proxy 连接，则此地址为 proxy 的地址。
 * `connection_port` ([UInt16](/zh/reference/data-types/int-uint)) — 建立 connection 时使用的客户端端口。若通过 proxy 连接，此处显示的将是 proxy 的端口。
 * `user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 发起当前查询的用户名。
 * `query_id` ([String](/zh/reference/data-types/string)) — 查询 ID。
 * `address` ([IPv6](/zh/reference/data-types/ipv6)) — 用于发起查询的 IP 地址。若通过代理连接且设置了 `auth_use_forwarded_address`，此处显示的是客户端地址，而非代理地址。
 * `port` ([UInt16](/zh/reference/data-types/int-uint)) — 用于发起查询的客户端端口。若通过代理连接，且设置了 `auth_use_forwarded_address`，这里显示的将是客户端端口，而不是代理端口。
-* `initial_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 执行初始查询的用户名 (用于分布式查询执行) 。
-* `initial_query_id` ([String](/zh/reference/data-types/string)) — 初始查询 ID (用于分布式查询执行) 。
-* `initial_address` ([IPv6](/zh/reference/data-types/ipv6)) — 发起父查询的 IP 地址。
-* `initial_port` ([UInt16](/zh/reference/data-types/int-uint)) — 用于发起父级查询的客户端端口。
-* `initial_query_start_time` ([DateTime](/zh/reference/data-types/datetime)) — 初始查询的执行开始时间。
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 初始查询开始执行的时间
+* `initial_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 在同一查询链中执行初始查询的用户名。
+* `initial_query_id` ([String](/zh/reference/data-types/string)) — 同一查询链中初始查询的 ID。
+* `initial_address` ([IPv6](/zh/reference/data-types/ipv6)) — 同一查询链中发起初始查询的 IP 地址。
+* `initial_port` ([UInt16](/zh/reference/data-types/int-uint)) — 同一查询链中发起初始查询的客户端端口。
+* `initial_query_start_time` ([DateTime](/zh/reference/data-types/datetime)) — 同一查询链中初始查询的开始时间。
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 同一查询链中初始查询的开始时间，精确到微秒。
 * `authenticated_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 会话中已通过身份验证的用户名。
 * `interface` ([UInt8](/zh/reference/data-types/int-uint)) — 发起查询所使用的接口。可能的值：1 — TCP，2 — HTTP。
 * `is_secure` ([UInt8](/zh/reference/data-types/int-uint)) — 用于指示连接是否安全的标志。

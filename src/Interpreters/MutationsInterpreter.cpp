@@ -1314,7 +1314,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 for (const auto & column_desc : columns_desc)
                 {
-                    if (!column_desc.statistics.empty())
+                    if (!column_desc.statistics.empty() && columns_desc.hasPhysical(column_desc.name))
                     {
                         dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
                         materialized_statistics.emplace(column_desc.name);
@@ -1323,6 +1323,14 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
             for (const auto & stat_column_name: command.statistics_columns)
             {
+                /// Skipped only while executing, so an already-queued mutation drains instead of
+                /// retrying forever. Validation still reaches the throw below.
+                if (!dry_run && columns_desc.has(stat_column_name) && !columns_desc.hasPhysical(stat_column_name))
+                {
+                    LOG_WARNING(logger, "Column {} is not physically stored, skipping statistics materialization", stat_column_name);
+                    continue;
+                }
+
                 if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
                     throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
 
@@ -2619,12 +2627,10 @@ QueryPipelineBuilder MutationsInterpreter::execute()
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
     ///
-    /// Only check sort order when mutating MergeTree parts. In MergeTree, mutations
-    /// process one part at a time and each part is physically sorted by the sorting key,
-    /// so the check is a valid invariant assertion. Other storages (e.g. Iceberg) may declare
-    /// a sorting key but process the entire table at once, reading multiple independently
-    /// sorted data files whose combined stream is not globally sorted.
-    if (source.getMergeTreeData())
+    /// Check sort order only when mutating a single MergeTree part, which is read sequentially and is
+    /// physically sorted by the sorting key. Other entry points (lightweight updates reading via
+    /// `readFromPool`, `Iceberg` reading independently sorted files) aren't monotonic and skip the check.
+    if (source.isMutatingDataPart())
     {
         if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
         {
