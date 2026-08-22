@@ -101,6 +101,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
             evaluation_settings.instant_selector_window = lookback_delta;
     }
 
+    auto query_tree = std::make_shared<PrometheusQueryTree>();
+    query_tree->parse(params.promql_query, timestamp_scale);
+    LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
+
     if (params.type == Type::Instant)
     {
         evaluation_settings.mode = PrometheusQueryEvaluationMode::QUERY;
