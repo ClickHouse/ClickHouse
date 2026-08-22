@@ -1469,6 +1469,11 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
     auto database = getDatabase(table_id.database_name);
     auto db_disk = database->getDisk();
 
+    /// The table limit is checked below; wait for the database to finish loading first, otherwise
+    /// its table list is incomplete and the check would undercount. Do it before taking
+    /// `tables_marked_dropped_mutex`, because startup can drop tables.
+    database->waitDatabaseStarted();
+
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
     {

@@ -485,8 +485,15 @@ void DatabaseOnDisk::renameTable(
     /// Do this before detaching the source table and moving its data. `createTable` checks the
     /// limit too, but at that point a failed cross-database rename cannot be rolled back safely.
     if (this != &to_database)
+    {
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+        {
+            /// The destination may still be loading, in which case its table list is incomplete
+            /// and the limit check below would undercount.
+            target_db->waitDatabaseStarted();
             target_db->checkTablesLimit();
+        }
+    }
 
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;
