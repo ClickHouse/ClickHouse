@@ -54,8 +54,8 @@ MAX_MEM_PER_WORKER_DIST_EACH = 20
 
 # A timeout says nothing about its own origin: a container orchestration command and
 # the process under test both raise `subprocess.TimeoutExpired`, rendering the same two
-# substrings. These two are therefore matched by TIMEOUT_PATTERN_RULE below rather than
-# by a plain substring search.
+# substrings. These two are therefore matched by `_is_docker_compose_timeout` rather
+# than by a plain substring search.
 TIMEOUT_ERROR_PATTERNS = [
     "timed out after",
     "TimeoutExpired",
