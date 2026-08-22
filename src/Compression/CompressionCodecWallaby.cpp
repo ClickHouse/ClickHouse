@@ -653,11 +653,36 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
       * the packing phase. The measuring and packing phases must agree exactly, so both use this
       * one walk.
       */
-    const auto walk_delta = [&](UInt8 cap_bits, T * delta_lanes, UInt16 * exiled_positions) -> UInt32
+    const auto walk_delta = [&](UInt8 cap_bits, T * delta_lanes, UInt16 * exiled_positions, SignedType & base) -> UInt32
     {
-        SignedType chain = quantized[0];
+        const auto delta_fits = [&](SignedType from, SignedType to) -> bool
+        {
+            SignedType needed;
+            if (__builtin_sub_overflow(to, from, &needed))
+                return false;
+            const T zigzag = (static_cast<T>(needed) << 1) ^ static_cast<T>(needed >> (Traits::width_bits - 1));
+            return cap_bits >= Traits::width_bits || zigzag < (T{1} << cap_bits);
+        };
+
+        /** The chain starts at the first value, so an outlier sitting there cannot be exiled the
+          * way an interior one is — the chain would stay on it and every later delta would span
+          * the whole distance back to it, exiling the entire vector. The head is therefore
+          * exiled and the chain started one position later when the head is the value that does
+          * not belong: its delta to the next value does not fit the cap, the next delta does,
+          * and the delta across the head does not (so keeping the head and exiling position one
+          * would not re-synchronize either). One position of lookahead decides this; the
+          * opposite case, where position one is the outlier, keeps the existing behavior.
+          */
+        UInt32 chain_start = 0;
+        if (!is_quantization_exception[0] && count > 2 && !is_quantization_exception[1] && !is_quantization_exception[2]
+            && !delta_fits(quantized[0], quantized[1]) && delta_fits(quantized[1], quantized[2])
+            && !delta_fits(quantized[0], quantized[2]))
+            chain_start = 1;
+
+        SignedType chain = quantized[chain_start];
+        base = chain;
         UInt32 exceptions = 0;
-        if (is_quantization_exception[0])
+        if (is_quantization_exception[0] || chain_start == 1)
         {
             if (exiled_positions)
                 exiled_positions[exceptions] = 0;
@@ -665,7 +690,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         }
         if (delta_lanes)
             delta_lanes[0] = 0;
-        for (UInt32 i = 1; i < count; ++i)
+        if (chain_start == 1 && delta_lanes)
+            delta_lanes[1] = 0;
+        for (UInt32 i = chain_start + 1; i < count; ++i)
         {
             SignedType needed = 0;
             bool fits = !is_quantization_exception[i] && !__builtin_sub_overflow(quantized[i], chain, &needed);
@@ -900,6 +927,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                     return Packing{w, 0, true, quantized[0], total};
                 }
                 UInt32 walked_exceptions = 0;
+                SignedType walked_base = quantized[0];
                 if (w >= bits_delta_full)
                 {
                     for (UInt32 i = 0; i < count; ++i)
@@ -909,7 +937,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 else
                 {
                     UInt16 exiled[WALLABY_VECTOR_VALUES]; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
-                    walked_exceptions = walk_delta(w, nullptr, exiled);
+                    walked_exceptions = walk_delta(w, nullptr, exiled, walked_base);
                     std::fill(exile_scratch.begin(), exile_scratch.begin() + count, false);
                     for (UInt32 e = 0; e < walked_exceptions; ++e)
                         exile_scratch[exiled[e]] = true;
@@ -933,7 +961,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 }
                 const UInt32 total
                     = header_size + lanes_bytes(w) + adjustment_cost + walked_exceptions * exceptionCost<T>();
-                return Packing{w, adjustment_bits, true, quantized[0], total};
+                return Packing{w, adjustment_bits, true, walked_base, total};
             };
 
             const Packing uncapped = evaluate_delta(bits_delta_full);
@@ -1359,7 +1387,10 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     if (use_delta)
     {
         UInt16 exiled[WALLABY_VECTOR_VALUES]; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
-        const UInt32 walked = walk_delta(bits, lanes.data(), exiled);
+        SignedType walked_base = quantized[0];
+        const UInt32 walked = walk_delta(bits, lanes.data(), exiled, walked_base);
+        if (walked_base != best->base)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wallaby delta chain base mismatch between measurement and packing");
         std::fill(exile_scratch.begin(), exile_scratch.begin() + count, false);
         for (UInt32 e = 0; e < walked; ++e)
             exile_scratch[exiled[e]] = true;
