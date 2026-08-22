@@ -258,6 +258,28 @@ size_t getMinBytesForPrefetch()
     return getL2CacheSize();
 }
 
+/// `min_bytes_for_prefetch` marks where a hash table whose cells carry an aggregate-state pointer
+/// stops fitting in caches. What decides how many lookups miss is the number of cells - one random
+/// probe each - not how wide they are, so a table of key-only cells has to start prefetching at the
+/// same number of cells, which for it means fewer bytes. Scale the threshold by the ratio of the
+/// cell to its mapped counterpart; for a table that does carry the pointer the ratio is 1.
+template <typename Data, bool has_mapped>
+size_t minBytesForPrefetch(size_t min_bytes_for_prefetch)
+{
+    if constexpr (has_mapped)
+        return min_bytes_for_prefetch;
+    else
+    {
+        using Cell = typename Data::cell_type;
+        static constexpr size_t alignment = alignof(DB::AggregateDataPtr);
+        /// The mapped counterpart of this cell is the same cell plus an aligned state pointer.
+        static constexpr size_t mapped_cell_size
+            = ((sizeof(Cell) + sizeof(DB::AggregateDataPtr) + alignment - 1) / alignment) * alignment;
+
+        return min_bytes_for_prefetch * sizeof(Cell) / mapped_cell_size;
+    }
+}
+
 
 }
 
@@ -1092,11 +1114,9 @@ void NO_INLINE Aggregator::executeImpl(
         /// below calls `getKeyHolder` a second time for every row, so a method that materializes
         /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
         /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
-        /// A method whose cells carry no mapped value keeps the same number of cells in half the
-        /// bytes, and it is the number of cells - one random lookup each - that decides how many of
-        /// them miss. Comparing bytes would let such a method start prefetching only at twice the
-        /// cardinality of the mapped one, so halve the threshold for it.
-        const size_t min_bytes = State::has_mapped ? min_bytes_for_prefetch : min_bytes_for_prefetch / 2;
+        /// See `minBytesForPrefetch` for why a method whose cells carry no mapped value gets a
+        /// smaller threshold.
+        const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
         const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
             && (method.data.getBufferSizeInBytes() > min_bytes);
 
@@ -4053,7 +4073,8 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
+        && (getDataVariant<Method>(*res).data.getBufferSizeInBytes()
+            > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
@@ -4141,7 +4162,8 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
     const bool prefetch = params.enable_prefetch
-        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
+        && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
+            > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
