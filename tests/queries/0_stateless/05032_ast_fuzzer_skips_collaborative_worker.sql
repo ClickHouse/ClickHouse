@@ -221,7 +221,10 @@ SELECT 'cluster_function_read',
 FROM fileCluster('test_cluster_one_shard_three_replicas_localhost',
                  currentDatabase() || '_t05032_cluster_src.csv',
                  'CSV', 'c1 UInt64, c2 UInt64')
-SETTINGS ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
+-- enable_analyzer is pinned because the file name has to reach the workers already resolved: only
+-- the analyzer folds currentDatabase() on the initiator, and a worker evaluating it locally reads
+-- its own current_database instead, which is not where the file was written.
+SETTINGS enable_analyzer = 1, ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1;
 
 SYSTEM FLUSH LOGS query_log;
 INSERT INTO t05032_events
