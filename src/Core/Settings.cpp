@@ -7032,17 +7032,17 @@ Overrides the input format of the query. Wins over the format specified in the q
 Overrides the output format of the query. Wins over the format specified in the query, in the file extension, or via `default_format`.
 )", 0) \
     DECLARE(String, compression, "", R"(
-Applies a generic compression to the response body, e.g., `compression=gz`. Note this is independent of `Content-Encoding` (HTTP compression) and the legacy `compress` parameter (ClickHouse-native compression). Specifying a compressed file extension in the URL path is equivalent.
+Applies a generic compression to the response body, e.g., `compression=gz`. Note this is independent of `Content-Encoding` (HTTP compression) and the legacy `compress` parameter (ClickHouse-native compression). For response-producing path requests, specifying a compressed file extension in the URL path is equivalent. For a path-based HTTP `PUT` upload, the compression suffix describes the request body instead, which is decompressed before insertion.
 
 This is an HTTP-interface response-shaping setting: it is consumed before the query is executed (the response buffers are set up up-front), so it must be supplied via the HTTP URL parameter, the URL path file extension, or a user profile, not via an in-query `SETTINGS` clause (where it has no effect and is rejected).
 )", 0) \
     DECLARE(Bool, http_allow_database_as_path, false, R"(
-If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database.
+If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database. It also enables database-prefixed path-based `PUT` uploads such as `/database/table.CSV`.
 
 This is a per-user setting that controls whether a routed path-style request is interpreted. Routing itself is gated globally by the server-level `http_allow_path_requests` configuration setting (off by default), which must be enabled for the HTTP interface to route a path-style request (such as `/my_db/my_table.csv`) to the query handler at all — that routing decision is made before the request is authenticated, so it cannot depend on a per-user setting. When `http_allow_path_requests` is off, unknown paths return a plain `404`. After routing, this setting is re-checked against the authenticated user's effective settings, so it can be enabled selectively per user, role, or profile.
 )", 0) \
     DECLARE(Bool, http_allow_table_as_file, false, R"(
-If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. The path is interpreted as `SELECT * FROM table`.
+If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. For `GET` and `HEAD`, the path is interpreted as `SELECT * FROM table`; for a path-based `PUT`, it identifies the existing destination table and input format for the upload.
 
 Like [`http_allow_database_as_path`](#http_allow_database_as_path), this is a per-user setting; routing of path-style requests is gated globally by the server-level `http_allow_path_requests` configuration setting (routing happens before authentication).
 )", 0) \

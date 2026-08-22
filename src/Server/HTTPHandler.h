@@ -68,6 +68,14 @@ public:
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
     virtual bool parsesHTTPPath() const { return false; }
 
+    /// Idempotent HTTP methods are read-only by default. A handler may opt into mutating behavior for
+    /// a narrowly defined request shape, such as a PUT upload whose target table comes from the URL path.
+    virtual bool allowMutatingIdempotentMethods(
+        const HTTPServerRequest & /* request */, const HTMLForm & /* params */) const
+    {
+        return false;
+    }
+
     /// `body` is the request body wrapped in the transport decompression chain - the same object the query
     /// itself would read. Handlers must read the body only through it, never through `request.getStream()`
     /// directly: the wrapper snapshots the inner buffer state on construction, so bytes taken from the inner
@@ -236,6 +244,8 @@ class DynamicQueryHandler : public HTTPHandler
 {
 private:
     std::string param_name;
+    /// Only the built-in catch-all handler enables the path-table upload mutation exception.
+    bool allow_path_table_uploads = false;
 
 public:
     explicit DynamicQueryHandler(
@@ -244,13 +254,16 @@ public:
         const std::string & param_name_ = "query",
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
         const std::string & url_prefix_ = "",
-        HTTPPathHintsPtr path_hints_ = nullptr);
+        HTTPPathHintsPtr path_hints_ = nullptr,
+        bool allow_path_table_uploads_ = false);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
     bool parsesHTTPPath() const override { return true; }
+
+    bool allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler

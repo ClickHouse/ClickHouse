@@ -138,6 +138,7 @@ def test_dynamic_handler_put_delete_still_readonly():
         modifying_query = urllib.parse.quote_plus(
             "CREATE DATABASE IF NOT EXISTS test_put_delete_db"
         )
+        modifying_query_body = "CREATE DATABASE IF NOT EXISTS test_default_query_put_db"
 
         for method in ("PUT", "DELETE"):
             # A read-only query is allowed over PUT/DELETE for a config handler (nothing to force).
@@ -156,6 +157,16 @@ def test_dynamic_handler_put_delete_still_readonly():
             )
             assert 200 != res_modify.status_code, method
             assert "Cannot execute query in readonly mode" in res_modify.content.decode(), method
+
+        # The default query parameter name is also used by configured dynamic handlers. It must not
+        # enable the built-in path-upload mutation exception for a handler-owned PUT route.
+        res_default_modify = cluster.instance.http_request(
+            "test_dynamic_handler_default_query_put",
+            method="PUT",
+            data=modifying_query_body,
+        )
+        assert 200 != res_default_modify.status_code
+        assert "Cannot execute query in readonly mode" in res_default_modify.content.decode()
 
 
 def test_predefined_query_handler():

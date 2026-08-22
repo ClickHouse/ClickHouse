@@ -465,8 +465,15 @@ void HTTPHandler::processQuery(
 
     /// POST always allows modifying queries. For SQL-defined handlers (which set `introspection_handler_name`)
     /// the mutating idempotent methods PUT and DELETE are allowed to modify data too, as decided per handler in
-    /// `makeSQLDefinedHandler`. Config-defined and built-in handlers keep the POST-only behavior.
-    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod(), /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty());
+    /// `makeSQLDefinedHandler`. Dynamic path uploads are also allowed to modify data, but only for their specific
+    /// PUT request shape; all other built-in and config-defined handlers keep the POST-only behavior.
+    /// This decision is made before request settings and path parsing are applied because the readonly
+    /// default must be selected first. The path and body are validated below before any query is executed.
+    const bool is_path_table_upload = allowMutatingIdempotentMethods(request, params);
+    setReadOnlyIfHTTPMethodIdempotent(
+        context,
+        request.getMethod(),
+        /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty() || is_path_table_upload);
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
@@ -527,6 +534,18 @@ void HTTPHandler::processQuery(
                 settings[Setting::http_allow_table_as_file],
                 settings[Setting::http_allow_filters_as_path]);
     }
+
+    if (is_path_table_upload && path_info.table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "HTTP PUT table uploads require a table path with a known format, for example /database/table.CSV");
+
+    if (is_path_table_upload && path_info.format.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "HTTP PUT table uploads require a known format in the URL path, for example /database/table.CSV");
+
+    if (is_path_table_upload && !path_info.compression.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "HTTP PUT table uploads do not support compression suffixes in the URL path yet");
 
     /// Resolve the current database from the path and the `database` setting, in that order.
     /// If both are specified and differ, that's an error. We do this *before* `QueryScope::create`
@@ -900,6 +919,9 @@ void HTTPHandler::processQuery(
         }
     }
 
+    const bool request_has_body = feeds_request_body_to_query
+        && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
+
     /// Determine base query: from URL path table, or from `query` param (raw_query).
     String final_query = raw_query;
 
@@ -937,11 +959,10 @@ void HTTPHandler::processQuery(
         /// `implicit_table_at_top_level` (only applied to FROM-less queries). Forcing the path
         /// table to exist would reject valid requests like `/foo.CSV?query=SELECT+1+FROM+other`
         /// or `POST /db/path_table` with body `SELECT ... FROM other_table`.
-        bool request_has_body = feeds_request_body_to_query
-            && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
         const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
-        bool table_name_is_simple = !path_info.table.contains('.');
-        if (table_name_is_simple && !table_db.empty() && raw_query.empty() && !request_has_body)
+        const bool table_name_is_simple = !path_info.table.contains('.');
+        if (table_name_is_simple && !table_db.empty() && raw_query.empty()
+            && (is_path_table_upload || !request_has_body))
         {
             StorageID table_id(table_db, path_info.table);
             if (!DatabaseCatalog::instance().isTableExist(table_id, context))
@@ -975,8 +996,15 @@ void HTTPHandler::processQuery(
         context->checkSettingsConstraints(implicit_change, SettingSource::QUERY);
         context->applySettingsChanges(implicit_change);
 
+        if (is_path_table_upload)
+        {
+            if (!request_has_body)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP PUT table uploads require a non-empty request body");
+
+            final_query = "INSERT INTO " + qualified_table + " FORMAT " + path_info.format + "\n";
+        }
         /// If there is no user-supplied query (URL param empty AND no body), generate a default one.
-        if (raw_query.empty() && !request_has_body)
+        else if (raw_query.empty() && !request_has_body)
             final_query = "SELECT * FROM " + qualified_table;
     }
 
@@ -1632,10 +1660,23 @@ DynamicQueryHandler::DynamicQueryHandler(
     const std::string & param_name_,
     const HTTPResponseHeaderSetup & http_response_headers_override_,
     const std::string & url_prefix_,
-    HTTPPathHintsPtr path_hints_)
+    HTTPPathHintsPtr path_hints_,
+    bool allow_path_table_uploads_)
     : HTTPHandler(server_, connection_config_, "DynamicQueryHandler", http_response_headers_override_, url_prefix_, std::move(path_hints_))
     , param_name(param_name_)
+    , allow_path_table_uploads(allow_path_table_uploads_)
 {
+}
+
+bool DynamicQueryHandler::allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const
+{
+    /// The catch-all factory only routes PUT requests whose last path component has a format suffix.
+    /// The full path is validated after authentication and path parsing in HTTPHandler::processQuery.
+    return allow_path_table_uploads
+        && param_name == "query"
+        && request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
+        && !params.has(param_name)
+        && !startsWith(request.getContentType(), "multipart/form-data");
 }
 
 bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)

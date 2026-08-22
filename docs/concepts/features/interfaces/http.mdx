@@ -339,9 +339,25 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 
 If the query already contains a `FROM` clause, the path component only supplies the download filename.
 
+### Upload data to a path table {#path-table-inserts}
+
+An HTTP `PUT` request to `/database/table.format` inserts the request body into an existing table. The format is taken from the path extension, and the request must not include a `query` parameter. This is useful when a file name already contains both the target table and the input format:
+
+```bash
+printf '1,"one"\n2,"two"\n' \
+  | curl -X PUT -H 'Content-Type: text/csv' --data-binary @- \
+      'http://localhost:8123/my_db/hits.CSV'
+
+printf '{"a":3,"b":"three"}\n' \
+  | curl -X PUT -H 'Content-Type: application/json' --data-binary @- \
+      'http://localhost:8123/my_db/hits.JSONEachRow'
+```
+
+The table must already exist. Auto-creation, schema inference, multipart uploads, and compression suffixes for `PUT` uploads are not supported. Use the regular [`INSERT` over HTTP](#insert-queries) form when the query or upload behavior needs to be customized.
+
 ## Insert queries over HTTP/HTTPS {#insert-queries}
 
-The `POST` method of transmitting data is necessary for `INSERT` queries. In this case, you can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.
+The traditional `POST` method of transmitting data is useful when the query needs to be supplied explicitly. You can write the beginning of the query in the URL parameter, and use POST to pass the data to insert. The data to insert could be, for example, a tab-separated dump from MySQL. In this way, the `INSERT` query replaces `LOAD DATA LOCAL INFILE` from MySQL.
 
 ### Examples {#examples}
 

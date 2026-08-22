@@ -57,5 +57,12 @@
                 <query_param_name>get_dynamic_handler_query</query_param_name>
             </handler>
         </rule>
+        <rule>
+            <methods>PUT</methods>
+            <url>/test_dynamic_handler_default_query_put</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+            </handler>
+        </rule>
     </http_handlers>
 </clickhouse>

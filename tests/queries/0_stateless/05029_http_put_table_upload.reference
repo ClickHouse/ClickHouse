@@ -1,0 +1,19 @@
+===== PUT table upload =====
+-- CSV format from the path
+-- JSONEachRow format from the path
+-- inserted rows
+1	one
+2	two
+3	three
+-- a PUT path without a format suffix is not claimed
+HTTP 404
+-- a missing table is rejected
+which does not exist
+-- an unknown path format is rejected
+HTTP PUT table uploads require a known format
+-- compressed path suffixes are rejected
+HTTP PUT table uploads do not support compression suffixes
+-- an empty body is rejected
+HTTP PUT table uploads require a non-empty request body
+-- an explicit INSERT query remains read-only on PUT
+Cannot execute query in readonly mode

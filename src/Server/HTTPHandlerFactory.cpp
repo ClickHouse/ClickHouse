@@ -649,7 +649,7 @@ void addCatchAllQueryHandlerFactory(
     {
         HTTPHandlerConnectionConfig connection_config;
         connection_config.default_session_user = default_session_user;
-        return std::make_unique<DynamicQueryHandler>(server, connection_config, "query", std::nullopt, "", path_hints);
+        return std::make_unique<DynamicQueryHandler>(server, connection_config, "query", std::nullopt, "", path_hints, true);
     };
     /// Path-as-file routing is gated by a single server-level flag (`http_allow_path_requests`,
     /// default off), evaluated here at routing time — before authentication, where the connecting
@@ -663,10 +663,12 @@ void addCatchAllQueryHandlerFactory(
     query_handler->addFilter([allow_path_requests](const auto & request)
         {
             const auto & method = request.getMethod();
-            bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
-                               || method == Poco::Net::HTTPRequest::HTTP_HEAD;
-            bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
-                                   || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+            const bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
+                                     || method == Poco::Net::HTTPRequest::HTTP_HEAD;
+            const bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
+                                         || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+            const bool is_put = method == Poco::Net::HTTPRequest::HTTP_PUT
+                             && !startsWith(request.getContentType(), "multipart/form-data");
 
             /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).
             /// `HTTPHandler::handleRequest` answers it via `processOptionsRequest` before
@@ -679,8 +681,23 @@ void addCatchAllQueryHandlerFactory(
             if (method == Poco::Net::HTTPRequest::HTTP_OPTIONS)
                 return true;
 
-            if (!is_get_or_head && !is_post_or_options)
+            if (!is_get_or_head && !is_post_or_options && !is_put)
                 return false;
+
+            if (is_put)
+            {
+                String path = request.getURI();
+                if (const auto query_start = path.find('?'); query_start != String::npos)
+                    path.resize(query_start);
+
+                const auto last_slash = path.rfind('/');
+                const auto last_dot = path.rfind('.');
+                if (path.empty()
+                    || last_dot == String::npos
+                    || last_dot <= last_slash
+                    || last_dot + 1 == path.size())
+                    return false;
+            }
 
             /// Everything below is the path-as-file extension. Skip it unless path requests are
             /// allowed server-wide, so unknown paths fall through to `NotFoundHandler` (HTTP 404)
