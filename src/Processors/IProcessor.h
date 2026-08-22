@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Port.h>
-#include <Common/MemorySpillScheduler.h>
+#include <Common/ProcessorMemoryStats.h>
 #include <Common/Stopwatch.h>
 
 #include <atomic>
