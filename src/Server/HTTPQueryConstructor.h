@@ -42,6 +42,11 @@ HTTPPathInfo parseHTTPPath(
     bool allow_filters,
     bool allow_table_after_database = false);
 
+/// Returns true when the final raw path component, after percent-decoding that component, has a non-empty
+/// suffix after a dot outside a quoted identifier. The path is split before decoding so an encoded slash
+/// remains data in the component. Malformed percent-encoding returns false.
+bool hasHTTPPathFormatSuffix(const String & path);
+
 /// Parse a URL parameter as a filter expression for the `http_allow_filters_as_unrecognized_url_parameters` mode.
 /// Returns the constructed SQL filter expression. The value must contain a comparison operator or
 /// be the right-hand side of `name = value`. Returns empty string if the input cannot be interpreted.

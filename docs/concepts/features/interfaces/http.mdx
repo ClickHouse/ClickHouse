@@ -341,7 +341,7 @@ If the query already contains a `FROM` clause, the path component only supplies 
 
 ### Upload data to a path table {#path-table-inserts}
 
-An HTTP `PUT` request to `/database/table.format` inserts the request body into an existing table. The format is taken from the path extension, and the request must not include a `query` parameter. This is useful when a file name already contains both the target table and the input format:
+An HTTP `PUT` request to `/database/table.format` inserts the request body into an existing table. The path extension supplies the input format by default. As with a regular `INSERT`, the `input_format` setting takes precedence over the path format, followed by the bidirectional `format` setting. The request must contain at least one decoded byte and must not include a `query` parameter. This is useful when a file name already contains both the target table and the input format:
 
 ```bash
 printf '1,"one"\n2,"two"\n' \
@@ -356,9 +356,15 @@ printf '{"a":3,"b":"three"}\n' \
 The table must already exist. For a database-prefixed upload, `http_allow_database_as_path` enables the
 `/database/table.format` path. An unqualified `/table.format` upload still requires
 `http_allow_table_as_file`. The request body may use a compression suffix such as `.CSV.gz`; the server
-decompresses it before inserting the rows. Auto-creation, schema inference, and multipart uploads are not
+decompresses it before inserting the rows. Path-table `PUT` uploads use normal `INSERT` semantics, so repeating
+the same request can insert the rows again. Auto-creation, schema inference, and multipart uploads are not
 supported. Use the regular [`INSERT` over HTTP](#insert-queries) form when the query or upload behavior needs
 to be customized.
+
+If the table name contains characters used by path filters, use a backquoted identifier followed by the format
+suffix. For example, `/my_db/%60a%3D1%60.CSV` uploads to the table named `` `a=1` `` even when
+`http_allow_filters_as_path` is enabled. The final path component is percent-decoded after path splitting, so an
+encoded format dot such as `hits%2ECSV` is also accepted.
 
 ```bash
 # The path suffix describes the compressed request body.

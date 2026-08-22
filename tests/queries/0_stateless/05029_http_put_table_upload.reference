@@ -5,7 +5,13 @@
 1	one
 2	two
 3	three
+-- input_format overrides the path format
+-- format overrides the path format
 -- database-prefixed upload works with table-as-file disabled
+-- path filters are rejected for uploads
+HTTP PUT table uploads do not support filters in the URL path
+-- filtered row was not inserted
+0
 -- unqualified upload still requires table-as-file
 HTTP PUT table uploads require a table path with a known format
 -- unqualified upload works with table-as-file enabled
@@ -17,12 +23,17 @@ HTTP PUT table uploads require a table path with a known format
 3	three
 4	four
 5	five
+9	nine
+10	ten
 -- gzip compression suffix decompresses the request body
 -- matching Content-Encoding and path compression are accepted
 -- compression aliases are accepted
 -- conflicting Content-Encoding is rejected
 Conflicting compression: 'gz' in URL path vs 'deflate' in `Content-Encoding`
--- inserted rows after compressed uploads
+-- chunked PUT upload
+-- Expect: 100-continue PUT upload
+-- deferred Expect: 100-continue PUT upload
+-- inserted rows after compressed and framed uploads
 1	one
 2	two
 3	three
@@ -31,10 +42,28 @@ Conflicting compression: 'gz' in URL path vs 'deflate' in `Content-Encoding`
 6	six
 7	seven
 8	eight
+9	nine
+10	ten
+12	expect
+13	chunked
+16	deferred-expect
+-- quoted table names with filter characters support upload suffixes
+-- quoted table names support compressed upload suffixes
+-- percent-encoded format suffixes are recognized
+-- a compressed body that decodes to empty is rejected
+HTTP PUT table uploads require a non-empty request body
+-- mixed-case multipart PUT is not claimed
+HTTP 501
 -- a PUT path without a format suffix is not claimed
+HTTP 501
+-- a dot inside a quoted table name is not a format suffix
 HTTP 501
 -- a missing table is rejected
 which does not exist
+-- an unknown format after a quoted table is rejected
+Unknown format 'UnknownFormat' in URL path
+-- an unknown format after a quoted table is rejected for reads
+Unknown format 'UnknownFormat' in URL path
 -- an unknown path format is rejected
 HTTP PUT table uploads require a known format
 -- compression without a format is rejected
@@ -47,10 +76,19 @@ unframed-status: 411
 Cannot execute query in readonly mode
 -- an explicit readonly setting remains enforced
 Cannot execute query in readonly mode
--- a failed PUT drains its body so the connection can be reused
+-- PUT still requires the INSERT privilege
+Not enough privileges
+-- failed requests drain bodies and keep connections reusable
 first-status: 400
 first-connection-close: False
 second-status: 200
 delete-first-status: 500
 delete-first-connection-close: False
 delete-second-status: 200
+parser-first-status: 400
+parser-first-connection-close: False
+parser-second-status: 200
+compressed-parser-first-status: 400
+compressed-parser-first-connection-close: False
+compressed-parser-second-status: 200
+chunked-empty-status: 400

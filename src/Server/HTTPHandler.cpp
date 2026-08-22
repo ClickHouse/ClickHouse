@@ -133,9 +133,7 @@ namespace
 /// "external data for query processing". Such a body must come with a length on a non-chunked request.
 bool requestDeclaresFormBody(const HTTPServerRequest & request)
 {
-    const auto & content_type = request.getContentType();
-    return startsWith(content_type, "application/x-www-form-urlencoded")
-        || startsWith(content_type, "multipart/form-data");
+    return isUrlEncodedFormData(request) || isMultipartFormData(request);
 }
 
 void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
@@ -306,7 +304,7 @@ void HTTPHandler::processQuery(
     /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
     SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
 
-    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
+    bool has_external_data = isMultipartFormData(request);
 
     const AccessControl & access_control = session->sessionContext()->getAccessControl();
     NameToNameMap query_parameters = session->sessionContext()->getQueryParameters();
@@ -546,6 +544,9 @@ void HTTPHandler::processQuery(
     if (is_path_table_upload && path_info.format.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "HTTP PUT table uploads require a known format in the URL path, for example /database/table.CSV");
+
+    if (is_path_table_upload && !path_info.path_filters.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP PUT table uploads do not support filters in the URL path");
 
     /// Resolve the current database from the path and the `database` setting, in that order.
     /// If both are specified and differ, that's an error. We do this *before* `QueryScope::create`
@@ -933,7 +934,10 @@ void HTTPHandler::processQuery(
         }
     }
 
-    const bool request_has_body = feeds_request_body_to_query
+    /// Framing tells us whether the request body is bounded and can be read. For path uploads, the
+    /// decoded stream is checked below as well, so a zero-length chunked or compressed body does not
+    /// satisfy the non-empty upload contract.
+    const bool request_body_is_framed = feeds_request_body_to_query
         && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
 
     /// Determine base query: from URL path table, or from `query` param (raw_query).
@@ -976,7 +980,7 @@ void HTTPHandler::processQuery(
         const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
         const bool table_name_is_simple = !path_info.table.contains('.');
         if (table_name_is_simple && !table_db.empty() && raw_query.empty()
-            && (is_path_table_upload || !request_has_body))
+            && (is_path_table_upload || !request_body_is_framed))
         {
             StorageID table_id(table_db, path_info.table);
             if (!DatabaseCatalog::instance().isTableExist(table_id, context))
@@ -1012,13 +1016,17 @@ void HTTPHandler::processQuery(
 
         if (is_path_table_upload)
         {
-            if (!request_has_body)
+            /// Do not probe a deferred Expect: 100-continue body here. The client waits for the continue
+            /// response before sending it; the deferred callback below performs the same probe after the
+            /// query has passed the normal parsing and quota checks.
+            const bool defer_http_continue = shouldDeferHTTP100Continue(request) && request.getExpectContinue();
+            if (!request_body_is_framed || (!defer_http_continue && in_post_maybe_compressed->eof()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP PUT table uploads require a non-empty request body");
 
             final_query = "INSERT INTO " + qualified_table + " FORMAT " + path_info.format + "\n";
         }
         /// If there is no user-supplied query (URL param empty AND no body), generate a default one.
-        else if (raw_query.empty() && !request_has_body)
+        else if (raw_query.empty() && !request_body_is_framed)
             final_query = "SELECT * FROM " + qualified_table;
     }
 
@@ -1076,6 +1084,9 @@ void HTTPHandler::processQuery(
     }
 
     customizeContext(request, context, *in_post_maybe_compressed);
+    /// Keep a non-owning pointer for the deferred-continue callback. Path uploads transfer ownership of the body
+    /// into the second buffer in `in`; the object remains alive until `executeQuery` has finished with the callback.
+    ReadBuffer * path_upload_body = is_path_table_upload ? in_post_maybe_compressed.get() : nullptr;
     std::unique_ptr<ReadBuffer> in;
     /// `feeds_request_body_to_query` is false for a SQL-defined handler whose query never reads the body. Appending
     /// the body to such a query would be meaningless, and it would also hang a lengthless non-chunked `PUT`: that
@@ -1371,11 +1382,13 @@ void HTTPHandler::processQuery(
     HTTPContinueCallback http_continue_callback = {};
     if (shouldDeferHTTP100Continue(request))
     {
-        http_continue_callback = [&request, &response]()
+        http_continue_callback = [&request, &response, path_upload_body]()
         {
             if (request.getExpectContinue() && response.getStatus() == HTTPResponse::HTTP_OK)
             {
                 response.sendContinue();
+                if (path_upload_body && path_upload_body->eof())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP PUT table uploads require a non-empty request body");
             }
         };
     }
@@ -1605,14 +1618,14 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// up front for these methods too, matching the POST contract.
         ///
         /// But require it only when the body is actually consumed - either by the handler's query
-        /// (`consumes_request_body`), by the path-table upload route, or by the form/multipart parsing that the handler
-        /// layer itself performs.
+        /// (`consumes_request_body`), by the path-table upload route, by an unknown handler whose query may consume
+        /// a POST, PUT, or DELETE body, or by the form/multipart parsing that the handler layer itself performs.
         /// A handler such as `CREATE HANDLER h URL '/x' METHODS (DELETE) AS SELECT 1` never looks at the body, and
         /// demanding `Content-Length: 0` from every ordinary HTTP client would make that class of handlers unusable.
-        /// The same applies to `POST` when the handler's body contract is known (a SQL-defined handler): a plain
+        /// The same applies to `POST`, `PUT`, and `DELETE` when the handler's body contract is known (a SQL-defined handler): a plain
         /// `curl -X POST` sends neither a body nor `Content-Length`, and a handler that never reads the body must
-        /// accept it. For the other handlers `POST` keeps the historical unconditional requirement: their body may
-        /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
+        /// accept it. For the other handlers `POST`, `PUT`, and `DELETE` keep the historical unconditional requirement: their
+        /// body may be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
         ///
         /// Accepting a lengthless non-chunked `POST`/`PUT` here is framing-safe even if the client does send
         /// bytes: the request stream stays unbounded (EOF-delimited), so `HTTPServerRequest::canKeepAlive`
@@ -1625,7 +1638,11 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         const bool is_path_table_upload = allowMutatingIdempotentMethods(request, params);
         const bool body_may_be_consumed = body_contract_known
             ? (consumes_request_body || requestDeclaresFormBody(request))
-            : (is_path_table_upload || method == HTTPRequest::HTTP_POST || requestDeclaresFormBody(request));
+            : (is_path_table_upload
+                || method == HTTPRequest::HTTP_POST
+                || method == HTTPRequest::HTTP_PUT
+                || method == HTTPRequest::HTTP_DELETE
+                || requestDeclaresFormBody(request));
         const bool method_requires_content_length = is_body_carrying_method && body_may_be_consumed;
         const bool request_is_unframed = !request.getChunkedTransferEncoding() && !request.hasContentLength();
 
@@ -1706,7 +1723,7 @@ bool DynamicQueryHandler::allowMutatingIdempotentMethods(const HTTPServerRequest
         && param_name == "query"
         && request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
         && !params.has(param_name)
-        && !startsWith(request.getContentType(), "multipart/form-data");
+        && !isMultipartFormData(request);
 }
 
 bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)
@@ -1728,7 +1745,7 @@ bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, 
 
 std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
-    if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
+    if (likely(!isMultipartFormData(request)))
     {
         /// Part of the query can be passed in the 'query' parameter and the rest in the request body
         /// (http method need not necessarily be POST). In this case the entire query consists of the
@@ -1872,7 +1889,7 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     const bool wants_request_body
         = receive_params.contains("_request_body") && !context->getQueryParameters().contains("_request_body");
 
-    if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
+    if (unlikely(isMultipartFormData(request)))
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
@@ -1885,7 +1902,7 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
             params.load(request, body, handler);
         body_fields_loaded = true;
     }
-    else if (unlikely(startsWith(request.getContentType(), "application/x-www-form-urlencoded")))
+    else if (unlikely(isUrlEncodedFormData(request)))
     {
         /// A urlencoded body carries parameter values for the query, so parse it - but only for a handler that
         /// declares parameters bindable this way, and only on a body-carrying method. `_request_body` alone does

@@ -48,5 +48,8 @@ echo "=== a lengthless urlencoded POST to a non-body-consuming handler still req
 # even though the handler's query does not read the body.
 ${CLICKHOUSE_CURL} -sS -X POST -I -H 'Content-Type: application/x-www-form-urlencoded' "${BASE}${P}/post" | grep -c '411 Length Required'
 
+echo "=== media type matching is case-insensitive for the same framing check ==="
+${CLICKHOUSE_CURL} -sS -X POST -I -H 'Content-Type: Application/X-WWW-Form-Urlencoded' "${BASE}${P}/post" | grep -c '411 Length Required'
+
 echo "=== the built-in dynamic handler keeps the unconditional POST contract ==="
 ${CLICKHOUSE_CURL} -sS -X POST -I "${BASE}/?query=SELECT%201" | grep -c '411 Length Required'

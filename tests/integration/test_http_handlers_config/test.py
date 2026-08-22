@@ -1,5 +1,6 @@
 import contextlib
 import os
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -141,10 +142,13 @@ def test_dynamic_handler_put_delete_still_readonly():
         modifying_query_body = "CREATE DATABASE IF NOT EXISTS test_default_query_put_db"
 
         for method in ("PUT", "DELETE"):
+            request_headers = {"Content-Length": "0"} if method == "DELETE" else {}
+
             # A read-only query is allowed over PUT/DELETE for a config handler (nothing to force).
             res_select = cluster.instance.http_request(
                 "test_dynamic_handler_put_delete?get_dynamic_handler_query=" + select_query,
                 method=method,
+                headers=request_headers,
             )
             assert 200 == res_select.status_code, method
             assert "1" == res_select.content.strip().decode(), method
@@ -154,6 +158,7 @@ def test_dynamic_handler_put_delete_still_readonly():
                 "test_dynamic_handler_put_delete?get_dynamic_handler_query="
                 + modifying_query,
                 method=method,
+                headers=request_headers,
             )
             assert 200 != res_modify.status_code, method
             assert "Cannot execute query in readonly mode" in res_modify.content.decode(), method
@@ -180,8 +185,8 @@ def test_dynamic_handler_put_delete_still_readonly():
             status = response.split(b" ", 2)[1].decode()
             assert "411" == status, (method, status, response)
 
-        # An unframed DELETE is represented by an empty request stream. It must close the connection even
-        # when the handler does not read the body, otherwise bytes after the headers can become a new request.
+        # A configured DELETE handler may consume the request body. Reject an unframed request before the
+        # handler sees the bounded empty stream, and close the connection so pipelined bytes are not reused.
         with socket.create_connection((cluster.instance.ip_address, 8123), timeout=5) as sock:
             sock.sendall(
                 b"DELETE /test_dynamic_handler_put_delete?get_dynamic_handler_query=SELECT+1 HTTP/1.1\r\n"
@@ -201,7 +206,7 @@ def test_dynamic_handler_put_delete_still_readonly():
 
         assert 1 == response.count(b"HTTP/1.1 "), response
         assert b"HTTP/1.1 200" in response, response
-        assert b"Connection: close" in response, response
+        assert b"connection: close" in response.lower(), response
         assert b"42424242" not in response, response
 
         # The server-level path-request gate must run before decoding the final component. Otherwise a
@@ -221,7 +226,7 @@ def test_dynamic_handler_put_delete_still_readonly():
                 response += chunk
 
         status = response.split(b" ", 2)[1].decode()
-        assert "404" == status, (status, response)
+        assert "411" == status, (status, response)
 
         # The default query parameter name is also used by configured dynamic handlers. It must not
         # enable the built-in path-upload mutation exception for a handler-owned PUT route.
@@ -317,6 +322,20 @@ def test_predefined_query_handler():
         )
         assert res3.status_code == 200
         assert cluster.instance.query("SELECT * FROM test_table") == "100\tTEST\n"
+
+        for content_type in (
+            "application/x-www-form-urlencoded",
+            "Application/X-WWW-Form-Urlencoded",
+        ):
+            res_form = cluster.instance.http_request(
+                "test_predefined_handler_post_form_body",
+                method="POST",
+                data=b"value=hello",
+                headers={"Content-Type": content_type},
+            )
+            assert res_form.status_code == 200, (content_type, res_form.content)
+            assert b"hello\n" == res_form.content, content_type
+
         cluster.instance.query("DROP TABLE test_table")
 
         cluster.instance.http_request(

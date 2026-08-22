@@ -1,6 +1,7 @@
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTPHandler.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/HTTPQueryConstructor.h>
 #include <Server/IServer.h>
 #include <Server/IndexRequestHandler.h>
 #include <Server/InterserverIOHTTPHandler.h>
@@ -668,7 +669,7 @@ void addCatchAllQueryHandlerFactory(
             const bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
                                          || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
             const bool is_put = method == Poco::Net::HTTPRequest::HTTP_PUT
-                             && !startsWith(request.getContentType(), "multipart/form-data");
+                             && !isMultipartFormData(request);
 
             /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).
             /// `HTTPHandler::handleRequest` answers it via `processOptionsRequest` before
@@ -684,27 +685,18 @@ void addCatchAllQueryHandlerFactory(
             if (!is_get_or_head && !is_post_or_options && !is_put)
                 return false;
 
-            if (is_put)
-            {
-                String path = request.getURI();
-                if (const auto query_start = path.find('?'); query_start != String::npos)
-                    path.resize(query_start);
-
-                const auto last_slash = path.rfind('/');
-                const auto last_dot = path.rfind('.');
-                if (path.empty()
-                    || last_dot == String::npos
-                    || last_dot <= last_slash
-                    || last_dot + 1 == path.size())
-                    return false;
-            }
-
             /// Everything below is the path-as-file extension. Skip it unless path requests are
             /// allowed server-wide, so unknown paths fall through to `NotFoundHandler` (HTTP 404)
             /// exactly as before this PR. (The path features are still gated again per-user inside
             /// `HTTPHandler::processQuery`; this server-level flag is only the routing-time gate.)
             if (!allow_path_requests)
                 return false;
+
+            if (is_put)
+            {
+                if (!hasHTTPPathFormatSuffix(request.getURI()))
+                    return false;
+            }
 
             /// Skip the path-as-file routing for clients sending an `Authorization` header with a
             /// scheme ClickHouse does not implement (e.g. `AWS4-HMAC-SHA256`, used by
