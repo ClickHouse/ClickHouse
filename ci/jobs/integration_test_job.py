@@ -113,6 +113,11 @@ ORCHESTRATION_LIFECYCLE_VERBS = {
 # which outlives the python-side budget, so its timeout means the server did not respond.
 ORCHESTRATION_PRODUCT_VERBS = {"kill", "pause", "restart", "stop"}
 
+# Top-level `docker` subcommands the harness runs on its own behalf, outside compose, and
+# whose timeout is known to arrive here (`run_and_check` re-raises `TimeoutExpired` even
+# under `nothrow`). `exec` and `update` are absent: a test body runs those.
+DOCKER_TOPLEVEL_LIFECYCLE_VERBS = {"login", "ps", "rm"}
+
 
 def _raising_exception_lines(info: str) -> list:
     """The `E   <ExcType>: <msg>` lines, i.e. the exceptions actually raised.
@@ -137,8 +142,8 @@ def _orchestration_verb(argv: list):
     """The docker subcommand `argv` invokes, or None if it is not orchestration."""
     if len(argv) < 2 or argv[0] != "docker":
         return None
-    if argv[1] == "login":
-        return "login"
+    if argv[1] in DOCKER_TOPLEVEL_LIFECYCLE_VERBS:
+        return argv[1]
     if argv[1] != "compose":
         return None
     i = 2

@@ -25,6 +25,12 @@ CLUSTER_PY = os.path.join(REPO_ROOT, "tests/integration/helpers/cluster.py")
 # `run_and_check`'s default, i.e. the budget that applies when nothing is forwarded.
 RUN_AND_CHECK_DEFAULT_TIMEOUT = 300
 
+# The drain headroom the container-side `timeout` is given over the python-side kill.
+# That `timeout` signals only its direct child, so `docker exec` returns once the whole
+# `tail | tee | grep` pipeline has drained, which outlasts the signal itself; a margin of
+# one second would satisfy the ordering invariant while leaving no time to drain.
+PROMISED_MARGIN = 60
+
 # Inner values spanning the callers that exist today (3 .. 600) plus the boundary at
 # `run_and_check`'s default, where the unfixed code starts losing the caller's value.
 SAMPLE_INNER_TIMEOUTS = [3, 30, 60, 300, 600]
@@ -211,6 +217,19 @@ def test_callers_above_the_default_are_no_longer_capped(inner):
         assert outer > RUN_AND_CHECK_DEFAULT_TIMEOUT, (
             f"inner={inner} still capped at {RUN_AND_CHECK_DEFAULT_TIMEOUT}"
         )
+
+
+@pytest.mark.parametrize("inner", SAMPLE_INNER_TIMEOUTS)
+def test_outer_budget_keeps_the_promised_drain_margin(inner):
+    """The ordering arm above accepts any positive margin, including one second, which
+    leaves the pipeline no time to drain. `>=` because a larger margin is not a defect and
+    the floor legitimately dominates for the small inner values."""
+    outer = _outer_timeout_for(_current_source(), inner)
+    assert outer is not None
+    assert outer >= max(inner + PROMISED_MARGIN, RUN_AND_CHECK_DEFAULT_TIMEOUT), (
+        f"inner={inner} yields {outer}, which leaves less than the {PROMISED_MARGIN}s of "
+        "drain headroom the container-side `timeout` is meant to have"
+    )
 
 
 @pytest.mark.parametrize("inner", SAMPLE_INNER_TIMEOUTS)

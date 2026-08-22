@@ -692,6 +692,97 @@ def test_docker_login_timeout_stays_infrastructure():
     assert _is_infrastructure_error(r)
 
 
+def test_plain_docker_ps_diagnostic_timeout_stays_infrastructure():
+    """Six startup waiters run `run_and_check(["docker", "ps", "--all"])` on their own
+    failure path (cluster.py:2885, 2913, 2936, 2959, 2985, 3019), and three of them are
+    reached without an enclosing `try` (`wait_for_url` from :3023, :3028, :3654), so the
+    timeout propagates here. A top-level `docker` command is not compose, so the verb has
+    to be recognised outside the compose path or the whole class stops being docker's.
+
+    `nothrow=True` does not change that: `run_and_check` re-raises `TimeoutExpired`
+    unconditionally (cluster.py:219-223), and `nothrow` only guards the returncode branch.
+    """
+    r = _run_and_check_chain(
+        "test_mysql_protocol/test.py::test_mysql_client",
+        [
+            ("test_mysql_protocol/test.py", 40, "    cluster.start()"),
+            ("helpers/cluster.py", 2885, "    run_and_check(['docker', 'ps', '--all'])"),
+        ],
+        ["docker", "ps", "--all"],
+    )
+    # the fixture's own precondition: the argv survived the rendering, so what the arm
+    # measures below is the decision and not a lost argv
+    assert _timed_out_orchestration_verbs(r.info) == {"ps"}
+    r.status = Result.Status.FAIL
+    assert _is_infrastructure_error(r)
+    r.status = Result.Status.ERROR
+    assert _is_infrastructure_error(r)
+
+
+def test_plain_docker_rm_timeout_stays_infrastructure():
+    """`wait_rabbitmq_to_start` removes a wedged container with a top-level
+    `docker rm -f -v` (cluster.py:3199) before recreating it, unguarded. `rm` already
+    means the same thing as a compose subcommand, so no split is needed."""
+    r = _run_and_check_chain(
+        "test_storage_rabbitmq/test.py::test_rabbitmq_select",
+        [
+            ("test_storage_rabbitmq/test.py", 60, "    cluster.start()"),
+            ("helpers/cluster.py", 3199, "    run_and_check(['docker', 'rm', '-f', '-v', ...])"),
+        ],
+        ["docker", "rm", "-f", "-v", "roottestrabbitmq-gw2-rabbitmq1-1"],
+    )
+    assert _timed_out_orchestration_verbs(r.info) == {"rm"}
+    r.status = Result.Status.FAIL
+    assert _is_infrastructure_error(r)
+
+
+def test_a_test_bodys_top_level_docker_command_is_still_a_failure():
+    """The guard that keeps the top-level set out of test-body territory.
+
+    `test_memory_limit_observer/test.py:47` runs `docker update --memory=10g` from the
+    test body to change the limit it then asserts on, so a timeout there is a result about
+    the run, not about docker being unreachable. `update` and `exec` must stay out of the
+    set for that reason.
+    """
+    r = _run_and_check_chain(
+        "test_memory_limit_observer/test.py::test_memory_limit_observer",
+        [
+            (
+                "test_memory_limit_observer/test.py",
+                47,
+                "    run_and_check(['docker', 'update', '--memory=10g', node1.docker_id])",
+            ),
+        ],
+        ["docker", "update", "--memory=10g", "roottestmemorylimitobserver-gw2-node1-1"],
+    )
+    r.status = Result.Status.FAIL
+    assert not _is_infrastructure_error(r)
+    r.status = Result.Status.ERROR
+    assert not _is_infrastructure_error(r)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["docker", "inspect", "--format", "{{json .State}}", "roottestx-gw2-rabbitmq1-1"],
+        ["docker", "volume", "prune", "-f", "--all"],
+    ],
+)
+def test_a_top_level_command_nobody_classified_is_not_relabelled(argv):
+    """The top-level set is an enumeration of the commands whose timeout has been shown to
+    reach here, not of every command the harness runs. `docker inspect` (cluster.py:435)
+    and `docker volume prune` (:1273) run only from inside a `try`, so nothing they raise
+    arrives, and classifying them would suppress results on the strength of a path nobody
+    has measured."""
+    r = _run_and_check_chain(
+        "test_storage_rabbitmq/test.py::test_rabbitmq_select",
+        [("helpers/cluster.py", 435, "    run_and_check(")],
+        argv,
+    )
+    r.status = Result.Status.FAIL
+    assert not _is_infrastructure_error(r)
+
+
 def test_compose_start_timeout_stays_infrastructure():
     """`process_integration_nodes` passes the subcommand in as a variable
     (cluster.py:4835), so `start`/`kill` reach compose from the same call site;
