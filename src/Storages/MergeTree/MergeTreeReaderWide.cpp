@@ -631,9 +631,9 @@ void MergeTreeReaderWide::readData(
 {
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
-    /// A column whose data files are only partly there (see `addStreams`) is discarded and filled
-    /// with defaults by `IMergeTreeReader::fillMissingColumns`, so deserialization may return it.
-    deserialize_settings.partially_read_columns_are_refilled = true;
+    /// Only the columns whose data files are partly there (see `addStreams`) are refilled by
+    /// `IMergeTreeReader::fillMissingColumns`; any other column has to be read in full.
+    deserialize_settings.partially_read_columns_are_refilled = partially_read_columns.contains(name_and_type.name);
 
     deserializePrefix(serialization, name_and_type, from_mark, deserialize_binary_bulk_state_map, cache, deserialize_states_cache, {});
 

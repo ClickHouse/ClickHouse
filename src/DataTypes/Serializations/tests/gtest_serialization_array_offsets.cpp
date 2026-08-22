@@ -46,19 +46,13 @@ ColumnPtr emptyOffsets()
 
 /// Read a whole `Array(UInt8)` column: offsets from `offsets_data`, elements from `elements_data`.
 /// Both buffers are references so that temporaries passed by the caller outlive the non-owning readers.
-ColumnPtr readArrayColumn(
-    const String & offsets_data,
-    const String & elements_data,
-    size_t limit,
-    bool position_independent_encoding,
-    bool partially_read_columns_are_refilled = false)
+ColumnPtr readArrayColumn(const String & offsets_data, const String & elements_data, size_t limit, bool position_independent_encoding)
 {
     ReadBufferFromString offsets_in(offsets_data);
     ReadBufferFromString elements_in(elements_data);
 
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.position_independent_encoding = position_independent_encoding;
-    settings.partially_read_columns_are_refilled = partially_read_columns_are_refilled;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
         return path.back().type == ISerialization::Substream::ArraySizes ? &offsets_in : &elements_in;
@@ -168,18 +162,9 @@ TEST(SerializationArrayOffsets, RejectsEmptyElementsWithNonZeroLastOffsetInSizes
     }
 }
 
-/// A reader that refills partially read columns keeps accepting an empty elements column: that is how
-/// a column of a Nested type that was added by ALTER reads the parts written before that ALTER, and
-/// `IMergeTreeReader::fillMissingColumns` replaces the column before anything else can see it.
-TEST(SerializationArrayOffsets, AcceptsEmptyElementsWhenPartiallyReadColumnsAreRefilled)
-{
-    auto column = readArrayColumn(
-        absoluteOffsets({1}), /*elements_data=*/"", 1,
-        /*position_independent_encoding=*/true, /*partially_read_columns_are_refilled=*/true);
-    const auto & column_array = assert_cast<const ColumnArray &>(*column);
-    ASSERT_EQ(column_array.getOffsets(), (ColumnArray::Offsets{1}));
-    ASSERT_TRUE(column_array.getData().empty());
-}
+/// The case where a reader may still see such a column - a `Nested` column added by `ALTER`, which
+/// `IMergeTreeReader::fillMissingColumns` replaces before anything else can see it - is covered by
+/// `05024_mergetree_array_missing_elements`, because it needs the MergeTree readers.
 
 /// Repeated reads into one accumulating column keep appending, so a column filled over many calls ends
 /// up with every offset that was read and stays accepted throughout.
