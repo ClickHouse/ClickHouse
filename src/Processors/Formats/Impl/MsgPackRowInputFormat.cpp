@@ -524,9 +524,8 @@ bool MsgPackRowInputFormat::readObject(Parser & msgpack_parser)
 
     PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t offset = 0;
-    /// execute() returns parse_return, not bool: PARSE_CONTINUE (0) alone asks for more data, and it
-    /// advances offset only on PARSE_SUCCESS (2) or PARSE_EXTRA_BYTES (1). The two error values are
-    /// negative, so they are indistinguishable from success under a boolean test.
+    /// execute() returns parse_return, not bool: both error statuses are negative and so are
+    /// indistinguishable from success under a boolean test.
     while (true)
     {
         const msgpack::parse_return status = msgpack_parser.execute(buf->position(), buf->available(), offset);
@@ -556,7 +555,15 @@ size_t MsgPackRowInputFormat::countRows(size_t max_block_size)
     while (!buf->eof() && num_rows < max_block_size)
     {
         for (size_t i = 0; i < columns; ++i)
-            readObject(null_parser);
+        {
+            /// A row that ends between columns is incomplete.
+            if (!readObject(null_parser))
+            {
+                if (i != 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Not enough values to complete the row.");
+                return num_rows;
+            }
+        }
         ++num_rows;
     }
 

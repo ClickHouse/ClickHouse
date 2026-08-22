@@ -67,6 +67,11 @@ printf '\x00\x00' > "$DIR/bad.pb"
 # 0xc1 is the one byte value MessagePack never assigns, so the parser reports a parse error without
 # consuming it.
 printf '\xc1' > "$DIR/bad.msgpk"
+# Three well formed objects read back with a two column schema, so the last row is missing its second
+# value: the object count is not a multiple of the column count.
+$CLICKHOUSE_LOCAL -q "
+    SELECT number AS c1 FROM numbers(3)
+    INTO OUTFILE '$DIR/odd.msgpk' TRUNCATE FORMAT MsgPack"
 # A negative declared object count: hasMore() tests != 0 and decr() only decrements.
 avro_append_block "$DIR/ok.avro" "$DIR/negative.avro" -5
 # A huge positive declared count: the loop terminates, but every row it reports past the payload is
@@ -82,6 +87,9 @@ for setting in 1 0; do
     $CLICKHOUSE_LOCAL -q "
         SELECT count() FROM file('$DIR/bad.msgpk', MsgPack, 'c1 UInt64')
         $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'Error occurred while parsing msgpack data'
+    $CLICKHOUSE_LOCAL -q "
+        SELECT count() FROM file('$DIR/odd.msgpk', MsgPack, 'c1 UInt64, c2 UInt64')
+        $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'Not enough values to complete the row'
     $CLICKHOUSE_LOCAL -q "
         SELECT count() FROM file('$DIR/negative.avro', Avro)
         $BOUND, optimize_count_from_files = $setting" 2>&1 | grep -c -F 'EOF reached'
