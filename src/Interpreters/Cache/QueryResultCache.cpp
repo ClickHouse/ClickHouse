@@ -212,31 +212,54 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
+/// Applies the `obfuscate_seed` changes of a single query-level `SETTINGS` clause to `seed_is_empty`.
+static void applyObfuscateSeedChanges(const ASTPtr & settings_ast, bool & seed_is_empty)
+{
+    const auto * set_query = settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr;
+    if (!set_query)
+        return;
+
+    for (const auto & change : set_query->changes)
+        if (change.name == "obfuscate_seed")
+            seed_is_empty = change.value.getType() == Field::Types::String && change.value.safeGet<String>().empty();
+
+    /// `SETTINGS obfuscate_seed = DEFAULT` is stored separately and resets the seed
+    /// to its default, which is the empty (non-deterministic) one.
+    for (const auto & name : set_query->default_settings)
+        if (name == "obfuscate_seed")
+            seed_is_empty = true;
+}
+
 /// The `obfuscate` table function with an empty seed derives a fresh random seed per execution
 /// (see `ObfuscateStep`), so its result is non-deterministic and must not be cached. A non-empty
 /// `obfuscate_seed` makes the output reproducible and therefore cacheable. The setting can be
-/// overridden by the SETTINGS clause of any enclosing SELECT, and that override is what the
+/// overridden by the SETTINGS clause of any enclosing (sub)query, and that override is what the
 /// table function effectively runs with, so track the effective value while descending into the AST.
 static bool hasNonDeterministicObfuscate(const ASTPtr & node, bool seed_is_empty)
 {
     if (!node)
         return false;
 
-    if (const auto * select = node->as<ASTSelectQuery>())
-    {
-        if (const auto * settings_ast = select->settings() ? select->settings()->as<ASTSetQuery>() : nullptr)
-        {
-            for (const auto & change : settings_ast->changes)
-                if (change.name == "obfuscate_seed")
-                    seed_is_empty = change.value.getType() == Field::Types::String && change.value.safeGet<String>().empty();
+    /// A query-level `SETTINGS` clause governs the whole (sub)query it belongs to, including the
+    /// parts of the AST that syntactically precede it, so it has to be applied before descending
+    /// into the children. There are three places that can carry it:
+    ///  - `ASTQueryWithOutput::settings_ast` - the top-level query, including the form after `FORMAT`;
+    ///  - `ASTSelectQuery::settings()` - a plain `SELECT`;
+    ///  - the *last* arm of a `UNION` - in every nested position the parser leaves a trailing
+    ///    union-level clause there instead of filling `settings_ast`.
+    if (const auto * query_with_output = node->as<ASTQueryWithOutput>())
+        applyObfuscateSeedChanges(query_with_output->settings_ast, seed_is_empty);
 
-            /// `SETTINGS obfuscate_seed = DEFAULT` is stored separately and resets the seed
-            /// to its default, which is the empty (non-deterministic) one.
-            for (const auto & name : settings_ast->default_settings)
-                if (name == "obfuscate_seed")
-                    seed_is_empty = true;
-        }
+    if (const auto * select_with_union = node->as<ASTSelectWithUnionQuery>())
+    {
+        const auto & arms = select_with_union->list_of_selects->children;
+        if (!arms.empty())
+            if (const auto * last_arm = arms.back()->as<ASTSelectQuery>())
+                applyObfuscateSeedChanges(last_arm->settings(), seed_is_empty);
     }
+
+    if (const auto * select = node->as<ASTSelectQuery>())
+        applyObfuscateSeedChanges(select->settings(), seed_is_empty);
 
     if (const auto * function = node->as<ASTFunction>())
         if (function->name == "obfuscate" && seed_is_empty)

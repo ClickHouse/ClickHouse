@@ -21,6 +21,7 @@ namespace Setting
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsBool extremes;
+    extern const SettingsString additional_result_filter;
 }
 
 /// The inner query is interpreted as a standalone top-level SELECT, so the query-level
@@ -28,9 +29,12 @@ namespace Setting
 /// generate from a truncated source just because the user limited the final result, e.g.
 /// `SELECT * FROM obfuscate(SELECT * FROM numbers(1000)) SETTINGS limit = 10`. Clear them
 /// for the inner execution; the outer pipeline still applies them to the obfuscated output.
-/// For the same reason clear the result-size limits and `extremes`: they describe the final
-/// query result, not the hidden source used for training and generation (subqueries and
-/// `StorageView` clear them for their inner contexts as well).
+/// For the same reason clear the result-size limits, `extremes` and `additional_result_filter`:
+/// they describe the final query result, not the hidden source used for training and generation
+/// (subqueries and `StorageView` clear them for their inner contexts as well). In particular,
+/// `additional_result_filter` is applied by both execution paths to every top-level query, so
+/// without clearing it here `SELECT * FROM obfuscate(SELECT ...) SETTINGS additional_result_filter = 'x > 0'`
+/// would filter the training source instead of only the obfuscated output.
 ContextPtr ObfuscateSource::makeInnerContext(const ContextPtr & context_)
 {
     auto inner_context = Context::createCopy(context_);
@@ -38,13 +42,14 @@ ContextPtr ObfuscateSource::makeInnerContext(const ContextPtr & context_)
     const auto & settings = context_->getSettingsRef();
     if (settings[Setting::limit] != 0 || settings[Setting::offset] != 0
         || settings[Setting::max_result_rows] != 0 || settings[Setting::max_result_bytes] != 0
-        || settings[Setting::extremes])
+        || settings[Setting::extremes] || !settings[Setting::additional_result_filter].value.empty())
     {
         inner_context->setSetting("limit", Field(0.));
         inner_context->setSetting("offset", Field(0.));
         inner_context->setSetting("max_result_rows", Field(UInt64(0)));
         inner_context->setSetting("max_result_bytes", Field(UInt64(0)));
         inner_context->setSetting("extremes", Field(false));
+        inner_context->setSetting("additional_result_filter", Field(""));
     }
 
     /// The inner query is analyzed from scratch here and was never seen by a distributed
