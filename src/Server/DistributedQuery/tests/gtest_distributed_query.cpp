@@ -590,7 +590,8 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     context->setSetting("distributed_plan_execute_locally", true);
 
     auto exchange_lookup = createExchangeLookup(
-        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context);
+        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
+        /*execute_locally=*/true);
 
     auto header = std::make_shared<const Block>();
     const ExchangeStreamId stream_id("test_exchange", 0, 0);
