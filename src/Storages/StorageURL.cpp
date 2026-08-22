@@ -34,6 +34,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
@@ -459,7 +460,7 @@ StorageURLSource::StorageURLSource(
             {
                 for (const auto & column : required_columns)
                 {
-                    if (columns_description.hasDefault(column.name))
+                    if (columnOrStorageParentHasDefault(columns_description, column.name))
                         return true;
                 }
                 return false;
@@ -492,11 +493,7 @@ StorageURLSource::StorageURLSource(
 
                 auto add_filter_inputs = [&](const ActionsDAG & dag)
                 {
-                    for (const auto & required : dag.getRequiredColumns())
-                    {
-                        if (!reader_header.has(required.name))
-                            reader_header.insert({required.type, required.name});
-                    }
+                    appendDeferredFilterInputs(reader_header, dag, columns_description);
                 };
                 if (deferred_row_level_filter)
                     add_filter_inputs(deferred_row_level_filter->actions);
@@ -530,6 +527,15 @@ StorageURLSource::StorageURLSource(
                 builder.addSimpleTransform([&](const SharedHeader & cur_header)
                 {
                     return std::make_shared<AddingDefaultsTransform>(cur_header, columns_description, *input_format, getContext());
+                });
+            }
+
+            if (auto extraction = tryCreateFilterSubcolumnExtractionActions(
+                    builder.getHeader(), deferred_row_level_filter, deferred_prewhere_info, getContext()))
+            {
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, *extraction);
                 });
             }
 

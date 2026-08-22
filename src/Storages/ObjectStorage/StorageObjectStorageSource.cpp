@@ -50,6 +50,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/prepareReadingFromFormat.h>
 #include <boost/operators.hpp>
 #include <Common/FailPoint.h>
 #include <Poco/String.h>
@@ -1098,9 +1099,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 for (const auto & column : required_columns)
                 {
-                    if (!read_from_format_info.columns_description.hasDefault(column.name))
+                    if (!columnOrStorageParentHasDefault(read_from_format_info.columns_description, column.name))
                         continue;
-                    if (!columns_present_in_this_file.empty() && columns_present_in_this_file.contains(column.name))
+                    const auto storage_name = storageColumnNameForDefaults(
+                        read_from_format_info.columns_description, column.name);
+                    if (!columns_present_in_this_file.empty() && columns_present_in_this_file.contains(storage_name))
                         continue;
                     return true;
                 }
@@ -1208,11 +1211,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             auto add_filter_inputs = [&](const ActionsDAG & dag)
             {
-                for (const auto & required : dag.getRequiredColumns())
-                {
-                    if (!initial_header.has(required.name))
-                        initial_header.insert({required.type, required.name});
-                }
+                appendDeferredFilterInputs(initial_header, dag, read_from_format_info.columns_description);
             };
             if (stripped_row_level_filter)
                 add_filter_inputs(stripped_row_level_filter->actions);
@@ -1343,6 +1342,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
                 });
+        }
+
+        if (auto extraction = tryCreateFilterSubcolumnExtractionActions(
+                builder.getHeader(), stripped_row_level_filter, stripped_prewhere_info, context_))
+        {
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, *extraction);
+            });
         }
 
         /// Apply row-level security filter and `PREWHERE` as fallback `FilterTransform`s

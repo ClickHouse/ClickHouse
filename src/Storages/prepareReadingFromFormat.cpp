@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -32,6 +33,72 @@ namespace Setting
     extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
+String storageColumnNameForDefaults(const ColumnsDescription & columns, const String & name)
+{
+    if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+        return column->getNameInStorage();
+    return name;
+}
+
+namespace
+{
+/// `ColumnsDescription::getDefault` matches the exact name, but the description of a subcolumn
+/// (`t.x`) carries no DEFAULT: it belongs to the storage parent (`t`).
+std::optional<ColumnDefault> getDefaultForColumnOrStorageParent(const ColumnsDescription & columns, const String & name)
+{
+    return columns.getDefault(storageColumnNameForDefaults(columns, name));
+}
+}
+
+bool columnOrStorageParentHasDefault(const ColumnsDescription & columns, const String & name)
+{
+    return getDefaultForColumnOrStorageParent(columns, name).has_value();
+}
+
+void appendDeferredFilterInputs(
+    Block & reader_header,
+    const ActionsDAG & dag,
+    const ColumnsDescription & columns_description)
+{
+    for (const auto & required : dag.getRequiredColumns())
+    {
+        if (reader_header.has(required.name))
+            continue;
+
+        /// A file that omits `t` cannot produce `t.x` either, so read the parent and let
+        /// `tryCreateFilterSubcolumnExtractionActions` extract the subcolumn after the defaults.
+        const auto storage_name = storageColumnNameForDefaults(columns_description, required.name);
+        if (storage_name != required.name && columns_description.hasDefault(storage_name))
+        {
+            if (!reader_header.has(storage_name))
+                reader_header.insert({columns_description.get(storage_name).type, storage_name});
+            continue;
+        }
+
+        reader_header.insert({required.type, required.name});
+    }
+}
+
+std::optional<ExpressionActionsPtr> tryCreateFilterSubcolumnExtractionActions(
+    const Block & header,
+    const FilterDAGInfoPtr & row_level_filter,
+    const PrewhereInfoPtr & prewhere_info,
+    const ContextPtr & context)
+{
+    Names required_names;
+    if (row_level_filter)
+        for (const auto & column : row_level_filter->actions.getRequiredColumns())
+            required_names.push_back(column.name);
+    if (prewhere_info)
+        for (const auto & column : prewhere_info->prewhere_actions.getRequiredColumns())
+            required_names.push_back(column.name);
+
+    auto dag = createSubcolumnsExtractionActions(header, required_names, context);
+    if (dag.getOutputs().empty())
+        return std::nullopt;
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
+}
+
 namespace
 {
 /// Also read inputs of DEFAULT expressions so AddingDefaultsTransform can evaluate them.
@@ -46,12 +113,28 @@ void appendColumnsRequiredForDefaults(
     const ColumnsDescription & all_columns,
     const UnorderedMapWithMemoryTracking<std::string, DataTypePtr> & hive_partition_columns)
 {
+    /// Read a subcolumn of a DEFAULT column as its parent: only the parent carries the expression,
+    /// and only the parent is what `AddingDefaultsTransform` and `getDescriptionForColumns` see.
+    {
+        std::unordered_set<std::string> rewritten_present;
+        Strings rewritten;
+        rewritten.reserve(columns_to_read.size());
+        for (const auto & name : columns_to_read)
+        {
+            const auto storage_name = storageColumnNameForDefaults(all_columns, name);
+            const auto & effective_name = all_columns.hasDefault(storage_name) ? storage_name : name;
+            if (rewritten_present.insert(effective_name).second)
+                rewritten.push_back(effective_name);
+        }
+        columns_to_read = std::move(rewritten);
+    }
+
     std::unordered_set<std::string> present(columns_to_read.begin(), columns_to_read.end());
     std::vector<String> to_visit = columns_to_read;
 
     for (size_t i = 0; i < to_visit.size(); ++i)
     {
-        const auto default_desc = all_columns.getDefault(to_visit[i]);
+        const auto default_desc = getDefaultForColumnOrStorageParent(all_columns, to_visit[i]);
         if (!default_desc || !default_desc->expression)
             continue;
 
@@ -82,8 +165,9 @@ NameSet collectColumnsRequiredForDefaults(
     NameSet defaulted;
     auto seed = [&](const String & name)
     {
-        if (columns_description.hasDefault(name))
-            defaulted.insert(name);
+        const auto storage_name = storageColumnNameForDefaults(columns_description, name);
+        if (columns_description.hasDefault(storage_name))
+            defaulted.insert(storage_name);
     };
 
     for (const auto & column : columns_that_may_need_defaults)
@@ -106,7 +190,7 @@ NameSet collectColumnsRequiredForDefaults(
         if (!visited.insert(name).second)
             continue;
 
-        const auto default_desc = columns_description.getDefault(name);
+        const auto default_desc = getDefaultForColumnOrStorageParent(columns_description, name);
         if (!default_desc || !default_desc->expression)
             continue;
 
@@ -115,8 +199,8 @@ NameSet collectColumnsRequiredForDefaults(
         for (const auto & required : columns_context.requiredColumns())
         {
             required_inputs.insert(required);
-            if (columns_description.hasDefault(required))
-                to_visit.push_back(required);
+            if (columnOrStorageParentHasDefault(columns_description, required))
+                to_visit.push_back(storageColumnNameForDefaults(columns_description, required));
         }
     }
 
@@ -199,10 +283,20 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
 
+        const auto & all_columns = storage_snapshot->metadata->getColumns();
         appendColumnsRequiredForDefaults(
             columns_to_read,
-            storage_snapshot->metadata->getColumns(),
+            all_columns,
             hive_parameters.hive_partition_columns_to_read_from_file_path_map);
+
+        /// The format now reads the parent of a subcolumn of a DEFAULT column, so point the
+        /// requested pair at that parent: `ExtractColumnsTransform` extracts the subcolumn from it.
+        for (auto & column : info.requested_columns)
+        {
+            const auto storage_name = storageColumnNameForDefaults(all_columns, column.name);
+            if (storage_name != column.getNameInStorage() && all_columns.hasDefault(storage_name))
+                column.setDelimiterAndTypeInStorage(storage_name, all_columns.get(storage_name).type);
+        }
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }
@@ -396,7 +490,30 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
             new_info.format_header.insert(column);
     }
 
-    new_info.source_header = pruned_header;
+    /// `pruned_header` is format-level: a requested subcolumn can appear in it as its storage
+    /// parent (a DEFAULT column is always read whole). Keep the query-level names in
+    /// `source_header` / `requested_columns` - `ExtractColumnsTransform` extracts them from the
+    /// parent - and add whatever the pruning produced on top of them (the prewhere outputs).
+    NameSet names_taken_from_pruned_header;
+    for (const auto & column : info.requested_columns)
+    {
+        const auto format_name = column.getNameInStorage();
+        if (!pruned_header.has(format_name) || new_info.source_header.has(column.name))
+            continue;
+
+        names_taken_from_pruned_header.insert(format_name);
+        new_info.source_header.insert({column.type->createColumn(), column.type, column.name});
+        new_info.requested_columns.push_back(column);
+    }
+
+    for (const auto & col : pruned_header)
+    {
+        if (names_taken_from_pruned_header.contains(col.name) || new_info.source_header.has(col.name))
+            continue;
+
+        new_info.source_header.insert(col);
+        new_info.requested_columns.emplace_back(col.name, col.type);
+    }
 
     /// Hive partition columns come from the file path, not the data file, so prewhere column
     /// pruning above does not concern them. Carry them over and keep their position before the
@@ -409,11 +526,6 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     new_info.requested_virtual_columns = info.requested_virtual_columns;
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
         new_info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
-
-    for (const auto & col : pruned_header)
-    {
-        new_info.requested_columns.emplace_back(col.name, col.type);
-    }
 
     for (const auto & col : new_info.format_header)
     {
