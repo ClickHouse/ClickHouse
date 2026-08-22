@@ -42,6 +42,13 @@ TEST(RegexpUtils, extractFixedPrefix)
     check("^abc\\\\", {.prefix = "abc\\", .is_perfect = true});
     check("^abc\\$", {.prefix = "abc$", .is_perfect = true});
 
+    /// A NUL is an ordinary literal character: the pattern is length-based and RE2 matches a NUL
+    /// literally, so the scan neither stops at it nor treats it as end-of-pattern.
+    check(std::string_view{"^abc\0def", 8}, {.prefix = String{"abc\0def", 7}, .is_perfect = true});
+    check(std::string_view{"^\0abc", 5}, {.prefix = String{"\0abc", 4}, .is_perfect = true});
+    check(std::string_view{"^a\0b$", 5}, {.prefix = String{"a\0b", 3}, .is_exact = true});
+    check(std::string_view{"^a\0b[12]", 8}, {.prefix = String{"a\0b", 3}});
+
     /// A trailing '$' makes the pattern an exact match.
     check("^abc$", {.prefix = "abc", .is_exact = true});
     check("^abc\\.$", {.prefix = "abc.", .is_exact = true});
@@ -56,7 +63,6 @@ TEST(RegexpUtils, extractFixedPrefix)
     check("^abc+", {.prefix = "abc"});
     check("^ab$cd", {.prefix = "ab"});
     check("^a^b", {.prefix = "a"});
-    check(std::string_view{"^abc\0def", 8}, {.prefix = "abc"});
 
     /// An invalid pattern must not be reported as exact, otherwise a point range could hide
     /// the exception the matcher throws.

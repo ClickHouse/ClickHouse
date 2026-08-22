@@ -2627,14 +2627,12 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         }
     }
 
-    /// Re-check the table engine privilege for the *target* engine on fresh definitions. The outer
-    /// creation already verified `TABLE ENGINE ON URL`; without this a user granted only URL could
-    /// create File/S3/Azure/HDFS-backed tables they are not permitted to. Fresh definitions are
-    /// CREATE and full-definition ATTACH (new user input); short-syntax attach / restore / startup
-    /// loading and SECONDARY_CREATE (replicated DDL replay, already authorized on the initiator)
-    /// stay unchecked, mirroring where the outer engine privilege is checked.
-    if (args.mode == LoadingStrictnessLevel::CREATE
-        || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
+    /// The outer creation verified `TABLE ENGINE ON URL`, so the storage built here needs its own:
+    /// the scheme is the user's choice, and it selects the engine. A definition replayed from this
+    /// server's metadata (startup, short `ATTACH TABLE t`, `ATTACH DATABASE`) was already validated
+    /// and must stay loadable after a revoke; every other statement introduces one to check.
+    const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+    if (!from_existing_metadata)
         context->checkAccess(AccessType::TABLE_ENGINE, String(engine_name));
 
     const auto & storages = StorageFactory::instance().getAllStorages();
