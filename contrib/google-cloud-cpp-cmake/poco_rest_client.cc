@@ -395,7 +395,13 @@ class PocoRestClient : public RestClient {
         }
         // Resolve relative Location values against the current URL, as libcurl
         // does, so e.g. "Location: /new-path" keeps the current scheme and host.
-        url = Poco::URI(Poco::URI(url), location->second).toString();
+        // Both sides are parsed with URL encoding disabled so that the merge
+        // preserves every escape sequence verbatim (see `MakeSingleRequest`);
+        // `Poco::URI(base, relative)` would instead re-parse the relative
+        // reference with decoding enabled.
+        Poco::URI resolved(url, /*enable_url_encoding=*/false);
+        resolved.resolve(Poco::URI(location->second, /*enable_url_encoding=*/false));
+        url = resolved.toString();
       }
       return Status(StatusCode::kUnavailable,
                     "too many redirects requesting " + url);
@@ -414,7 +420,16 @@ class PocoRestClient : public RestClient {
       std::vector<absl::Span<char const>> const& payload,
       std::string const& url, Options const& options,
       std::pair<std::string, std::string> const& auth_header) const {
-    Poco::URI uri(url);
+    // The URL is already fully percent-encoded by the storage layer, so parse it
+    // with ClickHouse's `enable_url_encoding = false` extension: by default
+    // `Poco::URI` percent-*decodes* the path when it parses a URL and re-encodes
+    // it with a reserved set that does not contain '/', so the round trip turns a
+    // "%2F" back into a path separator. GCS object names routinely contain
+    // slashes and are addressed in the request path
+    // (".../o/mergetree%2Frsp%2Fabc"), while an upload carries the name in the
+    // query string instead: the round trip therefore silently reads, heads and
+    // deletes a *different*, non-existent resource while writes keep working.
+    Poco::URI uri(url, /*enable_url_encoding=*/false);
     auto session = MakeSession(uri, options);
 
     auto path = uri.getPathAndQuery();
