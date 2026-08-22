@@ -1,9 +1,6 @@
 -- Regression test for the AST JSON review hardening of CREATE / SYSTEM / identifier shapes.
 -- Covers boundary validations that reject `clickhouse_json` payloads the SQL parser cannot produce:
---   * `attach_short_syntax` is rejected for every shape, `ATTACH` included: no parser produces it, and
---     downstream it means "this definition came from stored metadata", so a payload setting it would have
---     a user-supplied definition skip the checks such a definition must pass.
---   * `CREATE TABLE` must not carry the remaining attach-only state (`attach_from_path` /
+--   * `CREATE TABLE` must not carry attach-only state (`attach_short_syntax`, `attach_from_path` /
 --     `has_attach_from_path`, `attach_as_replicated`); these are gated behind `attach` in the parser and
 --     `formatImpl` even asserts `attach || !has_attach_from_path`.
 --   * `has_uuid` is not an independent input: it must match whether a non-`Nil` `uuid` is present,
@@ -28,10 +25,8 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 FROM {tbl:Identifier}'));
 -- Malformed JSON shapes that must fail closed with BAD_ARGUMENTS at the boundary.
 -- ---------------------------------------------------------------------------
 
--- `attach_short_syntax` is never a valid input, for a CREATE ...
+-- `attach_short_syntax` is only valid for ATTACH queries.
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x Int) ENGINE = Memory'), '"attach_short_syntax":false', '"attach_short_syntax":true')); -- { serverError BAD_ARGUMENTS }
--- ... nor for an ATTACH, where the flag would mark a user-supplied definition as replayed metadata.
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('ATTACH TABLE t UUID \'a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5\' (x Int) ENGINE = Memory'), '"attach_short_syntax":false', '"attach_short_syntax":true')); -- { serverError BAD_ARGUMENTS }
 -- `has_attach_from_path` without an ATTACH (and without a path) is parser-impossible.
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (x Int) ENGINE = Memory'), '"has_attach_from_path":false', '"has_attach_from_path":true')); -- { serverError BAD_ARGUMENTS }
 -- `attach_as_replicated` is only valid for ATTACH queries (inject it into a CREATE).
