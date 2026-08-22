@@ -29,6 +29,13 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     auto collection = getCollectionRef(document, "distinct");
 
     auto json_representation = document.getRapidJSONRepresentation();
+
+    /// A `distinct` is a `$group` on `key` over the documents its `query` matches; a field it does
+    /// not implement - a `collation`, which decides which values are the same one - is refused
+    /// rather than answered with a different set of values.
+    static const std::unordered_set<String> supported_fields{"key", "query", "hint"};
+    rejectUnsupportedCommandFields(json_representation, supported_fields, "distinct");
+
     auto key_it = json_representation.FindMember("key");
     if (key_it == json_representation.MemberEnd() || !key_it->value.IsString())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'distinct' command must name a field in 'key'");

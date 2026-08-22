@@ -29,6 +29,11 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
 
     auto json_representation = document.getRapidJSONRepresentation();
 
+    /// A `count` answers the size of the result of a `find`, so it takes the same fields, and a
+    /// field it does not implement is refused for the same reason.
+    static const std::unordered_set<String> supported_fields{"query", "limit", "skip", "hint"};
+    rejectUnsupportedCommandFields(json_representation, supported_fields, "count");
+
     /// `count` is the size of the result of a `find`, so its filter takes exactly the same
     /// path as the filter of a `find` - including the normalization of subdocument paths.
     String serialized_filter = "{}";

@@ -156,6 +156,7 @@ std::vector<Document> ServerCommandsHandler::handle(const std::vector<OpMessageS
 std::vector<Document> DropDatabaseHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     auto database = databaseName(documents[0].documents[0], "dropDatabase");
+    validateWriteConcern(documents[0].documents[0].getRapidJSONRepresentation(), "dropDatabase");
 
     /// Mongo answers a `dropDatabase` of a database that does not exist with success, so the drop
     /// has to tolerate it rather than report an error the client does not expect.

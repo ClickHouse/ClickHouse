@@ -111,6 +111,21 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
     auto collection = getCollectionRef(document, "aggregate");
 
     auto json_representation = document.getRapidJSONRepresentation();
+
+    /// The pipeline is what an `aggregate` answers; the other fields it may carry either name how it
+    /// is executed (`allowDiskUse`, `hint`), which changes nothing about the answer, or are not
+    /// implemented and are refused rather than dropped.
+    static const std::unordered_set<String> supported_fields{"pipeline", "cursor", "allowDiskUse", "hint"};
+    rejectUnsupportedCommandFields(json_representation, supported_fields, "aggregate");
+
+    /// Every document of the result is answered in the first batch, so a `cursor` that asks for a
+    /// `batchSize` asks for a batching this handler does not do.
+    if (auto cursor_it = json_representation.FindMember("cursor"); cursor_it != json_representation.MemberEnd())
+    {
+        static const std::unordered_set<String> supported_cursor_fields{};
+        rejectUnsupportedFields(cursor_it->value, supported_cursor_fields, "cursor", "aggregate");
+    }
+
     auto pipeline_it = json_representation.FindMember("pipeline");
     if (pipeline_it == json_representation.MemberEnd() || !pipeline_it->value.IsArray())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'pipeline' of an 'aggregate' command must be an array of stages");

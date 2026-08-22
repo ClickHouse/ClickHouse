@@ -39,6 +39,22 @@ std::optional<Int64> getWholeNumberOption(const rapidjson::Value & json, const c
   */
 void validateWriteConcern(const rapidjson::Value & json, const char * command);
 
+/** Refuses a read concern the endpoint cannot honour. A read goes to one ClickHouse table and sees
+  * everything written to it, which is what `local`, `available` and, on a server that is not a
+  * replica set, `majority` ask for. A snapshot, a linearizable read, or a read pinned to a cluster
+  * time is refused rather than answered with a plain read.
+  */
+void validateReadConcern(const rapidjson::Value & json, const char * command);
+
+/** Refuses the top-level fields of a read command that this endpoint does not implement. A read
+  * command carries the fields a driver attaches to every command - the target database, the
+  * session, the read preference, the version of the API - and those are accepted; a field that
+  * changes what the command answers, such as a `collation` or a `batchSize`, would otherwise be
+  * dropped silently and the command would answer a different query than the one it was sent.
+  */
+void rejectUnsupportedCommandFields(
+    const rapidjson::Value & json, const std::unordered_set<String> & supported, const char * command);
+
 /** Refuses the fields of a command, or of one of the write statements of a command, that this
   * endpoint does not implement. A field that changes what a write does - `arrayFilters` and
   * `collation` of an `update`, `collation` of a `delete` - would otherwise be dropped silently and

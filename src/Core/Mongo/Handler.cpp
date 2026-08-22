@@ -61,14 +61,19 @@ void validateWriteConcern(const rapidjson::Value & json, const char * command)
 
         if (name == "w")
         {
-            if (field->value.IsNumber() && (field->value.GetDouble() == 0 || field->value.GetDouble() == 1))
+            if (field->value.IsNumber() && field->value.GetDouble() == 1)
                 continue;
             if (field->value.IsString() && std::string_view(field->value.GetString(), field->value.GetStringLength()) == "majority")
                 continue;
+            /// `w: 0` asks for a write that is not acknowledged: the client does not wait for a reply
+            /// and the server does not report a write error. Every write of this endpoint runs the
+            /// statement and answers with its result, so accepting `w: 0` would answer a stronger
+            /// contract than the one asked for - and, worse, would make a failed write look like a
+            /// successful one to a client that expects no reply at all.
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
-                "The 'writeConcern' of the '{}' command asks for a 'w' this server cannot acknowledge: a write goes to one table, so "
-                "only 'w: 0', 'w: 1' and 'w: \"majority\"' are supported",
+                "The 'writeConcern' of the '{}' command asks for a 'w' this server cannot honour: a write goes to one table and is "
+                "always acknowledged, so only 'w: 1' and 'w: \"majority\"' are supported",
                 command);
         }
 
@@ -80,6 +85,106 @@ void validateWriteConcern(const rapidjson::Value & json, const char * command)
             "The '{}' field of the 'writeConcern' of the '{}' command is not supported: it would be acknowledged without being honoured",
             name,
             command);
+    }
+}
+
+void validateReadConcern(const rapidjson::Value & json, const char * command)
+{
+    auto it = json.FindMember("readConcern");
+    if (it == json.MemberEnd() || it->value.IsNull())
+        return;
+
+    if (!it->value.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'readConcern' of the '{}' command must be a document", command);
+
+    for (auto field = it->value.MemberBegin(); field != it->value.MemberEnd(); ++field)
+    {
+        const std::string_view name(field->name.GetString(), field->name.GetStringLength());
+
+        /// A read of one table sees everything that has been written to it, which is what `local`,
+        /// `available` and `majority` ask for on a server that is not a replica set. A `snapshot` or
+        /// a `linearizable` read, and a read pinned to a cluster time, are contracts this endpoint
+        /// cannot keep, so they are refused rather than answered with a plain read.
+        if (name == "level")
+        {
+            const std::string_view level(field->value.IsString() ? field->value.GetString() : "", field->value.IsString() ? field->value.GetStringLength() : 0);
+            if (level == "local" || level == "available" || level == "majority")
+                continue;
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The 'readConcern' of the '{}' command asks for a 'level' this server cannot honour: a read goes to one table, so only "
+                "'local', 'available' and 'majority' are supported",
+                command);
+        }
+
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The '{}' field of the 'readConcern' of the '{}' command is not supported: it would be acknowledged without being honoured",
+            name,
+            command);
+    }
+}
+
+static bool isGenericCommandField(std::string_view name)
+{
+    /// The fields a driver attaches to every command it sends. They name the target database, the
+    /// session, the read preference and the version of the API, none of which changes what the
+    /// command answers here. `writeConcern` and `readConcern` are checked apart, by the validators
+    /// above, and `comment` is carried by the query text of the statement rather than dropped.
+    static const std::unordered_set<std::string_view> generic_fields{
+        "$db",
+        "$audit",
+        "$client",
+        "$clusterTime",
+        "$configServerState",
+        "$readPreference",
+        "apiDeprecationErrors",
+        "apiStrict",
+        "apiVersion",
+        "comment",
+        "lsid",
+        "readConcern",
+        "writeConcern",
+    };
+    return generic_fields.contains(name);
+}
+
+void rejectUnsupportedCommandFields(
+    const rapidjson::Value & json, const std::unordered_set<String> & supported, const char * command)
+{
+    if (!json.IsObject())
+        return;
+
+    validateReadConcern(json, command);
+
+    for (auto field = json.MemberBegin(); field != json.MemberEnd(); ++field)
+    {
+        const std::string_view name(field->name.GetString(), field->name.GetStringLength());
+
+        /// The command field itself names the collection the command is about.
+        if (name == command || isGenericCommandField(name))
+            continue;
+
+        /// `maxTimeMS` bounds how long the command may run and is answered with `MaxTimeMSExpired`
+        /// when it is exceeded. Nothing here stops a query at that bound, so a bound that asks for
+        /// anything is refused rather than ignored; `0`, which is what a driver sends when no
+        /// timeout is configured, asks for nothing.
+        if (name == "maxTimeMS")
+        {
+            if (field->value.IsNull() || (field->value.IsNumber() && field->value.GetDouble() == 0))
+                continue;
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The 'maxTimeMS' of a '{}' command is not supported: the command would run past the bound it asks for",
+                command);
+        }
+
+        if (!supported.contains(String(name)))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The '{}' field of a '{}' command is not supported: it would be answered as a command that does not ask for it",
+                name,
+                command);
     }
 }
 

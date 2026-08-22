@@ -30,6 +30,9 @@ void appendNamespaceNotFound(bson_t * bson_doc)
 std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     auto collection = getCollectionRef(documents[0].documents[0], "drop");
+    /// A `drop` is a write: it is acknowledged when the table is gone, so a write concern that asks
+    /// for more than that is refused here for the same reason it is refused for an `insert`.
+    validateWriteConcern(documents[0].documents[0].getRapidJSONRepresentation(), "drop");
     String namespace_name = collection.database + "." + collection.collection;
 
     bson_t * bson_doc = bson_new();

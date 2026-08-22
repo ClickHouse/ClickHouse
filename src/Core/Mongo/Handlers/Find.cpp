@@ -47,6 +47,15 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
 
     auto json_representation = document.getRapidJSONRepresentation();
 
+    /** Only the fields below shape the answer this handler builds. A field that is not implemented -
+      * a `collation`, which changes which documents a filter matches, or a `batchSize`, which bounds
+      * how many documents a batch carries while everything is answered in the first one - is refused
+      * rather than dropped, so that a `find` never answers a different query than the one it was
+      * sent. `singleBatch` asks for exactly what this handler does.
+      */
+    static const std::unordered_set<String> supported_fields{"filter", "projection", "sort", "limit", "skip", "singleBatch", "hint"};
+    rejectUnsupportedCommandFields(json_representation, supported_fields, "find");
+
     /// `filter` is a document so it owns its allocator: it is serialized below and
     /// must stay valid (it must not reference a temporary document's allocator).
     rapidjson::Document filter;
