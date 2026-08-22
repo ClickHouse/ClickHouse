@@ -832,18 +832,22 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         }
     }
 
+    /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
+    if (!truncate)
+        DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+
     /// Database engines can resolve named collections from their persisted `CREATE DATABASE`
     /// metadata too. A detached database is absent from `DatabaseCatalog`, but that metadata is
     /// still replayed by a later `ATTACH DATABASE` or server start.
+    /// Only after `detachDatabase` succeeded: it attaches the database back when it cannot finish -
+    /// a table appeared in it while it was being dropped, or the engine's `drop` threw - and a
+    /// database that is live again must keep its dependency, or `DROP NAMED COLLECTION` would be
+    /// allowed while its `CREATE DATABASE` metadata still references the collection.
     const StorageID database_id = StorageID::createDatabaseOnly(database_name);
     if (drop)
         NamedCollectionFactory::instance().removeDependencies(database_id);
     else if (!truncate)
         NamedCollectionFactory::instance().markDependenciesDetached(database_id);
-
-    /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
-    if (!truncate)
-        DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
 
     /// `DROP DATABASE` drops the detached tables of the database too: their entries would otherwise
     /// keep blocking `DROP NAMED COLLECTION` until the server restart.

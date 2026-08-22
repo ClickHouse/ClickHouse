@@ -250,6 +250,13 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     {
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
+        /// The `CREATE DATABASE` metadata of an engine that uses a named collection - `MaterializedPostgreSQL`,
+        /// for one - is rewritten under the new name and keeps referencing the collection, so the
+        /// dependency of the database itself has to follow the rename. Otherwise the entry of the old
+        /// name is taken for the leftover of a failed `CREATE DATABASE` and pruned, and dropping the
+        /// collection breaks the next `ATTACH DATABASE`.
+        NamedCollectionFactory::instance().rekeyDependencies(
+            StorageID::createDatabaseOnly(old_name), StorageID::createDatabaseOnly(new_name));
         /// The metadata of the detached tables of the database moves along with it: their named
         /// collection dependencies stay valid under the new database name.
         NamedCollectionFactory::instance().renameDetachedDependencies(old_name, new_name);

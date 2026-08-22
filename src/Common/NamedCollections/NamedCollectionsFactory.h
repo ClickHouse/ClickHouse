@@ -114,6 +114,12 @@ public:
     /// still finds them.
     void rekeyDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     std::vector<StorageID> getDependents(const String & collection_name) const;
+    /// Whether any collection has a dependency recorded for exactly this `StorageID` - the database,
+    /// the table name and the UUID all have to match. It tells apart a table that was renamed after
+    /// its dependency was registered (its entries keep the old name, and no entry carries the current
+    /// one) from a `CREATE TABLE ... UUID` that reused the UUID of a failed create under a different
+    /// name (the committed table has its own entries, recorded under its current name).
+    bool hasDependencyRegisteredFor(const StorageID & table_id) const;
 
     /// `DETACH TABLE` moves the dependencies of the table here: a detached table is not in
     /// `DatabaseCatalog`, but the metadata it is attached from still references the collections, so they

@@ -642,9 +642,9 @@ void NamedCollectionFactory::rekeyDependencies(const StorageID & from_table_id, 
 
     LOG_TRACE(
         log,
-        "Re-keying dependencies of table {} to {}",
-        from_table_id.getNameForLogs(),
-        to_table_id.getNameForLogs());
+        "Re-keying dependencies of {} to {}",
+        getDependencyNameForLogs(from_table_id),
+        getDependencyNameForLogs(to_table_id));
 
     std::vector<String> collection_names;
 
@@ -681,6 +681,22 @@ void NamedCollectionFactory::rekeyDependencies(const StorageID & from_table_id, 
 
     for (const auto & collection_name : collection_names)
         dependencies.emplace(collection_name, to_table_id);
+}
+
+bool NamedCollectionFactory::hasDependencyRegisteredFor(const StorageID & table_id) const
+{
+    std::lock_guard lock(mutex);
+
+    const auto & idx = dependencies.get<TableName>();
+    auto range = idx.equal_range(std::make_tuple(table_id.database_name, table_id.table_name));
+
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        if (it->table_id.uuid == table_id.uuid)
+            return true;
+    }
+
+    return false;
 }
 
 std::vector<StorageID> NamedCollectionFactory::getDependents(const String & collection_name) const

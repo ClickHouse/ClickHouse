@@ -75,6 +75,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
@@ -106,6 +107,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char database_catalog_drop_finally_before_id_erase[];
+    extern const char drop_database_fail_before_drop[];
 }
 
 class DatabaseNameHints : public IHints<>
@@ -746,6 +748,11 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
         try
         {
+            fiu_do_on(FailPoints::drop_database_fail_before_drop,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to drop the database");
+            });
+
             /// Delete the database.
             db->drop(local_context);
         }

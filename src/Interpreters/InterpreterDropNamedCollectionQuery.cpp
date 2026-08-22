@@ -30,6 +30,22 @@ StoragePtr tryGetLiveTableByUUID(const StorageID & dependency)
     auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(dependency.uuid);
     if (!database || !table)
         return nullptr;
+
+    /// The UUID identifies the table the entry was registered for, with one exception:
+    /// `CREATE TABLE ... UUID` can reuse the UUID of a failed create under a different table name. The
+    /// two cases are told apart by the name the live table's own dependencies are recorded under - the
+    /// name is updated when the entries are registered, not when the table is renamed:
+    /// - the table was renamed after the registration: no entry carries its current name, so the entries
+    ///   under the UUID, stale names and all, are its own;
+    /// - the UUID was reused: the committed table registered its own entries under its current name, and
+    ///   an entry that carries another name belongs to the create that failed.
+    const auto live_table_id = table->getStorageID();
+    if (live_table_id.database_name != dependency.database_name || live_table_id.table_name != dependency.table_name)
+    {
+        if (NamedCollectionFactory::instance().hasDependencyRegisteredFor(live_table_id))
+            return nullptr;
+    }
+
     return table;
 }
 
