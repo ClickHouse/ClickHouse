@@ -10,6 +10,7 @@
 #include <Columns/ColumnNullable.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 
 
 namespace DB
@@ -40,11 +41,15 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
 
         void add(TimestampType timestamp, ValueType value)
         {
-            if (!has_value || timestamp > first || (timestamp == first && value > second))
+            if (!has_value || timestamp > first)
             {
                 first = timestamp;
                 second = value;
                 has_value = true;
+            }
+            else if (timestamp == first)
+            {
+                second = timeseriesMaxValueForDuplicateTimestamp(second, value);
             }
         }
 
