@@ -2,6 +2,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
@@ -21,21 +22,29 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (is_correlated)
+        if (must_disable)
             return;
 
         if (auto * query_node = node->as<QueryNode>())
             if (query_node->isCorrelated())
-                is_correlated = true;
+                must_disable = true;
 
         if (auto * union_node = node->as<UnionNode>())
+        {
             if (union_node->isCorrelated())
-                is_correlated = true;
+                must_disable = true;
+
+            /// A recursive CTE is initiator-local: its source owns a pair of temporary tables, rotates
+            /// them between iterations and rewrites the CTE's self-reference in place, so the
+            /// fixed-point loop has no distributed form.
+            if (union_node->hasRecursiveCTETable())
+                must_disable = true;
+        }
     }
 
     void leaveImpl(QueryTreeNodePtr & node) const
     {
-        if (!is_correlated)
+        if (!must_disable)
             return;
 
         if (auto * query_node = node->as<QueryNode>())
@@ -45,7 +54,7 @@ public:
     }
 
 private:
-    bool is_correlated = false;
+    bool must_disable = false;
 };
 
 
