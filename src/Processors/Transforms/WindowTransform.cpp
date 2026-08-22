@@ -2,7 +2,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/SortCursor.h>
@@ -1424,7 +1423,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         block.original_input_columns = columns;
         for (size_t i = 0; i < columns.size(); ++i)
             if (should_materialize[i])
-                columns[i] = recursiveRemoveLowCardinality(recursiveRemoveSparse(std::move(columns[i])->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()));
+                columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullIfWrapped());
 
         block.input_columns = std::move(columns);
 
