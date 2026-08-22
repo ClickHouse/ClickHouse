@@ -492,31 +492,33 @@ void deferDatabaseTables(IDatabase & database, std::function<void(IDatabase &)> 
 }
 
 /// The same, for a database that has to be created first, as a memory (ephemeral) one.
-void createMemoryDatabaseWithDeferredTables(
-    ContextPtr context,
-    const String & database_name,
-    std::function<void(IDatabase &)> populate,
-    const std::function<void(IDatabase &)> & attach_eagerly = {})
+void createMemoryDatabaseWithDeferredTables(ContextPtr context, const String & database_name, std::function<void(IDatabase &)> populate)
 {
-    DatabasePtr database = createMemoryDatabaseIfNotExists(context, database_name);
-    if (attach_eagerly)
-        attach_eagerly(*database);
-    deferDatabaseTables(*database, std::move(populate));
+    deferDatabaseTables(*createMemoryDatabaseIfNotExists(context, database_name), std::move(populate));
 }
 
-/// Everything that has to happen before the `system` database may be filled in on demand: the collision checks
-/// that `attachSystemTablesServer` performs up front, and `system.one`, which every `FROM`-less query resolves -
-/// deferring it together with the rest would make the very first query build the whole database anyway.
-void prepareSystemDatabaseForDeferredTables(ContextPtr context, IDatabase & system_database)
-{
-    validateSystemUserQueryLog(context, system_database);
-    attachSystemTableOne(context, system_database);
-}
-
-/// The tables that `prepareSystemDatabaseForDeferredTables` leaves out.
+/// The tables that `deferSystemDatabaseTables` leaves out of the deferred population.
 void attachRemainingSystemTables(ContextPtr context, IDatabase & system_database)
 {
     attachSystemTablesServerExceptOne(context, system_database, false, false);
+}
+
+/// Arm the deferred population of the `system` database, along with everything that has to happen eagerly around
+/// it: the collision check that `attachSystemTablesServer` performs up front, and `system.one`, which every
+/// `FROM`-less query resolves - deferring it together with the rest would make the very first query build the
+/// whole database anyway. The order matters, see the comments below.
+void deferSystemDatabaseTables(ContextPtr context, IDatabase & system_database)
+{
+    /// Before arming: this looks a table up, which would trigger the population it is supposed to precede.
+    validateSystemUserQueryLog(context, system_database);
+
+    deferDatabaseTables(system_database,
+        [context](IDatabase & database) { attachRemainingSystemTables(context, database); });
+
+    /// After arming: a table attached before it would be taken for one that may shadow a deferred system table,
+    /// so that looking it up populates the database - and `system.one` is looked up by every `FROM`-less query.
+    /// `attachTable` itself never triggers the population.
+    attachSystemTableOne(context, system_database);
 }
 
 DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
@@ -1762,10 +1764,7 @@ void LocalServer::processConfig()
                 /// The `system` database comes from disk, so the tables it stores are attached already. The system
                 /// table storages are added on top of them, and, exactly as for the ephemeral database below, that
                 /// is left to the first access to the database.
-                DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
-                prepareSystemDatabaseForDeferredTables(global_context, *system_database);
-                deferDatabaseTables(*system_database,
-                    [context = global_context](IDatabase & database) { attachRemainingSystemTables(context, database); });
+                deferSystemDatabaseTables(global_context, *DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE));
                 attached_system_database = true;
             }
 
@@ -1780,18 +1779,14 @@ void LocalServer::processConfig()
         }
 
         if (!attached_system_database)
-            createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::SYSTEM_DATABASE,
-                [context = global_context](IDatabase & database) { attachRemainingSystemTables(context, database); },
-                [context = global_context](IDatabase & database) { prepareSystemDatabaseForDeferredTables(context, database); });
+            deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
-        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::SYSTEM_DATABASE,
-            [context = global_context](IDatabase & database) { attachRemainingSystemTables(context, database); },
-            [context = global_context](IDatabase & database) { prepareSystemDatabaseForDeferredTables(context, database); });
+        deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
             [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
         createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,

@@ -51,3 +51,24 @@ ${CLICKHOUSE_LOCAL} --query "CREATE TABLE system.renamed (x UInt8) ENGINE = Memo
 local_query "SELECT count() > 0 FROM information_schema.tables WHERE table_schema = 'system'"
 
 rm -rf "${test_dir}"
+
+# A stored table cannot take over the name of a system table that is not attached yet: an old `--path` may
+# contain a table whose name a later version gave to a system table, and reading it instead of the system table
+# would be worse than the collision an eager attachment reports at startup - `system.settings` and the like are
+# readable without any grants.
+shadow_dir="${CLICKHOUSE_TMP}/05023_shadow_${CLICKHOUSE_DATABASE}"
+
+rm -rf "${shadow_dir}"
+mkdir -p "${shadow_dir}/metadata/system" "${shadow_dir}/data/system/settings"
+
+echo "ATTACH DATABASE system ENGINE=Ordinary" > "${shadow_dir}/metadata/system.sql"
+echo "ATTACH TABLE system.settings (x UInt8) ENGINE = MergeTree ORDER BY x;" > "${shadow_dir}/metadata/system/settings.sql"
+
+# Reading the name populates the database, and the collision is reported instead of the stored table.
+${CLICKHOUSE_LOCAL} --path "${shadow_dir}" --query "SELECT * FROM system.settings" 2>&1 | grep -c "already exists"
+# The same through the table list, and for a query that does not name the table at all.
+${CLICKHOUSE_LOCAL} --path "${shadow_dir}" --query "SHOW TABLES FROM system" 2>&1 | grep -c "already exists"
+# A query that needs none of the deferred tables still works.
+${CLICKHOUSE_LOCAL} --path "${shadow_dir}" --query "SELECT 1"
+
+rm -rf "${shadow_dir}"

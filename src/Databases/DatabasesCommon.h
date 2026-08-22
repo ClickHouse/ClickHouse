@@ -11,6 +11,7 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+#include <unordered_set>
 
 
 /// General functionality for several different database engines.
@@ -90,6 +91,13 @@ public:
     void ensurePopulated() const TSA_NO_THREAD_SAFETY_ANALYSIS;
 
 protected:
+    /// True while the deferred population is still pending and `table_name` is a table that was attached before
+    /// it was armed, so that the populator may want to attach a table of its own under the same name. Looking
+    /// such a name up must not take the fast path: the population has to run first, so that the collision is
+    /// reported instead of the already attached table shadowing the one that is not attached yet. Reserved
+    /// `system.*` names stay reserved this way even for a `system` database loaded from a `--path`.
+    bool mayShadowDeferredTable(const String & table_name) const;
+
     Tables tables TSA_GUARDED_BY(mutex);
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
@@ -112,6 +120,13 @@ private:
     mutable std::function<void(IDatabase &)> deferred_populate TSA_GUARDED_BY(populate_mutex);
     mutable bool populating TSA_GUARDED_BY(populate_mutex) = false;
     mutable std::thread::id populating_thread TSA_GUARDED_BY(populate_mutex);
+    /// A failed population leaves the database half-filled forever, so the error is remembered and reported to
+    /// every subsequent access, the way the eager attachment it replaces fails the startup for everybody.
+    mutable std::exception_ptr deferred_populate_error TSA_GUARDED_BY(populate_mutex);
+    /// Names attached before the population was armed, see `mayShadowDeferredTable`. Filled by
+    /// `setDeferredPopulation` before `has_deferred_population` is published and never changed afterwards, so it
+    /// may be read without a lock as long as `has_deferred_population` is true.
+    std::unordered_set<String> deferred_shadowing_candidates;
 };
 
 }
