@@ -7964,8 +7964,10 @@ Query Iceberg table using the specific snapshot id.
 )", 0) \
     DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
 Allow reading Iceberg `geometry` and `geography` field types, exposed as the ClickHouse `Geometry`
-(Variant) type. Required on the query that reads such a column, not on the query that created or
-attached the table.
+(`Variant`) type. Required on any query that reads a table whose schema has such a field, even if the
+query selects none of them, and on a query that infers a table's structure from the Iceberg metadata.
+Not required to `ATTACH` such a table, to create one with an explicit column list, or to inspect a
+schema through a data lake catalog.
 )", 0) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
 Enables showing data lake catalogs in system tables.

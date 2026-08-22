@@ -15,6 +15,7 @@ PLAIN="p_${CLICKHOUSE_DATABASE}_${RANDOM}"
 PLAIN_PATH="${USER_FILES_PATH}/${PLAIN}/"
 MERGE_GEO="mg_${CLICKHOUSE_DATABASE}_${RANDOM}"
 MERGE_PLAIN="mp_${CLICKHOUSE_DATABASE}_${RANDOM}"
+INFERRED="i_${CLICKHOUSE_DATABASE}_${RANDOM}"
 
 GEO_REFUSED="allow_experimental_geo_types_in_iceberg"
 
@@ -60,6 +61,19 @@ ${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM ${TABLE}" 2>&1 | grep -qF "
 ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 \
     --query "SELECT id, wkt(g) FROM icebergLocal('${TABLE_PATH}', 'Parquet')"
 ${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM icebergLocal('${TABLE_PATH}', 'Parquet')" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+
+# Handing the schema to a caller is gated on its own, with no column being read: inferring a
+# structure from the metadata exposes the geometry field's type. These arms read no data, so the
+# paths that gate a scan and a row count cannot be what answers them.
+${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 \
+    --query "DESCRIBE icebergLocal('${TABLE_PATH}', 'Parquet')" | grep -c Geometry
+${CLICKHOUSE_CLIENT} --query "DESCRIBE icebergLocal('${TABLE_PATH}', 'Parquet')" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${INFERRED}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${INFERRED} ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')" 2>&1 | grep -qF "${GEO_REFUSED}" && echo REFUSED || echo NOT_REFUSED
+# Dropped between the two arms: without the setting the create above is refused and creates nothing,
+# but a build that permits it would leave the table behind and make this arm fail on the name.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${INFERRED}"
+run_allowed --allow_experimental_geo_types_in_iceberg=1 --query "CREATE TABLE ${INFERRED} ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')"
 
 # A geometry nested inside a Tuple is gated the same way.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${NESTED}"
@@ -125,4 +139,5 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${MERGE_PLAIN}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${NESTED}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${PLAIN}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${INFERRED}"
 rm -rf "${TABLE_PATH}" "${NESTED_PATH}" "${PLAIN_PATH}"
