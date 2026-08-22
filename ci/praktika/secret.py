@@ -7,8 +7,8 @@ from .utils import Shell
 
 
 class SecretMisconfigured(RuntimeError):
-    """A secret's value is absent or empty: the request reached the store and was
-    answered, so retrying or tolerating it would hide a real misconfiguration."""
+    """A secret's value is absent, empty or unusable: the request reached the store and
+    was answered, so retrying or tolerating it would hide a real misconfiguration."""
 
 
 class Secret:
@@ -79,6 +79,13 @@ class Secret:
             # exits 0, so an answer naming none of them carries no pair to split. Decided
             # over the whole answer, since a value may itself span lines.
             name_value_pairs = res.split("\n") if "\t" in res else []
+            if any("\t" not in pair for pair in name_value_pairs):
+                # `--output text` prints a value verbatim, so one spanning lines arrives
+                # as continuations carrying no tab. Splitting them as pairs would use a
+                # value cut to its first line.
+                raise SecretMisconfigured(
+                    f"Unparseable answer for parameters {self.name}"
+                )
             names = [n.split("\t")[0].strip() for n in name_value_pairs]
             values = [n.split("\t")[1].strip() for n in name_value_pairs]
 
