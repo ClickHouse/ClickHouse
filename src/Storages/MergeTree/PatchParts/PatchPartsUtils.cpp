@@ -12,6 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/KeyDescription.h>
@@ -176,8 +177,28 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
             order_by_expression->arguments->children.push_back(child->clone());
     }
 
-    order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockNumberColumn::name));
-    order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockOffsetColumn::name));
+    /// KeyDescription requires either all children of a key expression list to be wrapped
+    /// in ASTStorageOrderByElement, or none of them, so the trailing columns must repeat
+    /// the shape of the inherited list. They are always ascending.
+    const bool wrap_in_order_by_element = sorting_key_expr_list && !sorting_key_expr_list->children.empty()
+        && sorting_key_expr_list->children.front()->as<ASTStorageOrderByElement>();
+
+    auto add_key_column = [&](const String & column_name)
+    {
+        ASTPtr column_ast = make_intrusive<ASTIdentifier>(column_name);
+
+        if (wrap_in_order_by_element)
+        {
+            auto element = make_intrusive<ASTStorageOrderByElement>();
+            element->children.push_back(std::move(column_ast));
+            column_ast = std::move(element);
+        }
+
+        order_by_expression->arguments->children.push_back(std::move(column_ast));
+    };
+
+    add_key_column(BlockNumberColumn::name);
+    add_key_column(BlockOffsetColumn::name);
 
     addCodecsForPatchSystemColumns(patch_part_desc);
 

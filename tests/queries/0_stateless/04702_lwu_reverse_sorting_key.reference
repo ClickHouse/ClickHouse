@@ -1,0 +1,56 @@
+-- single reversed key column
+1	v1
+3	v3
+5	v5
+1	v1
+3	x
+5	v5
+-- mixed directions in a multi-column key
+1	1	1	v1
+0	3	3	v3
+2	5	5	v5
+1	1	1	v1
+0	3	3	x
+2	5	5	v5
+-- all-ascending key
+1	v1
+3	v3
+5	v5
+-- reversed key with a non-identifier column
+1	1	v1
+3	3	v3
+5	5	v5
+1	1	v1
+3	3	x
+5	5	v5
+-- empty sorting key
+1	v1
+3	v3
+5	v5
+-- reversed key with ReplacingMergeTree
+1	1	v1
+3	3	v3
+5	5	v5
+1	1	v1
+3	3	x
+5	5	v5
+-- two patches on a reversed key, then applied on merge
+0	a0	b0
+1	p1	b1
+2	a2	b2
+3	a3	p2
+4	a4	b4
+5	a5	b5
+0	a0	b0
+1	p1	b1
+2	a2	b2
+3	a3	p2
+4	a4	b4
+5	a5	b5
+-- reversed key with v1 patch parts
+1	v1
+3	v3
+5	v5
+1	v1
+3	x
+5	v5
