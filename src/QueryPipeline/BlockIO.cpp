@@ -43,6 +43,7 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) /// NOLINT(hicpp-noexcept-move,per
 
     process_list_entries    = std::move(rhs.process_list_entries);
     pipeline                = std::move(rhs.pipeline);
+    insert_query            = std::move(rhs.insert_query);
 
     finalize_query_pipeline = std::move(rhs.finalize_query_pipeline);
     finish_callbacks        = std::move(rhs.finish_callbacks);

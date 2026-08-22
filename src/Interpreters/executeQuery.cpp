@@ -2509,11 +2509,16 @@ static BlockIO executeQueryImpl(
         }
 
         const char * query_end = end;
-
         if (out_ast)
         {
             if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+            {
                 query_end = insert_query->data;
+            }
+            else if (const auto * create_query = out_ast->as<ASTCreateQuery>(); create_query && create_query->insert_data)
+            {
+                query_end = create_query->insert_data;
+            }
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -3307,6 +3312,10 @@ static BlockIO executeQueryImpl(
 
         throw;
     }
+
+    /// CREATE ... AS/AND INSERT executes an ASTInsertQuery synthesized internally; expose it to the caller as the real parsed query.
+    if (res.insert_query)
+        out_ast = res.insert_query;
 
     return res;
 }

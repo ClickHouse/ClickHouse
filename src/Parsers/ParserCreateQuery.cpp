@@ -747,6 +747,67 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+static bool parseInsertPayload(
+    IParser::Pos & pos,
+    Expected & expected,
+    ASTPtr & insert_select,
+    String & insert_format,
+    const char *& insert_data,
+    const char *& insert_data_end,
+    const char * end)
+{
+    ParserSelectWithUnionQuery select_p;
+
+    if (select_p.parse(pos, insert_select, expected))
+        return true;
+
+    if (ParserKeyword{Keyword::VALUES}.ignore(pos, expected))
+    {
+        insert_format = "Values";
+        if (pos->type != TokenType::Semicolon && pos->type != TokenType::EndOfStream)
+        {
+            insert_data = pos->begin;
+            insert_data_end = insert_data ? end : nullptr;
+        }
+        return true;
+    }
+
+    if (ParserKeyword{Keyword::FORMAT}.ignore(pos, expected))
+    {
+        ParserIdentifier format_name_p;
+        ASTPtr format_name_ast;
+        if (!format_name_p.parse(pos, format_name_ast, expected))
+            return false;
+        insert_format = getIdentifierName(format_name_ast);
+
+        const char * data = nullptr;
+        IParser::Pos last_token = pos;
+        --last_token;
+        data = last_token->end;
+
+        if (data < end && *data == ';')
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "You have excessive ';' symbol before data for CREATE ... AS/AND INSERT.\n"
+                "Note that there is no ';' just after format name, "
+                "you need to put at least one whitespace symbol before the data.");
+
+        while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
+            ++data;
+        if (data < end && *data == '\r')
+            ++data;
+        if (data < end && *data == '\n')
+            ++data;
+
+        insert_data = data != end ? data : nullptr;
+        insert_data_end = data ? end : nullptr;
+
+        return true;
+    }
+
+    return false;
+}
+
+
 bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create(Keyword::CREATE);
@@ -787,6 +848,12 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr as_table_function;
     ASTPtr select;
     ASTPtr from_path;
+    ASTPtr insert_select;
+    String insert_format;
+    const char * insert_data = nullptr;
+    const char * insert_data_end = nullptr;
+    bool is_and_insert = false;
+    bool is_as_insert = false;
     ASTPtr sql_security;
 
     String cluster_str;
@@ -937,27 +1004,42 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         comment = parseComment(pos, expected);
         try_parse_empty_or_clone();
 
-        /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
-        bool has_as = false;
-        if (is_create_empty || is_clone_as)
+        if (!is_create_empty && !is_clone_as && if_not_exists && ParserKeyword{Keyword::AND_INSERT}.ignore(pos, expected))
         {
-            if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
+            is_and_insert = true;
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end, end))
                 return false;
-            has_as = true;
+        }
+        else if (!is_create_empty && !is_clone_as && ParserKeyword{Keyword::AS_INSERT}.ignore(pos, expected))
+        {
+            is_as_insert = true;
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end, end))
+                return false;
         }
         else
-            has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
-
-        if ((storage_parse_result || is_temporary) && has_as)
         {
-            if (!select_p.parse(pos, select, expected))
-                return false;
-        }
+            /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
+            bool has_as = false;
+            if (is_create_empty || is_clone_as)
+            {
+                if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
+                    return false;
+                has_as = true;
+            }
+            else
+                has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
 
-        if (!storage_parse_result && !is_temporary && has_as)
-        {
-            if (!table_function_p.parse(pos, as_table_function, expected))
-                return false;
+            if ((storage_parse_result || is_temporary) && has_as)
+            {
+                if (!select_p.parse(pos, select, expected))
+                    return false;
+            }
+
+            if (!storage_parse_result && !is_temporary && has_as)
+            {
+                if (!table_function_p.parse(pos, as_table_function, expected))
+                    return false;
+            }
         }
 
         /// Will set default table engine if Storage clause was not parsed
@@ -976,39 +1058,51 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             comment = parseComment(pos, expected);
         try_parse_empty_or_clone();
 
-        /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
-        bool has_as = false;
-        if (is_create_empty || is_clone_as)
+        if (!is_create_empty && !is_clone_as && if_not_exists && ParserKeyword{Keyword::AND_INSERT}.ignore(pos, expected))
         {
-            if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
+            is_and_insert = true;
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end, end))
                 return false;
-            has_as = true;
+        }
+        else if (!is_create_empty && !is_clone_as && ParserKeyword{Keyword::AS_INSERT}.ignore(pos, expected))
+        {
+            is_as_insert = true;
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end, end))
+                return false;
         }
         else
-            has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
-
-        /// CREATE|ATTACH TABLE ... AS ...
-        if (has_as)
         {
-            if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
+            /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
+            bool has_as = false;
+            if (is_create_empty || is_clone_as)
             {
                 /// ENGINE can not be specified for table functions.
-                if (storage || !table_function_p.parse(pos, as_table_function, expected))
-                {
-                    /// AS [db.]table
-                    if (!name_p.parse(pos, as_table, expected))
-                        return false;
+                if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
+                    return false;
+                has_as = true;
+            }
+            else
+                has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
 
-                    if (s_dot.ignore(pos, expected))
+            if (has_as)
+            {
+                if (!select_p.parse(pos, select, expected))
+                {
+                    if (storage || !table_function_p.parse(pos, as_table_function, expected))
                     {
-                        as_database = as_table;
                         if (!name_p.parse(pos, as_table, expected))
                             return false;
-                    }
 
-                    /// Optional - ENGINE can be specified.
-                    if (!storage)
-                        parse_storage();
+                        if (s_dot.ignore(pos, expected))
+                        {
+                            as_database = as_table;
+                            if (!name_p.parse(pos, as_table, expected))
+                                return false;
+                        }
+                        /// Optional - ENGINE can be specified.
+                        if (!storage)
+                            parse_storage();
+                    }
                 }
             }
         }
@@ -1064,6 +1158,14 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->set(query->comment, comment);
     if (sql_security)
         query->set(query->sql_security, sql_security);
+
+    query->has_and_insert = is_and_insert;
+    query->has_as_insert = is_as_insert;
+    query->insert_format = insert_format;
+    query->insert_data = insert_data;
+    query->insert_data_end = insert_data_end;
+    if (insert_select)
+        query->set(query->insert_select, insert_select);
 
     if (query->columns_list && query->columns_list->primary_key)
     {
@@ -2069,7 +2171,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 
 bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserCreateTableQuery table_p;
+    ParserCreateTableQuery table_p(end);
     ParserCreateDatabaseQuery database_p;
     ParserCreateViewQuery view_p;
     ParserCreateDictionaryQuery dictionary_p;
