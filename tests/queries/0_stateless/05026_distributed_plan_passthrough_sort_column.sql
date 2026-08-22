@@ -124,27 +124,21 @@ SELECT 'rewrite off keeps the gather below', count() > 0 FROM
 WHERE explain ILIKE '%GatherExchange (sorted by (a ASC, v ASC))%'
 SETTINGS make_distributed_plan = 0;
 
--- The move-up is only correct if the pass-through column reaches the step's output unchanged. If it did
--- not, `GatherReceive` would merge by a sort description that no longer matches the data and the inner
--- window would be computed over the wrong row sequence, so its values would diverge from the
--- non-distributed plan. Both sides run the shape that reaches the branch, so the outer constant-keyed
--- window is kept and every inner window value stays live in the hash.
-SELECT 'window values match local', d.h = l.h FROM
+-- The distributed result for the branch-reaching shape, and the same query planned locally. Plan
+-- optimization is whole-statement, so the local reference needs its own statement: a `SETTINGS` clause
+-- on a FROM-subquery does not exempt that subquery's subtree from being distributed.
+SELECT 'window values distributed', sum(cityHash64(a, v, s, r)) FROM
 (
-    SELECT sum(cityHash64(a, v, s, r)) AS h FROM
-    (
-        SELECT a, v, s, uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
-            OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
-        FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort)
-    )
-) AS d,
+    SELECT a, v, s, uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
+        OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
+    FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort)
+);
+
+SELECT 'window values local', sum(cityHash64(a, v, s, r)) FROM
 (
-    SELECT sum(cityHash64(a, v, s, r)) AS h FROM
-    (
-        SELECT a, v, s, uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
-            OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
-        FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort)
-    ) SETTINGS make_distributed_plan = 0
-) AS l;
+    SELECT a, v, s, uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
+        OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
+    FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort)
+) SETTINGS make_distributed_plan = 0;
 
 DROP TABLE t_passthrough_sort;

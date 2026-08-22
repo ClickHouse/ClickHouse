@@ -1033,11 +1033,6 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
                     if (dag && dagContainsNonDeterministicFunction(*dag))
                         can_move_gather_up = false;
 
-                    /// A stateful function's output depends on the rows that precede it in the same
-                    /// stream, so below the gather it would see one bucket instead of the whole input.
-                    if (can_move_gather_up && dag && dag->hasStatefulFunctions())
-                        can_move_gather_up = false;
-
                     /// Moving the sorted GatherExchange above the step is only valid if every sort column
                     /// survives the step unchanged - otherwise GatherReceive would merge by a sort
                     /// description that no longer matches the data. Expression/Filter may recompute or
