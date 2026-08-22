@@ -94,6 +94,12 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         column_names,
         columns_description.getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
+        /// The bridge protocol only reports the identifier quoting style, not the literal
+        /// escaping dialect of the remote database, so string literals keep the historical
+        /// `Regular` (backslash-escaping) serialization here. Predicates whose literals such
+        /// a database (e.g. PostgreSQL over ODBC) would read differently should not be pushed
+        /// down until the bridge exposes an escaping style; see the dialect-specific handling
+        /// in `transformQueryForExternalDatabase.cpp`.
         LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
@@ -313,12 +319,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE = ODBC(datasource, external_database, external_table)
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 The table structure can differ from the source table structure:
 
 - Column names should be the same as in the source table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the source table. ClickHouse tries to [cast](/sql-reference/functions/type-conversion-functions#CAST) values to the ClickHouse data types.
+- Column types may differ from those in the source table. ClickHouse tries to [cast](/reference/functions/regular-functions/type-conversion-functions#CAST) values to the ClickHouse data types.
 - The [external_table_functions_use_nulls](/reference/settings/session-settings/external-table#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
@@ -420,7 +426,7 @@ SELECT * FROM odbc_t
 
 ## See also {#see-also}
 
-- [ODBC dictionaries](/sql-reference/statements/create/dictionary/sources/odbc)
+- [ODBC dictionaries](/reference/statements/create/dictionary/sources/odbc)
 - [ODBC table function](/reference/functions/table-functions/odbc)
 )DOCS_MD",
                 .syntax = "ENGINE = ODBC('connection_settings', 'external_database', 'external_table')",

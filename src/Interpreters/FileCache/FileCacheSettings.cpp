@@ -73,6 +73,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, idle_client_eviction_threads, 4, "Maximum number of threads used to purge idle clients' cache. Only meaningful when `idle_client_ttl_sec` is non-zero.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
+    DECLARE(NonZeroUInt64, drop_cache_threads, FILECACHE_DEFAULT_DROP_CACHE_THREADS, "Maximum number of threads used to remove cache keys in parallel on `SYSTEM DROP FILESYSTEM CACHE`. Value 1 means the removal is performed by the query thread alone", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FileCacheSettings, FileCacheSetting)

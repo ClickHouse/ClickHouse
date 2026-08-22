@@ -3,8 +3,9 @@
     {
       "group": "Главная",
       "icon": "house",
-      "pages": [],
-      "root": "ru/integrations/language-clients/index"
+      "pages": [
+        "ru/integrations/language-clients/index"
+      ]
     },
     {
       "$ref": "js/navigation.json"
@@ -34,7 +35,6 @@
       "group": "Сторонние клиенты",
       "icon": "users",
       "pages": [
-        "ru/integrations/language-clients/third-party/moose-olap",
         "ru/integrations/language-clients/third-party/client-libraries"
       ]
     }

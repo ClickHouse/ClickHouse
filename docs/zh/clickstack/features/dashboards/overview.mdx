@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'ClickStack 可视化与仪表盘'
-sidebarTitle: '仪表盘'
+sidebarTitle: '概览'
 description: 'ClickStack 可视化与仪表盘'
 doc_type: 'guide'
 keywords: ['clickstack', '仪表盘', '可视化', '监控', '可观测性']
@@ -19,7 +19,7 @@ ClickStack 支持事件可视化，并在 ClickStack UI (HyperDX) 中内置了�
   ## 创建可视化
 </div>
 
-HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、链路追踪和日志可视化，便于快速创建用于数据分析的可视化内容。该界面在创建仪表盘时也会复用。下面将介绍如何使用 Chart Explorer 创建可视化。
+HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trace 和日志可视化，便于快速创建用于数据分析的可视化内容。该界面在创建仪表盘时也会复用。下面将介绍如何使用 Chart Explorer 创建可视化。
 
 每个可视化都从选择**数据源**开始，然后选择**指标**，并可按需添加**过滤表达式**和 **group by** 字段。从概念上讲，HyperDX 中的可视化在底层对应的是 SQL `GROUP BY` 查询——你需要定义要在所选维度上聚合的指标。
 
@@ -31,7 +31,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、链�
 
 例如，你可以绘制按服务名称分组的错误数量 (`count()`) 图表。
 
-在下面的示例中，我们使用 [sql.clickhouse.com](https://sql.clickhouse.com) 上提供的远程数据集，详见指南 [&quot;Remote Demo Dataset&quot;](/zh/clickstack/example-datasets/remote-demo-data)。**你也可以访问 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) 来复现这些示例。**
+在下面的示例中，我们使用 [sql.clickhouse.com](https://sql.clickhouse.com) 上提供的远程数据集，详见指南 [&quot;远程演示数据集&quot;](/zh/clickstack/example-datasets/remote-demo-data)。**你也可以访问 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) 来复现这些示例。**
 
 <Steps>
   <Step title="前往 Chart Explorer" id="navigate-chart-explorer">
@@ -59,16 +59,12 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、链�
 
     <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Simple visualization 2" size="lg" />
 
-    若要基于现有数据系列创建一个类似的新数据系列，你可以直接复制，而不必从头开始。点击某个数据系列行上的复制图标 (`Duplicate series`)，即可在其正下方插入一个副本。副本会保留原数据系列的设置，例如指标、列和过滤器。然后你只需修改不同的字段 (例如聚合方式) ，并为副本设置自己的别名。在所有支持多个数据系列 的地方都可以使用复制功能。对于仅允许一个数据系列 的可视化类型，例如 `Number`、`Pie` 和 `Heatmap`，则会隐藏该功能。
-
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg" />
-
-    若要基于现有数据系列创建一个类似的新数据系列，你可以直接复制，而不必从头开始。点击某个数据系列行上的复制图标 (`Duplicate series`)，即可在其正下方插入一个副本。副本会保留原数据系列的设置，例如指标、列和过滤器。然后你只需修改不同的字段 (例如聚合方式) ，并为副本设置自己的别名。在所有支持多个数据系列 的地方都可以使用复制功能。对于仅允许一个数据系列 的可视化类型，例如 `Number`、`Pie` 和 `Heatmap`，则会隐藏该功能。
+    若要基于现有数据系列创建一个类似的新数据系列，你可以直接复制，而不必从头开始。点击某个数据系列行上的复制图标 (`Duplicate series`)，即可在其正下方插入一个副本。副本会保留原数据系列的设置，例如指标、列和过滤器。然后你只需修改不同的字段 (例如聚合方式) ，并为副本设置自己的别名。在所有支持多个数据系列 的地方都可以使用复制功能。对于仅允许一个数据系列 的可视化类型，例如 `数值`、`Pie` 和 `Heatmap`，则会隐藏该功能。
 
     <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg" />
 
     <Note>
-      可以基于任何数据源创建可视化——无论是指标、链路追踪还是日志。ClickStack 将这些统一视为宽事件。任何**数值列**都可以按时间绘制成图，而**字符串**、**日期**或**数值**列都可用于分组。
+      可以基于任何数据源创建可视化——无论是指标、trace 还是日志。ClickStack 将这些统一视为宽事件。任何**数值列**都可以按时间绘制成图，而**字符串**、**日期**或**数值**列都可用于分组。
 
       这种统一方式使你能够基于一致且灵活的模型，跨不同类型的遥测数据构建仪表盘。
     </Note>
@@ -202,7 +198,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、链�
   ### 卡片显示设置
 </div>
 
-每个卡片都有一个 **Display Settings** 抽屉面板，用于控制其数值的显示方式。在卡片编辑器中点击 **Display Settings** 即可打开。可用选项取决于可视化类型。
+每个卡片都有一个 **Display Settings** 抽屉，用于控制其数值的显示方式。在卡片编辑器中点击 **Display Settings** 即可打开。可用选项取决于可视化类型。
 
 数值卡片可以显示**背景图表**：即在数值后方绘制一条趋势迷你线图，让你一眼就能看出它在所选时间范围内的变化。这对 SLO 和错误预算卡片尤其有用，因为数值的变化趋势与当前读数同样重要。
 
@@ -211,6 +207,14 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、链�
 <Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="数值卡片的 Display Settings 抽屉，其中 Background chart 设置为 Area" size="lg" />
 
 背景图表适用于查询构建器生成的数值卡片。Raw SQL 数值卡片只返回单个值，没有可用于分桶的时间维度，因此该选项会显示，但处于禁用状态。
+
+表格卡片可以使用 **Alternate Row Background** 为行添加斑马纹背景，即为隔行着色，从而让宽表更易于浏览。默认情况下此选项处于关闭状态。
+
+选中表格卡片后，打开 **Display Settings** 并开启 **Alternate Row Background**。斑马纹仅影响视觉显示，因此它同时适用于查询构建器和 Raw SQL 表格卡片。
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="表格卡片的 Display Settings 抽屉，其中已开启 Alternate Row Background" size="lg" />
+
+表格卡片在滚动时也会在表头与数据之间保留分隔线，因此列标题始终清晰可辨。
 
 <div id="dashboard-listing-search">
   ## 仪表盘 - 列表与搜索
@@ -306,7 +310,7 @@ HyperDX 部署后即提供开箱即用的仪表盘。
 <Info>
   **所需的系统表访问权限**
 
-  此仪表盘会查询 ClickHouse [系统表](/zh/reference/system-tables/index) 以显示关键指标。需要以下授权：
+  此仪表盘会查询 ClickHouse [系统表](/zh/reference/system-tables/overview) 以显示关键指标。需要以下授权：
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 
