@@ -3471,6 +3471,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 {
     using ChangeableWithoutRestart = ServerSettings::ChangeableWithoutRestart;
 
+    const MemoryPressureThresholds memory_pressure_thresholds = getMemoryPressureThresholds();
+
     ChangeableSettingsMap changeable_settings
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
@@ -3478,13 +3480,15 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"max_per_cpu_untracked_memory", {std::to_string(per_cpu_memory.budgetCapacity()), ChangeableWithoutRestart::Yes}},
             {"per_cpu_untracked_memory_thread_buffer", {std::to_string(per_cpu_memory.threadBuffer()), ChangeableWithoutRestart::Yes}},
 
-            /// Report the live thresholds, not the values captured at startup.
+            /// Report the live thresholds, not the values captured at startup. One snapshot for all
+            /// three rows: reading three times could straddle a reload and report a ladder that was
+            /// never published, such as an out-of-order one.
             {"reader_executor_memory_pressure_elevated_level_pct",
-             {std::to_string(getMemoryPressureThresholds().elevated_pct), ChangeableWithoutRestart::Yes}},
+             {std::to_string(memory_pressure_thresholds.elevated_pct), ChangeableWithoutRestart::Yes}},
             {"reader_executor_memory_pressure_high_level_pct",
-             {std::to_string(getMemoryPressureThresholds().high_pct), ChangeableWithoutRestart::Yes}},
+             {std::to_string(memory_pressure_thresholds.high_pct), ChangeableWithoutRestart::Yes}},
             {"reader_executor_memory_pressure_critical_level_pct",
-             {std::to_string(getMemoryPressureThresholds().critical_pct), ChangeableWithoutRestart::Yes}},
+             {std::to_string(memory_pressure_thresholds.critical_pct), ChangeableWithoutRestart::Yes}},
 
             /// Named collections metadata storage is initialized once, so use its effective startup type.
             {"named_collections_storage_type",
