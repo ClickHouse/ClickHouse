@@ -206,10 +206,10 @@ ProcessList::EntryPtr ProcessList::insert(
         /// Effective admission wait budget: queue_max_wait_ms → max_execution_time → default receive timeout (300s).
         /// This is the timeout used by the FIFO admission wait below, and also by the secondary-limit waits
         /// (`max_concurrent_queries_for_all_users` / `max_concurrent_queries_for_user`) once an admission slot
-        /// has been transferred to us by a finishing query. Computing a single `admission_deadline` up front
-        /// means the admission wait and the post-handoff secondary waits share one budget, so the total time a
-        /// query can spend in `insert` is bounded by `effective_wait_ms` regardless of how many of these waits
-        /// it goes through.
+        /// has been transferred to us by a finishing query. A single `admission_deadline` is computed once the
+        /// admission stage starts, so the admission wait and the post-handoff secondary waits share one budget
+        /// and the total time a query can spend admitting is bounded by `effective_wait_ms` regardless of how
+        /// many of these waits it goes through.
         UInt64 effective_wait_ms = queue_max_wait_ms
             ? queue_max_wait_ms
             : settings[Setting::max_execution_time].totalMilliseconds();
@@ -224,8 +224,6 @@ ProcessList::EntryPtr ProcessList::insert(
         /// admission wait, so the deadline arithmetic here and the `wait_until` calls below cannot overflow.
         const auto effective_wait = saturatedMilliseconds(effective_wait_ms);
         effective_wait_ms = effective_wait.count();
-
-        const auto admission_deadline = std::chrono::steady_clock::now() + effective_wait;
 
         /// --- FIFO admission control (see ProcessList.h for design overview) ---
         /// An `admission_tracked` query holds an admission slot for its whole lifetime whenever the
@@ -242,19 +240,18 @@ ProcessList::EntryPtr ProcessList::insert(
         const bool admission_tracked = !is_unlimited_query && admission_queue_enabled && !isAdmissionExemptQuery(ast);
         const bool needs_admission = admission_tracked && max_size;
 
-        /// Connection liveness callback and its polling interval, shared by the FIFO admission wait and the
-        /// post-handoff secondary-limit waits below. Both can park a query that holds (or is about to hold)
-        /// an admission slot, so both must drop the slot if the client disconnects meanwhile. Computed only
-        /// for admission-tracked queries; left empty otherwise, so the waits skip the liveness loop.
-        std::function<bool()> is_alive;
-        UInt64 alive_check_interval_ms = 0;
-        if (admission_tracked)
-        {
-            is_alive = query_context->getConnectionAliveCheck();
-            alive_check_interval_ms = std::clamp(static_cast<UInt64>(
-                query_context->getServerSettings()[ServerSetting::admission_queue_alive_check_interval_ms]),
-                UInt64(500), UInt64(10000));
-        }
+        /// Connection liveness callback and its polling interval, shared by the `replace_running_query` wait,
+        /// the FIFO admission wait and the post-handoff secondary-limit waits below. All of them can park a
+        /// query for a user-controlled amount of time, so all of them must give up once the client is gone —
+        /// the last two additionally hold (or are about to hold) an admission slot that has to be handed to
+        /// the next waiter. This is deliberately *not* conditional on `admission_tracked`: the replacement
+        /// wait exists with the admission queue disabled too, and a disconnected client must not sit out
+        /// `replace_running_query_max_wait_ms` and then run its query. It is empty when the protocol does not
+        /// provide a liveness check, in which case the waits skip the liveness loop.
+        const std::function<bool()> is_alive = query_context->getConnectionAliveCheck();
+        const UInt64 alive_check_interval_ms = std::clamp(static_cast<UInt64>(
+            query_context->getServerSettings()[ServerSetting::admission_queue_alive_check_interval_ms]),
+            UInt64(500), UInt64(10000));
 
         /// Replacing a query must happen before taking an admission slot. The old query can take up to
         /// `replace_running_query_max_wait_ms` to leave the process list; occupying a FIFO slot during
@@ -328,6 +325,13 @@ ProcessList::EntryPtr ProcessList::insert(
                 }
             }
         }
+
+        /// The admission budget starts here, after the `replace_running_query` wait: that wait has its own
+        /// budget (`replace_running_query_max_wait_ms`) and must not eat into `queue_max_wait_ms`. Otherwise a
+        /// replacement whose victim took a while to shut down would reach the queue with most of its admission
+        /// budget already spent and be rejected with `TOO_MANY_SIMULTANEOUS_QUERIES` without ever having
+        /// queued for that long.
+        const auto admission_deadline = std::chrono::steady_clock::now() + effective_wait;
 
         if (needs_admission && admission_running >= max_size)
         {

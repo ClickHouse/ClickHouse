@@ -33,6 +33,14 @@ node = cluster.add_instance(
     main_configs=["configs/server.xml"],
 )
 
+# The admission queue is opt-in, so the disconnect-aware `replace_running_query`
+# wait must work with it turned off as well (see
+# `test_client_disconnect_while_replacing_query_without_admission_queue`).
+node_without_admission_queue = cluster.add_instance(
+    "node_without_admission_queue",
+    main_configs=["configs/no_admission_queue.xml"],
+)
+
 # main_configs are mounted under /etc/clickhouse-server/config.d/.
 SERVER_CONFIG_PATH = "/etc/clickhouse-server/config.d/server.xml"
 
@@ -448,7 +456,7 @@ def test_client_disconnect_while_waiting_in_queue(started_cluster):
     pool.join()
 
 
-def test_client_disconnect_while_replacing_query(started_cluster):
+def check_client_disconnect_while_replacing_query(target):
     """
     Verify that a replacement query whose HTTP client disconnects while the old
     query is leaving the process list is not admitted for execution.
@@ -463,7 +471,7 @@ def test_client_disconnect_while_replacing_query(started_cluster):
 
     def run_victim():
         try:
-            node.query(
+            target.query(
                 "SELECT sleep(30) FORMAT Null",
                 settings={"function_sleep_max_microseconds_per_block": 0},
                 query_id=query_id,
@@ -472,7 +480,7 @@ def test_client_disconnect_while_replacing_query(started_cluster):
             pass  # Expected: the replacement cancels the victim.
 
     pool.apply_async(run_victim)
-    wait_for_query_start(node, query_id)
+    wait_for_query_start(target, query_id)
 
     params = urllib.parse.urlencode({
         "query": "SELECT 'replacement ran'",
@@ -482,27 +490,27 @@ def test_client_disconnect_while_replacing_query(started_cluster):
     })
     request = (
         f"GET /?{params} HTTP/1.1\r\n"
-        f"Host: {node.ip_address}\r\n"
+        f"Host: {target.ip_address}\r\n"
         f"Connection: close\r\n"
         f"\r\n"
     )
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(5)
-    sock.connect((node.ip_address, 8123))
+    sock.connect((target.ip_address, 8123))
     sock.sendall(request.encode())
 
     # Wait for an observable state instead of sleeping: the replacement marks the
     # victim as cancelled before it parks on `query_finished`, so `is_cancelled = 1`
     # on the still-running victim means the replacement is inside that wait.
-    wait_for_query_cancelled(node, query_id)
+    wait_for_query_cancelled(target, query_id)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b'\x01\x00\x00\x00\x00\x00\x00\x00')
     sock.close()
 
     try:
-        wait_for_query_finish(node, query_id)
-        node.query("SYSTEM FLUSH LOGS")
-        starts = node.query(
+        wait_for_query_finish(target, query_id)
+        target.query("SYSTEM FLUSH LOGS")
+        starts = target.query(
             f"SELECT count() FROM system.query_log "
             f"WHERE query_id = '{query_id}' AND type = 'QueryStart'"
         ).strip()
@@ -511,9 +519,25 @@ def test_client_disconnect_while_replacing_query(started_cluster):
             f"(QueryStart count: {starts})"
         )
     finally:
-        node.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC")
+        target.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC")
         pool.close()
         pool.join()
+
+
+def test_client_disconnect_while_replacing_query(started_cluster):
+    check_client_disconnect_while_replacing_query(node)
+
+
+def test_client_disconnect_while_replacing_query_without_admission_queue(started_cluster):
+    """
+    The same check with `enable_query_admission_queue = 0` (the default).
+
+    The FIFO admission queue is opt-in, but the connection-liveness check in the
+    `replace_running_query` wait must not be: without it a disconnected client
+    would still wait out `replace_running_query_max_wait_ms` and then run the
+    replacement query against a socket nobody is reading.
+    """
+    check_client_disconnect_while_replacing_query(node_without_admission_queue)
 
 
 def test_queue_wait_time_profile_event(started_cluster):

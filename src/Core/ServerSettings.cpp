@@ -570,10 +570,12 @@ When disabled, the legacy broadcast condvar is used.
 Requires server restart to take effect.
 )", 0) \
     DECLARE(UInt64, admission_queue_alive_check_interval_ms, 5000, R"(
-Interval in milliseconds between connection alive checks while a query is waiting in the admission control queue.
-When a query is waiting for a slot (controlled by `max_concurrent_queries`), the server
-periodically checks whether the client is still connected. If the client has disconnected, the waiting query is
-cancelled early instead of occupying a queue slot until timeout.
+Interval in milliseconds between connection alive checks while a query is waiting to start executing.
+This covers a query waiting for a slot in the admission control queue (controlled by `max_concurrent_queries`)
+and a query waiting for the query it replaces to finish (`replace_running_query`); the server periodically
+checks whether the client is still connected, and a waiting query whose client has disconnected is cancelled
+early instead of waiting until its timeout. The replacement wait is checked regardless of
+`enable_query_admission_queue`.
 
 The value is clamped to `[500, 10000]` ms internally.
 )", 0) \
