@@ -143,7 +143,6 @@ ReaderExecutor::ReaderExecutor(
     : source(std::move(source_))
     , window_size(options.window_size)
     , block_size(options.block_size)
-    , window_sizes{options.window_size, options.block_size}
     , fetch_tracker(ReadContinuityTracker::Options{.bridgeable_gap = options.min_bytes_for_seek})
     , long_connection_limit(std::move(options.long_connection_limit))
     , encryption_header_cache(std::move(options.encryption_header_cache))
@@ -172,9 +171,8 @@ ReaderExecutor::~ReaderExecutor()
     /// the destructor.
     try
     {
-        /// No window is in flight here, so drain at the level the last one was served at rather
-        /// than sampling again.
-        dropLongConnection(window_sizes);
+        /// No window is in flight here, so sample the level for the drain buffer.
+        dropLongConnection(sampleWindowSizes());
     }
     catch (...)
     {
@@ -513,10 +511,9 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     return fetched.slice(ByteRange{window_offset, serve_len(fetched_end)});
 }
 
-ReaderExecutor::WindowSizes ReaderExecutor::sampleWindowSizes()
+ReaderExecutor::WindowSizes ReaderExecutor::sampleWindowSizes() const
 {
-    window_sizes = sizesAtPressure(CurrentThread::getMemoryPressureMonitor().currentLevel(), window_size, block_size);
-    return window_sizes;
+    return sizesAtPressure(CurrentThread::getMemoryPressureMonitor().currentLevel(), window_size, block_size);
 }
 
 void ReaderExecutor::dropLongConnection(WindowSizes sizes)
