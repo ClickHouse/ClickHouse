@@ -666,6 +666,9 @@ struct HashMethodSerialized
         if (!arena_prepared)
             return;
         arena_prepared = false;
+        /// Sound only while the chunk is still the arena's last allocation, which is what
+        /// `enableKeyBatch` asks of its caller: it emplaces every row and allocates nothing else.
+        chassert(arena_pool->alloc(0) == arena_base + arena_size);
         arena_pool->rollback(arena_base + arena_size - arena_free);
     }
 
