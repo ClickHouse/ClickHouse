@@ -1,7 +1,5 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
-
-#include <Access/Common/AccessRightsElement.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -229,19 +227,9 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     return finder_data.has_system_tables;
 }
 
-bool sessionHasCredentialAccessLimit(const ContextPtr & context)
-{
-    const auto grants = context->getAuthenticationGrants();
-    return grants && !grants->structurallyEmpty();
-}
-
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
 {
     const Settings & settings = context->getSettingsRef();
-
-    /// A credential-limited session must not populate the cache: fail-close, see `sessionHasCredentialAccessLimit`.
-    if (sessionHasCredentialAccessLimit(context))
-        return false;
 
     if ((skip_context_check || context->getCanUseQueryResultCache()) && settings[Setting::enable_writes_to_query_cache])
     {
