@@ -63,6 +63,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageView.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
@@ -265,6 +266,8 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         if (typeid_cast<const StorageObjectStorageCluster *>(raw))
             return true;
         if (typeid_cast<const StorageView *>(raw))
+            return true;
+        if (typeid_cast<const StorageTimeSeries *>(raw))
             return true;
         return false;
     };

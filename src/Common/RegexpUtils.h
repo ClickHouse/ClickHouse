@@ -2,7 +2,9 @@
 
 #include <base/types.h>
 
+#include <optional>
 #include <string_view>
+#include <vector>
 
 
 namespace DB
@@ -48,5 +50,21 @@ struct RegexpFixedPrefix
 /// The only supported group is a top-level alternation of plain literals,
 /// "^(branch1|branch2|...)$?", which is handled separately.
 RegexpFixedPrefix extractFixedPrefixFromRegularExpression(std::string_view regexp, bool requires_perfect_prefix);
+
+/// Anchors a regular expression at its beginning and/or at its end,
+/// for example `anchorRegularExpression("abc", true, true)` returns "^abc$".
+/// A non-capturing group is added around `regexp` if it contains a top-level alternation,
+/// for example "foo|bar" is anchored as "^(?:foo|bar)$" and not as "^foo|bar$"
+/// (because "^foo|bar$" means "(^foo) | (bar$)").
+String anchorRegularExpression(std::string_view regexp, bool anchor_begin, bool anchor_end);
+
+/// If `regexp` matches a fixed list of strings and nothing else - i.e. it looks like "^(abc|def|...)$"
+/// or "^(?:abc|def|...)$" - the function returns that list, otherwise it returns nullopt.
+/// An escaped metacharacter ("\.", "\\", ...) counts as a literal character and is unescaped in the result,
+/// so "^(a\.b|c)$" gives {"a.b", "c"}.
+/// A regular expression without an alternation is a list of one string, so "^abc$" gives {"abc"}.
+/// Anchoring at both ends is required: "abc|def" matches every string containing "abc" or "def", and even
+/// "^abc|def$" means "(^abc)|(def$)", so neither is a fixed list.
+std::optional<std::vector<String>> getAllStringsMatchedByRegularExpression(std::string_view regexp);
 
 }
