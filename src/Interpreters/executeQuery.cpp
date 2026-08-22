@@ -2172,6 +2172,16 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
 
     for (const auto & collected : data.tables)
     {
+        /// The outer query can already be cancelled while it is still pending — killed by `KILL QUERY`,
+        /// or past its `max_execution_time` deadline. The pre-execution kill gate in `executeQueryImpl`
+        /// runs only later (and only for queries that are inserted into the process list, which the
+        /// internal `DETACH`/`ATTACH` queries below are not, since they run under the outer query's
+        /// process list element), so nothing else stops the cycle here. A cancelled query must not
+        /// mutate table state, so stop the randomization instead of starting another cycle.
+        if (const auto process_list_element = context->getProcessListElementSafe();
+            process_list_element && process_list_element->isKilled())
+            return;
+
         const auto & table_id = collected.id;
         if (table_id.getDatabaseName() == "system")
             continue;
