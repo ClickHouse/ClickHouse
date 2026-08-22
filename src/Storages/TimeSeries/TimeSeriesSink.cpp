@@ -605,6 +605,19 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     if (samples_target_metadata->columns.has(TimeSeriesColumnNames::IsStaleMarker))
         is_stale_marker_type = samples_target_metadata->columns.get(TimeSeriesColumnNames::IsStaleMarker).type;
 
+    /// The recent samples table receives a copy of every samples block, so the flag column can be
+    /// written only when both targets carry it; a legacy target degrades the pair to the raw-NaN behavior.
+    if (is_stale_marker_type && time_series_storage.hasTarget(ViewTarget::RecentSamples))
+    {
+        auto recent_samples_metadata
+            = time_series_storage.getTargetTable(ViewTarget::RecentSamples, getContext())->getInMemoryMetadataPtr(getContext(), false);
+        if (!recent_samples_metadata->columns.has(TimeSeriesColumnNames::IsStaleMarker))
+        {
+            is_stale_marker_type = nullptr;
+            stale_marker_missing_table = "recent samples";
+        }
+    }
+
     Block samples_header;
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
@@ -689,16 +702,16 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
                     continue;
                 }
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Cannot store a non-zero {} flag for a non-NaN sample: the \"samples\" table has no such column. "
-                    "Run ALTER TABLE <samples table> ADD COLUMN {} UInt8 to enable stale-marker storage",
-                    TimeSeriesColumnNames::IsStaleMarker, TimeSeriesColumnNames::IsStaleMarker);
+                    "Cannot store a non-zero {} flag for a non-NaN sample: the \"{}\" table has no such column. "
+                    "Run ALTER TABLE <that table> ADD COLUMN {} UInt8 to enable stale-marker storage",
+                    TimeSeriesColumnNames::IsStaleMarker, stale_marker_missing_table, TimeSeriesColumnNames::IsStaleMarker);
             }
         }
         if (dropped_marker_on_nan)
             LOG_WARNING(log,
-                "Prometheus stale markers are stored as raw NaN samples: the \"samples\" table has no {} column. "
-                "Run ALTER TABLE <samples table> ADD COLUMN {} UInt8 to enable stale-marker handling",
-                TimeSeriesColumnNames::IsStaleMarker, TimeSeriesColumnNames::IsStaleMarker);
+                "Prometheus stale markers are stored as raw NaN samples: the \"{}\" table has no {} column. "
+                "Run ALTER TABLE <that table> ADD COLUMN {} UInt8 to enable stale-marker handling",
+                stale_marker_missing_table, TimeSeriesColumnNames::IsStaleMarker, TimeSeriesColumnNames::IsStaleMarker);
     }
 
     PaddedPODArray<UInt8> filter;

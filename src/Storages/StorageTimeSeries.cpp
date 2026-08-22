@@ -864,7 +864,10 @@ otherwise vanish without a trace.
 For an inner legacy samples table the migration survives `BACKUP`/`RESTORE`: restoring recreates the inner
 table from the outer definition, and the restore adds `is_stale_marker` to a samples schema that lacks it,
 so both migrated and unmigrated legacy backups come back with the column in place (the backfill state is
-part of the data and restores as backed up).
+part of the data and restores as backed up). The same applies to an inner recent samples
+table. Since every inserted sample is also written to the recent samples table, the flag is stored only when both
+tables carry the column: a legacy recent samples table degrades the pair to the pre-column behavior above
+(with the warning naming it) so that reads inside and outside its TTL window stay consistent.
 
 Columns the engine creates itself get time-series compression codecs:
 `timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ZSTD(3))`. Near-monotonic timestamps barely
