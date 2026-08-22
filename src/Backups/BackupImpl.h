@@ -219,6 +219,10 @@ private:
 
     bool writing_finalized = false;
     bool corrupted = false;
+    /// Outcome of the one own-lock cleanup a failed `open` performs; see `tryRemoveOwnLockFile`.
+    std::optional<bool> own_lock_cleanup_result;
+    /// Whether this `open` wrote the destination lock, which is what makes it ours to take back.
+    bool created_own_lock_file = false;
     const LoggerPtr log;
 };
 

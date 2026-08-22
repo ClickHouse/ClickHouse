@@ -929,19 +929,25 @@ void BackupImpl::createLockFile()
         lock_file_contents = toString(*uuid);
     const String completed_file = use_archive ? archive_params.archive_name : ".backup";
     FailPointInjection::pauseFailPoint(FailPoints::backup_pause_before_lock_file_creation);
-    bool lock_created = false;
     try
     {
         auto out = writer->writeFileIfNotExists(lock_file_name);
         *out << lock_file_contents;
         out->finalize();
-        lock_created = true;
+        created_own_lock_file = true;
     }
     catch (...)
     {
         auto exception = std::current_exception();
         String actual_file_contents;
         bool lock_contents_match = false;
+        /// The write may have committed the lock, and no check below is guaranteed to observe it: each
+        /// issues its own request and can fail on its own. So the lock is this `open`'s to take back
+        /// unless it continues an earlier attempt; `removeLockFile` re-reads it and has the final say.
+#if CLICKHOUSE_CLOUD
+        if (!params.resume || !params.resume->continuing_existing_progress)
+#endif
+            created_own_lock_file = true;
         try
         {
             lock_contents_match = writer->fileContentsEqual(lock_file_name, lock_file_contents, actual_file_contents);
@@ -953,7 +959,8 @@ void BackupImpl::createLockFile()
             tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not read lock file {}", lock_file_name));
         }
 #if CLICKHOUSE_CLOUD
-        /// A continued attempt is allowed to find its own lock: it is the one that wrote it.
+        /// A resumable attempt whose own contents are already there falls through, so a later failure
+        /// lands inside `BackupResumer`'s inner try, which reports the lock and keeps its progress.
         if (lock_contents_match && !params.resume)
 #else
         if (lock_contents_match)
@@ -977,8 +984,7 @@ void BackupImpl::createLockFile()
 
     if (writer->fileExists(completed_file))
     {
-        if (lock_created)
-            removeLockFile();
+        tryRemoveOwnLockFile();
         throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name_for_logging);
     }
 }
@@ -1048,15 +1054,27 @@ bool BackupImpl::tryRemoveOwnLockFile() noexcept
     /// nobody. `removeLockFile` only removes a lock this backup still owns, so a foreign lock -- which may
     /// belong to a concurrent attempt that won the race -- is deliberately left alone. Never throws: it
     /// runs from an exception handler, where throwing would hide the original error.
+    ///
+    /// At most one attempt per `open`, and a repeat call answers with what that attempt found. A second
+    /// removal could delete a lock the first attempt reported as left behind, leaving the record of that
+    /// report describing a destination it no longer matches.
+    if (own_lock_cleanup_result.has_value())
+        return *own_lock_cleanup_result;
+    /// Only a lock this `open` wrote is ours to take back: a continued attempt holds the contents of the
+    /// lock the attempt it continues wrote, which `removeLockFile` cannot tell from its own, so removing it
+    /// would leave the progress naming a lock that is gone and fail every later attempt.
+    if (!created_own_lock_file)
+        return false;
     try
     {
-        return removeLockFile();
+        own_lock_cleanup_result = removeLockFile();
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
+        own_lock_cleanup_result = false;
     }
+    return *own_lock_cleanup_result;
 }
 
 bool BackupImpl::directoryExists(const String & directory) const
