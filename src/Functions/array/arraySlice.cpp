@@ -271,7 +271,7 @@ private:
                     /// `getSliceFromRight` clamps an oversized negative offset to the left edge, but preserves the
                     /// original endpoint. A slice starting before the left edge must therefore lose the part before it.
                     const UInt64 clipped_prefix = abs_offset - dimension;
-                    result_length = requested_length > clipped_prefix ? std::min(dimension, requested_length - clipped_prefix) : 0;
+                    result_length = requested_length > clipped_prefix ? std::min(dimension, requested_length - static_cast<size_t>(clipped_prefix)) : 0;
                 }
                 else
                     result_length = std::min(result_length, requested_length);
