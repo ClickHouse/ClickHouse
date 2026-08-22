@@ -559,9 +559,11 @@ void PrometheusHTTPProtocolAPI::writeHistogram(WriteBuffer & response, const His
             return custom_values_data.getFloat64(custom_values_begin + uidx);
         };
 
+        /// Custom buckets are (lower, upper] throughout, so every one of them uses rule 0 - including
+        /// the first, whose lower bound is -Inf and therefore cannot be inclusive.
         const auto positive_buckets = expandHistogramSpans(*payload.positive_spans, *payload.positive_values, row_index);
         for (const auto & bucket : positive_buckets)
-            add_bucket(bucket.index == 0 ? 3 : 0, custom_bound(bucket.index - 1), custom_bound(bucket.index), bucket.count);
+            add_bucket(0, custom_bound(bucket.index - 1), custom_bound(bucket.index), bucket.count);
     }
     else
     {
@@ -714,6 +716,20 @@ bool PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlockWithHistograms
 
     for (size_t i = 0; i < result_block.rows(); ++i)
     {
+        size_t start = (i == 0) ? 0 : offsets[i - 1];
+        size_t end = offsets[i];
+        size_t histogram_start = (i == 0) ? 0 : histogram_offsets[i - 1];
+        size_t histogram_end = histogram_offsets[i];
+
+        /// Stale markers are skipped below, so a series left with nothing but them has no samples
+        /// to report. Drop the whole series, as the instant-vector path does: emitting it would
+        /// produce a matrix element with neither "values" nor "histograms".
+        bool has_histogram_samples = false;
+        for (size_t j = histogram_start; j < histogram_end && !has_histogram_samples; ++j)
+            has_histogram_samples = !(payload_columns.flags->getUInt(j) & TimeSeriesHistogramFlags::StaleMarker);
+        if (start == end && !has_histogram_samples)
+            continue;
+
         if (need_comma)
             writeString(",", response);
 
@@ -724,9 +740,6 @@ bool PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlockWithHistograms
         writeTags(response, result_block, i);
 
         // Write float samples, if any
-        size_t start = (i == 0) ? 0 : offsets[i - 1];
-        size_t end = offsets[i];
-
         if (start < end)
         {
             writeString(R"(,"values":[)", response);
@@ -749,9 +762,6 @@ bool PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlockWithHistograms
         }
 
         // Write histogram samples, if any
-        size_t histogram_start = (i == 0) ? 0 : histogram_offsets[i - 1];
-        size_t histogram_end = histogram_offsets[i];
-
         bool wrote_histograms_key = false;
 
         for (size_t j = histogram_start; j < histogram_end; ++j)

@@ -37,3 +37,5 @@ test_histogram_seconds	test	2
 0
 -- an external histograms table must have all the columns with the exact types
 0
+-- the SQL insert surface rejects payloads readers cannot decode
+1

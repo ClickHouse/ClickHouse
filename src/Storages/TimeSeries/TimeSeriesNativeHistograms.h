@@ -12,6 +12,7 @@ namespace DB
 {
 
 class IColumn;
+class ColumnTuple;
 
 /// Bit layout of the `flags` column of the "histograms" target table.
 namespace TimeSeriesHistogramFlags
@@ -284,5 +285,11 @@ struct HistogramBucket
 /// Expands one direction (positive or negative) of one histogram sample into (index, count) pairs in ascending index order,
 /// porting the span walk of `floatBucketIterator` in Prometheus model/histogram/float_histogram.go; `idx` is Int64 because offsets can be negative.
 std::vector<HistogramBucket> expandHistogramSpans(const IColumn & spans_column, const IColumn & values_column, size_t row);
+
+/// Checks the invariants later readers rely on for one sample of the outer `histograms` column:
+/// a known schema and flags, non-negative counts, spans that cover exactly the bucket values, and
+/// custom bucket bounds covering the bucket indexes the spans reach. Throws INCORRECT_DATA
+/// otherwise. `tuple` is indexed by TimeSeriesHistogramsTupleIndex.
+void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row);
 
 }
