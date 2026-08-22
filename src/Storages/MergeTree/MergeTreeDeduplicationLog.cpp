@@ -13,6 +13,7 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #include <algorithm>
+#include <limits>
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -1138,9 +1139,9 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     /// durable writes means a failure aborts with nothing on disk and a rollback that
     /// only has to `erase` what it published, which never allocates (so it cannot
     /// throw) and never drops an unrelated, still-active block ID (nothing was
-    /// evicted). Once the writes and the rotation have both succeeded, `trimToMaxSize`
-    /// enforces the deduplication window; it only pops the oldest entries, so it
-    /// cannot throw at a point where the insert could no longer be rolled back.
+    /// evicted). The deduplication window is enforced once the writes and the rotation
+    /// have both succeeded - and, for a caller that commits a part afterwards, only
+    /// once that caller reports the outcome; see the end of this function.
     size_t published = 0;
     size_t written = 0;
     bool live_entries_counted = false;
@@ -1279,17 +1280,21 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw;
     }
 
-    /// Everything is durable now; enforce the deduplication window. Trimming only
-    /// pops the oldest entries, so - unlike a plain insert, which allocates - it
-    /// cannot throw here, where the durably recorded insert could no longer be rolled
-    /// back.
-    deduplication_map.trimToMaxSize([&](const std::string & block_id, const auto &)
-    {
-        auto source_it = block_id_log_numbers.find(block_id);
-        chassert(source_it != block_id_log_numbers.end());
-        --existing_logs.at(source_it->second).live_entries_count;
-        block_id_log_numbers.erase(source_it);
-    });
+    /// Everything is durable now; enforce the deduplication window. Trimming only pops
+    /// the oldest entries, so - unlike a plain insert, which allocates - it cannot
+    /// throw here, where the durably recorded insert could no longer be rolled back.
+    ///
+    /// A caller that asked to be told about the publication (`part_was_published`) has
+    /// a commit step after this returns and can roll the publication back, so the
+    /// window is not enforced on the block ids it just published until it reports the
+    /// outcome (finishPartPublication). Evicting the oldest, unrelated entry here would
+    /// not be something that rollback could undo - restoring an evicted entry
+    /// allocates, so it can fail on exactly the path that must not - and an already
+    /// committed block id would stop deduplicating just because an unrelated insert
+    /// failed to commit.
+    if (part_was_published)
+        published_not_confirmed += block_ids.size();
+    enforceDeduplicationWindow();
 
     /// Reclaim the record pairs left behind by any rolled-back operations once enough
     /// of them have piled up (best effort, never throws), so a burst of transient
@@ -1302,7 +1307,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     return {};
 }
 
-void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info, const std::vector<std::string> * block_ids_to_drop)
+void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)
 {
     std::lock_guard lock(state_mutex);
 
@@ -1318,7 +1323,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     /// ALTER MODIFY SETTING query. It's much more simpler to handle zero case
     /// here then destroy whole object, check for null pointer from different
     /// threads and so on.
-    if (deduplication_window == 0 && !block_ids_to_drop)
+    if (deduplication_window == 0)
         return;
 
     chassert(current_writer != nullptr);
@@ -1335,12 +1340,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     /// the part out of the active set and never retries the drop.
     std::vector<std::string> block_ids;
     std::vector<std::string> part_names;
-    if (block_ids_to_drop)
-    {
-        block_ids = *block_ids_to_drop;
-        part_names.assign(block_ids.size(), drop_part_info.getPartNameAndCheckFormat(format_version));
-    }
-    else for (const auto & node : deduplication_map)
+    for (const auto & node : deduplication_map)
     {
         /// Part is covered by the dropped part, so it must leave deduplication history.
         if (drop_part_info.contains(node.value))
@@ -1461,6 +1461,160 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     compactIfNeeded();
 }
 
+void MergeTreeDeduplicationLog::enforceDeduplicationWindow() noexcept
+{
+    /// The exempt block ids are the newest entries of the map, and trimming pops the
+    /// oldest first, so raising the limit by their count is exactly what keeps them.
+    /// Saturate rather than wrap: the window comes from a user setting and can be
+    /// arbitrarily large, and a wrapped limit would evict the whole map.
+    const size_t limit = deduplication_window > std::numeric_limits<size_t>::max() - published_not_confirmed
+        ? std::numeric_limits<size_t>::max()
+        : deduplication_window + published_not_confirmed;
+
+    deduplication_map.trimToSize(limit, [&](const std::string & block_id, const auto &)
+    {
+        auto source_it = block_id_log_numbers.find(block_id);
+        chassert(source_it != block_id_log_numbers.end());
+        --existing_logs.at(source_it->second).live_entries_count;
+        block_id_log_numbers.erase(source_it);
+    });
+}
+
+void MergeTreeDeduplicationLog::finishPartPublication(const std::vector<std::string> & block_ids) noexcept
+{
+    try
+    {
+        std::lock_guard lock(state_mutex);
+
+        chassert(published_not_confirmed >= block_ids.size());
+        published_not_confirmed -= std::min(published_not_confirmed, block_ids.size());
+
+        /// The outcome of the insert is known now: either its block ids are committed
+        /// and must take their place in the window, or the rollback has already erased
+        /// them and the map is back within the window anyway.
+        enforceDeduplicationWindow();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot enforce the deduplication window after a part commit");
+    }
+}
+
+size_t MergeTreeDeduplicationLog::unpublishBlockIds(
+    const MergeTreePartInfo & part_info,
+    const std::vector<std::string> * block_ids_to_unpublish) noexcept
+{
+    /// Erase without collecting the block ids into a container first: allocating
+    /// there could throw and leave them published, which is exactly the outcome the
+    /// last-resort path exists to prevent. `eraseIf` only pops nodes, so it cannot
+    /// fail, and - unlike the ordinary `dropPart` - it does not have to be
+    /// all-or-nothing with the on-disk records: the part never became active, so
+    /// unpublishing its block ids can at worst let a retry through as a visible
+    /// duplicate, while leaving them published drops the retry's data silently.
+    return deduplication_map.eraseIf([&](const std::string & block_id, const MergeTreePartInfo & info)
+    {
+        if (!part_info.contains(info))
+            return false;
+
+        if (block_ids_to_unpublish
+            && std::find(block_ids_to_unpublish->begin(), block_ids_to_unpublish->end(), block_id) == block_ids_to_unpublish->end())
+            return false;
+
+        auto source_it = block_id_log_numbers.find(block_id);
+        chassert(source_it != block_id_log_numbers.end());
+        --existing_logs.at(source_it->second).live_entries_count;
+        block_id_log_numbers.erase(source_it);
+        return true;
+    });
+}
+
+void MergeTreeDeduplicationLog::rollbackPublishedPart(
+    const MergeTreePartInfo & part_info,
+    const std::vector<std::string> & block_ids) noexcept
+{
+    try
+    {
+        std::lock_guard lock(state_mutex);
+
+        /// Record the rollback on disk before unpublishing, as a DROP carrying the
+        /// reserved cancelled-add part name - the same encoding `addPart` uses for its
+        /// own rollback. A plain DROP would be wrong here: replay would apply the
+        /// transient ADD first, and with a full deduplication window that ADD evicts the
+        /// oldest, unrelated block id before the DROP erases the rolled-back one, so a
+        /// restart would forget an insert that did commit and wrongly accept - and
+        /// duplicate - its retry. The marker instead cancels the (ADD, DROP) pair out of
+        /// the replay entirely, so the failed insert consumes no window slot, while an
+        /// older server, which knows no marker, still replays it as the erase that
+        /// unpublishes the never-committed block id (see MergeTreeDeduplicationOp).
+        bool compensated = false;
+        try
+        {
+            if (stopped)
+                throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we roll back this part.");
+
+            if (deduplication_window != 0)
+            {
+                prepareToWrite();
+
+                /// The commit failure may have come from the very disk this log lives
+                /// on, leaving the writer canceled by a failed record write.
+                if (current_writer->isCanceled())
+                    rotate();
+
+                for (const auto & block_id : block_ids)
+                {
+                    auto source_it = block_id_log_numbers.find(block_id);
+                    if (source_it == block_id_log_numbers.end())
+                        continue;
+
+                    MergeTreeDeduplicationLogRecord record;
+                    record.operation = MergeTreeDeduplicationOp::DROP;
+                    record.part_name = DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME;
+                    record.block_id = block_id;
+                    writeRecord(record, *current_writer);
+
+                    /// Physically on disk, so it counts towards raw log growth, but it
+                    /// never survives a replay - and neither does the ADD it cancels,
+                    /// which is why that ADD's log loses one record of effective
+                    /// coverage. Discount it right after the marker is durable, so that
+                    /// a failure partway through discounts only the ADDs that a replay
+                    /// really does cancel out.
+                    ++existing_logs[current_log_number].entries_count;
+                    --existing_logs.at(source_it->second).effective_entries_count;
+                }
+
+                rotateAndDropIfNeeded();
+            }
+
+            compensated = true;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__,
+                "Cannot write the rollback records of a part that failed to commit to the deduplication log; "
+                "discarding the deduplication history instead");
+        }
+
+        /// Unpublish unconditionally, whether or not the records above reached disk:
+        /// the part never became active, so leaving its block ids published would
+        /// silently deduplicate - and drop - a client retry of the same insert.
+        unpublishBlockIds(part_info, &block_ids);
+
+        if (compensated)
+            compactIfNeeded();
+        else
+            /// The ADD records of the erased block ids are still on disk uncancelled, so
+            /// the history no longer replays to the live state: repair it from the live
+            /// state, or fence it off so the next start discards it.
+            fenceOffDivergedHistory();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            __PRETTY_FUNCTION__, "Cannot roll back the deduplication log publication of a part that failed to commit");
+    }
+}
+
 void MergeTreeDeduplicationLog::unpublishFailedPart(
     const MergeTreePartInfo & part_info,
     const std::vector<std::string> * block_ids_to_unpublish) noexcept
@@ -1472,28 +1626,7 @@ void MergeTreeDeduplicationLog::unpublishFailedPart(
         if (deduplication_window == 0 && !block_ids_to_unpublish)
             return;
 
-        /// Erase without collecting the block ids into a container first: allocating
-        /// there could throw and leave them published, which is exactly the outcome this
-        /// last-resort path exists to prevent. `eraseIf` only pops nodes, so it cannot
-        /// fail, and - unlike the ordinary `dropPart` - it does not have to be
-        /// all-or-nothing with the on-disk records: the part never became active, so
-        /// unpublishing its block ids can at worst let a retry through as a visible
-        /// duplicate, while leaving them published drops the retry's data silently.
-        const size_t erased = deduplication_map.eraseIf([&](const std::string & block_id, const MergeTreePartInfo & info)
-        {
-            if (!part_info.contains(info))
-                return false;
-
-            if (block_ids_to_unpublish
-                && std::find(block_ids_to_unpublish->begin(), block_ids_to_unpublish->end(), block_id) == block_ids_to_unpublish->end())
-                return false;
-
-            auto source_it = block_id_log_numbers.find(block_id);
-            chassert(source_it != block_id_log_numbers.end());
-            --existing_logs.at(source_it->second).live_entries_count;
-            block_id_log_numbers.erase(source_it);
-            return true;
-        });
+        const size_t erased = unpublishBlockIds(part_info, block_ids_to_unpublish);
 
         if (erased == 0 && !block_ids_to_unpublish)
             return;
@@ -1578,13 +1711,12 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
             discardHistoryAfterUnfinishedCompaction();
     }
 
-    deduplication_map.setMaxSize(deduplication_window, [&](const std::string & block_id, const auto &)
-    {
-        auto source_it = block_id_log_numbers.find(block_id);
-        chassert(source_it != block_id_log_numbers.end());
-        --existing_logs.at(source_it->second).live_entries_count;
-        block_id_log_numbers.erase(source_it);
-    });
+    /// Shrinking the window must not evict the block ids of an insert that is
+    /// published but whose part commit is still in flight: its rollback erases exactly
+    /// what it published and would otherwise leave the bookkeeping of an entry that is
+    /// already gone (see finishPartPublication).
+    deduplication_map.setMaxSizeWithoutTrimming(deduplication_window);
+    enforceDeduplicationWindow();
     rotateAndDropIfNeeded();
 
     /// Can happen in case we have unfinished log. Only when deduplication is enabled:

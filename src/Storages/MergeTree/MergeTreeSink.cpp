@@ -13,6 +13,7 @@
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 
 #include <exception>
@@ -444,6 +445,17 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
                 published_block_ids = std::move(block_ids);
         }
 
+        /// `addPart` leaves the block ids it published exempt from the deduplication
+        /// window until the outcome of this part commit is known, so that a rollback
+        /// below restores the previous state exactly instead of leaving an unrelated,
+        /// already committed block id evicted (see
+        /// MergeTreeDeduplicationLog::finishPartPublication). Report the outcome on
+        /// every exit path, after the rollback has run.
+        SCOPE_EXIT({
+            if (deduplication_log && !published_block_ids.empty())
+                deduplication_log->finishPartPublication(published_block_ids);
+        });
+
         try
         {
             fiu_do_on(FailPoints::merge_tree_sink_fail_part_commit_after_dedup,
@@ -471,28 +483,12 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             /// renameTempPartAndAdd precommitted). Left published, they would silently deduplicate -
             /// and drop - a client retry of the same insert against a part that never existed, both
             /// in this process and, because the ADD records are already durable, after a restart.
-            /// Unpublish them (dropPart writes compensating DROP records and erases the block IDs
-            /// from the in-memory map, all-or-nothing). If the drop itself fails - e.g. the same
-            /// broken disk that failed the commit - it leaves the block IDs published, so fall back
-            /// to unpublishFailedPart, which cannot fail: it erases them from the in-memory map
-            /// without allocating and fences off the on-disk log, whose ADD records now no longer
-            /// match that map, so a restart discards the suspect history instead of replaying it.
-            /// Neither must mask the original error.
+            /// Unpublish them. This cannot fail and must not mask the original error: if the
+            /// rollback records cannot be written, the block IDs are unpublished anyway and the
+            /// on-disk history is repaired from the live state or fenced off, so a restart does
+            /// not replay it.
             if (deduplication_log && !published_block_ids.empty())
-            {
-                try
-                {
-                    deduplication_log->dropPart(part->info, &published_block_ids);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(
-                        storage.log,
-                        "Cannot roll back the deduplication log publication of a part that failed to commit; "
-                        "unpublishing its block IDs and discarding the deduplication history instead");
-                    deduplication_log->unpublishFailedPart(part->info, &published_block_ids);
-                }
-            }
+                deduplication_log->rollbackPublishedPart(part->info, published_block_ids);
             throw;
         }
     }

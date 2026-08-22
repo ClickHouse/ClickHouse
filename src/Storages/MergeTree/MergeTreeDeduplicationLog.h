@@ -94,19 +94,34 @@ public:
         setMaxSize(max_size_, [] (const std::string &, const V &) {});
     }
 
-    /// Evict the oldest entries (in FIFO insertion order) until the size is within
-    /// the limit. Only pops entries, so it never allocates and never throws: a caller
+    /// Change the limit without enforcing it. The caller enforces it separately, which
+    /// is what lets entries of an insert that is published but not yet confirmed
+    /// committed outlive a window change (see
+    /// MergeTreeDeduplicationLog::enforceDeduplicationWindow).
+    void setMaxSizeWithoutTrimming(size_t max_size_)
+    {
+        max_size = max_size_;
+    }
+
+    /// Evict the oldest entries (in FIFO insertion order) until at most `target_size`
+    /// remain. Only pops entries, so it never allocates and never throws: a caller
     /// that has already made a change durable relies on this to enforce the window
     /// without a failure that could no longer be rolled back.
     template <typename Callback>
-    void trimToMaxSize(Callback && on_evict) noexcept
+    void trimToSize(size_t target_size, Callback && on_evict) noexcept
     {
-        while (size() > max_size)
+        while (size() > target_size)
         {
             on_evict(queue.front().key, queue.front().value);
             map.erase(queue.front().key);
             queue.pop_front();
         }
+    }
+
+    template <typename Callback>
+    void trimToMaxSize(Callback && on_evict) noexcept
+    {
+        trimToSize(max_size, std::forward<Callback>(on_evict));
     }
 
     void trimToMaxSize() noexcept
@@ -234,23 +249,58 @@ public:
     /// Add part into in-memory hash table and to disk
     /// Return empty block_id and part info if insertion was successful.
     /// Otherwise, in case of duplicate, return block_id with the collision and previous part name with same hash (useful for logging)
+    ///
+    /// Passing `part_was_published` makes the publication two-phase: the caller is told
+    /// whether the block ids became published and takes responsibility for reporting the
+    /// outcome of its own commit step with `finishPartPublication`, on every exit path.
+    /// Until it does, those block ids are exempt from the deduplication window. A caller
+    /// that passes nullptr has no commit step to roll back, so the window is enforced
+    /// right away, as before.
     std::vector<AddPartResult> addPart(
         const std::vector<std::string> & block_id,
         const MergeTreePartInfo & part,
         bool * part_was_published = nullptr);
 
     /// Remove all covered parts from in memory table and add DROP records to the disk
-    void dropPart(const MergeTreePartInfo & drop_part_info, const std::vector<std::string> * block_ids = nullptr);
+    void dropPart(const MergeTreePartInfo & drop_part_info);
 
-    /// Last-resort counterpart of `dropPart` for a part that was published by `addPart`
-    /// but never became active, used when the ordinary `dropPart` rollback itself threw
-    /// (see MergeTreeSink::commitPart). Leaving the block ids published would silently
-    /// deduplicate - and drop - a client retry of that insert, so this must not be able
-    /// to fail: it erases the block ids from the in-memory map without allocating
-    /// (`LimitedOrderedHashMap::eraseIf`) and then fences off the on-disk history, which
-    /// still holds their ADD records and therefore no longer replays to the live state
+    /// Roll back a publication made by `addPart` for a part that never became active
+    /// (see MergeTreeSink::commitPart). This is not a `dropPart`: the block ids were
+    /// never committed, so the rollback is written with the reserved cancelled-add
+    /// encoding, which cancels the (ADD, rollback) pair out of a replay entirely
+    /// instead of replaying the transient ADD - which, with a full deduplication
+    /// window, would evict an unrelated, already committed block id on the next start.
+    /// Leaving the block ids published would silently deduplicate - and drop - a client
+    /// retry of that insert, so this cannot fail: if the rollback records cannot be
+    /// written, the block ids are unpublished anyway and the on-disk history, which no
+    /// longer replays to the live state, is repaired or fenced off
     /// (see fenceOffDivergedHistory). Never throws.
+    void rollbackPublishedPart(const MergeTreePartInfo & part_info, const std::vector<std::string> & block_ids) noexcept;
+
+    /// Unpublish the block ids of a part that never became active without recording
+    /// anything: the on-disk history, which still holds their ADD records, is repaired
+    /// from the live state or fenced off instead. `rollbackPublishedPart` falls back to
+    /// this when it cannot write; on its own it is the primitive a caller uses when it
+    /// has no usable log to write to. Never throws.
     void unpublishFailedPart(const MergeTreePartInfo & part_info, const std::vector<std::string> * block_ids = nullptr) noexcept;
+
+    /// Tell the log that the caller has finished with a two-phase publication made by
+    /// `addPart`: the part either became active or was rolled back (with
+    /// `rollbackPublishedPart`). Must be called exactly once for every `addPart` that
+    /// reported a publication through `part_was_published`, on every exit path -
+    /// `MergeTreeSink::commitPart` uses a scope guard.
+    ///
+    /// Until then the published block ids are exempt from the deduplication window:
+    /// `addPart` cannot enforce it, because it returns before its caller knows whether
+    /// the part will become active, and evicting the oldest entry there is not
+    /// something the rollback could undo (restoring an evicted entry allocates, so it
+    /// can fail on exactly the path that must not). With a full window that eviction
+    /// would drop an unrelated, already committed block id whenever an insert failed to
+    /// commit, and a retry of that unrelated insert would then be wrongly accepted and
+    /// duplicate its data. Keeping the map overfull by the in-flight block ids instead
+    /// makes the rollback a plain `erase` that restores the previous state exactly, and
+    /// the window is enforced here, once the outcome is known.
+    void finishPartPublication(const std::vector<std::string> & block_ids) noexcept;
 
     /// Load history from disk. Ignores broken logs.
     void load();
@@ -328,6 +378,23 @@ private:
     bool history_diverged = false;
 
     bool stopped{false};
+
+    /// Number of block ids published by `addPart` whose caller has not yet reported the
+    /// outcome of the part commit (see finishPartPublication). They are the newest
+    /// entries of `deduplication_map` and are exempt from the deduplication window
+    /// until then.
+    size_t published_not_confirmed = 0;
+
+    /// Erase the block ids of `part_info` (restricted to `block_ids` when given) from
+    /// the in-memory map and its retention bookkeeping, without touching the log. Only
+    /// erases, so it never allocates and never throws. Returns how many were erased.
+    size_t unpublishBlockIds(const MergeTreePartInfo & part_info, const std::vector<std::string> * block_ids) noexcept;
+
+    /// Enforce the deduplication window on the in-memory map, exempting the block ids
+    /// of the publications that `addPart` has made but their caller has not resolved
+    /// yet (see finishPartPublication). Only pops the oldest entries, so it never
+    /// allocates and never throws.
+    void enforceDeduplicationWindow() noexcept;
 
     /// Start new log
     void rotate();

@@ -3173,9 +3173,20 @@ TEST(MergeTreeDeduplicationLog, UnpublishFailedPartSurvivesRestart)
 
         log.unpublishFailedPart(part("all_1_1_0"));
 
-        /// "block1" belonged to the part that failed to commit: its retry is accepted.
-        /// "block2" committed and still deduplicates.
+        /// "block2" committed and still deduplicates in this process.
         EXPECT_FALSE(log.addPart({"block2"}, part("all_3_3_0")).empty());
+
+        /// "block1" belonged to the part that failed to commit, so its retry is
+        /// accepted here already, not only after the restart below.
+        const std::vector<std::string> retried_block_ids{"block1"};
+        bool part_was_published = false;
+        EXPECT_TRUE(log.addPart(retried_block_ids, part("all_4_4_0"), &part_was_published).empty());
+        ASSERT_TRUE(part_was_published);
+
+        /// Suppose the retry fails to commit too, so the restart below starts from the
+        /// same state: "block1" unpublished, "block2" committed.
+        log.unpublishFailedPart(part("all_4_4_0"), &retried_block_ids);
+        log.finishPartPublication(retried_block_ids);
 
         log.shutdown();
     }
@@ -3185,17 +3196,19 @@ TEST(MergeTreeDeduplicationLog, UnpublishFailedPartSurvivesRestart)
         MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
         log.load();
 
+        /// The unrelated committed block id survived the repair-or-fence path.
+        EXPECT_FALSE(log.addPart({"block2"}, part("all_5_5_0")).empty());
         /// The unpublished block id must not come back from the log either.
-        EXPECT_TRUE(log.addPart({"block1"}, part("all_4_4_0")).empty());
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_6_6_0")).empty());
         log.shutdown();
     }
 
     std::filesystem::remove_all(work_dir);
 }
 
-/// A part commit can fail after an ALTER disables deduplication. The ALTER trims
-/// the in-memory map, but the ADD record that was already made durable must still
-/// be fenced off using the block IDs captured at publication time.
+/// A part commit can fail after an ALTER disables deduplication. The ADD record that
+/// was already made durable must still be fenced off using the block IDs captured at
+/// publication time, even though the map no longer deduplicates anything.
 TEST(MergeTreeDeduplicationLog, UnpublishFailedPartAfterDisablingDeduplication)
 {
     const std::string work_dir = "tmp/gtest_dedup_log_unpublish_after_disable/";
@@ -3217,6 +3230,7 @@ TEST(MergeTreeDeduplicationLog, UnpublishFailedPartAfterDisablingDeduplication)
         log.setDeduplicationWindowSize(0);
         const std::vector<std::string> published_block_ids{"block1"};
         log.unpublishFailedPart(part("all_1_1_0"), &published_block_ids);
+        log.finishPartPublication(published_block_ids);
         log.shutdown();
     }
 
@@ -3229,6 +3243,86 @@ TEST(MergeTreeDeduplicationLog, UnpublishFailedPartAfterDisablingDeduplication)
     }
 
     std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test for the rollback of a part that never became active
+/// (MergeTreeSink::commitPart) while the deduplication window is full. Publishing the
+/// failed part's block id must not cost the oldest, unrelated block id its window slot,
+/// neither in memory - the window is enforced only once the caller reports the outcome
+/// of its part commit - nor on a replay, where the rollback record cancels the
+/// transient ADD out entirely instead of letting it evict on the way through. Otherwise
+/// a retry of the already committed insert is accepted after an unrelated failed insert
+/// and duplicates its data.
+TEST(MergeTreeDeduplicationLog, FailedPartCommitKeepsCommittedBlockInFullWindow)
+{
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    /// `rollbackPublishedPart` records the rollback in the log; when it cannot write at
+    /// all it falls back internally to unpublishing and repairing (or fencing off) the
+    /// history, which `unpublishFailedPart` does on its own. Both must keep the
+    /// committed block id deduplicating.
+    for (bool rollback_without_records : {false, true})
+    {
+        const std::string work_dir = rollback_without_records
+            ? "tmp/gtest_dedup_log_full_window_unpublish/"
+            : "tmp/gtest_dedup_log_full_window_rollback/";
+        std::filesystem::remove_all(work_dir);
+        std::filesystem::create_directories(work_dir);
+
+        const std::vector<std::string> committed{"block1"};
+        const std::vector<std::string> failed{"block2"};
+
+        auto fail_to_commit = [&](MergeTreeDeduplicationLog & log, const MergeTreePartInfo & part_info)
+        {
+            bool part_was_published = false;
+            EXPECT_TRUE(log.addPart(failed, part_info, &part_was_published).empty());
+            EXPECT_TRUE(part_was_published);
+            if (rollback_without_records)
+                log.unpublishFailedPart(part_info, &failed);
+            else
+                log.rollbackPublishedPart(part_info, failed);
+            log.finishPartPublication(failed);
+        };
+
+        {
+            auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+            MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+            log.load();
+
+            /// One committed insert fills the whole window.
+            bool part_was_published = false;
+            EXPECT_TRUE(log.addPart(committed, part("all_1_1_0"), &part_was_published).empty());
+            ASSERT_TRUE(part_was_published);
+            log.finishPartPublication(committed);
+
+            fail_to_commit(log, part("all_2_2_0"));
+
+            /// A retry of the failed insert is accepted ...
+            fail_to_commit(log, part("all_3_3_0"));
+
+            /// ... while the committed insert still deduplicates: the failed inserts
+            /// must not have taken its slot in the full window.
+            EXPECT_FALSE(log.addPart(committed, part("all_4_4_0")).empty());
+
+            log.shutdown();
+        }
+
+        {
+            auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+            MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+            log.load();
+
+            /// The same after a restart, which rebuilds the map from the durable
+            /// records rather than from the live state.
+            EXPECT_FALSE(log.addPart(committed, part("all_5_5_0")).empty());
+            /// And the failed inserts are still not published.
+            EXPECT_TRUE(log.addPart(failed, part("all_6_6_0")).empty());
+            log.shutdown();
+        }
+
+        std::filesystem::remove_all(work_dir);
+    }
 }
 #endif
 
