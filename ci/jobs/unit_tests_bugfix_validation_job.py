@@ -498,21 +498,29 @@ def attribute_compile_errors(compile_result, test_files):
 # translation unit of a failed edge is the `-c <source>` argument of the next line.
 _NINJA_FAILED_LINE_RE = re.compile(r"^FAILED:(?:\s|$)")
 _COMPILE_SOURCE_RE = re.compile(r"(?:^|\s)-c\s+(\S+)")
+# A compiler diagnostic, "path:line[:col]: ", standing where the command line should
+# be: this log does not carry the command, so there is nothing to read the edge from.
+_DIAGNOSTIC_LINE_RE = re.compile(r"^\S+:\d+(?::\d+)?:\s")
 
 
 def failed_compile_edge_sources(compile_result):
-    """Split the before-build's failed ninja edges into compiled sources vs the rest.
+    """Split the before-build's failed ninja edges three ways.
 
-    Returns `(sources, unattributable)` - sorted lists of, respectively, the compiled
-    translation units of the failed edges (repo-relative for paths under the
-    before-worktree) and the outputs of every failed edge whose command carries no
-    `-c <source>`, such as a link step, an archive step or a custom command. A
-    non-empty `unattributable` means the build failure cannot be attributed from the
-    edges alone.
+    Returns `(sources, unattributable, unreadable)` - sorted lists of, respectively,
+    the compiled translation units of the failed edges (repo-relative for paths under
+    the before-worktree); the outputs of the edges whose command line was read and
+    carries no `-c <source>`, such as a link step, an archive step or a custom command;
+    and the outputs of the edges whose command line is absent, because the log ends
+    there or a diagnostic stands in its place.
+
+    A non-empty `unattributable` is evidence that something which is not a translation
+    unit failed. A non-empty `unreadable` is only the absence of evidence about that
+    edge, which is why the two are kept apart.
     """
     marker = f"{BEFORE_SRC}/"
     sources = set()
     unattributable = set()
+    unreadable = set()
     for log in compile_result.files or []:
         try:
             with open(log, "r", errors="replace") as f:
@@ -524,15 +532,19 @@ def failed_compile_edge_sources(compile_result):
         for i, line in enumerate(lines):
             if not _NINJA_FAILED_LINE_RE.match(line):
                 continue
+            outputs = line[len("FAILED:") :].strip() or "unnamed edge"
             command = lines[i + 1] if i + 1 < len(lines) else ""
+            if not command.strip() or _DIAGNOSTIC_LINE_RE.match(command):
+                unreadable.add(outputs)
+                continue
             m = _COMPILE_SOURCE_RE.search(command)
             if not m:
-                unattributable.add(line[len("FAILED:") :].strip() or "unnamed edge")
+                unattributable.add(outputs)
                 continue
             path = m.group(1)
             idx = path.find(marker)
             sources.add(path[idx + len(marker) :] if idx != -1 else path)
-    return sorted(sources), sorted(unattributable)
+    return sorted(sources), sorted(unattributable), sorted(unreadable)
 
 
 def compile_failure_attribution(compile_result, test_files):
@@ -558,16 +570,21 @@ def compile_failure_attribution(compile_result, test_files):
       a broken fix source or contrib header is a different translation unit and fails
       its own edge.
 
-    The failed edges are consulted before either basis and defeat both, whatever the
-    diagnostics say: an edge that is not a compile at all (a link step, an archive step, a
-    custom command) names no translation unit, and a failed compile edge on anything other
-    than an overlaid test file is a translation unit outside them that failed on its own.
+    A failed edge that was read and is not a compile at all (a link step, an archive step,
+    a custom command), or that compiled a translation unit other than an overlaid test
+    file, defeats both bases whatever the diagnostics say: something outside the overlaid
+    tests demonstrably failed.
+
+    An edge whose command line could not be read defeats only the second basis, which
+    claims every failed translation unit is an overlaid test and therefore needs all of
+    them enumerated. The first basis reasons about the diagnostics that are present, so an
+    edge this log does not describe cannot contradict it.
 
     The second basis additionally requires a parsable compiler error to exist somewhere: a
     killed compiler or an internal ninja error is not attributable.
     """
     overlaid_errors, other_errors = attribute_compile_errors(compile_result, test_files)
-    sources, unattributable = failed_compile_edge_sources(compile_result)
+    sources, unattributable, unreadable = failed_compile_edge_sources(compile_result)
     if unattributable:
         return (
             "",
@@ -593,6 +610,13 @@ def compile_failure_attribution(compile_result, test_files):
         )
     if not (overlaid_errors or other_errors):
         return "", other_errors, "the build produced no parsable compiler diagnostic"
+    if unreadable:
+        return (
+            "",
+            other_errors,
+            "failed build steps whose command line could not be read: "
+            + ", ".join(unreadable),
+        )
     if not sources:
         return "", other_errors, ""
     return (
