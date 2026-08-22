@@ -1309,6 +1309,22 @@ entries of batches that already completed. Only available in ClickHouse Cloud, f
 
 When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregatio
 
+## run_query_in_background {#run_query_in_background}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to run a query in the background, detached from the connection that submitted it, discarding the result."}]}]}/>
+
+If enabled, the server schedules the query in the background, immediately returns an empty successful result, and runs the query to completion regardless of what happens to the connection.
+
+A background query does not survive a server restart. On shutdown it obeys the same server settings as a foreground query: `shutdown_wait_unfinished_queries` chooses between cancelling it and waiting for it (queued entries are discarded either way, without a `system.query_log` entry), and `shutdown_wait_unfinished` limits how long the server waits.
+
+Track the query by its `query_id`: in `system.processes` while it is running and in `system.query_log` after it finishes and the query log entry is flushed.
+
+Applies to queries received over the native TCP and HTTP protocols. Over HTTP, pass the setting as a URL parameter. It cannot be changed with `SET`; enable it per query, or at the user or profile level.
+
+The main use case is a long `INSERT ... SELECT` that must not be lost when the client connection drops.
+
 ## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
