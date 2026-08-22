@@ -598,6 +598,9 @@ protected:
     /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
     /// this flag can only be set server-side and is safe to use for security-sensitive checks.
     bool is_ddl_or_on_cluster_internal = false;
+    /// Set for CREATE queries a Replicated database replays from a definition it already stored.
+    /// Such a definition describes existing state, so validation that may reject a new one must not run.
+    bool is_recovery_from_stored_metadata = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
@@ -1821,6 +1824,9 @@ public:
 
     bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
+
+    bool isRecoveryFromStoredMetadata() const { return is_recovery_from_stored_metadata; }
+    void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }

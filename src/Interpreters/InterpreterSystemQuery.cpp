@@ -1461,6 +1461,11 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     table->is_being_restarted = true;
     table->flushAndShutdown();
 
+    /// The definition re-attached below was read back from this server's own metadata, so it must be
+    /// accepted as it is. `system_context` is shared by every branch of `execute`, hence the copy.
+    auto attach_context = Context::createCopy(system_context);
+    attach_context->setRecoveryFromStoredMetadata(true);
+
     /// For DatabaseReplicated, suppress digest checks while the table is temporarily detached.
     /// The table is removed from the in-memory tables map between detach and attach, making it
     /// inconsistent with tables_metadata_digest (which stays correct and is not modified).
@@ -1520,7 +1525,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
                 new_table = StorageFactory::instance().get(create,
                     data_path,
-                    system_context,
+                    attach_context,
                     system_context->getGlobalContext(),
                     columns,
                     constraints,
@@ -1895,6 +1900,10 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
         query_context->setDDLOrOnClusterInternal(true);
         query_context->setCurrentDatabase(restoring_database_name);
         query_context->setCurrentQueryId("");
+
+        /// The CREATE queries below come from metadata a Replicated database stored in Keeper, so they
+        /// must be accepted as they are: they re-derive tables that exist elsewhere.
+        query_context->setRecoveryFromStoredMetadata(true);
 
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
