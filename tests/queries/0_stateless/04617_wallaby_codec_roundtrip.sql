@@ -1,4 +1,4 @@
-SET allow_experimental_codecs = 1;
+SET enable_wallaby_codec = 1;
 
 DROP TABLE IF EXISTS base32;
 DROP TABLE IF EXISTS base64;

@@ -2,7 +2,7 @@
 -- which collapses plateaus into runs, instead of being forced into a per-value decimal packing.
 -- https://github.com/ClickHouse/ClickHouse/pull/113575
 
-SET allow_experimental_codecs = 1;
+SET enable_wallaby_codec = 1;
 
 DROP TABLE IF EXISTS plateau_base;
 DROP TABLE IF EXISTS plateau_wallaby32;
