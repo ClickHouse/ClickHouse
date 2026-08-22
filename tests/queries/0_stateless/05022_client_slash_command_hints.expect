@@ -26,6 +26,44 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
+# `replxx` treats a `\r` that arrives in the same read as the characters before it as a newline
+# inside one input instead of as a submission - on a loaded machine the whole `send` is waiting in
+# the terminal by the time the client reads it - and the next input would then be appended to this
+# one. Every input is therefore typed first, awaited in its echo, which is the proof that the line
+# editor has consumed it, and only then submitted with a `\r` of its own.
+proc type_and_submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+# `Ctrl-D` exits only from an empty prompt: sent together with the `Ctrl-C` that abandons the line
+# or cancels the running query, it is discarded on a loaded machine, and the client would then stay
+# open until the test times out. Wait for the prompt in between - unless the `Ctrl-C` itself ended
+# the client, which is what an empty input means to it.
+# The line editor draws the hints of every state that is typed through, and on a loaded machine a
+# whole `send` can be consumed one character at a time, so the hints of a bare `/` may still be on
+# their way when the rest of the input is already typed. Where the absence of a hint is asserted,
+# the input is therefore typed up to its last character first and the drawing of it is drained, so
+# that the assertion sees the drawing of the final state alone.
+proc drain {} {
+    expect {
+        -timeout 1
+        -re {.+}  { exp_continue }
+        timeout   {}
+    }
+}
+
+proc clear_and_quit {} {
+    send -- "\3"
+    expect {
+        eof   { return }
+        ":) " {}
+    }
+    send -- "\4"
+    expect eof
+}
+
 # The instant hints need color (the highlighter), while the `/`-commands themselves are a static
 # client-side list and do not need the asynchronous suggestion loader. The harness disables both,
 # so enable only highlighting where the hints are exercised.
@@ -38,8 +76,7 @@ send -- "/"
 expect "/clear"
 expect "/help"
 expect "/man"
-send -- "\3\4"
-expect eof
+clear_and_quit
 
 # ─── 2. A unique prefix is shown inline and accepted with Tab ────────────────
 # `/cl` matches `/clear` only, so its remainder is shown as ghost text; Tab accepts the hint and
@@ -50,10 +87,12 @@ expect ":) "
 
 send -- "/cl"
 expect "ear"
-send -- "\t\r"
+send -- "\t"
+# The accepted hint is redrawn as the whole command; the `/` of it is colored apart from the name.
+expect -ex "clear"
+send -- "\r"
 expect -re {\x1b\[2J}
-send -- "\3\4"
-expect eof
+clear_and_quit
 
 # ─── 3. Tab does not complete a command around text after the cursor ─────────
 # The callback receives only the prefix through the cursor. Completing `/cl|ear`
@@ -63,79 +102,93 @@ expect eof
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
 expect ":) "
 
-send -- "/clear\033\[D\033\[D\t\r"
+send -- "/clear"
+expect -ex "/clear"
+send -- "\033\[D\033\[D"
+expect -re {\x1b\[[0-9]+G}
+send -- "\t"
+# A `Tab` that completes nothing may redraw nothing, so wait for the redraw only for a moment: the
+# point of the wait is that the `\r` below arrives in a read of its own.
+set timeout 5
+expect {
+    -re {\x1b\[[0-9]+G} {}
+    timeout                {}
+}
+set timeout 60
+send -- "\r"
 expect -re {\x1b\[2J}
-send -- "\3\4"
-expect eof
+clear_and_quit
 
 # ─── 4. With the hints disabled, Tab completes the command ───────────────────
 # The options of the harness (`--highlight 0`, `--disable_suggestion`) leave the instant hints off.
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
 expect ":) "
 
-send -- "/hel\t\r"
+send -- "/hel"
+expect -ex "/hel"
+send -- "\t"
+expect -ex "/help"
+send -- "\r"
 expect "Usage: help <name>"
 
 # ─── 5. A mistake in the name of a command names the similar commands ────────
 # A bare `/` is not diagnosed: submitted alone it is the Oracle SQL*Plus shortcut of the interactive
 # client, which repeats the last input, and that keeps working as before.
-# Each input is submitted only once the client is back at the prompt: `replxx` treats a `\r` that
-# arrives in the same read as the characters around it as a newline within one input, not as a
-# submission, and the next command would then be appended to this one.
-send -- "SELECT 6011\r"
+type_and_submit "SELECT 6011"
 expect "6011"
 expect ":) "
-send -- "/\r"
+type_and_submit "/"
 expect "6011"
 expect ":) "
 
-send -- "/hepl\r"
+type_and_submit "/hepl"
 expect -ex {Unknown command `/hepl`}
 expect -ex {Maybe you meant: ['/help']}
 
 # An unfinished name is a prefix of the command, which `NamePrompter` alone would not suggest.
-send -- "/cl\r"
+type_and_submit {/cl}
 expect -ex {Maybe you meant: ['/clear']}
 
 # Nothing resembles it: the mistake is still reported instead of a syntax error at the `/`.
-send -- "/nosuchcommand\r"
+type_and_submit {/nosuchcommand}
 expect -ex {Unknown command `/nosuchcommand`}
 
 # The name is right but the usage is not.
-send -- "/clear now\r"
+type_and_submit {/clear now}
 expect -ex {The `/clear` command does not accept an argument}
 
 # A leading `/` that opens a comment is SQL, not a command.
-send -- "/* comment */ SELECT 6759\r"
+type_and_submit {/* comment */ SELECT 6759}
 expect "6759"
-send -- "\3\4"
-expect eof
+clear_and_quit
 
 # ─── 6. Nothing is offered where a `/` is not a command ──────────────────────
 spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
 expect ":) "
 
 # In the middle of a query it is an operator (or the beginning of a `/* comment */`).
-send -- "SELECT 1 /"
-set timeout 1
+send -- "SELECT 1 "
+drain
+send -- "/"
 expect {
-    "/clear" { exit 1 }
-    timeout  {}
+    -timeout 1
+    "/clear"  { exit 1 }
+    timeout   {}
 }
-set timeout 60
 
 send -- "\3"
+expect ":) "
 # After the name of a command, what is being typed is its argument.
-send -- "/man f"
-set timeout 1
+send -- "/man "
+drain
+send -- "f"
 expect {
-    "/clear" { exit 1 }
-    timeout  {}
+    -timeout 1
+    "/clear"  { exit 1 }
+    timeout   {}
 }
-set timeout 60
 
-send -- "\3\4"
-expect eof
+clear_and_quit
 
 # ─── 7. `clickhouse-local` reports the mistake as well ───────────────────────
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL -q '/hepl'"
