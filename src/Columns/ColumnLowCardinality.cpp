@@ -134,9 +134,49 @@ namespace
 }
 
 
-ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared)
-    : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_))
+ColumnLowCardinality::ColumnLowCardinality(
+    MutableColumnPtr && column_unique_,
+    MutableColumnPtr && indexes_,
+    bool is_shared,
+    bool has_single_dictionary_for_part_)
+    : dictionary(std::move(column_unique_), is_shared)
+    , idx(std::move(indexes_))
+    , has_single_dictionary_for_part(has_single_dictionary_for_part_)
 {
+}
+
+void ColumnLowCardinality::tryAdoptSharedDictionary(const ColumnLowCardinality & source)
+{
+    const auto & current_dictionary = getDictionary();
+    const auto & source_dictionary = source.getDictionary();
+    if (!source.isSharedDictionary() || (isSharedDictionary() && &current_dictionary == &source_dictionary))
+        return;
+
+    const bool was_empty = empty();
+    /// With only reserved entries, every existing index addresses the default or nullable nested default.
+    /// Check the dictionary size instead of scanning indexes on each insertion after leading defaults.
+    if (!was_empty && current_dictionary.size() != current_dictionary.getNestedTypeDefaultValueIndex() + 1)
+        return;
+
+    /// A private source can still be mutated in place. A shared source must also be structurally compatible,
+    /// otherwise insertions need to rebuild the dictionary for conversions such as nullable promotion.
+    if (current_dictionary.nestedColumnIsNullable() != source_dictionary.nestedColumnIsNullable()
+        || !current_dictionary.structureEquals(source_dictionary))
+        return;
+
+    if (!was_empty)
+    {
+        /// Retain existing encodings, including floating-point signed zeros, when replacing the reserved prefix.
+        const auto & current_keys = *current_dictionary.getNestedNotNullableColumn();
+        const auto & source_keys = *source_dictionary.getNestedNotNullableColumn();
+        for (size_t index = 0; index < current_dictionary.size(); ++index)
+            if (current_keys.getDataAt(index) != source_keys.getDataAt(index))
+                return;
+    }
+
+    /// Existing indexes remain valid under the immutable source dictionary, so its proof applies to them too.
+    dictionary.setShared(source.getDictionaryPtr());
+    has_single_dictionary_for_part = source.hasSingleDictionaryForPart();
 }
 
 void ColumnLowCardinality::insert(const Field & x)
@@ -174,10 +214,17 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
+    const bool was_empty = empty();
+
+    tryAdoptSharedDictionary(*low_cardinality_src);
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only index.
+        /// A verified source can initialize an empty column or extend a verified column (including after adoption)
+        /// without changing the meaning of its dictionary indexes.
+        has_single_dictionary_for_part
+            = low_cardinality_src->hasSingleDictionaryForPart() && (was_empty || hasSingleDictionaryForPart());
         idx.insertIndex(position);
     }
     else
@@ -203,10 +250,17 @@ void ColumnLowCardinality::doInsertManyFrom(const IColumn & src, size_t position
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
 
     const size_t source_index = low_cardinality_src->getIndexes().getUInt(position);
+    const bool was_empty = empty();
+
+    tryAdoptSharedDictionary(*low_cardinality_src);
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.
+        /// A verified source can initialize an empty column or extend a verified column (including after adoption)
+        /// without changing the meaning of its dictionary indexes.
+        has_single_dictionary_for_part
+            = low_cardinality_src->hasSingleDictionaryForPart() && (was_empty || hasSingleDictionaryForPart());
         idx.insertManyIndexes(source_index, length);
     }
     else
@@ -238,20 +292,17 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     if (length == 0)
         return;
 
-    /// An already shared, structurally compatible source dictionary is immutable. Reuse it when initializing
-    /// an empty column to avoid rebuilding it and keep its indexes unchanged through generic range insertions.
-    /// A private source dictionary can still be mutated in place, while an incompatible dictionary must be
-    /// rebuilt to perform conversions such as nullable promotion.
-    if (
-        empty()
-        && low_cardinality_src->isSharedDictionary()
-        && getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
-        && getDictionary().structureEquals(low_cardinality_src->getDictionary()))
-        setSharedDictionary(low_cardinality_src->getDictionaryPtr());
+    const bool was_empty = empty();
+
+    tryAdoptSharedDictionary(*low_cardinality_src);
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.
+        /// A verified source can initialize an empty column or extend a verified column (including after adoption)
+        /// without changing the meaning of its dictionary indexes.
+        has_single_dictionary_for_part
+            = low_cardinality_src->hasSingleDictionaryForPart() && (was_empty || hasSingleDictionaryForPart());
         idx.insertIndexesRange(low_cardinality_src->getIndexes(), start, length);
     }
     else
@@ -390,7 +441,11 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
     if (size == 0)
         unique_ptr = unique_ptr->cloneEmpty();
 
-    return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size), /*is_shared=*/false);
+    return ColumnLowCardinality::create(
+        IColumn::mutate(std::move(unique_ptr)),
+        getIndexes().cloneResized(size),
+        /*is_shared=*/false,
+        size != 0 && hasSingleDictionaryForPart());
 }
 
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
@@ -640,7 +695,8 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t 
     for (auto & column : columns)
     {
         auto unique_ptr = global_unique_ptr->cloneEmpty();
-        column = ColumnLowCardinality::create(std::move(unique_ptr), std::move(column), true);
+        column = ColumnLowCardinality::create(
+            std::move(unique_ptr), std::move(column), true, hasSingleDictionaryForPart());
         static_cast<ColumnLowCardinality &>(*column).dictionary.setShared(global_unique_ptr);
     }
 
@@ -654,6 +710,19 @@ void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
                         "ColumnLowCardinality because is't not empty.");
 
     dictionary.setShared(column_unique);
+    has_single_dictionary_for_part = false;
+}
+
+void ColumnLowCardinality::insertDictionaryIndex(UInt64 index)
+{
+    if (index >= getDictionary().size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "LowCardinality dictionary index {} is out of range for dictionary of size {}",
+            index,
+            getDictionary().size());
+
+    idx.insertIndex(index);
 }
 
 ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t start, size_t length) const
@@ -665,6 +734,7 @@ ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t star
 
 void ColumnLowCardinality::compactInplace()
 {
+    has_single_dictionary_for_part = false;
     auto indexes = idx.detachIndexes();
     dictionary.compact(indexes);
     idx.attachIndexes(std::move(indexes));
@@ -672,6 +742,7 @@ void ColumnLowCardinality::compactInplace()
 
 void ColumnLowCardinality::compactInplaceToNullable()
 {
+    has_single_dictionary_for_part = false;
     auto indexes = idx.detachIndexes();
     dictionary.compactToNullable(indexes);
     idx.attachIndexes(std::move(indexes));
@@ -679,6 +750,8 @@ void ColumnLowCardinality::compactInplaceToNullable()
 
 void ColumnLowCardinality::compactIfSharedDictionary()
 {
+    /// Callers are about to add dictionary values from an unverified source.
+    has_single_dictionary_for_part = false;
     if (dictionary.isShared())
         compactInplace();
 }

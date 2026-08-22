@@ -3,8 +3,12 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
+
+#include <cmath>
+#include <initializer_list>
 
 using namespace DB;
 
@@ -125,6 +129,202 @@ TEST(ColumnLowCardinality, InsertRangeFromChecksBoundsAfterSharingDictionary)
     ASSERT_EQ(low_cardinality_destination.getSizeOfIndexType(), sizeof(UInt16));
     EXPECT_THROW(destination->insertRangeFrom(*source, source->size(), 1), Exception);
     EXPECT_TRUE(destination->empty());
+}
+
+TEST(ColumnLowCardinality, InsertionsIntoCloneEmptyPreserveSingleDictionary)
+{
+    auto dictionary_keys = ColumnUInt64::create();
+    for (UInt64 value : {0, 10})
+        dictionary_keys->insertValue(value);
+
+    ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeUInt64(), std::move(dictionary_keys));
+
+    auto source_indexes = ColumnUInt8::create();
+    source_indexes->insertValue(1);
+    auto source = ColumnLowCardinality::create(
+        dictionary,
+        std::move(source_indexes),
+        /* is_shared = */ true,
+        /* has_single_dictionary_for_part = */ true);
+
+    auto insert_from_destination = source->cloneEmpty();
+    insert_from_destination->insertFrom(*source, 0);
+    const auto & insert_from_low_cardinality = assert_cast<const ColumnLowCardinality &>(*insert_from_destination);
+
+    EXPECT_EQ(insert_from_low_cardinality.getDictionaryPtr().get(), dictionary.get());
+    EXPECT_TRUE(insert_from_low_cardinality.isSharedDictionary());
+    EXPECT_TRUE(insert_from_low_cardinality.hasSingleDictionaryForPart());
+    EXPECT_EQ(insert_from_low_cardinality.getUInt(0), 10);
+
+    auto insert_many_from_destination = source->cloneEmpty();
+    insert_many_from_destination->insertManyFrom(*source, 0, 3);
+    const auto & insert_many_from_low_cardinality = assert_cast<const ColumnLowCardinality &>(*insert_many_from_destination);
+
+    EXPECT_EQ(insert_many_from_low_cardinality.getDictionaryPtr().get(), dictionary.get());
+    EXPECT_TRUE(insert_many_from_low_cardinality.isSharedDictionary());
+    EXPECT_TRUE(insert_many_from_low_cardinality.hasSingleDictionaryForPart());
+    ASSERT_EQ(insert_many_from_low_cardinality.size(), 3);
+    EXPECT_EQ(insert_many_from_low_cardinality.getUInt(0), 10);
+    EXPECT_EQ(insert_many_from_low_cardinality.getUInt(1), 10);
+    EXPECT_EQ(insert_many_from_low_cardinality.getUInt(2), 10);
+}
+
+TEST(ColumnLowCardinality, InsertionsAfterDefaultsPreserveSingleDictionary)
+{
+    for (bool is_nullable : {false, true})
+    {
+        SCOPED_TRACE(is_nullable ? "nullable" : "nonnullable");
+
+        DataTypePtr data_type = std::make_shared<DataTypeUInt64>();
+        if (is_nullable)
+            data_type = std::make_shared<DataTypeNullable>(data_type);
+
+        auto dictionary_keys = ColumnUInt64::create();
+        dictionary_keys->insertDefault();
+        if (is_nullable)
+            dictionary_keys->insertDefault();
+        /// Leave an unused key before the copied value to detect dictionary index renumbering.
+        dictionary_keys->insertValue(20);
+        dictionary_keys->insertValue(10);
+
+        ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*data_type, std::move(dictionary_keys));
+        const auto value_index = static_cast<UInt8>(dictionary->size() - 1);
+        auto source_indexes = ColumnUInt8::create();
+        source_indexes->insertValue(value_index);
+        source_indexes->insertValue(0);
+        source_indexes->insertValue(value_index);
+        auto source = ColumnLowCardinality::create(
+            dictionary,
+            std::move(source_indexes),
+            /* is_shared = */ true,
+            /* has_single_dictionary_for_part = */ true);
+
+        auto check_insertion = [&](const char * name, auto insert_rows, std::initializer_list<size_t> source_rows)
+        {
+            SCOPED_TRACE(name);
+            for (size_t default_rows : {0, 1, 3})
+            {
+                SCOPED_TRACE(default_rows);
+                auto destination = source->cloneEmpty();
+                const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(*destination);
+                destination->insertManyDefaults(default_rows);
+                ASSERT_FALSE(low_cardinality.isSharedDictionary());
+                ASSERT_FALSE(low_cardinality.hasSingleDictionaryForPart());
+
+                /// A leading blank in `JoinCommon::filterWithBlanks` precedes the first copied row.
+                insert_rows(*destination);
+
+                ASSERT_EQ(destination->size(), default_rows + source_rows.size());
+                EXPECT_EQ(low_cardinality.getDictionaryPtr().get(), dictionary.get());
+                EXPECT_TRUE(low_cardinality.isSharedDictionary());
+                EXPECT_TRUE(low_cardinality.hasSingleDictionaryForPart());
+                for (size_t row = 0; row < default_rows; ++row)
+                {
+                    EXPECT_EQ(low_cardinality.getIndexes().getUInt(row), 0);
+                    EXPECT_EQ((*destination)[row], data_type->getDefault());
+                }
+                size_t destination_row = default_rows;
+                for (size_t source_row : source_rows)
+                {
+                    EXPECT_EQ(low_cardinality.getIndexes().getUInt(destination_row), source->getIndexes().getUInt(source_row));
+                    EXPECT_EQ((*destination)[destination_row], (*source)[source_row]);
+                    ++destination_row;
+                }
+            }
+        };
+
+        check_insertion("insertFrom", [&](IColumn & destination)
+        {
+            destination.insertFrom(*source, 0);
+        }, {0});
+        check_insertion("insertManyFrom", [&](IColumn & destination)
+        {
+            destination.insertManyFrom(*source, 0, 3);
+        }, {0, 0, 0});
+        check_insertion("insertRangeFrom", [&](IColumn & destination)
+        {
+            destination.insertRangeFrom(*source, 0, source->size());
+        }, {0, 1, 2});
+    }
+}
+
+TEST(ColumnLowCardinality, InsertionsAfterDefaultsRespectDictionaryCompatibility)
+{
+    struct Case
+    {
+        const char * name = nullptr;
+        bool source_is_shared = true;
+        bool source_has_proof = true;
+        Float64 source_default = 0;
+        bool destination_is_nullable = false;
+        Float64 destination_value = 0;
+        bool expect_shared = false;
+    };
+
+    const Case cases[] =
+    {
+        {.name = "private source", .source_is_shared = false, .source_has_proof = false},
+        {.name = "unverified source", .source_has_proof = false, .expect_shared = true},
+        {.name = "nondefault destination", .destination_value = 99},
+        {.name = "nullable promotion", .destination_is_nullable = true},
+        {.name = "different default encoding", .source_default = -0.0},
+    };
+
+    auto check_insertion = [&](const char * name, auto insert_row)
+    {
+        SCOPED_TRACE(name);
+        for (const auto & test_case : cases)
+        {
+            SCOPED_TRACE(test_case.name);
+            auto dictionary_keys = ColumnFloat64::create();
+            dictionary_keys->insertValue(test_case.source_default);
+            dictionary_keys->insertValue(20);
+            dictionary_keys->insertValue(10);
+            ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeFloat64(), std::move(dictionary_keys));
+            auto source_indexes = ColumnUInt8::create();
+            source_indexes->insertValue(2);
+            auto source = ColumnLowCardinality::create(
+                dictionary, std::move(source_indexes), test_case.source_is_shared, test_case.source_has_proof);
+
+            DataTypePtr data_type = std::make_shared<DataTypeFloat64>();
+            if (test_case.destination_is_nullable)
+                data_type = std::make_shared<DataTypeNullable>(data_type);
+            auto destination = DataTypeLowCardinality(data_type).createColumn();
+            if (test_case.destination_value == 0)
+                destination->insertDefault();
+            else
+                destination->insert(Field{test_case.destination_value});
+
+            insert_row(*destination, *source);
+
+            const auto & low_cardinality = assert_cast<const ColumnLowCardinality &>(*destination);
+            ASSERT_EQ(destination->size(), 2);
+            EXPECT_EQ(low_cardinality.getDictionaryPtr().get() == dictionary.get(), test_case.expect_shared);
+            EXPECT_EQ(low_cardinality.isSharedDictionary(), test_case.expect_shared);
+            EXPECT_FALSE(low_cardinality.hasSingleDictionaryForPart());
+            EXPECT_EQ(low_cardinality.isNullAt(0), test_case.destination_is_nullable);
+            if (!test_case.destination_is_nullable)
+            {
+                EXPECT_EQ(low_cardinality.getFloat64(0), test_case.destination_value);
+                EXPECT_FALSE(std::signbit(low_cardinality.getFloat64(0)));
+            }
+            EXPECT_FALSE(low_cardinality.isNullAt(1));
+            EXPECT_EQ(low_cardinality.getFloat64(1), 10);
+        }
+    };
+
+    check_insertion("insertFrom", [](IColumn & destination, const IColumn & source)
+    {
+        destination.insertFrom(source, 0);
+    });
+    check_insertion("insertManyFrom", [](IColumn & destination, const IColumn & source)
+    {
+        destination.insertManyFrom(source, 0, 1);
+    });
+    check_insertion("insertRangeFrom", [](IColumn & destination, const IColumn & source)
+    {
+        destination.insertRangeFrom(source, 0, 1);
+    });
 }
 
 TEST(ColumnLowCardinality, EmptyDictionaryEmptyIndexes)
