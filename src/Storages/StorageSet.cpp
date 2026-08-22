@@ -72,6 +72,9 @@ private:
     std::optional<NativeWriter> backup_stream;
     bool backup_promoted = false;
     bool state_update_started = false;
+    /// Set when `onFinish` published the backup and the live state. Until then the staged file
+    /// belongs to an unfinished `INSERT` and must be removed if the sink goes away.
+    bool insert_finished = false;
     bool persistent;
 };
 
@@ -97,7 +100,9 @@ SetOrJoinSink::SetOrJoinSink(
 
 SetOrJoinSink::~SetOrJoinSink()
 {
-    if (isCancelled())
+    /// Do not look at `isCancelled` here: a pipeline is also cancelled after it has completed
+    /// successfully, and the backup of a finished `INSERT` must survive that.
+    if (!insert_finished)
         discardStagedBackup();
 }
 
@@ -207,6 +212,7 @@ void SetOrJoinSink::onFinish()
     }
 
     table.finishInsert();
+    insert_finished = true;
 }
 
 
