@@ -2825,7 +2825,12 @@ static bool tryPrepareSetColumnsForIndex(
 
         /// `Dynamic` is judged by the types it holds, not by itself: it declares nothing about its values,
         /// and each stored type converts on its own terms. All of them must preserve equality.
-        if (isDynamic(removeNullable(recursiveRemoveLowCardinality(set_element_type))))
+        ///
+        /// Only for `has`, which compares `Field`s. `IN` casts the key into the declared `Dynamic`, which
+        /// keeps the key's own concrete type, so a stored type that merely converts losslessly still
+        /// compares unequal there: `Dynamic(UInt8(1))` does not equal `Dynamic(UInt64(1))`.
+        if (composite_field_identity_is_enough
+            && isDynamic(removeNullable(recursiveRemoveLowCardinality(set_element_type))))
         {
             const auto variants_in_use = getDynamicVariantsInUse(*set_column);
             if (!variants_in_use)

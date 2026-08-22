@@ -389,3 +389,47 @@ SELECT 'attr Tuple(Bool,UInt8)/Tuple(UInt8,UInt8) declines', count() = 0 FROM (E
 SELECT 'attr Tuple(Bool,UInt8)/Tuple(UInt8,UInt8)',
     (SELECT count() FROM at_tb WHERE t IN (SELECT tuple(toUInt8(1), toUInt8(1)))) = (SELECT count() FROM ao_tb WHERE t IN (SELECT tuple(toUInt8(1), toUInt8(1))));
 DROP TABLE at_tb; DROP TABLE ao_tb;
+
+-- A `Dynamic` element is judged by the types it holds, not by `Dynamic` itself. `has` compares `Field`s,
+-- so a stored type that converts losslessly into the key keeps the index; `IN` casts the key into the
+-- declared `Dynamic` and so keeps the key's own concrete type, where `UInt8(1)` and `UInt64(1)` are two
+-- different values. The `IN` cells therefore have to decline where the `has` cells prune.
+
+DROP TABLE IF EXISTS at_dyn; DROP TABLE IF EXISTS ao_dyn;
+CREATE TABLE at_dyn (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k SETTINGS index_granularity = 1;
+CREATE TABLE ao_dyn (k UInt64) ENGINE = Memory;
+INSERT INTO at_dyn VALUES (1), (2);
+INSERT INTO ao_dyn VALUES (1), (2);
+SELECT 'dyn UInt64/Dynamic(UInt8) IN declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyn WHERE k IN (SELECT arrayJoin(CAST([toUInt8(1)], 'Array(Dynamic)')))) WHERE explain ILIKE '%in 1-element set%';
+SELECT 'dyn UInt64/Dynamic(UInt8) IN',
+    (SELECT count() FROM at_dyn WHERE k IN (SELECT arrayJoin(CAST([toUInt8(1)], 'Array(Dynamic)')))) = (SELECT count() FROM ao_dyn WHERE k IN (SELECT arrayJoin(CAST([toUInt8(1)], 'Array(Dynamic)')))),
+    (SELECT count() FROM at_dyn WHERE k NOT IN (SELECT arrayJoin(CAST([toUInt8(1)], 'Array(Dynamic)')))) = (SELECT count() FROM ao_dyn WHERE k NOT IN (SELECT arrayJoin(CAST([toUInt8(1)], 'Array(Dynamic)'))));
+-- The same element under `has` keeps the index, which is what makes the decline above specific to `IN`
+-- rather than a blanket refusal of every `Dynamic`.
+SELECT 'dyn UInt64/Dynamic(UInt8) has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyn WHERE has(CAST([toUInt8(1)], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%in 1-element set%';
+SELECT 'dyn UInt64/Dynamic(UInt8) has',
+    (SELECT count() FROM at_dyn WHERE has(CAST([toUInt8(1)], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyn WHERE has(CAST([toUInt8(1)], 'Array(Dynamic)'), k)),
+    (SELECT count() FROM at_dyn WHERE notHas(CAST([toUInt8(1)], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyn WHERE notHas(CAST([toUInt8(1)], 'Array(Dynamic)'), k));
+DROP TABLE at_dyn; DROP TABLE ao_dyn;
+
+-- A `Dynamic` holding a `Float64` cannot keep a `String` key's index even under `has`: the element casts
+-- to the single value '3' for the index while matching '3', '3.0' and '3.00' at runtime.
+DROP TABLE IF EXISTS at_dyns; DROP TABLE IF EXISTS ao_dyns;
+CREATE TABLE at_dyns (k String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE ao_dyns (k String) ENGINE = Memory;
+INSERT INTO at_dyns VALUES ('3'), ('3.0'), ('3.00'), ('4');
+INSERT INTO ao_dyns VALUES ('3'), ('3.0'), ('3.00'), ('4');
+SELECT 'dyn String/Dynamic(Float64) has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyns WHERE has(CAST([3.0], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%in 1-element set%';
+SELECT 'dyn String/Dynamic(Float64) has',
+    (SELECT count() FROM at_dyns WHERE has(CAST([3.0], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyns WHERE has(CAST([3.0], 'Array(Dynamic)'), k)),
+    (SELECT count() FROM at_dyns WHERE notHas(CAST([3.0], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyns WHERE notHas(CAST([3.0], 'Array(Dynamic)'), k));
+-- A `String`-holding `Dynamic` compares exactly against the same key, so it keeps the index: the decline
+-- above is driven by the type stored, not by `Dynamic`.
+SELECT 'dyn String/Dynamic(String) has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyns WHERE has(CAST(['3'], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%in 1-element set%';
+SELECT 'dyn String/Dynamic(String) has',
+    (SELECT count() FROM at_dyns WHERE has(CAST(['3'], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyns WHERE has(CAST(['3'], 'Array(Dynamic)'), k));
+-- One inexact type in a mixed set is enough to decline the whole element.
+SELECT 'dyn String/Dynamic(String,Float64) has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyns WHERE has(CAST(['3', 3.0], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%in 1-element set%';
+SELECT 'dyn String/Dynamic(String,Float64) has',
+    (SELECT count() FROM at_dyns WHERE has(CAST(['3', 3.0], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyns WHERE has(CAST(['3', 3.0], 'Array(Dynamic)'), k));
+DROP TABLE at_dyns; DROP TABLE ao_dyns;
