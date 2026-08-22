@@ -2461,7 +2461,9 @@ function activePinnedColumns() {
 /// All three are shared by reference with the tab's result element(s) (`_sortColumns` / `_filters` /
 /// `_pagination`) and are therefore always mutated IN PLACE, and all three are persisted with the
 /// tab's result snapshot and mirrored into the URL / history. They are bound to ONE statement
-/// (`tab.shapeQuery`, see `shapeQueryKey`), because they name that statement's columns.
+/// (`tab.shapeQuery`, see `shapeQueryKey`) run in ONE context (`tab.shapeContext`, see
+/// `shapeContextKey`), because they name the columns of that statement's result - which the selected
+/// database, the connection and the query parameters take part in deciding.
 
 /// Validate a `sort_columns` payload read back from a URL, a history entry, or a stored snapshot
 /// into the in-memory shape. Anything malformed is dropped rather than trusted: the value ends up in
@@ -2497,10 +2499,14 @@ function sanitizeFilters(value) {
 /// active; an active page needs a positive size, since the page is translated into `limit` + `page`
 /// and the server rejects `page` without `limit`. Anything else resolves to "not active" rather than
 /// to a request that cannot run.
+/// Both values are required to be FINITE integers: a URL or a history entry can carry `Infinity` or
+/// an overflowing literal like `1e309`, and `Number` turns both into `Infinity`, which no comparison
+/// against a lower bound rejects. An infinite page would make `renderPagination` loop forever, and an
+/// infinite size would be sent as `limit=Infinity`.
 function sanitizePagination(value) {
-    const page = Math.floor(Number(value && value.page)) || 0;
-    const size = Math.floor(Number(value && value.size)) || 0;
-    if (page < 1 || size < 1) { return { page: 0, size: 0 }; }
+    const page = Math.floor(Number(value && value.page));
+    const size = Math.floor(Number(value && value.size));
+    if (!Number.isFinite(page) || !Number.isFinite(size) || page < 1 || size < 1) { return { page: 0, size: 0 }; }
     return { page, size };
 }
 
@@ -2560,6 +2566,23 @@ function shapeQueryKey(query) {
     return String(query === undefined || query === null ? '' : query).trim().replace(/;+\s*$/, '').trim();
 }
 
+/// The rest of the identity a shape is bound to: the statement TEXT alone does not determine the
+/// columns of its result. `SELECT * FROM events` names a different table after the database selection
+/// changes, `SELECT * FROM {tbl:Identifier}` after a parameter is edited, and either can name a
+/// different table on a different server or under a different user. A shape carried across such a
+/// change would put an `ORDER BY` or a `WHERE` on a column the new result may not have - or, worse,
+/// silently shape a different table - so the run context is part of what the shape is bound to and a
+/// change of it drops the shape exactly like a change of the statement.
+///
+/// Built from the values a run is launched with (`postSingle`'s snapshotted database, connection and
+/// parameters), never from the live inputs, so it describes the run that produced the result. The
+/// parameters are sorted so an unordered rebuild of the same bindings is the same context.
+function shapeContextKey(database, url, user, params) {
+    const entries = Object.entries(params || {}).map(([name, value]) => [String(name), String(value)]);
+    entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    return JSON.stringify([database ?? null, url ?? null, user ?? null, entries]);
+}
+
 /// Apply a click on one of a column's sort arrows to a sort list, IN PLACE (the list is the owning
 /// tab's `sortColumns`, aliased by its result element(s), so it must not be replaced).
 ///
@@ -2617,11 +2640,19 @@ function shapeUrlParams(tab) {
 
 /// The shape parameters for a run of `query` in `tab`, dropping a shape that belongs to a different
 /// statement (see `shapeQueryKey`) and re-binding the tab's shape to the statement now being run.
-function resolveShapeForRun(tab, query) {
-    if (shapeQueryKey(tab.shapeQuery) !== shapeQueryKey(query)) {
+/// `context` is the run's `shapeContextKey`; a shape whose recorded context is a DIFFERENT one belongs
+/// to another database/connection/parameter binding and is dropped too. A `null` recorded context
+/// means the shape was restored from a URL, a history entry or a stored snapshot, which carry no
+/// context of their own: it adopts the context of the run that re-applies it, and only a change AFTER
+/// that drops it.
+function resolveShapeForRun(tab, query, context = null) {
+    const bound_context = tab.shapeContext ?? null;
+    if (shapeQueryKey(tab.shapeQuery) !== shapeQueryKey(query)
+        || (bound_context !== null && bound_context !== context)) {
         clearResultShape(tab);
         tab.shapeQuery = query;
     }
+    tab.shapeContext = context;
     return shapeUrlParams(tab);
 }
 
@@ -2640,11 +2671,15 @@ function commitResultShape(el) {
     if (!tab) { return; }
     /// Bind the shape to the exact statement whose result was acted on, so the launch below applies it.
     tab.shapeQuery = el._queryText;
-    persistResultShape();
     /// Only the active tab's panel is visible, so a click can only ever come from it; `postOne` acts
     /// on the active tab, so refuse to launch anything for a background tab rather than run the wrong
-    /// one. The chosen shape is already persisted and applies to that tab's next run.
-    if (tab.id !== activeTabId) { return; }
+    /// one. Nothing runs then, so the chosen shape is persisted here instead, and applies to that tab's
+    /// next run.
+    if (tab.id !== activeTabId) { persistResultShape(tab); return; }
+    /// The launched run persists the shape once it has resolved WHICH shape applies to the statement
+    /// it actually runs (see `resolveShapeForRun` in `postSingle`), so a shape the run drops is never
+    /// stamped into the URL or the history entry: a `Stop` or a reload in between would otherwise
+    /// leave it there, to be rebound to an unrelated query on the next load.
     postOne();
 }
 
@@ -5481,7 +5516,9 @@ class QueryResultElement extends HTMLElement
     {
         if (!this._shapeable) { return; }
         const size = this._pagination.size >= 1 ? this._pagination.size : this._pageSize();
-        if (!(page >= 1) || size < 1) { return; }
+        /// A finite integer only: `Number('1e309')` is `Infinity`, which passes every lower bound and
+        /// would make the pager's `for (let page = first; page <= last; ++page)` loop forever.
+        if (!Number.isFinite(page) || !(page >= 1) || size < 1) { return; }
         /// In place: `_pagination` is the owning tab's object, aliased by every element of the tab.
         this._pagination.page = page;
         this._pagination.size = size;
@@ -11366,8 +11403,18 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
     /// The result shape chosen in this tab's result view, but only while it still belongs to the
     /// statement being run - `resolveShapeForRun` drops a shape left over from a different statement,
     /// which would otherwise put an `ORDER BY` or a `WHERE` on a column this query does not have and
-    /// fail it.
-    const shape_params = resolveShapeForRun(tab, query);
+    /// fail it. A shape is bound to the run CONTEXT as well (`shapeContextKey`): the same statement
+    /// resolves to different columns after the database selection, the connection or a parameter
+    /// binding changed, so that too drops it.
+    const shape_params = resolveShapeForRun(
+        tab, query, shapeContextKey(query_database, query_url, query_user, paramValuesSnapshot));
+    /// Now that the launch has decided which shape actually applies, mirror it into the URL, the
+    /// history entry and the tab's stored snapshot. Deliberately NOT done when the shape was chosen
+    /// (`commitResultShape` launches this run without persisting it): a shape this launch drops -
+    /// because the editor moved on to another statement, or the database/parameters changed - must
+    /// never be left behind in a URL or a history entry, where the next load would rebind it to
+    /// whatever query that entry carries.
+    persistResultShape(tab);
 
     tab.controller = new AbortController();
     const result = await postImpl(tab, posted_request_num, query, el, tab.controller, paramValuesSnapshot, query_database, connection, queryStart, shape_params);
@@ -11560,6 +11607,10 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
     /// single-statement run in this tab left behind, so nothing stale is persisted with its snapshot.
     clearResultShape(tab);
     tab.shapeQuery = null;
+    tab.shapeContext = null;
+    /// Mirror the drop into the URL / the history entry / the stored snapshot right away, for the same
+    /// reason the single-statement path persists its resolved shape there.
+    persistResultShape(tab);
 
     tab.downloadVisible = false;
     tab.copyVisible = false;
@@ -12185,8 +12236,11 @@ function persistPinnedColumns() {
 /// Back/Forward keep it. For the shape this also makes the URL reproduce the RESULT and not just its
 /// presentation: an auto-run (`run=1`) link carrying it re-runs the query with the same construction
 /// settings, so the rows come back sorted, filtered and paged as they were when the link was shared.
-function persistResultShape() {
-    const tab = getActiveTab();
+///
+/// `tab` defaults to the active one; a run persists ITS OWN tab's shape (`postSingle`/`postMulti` run
+/// in the background too), and for a background tab only the tab's snapshot is written - the URL and
+/// the history entry describe what is on screen, which is the active tab.
+function persistResultShape(tab = getActiveTab()) {
     const sort = tab ? tab.sortColumns : [];
     const filters = tab ? tab.filters : {};
     const pagination = tab ? tab.pagination : { page: 0, size: 0 };
@@ -12195,6 +12249,7 @@ function persistResultShape() {
         tab.result.filters = filters;
         tab.result.pagination = pagination;
     }
+    if (tab && tab.id !== activeTabId) { scheduleSave(); return; }
     const url = new URL(window.location);
     const set = (name, value) => {
         if (value === null) url.searchParams.delete(name);
@@ -12399,6 +12454,10 @@ async function materializeResult(tab) {
     tab.filters = sanitizeFilters(result.filters);
     tab.pagination = sanitizePagination(result.pagination);
     tab.shapeQuery = result.query ?? null;
+    /// A stored snapshot records the database, connection and parameters its rows were produced with,
+    /// but the restored shape is re-bound only to the statement: leave the context unbound so the run
+    /// that re-applies it adopts its own, and only a change after that drops the shape.
+    tab.shapeContext = null;
     el._sortColumns = tab.sortColumns;
     el._filters = tab.filters;
     el._pagination = tab.pagination;
@@ -12839,6 +12898,7 @@ function tabRuntimeDefaults() {
         filters: {},            /// per-column filters of this tab's result (shared with its element)
         pagination: { page: 0, size: 0 },  /// selected page of this tab's result; page 0 = not paginated
         shapeQuery: null,       /// statement the result shape was chosen on (see `shapeQueryKey`); null for none
+        shapeContext: null,     /// run context (database/connection/parameters) it was chosen in (see `shapeContextKey`); null adopts the next run's
         downloadQuery: '',      /// query the download button should re-run for this tab
         downloadParams: {},
         downloadShape: '',      /// construction-setting URL params the download reproduces the shown shape with
@@ -17938,6 +17998,7 @@ tabs[0].pagination = url_pagination;
 /// The shape belongs to the statement the link carries, which is what a `run=1` load auto-runs, so
 /// bind it to that text (`resolveShapeForRun` would otherwise drop it as belonging to another query).
 tabs[0].shapeQuery = tabs[0].query;
+tabs[0].shapeContext = null;
 /// Build the active tab's panel now (synchronously), so the `resultEl` alias exists before any
 /// connection check / early render runs, matching the pre-tabs invariant that it always existed.
 setActivePanel(tabs[0]);
@@ -18047,6 +18108,7 @@ async function reconcileStartup() {
                     /// The shape belongs to the statement that produced the stored result, so it is
                     /// re-applied only by a run of that exact statement (see `resolveShapeForRun`).
                     shapeQuery: (r.result && r.result.query) ?? null,
+                    shapeContext: null,
                 });
             } else {
                 pruned_blank_ids.add(r.id);
@@ -18319,6 +18381,7 @@ async function reconcileStartup() {
                 t.pagination.page = url_pagination.page;
                 t.pagination.size = url_pagination.size;
                 t.shapeQuery = url_query;
+                t.shapeContext = null;
                 const els = t.resultEl ? [t.resultEl] : [];
                 if (t.multiContainer) for (const el of t.multiContainer.querySelectorAll('query-result')) els.push(el);
                 for (const el of els) {

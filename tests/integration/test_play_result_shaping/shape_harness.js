@@ -21,8 +21,11 @@
 ///  - `shapeQueryKey` binds a shape to ONE statement while treating the two spellings the launch paths
 ///    produce for that statement (with and without its trailing `;`) as the same one, so a shape
 ///    survives its own re-run;
-///  - `resolveShapeForRun` drops a shape belonging to a different statement, in place, so the objects
-///    the tab shares with its result element(s) stay the same objects.
+///  - `shapeContextKey` completes that identity with the run context - the selected database, the
+///    connection and the query parameters - which decides the columns just as much as the text does;
+///  - `resolveShapeForRun` drops a shape belonging to a different statement, or to the same statement
+///    run in a different context, in place, so the objects the tab shares with its result element(s)
+///    stay the same objects.
 ///
 /// Driven by `test.py` inside the `clickhouse/mysql-js-client` container (node:22-alpine),
 /// against the `/play` page served by a real ClickHouse server. Can also be run standalone
@@ -50,7 +53,7 @@ const HELPERS = [
     'backQuoteIdentifier', 'quoteStringLiteral', 'escapeLikePattern',
     'sortOrderExpression', 'filterExpression', 'shapeQueryKey',
     'applySortToggle', 'resetPagination', 'clearResultShape',
-    'shapeUrlParams', 'resolveShapeForRun',
+    'shapeUrlParams', 'resolveShapeForRun', 'shapeContextKey',
 ];
 
 function extractShapeHelpers(js) {
@@ -81,9 +84,13 @@ function keys(list) {
     return list.map(entry => (entry.desc ? '-' : '+') + entry.name);
 }
 
-/// A tab as the helpers see it: the three shape objects plus the statement they are bound to.
-function makeTab(query) {
-    return { sortColumns: [], filters: {}, pagination: { page: 0, size: 0 }, shapeQuery: query ?? null };
+/// A tab as the helpers see it: the three shape objects plus the statement and the run context they
+/// are bound to.
+function makeTab(query, context) {
+    return {
+        sortColumns: [], filters: {}, pagination: { page: 0, size: 0 },
+        shapeQuery: query ?? null, shapeContext: context ?? null,
+    };
 }
 
 async function main() {
@@ -251,6 +258,17 @@ async function main() {
             H.sanitizePagination({ page: 0, size: 500 }), { page: 0, size: 0 });
         check('sanitize', 'a non-numeric page is not a page',
             H.sanitizePagination({ page: 'x', size: 500 }), { page: 0, size: 0 });
+        /// A non-finite value passes every lower bound: an infinite page makes the pager iterate from
+        /// it to it forever, and an infinite size would be sent as `limit=Infinity`. Both spellings a
+        /// URL or a history entry can carry - the word and an overflowing literal - must be rejected.
+        check('sanitize', 'an infinite page is not a page',
+            H.sanitizePagination({ page: Infinity, size: 500 }), { page: 0, size: 0 });
+        check('sanitize', 'an overflowing page literal is not a page',
+            H.sanitizePagination({ page: '1e309', size: 500 }), { page: 0, size: 0 });
+        check('sanitize', 'an infinite page size is not a page',
+            H.sanitizePagination({ page: 2, size: Infinity }), { page: 0, size: 0 });
+        check('sanitize', 'an overflowing page size literal is not a page',
+            H.sanitizePagination({ page: 2, size: '1e309' }), { page: 0, size: 0 });
     }
 
     /// Contract 9: the statement identity a shape is bound to. The two launch paths spell the same
@@ -312,6 +330,48 @@ async function main() {
         H.clearResultShape(failed);
         check('resolve', 'clearResultShape empties every part of the shape',
             [failed.sortColumns.length, Object.keys(failed.filters).length, failed.pagination.page], [0, 0, 0]);
+    }
+
+    /// Contract 12: the run CONTEXT is part of what a shape is bound to. The same statement text names
+    /// different columns after the selected database, the connection or a query parameter changed, so
+    /// a shape carried across such a change would sort or filter a different result - by a column it
+    /// may not even have.
+    {
+        const db_a = H.shapeContextKey('a', 'http://localhost:8123/', 'default', {});
+        const db_b = H.shapeContextKey('b', 'http://localhost:8123/', 'default', {});
+        check('context-key', 'the same database, connection and parameters are the same context',
+            H.shapeContextKey('a', 'http://localhost:8123/', 'default', { tbl: 'hits' }),
+            H.shapeContextKey('a', 'http://localhost:8123/', 'default', { tbl: 'hits' }));
+        check('context-key', 'a different database is a different context', db_a === db_b, false);
+        check('context-key', 'a different server is a different context',
+            db_a === H.shapeContextKey('a', 'http://other:8123/', 'default', {}), false);
+        check('context-key', 'a different user is a different context',
+            db_a === H.shapeContextKey('a', 'http://localhost:8123/', 'reader', {}), false);
+        check('context-key', 'a different parameter value is a different context',
+            H.shapeContextKey('a', 'u', 'd', { tbl: 'hits' }) === H.shapeContextKey('a', 'u', 'd', { tbl: 'visits' }), false);
+        /// The parameters are a set of bindings, not an ordered list: rebuilding the same bindings in
+        /// another order (which `extractRunParamNames` can) must not drop the shape.
+        check('context-key', 'the parameter order does not matter',
+            H.shapeContextKey('a', 'u', 'd', { x: '1', y: '2' }), H.shapeContextKey('a', 'u', 'd', { y: '2', x: '1' }));
+
+        const tab = makeTab('SELECT * FROM events', db_a);
+        tab.sortColumns.push({ name: 'a', desc: false });
+        check('context', 'the same statement in the same context keeps the shape',
+            H.resolveShapeForRun(tab, 'SELECT * FROM events', db_a), '&order=' + encodeURIComponent('`a` ASC'));
+        check('context', 'the same statement in another database drops the shape',
+            H.resolveShapeForRun(tab, 'SELECT * FROM events', db_b), '');
+        check('context', 'the shape is re-bound to the context now running', tab.shapeContext, db_b);
+
+        /// A shape restored from a URL, a history entry or a stored snapshot carries no context of its
+        /// own: it adopts the one of the run that re-applies it, and a change AFTER that drops it.
+        const restored = makeTab('SELECT * FROM events', null);
+        restored.filters.a = '> 1';
+        check('context', 'an unbound shape survives the run that adopts its context',
+            H.resolveShapeForRun(restored, 'SELECT * FROM events', db_a),
+            '&filter=' + encodeURIComponent('(`a` > 1)'));
+        check('context', 'the adopted context is recorded', restored.shapeContext, db_a);
+        check('context', 'and a change after it drops the shape',
+            H.resolveShapeForRun(restored, 'SELECT * FROM events', db_b), '');
     }
 
     console.log(failures ? `${failures} check(s) failed` : 'All scenarios passed');
