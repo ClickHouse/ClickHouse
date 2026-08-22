@@ -54,7 +54,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
 }
 
@@ -479,7 +478,7 @@ public:
         {
             const String uri_path = Poco::URI(uri).getPath();
 
-            if (uri_path.ends_with("/format_query"))
+            if (uri_path.ends_with("/format_query") || uri_path.ends_with("/parse_query"))
             {
                 if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_GET
                     && request.getMethod() != Poco::Net::HTTPRequest::HTTP_POST)
@@ -492,11 +491,15 @@ public:
 
                 PrometheusQueryTree query_tree{params->get("query", ""), 9};
                 query_tree.validate();
-                String formatted_query = query_tree.toPrometheusString();
+                const bool is_parse_query = uri_path.ends_with("/parse_query");
+                const String result = is_parse_query ? query_tree.toPrometheusJSON() : query_tree.toPrometheusString();
 
                 auto & output = getOutputStream(response);
                 writeString(R"({"status":"success","data":)", output);
-                writeJSONString(formatted_query, output, FormatSettings{});
+                if (is_parse_query)
+                    writeString(result, output);
+                else
+                    writeJSONString(result, output, FormatSettings{});
                 writeString("}", output);
                 return;
             }
@@ -558,10 +561,6 @@ public:
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
-            }
-            else if (uri_path.ends_with("/parse_query"))
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
             }
             else if (uri_path.ends_with("/series"))
             {

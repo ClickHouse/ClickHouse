@@ -135,6 +135,21 @@
                     <type>query_api</type>
                 </handler>
             </my_rule_17>
+
+            <my_rule_18>
+                <url>/api/v1/parse_query</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_18>
+
+            <my_rule_19>
+                <url>/dynamic_table/api/v1/parse_query</url>
+                <handler>
+                    <type>query_api</type>
+                </handler>
+            </my_rule_19>
         </handlers>
     </prometheus>
 </clickhouse>

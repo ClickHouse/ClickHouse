@@ -7,6 +7,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/quoteString.h>
 #include <Core/DecimalFunctions.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 #include <base/hex.h>
@@ -417,6 +418,7 @@ namespace
             case PrometheusQueryTree::NodeType::Scalar:
             case PrometheusQueryTree::NodeType::StringLiteral:
             case PrometheusQueryTree::NodeType::RangeSelector:
+            case PrometheusQueryTree::NodeType::ParenExpression:
                 break;
             case PrometheusQueryTree::NodeType::InstantSelector:
                 validateInstantSelector(static_cast<const PrometheusQueryTree::InstantSelector &>(*node));
@@ -748,6 +750,20 @@ namespace
         return {buffer, end};
     }
 
+    String formatPrometheusNumber(Float64 value)
+    {
+        if (std::isinf(value))
+            return value < 0 ? "-Inf" : "+Inf";
+        if (std::isnan(value))
+            return "NaN";
+
+        char buffer[1100];
+        const auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), value, std::chars_format::fixed);
+        if (error != std::errc{})
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot format Prometheus number {}", value);
+        return {buffer, end};
+    }
+
     using PrometheusMatcherType = PrometheusQueryTree::MatcherType;
 
     String formatPrometheusMatcher(const PrometheusQueryTree::Matcher & matcher)
@@ -842,6 +858,10 @@ namespace
 
             case NodeType::StringLiteral:
                 return quotePrometheusString(static_cast<const PrometheusQueryTree::StringLiteral &>(node).string);
+
+            case NodeType::ParenExpression:
+                return formatPrometheusNodeFlat(
+                    *static_cast<const PrometheusQueryTree::ParenExpression &>(node).getExpression(), tree);
 
             case NodeType::InstantSelector:
             {
@@ -1163,6 +1183,522 @@ namespace
         }
     }
 
+    class PrometheusJSONWriter
+    {
+    public:
+        PrometheusJSONWriter(WriteBuffer & out_, UInt32 timestamp_scale_) : out(out_), timestamp_scale(timestamp_scale_) {}
+
+        void writeNode(const PrometheusQueryTree::Node & node)
+        {
+            writeNode(node, nullptr);
+        }
+
+    private:
+        using Node = PrometheusQueryTree::Node;
+        using NodeType = PrometheusQueryTree::NodeType;
+        using ResultType = PrometheusQueryTree::ResultType;
+        using Matcher = PrometheusQueryTree::Matcher;
+        using MatcherType = PrometheusQueryTree::MatcherType;
+
+        struct SelectorModifiers
+        {
+            enum class AtModifier { None, Timestamp, Start, End };
+
+            AtModifier at_modifier = AtModifier::None;
+            Int64 at_timestamp = 0;
+            bool has_offset = false;
+            Int64 offset = 0;
+        };
+
+        WriteBuffer & out;
+        UInt32 timestamp_scale;
+
+        static String resultTypeToString(ResultType type)
+        {
+            switch (type)
+            {
+                case ResultType::SCALAR: return "scalar";
+                case ResultType::STRING: return "string";
+                case ResultType::INSTANT_VECTOR: return "vector";
+                case ResultType::RANGE_VECTOR: return "matrix";
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Prometheus result type");
+        }
+
+        void writeFieldName(bool & first, std::string_view name)
+        {
+            if (!first)
+                writeChar(',', out);
+            first = false;
+            writeJSONString(name, out, FormatSettings{});
+            writeChar(':', out);
+        }
+
+        void writeStringField(bool & first, std::string_view name, std::string_view value)
+        {
+            writeFieldName(first, name);
+            writeJSONString(value, out, FormatSettings{});
+        }
+
+        void writeIntField(bool & first, std::string_view name, Int64 value)
+        {
+            writeFieldName(first, name);
+            writeIntText(value, out);
+        }
+
+        void writeBoolField(bool & first, std::string_view name, bool value)
+        {
+            writeFieldName(first, name);
+            writeString(value ? "true" : "false", out);
+        }
+
+        void writeNullField(bool & first, std::string_view name)
+        {
+            writeFieldName(first, name);
+            writeString("null", out);
+        }
+
+        void writeStringArrayField(bool & first, std::string_view name, const Strings & values)
+        {
+            writeFieldName(first, name);
+            writeChar('[', out);
+            for (size_t i = 0; i != values.size(); ++i)
+            {
+                if (i != 0)
+                    writeChar(',', out);
+                writeJSONString(values[i], out, FormatSettings{});
+            }
+            writeChar(']', out);
+        }
+
+        void writeTypeArray(std::initializer_list<std::string_view> types)
+        {
+            writeChar('[', out);
+            bool first = true;
+            for (const auto type : types)
+            {
+                if (!first)
+                    writeChar(',', out);
+                first = false;
+                writeJSONString(type, out, FormatSettings{});
+            }
+            writeChar(']', out);
+        }
+
+        void writeOffsetFields(bool & first, const SelectorModifiers & modifiers)
+        {
+            writeIntField(first, "offset", modifiers.has_offset ? modifiers.offset : 0);
+            writeNullField(first, "offsetExpr");
+        }
+
+        void writeTimestampFields(bool & first, const SelectorModifiers & modifiers)
+        {
+            if (modifiers.at_modifier == SelectorModifiers::AtModifier::Timestamp)
+                writeIntField(first, "timestamp", modifiers.at_timestamp);
+            else
+                writeNullField(first, "timestamp");
+
+            if (modifiers.at_modifier == SelectorModifiers::AtModifier::Start)
+                writeStringField(first, "startOrEnd", "start");
+            else if (modifiers.at_modifier == SelectorModifiers::AtModifier::End)
+                writeStringField(first, "startOrEnd", "end");
+            else
+                writeNullField(first, "startOrEnd");
+        }
+
+        void writeSelectorFields(
+            bool & first,
+            const PrometheusQueryTree::InstantSelector & selector,
+            const SelectorModifiers & modifiers)
+        {
+            writeStringField(first, "name", selector.metric_name);
+            writeOffsetFields(first, modifiers);
+
+            writeFieldName(first, "matchers");
+            writeMatchers(selector);
+
+            writeTimestampFields(first, modifiers);
+            writeBoolField(first, "anchored", false);
+            writeBoolField(first, "smoothed", false);
+        }
+
+        bool isMetricNameMatcher(const PrometheusQueryTree::InstantSelector & selector, const Matcher & matcher) const
+        {
+            return !selector.metric_name.empty()
+                && matcher.label_name == "__name__"
+                && matcher.matcher_type == MatcherType::EQ
+                && matcher.label_value == selector.metric_name;
+        }
+
+        static String matcherTypeToString(MatcherType type)
+        {
+            switch (type)
+            {
+                case MatcherType::EQ: return "=";
+                case MatcherType::NE: return "!=";
+                case MatcherType::RE: return "=~";
+                case MatcherType::NRE: return "!~";
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Prometheus matcher type");
+        }
+
+        void writeMatcher(const Matcher & matcher)
+        {
+            writeChar('{', out);
+            bool first = true;
+            writeStringField(first, "name", matcher.label_name);
+            writeStringField(first, "value", matcher.label_value);
+            writeStringField(first, "type", matcherTypeToString(matcher.matcher_type));
+            writeChar('}', out);
+        }
+
+        void writeMatchers(const PrometheusQueryTree::InstantSelector & selector)
+        {
+            writeChar('[', out);
+            bool first = true;
+
+            auto write_if_metric_name = [&](const Matcher & matcher, bool metric_name)
+            {
+                if (isMetricNameMatcher(selector, matcher) != metric_name)
+                    return;
+                if (!first)
+                    writeChar(',', out);
+                first = false;
+                writeMatcher(matcher);
+            };
+
+            for (const auto & matcher : selector.matchers)
+                write_if_metric_name(matcher, false);
+            for (const auto & matcher : selector.matchers)
+                write_if_metric_name(matcher, true);
+
+            writeChar(']', out);
+        }
+
+        void writeNodeArray(const std::vector<const Node *> & nodes)
+        {
+            writeChar('[', out);
+            for (size_t i = 0; i != nodes.size(); ++i)
+            {
+                if (i != 0)
+                    writeChar(',', out);
+                writeNode(*nodes[i], nullptr);
+            }
+            writeChar(']', out);
+        }
+
+        void writeFunctionArgumentTypes(std::string_view name)
+        {
+            if (isOneOf(name, {
+                    "abs", "absent", "ceil", "exp", "floor", "histogram_count", "histogram_sum", "sort", "sort_desc",
+                    "acos", "acosh", "asin", "asinh", "atan", "atanh", "cos", "cosh", "deg", "ln", "log2",
+                    "log10", "rad", "sgn", "sin", "sinh", "sqrt", "tan", "tanh", "timestamp"}))
+            {
+                writeTypeArray({"vector"});
+            }
+            else if (isOneOf(name, {
+                         "absent_over_time", "avg_over_time", "changes", "count_over_time", "delta", "deriv", "idelta",
+                         "increase", "irate", "last_over_time", "max_over_time", "min_over_time", "present_over_time", "rate",
+                         "resets", "stddev_over_time", "stdvar_over_time", "sum_over_time"}))
+            {
+                writeTypeArray({"matrix"});
+            }
+            else if (isOneOf(name, {"day_of_month", "day_of_week", "day_of_year", "days_in_month", "hour", "minute", "month", "year"}))
+            {
+                writeTypeArray({"vector"});
+            }
+            else if (name == "clamp")
+            {
+                writeTypeArray({"vector", "scalar", "scalar"});
+            }
+            else if (isOneOf(name, {"clamp_min", "clamp_max"}))
+            {
+                writeTypeArray({"vector", "scalar"});
+            }
+            else if (name == "round")
+            {
+                writeTypeArray({"vector", "scalar"});
+            }
+            else if (name == "label_replace")
+            {
+                writeTypeArray({"vector", "string", "string", "string", "string"});
+            }
+            else if (name == "label_join")
+            {
+                writeTypeArray({"vector", "string", "string", "string"});
+            }
+            else if (name == "histogram_quantile")
+            {
+                writeTypeArray({"scalar", "vector"});
+            }
+            else if (name == "histogram_fraction")
+            {
+                writeTypeArray({"scalar", "scalar", "vector"});
+            }
+            else if (name == "holt_winters")
+            {
+                writeTypeArray({"matrix", "scalar", "scalar"});
+            }
+            else if (name == "predict_linear")
+            {
+                writeTypeArray({"matrix", "scalar"});
+            }
+            else if (name == "quantile_over_time")
+            {
+                writeTypeArray({"scalar", "matrix"});
+            }
+            else if (isOneOf(name, {"scalar", "vector", "time", "pi"}))
+            {
+                if (name == "scalar")
+                    writeTypeArray({"vector"});
+                else if (name == "vector")
+                    writeTypeArray({"scalar"});
+                else
+                    writeTypeArray({});
+            }
+            else
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prometheus function '{}' is not supported by parse_query", name);
+            }
+        }
+
+        Int64 functionVariadic(std::string_view name)
+        {
+            if (isOneOf(name, {"day_of_month", "day_of_week", "day_of_year", "days_in_month", "hour", "minute", "month", "year", "round"}))
+                return 1;
+            if (name == "label_join")
+                return -1;
+            return 0;
+        }
+
+        void writeFunction(const PrometheusQueryTree::Function & function)
+        {
+            writeChar('{', out);
+            bool first = true;
+            writeStringField(first, "type", "call");
+
+            writeFieldName(first, "func");
+            writeChar('{', out);
+            bool function_first = true;
+            writeStringField(function_first, "name", function.function_name);
+            writeFieldName(function_first, "argTypes");
+            writeFunctionArgumentTypes(function.function_name);
+            writeIntField(function_first, "variadic", functionVariadic(function.function_name));
+            writeStringField(function_first, "returnType", resultTypeToString(function.result_type));
+            writeChar('}', out);
+
+            writeFieldName(first, "args");
+            writeNodeArray(function.getArguments());
+            writeChar('}', out);
+        }
+
+        void writeBinaryMatching(bool & first, const PrometheusQueryTree::BinaryOperator & binary)
+        {
+            writeFieldName(first, "matching");
+
+            const bool both_vectors = binary.getLeftArgument()->result_type == ResultType::INSTANT_VECTOR
+                && binary.getRightArgument()->result_type == ResultType::INSTANT_VECTOR;
+            if (!both_vectors)
+            {
+                writeString("null", out);
+                return;
+            }
+
+            String cardinality;
+            if (binary.group_left)
+                cardinality = "many-to-one";
+            else if (binary.group_right)
+                cardinality = "one-to-many";
+            else if (isOneOf(binary.operator_name, {"and", "or", "unless"}))
+                cardinality = "many-to-many";
+            else
+                cardinality = "one-to-one";
+
+            writeChar('{', out);
+            bool matching_first = true;
+            writeStringField(matching_first, "card", cardinality);
+            writeStringArrayField(matching_first, "labels", binary.labels);
+            writeBoolField(matching_first, "on", binary.on);
+            writeStringArrayField(matching_first, "include", binary.extra_labels);
+
+            writeFieldName(matching_first, "fillValues");
+            writeChar('{', out);
+            bool fill_first = true;
+            writeNullField(fill_first, "lhs");
+            writeNullField(fill_first, "rhs");
+            writeChar('}', out);
+
+            writeChar('}', out);
+        }
+
+        void writeNode(const Node & node, const SelectorModifiers * inherited_modifiers)
+        {
+            switch (node.node_type)
+            {
+                case NodeType::Scalar:
+                {
+                    const auto & scalar = static_cast<const PrometheusQueryTree::Scalar &>(node);
+                    writeChar('{', out);
+                    bool first = true;
+                    writeStringField(first, "type", "numberLiteral");
+                    writeStringField(first, "val", formatPrometheusNumber(scalar.scalar));
+                    writeChar('}', out);
+                    return;
+                }
+                case NodeType::StringLiteral:
+                {
+                    const auto & string = static_cast<const PrometheusQueryTree::StringLiteral &>(node);
+                    writeChar('{', out);
+                    bool first = true;
+                    writeStringField(first, "type", "stringLiteral");
+                    writeStringField(first, "val", string.string);
+                    writeChar('}', out);
+                    return;
+                }
+                case NodeType::InstantSelector:
+                {
+                    const auto & selector = static_cast<const PrometheusQueryTree::InstantSelector &>(node);
+                    const SelectorModifiers modifiers = inherited_modifiers ? *inherited_modifiers : SelectorModifiers{};
+                    writeChar('{', out);
+                    bool first = true;
+                    writeStringField(first, "type", "vectorSelector");
+                    writeSelectorFields(first, selector, modifiers);
+                    writeChar('}', out);
+                    return;
+                }
+                case NodeType::RangeSelector:
+                {
+                    const auto & range = static_cast<const PrometheusQueryTree::RangeSelector &>(node);
+                    const SelectorModifiers modifiers = inherited_modifiers ? *inherited_modifiers : SelectorModifiers{};
+                    writeChar('{', out);
+                    bool first = true;
+                    writeStringField(first, "type", "matrixSelector");
+                    writeStringField(first, "name", range.getInstantSelector()->metric_name);
+                    writeIntField(first, "range", decimalToMilliseconds(range.range, timestamp_scale));
+                    writeNullField(first, "rangeExpr");
+                    writeOffsetFields(first, modifiers);
+                    writeFieldName(first, "matchers");
+                    writeMatchers(*range.getInstantSelector());
+                    writeTimestampFields(first, modifiers);
+                    writeBoolField(first, "anchored", false);
+                    writeBoolField(first, "smoothed", false);
+                    writeChar('}', out);
+                    return;
+                }
+                case NodeType::Subquery:
+                {
+                    const auto & subquery = static_cast<const PrometheusQueryTree::Subquery &>(node);
+                    const SelectorModifiers modifiers = inherited_modifiers ? *inherited_modifiers : SelectorModifiers{};
+                    writeChar('{', out);
+                    bool first = true;
+                    writeStringField(first, "type", "subquery");
+                    writeFieldName(first, "expr");
+                    writeNode(*subquery.getExpression(), nullptr);
+                    writeIntField(first, "range", decimalToMilliseconds(subquery.range, timestamp_scale));
+                    writeNullField(first, "rangeExpr");
+                    writeOffsetFields(first, modifiers);
+                    writeIntField(first, "step", subquery.step ? decimalToMilliseconds(*subquery.step, timestamp_scale) : 0);
+                    writeNullField(first, "stepExpr");
+                    writeTimestampFields(first, modifiers);
+                    writeChar('}', out);
+                    return;
+                }
+                case NodeType::Offset:
+                {
+                    const auto & offset = static_cast<const PrometheusQueryTree::Offset &>(node);
+                    SelectorModifiers modifiers = inherited_modifiers ? *inherited_modifiers : SelectorModifiers{};
+                    switch (offset.at_modifier)
+                    {
+                        case PrometheusQueryTree::Offset::AtModifier::None:
+                            break;
+                        case PrometheusQueryTree::Offset::AtModifier::Timestamp:
+                            modifiers.at_modifier = SelectorModifiers::AtModifier::Timestamp;
+                            modifiers.at_timestamp = decimalToRoundedMilliseconds(Decimal64{*offset.at_timestamp}, timestamp_scale);
+                            break;
+                        case PrometheusQueryTree::Offset::AtModifier::Start:
+                            modifiers.at_modifier = SelectorModifiers::AtModifier::Start;
+                            break;
+                        case PrometheusQueryTree::Offset::AtModifier::End:
+                            modifiers.at_modifier = SelectorModifiers::AtModifier::End;
+                            break;
+                    }
+                    if (offset.offset_value)
+                    {
+                        modifiers.has_offset = true;
+                        modifiers.offset = decimalToMilliseconds(*offset.offset_value, timestamp_scale);
+                    }
+                    writeNode(*offset.getExpression(), &modifiers);
+                    return;
+                }
+                case NodeType::Function:
+                    writeFunction(static_cast<const PrometheusQueryTree::Function &>(node));
+                    return;
+                case NodeType::UnaryOperator:
+                {
+                    const auto & unary = static_cast<const PrometheusQueryTree::UnaryOperator &>(node);
+                    writeChar('{', out);
+                    bool first = true;
+                    writeStringField(first, "type", "unaryExpr");
+                    writeStringField(first, "op", unary.operator_name);
+                    writeFieldName(first, "expr");
+                    writeNode(*unary.getArgument(), nullptr);
+                    writeChar('}', out);
+                    return;
+                }
+                case NodeType::BinaryOperator:
+                {
+                    const auto & binary = static_cast<const PrometheusQueryTree::BinaryOperator &>(node);
+                    writeChar('{', out);
+                    bool first = true;
+                    writeStringField(first, "type", "binaryExpr");
+                    writeStringField(first, "op", binary.operator_name);
+                    writeFieldName(first, "lhs");
+                    writeNode(*binary.getLeftArgument(), nullptr);
+                    writeFieldName(first, "rhs");
+                    writeNode(*binary.getRightArgument(), nullptr);
+                    writeBinaryMatching(first, binary);
+                    writeBoolField(first, "bool", binary.bool_modifier);
+                    writeChar('}', out);
+                    return;
+                }
+                case NodeType::AggregationOperator:
+                {
+                    const auto & aggregation = static_cast<const PrometheusQueryTree::AggregationOperator &>(node);
+                    writeChar('{', out);
+                    bool first = true;
+                    writeStringField(first, "type", "aggregation");
+                    writeStringField(first, "op", aggregation.operator_name);
+                    writeFieldName(first, "expr");
+                    if (aggregation.getArguments().empty())
+                        writeString("null", out);
+                    else
+                        writeNode(*aggregation.getArguments().back(), nullptr);
+                    writeFieldName(first, "param");
+                    if (aggregation.getArguments().size() < 2)
+                        writeString("null", out);
+                    else
+                        writeNode(*aggregation.getArguments().front(), nullptr);
+                    writeStringArrayField(first, "grouping", aggregation.labels);
+                    writeBoolField(first, "without", aggregation.without);
+                    writeChar('}', out);
+                    return;
+                }
+                case NodeType::ParenExpression:
+                {
+                    const auto & paren = static_cast<const PrometheusQueryTree::ParenExpression &>(node);
+                    writeChar('{', out);
+                    bool first = true;
+                    writeStringField(first, "type", "parenExpr");
+                    writeFieldName(first, "expr");
+                    writeNode(*paren.getExpression(), inherited_modifiers);
+                    writeChar('}', out);
+                    return;
+                }
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Prometheus query node type");
+        }
+    };
+
     template <typename NodeType>
     NodeType * cloneNodeImpl(const NodeType * node, std::vector<std::unique_ptr<Node>> & node_list)
     {
@@ -1226,6 +1762,11 @@ Node * PrometheusQueryTree::BinaryOperator::clone(std::vector<std::unique_ptr<No
 }
 
 Node * PrometheusQueryTree::AggregationOperator::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
+{
+    return cloneNodeImpl(this, node_list_);
+}
+
+Node * PrometheusQueryTree::ParenExpression::clone(std::vector<std::unique_ptr<Node>> & node_list_) const
 {
     return cloneNodeImpl(this, node_list_);
 }
@@ -1407,6 +1948,11 @@ String PrometheusQueryTree::AggregationOperator::dumpNode(const PrometheusQueryT
     for (const auto * argument : getArguments())
         str += fmt::format("\n{}", argument->dumpNode(tree, indent + 1));
     return str;
+}
+
+String PrometheusQueryTree::ParenExpression::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
+{
+    return getExpression()->dumpNode(tree, indent);
 }
 
 
@@ -1761,6 +2307,11 @@ String PrometheusQueryTree::AggregationOperator::toString(const PrometheusQueryT
     return str;
 }
 
+String PrometheusQueryTree::ParenExpression::toString(const PrometheusQueryTree & tree) const
+{
+    return getExpression()->toString(tree);
+}
+
 String PrometheusQueryTree::toString() const
 {
     if (empty())
@@ -1773,6 +2324,23 @@ String PrometheusQueryTree::toPrometheusString() const
     if (empty())
         return "";
     return formatPrometheusNode(*getRoot(), *this, 0);
+}
+
+String PrometheusQueryTree::toPrometheusJSON() const
+{
+    String result;
+    WriteBufferFromString output(result);
+    if (root)
+    {
+        PrometheusJSONWriter writer{output, timestamp_scale};
+        writer.writeNode(*root);
+    }
+    else
+    {
+        writeString("null", output);
+    }
+    output.finalize();
+    return result;
 }
 
 }

@@ -292,6 +292,290 @@ def test_format_query_formats_long_expressions_on_multiple_lines():
     }
 
 
+def _parse_query_matcher(name, value, matcher_type="="):
+    return {"name": name, "value": value, "type": matcher_type}
+
+
+def _parse_query_vector_selector(name, matchers, offset=0, timestamp=None, start_or_end=None):
+    return {
+        "type": "vectorSelector",
+        "name": name,
+        "offset": offset,
+        "offsetExpr": None,
+        "matchers": matchers,
+        "timestamp": timestamp,
+        "startOrEnd": start_or_end,
+        "anchored": False,
+        "smoothed": False,
+    }
+
+
+def _parse_query_matrix_selector(name, range_ms, matchers):
+    return {
+        "type": "matrixSelector",
+        "name": name,
+        "range": range_ms,
+        "rangeExpr": None,
+        "offset": 0,
+        "offsetExpr": None,
+        "matchers": matchers,
+        "timestamp": None,
+        "startOrEnd": None,
+        "anchored": False,
+        "smoothed": False,
+    }
+
+
+def _parse_query_call(name, arg_types, return_type, args, variadic=0):
+    return {
+        "type": "call",
+        "func": {
+            "name": name,
+            "argTypes": arg_types,
+            "variadic": variadic,
+            "returnType": return_type,
+        },
+        "args": args,
+    }
+
+
+def _parse_query_binary(lhs, rhs, operator, matching=None, bool_modifier=False):
+    return {
+        "type": "binaryExpr",
+        "op": operator,
+        "lhs": lhs,
+        "rhs": rhs,
+        "matching": matching,
+        "bool": bool_modifier,
+    }
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("1", {"type": "numberLiteral", "val": "1"}),
+        (
+            'up{job="api"}',
+            _parse_query_vector_selector(
+                "up",
+                [
+                    _parse_query_matcher("job", "api"),
+                    _parse_query_matcher("__name__", "up"),
+                ],
+            ),
+        ),
+        (
+            "rate(http_requests_total[5m])",
+            _parse_query_call(
+                "rate",
+                ["matrix"],
+                "vector",
+                [
+                    _parse_query_matrix_selector(
+                        "http_requests_total",
+                        300000,
+                        [_parse_query_matcher("__name__", "http_requests_total")],
+                    )
+                ],
+            ),
+        ),
+        (
+            "foo / bar",
+            _parse_query_binary(
+                _parse_query_vector_selector("foo", [_parse_query_matcher("__name__", "foo")]),
+                _parse_query_vector_selector("bar", [_parse_query_matcher("__name__", "bar")]),
+                "/",
+                {
+                    "card": "one-to-one",
+                    "labels": [],
+                    "on": False,
+                    "include": [],
+                    "fillValues": {"lhs": None, "rhs": None},
+                },
+            ),
+        ),
+        (
+            "foo / on(instance) group_left(job) bar",
+            _parse_query_binary(
+                _parse_query_vector_selector("foo", [_parse_query_matcher("__name__", "foo")]),
+                _parse_query_vector_selector("bar", [_parse_query_matcher("__name__", "bar")]),
+                "/",
+                {
+                    "card": "many-to-one",
+                    "labels": ["instance"],
+                    "on": True,
+                    "include": ["job"],
+                    "fillValues": {"lhs": None, "rhs": None},
+                },
+            ),
+        ),
+        (
+            "sum by (instance) (foo)",
+            {
+                "type": "aggregation",
+                "op": "sum",
+                "expr": _parse_query_vector_selector("foo", [_parse_query_matcher("__name__", "foo")]),
+                "param": None,
+                "grouping": ["instance"],
+                "without": False,
+            },
+        ),
+        (
+            "topk(3, foo)",
+            {
+                "type": "aggregation",
+                "op": "topk",
+                "expr": _parse_query_vector_selector("foo", [_parse_query_matcher("__name__", "foo")]),
+                "param": {"type": "numberLiteral", "val": "3"},
+                "grouping": [],
+                "without": False,
+            },
+        ),
+        (
+            "rate(foo[5m])[1h:1m]",
+            {
+                "type": "subquery",
+                "expr": _parse_query_call(
+                    "rate",
+                    ["matrix"],
+                    "vector",
+                    [
+                        _parse_query_matrix_selector(
+                            "foo", 300000, [_parse_query_matcher("__name__", "foo")]
+                        )
+                    ],
+                ),
+                "range": 3600000,
+                "rangeExpr": None,
+                "offset": 0,
+                "offsetExpr": None,
+                "step": 60000,
+                "stepExpr": None,
+                "timestamp": None,
+                "startOrEnd": None,
+            },
+        ),
+        (
+            "(foo + bar)",
+            {
+                "type": "parenExpr",
+                "expr": _parse_query_binary(
+                    _parse_query_vector_selector("foo", [_parse_query_matcher("__name__", "foo")]),
+                    _parse_query_vector_selector("bar", [_parse_query_matcher("__name__", "bar")]),
+                    "+",
+                    {
+                        "card": "one-to-one",
+                        "labels": [],
+                        "on": False,
+                        "include": [],
+                        "fillValues": {"lhs": None, "rhs": None},
+                    },
+                ),
+            },
+        ),
+        (
+            "foo offset 5m",
+            _parse_query_vector_selector(
+                "foo", [_parse_query_matcher("__name__", "foo")], offset=300000
+            ),
+        ),
+        (
+            "foo @ 123",
+            _parse_query_vector_selector(
+                "foo", [_parse_query_matcher("__name__", "foo")], timestamp=123000
+            ),
+        ),
+        (
+            "foo @ 1.23456789",
+            _parse_query_vector_selector(
+                "foo", [_parse_query_matcher("__name__", "foo")], timestamp=1235
+            ),
+        ),
+        (
+            "-foo",
+            {
+                "type": "unaryExpr",
+                "op": "-",
+                "expr": _parse_query_vector_selector("foo", [_parse_query_matcher("__name__", "foo")]),
+            },
+        ),
+    ],
+)
+def test_parse_query_returns_prometheus_ast(query, expected):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/parse_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    assert response.json() == {"status": "success", "data": expected}
+
+
+def test_parse_query_escapes_string_values():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/parse_query",
+        params={"query": r'label_replace(foo, "dst", "value\"quoted", "src", "regex")'},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    assert response.json() == {
+        "status": "success",
+        "data": _parse_query_call(
+            "label_replace",
+            ["vector", "string", "string", "string", "string"],
+            "vector",
+            [
+                _parse_query_vector_selector("foo", [_parse_query_matcher("__name__", "foo")]),
+                {"type": "stringLiteral", "val": "dst"},
+                {"type": "stringLiteral", "val": 'value"quoted'},
+                {"type": "stringLiteral", "val": "src"},
+                {"type": "stringLiteral", "val": "regex"},
+            ],
+        ),
+    }
+
+
+def test_parse_query_accepts_urlencoded_post_without_a_table():
+    query = "# comment\nsum by (job) (rate(http_requests_total[5m]))"
+    url = f"http://{node.ip_address}:9093/dynamic_table/api/v1/parse_query"
+    response = requests.post(
+        url,
+        data={"query": query},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    get_response = requests.get(url, params={"query": query})
+    assert get_response.status_code == requests.codes.ok, get_response.text
+    assert response.json() == get_response.json()
+
+
+@pytest.mark.parametrize("method", ["put", "delete"])
+def test_parse_query_rejects_unsupported_methods(method):
+    response = getattr(requests, method)(
+        f"http://{node.ip_address}:9093/api/v1/parse_query",
+        data={"query": "foo"},
+        params={"query": "foo"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == requests.codes.method_not_allowed, response.text
+    assert response.headers["Allow"] == "GET, POST"
+    assert response.json() == {
+        "status": "error",
+        "errorType": "method_not_allowed",
+        "error": "method not allowed",
+    }
+
+
+@pytest.mark.parametrize("query", ["", "foo +"])
+def test_parse_query_rejects_invalid_query(query):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/parse_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.bad_request, response.text
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["errorType"] == "bad_data"
+
+
 @pytest.mark.parametrize("query", ["", "foo +"])
 def test_format_query_rejects_invalid_query(query):
     response = requests.get(

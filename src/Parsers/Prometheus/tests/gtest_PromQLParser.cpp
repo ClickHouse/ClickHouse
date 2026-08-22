@@ -83,6 +83,10 @@ namespace
 
         if (lhs->node_type != rhs->node_type)
         {
+            if (rhs->node_type == PrometheusQueryTree::NodeType::ParenExpression && rhs->children.size() == 1)
+                return samePrometheusTree(lhs, rhs->children.front(), timestamp_scale);
+            if (lhs->node_type == PrometheusQueryTree::NodeType::ParenExpression && lhs->children.size() == 1)
+                return samePrometheusTree(lhs->children.front(), rhs, timestamp_scale);
             if (rhs->node_type == PrometheusQueryTree::NodeType::UnaryOperator)
             {
                 const auto & unary = typeid_cast<const PrometheusQueryTree::UnaryOperator &>(*rhs);
@@ -196,6 +200,8 @@ namespace
                     return false;
                 break;
             }
+            case NodeType::ParenExpression:
+                break;
         }
 
         if (lhs->children.size() != rhs->children.size())

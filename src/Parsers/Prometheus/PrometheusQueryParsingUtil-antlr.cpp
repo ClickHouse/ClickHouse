@@ -321,6 +321,7 @@ namespace
         using UnaryOperator = PrometheusQueryTree::UnaryOperator;
         using BinaryOperator = PrometheusQueryTree::BinaryOperator;
         using AggregationOperator = PrometheusQueryTree::AggregationOperator;
+        using ParenExpression = PrometheusQueryTree::ParenExpression;
 
         /// Makes a node for a string literal after unquoting and unescaping it.
         Node * makeStringLiteral(antlr4::tree::TerminalNode * ctx)
@@ -842,6 +843,25 @@ namespace
             return makeAggregationOperator(operator_name, arguments, ctx->by(), ctx->without());
         }
 
+        Node * makeParenExpression(antlr4_grammars::PromQLParser::ParensContext * ctx)
+        {
+            auto * expression_ctx = ctx->vectorOperation();
+            if (!expression_ctx)
+                throwInconsistentSchema("Parens", ctx->getText());
+
+            auto * expression = makeNode(expression_ctx);
+            if (!expression)
+            {
+                chassert(error_listener.hasError());
+                return nullptr;
+            }
+
+            auto new_node = std::make_unique<ParenExpression>();
+            new_node->result_type = expression->result_type;
+            addChild(new_node.get(), expression);
+            return addNode(std::move(new_node));
+        }
+
         /// ANTLR visitors:
         std::any visitLiteral(antlr4_grammars::PromQLParser::LiteralContext * ctx) override
         {
@@ -1017,6 +1037,11 @@ namespace
                 arguments.push_back(argument);
             }
             return makeAggregationOperator(ctx, arguments);
+        }
+
+        std::any visitParens(antlr4_grammars::PromQLParser::ParensContext * ctx) override
+        {
+            return makeParenExpression(ctx);
         }
 
         /// Converts std::any to a pointer to a Node.

@@ -50,6 +50,7 @@ public:
         UnaryOperator,
         BinaryOperator,
         AggregationOperator,
+        ParenExpression,
     };
 
     using ResultType = PrometheusQueryResultType;
@@ -232,6 +233,17 @@ public:
         String toString(const PrometheusQueryTree & tree) const override;
     };
 
+    class ParenExpression : public Node
+    {
+    public:
+        const Node * getExpression() const { return children.at(0); }
+        ParenExpression() { node_type = NodeType::ParenExpression; }
+        Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
+        String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
+        String toString(const PrometheusQueryTree & tree) const override;
+        int getPrecedence() const override { return getExpression()->getPrecedence(); }
+    };
+
     PrometheusQueryTree() = default;
     PrometheusQueryTree(const PrometheusQueryTree & src) { *this = src; }
     PrometheusQueryTree(PrometheusQueryTree && src) noexcept { *this = std::move(src); }
@@ -266,6 +278,8 @@ public:
 
     /// Returns the query formatted with the syntax and output conventions used by Prometheus' format_query API.
     String toPrometheusString() const;
+
+    String toPrometheusJSON() const;
 
     /// Returns the type of the query's returning value.
     ResultType getResultType() const;
