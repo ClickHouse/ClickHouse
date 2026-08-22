@@ -50,6 +50,13 @@ public:
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
+    /// The query id the `Join` engine locks under. Prefer the initial query id, so that every part
+    /// of a distributed query counts as the same query, but fall back to the current one when it is
+    /// empty: an empty id is `RWLockImpl::NO_QUERY`, which disables the self-deadlock detection that
+    /// `INSERT INTO join_table SELECT ... JOIN join_table` relies on. Every lock taken on this
+    /// storage - read and write - must use it, otherwise the two sides do not recognise each other.
+    static String getLockQueryId(const Context & context);
+
     HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const;
     HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const;
 
@@ -127,6 +134,10 @@ private:
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
     void rebuildFromBackups(ContextPtr context) override;
+
+    /// Build a fresh state from the committed backups without touching `join`. The caller decides
+    /// when and under which lock the result is published.
+    HashJoinPtr buildFromBackups() const;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
     /// Same as tryLockTimedWithContext, but returns `nullptr` if lock is already acquired by current query.
     static RWLockImpl::LockHolder tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context);

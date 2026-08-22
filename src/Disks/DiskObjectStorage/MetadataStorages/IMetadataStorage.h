@@ -305,6 +305,9 @@ public:
     /// answer `true`.
     virtual bool hasLocalFilesystemDirectoryNamespace() const { return false; }
 
+    /// See `IDisk::keepsMetadataAcrossRestarts`. Only the in-memory backends lose their metadata.
+    virtual bool keepsMetadataAcrossRestarts() const { return true; }
+
     /// True if transactions apply operations immediately instead of accumulating them until commit.
     virtual bool appliesOperationsEagerly() const
     {

@@ -32,6 +32,9 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Memory; }
 
+    /// Everything lives in RAM, so nothing survives a restart.
+    bool keepsMetadataAcrossRestarts() const override { return false; }
+
     bool supportsEmptyFilesWithoutBlobs() const override { return true; }
     bool areBlobPathsRandom() const override { return true; }
 

@@ -195,6 +195,8 @@ public:
     /// Same reasoning as above: the delegate owns the directory namespace.
     bool hasLocalFilesystemDirectoryNamespace() const override { return delegate->hasLocalFilesystemDirectoryNamespace(); }
 
+    bool keepsMetadataAcrossRestarts() const override { return delegate->keepsMetadataAcrossRestarts(); }
+
     MetadataStorageType getType() const override { return delegate->getType(); }
 
     /// Metadata on disk for an empty file can store empty list of blobs and size=0

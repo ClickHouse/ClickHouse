@@ -345,7 +345,11 @@ StorageStripeLog::StorageStripeLog(
         /// (such as `memory`, used by the `borrow_from_cache` object storage) the table directory is
         /// gone when the table is reattached, and the first write would fail with
         /// `DIRECTORY_DOESNT_EXIST`. Recreate it, the same way the `MergeTree` family does on attach.
-        if (!disk->existsDirectory(table_path))
+        ///
+        /// Only for such a disk: on a durable disk a missing table directory means the data is
+        /// gone, and recreating it would silently turn that into a working empty table. Leave it
+        /// missing there, so the table fails as before instead of hiding the loss.
+        if (!disk->keepsMetadataAcrossRestarts() && !disk->existsDirectory(table_path))
         {
             if (disk->isReadOnly())
                 table_directory_is_missing = true;

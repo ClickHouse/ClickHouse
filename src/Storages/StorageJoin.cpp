@@ -94,11 +94,17 @@ StorageJoin::StorageJoin(
     optimizeUnlocked();
 }
 
+String StorageJoin::getLockQueryId(const Context & context)
+{
+    String query_id = context.getInitialQueryId();
+    if (query_id.empty())
+        query_id = context.getCurrentQueryId();
+    return query_id;
+}
+
 RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
 {
-    String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
-    if (query_id.empty() && context)
-        query_id = context->getCurrentQueryId();
+    const String query_id = context ? getLockQueryId(*context) : RWLockImpl::NO_QUERY;
 
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
@@ -107,9 +113,7 @@ RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock,
 
 RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context)
 {
-    String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
-    if (query_id.empty() && context)
-        query_id = context->getCurrentQueryId();
+    const String query_id = context ? getLockQueryId(*context) : RWLockImpl::NO_QUERY;
 
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
@@ -220,33 +224,51 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         }
     }
 
-    /// Now acquire exclusive lock and modify storage.
-    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
-
-    join = std::move(new_data);
-    increment = 1;
-
+    /// Make the new backup durable before anything is published: a failure while writing it must
+    /// leave both the live state and the table directory exactly as they were.
     if (persistent)
     {
         backup_stream.flush();
         compressed_backup_buf.finalize();
         backup_buf->finalize();
-
-        std::vector<std::string> files;
-        disk->listFiles(path, files);
-        for (const auto & file_name: files)
-        {
-            if (file_name.ends_with(".bin"))
-                disk->removeFileIfExists(path + file_name);
-        }
-
-        disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
     }
     else
     {
         compressed_backup_buf.cancel();
         backup_buf->cancel();
     }
+
+    /// Now acquire exclusive lock and modify storage.
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
+
+    if (persistent)
+    {
+        /// Rewrite the table directory before publishing the mutated data in memory, so that a
+        /// failure cannot leave queries seeing a state that a restart would not reproduce. If the
+        /// rewrite does fail halfway, resynchronize the live state with whatever survived on disk.
+        try
+        {
+            std::vector<std::string> files;
+            disk->listFiles(path, files);
+            for (const auto & file_name: files)
+            {
+                if (file_name.ends_with(".bin"))
+                    disk->removeFileIfExists(path + file_name);
+            }
+
+            disk->replaceFile(path + tmp_backup_file_name, path + "1.bin");
+        }
+        catch (...)
+        {
+            /// The write lock is already held here, so rebuild in place instead of calling
+            /// `rebuildFromBackups`, which would try to take it again.
+            join = buildFromBackups();
+            throw;
+        }
+    }
+
+    join = std::move(new_data);
+    increment = 1;
 }
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
@@ -330,7 +352,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
 {
-    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const String query_id = context ? getLockQueryId(*context) : RWLockImpl::NO_QUERY;
     const std::chrono::milliseconds acquire_timeout
         = context ? std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()) : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
 
@@ -359,7 +381,7 @@ void StorageJoin::checkInsertIsPossible(ContextPtr context) const
             ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 }
 
-void StorageJoin::rebuildFromBackups(ContextPtr context)
+HashJoinPtr StorageJoin::buildFromBackups() const
 {
     auto rebuilt_join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
     forEachBackupBlock([&](const Block & block)
@@ -368,6 +390,12 @@ void StorageJoin::rebuildFromBackups(ContextPtr context)
         convertRightBlock(block_to_insert);
         rebuilt_join->addBlockToJoin(block_to_insert, true);
     });
+    return rebuilt_join;
+}
+
+void StorageJoin::rebuildFromBackups(ContextPtr context)
+{
+    auto rebuilt_join = buildFromBackups();
 
     /// Use the query id of the failed insert: waiting for a lock that the same query holds would
     /// never finish, so fail instead of blocking until `lock_acquire_timeout`.

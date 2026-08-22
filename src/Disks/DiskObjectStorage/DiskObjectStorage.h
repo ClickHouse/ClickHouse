@@ -217,6 +217,8 @@ public:
 
     bool hasLocalFilesystemDirectoryNamespace() const override { return metadata_storage->hasLocalFilesystemDirectoryNamespace(); }
 
+    bool keepsMetadataAcrossRestarts() const override { return metadata_storage->keepsMetadataAcrossRestarts(); }
+
     /// Is object write-once?
     /// For example: S3ObjectStorage with MetadataStorageFromPlainObjectStorage is write once, this
     /// means that it does support BACKUP to this disk, but does not support INSERT into

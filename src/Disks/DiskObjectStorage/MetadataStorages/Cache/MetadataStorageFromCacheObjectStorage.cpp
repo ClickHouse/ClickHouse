@@ -37,6 +37,12 @@ bool MetadataStorageFromCacheObjectStorage::hasLocalFilesystemDirectoryNamespace
     return underlying->hasLocalFilesystemDirectoryNamespace();
 }
 
+bool MetadataStorageFromCacheObjectStorage::keepsMetadataAcrossRestarts() const
+{
+    /// The metadata is the underlying storage's; caching the data does not make it persistent.
+    return underlying->keepsMetadataAcrossRestarts();
+}
+
 MetadataStorageType MetadataStorageFromCacheObjectStorage::getType() const
 {
     return underlying->getType();

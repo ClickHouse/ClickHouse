@@ -213,6 +213,19 @@ TEST_F(MetadataInMemoryTest, TestNoLocalFilesystemDirectoryNamespace)
     EXPECT_FALSE(wrapped->hasLocalFilesystemDirectoryNamespace());
 }
 
+/// `keepsMetadataAcrossRestarts` tells storages whether a table directory that is missing on
+/// attach is expected (the metadata is in RAM) or a sign of data loss on a durable disk. An
+/// in-memory backend must report `false`, and the cache wrapper must forward it: caching the data
+/// does not make the metadata persistent.
+TEST_F(MetadataInMemoryTest, TestDoesNotKeepMetadataAcrossRestarts)
+{
+    auto metadata = getMetadataStorage();
+    EXPECT_FALSE(metadata->keepsMetadataAcrossRestarts());
+
+    auto wrapped = std::make_shared<DB::MetadataStorageFromCacheObjectStorage>(metadata);
+    EXPECT_FALSE(wrapped->keepsMetadataAcrossRestarts());
+}
+
 /// `MergeTree` reads a part directory's mtime as the part `modification_time`
 /// (`DataPartStorageOnDiskBase::getLastModified`), and sets it on the temp part directory just
 /// before renaming it into place. Verify directories carry timestamps: `getLastModified` does

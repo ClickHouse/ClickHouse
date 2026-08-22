@@ -498,6 +498,11 @@ public:
     /// directory (e.g. `StorageDistributed`'s local insert queue) must check this one.
     virtual bool hasLocalFilesystemDirectoryNamespace() const { return true; }
 
+    /// True if everything this disk stores - including the directory tree - is still there after a
+    /// server restart. A disk with a non-persistent metadata type (`memory`) comes up empty, so a
+    /// table directory that is missing on attach is expected there rather than a sign of data loss.
+    virtual bool keepsMetadataAcrossRestarts() const { return true; }
+
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
