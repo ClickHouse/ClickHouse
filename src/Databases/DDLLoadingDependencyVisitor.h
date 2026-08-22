@@ -17,7 +17,10 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 /// Returns a list of all tables which should be loaded before a specified table.
 /// For example, a local ClickHouse table should be loaded before a dictionary which uses that table as its source.
 /// Does not validate AST, works a best-effort way.
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & default_database, bool can_throw = false);
+/// `current_database` is the database against which the unqualified table names of the CREATE query
+/// have to be resolved: the current database of the query for a freshly executed CREATE, or the
+/// database owning the table for the metadata loaded at startup.
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw = false);
 
 
 class DDLMatcherBase
@@ -35,7 +38,11 @@ class DDLLoadingDependencyVisitor : public DDLMatcherBase
 public:
     struct Data
     {
+        /// The default database of the server, used where a nested query is executed with the global
+        /// context rather than with the context of the CREATE query.
         String default_database;
+        /// The database against which the unqualified table names of the CREATE query are resolved.
+        String current_database;
         TableNamesSet dependencies;
         ContextPtr global_context;
         ASTPtr create_query;

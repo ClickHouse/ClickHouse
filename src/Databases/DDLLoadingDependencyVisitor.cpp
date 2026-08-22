@@ -24,11 +24,12 @@ namespace DB
 
 using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & default_database, bool can_throw)
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, const String & current_database, bool can_throw)
 {
     chassert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
-    data.default_database = default_database;
+    data.default_database = global_context->getCurrentDatabase();
+    data.current_database = current_database;
     data.create_query = ast;
     data.global_context = global_context;
     data.table_name = table;
@@ -151,7 +152,7 @@ void DDLLoadingDependencyVisitor::addDependenciesOfExecutedSubqueries(const ASTP
     if (ast->as<ASTSubquery>())
     {
         /// The subquery is executed as a whole, so everything it reads is a dependency.
-        auto subquery_dependencies = getDependenciesFromCreateQuery(data.global_context, data.table_name, ast, data.default_database);
+        auto subquery_dependencies = getDependenciesFromCreateQuery(data.global_context, data.table_name, ast, data.current_database);
         data.dependencies.merge(subquery_dependencies.dependencies);
         return;
     }
