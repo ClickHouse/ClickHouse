@@ -97,6 +97,8 @@ public:
     bool treatsConstTupleAsPoint(size_t arg_index) const override { return function->treatsConstTupleAsPoint(arg_index); }
 
 
+    bool isVolumeReducing() const override { return function->isVolumeReducing(); }
+
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
     ComparisonOrderDomain getComparisonOrderDomain() const override
@@ -165,6 +167,7 @@ public:
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     bool isServerConstant() const override { return function->isServerConstant(); }
+    bool isVolumeReducing() const override { return function->isVolumeReducing(); }
     bool isShortCircuit(IFunctionBase::ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
     bool isHigherOrderFunction() const override { return function->isHigherOrderFunction(); }
     bool allowsOmittingParentheses() const override { return function->allowsOmittingParentheses(); }
