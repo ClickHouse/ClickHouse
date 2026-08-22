@@ -33,10 +33,21 @@ attach_uuid() { ${CLICKHOUSE_CLIENT} -q "SELECT reinterpretAsUUID(MD5('${CLICKHO
 denied_on() { grep -qiF "necessary to have the grant TABLE ENGINE ON $1"; }
 
 # The absence of a denial is not success. A parse error, a UUID collision or any other failure leaves
-# the same empty match, so every arm asserting a statement was permitted also asserts that it created
-# the table. Queried as the admin, so a missing `SELECT` grant cannot hide the row, and after the
-# statement rather than before, since a detached table has no row here either.
-attached() { [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name = '$1'")" = "1" ]; }
+# the same empty match, so every arm asserting a statement was permitted also requires exit status 0
+# and asserts that the table is there. Queried as the admin, so a missing `SELECT` grant cannot hide
+# the row, and after the statement rather than before, since a detached table has no row here either.
+# A failure of this probe itself is reported instead of read as absence, which the arms expecting
+# nothing to have been created would otherwise accept as their pass.
+attached() {
+    local count rc
+    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name = '$1'")
+    rc=$?
+    if [ "$rc" -ne 0 ] || { [ "$count" != "0" ] && [ "$count" != "1" ]; }; then
+        echo "attached-probe-FAILED (unexpected) for $1: rc=$rc out='$count'"
+        return 2
+    fi
+    [ "$count" = "1" ]
+}
 
 USER="url_only_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER}"
@@ -67,13 +78,18 @@ ${CLICKHOUSE_CLIENT} --user "${USER}" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.${
     | denied_on AzureBlobStorage && echo "attach-azure-engine-denied" || echo "NOT DENIED"
 
 echo "--- ATTACH carrying a full definition: URL('http://...') is still allowed (URL engine) ---"
+# A table left behind by an interrupted run would make this ATTACH fail `TABLE_ALREADY_EXISTS` while
+# still leaving the name present, so the target is removed first and its absence is what makes the
+# post-statement presence below evidence that this statement is the one that created it.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_a_http SYNC"
 out=$(${CLICKHOUSE_CLIENT} --user "${USER}" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_a_http UUID '$(attach_uuid a_http)' (a UInt32) ENGINE = URL('http://example.com/data.csv', 'CSV')" 2>&1)
+rc=$?
 if echo "$out" | grep -qiE "Not enough privileges|ACCESS_DENIED"; then
     echo "attach-http-DENIED (unexpected)"
-elif attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_a_http"; then
+elif [ "$rc" -eq 0 ] && attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_a_http"; then
     echo "attach-http-allowed"
 else
-    echo "attach-http-FAILED (unexpected): $out"
+    echo "attach-http-FAILED (unexpected): rc=$rc $out"
 fi
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_a_http"
 
@@ -81,16 +97,18 @@ ${CLICKHOUSE_CLIENT} --user "${USER}" -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATA
 # re-checked: revoking the target engine grant must not make an existing table unattachable.
 echo "--- short ATTACH replays stored metadata and is not re-checked, even for a dispatched engine ---"
 ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON File TO ${USER}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach SYNC"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach (s String) ENGINE = URL('file://${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}_r.csv', 'LineAsString')"
 ${CLICKHOUSE_CLIENT} -q "REVOKE TABLE ENGINE ON File FROM ${USER}"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "DETACH TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach"
 out=$(${CLICKHOUSE_CLIENT} --user "${USER}" -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach" 2>&1)
+rc=$?
 if echo "$out" | grep -qiE "Not enough privileges|ACCESS_DENIED"; then
     echo "short-attach-DENIED (unexpected)"
-elif attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach"; then
+elif [ "$rc" -eq 0 ] && attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach"; then
     echo "short-attach-allowed"
 else
-    echo "short-attach-FAILED (unexpected): $out"
+    echo "short-attach-FAILED (unexpected): rc=$rc $out"
 fi
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_reattach"
 
@@ -100,6 +118,8 @@ ${CLICKHOUSE_CLIENT} --user "${USER}" -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATA
 # the unique name alone is stable across repeated runs of one test.
 BACKUP="Disk('backups', '04401_${CLICKHOUSE_TEST_UNIQUE_NAME}_$$')"
 echo "--- RESTORE carries a fresh definition and is checked like CREATE: URL('file://...') needs the File grant ---"
+# The backup must be taken from the definition written here, not from one a previous run left behind.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore SYNC"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore (s String) ENGINE = URL('file://${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}_b.csv', 'LineAsString')"
 ${CLICKHOUSE_CLIENT} -q "BACKUP TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore TO ${BACKUP} FORMAT Null"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore SYNC"
@@ -110,12 +130,13 @@ attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_restore" && echo "RESTORED ANYWAY (unex
 
 ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON File TO ${USER}"
 out=$(${CLICKHOUSE_CLIENT} --user "${USER}" -q "RESTORE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore FROM ${BACKUP} FORMAT Null" 2>&1)
+rc=$?
 if echo "$out" | grep -qiE "Not enough privileges|ACCESS_DENIED"; then
     echo "restore-with-grant-DENIED (unexpected)"
-elif attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_restore"; then
+elif [ "$rc" -eq 0 ] && attached "${CLICKHOUSE_TEST_UNIQUE_NAME}_restore"; then
     echo "restore-with-grant-allowed"
 else
-    echo "restore-with-grant-FAILED (unexpected): $out"
+    echo "restore-with-grant-FAILED (unexpected): rc=$rc $out"
 fi
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_TEST_UNIQUE_NAME}_restore SYNC"
 
