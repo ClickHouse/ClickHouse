@@ -52,6 +52,10 @@ def make_fake_docs(root):
             "        'status': 'matched',\n"
             "        'docusaurus_file': 'docs/sql-reference/statements/create/dictionary/sources/local-file.md',\n"
             "        'mintlify_file': 'reference/statements/create/dictionary/sources/local-file.mdx',\n"
+            "    }, {\n"
+            "        'status': 'matched',\n"
+            "        'docusaurus_file': 'docs/sql-reference/statements/create/dictionary/layouts/flat.md',\n"
+            "        'mintlify_file': 'reference/statements/create/dictionary/layouts/flat.mdx',\n"
             "    }]\n"
             "    return object(), rows\n")
     open(os.path.join(mig, "slug-map.csv"), "w", encoding="utf-8").close()
@@ -69,6 +73,13 @@ def make_fake_docs(root):
     os.makedirs(ds)
     with open(os.path.join(ds, "local-file.mdx"), "w", encoding="utf-8") as f:
         f.write("# Local file\n" + marker)
+    # Dictionary-layout family: also discovered from the stub file map.
+    layouts = os.path.join(
+        root, "reference", "statements", "create", "dictionary", "layouts"
+    )
+    os.makedirs(layouts)
+    with open(os.path.join(layouts, "flat.mdx"), "w", encoding="utf-8") as f:
+        f.write("# Flat\n" + marker)
     # Aggregate family: discovered from the migrated tree.
     agg = os.path.join(root, "reference", "functions", "aggregate-functions")
     os.makedirs(agg)
@@ -108,6 +119,7 @@ def main():
             "aggregate",
             "table-engine",
             "dictionary-source",
+            "dictionary-layout",
         ]:
             expect_blocked(mod, docs, only)
 
