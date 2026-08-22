@@ -12,7 +12,6 @@ DROP TABLE IF EXISTS t_ttl_merged_empty_part;
 CREATE TABLE t_ttl_merged_empty_part (d DateTime('UTC')) ENGINE = MergeTree ORDER BY tuple()
     TTL d + INTERVAL 6311520000 SECOND
     SETTINGS min_bytes_for_full_part_storage = 0, materialize_ttl_recalculate_only = 0, remove_empty_parts = 0;
-SYSTEM STOP MERGES t_ttl_merged_empty_part;
 
 INSERT INTO t_ttl_merged_empty_part VALUES ('2020-01-01 00:00:00');
 -- Provable constant shift that expires the whole part: it is replaced with an empty part.
@@ -21,7 +20,6 @@ SELECT count() FROM t_ttl_merged_empty_part;
 
 -- A live part with a fingerprint of its own, merged with the empty one.
 INSERT INTO t_ttl_merged_empty_part VALUES ('2100-01-01 00:00:00');
-SYSTEM START MERGES t_ttl_merged_empty_part;
 OPTIMIZE TABLE t_ttl_merged_empty_part FINAL;
 
 -- The merged part still knows the expression its bounds were computed under, so this is a shift.
