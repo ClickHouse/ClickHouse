@@ -1132,6 +1132,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
 
+    /// An inversion may only be pushed onto a node whose negation equals its two-valued complement.
+    /// `NOT NULL` is `NULL`, so absorb the inversion at an all-NULL node. That substitutes the
+    /// operand's type for the `not()` result type, so it is only valid where the value is discarded.
+    if (need_inversion && boolean_context
+        && ((node.column && node.column->onlyNull()) || node.result_type->onlyNull()))
+        return cloneDAGWithInversionPushDown(node, inverted_dag, inputs_mapping, context, false, boolean_context);
+
     switch (node.type)
     {
         case ActionsDAG::ActionType::INPUT:
@@ -1667,7 +1674,8 @@ static bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
     }
-    else if (!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+    else if ((!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+             || !canBeAccurateCastOrNullTarget(in_argument_type))
     {
         /// We cannot apply castColumnAccurateOrNull() because it will throw exception
         return false;
@@ -2170,7 +2178,10 @@ static bool applyDeterministicDagToColumn(
         /// transform DAG still receives the type it was built against.
         const DataTypePtr probe_type = removeLowCardinality(target_type);
 
-        if (!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+        /// passes it and then throws in the cast below.
+        if ((!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+            || !canBeAccurateCastOrNullTarget(probe_type))
         {
             /// We cannot apply castColumnAccurateOrNull() because it will throw exception
             return false;
@@ -2582,7 +2593,9 @@ static bool tryPrepareSetColumnsForIndex(
             continue;
         }
 
-        if (!key_column_type->canBeInsideNullable())
+        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+        /// passes it and then throws in `castColumnAccurateOrNull` below.
+        if (!key_column_type->canBeInsideNullable() || !canBeAccurateCastOrNullTarget(key_column_type))
             return false;
 
         /// Marks the elements that are NULL in the set itself, e.g. the NULL in `notHas([1, NULL], x)`
