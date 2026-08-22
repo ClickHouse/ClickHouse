@@ -9,9 +9,11 @@ does not contain the new tests.
 Instead, this job builds a "before" binary from the merge-base sources with ONLY the
 PR's unit-test file changes overlaid on top (the test, but not the fix), and then
 runs the touched test suites on it — at least one must FAIL or crash. When the
-"before" binary fails to compile and every compiler error lies inside the overlaid
-test files, the changed test code depends on the interface the fix introduces (the
-typical case is a call site adapted to a changed function signature); the unit side
+"before" binary fails to compile and the failure belongs to the overlaid test files
+alone (every compiler error is inside them, or every translation unit that failed to
+compile is one of them), the changed test code depends on the interface the fix
+introduces (the typical case is a call site adapted to a changed function signature);
+the unit side
 then has nothing it can judge at runtime, the PR author cannot avoid the adaptation,
 and the job reports the build failure as expected (XFAIL, nothing to validate)
 instead of staying red forever. Any other build failure is an infrastructure or
@@ -493,6 +495,98 @@ def attribute_compile_errors(compile_result, test_files):
     return sorted(overlaid), sorted(other)
 
 
+# ninja prints `FAILED: <outputs>` and then the exact command it ran, so the compiled
+# translation unit of a failed edge is the `-c <source>` argument of the next line.
+_NINJA_FAILED_LINE_RE = re.compile(r"^FAILED:(?:\s|$)")
+_COMPILE_SOURCE_RE = re.compile(r"(?:^|\s)-c\s+(\S+)")
+
+
+def failed_compile_edge_sources(compile_result):
+    """Split the before-build's failed ninja edges into compiled sources vs the rest.
+
+    Returns `(sources, unattributable)` - sorted lists of, respectively, the compiled
+    translation units of the failed edges (repo-relative for paths under the
+    before-worktree) and the outputs of every failed edge whose command carries no
+    `-c <source>`, such as a link step, an archive step or a custom command. A
+    non-empty `unattributable` means the build failure cannot be attributed from the
+    edges alone.
+    """
+    marker = f"{BEFORE_SRC}/"
+    sources = set()
+    unattributable = set()
+    for log in compile_result.files or []:
+        try:
+            with open(log, "r", errors="replace") as f:
+                content = _ANSI_ESCAPE_RE.sub("", f.read())
+        except OSError as e:
+            print(f"WARNING: could not read compile log {log}: {e}")
+            continue
+        lines = content.splitlines()
+        for i, line in enumerate(lines):
+            if not _NINJA_FAILED_LINE_RE.match(line):
+                continue
+            command = lines[i + 1] if i + 1 < len(lines) else ""
+            m = _COMPILE_SOURCE_RE.search(command)
+            if not m:
+                unattributable.add(line[len("FAILED:") :].strip() or "unnamed edge")
+                continue
+            path = m.group(1)
+            idx = path.find(marker)
+            sources.add(path[idx + len(marker) :] if idx != -1 else path)
+    return sorted(sources), sorted(unattributable)
+
+
+def compile_failure_attribution(compile_result, test_files):
+    """Decide whether the before-build failure belongs to the overlaid test files alone.
+
+    Returns `(reason, other_errors)`: `reason` is a non-empty sentence naming the
+    attribution basis when the failure is fully attributable to the overlaid tests (the
+    caller then reports XFAIL), and an empty string when it is not (the caller fails
+    close with ERROR). `other_errors` is the error-carrying paths outside the overlaid
+    tests, for the ERROR message.
+
+    Two attribution bases, tried in that order:
+
+    * the path on every `error:` diagnostic is an overlaid test file;
+    * every translation unit that failed to compile is an overlaid test file. This covers
+      the failure clang reports inside a header the overlaid test includes: a
+      construction through a template (`std::make_unique` and friends) is performed on a
+      libcxx line, so the only `error:` line names a contrib path while the overlaid test
+      appears merely on a `note: in instantiation of ...` line. The failing ninja edge
+      names the translation unit instead, which is what attribution really asks, because
+      the before-worktree is merge-base sources with only the PR's test files overlaid:
+      a broken fix source or contrib header is a different translation unit and fails
+      its own edge.
+
+    The second basis requires all three of the following, and each one keeps a fail-close
+    property: a parsable compiler error must exist somewhere (a killed compiler or an
+    internal ninja error is not attributable), every failed edge must be a compile whose
+    source could be extracted (a link failure is not attributable), and every one of
+    those sources must be an overlaid test file.
+    """
+    overlaid_errors, other_errors = attribute_compile_errors(compile_result, test_files)
+    if overlaid_errors and not other_errors:
+        return (
+            "every compile error is inside the PR's changed test files ("
+            + ", ".join(overlaid_errors)
+            + ")",
+            other_errors,
+        )
+    if not (overlaid_errors or other_errors):
+        return "", other_errors
+    sources, unattributable = failed_compile_edge_sources(compile_result)
+    if unattributable or not sources:
+        return "", other_errors
+    if any(source not in set(test_files) for source in sources):
+        return "", other_errors
+    return (
+        "every translation unit that failed to compile is one of the PR's changed test "
+        "files (" + ", ".join(sources) + "), and the compile error is raised inside a "
+        "header they include",
+        other_errors,
+    )
+
+
 def run_gtests(binary_path, gtest_filter, name):
     # ASan+UBSan build: do not wrap with gdb (LSan is incompatible with the debugger),
     # and disable the uninstrumented FIPS provider to avoid sanitizer false positives.
@@ -707,7 +801,9 @@ def main():
     # 4b. Compile. A compile failure is NOT accepted as a reproduction: it only proves
     # the overlaid test references *some* code the PR adds, not that it catches the bug
     # at runtime. Attribute the failure instead:
-    #  * every compiler error inside the overlaid test files → the changed test code
+    #  * every compiler error inside the overlaid test files, or every translation unit
+    #    that failed to compile being an overlaid test file (compile_failure_attribution)
+    #    → the changed test code
     #    depends on the fix's interface (typically a call site adapted to a changed
     #    signature). The PR author cannot avoid that adaptation and the unit side has
     #    nothing left to judge, so report the step as an expected failure (XFAIL) with
@@ -715,21 +811,21 @@ def main():
     #    functional/integration tests, new_tests_check.py still demands a real
     #    validation from those jobs; for a unit-only PR the merge gate already treats
     #    inconclusive as non-blocking, so this changes report truthfulness, not gating.
-    #  * any error elsewhere (fix sources, contrib, the linker, no parsable diagnostic)
+    #  * anything else (a failed fix-source or contrib translation unit, the linker, no
+    #    parsable diagnostic)
     #    → cannot be attributed to the touched test changes; fail close (ERROR).
     compile_result = compile_before_binary()
     if not compile_result.is_ok():
-        overlaid_errors, other_errors = attribute_compile_errors(
+        attributed_to, other_errors = compile_failure_attribution(
             compile_result, test_files
         )
-        if overlaid_errors and not other_errors:
+        if attributed_to:
             compile_result.set_label(Result.Label.XFAIL)
             compile_result.set_status(Result.Status.XFAIL)
             compile_result.set_info(
-                "The before-binary cannot compile the overlaid unit-test changes: every "
-                "compile error is inside the PR's changed test files ("
-                + ", ".join(overlaid_errors)
-                + "). The changed test code depends on the interface this PR introduces "
+                "The before-binary cannot compile the overlaid unit-test changes: "
+                + attributed_to
+                + ". The changed test code depends on the interface this PR introduces "
                 "(e.g. a call site adapted to a changed signature), so there is nothing "
                 "the unit side can validate on the merge base. This is expected, not an "
                 "error — and it is not counted as a reproduction either. "

@@ -23,9 +23,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.unit_tests_bugfix_validation_job import (
     _UNIT_TEST_FILE_RE,
+    attribute_compile_errors,
     before_run_started_a_test,
     build_gtest_filter,
+    compile_failure_attribution,
     derive_test_suites,
+    failed_compile_edge_sources,
     get_changed_unit_test_files,
     gitmodules_shape_violation,
 )
@@ -547,6 +550,236 @@ def test_before_run_started_a_test_no_marker_is_inconclusive(tmp_path):
 def test_before_run_started_a_test_handles_no_files():
     assert before_run_started_a_test(_FakeResult(None)) is False
     assert before_run_started_a_test(_FakeResult([])) is False
+
+
+# --------------------------------------------------------------------------
+# compile_failure_attribution: which before-build compile failures belong to
+# the overlaid test files alone (XFAIL) and which must fail close (ERROR).
+#
+# Attribution by the path on the `error:` line alone misses the failure clang
+# reports inside a header the overlaid test includes: a construction through
+# `std::make_unique` is performed on a libcxx line, so the only `error:` line
+# names a contrib path and the overlaid test appears merely on a `note: in
+# instantiation of ...` line. The failing ninja edge names the translation unit
+# instead. Every other shape (a failed fix-source or contrib translation unit,
+# a link failure, no parsable diagnostic) must stay an ERROR.
+# --------------------------------------------------------------------------
+_TEST_FILE = "src/Disks/tests/gtest_write_buffer_inline_or_blob.cpp"
+_BEFORE = "/ClickHouse/ci/tmp/before_src"
+
+
+def _compile_log(tmp_path, *contents):
+    """A fake compile Result whose `files` are logs with the given contents."""
+    paths = []
+    for i, content in enumerate(contents):
+        log = tmp_path / f"compile_{i}.log"
+        log.write_text(content)
+        paths.append(str(log))
+    return _FakeResult(paths)
+
+
+def _failed_compile_edge(output, source):
+    """A ninja `FAILED:` edge for `output`, followed by a clang command line
+    compiling `source` (abridged, but with the real flag ordering: the `-c
+    <source>` pair is the last thing on the line, after `-o <output>`)."""
+    return (
+        f"FAILED: {output} \n"
+        f"/usr/local/bin/clang++-22 --target=x86_64-linux-gnu -DNDEBUG -O2 "
+        f"-fsanitize=address,undefined -std=c++23 -MD -MT {output} -MF {output}.d "
+        f"-o {output} -c {source}\n"
+    )
+
+
+# The diagnostic of the real failure, verbatim in shape: the single `error:` line
+# is inside libcxx, the overlaid test only carries an instantiation `note:`, and a
+# further `note:` points at the fix source (which is why a note-path rule is unsafe).
+_TEMPLATE_INSTANTIATION_DIAGNOSTIC = (
+    f"In file included from {_BEFORE}/{_TEST_FILE}:1:\n"
+    f"In file included from {_BEFORE}/contrib/googletest/googletest/include/gtest/gtest.h:55:\n"
+    f"{_BEFORE}/contrib/llvm-project/libcxx/include/__memory/unique_ptr.h:770:30: error: "
+    "no matching constructor for initialization of 'DB::WriteBufferInlineOrBlob'\n"
+    f"{_BEFORE}/{_TEST_FILE}:56:21: note: in instantiation of function template "
+    "specialization 'std::make_unique<DB::WriteBufferInlineOrBlob, ...>' requested here\n"
+    f"{_BEFORE}/src/Disks/IO/WriteBufferInlineOrBlob.h:29:5: note: candidate constructor "
+    "not viable: requires 6 arguments, but 7 were provided\n"
+)
+
+
+def _template_instantiation_log(edge_output="src/CMakeFiles/x.dir/gtest_wb.cpp.o"):
+    return (
+        "[16276/17328] Building CXX object src/CMakeFiles/x.dir/gtest_other.cpp.o\n"
+        + _failed_compile_edge(edge_output, f"{_BEFORE}/{_TEST_FILE}")
+        + _TEMPLATE_INSTANTIATION_DIAGNOSTIC
+        + "ninja: build stopped: subcommand failed.\n"
+    )
+
+
+def test_attribution_covers_error_raised_inside_an_included_header(tmp_path):
+    """The gap this fixes: the only `error:` line is in libcxx, but the sole failed
+    translation unit is the overlaid test, so the failure is attributable to it."""
+    result = _compile_log(tmp_path, _template_instantiation_log())
+
+    # Path-of-error attribution alone cannot see it: the test file is on a `note:`.
+    overlaid, other = attribute_compile_errors(result, [_TEST_FILE])
+    assert overlaid == []
+    assert other == ["contrib/llvm-project/libcxx/include/__memory/unique_ptr.h"]
+
+    reason, _ = compile_failure_attribution(result, [_TEST_FILE])
+    assert reason
+    assert _TEST_FILE in reason
+
+
+def test_attribution_keeps_error_in_overlaid_test_wording(tmp_path):
+    """The pre-existing basis (every `error:` path is an overlaid test) is unchanged
+    and still reported as such, not as the new translation-unit wording."""
+    log = (
+        _failed_compile_edge(
+            "src/CMakeFiles/x.dir/gtest_wb.cpp.o", f"{_BEFORE}/{_TEST_FILE}"
+        )
+        + f"{_BEFORE}/{_TEST_FILE}:56:21: error: too many arguments to function call\n"
+    )
+    reason, other = compile_failure_attribution(
+        _compile_log(tmp_path, log), [_TEST_FILE]
+    )
+    assert "every compile error is inside the PR's changed test files" in reason
+    assert other == []
+
+
+def test_attribution_fails_close_when_a_fix_source_also_fails(tmp_path):
+    """A broken fix source is its own translation unit and fails its own edge, so the
+    failure is not attributable to the overlaid tests."""
+    log = (
+        _failed_compile_edge(
+            "src/CMakeFiles/x.dir/gtest_wb.cpp.o", f"{_BEFORE}/{_TEST_FILE}"
+        )
+        + _TEMPLATE_INSTANTIATION_DIAGNOSTIC
+        + _failed_compile_edge(
+            "src/CMakeFiles/y.dir/WriteBufferInlineOrBlob.cpp.o",
+            f"{_BEFORE}/src/Disks/IO/WriteBufferInlineOrBlob.cpp",
+        )
+        + f"{_BEFORE}/src/Disks/IO/WriteBufferInlineOrBlob.cpp:12:9: error: "
+        "use of undeclared identifier 'sync_metadata_callback'\n"
+    )
+    reason, _ = compile_failure_attribution(_compile_log(tmp_path, log), [_TEST_FILE])
+    assert reason == ""
+
+
+def test_attribution_fails_close_when_a_contrib_translation_unit_fails(tmp_path):
+    """A contrib source failing on its own edge is a toolchain/contrib break, never an
+    unavoidable test adaptation."""
+    log = (
+        _failed_compile_edge(
+            "contrib/zstd/CMakeFiles/z.dir/zstd.c.o",
+            f"{_BEFORE}/contrib/zstd/lib/zstd.c",
+        )
+        + f"{_BEFORE}/contrib/zstd/lib/zstd.c:99:1: error: expected identifier\n"
+    )
+    reason, _ = compile_failure_attribution(_compile_log(tmp_path, log), [_TEST_FILE])
+    assert reason == ""
+
+
+def test_attribution_fails_close_on_a_link_failure(tmp_path):
+    """A failed edge with no `-c <source>` (the linker) is not attributable, even though
+    a compiler-style `error:` line inside an overlaid test is present as well."""
+    log = (
+        _failed_compile_edge(
+            "src/CMakeFiles/x.dir/gtest_wb.cpp.o", f"{_BEFORE}/{_TEST_FILE}"
+        )
+        + _TEMPLATE_INSTANTIATION_DIAGNOSTIC
+        + "FAILED: src/unit_tests_dbms \n"
+        + ": && /usr/local/bin/clang++-22 -fsanitize=address src/CMakeFiles/x.dir/a.o "
+        "-o src/unit_tests_dbms && :\n"
+        "ld.lld: error: undefined symbol: DB::WriteBufferInlineOrBlob::finalizeImpl()\n"
+    )
+    sources, unattributable = failed_compile_edge_sources(_compile_log(tmp_path, log))
+    assert sources == [_TEST_FILE]
+    assert unattributable == ["src/unit_tests_dbms"]
+
+    reason, _ = compile_failure_attribution(_compile_log(tmp_path, log), [_TEST_FILE])
+    assert reason == ""
+
+
+def test_attribution_fails_close_without_a_parsable_diagnostic(tmp_path):
+    """A killed compiler produces a failed compile edge on the overlaid test but no
+    parsable diagnostic, so nothing states the failure is a test adaptation."""
+    log = (
+        _failed_compile_edge(
+            "src/CMakeFiles/x.dir/gtest_wb.cpp.o", f"{_BEFORE}/{_TEST_FILE}"
+        )
+        + "clang++-22: error\n"  # no `path:line:` prefix, so not a diagnostic
+        + "Killed\n"
+        + "ninja: build stopped: subcommand failed.\n"
+    )
+    result = _compile_log(tmp_path, log)
+    assert attribute_compile_errors(result, [_TEST_FILE]) == ([], [])
+    # The edge itself is attributable; only the missing diagnostic holds it back.
+    assert failed_compile_edge_sources(result) == ([_TEST_FILE], [])
+
+    reason, _ = compile_failure_attribution(result, [_TEST_FILE])
+    assert reason == ""
+
+
+def test_attribution_strips_ansi_colour_before_scanning_edges(tmp_path):
+    """cmake/ninja colour the output when a TTY is detected; the escape stripping must
+    apply to the edge scan too, not only to the error scan."""
+    plain = _template_instantiation_log()
+    coloured = "".join(f"\x1b[1m{line}\x1b[0m\n" for line in plain.splitlines())
+    reason, _ = compile_failure_attribution(
+        _compile_log(tmp_path, coloured), [_TEST_FILE]
+    )
+    assert reason
+    assert _TEST_FILE in reason
+
+
+def test_attribution_scans_every_log_and_deduplicates(tmp_path):
+    """Edges spread across several logs are all scanned, and a repeated edge yields one
+    deterministic, sorted entry."""
+    other_test = "src/Common/tests/gtest_a.cpp"
+    log_a = _template_instantiation_log()
+    log_b = (
+        _failed_compile_edge(
+            "src/CMakeFiles/x.dir/gtest_a.cpp.o", f"{_BEFORE}/{other_test}"
+        )
+        + f"{_BEFORE}/{other_test}:7:1: error: unknown type name 'Foo'\n"
+    )
+    result = _compile_log(tmp_path, log_a, log_b, log_a)
+    assert failed_compile_edge_sources(result) == ([other_test, _TEST_FILE], [])
+
+    reason, _ = compile_failure_attribution(result, [_TEST_FILE, other_test])
+    assert reason
+    assert _TEST_FILE in reason and other_test in reason
+
+
+def test_failed_compile_edge_sources_keeps_paths_outside_the_worktree(tmp_path):
+    """A source that does not live under the before-worktree cannot be an overlaid test
+    file, so it is kept verbatim and makes the failure unattributable."""
+    log = (
+        _failed_compile_edge(
+            "CMakeFiles/x.dir/probe.c.o", "/usr/share/cmake/Modules/probe.c"
+        )
+        + "/usr/share/cmake/Modules/probe.c:1:1: error: bad probe\n"
+    )
+    result = _compile_log(tmp_path, log)
+    assert failed_compile_edge_sources(result) == (
+        ["/usr/share/cmake/Modules/probe.c"],
+        [],
+    )
+    assert compile_failure_attribution(result, [_TEST_FILE])[0] == ""
+
+
+def test_failed_compile_edge_sources_handles_a_truncated_log(tmp_path):
+    """A log cut off right after a `FAILED:` line (the runner was killed) has no command
+    to read, so the edge is unattributable rather than an IndexError."""
+    result = _compile_log(tmp_path, "FAILED: src/CMakeFiles/x.dir/gtest_wb.cpp.o \n")
+    assert failed_compile_edge_sources(result) == (
+        [],
+        ["src/CMakeFiles/x.dir/gtest_wb.cpp.o"],
+    )
+
+
+def test_failed_compile_edge_sources_handles_no_files():
+    assert failed_compile_edge_sources(_FakeResult(None)) == ([], [])
+    assert failed_compile_edge_sources(_FakeResult([])) == ([], [])
 
 
 if __name__ == "__main__":
