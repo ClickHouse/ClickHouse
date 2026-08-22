@@ -11,6 +11,9 @@ DROP TABLE IF EXISTS t_preprocessed_wrapped;
 DROP TABLE IF EXISTS t_preprocessed_plain;
 DROP TABLE IF EXISTS t_preprocessed_map;
 DROP TABLE IF EXISTS t_preprocessed_folded;
+DROP TABLE IF EXISTS t_preprocessed_cast;
+DROP TABLE IF EXISTS t_preprocessed_cast_fixed;
+DROP TABLE IF EXISTS t_preprocessed_cast_nested;
 DROP TABLE IF EXISTS t_map_fixed;
 DROP TABLE IF EXISTS t_map_nullable;
 
@@ -201,6 +204,27 @@ INSERT INTO t_preprocessed_folded SELECT if(number = 5, 'word5', 'zz' || toStrin
 SELECT 'preprocessor folded key used', count() FROM t_preprocessed_folded WHERE x IN ('word5') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
 SELECT 'preprocessor folded key rows', (SELECT count() FROM t_preprocessed_folded WHERE x IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_folded WHERE x IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 SELECT 'preprocessor folded key mixed case rows', (SELECT count() FROM t_preprocessed_folded WHERE x IN ('WORD5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_folded WHERE x IN ('WORD5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+-- A cast to `String` reproduces a set element's own bytes when the carrier already holds a `String`
+-- payload, so such a key stays prunable through the wrappers.
+CREATE TABLE t_preprocessed_cast (x LowCardinality(Nullable(String)), INDEX i x TYPE text(tokenizer = splitByNonAlpha, preprocessor = CAST(x, 'String'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_preprocessed_cast SELECT if(number = 5, 'word5', 'zz' || toString(number)) FROM numbers(1000);
+
+SELECT 'preprocessor cast key used', count() FROM t_preprocessed_cast WHERE x IN ('word5') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
+SELECT 'preprocessor cast key rows', (SELECT count() FROM t_preprocessed_cast WHERE x IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_cast WHERE x IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+-- A cast from `FixedString` drops the padding a set element still carries, so a value shorter than
+-- the width tokenizes differently on the two sides.
+CREATE TABLE t_preprocessed_cast_fixed (x FixedString(6), INDEX i x TYPE text(tokenizer = ngrams(3), preprocessor = CAST(x, 'String'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_preprocessed_cast_fixed SELECT toFixedString(if(number = 5, 'word5', 'zz' || toString(number)), 6) FROM numbers(1000);
+
+SELECT count() FROM t_preprocessed_cast_fixed WHERE x IN (toFixedString('word5', 6)) SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1; -- { serverError INDEX_NOT_USED }
+SELECT 'preprocessor cast fixed rows', (SELECT count() FROM t_preprocessed_cast_fixed WHERE x IN (toFixedString('word5', 6)) SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_cast_fixed WHERE x IN (toFixedString('word5', 6)) SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+-- A cast wrapping anything but the index column itself carries that expression's own divergence:
+-- here the type name is read from the carrier, which the set element never spells.
+CREATE TABLE t_preprocessed_cast_nested (x LowCardinality(String), INDEX i x TYPE text(tokenizer = ngrams(3), preprocessor = CAST(concat(toTypeName(x), ':', x), 'String'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_preprocessed_cast_nested SELECT if(number = 5, 'word5', 'zz' || toString(number)) FROM numbers(1000);
+
+SELECT count() FROM t_preprocessed_cast_nested WHERE x IN ('word5') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1; -- { serverError INDEX_NOT_USED }
+SELECT 'preprocessor cast nested rows', (SELECT count() FROM t_preprocessed_cast_nested WHERE x IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_cast_nested WHERE x IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 -- A row whose map lacks the key reads the value type's default, which `mapValues` never stored, so
 -- a set holding that default must keep every granule. An all-NUL `FixedString` default is nonempty,
 -- so the empty-element refusal above does not cover it.
@@ -269,5 +293,8 @@ DROP TABLE t_preprocessed_wrapped;
 DROP TABLE t_preprocessed_plain;
 DROP TABLE t_preprocessed_map;
 DROP TABLE t_preprocessed_folded;
+DROP TABLE t_preprocessed_cast;
+DROP TABLE t_preprocessed_cast_fixed;
+DROP TABLE t_preprocessed_cast_nested;
 DROP TABLE t_map_fixed;
 DROP TABLE t_map_nullable;

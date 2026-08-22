@@ -65,6 +65,10 @@ preprocessor plain key still prunes	Granules: 1/250
 preprocessor folded key used	1
 preprocessor folded key rows	1
 preprocessor folded key mixed case rows	1
+preprocessor cast key used	1
+preprocessor cast key rows	1
+preprocessor cast fixed rows	1
+preprocessor cast nested rows	1
 map fixed default rows	1
 map fixed default rows, transform_null_in = 0	1
 map fixed stored value still prunes	143
