@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## 서로 다른 테이블의 컬럼에 대한 부등 조건 JOIN
 </div>
 
-ClickHouse는 현재 동등 조건뿐 아니라 부등 조건도 포함한 `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN`을 지원합니다. 부등 조건은 `hash` 및 `grace_hash` 조인 알고리즘에서만 지원됩니다. 부등 조건은 `join_use_nulls`와 함께는 지원되지 않습니다.
+ClickHouse는 현재 동등 조건뿐 아니라 부등 조건도 포함한 `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN`을 지원합니다. 부등 조건은 `hash`, `parallel_hash` 및 `grace_hash` 조인 알고리즘에서만 지원됩니다. 조인 중 평가되는 비동등 조건에는 행 수를 유지해야 하므로 `arrayJoin`을 포함할 수 없습니다. 한쪽에만 적용되는 조건과 `arrayJoin`에 대한 동등 키는 조인 전에 추출되므로 영향을 받지 않습니다. 논리합으로 연결되지 않은 `ALL INNER JOIN` 조건도 조인 후에 적용되므로 영향을 받지 않습니다. 확장이 한쪽에만 의존하는 경우 조인 전에 서브쿼리의 `ARRAY JOIN`으로 이동하십시오. `arrayJoin` 인수가 양쪽의 컬럼을 읽는 조건은 구조를 변경해야 합니다.
 
 **예시**
 

@@ -229,8 +229,8 @@ L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
 **인수**
 
 * `vectors` — `quantizeBFloat16ToInt8` 코드의 벡터. [`QBit(Int8, UInt64[, UInt64])`](/ko/reference/data-types/qbit)
-* `reference` — 기준(쿼리) 벡터: `Float` 배열(쿼리이며 `Float32` 정밀도로 비교됨 -- `Float64` 쿼리는 `Float32`로 축소됨) 또는 `quantizeBFloat16ToInt8` 코드의 `Array(Int8)`로, 사용 시 즉석에서 역양자화됩니다. [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Int8)`](/ko/reference/data-types/array)
-* `p` — 사용할 저장된 `QBit` 코드의 상위 비트 수(1~8)입니다. 더 적은 비트를 사용하면 더 거친 내장 양자화기가 복원되어 I/O는 빨라지지만 정확도는 낮아집니다. 8비트는 전체 정밀도 복원입니다. `p`는 저장된 `QBit`에만 절단을 적용하며, `Array(Int8)` 기준 벡터는 항상 전체 8비트 정밀도로 복원됩니다. [`UInt`](/ko/reference/data-types/int-uint)
+* `reference` — 기준(쿼리) 벡터: `Float` 배열(쿼리이며 `Float32` 정밀도로 비교됨 -- `Float64` 쿼리는 `Float32`로 축소됨) 또는 `quantizeBFloat16ToInt8` 코드의 `Array(Int8)`로, 사용 시 즉시 역양자화됩니다. [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Int8)`](/ko/reference/data-types/array)
+* `p` — 사용할 저장된 `QBit` 코드의 상위 비트 수(1~8)입니다. 더 적은 비트를 사용하면 기존 Lloyd-Max 접두사 인터벌의 가우스 조건부 평균 중심점을 사용하는 더 거친 내장 양자화기가 복원되어 I/O는 빨라지지만 정확도는 낮아집니다. 8비트는 전체 정밀도 복원입니다. `p`는 저장된 `QBit`에만 절단을 적용하며, `Array(Int8)` 기준 벡터는 항상 전체 8비트 정밀도로 복원됩니다. [`UInt`](/ko/reference/data-types/int-uint)
 * `used_dims` — 선택 사항입니다. stride된 `QBit`에서 축소 차원(Matryoshka) 검색을 위해 읽을 선행 차원의 수입니다. QBit stride의 배수여야 하고 차원을 초과할 수 없으며, 기준 벡터에는 최소한 이 개수만큼의 원소가 있어야 합니다(추가로 뒤에 있는 원소는 무시됨). 이 차원들을 포함하는 stride 그룹만 읽습니다. [`UInt`](/ko/reference/data-types/int-uint)
 
 **반환 값**
@@ -739,12 +739,12 @@ cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — `quantizeBFloat16ToInt8` 코드로 이루어진 벡터입니다. [`QBit(Int8, UInt64[, UInt64])`](/ko/reference/data-types/qbit)
 * `reference` — 기준(쿼리) 벡터입니다. `Float` 배열(`Float32` 정밀도로 비교되는 쿼리이며 `Float64` 쿼리는 `Float32`로 축소됨) 또는 실행 중 즉시 역양자화되는 `quantizeBFloat16ToInt8` 코드의 `Array(Int8)`입니다. [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Int8)`](/ko/reference/data-types/array)
-* `p` — 저장된 각 `QBit` 코드에서 사용할 상위 비트 수입니다(1~8). 비트 수가 적을수록 더 거친 양자화 표현으로 재구성되므로 I/O는 빨라지지만 정확도는 낮아집니다. 8비트는 전체 정밀도 재구성입니다. `p`는 저장된 `QBit`에만 적용되며, `Array(Int8)` 기준 벡터는 항상 전체 8비트 정밀도로 재구성됩니다. [`UInt`](/ko/reference/data-types/int-uint)
+* `p` — 저장된 각 `QBit` 코드에서 사용할 상위 비트 수입니다(1~8). 비트 수가 적을수록 기존 Lloyd-Max 접두사 인터벌의 가우스 조건부 평균 중심점을 사용하여 더 거친 양자화 표현으로 재구성되므로 I/O는 빨라지지만 정확도는 낮아집니다. 8비트는 전체 정밀도 재구성입니다. `p`는 저장된 `QBit`에만 적용되며, `Array(Int8)` 기준 벡터는 항상 전체 8비트 정밀도로 재구성됩니다. [`UInt`](/ko/reference/data-types/int-uint)
 * `used_dims` — 선택 사항입니다. stride된 `QBit`에서 축소 차원(Matryoshka) 검색을 수행하기 위해 읽을 선행 차원 수입니다. QBit stride의 배수여야 하고 차원을 초과할 수 없으며, 기준 벡터에는 최소한 이 개수만큼의 원소가 있어야 합니다(추가로 뒤에 있는 원소는 무시됩니다). 이러한 차원을 포함하는 stride 그룹만 읽습니다. [`UInt`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
-근사 코사인 거리(cosine similarity에서 1을 뺀 값)를 반환합니다. 반환 타입은 항상 `Float64`입니다. [`Float64`](/ko/reference/data-types/float)
+근사 코사인 거리(코사인 유사도에서 1을 뺀 값)를 반환합니다. 반환 타입은 항상 `Float64`입니다. [`Float64`](/ko/reference/data-types/float)
 
 **예시**
 
@@ -817,7 +817,7 @@ dotProductTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — `quantizeBFloat16ToInt8` 코드의 벡터. [`QBit(Int8, UInt64[, UInt64])`](/ko/reference/data-types/qbit)
 * `reference` — 기준(쿼리) 벡터: `Float` 배열(`Float32` 정밀도로 비교되는 쿼리이며 `Float64` 쿼리는 `Float32`로 축소됨) 또는 필요 시 역양자화되는 `quantizeBFloat16ToInt8` 코드의 `Array(Int8)`입니다. [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Int8)`](/ko/reference/data-types/array)
-* `p` — 사용할 저장된 각 `QBit` 코드의 상위 비트 수(1~8)입니다. 비트 수가 적을수록 정확도는 낮아지지만 더 빠른 I/O를 위해 더 거친 내장 양자화기를 재구성하며, 8비트는 전체 정밀도 재구성입니다. `p`는 저장된 `QBit`만 잘라내며, `Array(Int8)` 기준 벡터는 항상 전체 8비트 정밀도로 재구성됩니다. [`UInt`](/ko/reference/data-types/int-uint)
+* `p` — 사용할 저장된 각 `QBit` 코드의 상위 비트 수(1~8)입니다. 비트 수가 적을수록 정확도는 낮아지지만 더 빠른 I/O를 위해 기존 Lloyd-Max 접두사 인터벌의 Gaussian 조건부 평균 중심점을 사용하여 더 거친 내장 양자화기를 재구성하며, 8비트는 전체 정밀도 재구성입니다. `p`는 저장된 `QBit`만 잘라내며, `Array(Int8)` 기준 벡터는 항상 전체 8비트 정밀도로 재구성됩니다. [`UInt`](/ko/reference/data-types/int-uint)
 * `used_dims` — 선택 사항입니다. stride된 `QBit`에서 축소 차원(Matryoshka) 검색을 위해 읽을 선행 차원의 수입니다. QBit stride의 배수여야 하고 차원을 초과해서는 안 되며, 기준 벡터는 최소한 이 수만큼의 원소를 가져야 합니다(추가 후행 원소는 무시됨). 이 차원들을 포함하는 stride 그룹만 읽습니다. [`UInt`](/ko/reference/data-types/int-uint)
 
 **반환 값**
