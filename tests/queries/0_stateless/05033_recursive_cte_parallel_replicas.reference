@@ -18,5 +18,10 @@
 -- ParallelReplicasQueryCount: 0 for the recursive CTE, non-zero for the plain query
 10
 10
+-- the same pair with the settings on the subquery instead of the top-level query
+10
+10
+rcte_pr_nested_ships	1
+rcte_pr_nested_stays_local	0
 rcte_pr_ships	1
 rcte_pr_stays_local	0

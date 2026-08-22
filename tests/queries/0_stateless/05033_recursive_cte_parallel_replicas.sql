@@ -125,6 +125,42 @@ SETTINGS enable_analyzer = 1,
          max_recursive_cte_evaluation_depth = 10,
          log_comment = 'rcte_pr_stays_local';
 
+SELECT '-- the same pair with the settings on the subquery instead of the top-level query';
+SELECT * FROM
+(
+    SELECT sum(span_id) AS s FROM rcte_pr
+    SETTINGS enable_analyzer = 1,
+             allow_experimental_parallel_reading_from_replicas = 1,
+             max_parallel_replicas = 3,
+             cluster_for_parallel_replicas = 'parallel_replicas',
+             parallel_replicas_for_non_replicated_merge_tree = 1,
+             automatic_parallel_replicas_mode = 0
+)
+SETTINGS enable_analyzer = 1,
+         allow_experimental_parallel_reading_from_replicas = 0,
+         log_comment = 'rcte_pr_nested_ships';
+
+SELECT * FROM
+(
+    WITH RECURSIVE d AS
+    (
+        SELECT span_id FROM rcte_pr WHERE parent_span_id = 0
+        UNION ALL
+        SELECT l.span_id FROM rcte_pr AS l INNER JOIN d AS dd ON l.parent_span_id = dd.span_id
+    )
+    SELECT sum(span_id) AS s FROM d
+    SETTINGS enable_analyzer = 1,
+             allow_experimental_parallel_reading_from_replicas = 1,
+             max_parallel_replicas = 3,
+             cluster_for_parallel_replicas = 'parallel_replicas',
+             parallel_replicas_for_non_replicated_merge_tree = 1,
+             automatic_parallel_replicas_mode = 0,
+             max_recursive_cte_evaluation_depth = 10
+)
+SETTINGS enable_analyzer = 1,
+         allow_experimental_parallel_reading_from_replicas = 0,
+         log_comment = 'rcte_pr_nested_stays_local';
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['ParallelReplicasQueryCount'] > 0
 FROM system.query_log
@@ -132,7 +168,8 @@ WHERE current_database = currentDatabase()
   AND event_date >= yesterday()
   AND type = 'QueryFinish'
   AND is_initial_query
-  AND log_comment IN ('rcte_pr_ships', 'rcte_pr_stays_local')
+  AND log_comment IN ('rcte_pr_ships', 'rcte_pr_stays_local',
+                      'rcte_pr_nested_ships', 'rcte_pr_nested_stays_local')
 ORDER BY log_comment
 SETTINGS enable_analyzer = 1, allow_experimental_parallel_reading_from_replicas = 0;
 
