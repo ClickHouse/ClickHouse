@@ -49,7 +49,9 @@ from ci.jobs.scripts.workflow_hooks.review_threads import (
     should_limit_pipeline,
     store_gate_state,
 )
+from ci.defs.job_configs import JobConfigs
 from ci.praktika.gh import GH
+from ci.praktika.result import Result
 
 # The 80-character truncation applied by GH.post_commit_status.
 STATUS_DESCRIPTION_LIMIT = 80
@@ -431,7 +433,11 @@ def test_gate_is_skipped_when_the_label_state_is_unknown(monkeypatch):
     store_gate_state(info)
 
     assert info.get_kv_data(KV_UNRESOLVED_COUNT) is None
-    assert info.get_kv_data(KV_FORCE_ALL) is None
+    # `ci-force-all` may have been added after the original run and is
+    # invisible here, so the stale event payload must not be consulted: assume
+    # the label instead of letting filters and cached results stay in effect.
+    assert info.get_kv_data(KV_FORCE_ALL) is True
+    assert info.get_kv_data(KV_OVERRIDE) is False
 
 
 def _retry_marker_state(statuses, started_at, completed_at):
@@ -485,3 +491,94 @@ def test_retry_suppression_only_matches_the_failed_attempt():
     assert _retry_marker_state([earlier], started, completed) == ""
     assert _retry_marker_state([other], started, completed) == ""
     assert _retry_marker_state([earlier, own, later], started, completed) == "failure"
+
+
+def test_toolchain_builds_stay_opt_in_under_the_review_threads_gate(fake_info):
+    """The limited pipeline may only shrink the PR surface, never widen it."""
+    toolchain_job = JobConfigs.toolchain_build_jobs[0].name
+    assert JobNames.BUILD_TOOLCHAIN in toolchain_job
+
+    skip, reason = filter_job.should_skip_job(toolchain_job)
+    assert skip
+    assert Labels.CI_TOOLCHAIN in reason
+
+    # ... and the label still opts in, gate or no gate.
+    fake_info.pr_labels = [Labels.CI_TOOLCHAIN]
+    skip, reason = filter_job.should_skip_job(toolchain_job)
+    assert not skip, reason
+
+    fake_info.pr_labels = []
+    fake_info.kv[KV_UNRESOLVED_COUNT] = 0
+    skip, reason = filter_job.should_skip_job(toolchain_job)
+    assert skip
+    assert Labels.CI_TOOLCHAIN in reason
+
+
+def test_only_the_policy_verdict_is_rewritten_into_the_review_threads_marker():
+    """An infrastructure failure of the same hook must keep the generic status.
+
+    The reconciliation workflow clears `Failed: review threads only` once the
+    threads are resolved; a failure that had nothing to do with the threads
+    (a GitHub API outage inside the hook) must not be cleared that way.
+    """
+    from ci.praktika.native_jobs import (
+        _REVIEW_THREADS_POLICY_FAILURE_MARKER,
+        _REVIEW_THREADS_POST_HOOK,
+        _review_threads_were_the_only_failed_post_hook,
+    )
+    from ci.jobs.scripts.workflow_hooks.review_threads import POLICY_FAILURE_MARKER
+
+    assert _REVIEW_THREADS_POLICY_FAILURE_MARKER == POLICY_FAILURE_MARKER
+
+    def result(name, ok, info=""):
+        return Result.create_new(
+            name=name,
+            status=Result.Status.OK if ok else Result.Status.FAIL,
+            info=info,
+        )
+
+    policy_failure = result(
+        _REVIEW_THREADS_POST_HOOK,
+        False,
+        f"Review threads gate: ...\nWARNING: unresolved review threads, merge not "
+        f"allowed\n{POLICY_FAILURE_MARKER}",
+    )
+    infra_failure = result(
+        _REVIEW_THREADS_POST_HOOK,
+        False,
+        "Traceback (most recent call last):\nRuntimeError: GitHub API is down",
+    )
+    other_ok = result("ci/jobs/scripts/workflow_hooks/can_be_merged.py", True)
+    other_failure = result("ci/jobs/scripts/workflow_hooks/can_be_merged.py", False)
+
+    assert _review_threads_were_the_only_failed_post_hook([policy_failure, other_ok])
+    assert not _review_threads_were_the_only_failed_post_hook([infra_failure, other_ok])
+    assert not _review_threads_were_the_only_failed_post_hook(
+        [policy_failure, other_failure]
+    )
+    assert not _review_threads_were_the_only_failed_post_hook([other_ok])
+
+
+def test_the_policy_marker_is_printed_only_when_the_gate_blocks(monkeypatch, capsys):
+    from ci.jobs.scripts.workflow_hooks import can_be_merged
+
+    info = FakeInfo(kv={KV_PIPELINE_LIMITED: False})
+    monkeypatch.setattr(can_be_merged, "Info", lambda: info)
+    monkeypatch.setattr(can_be_merged.GH, "post_commit_status", lambda **_: True)
+
+    monkeypatch.setattr(can_be_merged, "fetch_thread_state", lambda _: (1, False, False))
+    assert not can_be_merged.check_review_threads()
+    assert can_be_merged.POLICY_FAILURE_MARKER in capsys.readouterr().out
+
+    monkeypatch.setattr(can_be_merged, "fetch_thread_state", lambda _: (0, False, False))
+    assert can_be_merged.check_review_threads()
+    assert can_be_merged.POLICY_FAILURE_MARKER not in capsys.readouterr().out
+
+    # An infrastructure failure propagates instead of printing the marker.
+    def failing_state(_):
+        raise RuntimeError("GitHub API is down")
+
+    monkeypatch.setattr(can_be_merged, "fetch_thread_state", failing_state)
+    with pytest.raises(RuntimeError):
+        can_be_merged.check_review_threads()
+    assert can_be_merged.POLICY_FAILURE_MARKER not in capsys.readouterr().out

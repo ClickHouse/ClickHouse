@@ -4,6 +4,7 @@ import sys
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import (
     KV_PIPELINE_LIMITED,
+    POLICY_FAILURE_MARKER,
     REVIEW_THREADS_STATUS_NAME,
     fetch_thread_state,
     merge_gate_verdict,
@@ -70,6 +71,10 @@ def check_review_threads():
 
     if blocked:
         print("WARNING: unresolved review threads, merge not allowed")
+        # Emitted only here, after the verdict was computed and posted: an
+        # infrastructure failure above raises instead, and `native_jobs.py`
+        # must not mistake it for this policy verdict.
+        print(POLICY_FAILURE_MARKER)
         return False
 
     return True

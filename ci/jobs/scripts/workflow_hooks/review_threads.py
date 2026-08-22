@@ -42,6 +42,15 @@ KV_FORCE_ALL = "unresolved_review_threads_force_all"
 # `ci-force-all` bypasses workflow filters altogether.
 KV_PIPELINE_LIMITED = "unresolved_review_threads_pipeline_limited"
 
+# Printed by `can_be_merged.py` only when the gate actually concluded "blocked
+# by unresolved review threads", so that `ci/praktika/native_jobs.py` can tell
+# that verdict apart from an infrastructure failure inside the same hook (the
+# thread and label queries and the commit-status write all raise). Only the
+# policy verdict may be rewritten into the `Failed: review threads only`
+# aggregate status that the reconciliation workflow is allowed to clear.
+# Also hard-coded in `ci/praktika/native_jobs.py` - keep them in sync.
+POLICY_FAILURE_MARKER = "REVIEW_THREADS_GATE: blocked by unresolved review threads"
+
 
 def get_unresolved_review_threads_count(pr=None, repo=None) -> int:
     """The number of unresolved review threads on the PR. Raises on API failure."""
@@ -142,11 +151,20 @@ def store_gate_state(info):
     try:
         labels = fetch_live_labels(info)
     except Exception as e:
-        # There is no live label state to record: leave the kv data unset so
-        # that `native_jobs.py` falls back to the event payload, which is
-        # correct for everything but a label added after the original run.
-        print(f"WARNING: failed to fetch the live PR labels [{e}]")
+        # There is no live label state to record. Leaving the kv data unset
+        # would make `native_jobs.py` fall back to the event payload, which is
+        # stale on re-runs and therefore misses a `ci-force-all` added after
+        # the original run - the workflow filter hooks, the changed-file
+        # filtering and the CI cache lookup would all stay enabled on a re-run
+        # that was meant to bypass them, letting old green results survive it.
+        # Fail toward doing more work: assume the label until proven otherwise.
+        print(
+            f"WARNING: failed to fetch the live PR labels [{e}] - assuming "
+            f"'{Labels.CI_FORCE_ALL}' so that no filtering or cached result is trusted"
+        )
         labels = None
+        info.store_kv_data(KV_FORCE_ALL, True)
+        info.store_kv_data(KV_OVERRIDE, False)
     else:
         override = review_threads_gate_bypassed(labels)
         force_all = Labels.CI_FORCE_ALL in labels

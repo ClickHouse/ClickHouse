@@ -227,6 +227,17 @@ def should_skip_job(job_name):
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
 
+    # `Build Toolchain (PGO, BOLT)` is opt-in: it occupies a large runner for
+    # hours. This check stays ahead of the review-thread gate below, which is
+    # allowed to shrink the pipeline but never to widen it - a limited run must
+    # not start toolchain builds that a full run would have skipped.
+    if (
+        JobNames.BUILD_TOOLCHAIN in job_name
+        and _info_cache.pr_number
+        and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels
+    ):
+        return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
+
     # While the PR has unresolved review threads, run only builds and the
     # preliminary checks - the code is expected to change again, so the full
     # test suite would be wasted (https://github.com/ClickHouse/ClickHouse/issues/114724).
@@ -290,13 +301,6 @@ def should_skip_job(job_name):
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
         _add_pipeline_note(Labels.NO_FAST_TESTS)
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
-
-    if (
-        JobNames.BUILD_TOOLCHAIN in job_name
-        and _info_cache.pr_number
-        and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
 
     if (
         Labels.CI_INTEGRATION_FLAKY in _info_cache.pr_labels

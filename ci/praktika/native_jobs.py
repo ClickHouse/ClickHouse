@@ -102,15 +102,31 @@ _REVIEW_THREADS_POST_HOOK = (
 )
 _REVIEW_THREADS_ONLY_POST_HOOK_FAILURE = "Failed: review threads only"
 
+# Printed by `check_review_threads` in
+# `ci/jobs/scripts/workflow_hooks/can_be_merged.py` on the policy-block path
+# only - keep the two in sync. The hook fails for infrastructure reasons too
+# (the thread/label queries and the commit-status write all raise), and such a
+# failure must not be rewritten into the marker below: the reconciliation
+# workflow clears that marker once the threads are resolved, which would hide
+# a hook failure that had nothing to do with review threads.
+_REVIEW_THREADS_POLICY_FAILURE_MARKER = (
+    "REVIEW_THREADS_GATE: blocked by unresolved review threads"
+)
+
+
+def _is_review_threads_policy_failure(result):
+    """Whether this result is the review-thread hook concluding "blocked"."""
+    return (
+        _REVIEW_THREADS_POST_HOOK in result.name
+        and _REVIEW_THREADS_POLICY_FAILURE_MARKER in (result.info or "")
+    )
+
 
 def _review_threads_were_the_only_failed_post_hook(results):
-    """Whether the dedicated review-thread hook was the sole failed post-hook."""
-    return any(
-        not result.is_ok() and _REVIEW_THREADS_POST_HOOK in result.name
-        for result in results
-    ) and all(
-        result.is_ok() or _REVIEW_THREADS_POST_HOOK in result.name
-        for result in results
+    """Whether the review-thread policy verdict was the sole failed post-hook."""
+    failed = [result for result in results if not result.is_ok()]
+    return bool(failed) and all(
+        _is_review_threads_policy_failure(result) for result in failed
     )
 
 
