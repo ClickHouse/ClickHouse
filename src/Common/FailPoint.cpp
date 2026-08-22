@@ -209,6 +209,8 @@ static struct InitFiu
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(database_replicated_create_replica_nodes_lose_response) \
     ONCE(replicated_merge_tree_fail_after_creating_replica) \
+    ONCE(database_on_disk_fail_before_commit_create_table) \
+    ONCE(database_on_disk_fail_after_commit_create_table) \
     ONCE(keeper_leader_sets_invalid_digest) \
     PAUSEABLE_ONCE(keeper_save_snapshot_pause_mid_transfer) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \

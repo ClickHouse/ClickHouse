@@ -260,6 +260,11 @@ public:
 
     bool dropReplica(const String & drop_replica, LoggerPtr logger);
 
+    /// Whether a replica registration in Keeper can be attributed to this table rather than to any other
+    /// replicated table on this server. It cannot when the table has no UUID, because the identity stored
+    /// with the registration is then the same string for all of them.
+    bool hasProvableCreationIdentity() const { return getStorageID().uuid != UUIDHelpers::Nil; }
+
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(
         zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info2,

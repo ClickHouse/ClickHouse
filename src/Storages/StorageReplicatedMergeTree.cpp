@@ -704,7 +704,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
     catch (...)
     {
-        if (mode < LoadingStrictnessLevel::ATTACH)
+        if (mode < LoadingStrictnessLevel::ATTACH && hasProvableCreationIdentity())
             tryRemoveOwnReplicaFromZooKeeper();
 
         /// If replica was not created, rollback creation of data directory.
@@ -727,10 +727,16 @@ void StorageReplicatedMergeTree::tryRemoveOwnReplicaFromZooKeeper()
         /// Remove the registration only if it is the one this statement created. `creator_info` is
         /// written atomically with the replica nodes and pins them to this table UUID and this server,
         /// so a leftover of another statement, table or server never matches and is kept for
-        /// SYSTEM DROP REPLICA.
+        /// SYSTEM DROP REPLICA. This distinguishes nothing unless the table UUID is unique, which is
+        /// what hasProvableCreationIdentity() asserts.
         String creator_info;
         if (!zookeeper->tryGet(replica_path + "/creator_info", creator_info)
             || creator_info != toString(getStorageID().uuid) + "|" + toString(ServerUUID::get()))
+            return;
+
+        /// This replica is only started up after the constructor returns, so an active node here belongs
+        /// to something else and the registration is not ours to remove.
+        if (zookeeper->exists(replica_path + "/is_active"))
             return;
 
         /// Not drop(): the table has no parts and no table_shared_id yet, and collecting zero-copy lock

@@ -181,3 +181,92 @@ ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
 
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE test_aux"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_aux SYNC"
+
+#### 10 - A database whose tables have no UUID: a colliding CREATE must not touch the existing replica
+
+# `Memory` has no database UUID, so every table in it has a nil UUID and the registrations of all of
+# them carry the same identity. A failed CREATE therefore cannot prove which one is its own.
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_nouuid SYNC"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_nouuid ENGINE=Memory"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE ${CLICKHOUSE_DATABASE}_nouuid.live (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nouuid', 'r1') ORDER BY date"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${CLICKHOUSE_DATABASE}_nouuid.live SELECT toDate('2024-01-01')"
+
+# Same Keeper path and replica name as the live table
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE ${CLICKHOUSE_DATABASE}_nouuid.other (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nouuid', 'r1') ORDER BY date" 2>&1 | grep -cm1 "REPLICA_ALREADY_EXISTS"
+
+${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nouuid/replicas' ORDER BY name"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nouuid' AND name='metadata'"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${CLICKHOUSE_DATABASE}_nouuid.live SELECT toDate('2024-01-02')"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}_nouuid.live"
+
+# The same collision while the table is detached: there is no active node to fall back on, so the
+# identity check is the only thing that can tell the two tables apart.
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_DATABASE}_nouuid.live"
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE ${CLICKHOUSE_DATABASE}_nouuid.other (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nouuid', 'r1') ORDER BY date" 2>&1 | grep -cm1 "REPLICA_ALREADY_EXISTS"
+
+${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nouuid/replicas' ORDER BY name"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nouuid' AND name='metadata'"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${CLICKHOUSE_DATABASE}_nouuid.live"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}_nouuid.live"
+
+# A failure of the same statement that registered the replica also keeps it, for the same reason. The
+# registration stays reusable, so a retry still completes.
+${CLICKHOUSE_CLIENT} --create_replicated_merge_tree_fault_injection_probability=1 \
+    -q "CREATE TABLE ${CLICKHOUSE_DATABASE}_nouuid.own (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nouuid_own', 'r1') ORDER BY date" 2>&1 | grep -cm1 "Fault injected"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nouuid_own/replicas'"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE ${CLICKHOUSE_DATABASE}_nouuid.own_2 (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nouuid_own', 'r1') ORDER BY date"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${CLICKHOUSE_DATABASE}_nouuid.own_2 SELECT toDate('2024-01-01')"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}_nouuid.own_2"
+
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${CLICKHOUSE_DATABASE}_nouuid SYNC"
+
+#### 11 - Publishing the table to the database is the boundary for the rollback
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_before_commit SYNC"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT database_on_disk_fail_before_commit_create_table"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_before_commit (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/before_commit', 'r1') ORDER BY date" 2>&1 | grep -cm1 "Fault injected (before"
+
+# Nothing was published, so the registration is this statement's to remove and the retry succeeds
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database=currentDatabase() AND name='test_before_commit'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/before_commit/replicas'"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_before_commit (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/before_commit', 'r1') ORDER BY date"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO test_before_commit SELECT toDate('2024-01-01')"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_before_commit"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_before_commit SYNC"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_after_commit SYNC"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT database_on_disk_fail_after_commit_create_table"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_after_commit (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/after_commit', 'r1') ORDER BY date" 2>&1 | grep -cm1 "Fault injected (after"
+
+# The database accepted the table, so its data and registration must stay: it is reachable and
+# recovers with DETACH/ATTACH, and DROP TABLE cleans up both.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database=currentDatabase() AND name='test_after_commit'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/after_commit/replicas'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/after_commit' AND name='metadata'"
+
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE test_after_commit"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE test_after_commit"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO test_after_commit SELECT toDate('2024-01-01')"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_after_commit"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_after_commit SYNC"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/after_commit/replicas'"
+
+# No failpoint may leak into a later run of this test
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.fail_points WHERE enabled AND name IN ('replicated_merge_tree_fail_after_creating_replica', 'database_on_disk_fail_before_commit_create_table', 'database_on_disk_fail_after_commit_create_table')"

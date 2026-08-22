@@ -2454,13 +2454,20 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
 
-    /// Once the constructor has returned, the replica is registered in Keeper under this statement's
-    /// identity, and only drop() removes that. Best effort, because the original exception is what the
-    /// user must see.
+    /// A constructed replicated storage has its replica registered in Keeper, and a registration left
+    /// there makes every retry of the CREATE fail with REPLICA_ALREADY_EXISTS. Best effort, because the
+    /// original exception is the one the user must see.
     auto rollback_replica_in_keeper = [&]
     {
-        if (!replicated_storage || create.attach)
+        if (!replicated_storage || create.attach || !replicated_storage->hasProvableCreationIdentity())
             return;
+
+        /// Once the database has accepted the storage, removing its data from under the database map
+        /// would leave an attached table with no data. The registration is then left for
+        /// SYSTEM DROP REPLICA instead.
+        if (database->isTableExist(create.getTable(), getContext()))
+            return;
+
         try
         {
             replicated_storage->drop();
@@ -2490,8 +2497,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
     catch (...)
     {
-        /// The metadata file is not committed here, so there is no local table for DROP TABLE to remove,
-        /// while a replica left in Keeper makes every retry fail with REPLICA_ALREADY_EXISTS.
         rollback_replica_in_keeper();
         throw;
     }
