@@ -801,10 +801,12 @@ The _samples_ table must have columns:
 
 Inner samples tables get `is_stale_marker UInt8 DEFAULT 0` automatically. An [external](#external-target-tables) samples
 table created without that column (for example one created before it existed) keeps working with the pre-column
-behavior: the Prometheus remote-write and remote-read protocols and the PromQL functions
+behavior: the Prometheus remote-write protocol stores staleness markers as their raw `NaN` payload with no flag, and
+every stored row is treated as non-stale. The two read surfaces then differ: the PromQL functions
 [`prometheusQuery()`](/reference/functions/table-functions/prometheusQuery) and
-[`timeSeriesSelector()`](/reference/functions/table-functions/timeSeriesSelector) store and read staleness markers as
-their raw `NaN` payload and treat every stored row as non-stale, logging a warning that points at the
+[`timeSeriesSelector()`](/reference/functions/table-functions/timeSeriesSelector) return such a row as an ordinary
+sample still carrying the raw payload, while the Prometheus remote-read protocol replaces the unflagged payload with an
+ordinary quiet `NaN`, not the reserved stale-marker payload. A warning is logged that points at the
 `ALTER TABLE ... ADD COLUMN is_stale_marker UInt8` migration. Adding the column is not sufficient on its own: every
 historical row starts at `is_stale_marker = 0`, so markers written before the migration keep reading as ordinary
 samples until they are backfilled with
