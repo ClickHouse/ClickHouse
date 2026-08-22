@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
-from ci.praktika import SecretMisconfigured
+from ci.praktika import SecretFetchFailed
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -73,13 +73,11 @@ def main():
         def configure_log_export(config_dir, var_lib_dir):
             # `start_log_exports` guards on `log_export_host`, so an unconfigured
             # export is a supported state. Returns truthy: `ClickHouseService`
-            # treats a hook returning exactly `False` as a failed hook.
+            # treats a hook returning exactly `False` as a failed hook. Only an
+            # unanswered fetch is tolerated; every other failure fails the hook.
             try:
                 return ch.create_log_export_config(config_dir)
-            except SecretMisconfigured:
-                # Permanent, unlike the transient fetch failure tolerated below.
-                raise
-            except Exception as e:
+            except SecretFetchFailed as e:
                 print(f"WARNING: Failed to configure log export: {e}")
                 info.add_workflow_warning(f"Failed to configure log export: {e}")
                 return True

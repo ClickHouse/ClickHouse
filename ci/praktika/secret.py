@@ -6,6 +6,11 @@ from typing import List, Union
 from .utils import Shell
 
 
+class SecretFetchFailed(RuntimeError):
+    """The request for a secret's value did not complete, so the value is unknown. A
+    caller that can run without the secret may treat this as a transient lapse."""
+
+
 class SecretMisconfigured(RuntimeError):
     """A secret's value is absent, empty or unusable: the request reached the store and
     was answered, so retrying or tolerating it would hide a real misconfiguration."""
@@ -71,10 +76,15 @@ class Secret:
             if self.region:
                 region = f" --region {self.region}"
             assert isinstance(self.name, list)
-            res = Shell.get_output(
-                f"aws ssm get-parameters --names {' '.join(self.name)} --with-decryption --output text --query 'Parameters[*].[Name,Value]' {region}",
-                strict=True,
-            )
+            cmd = f"aws ssm get-parameters --names {' '.join(self.name)} --with-decryption --output text --query 'Parameters[*].[Name,Value]' {region}"
+            try:
+                res = Shell.get_output(cmd, strict=True)
+            except Exception as e:
+                # Scoped to the request: every check below has an answer to judge, so
+                # only this raises with the value still unknown.
+                raise SecretFetchFailed(
+                    f"Failed to fetch parameters {self.name}: {e}"
+                ) from e
             # `get-parameters` reports unknown names under `InvalidParameters` and still
             # exits 0, so an answer naming none of them carries no pair to split. Decided
             # over the whole answer, since a value may itself span lines.

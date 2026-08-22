@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from praktika import Secret, SecretMisconfigured
+from praktika import Secret, SecretFetchFailed
 from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
@@ -371,14 +371,12 @@ def main():
         # Configure export of system log tables to the central CI logs cluster
         # (skipped for local runs, where the credentials are not available).
         # `start_log_exports` guards on `log_export_host`, so an unconfigured
-        # export is a supported state.
+        # export is a supported state. Only an unanswered fetch is tolerated;
+        # every other failure here is fatal to the step.
         if not info.is_local_run:
             try:
                 ch.create_log_export_config()
-            except SecretMisconfigured:
-                # Permanent, unlike the transient fetch failure tolerated below.
-                raise
-            except Exception as e:
+            except SecretFetchFailed as e:
                 print(f"WARNING: Failed to configure log export: {e}")
                 info.add_workflow_warning(f"Failed to configure log export: {e}")
         if not ch.start():
