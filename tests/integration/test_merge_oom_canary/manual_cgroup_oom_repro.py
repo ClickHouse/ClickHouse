@@ -34,7 +34,8 @@ HOLDS from before any setup until the moment the server is started (an explicit 
 way, so a collision fails fast instead of burning the startup loop). That reservation is best-effort
 race reduction, not a guarantee: it has to be released for `clickhouse-server` to bind the port, so in
 the brief gap between the release and the server's own `bind` another process can still claim it -
-which then surfaces as the bounded startup probe failing, not as silent misbehavior. It also refuses to run when the scratch data directory
+which then surfaces as the startup probe rejecting that server (it accepts only a server whose data
+path is this run's own scratch directory), not as silent misbehavior. It also refuses to run when the scratch data directory
 is on a memory-backed filesystem (`tmpfs`/`ramfs`): there the part bytes written by the churn would be
 charged to the cgroup, so an OOM would prove the filesystem choice rather than the merge-memory
 mechanism. The scratch root defaults to the repo `tmp` directory (disk-backed) and can be overridden
@@ -100,8 +101,9 @@ def reserve_port(port):
     This is best-effort race reduction, NOT an airtight handoff: the reservation must be closed for
     `clickhouse-server` to bind the port, and a plain reservation socket cannot be handed over to the
     server, so the gap between `release_port_reservation` and the server's own `bind` stays open. A
-    process that grabs the port in that gap makes the bounded startup probe below fail ("server did
-    not start"), which is a loud, immediate error rather than a corrupted result.
+    process that grabs the port in that gap is caught by the startup probe below, which accepts the
+    server only if its data path is this run's own scratch directory - a loud, immediate error rather
+    than a workload silently aimed at somebody else's server.
     """
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -365,7 +367,8 @@ def main():
         # server is spawned, so the port stayed held for the whole setup and the window in which
         # another process could steal it is as small as a plain socket allows - but it still exists
         # (the socket cannot be handed over to the server). A theft in this gap is caught loudly by
-        # the bounded startup probe below, not silently.
+        # the startup probe below, which does not accept just any ClickHouse answering on the port: it
+        # requires the answering server's data path to be this run's own scratch directory.
         release_port_reservation()
         # `start_new_session=True` makes the `runuser` wrapper a session/process-group leader (its
         # server child inherits the group), so `cleanup` can SIGKILL exactly this group via the
@@ -377,12 +380,35 @@ def main():
             start_new_session=True,
         )
         # Bound the startup probe too: a half-started server can accept the connection but stall the
-        # query, so an unbounded `SELECT 1` would park the "40 tries" loop for minutes. A backstop
+        # query, so an unbounded probe would park the "40 tries" loop for minutes. A backstop
         # `TimeoutExpired` here just means "not up yet" - retry until the loop budget is exhausted.
+        #
+        # The probe is not `SELECT 1`: a `SELECT 1` answer only proves that SOME ClickHouse is
+        # listening on `PORT`, and the port reservation has to be released before the server binds it
+        # (see `reserve_port`), so another local server can occupy the port in that gap. The later
+        # checks would not catch it either - they prove that the launched `runuser` wrapper is in the
+        # cgroup and that the cgroup is charged, not that the server answering the client queries is
+        # the one this run launched. The whole `CREATE TABLE m` / `INSERT` / `OPTIMIZE` / `TRUNCATE`
+        # workload would then be aimed at an unrelated (possibly production) server. So the probe asks
+        # for an invariant only this run's server can satisfy: its data path, which lives inside this
+        # run's freshly created scratch directory. Anything else answering the port aborts the run
+        # immediately instead of after the full retry budget - it is a hard error, not "not up yet".
+        expected_path = os.path.join(base, "data") + "/"
         started = False
         for _ in range(40):
             try:
-                if bounded_client("-q", "SELECT 1").returncode == 0:
+                probe = bounded_client(
+                    "-q", "SELECT value FROM system.server_settings WHERE name = 'path'"
+                )
+                if probe.returncode == 0 and probe.stdout.strip():
+                    answered_path = probe.stdout.strip()
+                    if answered_path != expected_path:
+                        die(
+                            f"the server listening on port {PORT} is NOT the one this run started "
+                            f"(its data path is {answered_path!r}, expected {expected_path!r}); "
+                            "another ClickHouse claimed the port - refusing to run the workload "
+                            "against it"
+                        )
                     started = True
                     break
             except subprocess.TimeoutExpired:
