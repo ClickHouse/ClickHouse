@@ -600,6 +600,10 @@ private:
     void createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info);
     void createNewZooKeeperNodesAttempt() const;
 
+    /// Removes this replica's registration if this statement is the one that created it, so that a failed
+    /// CREATE can be retried. Best effort, never throws.
+    void tryRemoveOwnReplicaFromZooKeeper();
+
     /// Returns the ZooKeeper retries info specified for the CREATE TABLE query which is creating and starting this table right now.
     ZooKeeperRetriesInfo getCreateQueryZooKeeperRetriesInfo() const;
     void clearCreateQueryZooKeeperRetriesInfo();

@@ -126,6 +126,9 @@ public:
 
     const String & getZooKeeperName() const { return zookeeper_name; }
     const String & getZooKeeperPath() const { return zookeeper_path; }
+    /// Path as `SYSTEM ... FROM ZKPATH` accepts it: that syntax derives the Keeper to act on from the
+    /// literal, so an auxiliary Keeper must be named in it or the command is routed to the default one.
+    String getFullZooKeeperPath() const;
 
     void getStatus(ReplicatedStatus& response, bool with_zk_fields) const;
 

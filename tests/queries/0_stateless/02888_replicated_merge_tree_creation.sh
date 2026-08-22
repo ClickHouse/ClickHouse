@@ -113,3 +113,71 @@ ${CLICKHOUSE_CLIENT} \
     -q "CREATE TABLE test_hint_2 (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/hint', 'r1') ORDER BY date" 2>&1 | grep -cm1 "SYSTEM DROP REPLICA 'r1' FROM ZKPATH"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_hint SYNC"
+
+#### 7 - A Keeper failure inside the constructor, with default settings, cleans up the registration
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_ctor SYNC"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT replicated_merge_tree_fail_after_creating_replica"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_ctor (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor', 'r1') ORDER BY date" 2>&1 | grep -cm1 "Fault injected"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor/replicas'"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_ctor (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor', 'r1') ORDER BY date"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database=currentDatabase() AND name='test_ctor'"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_ctor SYNC"
+
+#### 8 - The same failure on a second replica keeps the first replica and the shared path
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_ctor_first SYNC"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_ctor_second SYNC"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_ctor_first (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor_keep', 'r1') ORDER BY date"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO test_ctor_first SELECT toDate('2024-01-01')"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT replicated_merge_tree_fail_after_creating_replica"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_ctor_second (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor_keep', 'r2') ORDER BY date" 2>&1 | grep -cm1 "Fault injected"
+
+${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor_keep/replicas' ORDER BY name"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor_keep' AND name='metadata'"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO test_ctor_first SELECT toDate('2024-01-02')"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_ctor_first"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_ctor_second (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ctor_keep', 'r2') ORDER BY date"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_ctor_second SYNC"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_ctor_first SYNC"
+
+#### 9 - The recovery hint names the auxiliary Keeper, so the command it prints acts on the right one
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_aux SYNC"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_aux_2 SYNC"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_aux (date Date) ENGINE=ReplicatedMergeTree('zookeeper2:/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/aux', 'r1') ORDER BY date"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_aux_2 (date Date) ENGINE=ReplicatedMergeTree('zookeeper2:/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/aux', 'r1') ORDER BY date" 2>&1 | grep -cm1 "SYSTEM DROP REPLICA 'r1' FROM ZKPATH 'zookeeper2:/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/aux'"
+
+# The path the hint prints must be the one SYSTEM DROP REPLICA resolves: dropping the same replica
+# without the prefix is routed to the default Keeper, where that path does not exist.
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE test_aux PERMANENTLY"
+${CLICKHOUSE_CLIENT} \
+    -q "SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/aux'" 2>&1 | grep -cm1 "does not look like a table path"
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT name FROM system.zookeeper WHERE zookeeperName='zookeeper2' AND path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/aux/replicas'"
+${CLICKHOUSE_CLIENT} -q "SYSTEM DROP REPLICA 'r1' FROM ZKPATH 'zookeeper2:/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/aux'"
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT count() FROM system.zookeeper WHERE zookeeperName='zookeeper2' AND path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/aux/replicas'"
+
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE test_aux"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_aux SYNC"

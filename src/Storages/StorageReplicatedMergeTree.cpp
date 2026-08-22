@@ -18,6 +18,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
+#include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/Jemalloc.h>
@@ -268,6 +269,7 @@ namespace FailPoints
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
     extern const char check_table_inject_retryable_zk_error[];
+    extern const char replicated_merge_tree_fail_after_creating_replica[];
 }
 
 namespace ErrorCodes
@@ -693,15 +695,53 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
             createTableSharedID(getCreateQueryZooKeeperRetriesInfo());
+
+        /// Emulates a hardware error raised by one of the calls above after the replica was registered.
+        fiu_do_on(FailPoints::replicated_merge_tree_fail_after_creating_replica,
+        {
+            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (after creating replica)");
+        });
     }
     catch (...)
     {
+        if (mode < LoadingStrictnessLevel::ATTACH)
+            tryRemoveOwnReplicaFromZooKeeper();
+
         /// If replica was not created, rollback creation of data directory.
         dropIfEmpty();
         throw;
     }
 
     initialization_done = true;
+}
+
+
+void StorageReplicatedMergeTree::tryRemoveOwnReplicaFromZooKeeper()
+{
+    /// Best effort: ZooKeeper is likely the reason we are here, and the original exception is the one
+    /// the user must see.
+    try
+    {
+        auto zookeeper = getZooKeeperIfTableShutDown();
+
+        /// Remove the registration only if it is the one this statement created. `creator_info` is
+        /// written atomically with the replica nodes and pins them to this table UUID and this server,
+        /// so a leftover of another statement, table or server never matches and is kept for
+        /// SYSTEM DROP REPLICA.
+        String creator_info;
+        if (!zookeeper->tryGet(replica_path + "/creator_info", creator_info)
+            || creator_info != toString(getStorageID().uuid) + "|" + toString(ServerUUID::get()))
+            return;
+
+        /// Not drop(): the table has no parts and no table_shared_id yet, and collecting zero-copy lock
+        /// paths would have to load them. This keeps the /replicas + /dropped lock protocol that lets a
+        /// concurrent creator of the same table win.
+        dropReplica(zookeeper, zookeeper_info, log.load(), getSettings(), &has_metadata_in_zookeeper);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log.load(), "Failed to remove replica " + replica_path + " after a failed table creation");
+    }
 }
 
 
@@ -1405,8 +1445,8 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
                 throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS,
                                 "Replica {} already exists. If it is a leftover of a failed table creation "
                                 "and no other server uses it, remove it with "
-                                "SYSTEM DROP REPLICA '{}' FROM ZKPATH '{}'",
-                                replica_path, replica_name, zookeeper_path);
+                                "SYSTEM DROP REPLICA {} FROM ZKPATH {}",
+                                replica_path, quoteString(replica_name), quoteString(getFullZooKeeperPath()));
             case Coordination::Error::ZBADVERSION:
                 LOG_INFO(log, "Retrying createReplica(), because some other replicas were created at the same time");
                 break;

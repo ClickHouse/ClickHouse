@@ -2453,6 +2453,24 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
 
     auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
+
+    /// Once the constructor has returned, the replica is registered in Keeper under this statement's
+    /// identity, and only drop() removes that. Best effort, because the original exception is what the
+    /// user must see.
+    auto rollback_replica_in_keeper = [&]
+    {
+        if (!replicated_storage || create.attach)
+            return;
+        try
+        {
+            replicated_storage->drop();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("InterpreterCreateQuery");
+        }
+    };
+
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
@@ -2460,25 +2478,23 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (fault(thread_local_rng))
         {
             /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
-            /// The storage is constructed at this point, so it owns Keeper state that only drop() removes.
-            /// Best effort, like validateStorage above: the original exception is what the user must see.
-            if (!create.attach)
-            {
-                try
-                {
-                    replicated_storage->drop();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("InterpreterCreateQuery");
-                }
-            }
+            rollback_replica_in_keeper();
 
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }
     }
 
-    database->createTable(getContext(), create.getTable(), res, query_ptr);
+    try
+    {
+        database->createTable(getContext(), create.getTable(), res, query_ptr);
+    }
+    catch (...)
+    {
+        /// The metadata file is not committed here, so there is no local table for DROP TABLE to remove,
+        /// while a replica left in Keeper makes every retry fail with REPLICA_ALREADY_EXISTS.
+        rollback_replica_in_keeper();
+        throw;
+    }
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
     /// when data directory moved, but table has not been created due to some error.
