@@ -37,6 +37,7 @@ PRIMARY KEY(primary_key_name);
 
   `PRIMARY KEY` は 1 つのカラムのみをサポートします。主キーは Redis のキーとしてバイナリ形式でシリアライズされます。
   主キー以外のカラムは、対応する順序で Redis の値としてバイナリ形式でシリアライズされます。
+  選択した Redis データベースに ClickHouse によって書き込まれていないキーまたは値が含まれている場合、`SELECT * FROM redis_table` によるフルスキャンはバイナリデシリアライゼーションエラーで失敗することがあります。
 </Info>
 
 引数は [名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用して渡すこともできます。この場合、`host` と `port` は個別に指定する必要があります。この方法は本番環境では推奨されます。現時点では、名前付きコレクション を使用して Redis に渡すすべてのパラメータが必須です。
