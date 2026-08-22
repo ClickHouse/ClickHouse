@@ -354,6 +354,7 @@ public:
         NodesReplacementMap replacements;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
         const auto * filter_node = &actions_dag.findInOutputs(filter_column_name);
+        std::vector<std::pair<String, VirtualColumnDescription>> candidate_virtual_columns;
 
         /// Cache for added input nodes for each virtual column.
         std::unordered_map<String, const ActionsDAG::Node *> virtual_column_to_node;
@@ -379,7 +380,7 @@ public:
                 replacements[node] = replaced.node;
 
             for (auto & [index_name, virtual_column] : replaced.added_virtual_columns)
-                result.added_columns[index_name].add(std::move(virtual_column));
+                candidate_virtual_columns.emplace_back(index_name, std::move(virtual_column));
         }
 
         if (replacements.empty())
@@ -404,6 +405,14 @@ public:
         {
             if (!replaced_columns_set.contains(column))
                 result.removed_columns.push_back(column);
+        }
+
+        /// A virtual column is read only if its input survived `removeUnusedActions`: the rewrite can
+        /// keep a different index's virtual (or the original expression) instead, leaving this one unused.
+        for (auto & [index_name, virtual_column] : candidate_virtual_columns)
+        {
+            if (replaced_columns_set.contains(virtual_column.name))
+                result.added_columns[index_name].add(std::move(virtual_column));
         }
 
         return result;
