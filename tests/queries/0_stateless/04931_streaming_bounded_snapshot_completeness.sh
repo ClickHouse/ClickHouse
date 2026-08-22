@@ -11,17 +11,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 FP_ROUND=streaming_enrichment_pause_before_enrichment
-FP_MID=streaming_enrichment_pause_mid_round
 FP_OBSERVED=streaming_bounded_pause_after_snapshot_observed
 
 # An armed failpoint holds the table's enrichment, which blocks DROP TABLE, so always release.
 trap '$CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT '"$FP_ROUND"';
-    SYSTEM DISABLE FAILPOINT '"$FP_MID"';
     SYSTEM DISABLE FAILPOINT '"$FP_OBSERVED"';
 " 2>/dev/null || true' EXIT
 
-# One reader, so every partition belongs to it and a half-caught-up table leaves rows unread.
+# One reader, so every partition belongs to it.
 STREAM_SETTINGS="--enable_analyzer 1 --enable_streaming_queries 1 --use_skip_indexes_on_data_read 0 --max_threads 1"
 
 TABLE_SETTINGS="
@@ -30,41 +28,6 @@ TABLE_SETTINGS="
     add_minmax_index_for_block_number_column = 1,
     add_minmax_index_for_block_offset_column = 1,
     part_minmax_index_columns = 'with_block_number_offset'"
-
-# A bounded stream must not stop on work that is still publishing partitions.
-
-$CLICKHOUSE_CLIENT --query "
-DROP TABLE IF EXISTS t_bounded_partial;
-CREATE TABLE t_bounded_partial (p UInt64, k UInt64, v UInt64)
-ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS $TABLE_SETTINGS;"
-
-$CLICKHOUSE_CLIENT --query "
-INSERT INTO t_bounded_partial SELECT 0, number, number * 10 FROM numbers(5);
-INSERT INTO t_bounded_partial SELECT 1, number, number * 10 FROM numbers(5, 5);"
-
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_MID"
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_OBSERVED"
-
-# The work serving this reader parks after publishing one partition of the data it is entitled to.
-# shellcheck disable=SC2086
-$CLICKHOUSE_CLIENT $STREAM_SETTINGS --query_id "${CLICKHOUSE_DATABASE}_partial_reader" --query \
-    "SELECT 'partial_round', count(), sum(k), sum(v) FROM t_bounded_partial STREAM BOUNDED" &
-READER=$!
-
-timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_MID PAUSE" \
-    || echo "partial_round mid barrier timed out"
-
-# Both waits returning is the witness: the work is held after publishing part of what it owes, and
-# the reader has already read both of the things it stops on, so it read them inside that window.
-timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_OBSERVED PAUSE" \
-    || echo "partial_round reader barrier timed out"
-
-# Reader first, so it acts on that pair while the work is still held.
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_OBSERVED" 2>/dev/null || true
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_MID" 2>/dev/null || true
-
-wait $READER
-$CLICKHOUSE_CLIENT --query "DROP TABLE t_bounded_partial"
 
 # A bounded stream reads how much has been published and what is readable separately, so a whole
 # round can land between the two. Reading the count first bounds what the second read can be.

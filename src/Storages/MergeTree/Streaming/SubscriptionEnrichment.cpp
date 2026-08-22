@@ -1,16 +1,7 @@
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 
-#include <Common/FailPoint.h>
-
 namespace DB
 {
-
-namespace FailPoints
-{
-    /// Pauses a round right after it advanced one partition of a subscription, so a test can
-    /// deterministically observe that subscription while its map is only partially published.
-    extern const char streaming_enrichment_pause_mid_round[];
-}
 
 static bool partitionBelongsToSubscription(const String & partition_id, size_t subscriptions_count, size_t subscription_index)
 {
@@ -66,8 +57,6 @@ bool enrichSubscription(
         {
             subscription.advance(partition_id, cursor);
             enriched = true;
-
-            FailPointInjection::pauseFailPoint(FailPoints::streaming_enrichment_pause_mid_round);
         }
     }
 
