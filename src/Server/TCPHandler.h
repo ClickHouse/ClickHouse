@@ -37,6 +37,11 @@ namespace CurrentMetrics
     extern const Metric TCPConnection;
 }
 
+namespace ProfileEvents
+{
+    extern const Event NativeProtocolSend;
+}
+
 namespace Poco { class Logger; }
 
 namespace DB
@@ -60,7 +65,14 @@ class TCPHandlerPocoChunkedWriter : public WriteBufferFromPocoSocketChunked
 public:
     using WriteBufferFromPocoSocketChunked::WriteBufferFromPocoSocketChunked;
 
-    void sync() override { WriteBuffer::next(); }
+    void sync() override
+    {
+        if (!offset())
+            return;
+
+        WriteBuffer::next();
+        ProfileEvents::increment(ProfileEvents::NativeProtocolSend);
+    }
 
 private:
     using WriteBuffer::next;
