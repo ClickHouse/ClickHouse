@@ -709,10 +709,13 @@ def test_attribution_fails_close_on_a_link_failure(tmp_path):
         [],
         ["contrib/llvm-project/libcxx/include/__memory/unique_ptr.h"],
     )
-    sources, unattributable, unreadable = failed_compile_edge_sources(result)
+    sources, unattributable, unreadable, diagnostic_free = failed_compile_edge_sources(
+        result
+    )
     assert sources == [_TEST_FILE]
     assert unattributable == ["src/unit_tests_dbms"]
     assert unreadable == []
+    assert diagnostic_free == []
 
     reason, _, refusal = compile_failure_attribution(result, [_TEST_FILE])
     assert reason == ""
@@ -737,6 +740,7 @@ def test_attribution_fails_close_on_a_link_failure_with_an_overlaid_error(tmp_pa
         [_TEST_FILE],
         ["src/unit_tests_dbms"],
         [],
+        [],
     )
 
     reason, other, refusal = compile_failure_attribution(result, [_TEST_FILE])
@@ -759,7 +763,7 @@ def test_attribution_keeps_the_error_path_basis_without_any_failed_edge(tmp_path
     )
     result = _compile_log(tmp_path, log)
     assert attribute_compile_errors(result, [_TEST_FILE]) == ([_TEST_FILE], [])
-    assert failed_compile_edge_sources(result) == ([], [], [])
+    assert failed_compile_edge_sources(result) == ([], [], [], [])
 
     reason, _, refusal = compile_failure_attribution(result, [_TEST_FILE])
     assert "every compile error is inside the PR's changed test files" in reason
@@ -791,7 +795,12 @@ def test_attribution_fails_close_when_a_fix_source_edge_fails_without_a_diagnost
     # Both bases would say "attributable" on their own: the only `error:` path is the
     # overlaid test, and the fix source carries no diagnostic to place outside it.
     assert attribute_compile_errors(result, [_TEST_FILE]) == ([_TEST_FILE], [])
-    assert failed_compile_edge_sources(result) == ([fix_source, _TEST_FILE], [], [])
+    assert failed_compile_edge_sources(result) == (
+        [fix_source, _TEST_FILE],
+        [],
+        [],
+        [fix_source],
+    )
 
     reason, other, refusal = compile_failure_attribution(result, [_TEST_FILE])
     assert reason == ""
@@ -818,12 +827,21 @@ def test_attribution_fails_close_without_a_parsable_diagnostic(tmp_path):
     result = _compile_log(tmp_path, log)
     assert attribute_compile_errors(result, [_TEST_FILE]) == ([], [])
     # The edge itself is attributable; only the missing diagnostic holds it back.
-    assert failed_compile_edge_sources(result) == ([_TEST_FILE], [], [])
+    assert failed_compile_edge_sources(result) == (
+        [_TEST_FILE],
+        [],
+        [],
+        [_TEST_FILE],
+    )
 
     reason, other, refusal = compile_failure_attribution(result, [_TEST_FILE])
     assert reason == ""
     assert other == []
-    assert refusal == "the build produced no parsable compiler diagnostic"
+    # The per-edge wording names the silent translation unit. The whole-log wording is
+    # reserved for a log with no readable edge to name.
+    assert refusal == (
+        "failed build steps with no compiler diagnostic of their own: " + _TEST_FILE
+    )
 
 
 def test_attribution_strips_ansi_colour_before_scanning_edges(tmp_path):
@@ -850,7 +868,12 @@ def test_attribution_scans_every_log_and_deduplicates(tmp_path):
         + f"{_BEFORE}/{other_test}:7:1: error: unknown type name 'Foo'\n"
     )
     result = _compile_log(tmp_path, log_a, log_b, log_a)
-    assert failed_compile_edge_sources(result) == ([other_test, _TEST_FILE], [], [])
+    assert failed_compile_edge_sources(result) == (
+        [other_test, _TEST_FILE],
+        [],
+        [],
+        [],
+    )
 
     reason, _, _ = compile_failure_attribution(result, [_TEST_FILE, other_test])
     assert reason
@@ -871,6 +894,7 @@ def test_failed_compile_edge_sources_keeps_paths_outside_the_worktree(tmp_path):
         ["/usr/share/cmake/Modules/probe.c"],
         [],
         [],
+        [],
     )
     assert compile_failure_attribution(result, [_TEST_FILE])[0] == ""
 
@@ -884,6 +908,7 @@ def test_failed_compile_edge_sources_handles_a_truncated_log(tmp_path):
         [],
         [],
         ["src/CMakeFiles/x.dir/gtest_wb.cpp.o"],
+        [],
     )
     reason, _, refusal = compile_failure_attribution(result, [_TEST_FILE])
     assert reason == ""
@@ -906,7 +931,139 @@ def test_failed_compile_edge_sources_splits_three_ways(tmp_path):
         ["src/Common/tests/gtest_a.cpp"],
         ["src/unit_tests_dbms"],
         ["src/CMakeFiles/x.dir/gtest_wb.cpp.o"],
+        [],
     )
+
+
+def test_failed_compile_edge_sources_reads_a_shell_wrapped_link_command(tmp_path):
+    """The link command is wrapped in cmake's `: && ... && :` and the real compile command
+    is a wrapper script, not a compiler. Both must be read as commands: recognising a
+    command line must not become a way for a link edge to be filed as unreadable, which
+    would stop it defeating attribution."""
+    log = (
+        _link_failure_edge()
+        + "FAILED: src/CMakeFiles/x.dir/gtest_wb.cpp.o \n"
+        f"{_BEFORE}/cmake/heavy_build_check_scripts/prlimit_sanitizers.sh "
+        f"/usr/bin/sccache /usr/local/bin/clang++-22 -O2 "
+        f"-o src/CMakeFiles/x.dir/gtest_wb.cpp.o -c {_BEFORE}/{_TEST_FILE}\n"
+        + f"{_BEFORE}/{_TEST_FILE}:42:5: error: no matching function for call to 'f'\n"
+    )
+    assert failed_compile_edge_sources(_compile_log(tmp_path, log)) == (
+        [_TEST_FILE],
+        ["src/unit_tests_dbms"],
+        [],
+        [],
+    )
+
+
+def test_failed_compile_edge_sources_scopes_each_edges_diagnostic(tmp_path):
+    """Two overlaid-test compile edges where only the first carries an `error:`. The
+    diagnostic belongs to the edge it follows, so the silent one is reported."""
+    other_test = "src/Common/tests/gtest_second_overlaid.cpp"
+    log = (
+        _template_instantiation_log()
+        + _failed_compile_edge(
+            "src/CMakeFiles/y.dir/gtest_second.cpp.o", f"{_BEFORE}/{other_test}"
+        )
+        + "clang++-22: error\n"
+        + "Killed\n"
+    )
+    result = _compile_log(tmp_path, log)
+    assert failed_compile_edge_sources(result) == (
+        [other_test, _TEST_FILE],
+        [],
+        [],
+        [other_test],
+    )
+
+    reason, other, refusal = compile_failure_attribution(result, [_TEST_FILE, other_test])
+    assert reason == ""
+    assert refusal == (
+        "failed build steps with no compiler diagnostic of their own: " + other_test
+    )
+    # The edge that did explain itself is not what defeated attribution.
+    assert _TEST_FILE not in refusal
+
+
+def test_failed_compile_edge_sources_does_not_borrow_a_later_edges_diagnostic(tmp_path):
+    """The silent edge comes first and the explained one after it. Only a window that ends
+    at the next `FAILED:` edge can tell them apart: one running to the end of the log would
+    lend the second edge's error to the first."""
+    other_test = "src/Common/tests/gtest_second_overlaid.cpp"
+    log = (
+        _failed_compile_edge(
+            "src/CMakeFiles/y.dir/gtest_second.cpp.o", f"{_BEFORE}/{other_test}"
+        )
+        + "clang++-22: error\n"
+        + "Killed\n"
+        + _failed_compile_edge(
+            "src/CMakeFiles/x.dir/gtest_wb.cpp.o", f"{_BEFORE}/{_TEST_FILE}"
+        )
+        + f"{_BEFORE}/{_TEST_FILE}:42:5: error: no matching function for call to 'f'\n"
+    )
+    result = _compile_log(tmp_path, log)
+    assert failed_compile_edge_sources(result) == (
+        [other_test, _TEST_FILE],
+        [],
+        [],
+        [other_test],
+    )
+    assert compile_failure_attribution(result, [_TEST_FILE, other_test])[0] == ""
+
+
+def test_failed_compile_edge_sources_reads_a_cd_wrapped_custom_command(tmp_path):
+    """cmake writes a generated-source edge as `cd <dir> && <tool>`. It is a command, so
+    the edge is read and reported as naming no translation unit, which defeats attribution
+    outright. Filing it as unreadable instead would only withhold the second basis and let
+    a broken code generator pass as a test adaptation."""
+    generated = "contrib/llvm-project/llvm/include/llvm/IR/Attributes.inc"
+    log = (
+        f"FAILED: {generated} \n"
+        "cd /ClickHouse/ci/tmp/before_build/contrib/llvm-project-cmake && "
+        "/ClickHouse/ci/tmp/before_build/bin/llvm-tblgen -gen-attrs -o Attributes.inc\n"
+        + f"{_BEFORE}/{_TEST_FILE}:42:5: error: no matching function for call to 'f'\n"
+    )
+    result = _compile_log(tmp_path, log)
+    assert failed_compile_edge_sources(result) == ([], [generated], [], [])
+
+    reason, _, refusal = compile_failure_attribution(result, [_TEST_FILE])
+    assert reason == ""
+    assert refusal == (
+        "failed build steps that name no translation unit: " + generated
+    )
+
+
+@pytest.mark.parametrize(
+    "first_line",
+    [
+        f"In file included from {_BEFORE}/{_TEST_FILE}:1:",
+        "    auto buffer = std::make_unique<WriteBufferInlineOrBlob>(a, b);",
+        "                  ~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~",
+        f"{_BEFORE}/{_TEST_FILE}:42:5: error: no matching function for call to 'f'",
+    ],
+    ids=["include-context", "source-excerpt", "caret", "bare-diagnostic"],
+)
+def test_attribution_keeps_the_error_path_basis_for_every_diagnostic_line_shape(
+    tmp_path, first_line
+):
+    """An abridged `FAILED:` block says nothing about its edge, so it must not withdraw an
+    attribution the diagnostics already establish - whichever line clang happens to print
+    first. `In file included from` is the shape the real failure this job exists for
+    starts with, and only a command line may be read as evidence about the edge."""
+    log = (
+        _abridged_failed_edge("src/CMakeFiles/x.dir/gtest_wb.cpp.o")
+        + first_line
+        + "\n"
+        + f"{_BEFORE}/{_TEST_FILE}:42:5: error: no matching function for call to 'f'\n"
+        + "ninja: build stopped: subcommand failed.\n"
+    )
+    result = _compile_log(tmp_path, log)
+    assert failed_compile_edge_sources(result)[2] == [
+        "src/CMakeFiles/x.dir/gtest_wb.cpp.o"
+    ]
+    reason, _, refusal = compile_failure_attribution(result, [_TEST_FILE])
+    assert "every compile error is inside the PR's changed test files" in reason
+    assert refusal == ""
 
 
 def test_attribution_keeps_the_error_path_basis_when_a_command_line_is_missing(tmp_path):
@@ -923,6 +1080,7 @@ def test_attribution_keeps_the_error_path_basis_when_a_command_line_is_missing(t
         [],
         [],
         ["src/CMakeFiles/x.dir/gtest_wb.cpp.o"],
+        [],
     )
 
     reason, other, refusal = compile_failure_attribution(result, [_TEST_FILE])
@@ -958,8 +1116,8 @@ def test_attribution_fails_close_when_a_missing_command_line_is_all_that_is_left
 
 
 def test_failed_compile_edge_sources_handles_no_files():
-    assert failed_compile_edge_sources(_FakeResult(None)) == ([], [], [])
-    assert failed_compile_edge_sources(_FakeResult([])) == ([], [], [])
+    assert failed_compile_edge_sources(_FakeResult(None)) == ([], [], [], [])
+    assert failed_compile_edge_sources(_FakeResult([])) == ([], [], [], [])
 
 
 # --------------------------------------------------------------------------
@@ -1106,11 +1264,13 @@ def test_main_reports_xfail_when_a_failed_edge_carries_no_command_line(
 ):
     """An abridged `FAILED:` block plus an `error:` inside the overlaid test: the
     diagnostics attribute the failure on their own, and an edge the log does not describe
-    must not turn that into an ERROR."""
+    must not turn that into an ERROR. The block leads with the `In file included from`
+    line real clang prints first, which is the shape that regressed."""
     import ci.jobs.unit_tests_bugfix_validation_job as job
 
     log = (
         _abridged_failed_edge("src/CMakeFiles/x.dir/gtest_wb.cpp.o")
+        + f"In file included from {_BEFORE}/{_TEST_FILE}:1:\n"
         + f"{_BEFORE}/{_TEST_FILE}:42:5: error: no matching function for call to 'f'\n"
         + "ninja: build stopped: subcommand failed.\n"
     )
@@ -1146,6 +1306,33 @@ def test_main_reports_error_when_an_abridged_log_also_breaks_a_fix_source(
     assert job.Result.Label.XFAIL not in compile_result.get_labels()
     assert "cannot be attributed" in compile_result.info
     assert fix_source in compile_result.info
+    assert "inconclusive" in info_lines
+
+
+def test_main_reports_error_when_a_second_overlaid_edge_has_no_diagnostic(
+    monkeypatch, tmp_path
+):
+    """Two overlaid tests each fail their own edge and only the first says why. One edge's
+    diagnostic cannot answer for another edge's silence, so the killed translation unit is
+    named and the failure stays inconclusive."""
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    other_test = "src/Common/tests/gtest_second_overlaid.cpp"
+    log = (
+        _template_instantiation_log()
+        + _failed_compile_edge(
+            "src/CMakeFiles/y.dir/gtest_second.cpp.o", f"{_BEFORE}/{other_test}"
+        )
+        + "clang++-22: error\n"
+        + "Killed\n"
+    )
+    results, info_lines = _drive_main_to_compile_step(monkeypatch, tmp_path, log)
+
+    compile_result = results[-1]
+    assert compile_result.status == job.Result.Status.ERROR
+    assert job.Result.Label.XFAIL not in compile_result.get_labels()
+    assert "cannot be attributed" in compile_result.info
+    assert other_test in compile_result.info
     assert "inconclusive" in info_lines
 
 

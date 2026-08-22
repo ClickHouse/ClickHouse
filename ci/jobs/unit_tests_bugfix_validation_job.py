@@ -498,29 +498,37 @@ def attribute_compile_errors(compile_result, test_files):
 # translation unit of a failed edge is the `-c <source>` argument of the next line.
 _NINJA_FAILED_LINE_RE = re.compile(r"^FAILED:(?:\s|$)")
 _COMPILE_SOURCE_RE = re.compile(r"(?:^|\s)-c\s+(\S+)")
-# A compiler diagnostic, "path:line[:col]: ", standing where the command line should
-# be: this log does not carry the command, so there is nothing to read the edge from.
-_DIAGNOSTIC_LINE_RE = re.compile(r"^\S+:\d+(?::\d+)?:\s")
+# The line after `FAILED:` is the command only if it starts with the program ninja ran:
+# a path to a tool or wrapper script, optionally behind cmake's `: && ` or `cd <dir> && `
+# prefix. A diagnostic never takes that shape - it indents, or its first token carries
+# the `path:line:` colons, or it leads with a bare word such as `In` or `clang`.
+_NINJA_COMMAND_LINE_RE = re.compile(r"^(?::\s*&&\s+)?(?:cd|[^\s:]*/[^\s:]*)(?:\s|$)")
 
 
 def failed_compile_edge_sources(compile_result):
-    """Split the before-build's failed ninja edges three ways.
+    """Split the before-build's failed ninja edges four ways.
 
-    Returns `(sources, unattributable, unreadable)` - sorted lists of, respectively,
-    the compiled translation units of the failed edges (repo-relative for paths under
-    the before-worktree); the outputs of the edges whose command line was read and
-    carries no `-c <source>`, such as a link step, an archive step or a custom command;
-    and the outputs of the edges whose command line is absent, because the log ends
-    there or a diagnostic stands in its place.
+    Returns `(sources, unattributable, unreadable, diagnostic_free)` - sorted lists of,
+    respectively, the compiled translation units of the failed edges (repo-relative for
+    paths under the before-worktree); the outputs of the edges whose command line was
+    read as a command and carries no `-c <source>`, such as a link step, an archive step
+    or a custom command; the outputs of the edges whose command line is absent or is not
+    recognisable as a command, because the log ends there or something else stands in its
+    place; and the translation units of the compile edges that raised no parsable
+    compiler error of their own.
 
-    A non-empty `unattributable` is evidence that something which is not a translation
-    unit failed. A non-empty `unreadable` is only the absence of evidence about that
-    edge, which is why the two are kept apart.
+    A non-empty `unattributable` or `diagnostic_free` is evidence that something failed
+    which either is not a translation unit or never said why. A non-empty `unreadable` is
+    only the absence of evidence about that edge, which is why they are kept apart.
+
+    An edge's own diagnostics are the lines up to the next `FAILED:` edge, so one edge's
+    error cannot vouch for another edge's silence.
     """
     marker = f"{BEFORE_SRC}/"
     sources = set()
     unattributable = set()
     unreadable = set()
+    diagnostic_free = set()
     for log in compile_result.files or []:
         try:
             with open(log, "r", errors="replace") as f:
@@ -529,12 +537,11 @@ def failed_compile_edge_sources(compile_result):
             print(f"WARNING: could not read compile log {log}: {e}")
             continue
         lines = content.splitlines()
-        for i, line in enumerate(lines):
-            if not _NINJA_FAILED_LINE_RE.match(line):
-                continue
-            outputs = line[len("FAILED:") :].strip() or "unnamed edge"
+        edges = [i for i, line in enumerate(lines) if _NINJA_FAILED_LINE_RE.match(line)]
+        for n, i in enumerate(edges):
+            outputs = lines[i][len("FAILED:") :].strip() or "unnamed edge"
             command = lines[i + 1] if i + 1 < len(lines) else ""
-            if not command.strip() or _DIAGNOSTIC_LINE_RE.match(command):
+            if not command.strip() or not _NINJA_COMMAND_LINE_RE.match(command):
                 unreadable.add(outputs)
                 continue
             m = _COMPILE_SOURCE_RE.search(command)
@@ -543,8 +550,19 @@ def failed_compile_edge_sources(compile_result):
                 continue
             path = m.group(1)
             idx = path.find(marker)
-            sources.add(path[idx + len(marker) :] if idx != -1 else path)
-    return sorted(sources), sorted(unattributable), sorted(unreadable)
+            rel = path[idx + len(marker) :] if idx != -1 else path
+            sources.add(rel)
+            end = edges[n + 1] if n + 1 < len(edges) else len(lines)
+            if not any(
+                _COMPILE_ERROR_LINE_RE.match(line) for line in lines[i + 1 : end]
+            ):
+                diagnostic_free.add(rel)
+    return (
+        sorted(sources),
+        sorted(unattributable),
+        sorted(unreadable),
+        sorted(diagnostic_free),
+    )
 
 
 def compile_failure_attribution(compile_result, test_files):
@@ -580,11 +598,14 @@ def compile_failure_attribution(compile_result, test_files):
     them enumerated. The first basis reasons about the diagnostics that are present, so an
     edge this log does not describe cannot contradict it.
 
-    The second basis additionally requires a parsable compiler error to exist somewhere: a
-    killed compiler or an internal ninja error is not attributable.
+    A compile edge that raised no parsable error of its own is not attributable either: a
+    killed compiler says nothing about why that translation unit failed, and a diagnostic
+    belonging to a different edge cannot answer for it.
     """
     overlaid_errors, other_errors = attribute_compile_errors(compile_result, test_files)
-    sources, unattributable, unreadable = failed_compile_edge_sources(compile_result)
+    sources, unattributable, unreadable, diagnostic_free = failed_compile_edge_sources(
+        compile_result
+    )
     if unattributable:
         return (
             "",
@@ -599,6 +620,13 @@ def compile_failure_attribution(compile_result, test_files):
             other_errors,
             "translation units outside the PR's changed test files failed to compile: "
             + ", ".join(non_test_sources),
+        )
+    if diagnostic_free:
+        return (
+            "",
+            other_errors,
+            "failed build steps with no compiler diagnostic of their own: "
+            + ", ".join(diagnostic_free),
         )
     if overlaid_errors and not other_errors:
         return (
