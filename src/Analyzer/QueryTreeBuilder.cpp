@@ -194,7 +194,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(
 /// persisted on the query tree node it belongs to (and therefore survive cloning and the conversion
 /// back to AST for distributed execution). Applying and recording are kept together here because
 /// both a `SELECT`'s clause and a `UNION`'s query-level clause must be handled identically.
-static void applyQueryLevelSettings(
+void applyQueryLevelSettings(
     ASTSetQuery & set_query,
     ContextMutablePtr & updated_context,
     SettingsChanges & settings_changes,
