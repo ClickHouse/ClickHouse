@@ -59,6 +59,14 @@ _AWS_FAILURES = [
     ),
 ]
 
+# The paths `ClickHouseProc.__init__` writes straight into `os.environ`.
+_CLICKHOUSE_PATH_VARS = (
+    "CLICKHOUSE_CONFIG_DIR",
+    "CLICKHOUSE_CONFIG",
+    "CLICKHOUSE_SCHEMA_FILES",
+    "CLICKHOUSE_USER_FILES",
+)
+
 # The ways `Secret` rejects an answer it did receive. All must stay fatal: `aws` exited
 # 0, so no amount of retrying or tolerating changes the outcome.
 _MISCONFIGURATIONS = {
@@ -119,9 +127,17 @@ def proc(monkeypatch, tmp_path):
     from a module global that the `ch_config_dir` argument does not redirect and that
     the `ClickHouseService` this suite runs inside uses for the live server's log and
     stderr sinks. Same convention as `test_collect_core_dumps.py`.
+
+    `__init__` also `os.environ`-assigns four `CLICKHOUSE_*` paths directly, outside
+    monkeypatch's tracking. `ci/tests` runs as one pytest process whose later modules
+    subprocess `clickhouse-test`, which honours all four from the inherited
+    environment, so they are pinned here to make those assignments restorable. Same
+    convention as `test_expect_debuglog_separation.py`.
     """
     monkeypatch.setattr(clickhouse_proc_module, "temp_dir", str(tmp_path))
     monkeypatch.setattr(clickhouse_proc_module, "p_temp_dir", Path(tmp_path))
+    for name in _CLICKHOUSE_PATH_VARS:
+        monkeypatch.setenv(name, os.environ.get(name, ""))
 
     def make(**kwargs):
         return ClickHouseProc(**kwargs)
@@ -159,6 +175,19 @@ def fake_aws(tmp_path, monkeypatch):
         """`aws` exits 0 but the answer is unusable, so `Secret`'s own checks reject it."""
         _write(_MISCONFIGURATIONS[shape])
 
+    def answer_with(body):
+        """Emit exactly `body`, for shapes that are neither a clean success nor one of the
+        named misconfigurations.
+
+        Written to a file and `cat`-ed rather than passed to `printf`: `printf` interprets
+        escapes in its format argument only, so a body carrying tabs as `\\t` would arrive
+        as the literal two characters, and a shape meant to be misparsed would instead
+        contain no tab at all and be rejected for the wrong reason.
+        """
+        answer = tmp_path / "answer"
+        answer.write_text(body)
+        _write(f'cat "{answer}"\n')
+
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
     # `create_log_export_config` copies a repo-relative config file.
     monkeypatch.chdir(_REPO_ROOT)
@@ -169,6 +198,7 @@ def fake_aws(tmp_path, monkeypatch):
     install.invocations = invocations
     install.succeed_with = succeed_with
     install.misconfigure = misconfigure
+    install.answer_with = answer_with
     # The default shape, so a cell that does not parametrise still fails realistically.
     install(*_AWS_FAILURES[0])
     return install
@@ -238,7 +268,7 @@ def _module_constants(path, names):
 
 
 def _imported_names(path):
-    """Resolve `path`'s own top-level `from X import a, b` bindings.
+    """Resolve `path`'s own top-level import bindings, both `import x` and `from x import a`.
 
     The import root is load-bearing and invisible to a namespace the test fills in
     itself. `ci.praktika` and `praktika` are two distinct module objects for the same
@@ -254,11 +284,17 @@ def _imported_names(path):
         tree = ast.parse(f.read(), filename=path)
     resolved = {}
     for node in tree.body:
-        if not isinstance(node, ast.ImportFrom) or node.level:
-            continue
-        module = importlib.import_module(node.module)
-        for alias in node.names:
-            resolved[alias.asname or alias.name] = getattr(module, alias.name)
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                # `import a.b` binds `a`; only an `as` alias binds the dotted module.
+                top = alias.name.split(".")[0]
+                resolved[alias.asname or top] = importlib.import_module(
+                    alias.name if alias.asname else top
+                )
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            module = importlib.import_module(node.module)
+            for alias in node.names:
+                resolved[alias.asname or alias.name] = getattr(module, alias.name)
     return resolved
 
 
@@ -289,6 +325,82 @@ def test_a_tolerated_failure_leaves_no_half_written_config(fake_aws, proc, tmp_p
         proc().create_log_export_config(config_dir=str(config_dir))
     assert [p.name for p in config_dir.iterdir()] == ["config.d"]
     assert list((config_dir / "config.d").iterdir()) == []
+
+
+def _open_failing_midway():
+    """An `open` replacement that writes half of the config and then raises `OSError`.
+
+    That is the shape of ENOSPC, EIO or a signal arriving during the write, which is not
+    reachable by permissions: a failure BEFORE the first byte leaves nothing behind and
+    so cannot tell a direct write from an atomic one.
+    """
+    real_open = open
+
+    class _PrefixThenFail:
+        def __init__(self, path):
+            self._f = real_open(path, "w")
+
+        def write(self, text):
+            self._f.write(text[: len(text) // 2])
+            self._f.flush()
+            raise OSError(28, "No space left on device")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self._f.close()
+            return False
+
+    def failing_open(path, mode="r", *args, **kwargs):
+        if mode == "w" and "system_logs_export.yaml" in str(path):
+            return _PrefixThenFail(path)
+        return real_open(path, mode, *args, **kwargs)
+
+    return failing_open
+
+
+def test_a_write_failing_after_the_first_bytes_leaves_no_partial_config(
+    fake_aws, proc, tmp_path, monkeypatch
+):
+    """The server reads this path, so it must hold either the previous content or the
+    complete new content. A direct `open(path, "w")` truncates in place, so a failure
+    part-way through leaves a prefix: 50 of the 235 truncation points of this content are
+    invalid YAML, which stops the server from starting at all, and a previously good file
+    is destroyed the same way."""
+    fake_aws.succeed_with(host="ci-logs.example.com", password="secret")
+    config_dir = tmp_path / "etc"
+    config_file = config_dir / "config.d" / "system_logs_export.yaml"
+
+    monkeypatch.setattr(
+        clickhouse_proc_module, "open", _open_failing_midway(), raising=False
+    )
+    ch = proc()
+    with pytest.raises(OSError):
+        ch.create_log_export_config(config_dir=str(config_dir))
+
+    assert not config_file.exists()
+    # Nor a leftover temp file: the server ignores it, but it would be a stale secret.
+    assert list((config_dir / "config.d").iterdir()) == []
+    assert ch.log_export_host is None
+
+
+def test_the_sqlstorm_duplicate_also_leaves_no_partial_config(fake_aws, tmp_path):
+    """The SQLStorm copy of the method writes the same path for the same server, so it
+    needs the same atomicity. Asserted separately because a fix applied to one copy
+    leaves the other."""
+    fake_aws.succeed_with(host="ci-logs.example.com", password="secret")
+    config_path = tmp_path / "config"
+    config_file = config_path / "config.d" / "system_logs_export.yaml"
+
+    _, configure = _sqlstorm_binary_config(
+        config_path, extra_globals={"open": _open_failing_midway()}
+    )
+    with pytest.raises(OSError):
+        configure()
+
+    assert not config_file.exists()
+    assert list((config_path / "config.d").iterdir()) == []
 
 
 def test_a_failed_write_leaves_no_host_to_export_against(fake_aws, proc, tmp_path):
@@ -358,6 +470,36 @@ def test_a_rejected_answer_raises_the_distinguishable_type(
         proc().create_log_export_config(config_dir=str(tmp_path / "etc"))
 
 
+# `--output text` emits a value verbatim, so an answer is not a list of `Name<TAB>Value`
+# lines: a value spanning lines continues on lines carrying no tab. Deciding per line
+# instead of over the whole answer drops those continuations and yields a silently
+# truncated credential, which every consumer of the shared fetcher would then use.
+_UNSPLITTABLE_ANSWERS = {
+    "multi_line_value": (
+        "clickhouse_ci_logs_host\th.example\n"
+        "clickhouse_ci_logs_password\tline1\nline2\n"
+    ),
+    "junk_trailing_line": (
+        "clickhouse_ci_logs_host\th.example\n"
+        "clickhouse_ci_logs_password\tp\njunkline\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_UNSPLITTABLE_ANSWERS))
+def test_an_answer_that_is_not_line_per_pair_yields_no_truncated_credential(
+    fake_aws, proc, tmp_path, shape
+):
+    """The outcome, not the type: whatever this shape is decided to be, a value must
+    never arrive cut down to its first line."""
+    fake_aws.answer_with(_UNSPLITTABLE_ANSWERS[shape])
+    ch = proc()
+    with pytest.raises(Exception):
+        ch.create_log_export_config(config_dir=str(tmp_path / "etc"))
+    assert ch.log_export_password != "line1"
+    assert ch.log_export_password is None
+
+
 # --- Install ClickHouse survives it (the defect) ------------------------------
 
 
@@ -390,11 +532,14 @@ def _clickbench_hook(ch):
     )
 
 
+@pytest.mark.parametrize("exit_code,stderr", _AWS_FAILURES)
 def test_install_clickhouse_survives_a_failed_log_export_fetch(
-    fake_aws, env, proc, tmp_path
+    fake_aws, env, proc, tmp_path, exit_code, stderr
 ):
     """The claim of the whole change, through the production result machinery: a
-    telemetry blip must not abort the job before a single test runs."""
+    telemetry blip must not abort the job before a single test runs. All three observed
+    shapes, since a handler narrowed to one of their messages would pass on the rest."""
+    fake_aws(exit_code, stderr)
     closure = _functional_tests_closure(str(tmp_path / "etc"), proc())
     result = Result.from_commands_run(
         name="Install ClickHouse", command=["true", closure]
@@ -609,12 +754,14 @@ def test_the_appended_clickbench_hook_lands_in_the_service_config_hooks():
 # --- the other two telemetry call sites --------------------------------------
 
 
+@pytest.mark.parametrize("exit_code,stderr", _AWS_FAILURES)
 def test_clickbench_config_hook_survives_and_does_not_trip_the_hook_gate(
-    fake_aws, env, proc, tmp_path
+    fake_aws, env, proc, tmp_path, exit_code, stderr
 ):
     """ClickBench fails by a second mechanism: the hook runs inside
     `ClickHouseService.__enter__`, which raises both when a hook raises and when it
     returns exactly `False`. So the tolerant hook must clear both gates."""
+    fake_aws(exit_code, stderr)
     ch = proc(ch_config_dir=str(tmp_path / "etc"))
     hook = _clickbench_hook(ch)
 
@@ -650,7 +797,7 @@ def test_clickbench_hook_failure_would_otherwise_abort_the_benchmark(
         ch.create_log_export_config(str(tmp_path / "etc"))
 
 
-def _sqlstorm_binary_config(config_path):
+def _sqlstorm_binary_config(config_path, extra_globals=None):
     """The production `ClickHouseBinary.create_log_export_config`, bound to `config_path`.
 
     Extracted and executed rather than reached through `ClickHouseProc`: the two
@@ -672,6 +819,8 @@ def _sqlstorm_binary_config(config_path):
         )
     )
     method = _define(_SQLSTORM, "create_log_export_config", namespace, args=("self",))
+    # After `_define`, so a caller can override a name the module itself imports.
+    namespace.update(extra_globals or {})
     return binary, lambda: method(binary)
 
 
@@ -704,10 +853,14 @@ def _sqlstorm_start(config_path, env_recorder, reached):
     return _define(_SQLSTORM, "start", namespace, args=()), binary
 
 
-def test_sqlstorm_start_reaches_the_server_start(fake_aws, env, tmp_path):
+@pytest.mark.parametrize("exit_code,stderr", _AWS_FAILURES)
+def test_sqlstorm_start_reaches_the_server_start(
+    fake_aws, env, tmp_path, exit_code, stderr
+):
     """SQLStorm's tolerance sits inline in the `start()` callable handed to
     `from_commands_run`, so assert the step both survives and continues: `ch.start()` has
     to be reached, and the tolerated fetch has to have been attempted."""
+    fake_aws(exit_code, stderr)
     reached = []
     start, _ = _sqlstorm_start(tmp_path / "config", env, reached)
 

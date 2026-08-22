@@ -364,8 +364,16 @@ class ClickHouseProc:
             CLICKHOUSE_CI_LOGS_PASSWORD=password,
         )
 
-        with open(config_file, "w") as f:
-            f.write(config_content)
+        # The server reads this path, so it must never hold a prefix: write beside it
+        # and rename, which is atomic within a directory.
+        tmp_file = config_file.with_name(config_file.name + ".tmp")
+        try:
+            with open(tmp_file, "w") as f:
+                f.write(config_content)
+            os.replace(tmp_file, config_file)
+        except Exception:
+            tmp_file.unlink(missing_ok=True)
+            raise
         # Assigned last: a set `log_export_host` means `start_log_exports` may
         # export against the cluster, which requires the file to be on disk.
         self.log_export_host, self.log_export_password = host, password

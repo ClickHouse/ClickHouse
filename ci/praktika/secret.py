@@ -75,10 +75,10 @@ class Secret:
                 f"aws ssm get-parameters --names {' '.join(self.name)} --with-decryption --output text --query 'Parameters[*].[Name,Value]' {region}",
                 strict=True,
             )
-            # Keep only lines carrying a Name<TAB>Value pair: `get-parameters` reports
-            # unknown names under `InvalidParameters` and still exits 0, so a response
-            # with none of them is empty and has no pair to split.
-            name_value_pairs = [p for p in res.split("\n") if "\t" in p]
+            # `get-parameters` reports unknown names under `InvalidParameters` and still
+            # exits 0, so an answer naming none of them carries no pair to split. Decided
+            # over the whole answer, since a value may itself span lines.
+            name_value_pairs = res.split("\n") if "\t" in res else []
             names = [n.split("\t")[0].strip() for n in name_value_pairs]
             values = [n.split("\t")[1].strip() for n in name_value_pairs]
 
