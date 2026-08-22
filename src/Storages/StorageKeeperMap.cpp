@@ -111,6 +111,8 @@ namespace ErrorCodes
     extern const int INVALID_STATE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 namespace
@@ -730,9 +732,7 @@ bool StorageKeeperMap::isMetadataStringCompatible(
     const std::string_view primary_key_header = "\nprimary key: ";
 
     /// The stored value is untrusted: anything with write access to the Keeper path can leave arbitrary
-    /// bytes there. When the caller does not ask for errors it expects an answer, not an exception, so no
-    /// failure to parse either side may escape - the table is then reported incompatible and quarantined
-    /// rather than made unloadable.
+    /// bytes there, and a caller that did not ask for errors must still get an answer.
     bool columns_equal = false;
     try
     {
@@ -775,6 +775,13 @@ bool StorageKeeperMap::isMetadataStringCompatible(
     catch (...)
     {
         if (throw_on_error)
+            throw;
+
+        /// A failure to allocate says nothing about the stored bytes, and the invalid-metadata verdict is
+        /// cached for the lifetime of the table, so reporting one as corruption would strand a healthy
+        /// table until restart.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::MEMORY_LIMIT_EXCEEDED || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
             throw;
 
         tryLogCurrentException(
