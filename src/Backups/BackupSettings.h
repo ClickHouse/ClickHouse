@@ -53,6 +53,10 @@ struct BackupSettings
     /// durable once uploaded.
     bool fsync_backup_files = true;
 
+    /// Whether `fsync_backup_files` was named in the query's SETTINGS clause. A value equal to the
+    /// default is indistinguishable from an unset one, so this is what tells the two apart.
+    bool fsync_backup_files_specified = false;
+
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 
