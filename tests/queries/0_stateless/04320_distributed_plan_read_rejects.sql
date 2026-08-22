@@ -5,6 +5,11 @@ DROP TABLE IF EXISTS t_read_rejects;
 CREATE TABLE t_read_rejects (x UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_read_rejects SELECT number FROM numbers(200000);
 
+DROP TABLE IF EXISTS t_read_rejects_final;
+CREATE TABLE t_read_rejects_final (k UInt64, v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY k;
+INSERT INTO t_read_rejects_final SELECT number, 1 FROM numbers(100000);
+INSERT INTO t_read_rejects_final SELECT number, 2 FROM numbers(100000);
+
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0 (randomized
 -- settings set it nonzero, which would make make_distributed_plan reject the count/sum below).
 SET max_rows_to_group_by = 0;
@@ -28,6 +33,25 @@ SELECT sum(x) FROM t_read_rejects SETTINGS distributed_plan_default_reader_bucke
 SELECT sum(x) FROM t_read_rejects SETTINGS distributed_plan_default_shuffle_join_bucket_count = 9223372036854775807; -- { serverError INVALID_SETTING_VALUE }
 SELECT sum(x) FROM t_read_rejects SETTINGS distributed_plan_default_reader_bucket_count = 9223372036854775807; -- { serverError INVALID_SETTING_VALUE }
 
+-- The Cascades node count sizes the read buckets and the exchange fan-out the same way, so it is
+-- capped identically, wherever it came from: the setting, the internal parameter, or a configured
+-- worker cluster. A count above the cap could not produce a distributed read anyway, since the read
+-- would split into that many buckets and then be refused for exceeding the same cap.
+SELECT count() FROM t_read_rejects SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 257; -- { serverError INVALID_SETTING_VALUE }
+SELECT count() FROM t_read_rejects SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 9223372036854775807; -- { serverError INVALID_SETTING_VALUE }
+SET param__internal_cascades_cluster_node_count = 9223372036854775807;
+SELECT count() FROM t_read_rejects SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 4; -- { serverError INVALID_SETTING_VALUE }
+SET param__internal_cascades_cluster_node_count = 0;
+-- FINAL derives a larger layer budget from the count before slicing, so it is capped by the same check.
+SELECT sum(v) FROM t_read_rejects_final FINAL SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 9223372036854775807; -- { serverError INVALID_SETTING_VALUE }
+-- The cap is inclusive: 256 is accepted, on both read paths. An over-strict cap raises here rather
+-- than falling back to a serial read, so these answering at all is the boundary assertion.
+SELECT count() FROM t_read_rejects SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 256;
+SELECT sum(v) FROM t_read_rejects_final FINAL SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 256;
+-- Without Cascades the count never becomes a bucket count, so it is not capped: the rule-based
+-- distributed plan takes its bucket counts from the settings validated above.
+SELECT count() FROM t_read_rejects SETTINGS enable_cascades_optimizer = 0, distributed_plan_workers_num = 9223372036854775807;
+
 -- _part_offset alone is per-part and order-independent, so it stays supported.
 SELECT sum(_part_offset) FROM t_read_rejects;
 
@@ -36,3 +60,4 @@ SELECT sum(_part_offset) FROM t_read_rejects;
 SELECT sum(rn) FROM (SELECT rowNumberInAllBlocks() AS rn FROM t_read_rejects);
 
 DROP TABLE t_read_rejects;
+DROP TABLE t_read_rejects_final;
