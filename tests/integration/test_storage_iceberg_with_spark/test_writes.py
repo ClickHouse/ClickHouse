@@ -628,8 +628,9 @@ def test_writes_decimal_partition_not_first(started_cluster_iceberg_with_spark, 
             f"SELECT * FROM {TABLE_NAME} ORDER BY ALL",
             settings={"output_format_decimal_trailing_zeros": 1},
         )
-        == "1\t\\N\t-3.25\t2025-08-27 12:34:56.000000\t20\n"
-        "1\ta\t1.50\t2025-08-27 12:34:56.000000\t10\n"
+        # `ORDER BY` puts NULLs last.
+        == "1\ta\t1.50\t2025-08-27 12:34:56.000000\t10\n"
+        "1\t\\N\t-3.25\t2025-08-27 12:34:56.000000\t20\n"
         "2\ta\t1.50\t2026-08-27 12:34:56.000000\t30\n"
     )
 
