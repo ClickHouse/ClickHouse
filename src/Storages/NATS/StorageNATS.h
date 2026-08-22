@@ -140,7 +140,9 @@ private:
     void createConsumers();
 
     bool subscribeConsumers();
-    bool consumersNeedResubscribe();
+    /// Replaces the subscription of every consumer that stopped consuming, keeping the messages it
+    /// has already buffered locally.
+    void resubscribeStaleConsumers();
     void unsubscribeConsumers();
 
     void stopEventLoop();

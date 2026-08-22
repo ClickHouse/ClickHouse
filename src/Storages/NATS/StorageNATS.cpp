@@ -374,23 +374,52 @@ bool StorageNATS::subscribeConsumers()
     return are_consumers_initialized;
 }
 
-bool StorageNATS::consumersNeedResubscribe()
+void StorageNATS::resubscribeStaleConsumers()
 {
     std::lock_guard lock(consumers_mutex);
-    if (std::ranges::none_of(consumers, [](const auto & consumer) { return consumer->needsResubscribe(); }))
-        return false;
-
-    /// Re-subscribing drops every consumer's local queue, and the messages waiting in it have
-    /// already been delivered to this server: throwing them away would keep the views short until
-    /// JetStream redelivers them, a whole ACK deadline later. The streaming cycle below drains
-    /// them first, and the reconnect this keys on is still reported once they are gone.
-    if (std::ranges::any_of(consumers, [](const auto & consumer) { return !consumer->queueEmpty(); }))
+    for (auto & consumer : consumers)
     {
-        LOG_DEBUG(log, "A subscription stopped consuming from the NATS server, resubscribing once the buffered messages are drained");
-        return false;
-    }
+        if (!consumer->needsResubscribe())
+            continue;
 
-    return true;
+        /// Nothing the consumer holds locally can outlive its subscription: a `natsMsg` keeps a
+        /// plain pointer to the `natsSubscription` it arrived on, and `natsMsg_Ack` follows it to
+        /// reach the JetStream context and the connection, so acknowledging a message whose
+        /// subscription has been destroyed reads freed memory. Recovery therefore waits for a
+        /// consumer that holds nothing: the streaming cycles insert and acknowledge what the
+        /// broker delivered before it went stale, and a stale subscription delivers nothing more,
+        /// so the queue does drain and the reconnect this keys on is still reported once it has.
+        if (!consumer->queueEmpty())
+        {
+            LOG_DEBUG(log, "A subscription stopped consuming from the NATS server, resubscribing once the buffered messages are drained");
+            continue;
+        }
+
+        LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing");
+
+        /// The check above cannot rule out a message arriving right here - `onMsg` runs on the
+        /// NATS client thread and appends to the queue without `consumers_mutex` - and neither can
+        /// draining the subscription below, which delivers whatever it still has. Finishing the
+        /// queue first is what keeps that safe and loses nothing: `onMsg` cannot append to a
+        /// finished queue, so it sends the message back with `natsMsg_Nak` instead, and the broker
+        /// redelivers it at once rather than after the ACK deadline.
+        consumer->unsubscribe(/*finish_queue=*/true);
+        consumer->dropBuffered();
+
+        try
+        {
+            consumer->subscribe();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            /// A consumer left unsubscribed no longer reports that it needs to be recovered, so it
+            /// would stay silent. Hand it to `subscribeConsumers`, which only runs while the
+            /// consumers are not ready.
+            consumers_ready.store(false);
+            break;
+        }
+    }
 }
 
 void StorageNATS::unsubscribeConsumers()
@@ -713,12 +742,9 @@ void StorageNATS::threadFunc()
         unsubscribeConsumers();
 
     /// A subscription the NATS client has closed, or one that outlived a reconnect, never receives
-    /// another message, so drop the subscriptions here and let the cycle below subscribe again.
-    if (consumers_ready && consumersNeedResubscribe())
-    {
-        LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing");
-        unsubscribeConsumers();
-    }
+    /// another message, so replace it here, keeping everything the consumer already holds locally.
+    if (consumers_ready)
+        resubscribeStaleConsumers();
 
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
     const bool is_connected = consumers_connection && consumers_connection->isConnected();
