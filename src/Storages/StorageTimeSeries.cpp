@@ -815,6 +815,10 @@ samples until they are backfilled with
 A non-zero `is_stale_marker` flag written to such a table degrades the same way when its sample value is `NaN`
 (a RemoteWrite stale marker), and is rejected when the sample value is not `NaN`, because the flag would
 otherwise vanish without a trace.
+For an inner legacy samples table the migration survives `BACKUP`/`RESTORE`: restoring recreates the inner
+table from the outer definition, and the restore adds `is_stale_marker` to a samples schema that lacks it,
+so both migrated and unmigrated legacy backups come back with the column in place (the backfill state is
+part of the data and restores as backed up).
 
 Columns the engine creates itself get time-series compression codecs:
 `timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ZSTD(3))`. Near-monotonic timestamps barely

@@ -1062,6 +1062,29 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         chassert(!isPrealpha(create_query));
     }
 
+    /// A restore recreates the inner samples table from this definition; a legacy 3-column list
+    /// would drop an `ALTER ... ADD COLUMN is_stale_marker` migration done on the inner table.
+    if (is_restore_from_backup)
+    {
+        if (auto * samples_columns = create_query.getTargetInnerColumns(ViewTarget::Samples); samples_columns && samples_columns->columns)
+        {
+            bool has_stale_marker = false;
+            for (const auto & child : samples_columns->columns->children)
+                if (const auto * existing_decl = child->as<ASTColumnDeclaration>(); existing_decl && existing_decl->name == TimeSeriesColumnNames::IsStaleMarker)
+                    has_stale_marker = true;
+            if (!has_stale_marker)
+            {
+                auto decl = make_intrusive<ASTColumnDeclaration>();
+                decl->name = TimeSeriesColumnNames::IsStaleMarker;
+                decl->setType(makeASTDataType("UInt8"));
+                decl->default_specifier = ColumnDefaultSpecifier::Default;
+                decl->ephemeral_default = false;
+                decl->setDefaultExpression(make_intrusive<ASTLiteral>(Field{static_cast<UInt64>(0)}));
+                samples_columns->columns->children.push_back(decl);
+            }
+        }
+    }
+
     /// Apply the clause `AS <other_table>` if any.
     if (!create_query.as_table.empty())
     {
