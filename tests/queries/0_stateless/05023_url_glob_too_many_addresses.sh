@@ -21,6 +21,16 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM remote('127.0.0.{1..2000}', system.one
     | grep -oF -e "Table function 'remote'" -e "too many result addresses: 2000, while at most 1000 are allowed" -e "'table_function_remote_max_addresses' setting" \
     | head -n 3
 
+# The `URL` engine and `urlCluster` share the parser with the `url` table function, but the message
+# has to name the surface the user actually invoked.
+$CLICKHOUSE_CLIENT --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.url_glob (x UInt8) ENGINE = URL('http://localhost:1/data-{0..2000}.tsv', TSV)" 2>&1 \
+    | grep -oF -e "Table engine 'URL'" -e "too many result addresses: 2001, while at most 1000 are allowed" \
+    | head -n 2
+
+$CLICKHOUSE_CLIENT --query "SELECT * FROM urlCluster('test_shard_localhost', 'http://localhost:1/data-{0..2000}.tsv', TSV, 'x UInt8')" 2>&1 \
+    | grep -oF -e "Table function 'urlCluster'" -e "too many result addresses: 2001, while at most 1000 are allowed" \
+    | head -n 2
+
 # Raising the setting lets the same pattern through: it now fails while connecting, not while parsing.
 $CLICKHOUSE_CLIENT --query "SELECT * FROM url('http://localhost:1/data-{0..2000}.tsv', TSV, 'x UInt8') SETTINGS glob_expansion_max_elements = 3000, http_max_tries = 1, max_threads = 1" 2>&1 \
     | grep -cF "too many result addresses" || true

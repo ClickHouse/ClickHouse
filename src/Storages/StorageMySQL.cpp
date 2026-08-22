@@ -509,7 +509,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     {
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
-            configuration.addresses_expr, max_addresses, 3306);
+            configuration.addresses_expr, max_addresses, 3306, globCaller("MySQL address expression"));
     }
 
     configuration.username = named_collection.getAny<String>({"username", "user"});
@@ -561,7 +561,8 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
 
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 3306);
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+            configuration.addresses_expr, max_addresses, 3306, globCaller("MySQL address expression"));
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
         if (maybe_query)
             configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);

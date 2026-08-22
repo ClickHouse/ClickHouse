@@ -583,7 +583,8 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             const auto & host_port = safeGetLiteralValue<String>(positional_arguments[0], engine_name);
             size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
-            configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+            configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+                host_port, max_addresses, 5432, globCaller(fmt::format("Database engine '{}'", engine_name)));
             configuration.database = safeGetLiteralValue<String>(positional_arguments[1], engine_name);
             configuration.username = safeGetLiteralValue<String>(positional_arguments[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);

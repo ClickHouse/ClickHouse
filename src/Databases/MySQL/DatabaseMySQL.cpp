@@ -630,7 +630,8 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             if (engine_name == "MySQL")
             {
                 size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
-                configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
+                configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+                    host_port, max_addresses, 3306, globCaller(fmt::format("Database engine '{}'", engine_name)));
             }
             else
             {

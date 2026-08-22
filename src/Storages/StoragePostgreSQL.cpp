@@ -782,7 +782,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     {
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
-            configuration.addresses_expr, max_addresses, 5432);
+            configuration.addresses_expr, max_addresses, 5432, globCaller("PostgreSQL address expression"));
     }
 
     configuration.username = named_collection.getAny<String>({"username", "user"});
@@ -844,7 +844,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 5432);
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+            configuration.addresses_expr, max_addresses, 5432, globCaller("PostgreSQL address expression"));
         if (configuration.addresses.size() == 1)
         {
             configuration.host = configuration.addresses[0].first;

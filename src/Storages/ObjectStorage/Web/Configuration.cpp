@@ -41,10 +41,9 @@ namespace
 using URLFailoverOptions = std::vector<String>;
 using URLShardsWithFailover = std::vector<URLFailoverOptions>;
 
-URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const String & func_name = "url")
+URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const RemoteDescriptionCaller & caller)
 {
-    auto disclosed_urls
-        = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses, func_name, GLOB_EXPANSION_MAX_ELEMENTS_SETTING);
+    auto disclosed_urls = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses, caller);
 
     URLShardsWithFailover result;
     result.reserve(disclosed_urls.size());
@@ -52,17 +51,12 @@ URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_
 
     for (const auto & disclosed_url : disclosed_urls)
     {
-        auto failover_options = parseRemoteDescription(
-            disclosed_url, 0, disclosed_url.size(), '|', max_addresses, func_name, GLOB_EXPANSION_MAX_ELEMENTS_SETTING);
+        auto failover_options
+            = parseRemoteDescription(disclosed_url, 0, disclosed_url.size(), '|', max_addresses, caller);
+        /// The limit is on the whole first argument, so the failover options of all the comma-separated
+        /// URLs are summed up. Reuse the same helper to keep the explanation identical on every path.
         if (url_options_count + failover_options.size() > max_addresses)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Table function '{}': first argument generates too many result addresses: {}, while at most {} are allowed"
-                " (see the '{}' setting)",
-                func_name,
-                url_options_count + failover_options.size(),
-                max_addresses,
-                GLOB_EXPANSION_MAX_ELEMENTS_SETTING);
+            throwTooManyAddresses(caller, max_addresses, url_options_count + failover_options.size());
 
         url_options_count += failover_options.size();
         result.push_back(std::move(failover_options));
@@ -287,7 +281,8 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 
     const auto url_root_for_expansion = has_path ? url.substr(0, path_start + 1) : url.substr(0, path_end) + "/";
     const auto query_fragment_part = query_or_fragment_pos == String::npos ? String{} : url.substr(query_or_fragment_pos);
-    const auto url_shards_with_failover = parseURLShardsWithFailover(url_root_for_expansion + query_fragment_part, max_addresses, "url");
+    const auto url_shards_with_failover = parseURLShardsWithFailover(
+        url_root_for_expansion + query_fragment_part, max_addresses, urlCaller(TABLE_FUNCTION_URL_CALLER));
 
     path.path = has_path ? url.substr(path_start, path_end - path_start) : String{};
     while (path.path.starts_with('/'))
