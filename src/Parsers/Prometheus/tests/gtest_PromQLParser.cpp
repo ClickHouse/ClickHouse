@@ -1,6 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <Common/Exception.h>
+#include <Core/DecimalFunctions.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+
+#include <algorithm>
+#include <cmath>
+#include <tuple>
 
 #include <fmt/format.h>
 
@@ -8,6 +14,200 @@ using namespace DB;
 
 namespace
 {
+    bool sameScalar(Float64 lhs, Float64 rhs)
+    {
+        return (std::isnan(lhs) && std::isnan(rhs)) || lhs == rhs;
+    }
+
+    bool sameOptionalDuration(const std::optional<PrometheusQueryTree::DurationType> & lhs,
+                              const std::optional<PrometheusQueryTree::DurationType> & rhs)
+    {
+        return lhs.has_value() == rhs.has_value() && (!lhs || lhs->value == rhs->value);
+    }
+
+    Int64 roundedTimestampMilliseconds(const PrometheusQueryTree::TimestampType & timestamp, UInt32 scale)
+    {
+        if (scale < 3)
+            return timestamp.value * DecimalUtils::scaleMultiplier<Int64>(3 - scale);
+
+        const Int64 divisor = DecimalUtils::scaleMultiplier<Int64>(scale - 3);
+        Int64 milliseconds = timestamp.value / divisor;
+        const Int64 remainder = timestamp.value % divisor;
+        if (std::abs(remainder) * 2 >= divisor)
+            milliseconds += timestamp.value < 0 ? -1 : 1;
+        return milliseconds;
+    }
+
+    bool sameOptionalTimestamp(const std::optional<PrometheusQueryTree::TimestampType> & lhs,
+                               const std::optional<PrometheusQueryTree::TimestampType> & rhs,
+                               UInt32 scale)
+    {
+        return lhs.has_value() == rhs.has_value()
+            && (!lhs || roundedTimestampMilliseconds(*lhs, scale) == roundedTimestampMilliseconds(*rhs, scale));
+    }
+
+    bool sameStringsIgnoringOrder(Strings lhs, Strings rhs)
+    {
+        std::sort(lhs.begin(), lhs.end());
+        std::sort(rhs.begin(), rhs.end());
+        return lhs == rhs;
+    }
+
+    bool sameMatchersIgnoringOrder(PrometheusQueryTree::MatcherList lhs, PrometheusQueryTree::MatcherList rhs)
+    {
+        const auto matcher_less = [](const auto & lhs_matcher, const auto & rhs_matcher)
+        {
+            return std::tie(lhs_matcher.label_name, lhs_matcher.matcher_type, lhs_matcher.label_value)
+                < std::tie(rhs_matcher.label_name, rhs_matcher.matcher_type, rhs_matcher.label_value);
+        };
+        std::sort(lhs.begin(), lhs.end(), matcher_less);
+        std::sort(rhs.begin(), rhs.end(), matcher_less);
+        if (lhs.size() != rhs.size())
+            return false;
+        for (size_t i = 0; i != lhs.size(); ++i)
+        {
+            if (lhs[i].label_name != rhs[i].label_name
+                || lhs[i].matcher_type != rhs[i].matcher_type
+                || lhs[i].label_value != rhs[i].label_value)
+                return false;
+        }
+        return true;
+    }
+
+    bool samePrometheusTree(const PrometheusQueryTree::Node * lhs, const PrometheusQueryTree::Node * rhs, UInt32 timestamp_scale)
+    {
+        if (!lhs || !rhs)
+            return lhs == rhs;
+        if (lhs->result_type != rhs->result_type)
+            return false;
+
+        if (lhs->node_type != rhs->node_type)
+        {
+            if (rhs->node_type == PrometheusQueryTree::NodeType::UnaryOperator)
+            {
+                const auto & unary = typeid_cast<const PrometheusQueryTree::UnaryOperator &>(*rhs);
+                if (unary.operator_name == "+" && unary.children.size() == 1)
+                    return samePrometheusTree(lhs, unary.children.front(), timestamp_scale);
+            }
+            if (lhs->node_type == PrometheusQueryTree::NodeType::UnaryOperator)
+            {
+                const auto & unary = typeid_cast<const PrometheusQueryTree::UnaryOperator &>(*lhs);
+                if (unary.operator_name == "+" && unary.children.size() == 1)
+                    return samePrometheusTree(unary.children.front(), rhs, timestamp_scale);
+            }
+            return false;
+        }
+
+        using NodeType = PrometheusQueryTree::NodeType;
+        switch (lhs->node_type)
+        {
+            case NodeType::Scalar:
+            {
+                const auto & lhs_scalar = typeid_cast<const PrometheusQueryTree::Scalar &>(*lhs);
+                const auto & rhs_scalar = typeid_cast<const PrometheusQueryTree::Scalar &>(*rhs);
+                if (!sameScalar(lhs_scalar.scalar, rhs_scalar.scalar)
+                    || !sameOptionalDuration(lhs_scalar.duration_value, rhs_scalar.duration_value))
+                    return false;
+                break;
+            }
+            case NodeType::StringLiteral:
+                if (typeid_cast<const PrometheusQueryTree::StringLiteral &>(*lhs).string
+                    != typeid_cast<const PrometheusQueryTree::StringLiteral &>(*rhs).string)
+                    return false;
+                break;
+            case NodeType::InstantSelector:
+            {
+                const auto & lhs_selector = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*lhs);
+                const auto & rhs_selector = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*rhs);
+                if (lhs_selector.metric_name != rhs_selector.metric_name
+                    || !sameMatchersIgnoringOrder(lhs_selector.matchers, rhs_selector.matchers))
+                    return false;
+                break;
+            }
+            case NodeType::RangeSelector:
+                if (typeid_cast<const PrometheusQueryTree::RangeSelector &>(*lhs).range.value
+                    != typeid_cast<const PrometheusQueryTree::RangeSelector &>(*rhs).range.value)
+                    return false;
+                break;
+            case NodeType::Subquery:
+            {
+                const auto & lhs_subquery = typeid_cast<const PrometheusQueryTree::Subquery &>(*lhs);
+                const auto & rhs_subquery = typeid_cast<const PrometheusQueryTree::Subquery &>(*rhs);
+                if (lhs_subquery.range.value != rhs_subquery.range.value
+                    || !sameOptionalDuration(lhs_subquery.step, rhs_subquery.step))
+                    return false;
+                break;
+            }
+            case NodeType::Offset:
+            {
+                const auto & lhs_offset = typeid_cast<const PrometheusQueryTree::Offset &>(*lhs);
+                const auto & rhs_offset = typeid_cast<const PrometheusQueryTree::Offset &>(*rhs);
+                if (lhs_offset.at_modifier != rhs_offset.at_modifier
+                    || !sameOptionalTimestamp(lhs_offset.at_timestamp, rhs_offset.at_timestamp, timestamp_scale)
+                    || !sameOptionalDuration(lhs_offset.offset_value, rhs_offset.offset_value))
+                    return false;
+                break;
+            }
+            case NodeType::Function:
+                if (typeid_cast<const PrometheusQueryTree::Function &>(*lhs).function_name
+                    != typeid_cast<const PrometheusQueryTree::Function &>(*rhs).function_name)
+                    return false;
+                break;
+            case NodeType::UnaryOperator:
+                if (typeid_cast<const PrometheusQueryTree::UnaryOperator &>(*lhs).operator_name
+                    != typeid_cast<const PrometheusQueryTree::UnaryOperator &>(*rhs).operator_name)
+                    return false;
+                break;
+            case NodeType::BinaryOperator:
+            {
+                const auto & lhs_binary = typeid_cast<const PrometheusQueryTree::BinaryOperator &>(*lhs);
+                const auto & rhs_binary = typeid_cast<const PrometheusQueryTree::BinaryOperator &>(*rhs);
+                const bool lhs_on = lhs_binary.on
+                    && (!lhs_binary.labels.empty()
+                        || (lhs_binary.getLeftArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR
+                            && lhs_binary.getRightArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR));
+                const bool rhs_on = rhs_binary.on
+                    && (!rhs_binary.labels.empty()
+                        || (rhs_binary.getLeftArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR
+                            && rhs_binary.getRightArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR));
+                const bool lhs_ignoring = lhs_binary.ignoring && !lhs_binary.labels.empty();
+                const bool rhs_ignoring = rhs_binary.ignoring && !rhs_binary.labels.empty();
+                if (lhs_binary.operator_name != rhs_binary.operator_name
+                    || lhs_on != rhs_on
+                    || lhs_ignoring != rhs_ignoring
+                    || !sameStringsIgnoringOrder(lhs_binary.labels, rhs_binary.labels)
+                    || lhs_binary.group_left != rhs_binary.group_left
+                    || lhs_binary.group_right != rhs_binary.group_right
+                    || !sameStringsIgnoringOrder(lhs_binary.extra_labels, rhs_binary.extra_labels)
+                    || lhs_binary.bool_modifier != rhs_binary.bool_modifier)
+                    return false;
+                break;
+            }
+            case NodeType::AggregationOperator:
+            {
+                const auto & lhs_aggregation = typeid_cast<const PrometheusQueryTree::AggregationOperator &>(*lhs);
+                const auto & rhs_aggregation = typeid_cast<const PrometheusQueryTree::AggregationOperator &>(*rhs);
+                const bool lhs_by = lhs_aggregation.by && !lhs_aggregation.labels.empty();
+                const bool rhs_by = rhs_aggregation.by && !rhs_aggregation.labels.empty();
+                if (lhs_aggregation.operator_name != rhs_aggregation.operator_name
+                    || lhs_by != rhs_by
+                    || lhs_aggregation.without != rhs_aggregation.without
+                    || !sameStringsIgnoringOrder(lhs_aggregation.labels, rhs_aggregation.labels))
+                    return false;
+                break;
+            }
+        }
+
+        if (lhs->children.size() != rhs->children.size())
+            return false;
+        for (size_t i = 0; i != lhs->children.size(); ++i)
+        {
+            if (!samePrometheusTree(lhs->children[i], rhs->children[i], timestamp_scale))
+                return false;
+        }
+        return true;
+    }
+
     String parse(std::string_view input)
     {
         PrometheusQueryTree query_tree{input};
@@ -35,6 +235,192 @@ namespace
         EXPECT_EQ(reparsed.getResultType(), query_tree.getResultType()) << input;
         EXPECT_EQ(reparsed.dumpTree(), query_tree.dumpTree()) << input;
     }
+
+    void expectPrometheusFormatting(std::string_view input, std::string_view expected)
+    {
+        PrometheusQueryTree query_tree{input, 9};
+        EXPECT_EQ(query_tree.toPrometheusString(), expected) << input;
+
+        PrometheusQueryTree reparsed;
+        String error_message;
+        size_t error_pos = 0;
+        ASSERT_TRUE(reparsed.tryParse(expected, 9, &error_message, &error_pos))
+            << input << ": " << error_message << " at position " << error_pos;
+        EXPECT_EQ(reparsed.getResultType(), query_tree.getResultType()) << input;
+        EXPECT_TRUE(samePrometheusTree(query_tree.getRoot(), reparsed.getRoot(), query_tree.getTimestampScale())) << input << "\nOriginal:\n"
+                                                                                   << query_tree.dumpTree() << "\nReparsed:\n"
+                                                                                   << reparsed.dumpTree();
+        EXPECT_EQ(reparsed.toPrometheusString(), expected) << input;
+    }
+}
+
+
+TEST(PromQLParser, TrailingComment)
+{
+    expectRoundTrip("up # comment", "up");
+}
+
+
+TEST(PromQLParser, PrometheusFormatting)
+{
+    expectPrometheusFormatting(
+        "sum by (job) (rate(http_requests_total[5m]))",
+        "sum by (job) (rate(http_requests_total[5m]))");
+    expectPrometheusFormatting(R"(foo[7d])", R"(foo[1w])");
+    expectPrometheusFormatting(R"(foo[90d])", R"(foo[90d])");
+    expectPrometheusFormatting(R"(foo[1y2w3d4h5m6s7ms])", R"(foo[382d4h5m6s7ms])");
+    expectPrometheusFormatting(R"(foo{z="last",a="first"})", R"(foo{a="first",z="last"})");
+    expectPrometheusFormatting(R"(foo{nan="first",inf="last"})", R"(foo{inf="last",nan="first"})");
+    expectPrometheusFormatting(R"(foo{"nan"="first","inf"="last"})", R"(foo{inf="last",nan="first"})");
+    expectPrometheusFormatting(R"({"foo",job="x"})", R"({__name__="foo",job="x"})");
+    expectPrometheusFormatting(R"(foo @ 1.23456789)", R"(foo @ 1.235)");
+    expectPrometheusFormatting(R"(foo @ -1.2345)", R"(foo @ -1.235)");
+    expectPrometheusFormatting(R"(foo @ 0755)", R"(foo @ 493)");
+    expectPrometheusFormatting(R"(foo offset 1h30m)", R"(foo offset 1h30m)");
+    expectPrometheusFormatting(R"(foo offset -1h30m)", R"(foo offset -1h30m)");
+    expectPrometheusFormatting(R"(foo[1h30m:5m])", R"(foo[1h30m:5m])");
+    expectPrometheusFormatting(R"(5m)", R"(5m)");
+    expectPrometheusFormatting(R"(vector(5m))", R"(vector(5m))");
+    expectPrometheusFormatting(R"(1h30m)", R"(1h30m)");
+    expectPrometheusFormatting(R"(-5m)", R"(-5m)");
+    expectPrometheusFormatting(R"(0755)", R"(493)");
+    expectPrometheusFormatting(R"(0_755)", R"(493)");
+    expectPrometheusFormatting(R"(-0755)", R"(-493)");
+    expectPrometheusFormatting(R"(08)", R"(8)");
+    {
+        PrometheusQueryTree query_tree{R"(077777777777777777777777777777)", 9};
+        const auto * scalar = typeid_cast<const PrometheusQueryTree::Scalar *>(query_tree.getRoot());
+        ASSERT_NE(scalar, nullptr);
+        EXPECT_TRUE(std::isfinite(scalar->scalar));
+    }
+    expectPrometheusFormatting(R"(+1)", R"(1)");
+    expectPrometheusFormatting(R"(+1e3)", R"(1000)");
+    expectPrometheusFormatting(R"(+5m)", R"(5m)");
+    expectPrometheusFormatting(R"(+Inf)", R"(+Inf)");
+    expectPrometheusFormatting(R"(+NaN)", R"(NaN)");
+    expectPrometheusFormatting(R"(-NaN)", R"(NaN)");
+    expectPrometheusFormatting(R"(+foo)", R"(+foo)");
+    expectPrometheusFormatting(R"(1e-7)", R"(0.0000001)");
+    expectPrometheusFormatting(R"(1e21)", R"(1000000000000000000000)");
+    expectPrometheusFormatting(R"(Inf)", R"(+Inf)");
+    expectPrometheusFormatting(R"(-Inf)", R"(-Inf)");
+    expectPrometheusFormatting(R"(NaN)", R"(NaN)");
+    expectPrometheusFormatting(R"(foo + on(job) group_left(instance) bar)", R"(foo + on (job) group_left (instance) bar)");
+    expectPrometheusFormatting(R"(foo + on(inf) group_left(nan) bar)", R"(foo + on ("inf") group_left ("nan") bar)");
+    expectPrometheusFormatting(R"(foo + ignoring() bar)", R"(foo + bar)");
+    expectPrometheusFormatting(R"(foo + on() group_left() bar)", R"(foo + on () group_left () bar)");
+    expectPrometheusFormatting(R"(1 + ignoring() 2)", R"(1 + 2)");
+    expectPrometheusFormatting(R"(1 + on() 2)", R"(1 + 2)");
+    expectPrometheusFormatting(R"(sum by () (foo))", R"(sum(foo))");
+    expectPrometheusFormatting(R"(sum without () (foo))", R"(sum without () (foo))");
+    expectPrometheusFormatting(R"("\a\v\000\001\037\177")", R"("\a\v\x00\x01\x1f\x7f")");
+    expectPrometheusFormatting(R"("\u0085\u00a0\u2028\u00a1\U0001f600")", R"("\u0085\u00a0\u2028¡😀")");
+    expectPrometheusFormatting(R"("\xff")", R"("\xff")");
+}
+
+
+TEST(PromQLParser, StaticValidation)
+{
+    for (const auto * const query : {
+             "time()",
+             "sum(foo)",
+             "rate(foo[5m])",
+             "topk(3, foo)",
+             "foo + on(job) group_left(instance) bar",
+             "foo + ignoring(job) group_left(job) bar",
+             "1 + ignoring() 2",
+             "1 + on() 2",
+             R"({job=~".+"})",
+             R"(label_replace(foo, "label", "value", "source", "regex"))",
+         })
+    {
+        PrometheusQueryTree query_tree{query};
+        EXPECT_NO_THROW(query_tree.validate()) << query;
+    }
+
+    for (const auto * const query : {
+             "time(1)",
+             "sum(foo, bar)",
+             "sum(1)",
+             "rate(foo)",
+             "foo + bar[5m]",
+             "foo and 1",
+             "1 == 2",
+             "topk(foo, bar)",
+             R"({job=~"["})",
+             R"({job=~".*"})",
+             R"({__name__="foo",__name__="bar"})",
+             "foo + on(job) group_left(job) bar",
+             "foo + on(job) group_right(job) bar",
+         })
+    {
+        PrometheusQueryTree query_tree{query};
+        EXPECT_THROW(query_tree.validate(), Exception) << query;
+    }
+}
+
+
+TEST(PromQLParser, InvalidNumericLabelNames)
+{
+    for (const auto * const query : {R"(foo{123="x"})", R"(foo + on(123) bar)"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 9, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(error_message.empty()) << query;
+    }
+}
+
+
+TEST(PromQLParser, PrometheusFormattingPreservesPrecedenceWhenSplitting)
+{
+    String long_metric = "metric_";
+    long_metric.append(100, 'x');
+
+    expectPrometheusFormatting(
+        fmt::format("(foo + bar) * {}", long_metric),
+        fmt::format("  (foo + bar)\n*\n  {}", long_metric));
+    expectPrometheusFormatting(
+        fmt::format("{} * (foo + bar)", long_metric),
+        fmt::format("  {}\n*\n  (foo + bar)", long_metric));
+    expectPrometheusFormatting(
+        fmt::format("-(foo + {})", long_metric),
+        fmt::format("-(\n    foo\n  +\n    {}\n)", long_metric));
+    expectPrometheusFormatting(
+        fmt::format("(foo + {})[5m:]", long_metric),
+        fmt::format("(\n    foo\n  +\n    {}\n)[5m:]", long_metric));
+}
+
+
+TEST(PromQLParser, PrometheusFormattingSplitsLongFunction)
+{
+    expectPrometheusFormatting(
+        R"(label_replace(foo, "label", "this string is long enough to make the PromQL call exceed the line length limit", "source", "regex"))",
+        R"(label_replace(
+  foo,
+  "label",
+  "this string is long enough to make the PromQL call exceed the line length limit",
+  "source",
+  "regex"
+))");
+}
+
+
+TEST(PromQLParser, PrometheusFormattingSplitsNestedExpressions)
+{
+    expectPrometheusFormatting(
+        R"(topk(5, label_replace(foo, "label", "this string is long enough to make the PromQL call exceed the line length limit", "source", "regex")))",
+        R"(topk(
+  5,
+  label_replace(
+    foo,
+    "label",
+    "this string is long enough to make the PromQL call exceed the line length limit",
+    "source",
+    "regex"
+  )
+))");
 }
 
 
@@ -1736,6 +2122,7 @@ PrometheusQueryTree(STRING):
     StringLiteral('日本語')
 )");
 
+    expectRoundTrip(R"("\a\v\000\001\037\177")", R"("\a\v\x00\x01\x1f\x7f")");
 }
 
 

@@ -121,6 +121,20 @@
                     <table>default.prometheus_no_bounds</table>
                 </handler>
             </my_rule_12>
+            <my_rule_16>
+                <url>/api/v1/format_query</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_16>
+
+            <my_rule_17>
+                <url>/dynamic_table/api/v1/format_query</url>
+                <handler>
+                    <type>query_api</type>
+                </handler>
+            </my_rule_17>
         </handlers>
     </prometheus>
 </clickhouse>

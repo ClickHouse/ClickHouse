@@ -222,7 +222,7 @@ METRIC_NAME : [a-z_:] [a-z0-9_:]*;
 LABEL_NAME  : [a-z_] [a-z0-9_]*;
 
 WS         : [\r\t\n ]+   -> channel(WHITESPACE);
-SL_COMMENT : '#' .*? '\n' -> channel(COMMENTS);
+SL_COMMENT : '#' ~[\r\n]* -> channel(COMMENTS);
 
 // Whitespace as a fragment (so it can be used as a part of another token).
 fragment WS_FRAGMENT: [\r\t\n ]+;

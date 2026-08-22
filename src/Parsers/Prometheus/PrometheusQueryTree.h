@@ -76,6 +76,8 @@ public:
     {
     public:
         ScalarType scalar{};
+        /// Set for a scalar written with PromQL duration syntax. The value is stored at millisecond scale.
+        std::optional<DurationType> duration_value;
         Scalar() { node_type = NodeType::Scalar; result_type = ResultType::SCALAR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;
@@ -100,6 +102,8 @@ public:
     class InstantSelector : public Node
     {
     public:
+        /// The metric name written before the optional label matcher list. Empty when the selector starts with `{`.
+        String metric_name;
         MatcherList matchers;
         InstantSelector() { node_type = NodeType::InstantSelector; result_type = ResultType::INSTANT_VECTOR; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
@@ -249,6 +253,8 @@ public:
     /// If it isn't successful the function sets `error_pos` and `error_message` and returns false.
     bool tryParse(std::string_view promql_query_, UInt32 timestamp_scale_ = 3, String * error_message_ = nullptr, size_t * error_pos_ = nullptr);
 
+    void validate() const;
+
     bool empty() const { return node_list.empty(); }
     size_t size() const { return node_list.size(); }
 
@@ -257,6 +263,9 @@ public:
 
     /// Returns the promql query which was parsed to build this tree.
     String toString() const;
+
+    /// Returns the query formatted with the syntax and output conventions used by Prometheus' format_query API.
+    String toPrometheusString() const;
 
     /// Returns the type of the query's returning value.
     ResultType getResultType() const;

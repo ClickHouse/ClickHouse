@@ -1,14 +1,21 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 #include <Common/Exception.h>
+#include <Common/isValidUTF8.h>
+#include <Common/re2.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
+#include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 #include <base/hex.h>
+#include <Poco/Unicode.h>
 #include <fmt/ranges.h>
+
+#include <algorithm>
+#include <charconv>
+#include <initializer_list>
 
 
 namespace DB
@@ -24,6 +31,398 @@ namespace ErrorCodes
 namespace
 {
     using Node = PrometheusQueryTree::Node;
+    using ResultType = PrometheusQueryTree::ResultType;
+
+    bool isOneOf(std::string_view value, std::initializer_list<std::string_view> values)
+    {
+        for (const auto candidate : values)
+        {
+            if (value == candidate)
+                return true;
+        }
+        return false;
+    }
+
+    void checkArgumentCount(std::string_view kind, std::string_view name, size_t actual, size_t expected)
+    {
+        if (actual != expected)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "{} '{}' expects {} arguments, but was called with {} arguments",
+                            kind, name, expected, actual);
+        }
+    }
+
+    void checkArgumentCountAtLeast(std::string_view kind, std::string_view name, size_t actual, size_t expected)
+    {
+        if (actual < expected)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "{} '{}' expects at least {} arguments, but was called with {} arguments",
+                            kind, name, expected, actual);
+        }
+    }
+
+    void checkArgumentType(
+        std::string_view kind,
+        std::string_view name,
+        const std::vector<const Node *> & arguments,
+        size_t argument_index,
+        ResultType expected)
+    {
+        const auto actual = arguments[argument_index]->result_type;
+        if (actual != expected)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "{} '{}' expects argument #{} of type {}, but got {}",
+                            kind, name, argument_index + 1, expected, actual);
+        }
+    }
+
+    void checkArgumentTypes(
+        std::string_view kind,
+        std::string_view name,
+        const std::vector<const Node *> & arguments,
+        std::initializer_list<ResultType> expected_types)
+    {
+        size_t argument_index = 0;
+        for (const auto expected : expected_types)
+        {
+            checkArgumentType(kind, name, arguments, argument_index, expected);
+            ++argument_index;
+        }
+    }
+
+    bool isScalarOrInstantVector(ResultType type)
+    {
+        return type == ResultType::SCALAR || type == ResultType::INSTANT_VECTOR;
+    }
+
+    bool matcherMatchesEmpty(const PrometheusQueryTree::Matcher & matcher)
+    {
+        using MatcherType = PrometheusQueryTree::MatcherType;
+        switch (matcher.matcher_type)
+        {
+            case MatcherType::EQ:
+                return matcher.label_value.empty();
+            case MatcherType::NE:
+                return !matcher.label_value.empty();
+            case MatcherType::RE:
+            case MatcherType::NRE:
+            {
+                const re2::RE2 regexp(matcher.label_value);
+                if (!regexp.ok())
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                        "Invalid regular expression in label matcher '{}': {}",
+                        matcher.label_value,
+                        regexp.error());
+                }
+
+                const bool matches_empty = re2::RE2::FullMatch("", regexp);
+                return matcher.matcher_type == MatcherType::RE ? matches_empty : !matches_empty;
+            }
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Prometheus matcher type");
+    }
+
+    void validateInstantSelector(const PrometheusQueryTree::InstantSelector & selector)
+    {
+        size_t metric_name_matcher_count = 0;
+        bool has_non_empty_matcher = false;
+        for (const auto & matcher : selector.matchers)
+        {
+            if (matcher.label_name == "__name__")
+                ++metric_name_matcher_count;
+
+            if (!matcherMatchesEmpty(matcher))
+                has_non_empty_matcher = true;
+        }
+
+        if (metric_name_matcher_count > 1)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY, "metric name must not be set twice");
+        }
+
+        if (selector.metric_name.empty() && !has_non_empty_matcher)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                "vector selector must contain at least one non-empty matcher");
+        }
+    }
+
+    void validateFunction(const PrometheusQueryTree::Function & function)
+    {
+        const auto & name = function.function_name;
+        const auto & arguments = function.getArguments();
+
+        if (isOneOf(name, {"time", "pi"}))
+        {
+            checkArgumentCount("Function", name, arguments.size(), 0);
+        }
+        else if (name == "scalar")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 1);
+            checkArgumentTypes("Function", name, arguments, {ResultType::INSTANT_VECTOR});
+        }
+        else if (name == "vector")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 1);
+            checkArgumentTypes("Function", name, arguments, {ResultType::SCALAR});
+        }
+        else if (isOneOf(name, {
+                     "abs", "absent", "ceil", "floor", "histogram_count", "histogram_sum", "sort", "sort_desc", "timestamp",
+                     "acos", "acosh", "asin", "asinh", "atan", "atanh", "cos", "cosh", "deg", "exp", "ln", "log2",
+                     "log10", "rad", "sgn", "sin", "sinh", "sqrt", "tan", "tanh"}))
+        {
+            checkArgumentCount("Function", name, arguments.size(), 1);
+            checkArgumentTypes("Function", name, arguments, {ResultType::INSTANT_VECTOR});
+        }
+        else if (isOneOf(name, {
+                     "absent_over_time", "avg_over_time", "changes", "count_over_time", "delta", "deriv", "idelta", "increase",
+                     "irate", "last_over_time", "max_over_time", "min_over_time", "present_over_time", "rate", "resets",
+                     "stddev_over_time", "stdvar_over_time", "sum_over_time"}))
+        {
+            checkArgumentCount("Function", name, arguments.size(), 1);
+            checkArgumentTypes("Function", name, arguments, {ResultType::RANGE_VECTOR});
+        }
+        else if (isOneOf(name, {"day_of_month", "day_of_week", "day_of_year", "days_in_month", "hour", "minute", "month", "year"}))
+        {
+            if (arguments.size() > 1)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Function '{}' expects 0 or 1 arguments, but was called with {} arguments",
+                                name, arguments.size());
+            }
+            if (!arguments.empty())
+                checkArgumentTypes("Function", name, arguments, {ResultType::INSTANT_VECTOR});
+        }
+        else if (name == "clamp")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 3);
+            checkArgumentTypes("Function", name, arguments, {ResultType::INSTANT_VECTOR, ResultType::SCALAR, ResultType::SCALAR});
+        }
+        else if (isOneOf(name, {"clamp_min", "clamp_max"}))
+        {
+            checkArgumentCount("Function", name, arguments.size(), 2);
+            checkArgumentTypes("Function", name, arguments, {ResultType::INSTANT_VECTOR, ResultType::SCALAR});
+        }
+        else if (name == "round")
+        {
+            if (arguments.size() != 1 && arguments.size() != 2)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Function '{}' expects 1 or 2 arguments, but was called with {} arguments",
+                                name, arguments.size());
+            }
+            checkArgumentType("Function", name, arguments, 0, ResultType::INSTANT_VECTOR);
+            if (arguments.size() == 2)
+                checkArgumentType("Function", name, arguments, 1, ResultType::SCALAR);
+        }
+        else if (name == "label_replace")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 5);
+            checkArgumentType("Function", name, arguments, 0, ResultType::INSTANT_VECTOR);
+            for (size_t i = 1; i < arguments.size(); ++i)
+                checkArgumentType("Function", name, arguments, i, ResultType::STRING);
+        }
+        else if (name == "label_join")
+        {
+            checkArgumentCountAtLeast("Function", name, arguments.size(), 3);
+            checkArgumentType("Function", name, arguments, 0, ResultType::INSTANT_VECTOR);
+            for (size_t i = 1; i < arguments.size(); ++i)
+                checkArgumentType("Function", name, arguments, i, ResultType::STRING);
+        }
+        else if (name == "histogram_quantile")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 2);
+            checkArgumentTypes("Function", name, arguments, {ResultType::SCALAR, ResultType::INSTANT_VECTOR});
+        }
+        else if (name == "histogram_fraction")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 3);
+            checkArgumentTypes("Function", name, arguments, {ResultType::SCALAR, ResultType::SCALAR, ResultType::INSTANT_VECTOR});
+        }
+        else if (name == "holt_winters")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 3);
+            checkArgumentTypes("Function", name, arguments, {ResultType::RANGE_VECTOR, ResultType::SCALAR, ResultType::SCALAR});
+        }
+        else if (name == "predict_linear")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 2);
+            checkArgumentTypes("Function", name, arguments, {ResultType::RANGE_VECTOR, ResultType::SCALAR});
+        }
+        else if (name == "quantile_over_time")
+        {
+            checkArgumentCount("Function", name, arguments.size(), 2);
+            checkArgumentTypes("Function", name, arguments, {ResultType::SCALAR, ResultType::RANGE_VECTOR});
+        }
+    }
+
+    void validateAggregationOperator(const PrometheusQueryTree::AggregationOperator & aggregation)
+    {
+        const auto & name = aggregation.operator_name;
+        const auto & arguments = aggregation.getArguments();
+
+        if (isOneOf(name, {"sum", "min", "max", "avg", "count", "stddev", "stdvar", "group"}))
+        {
+            checkArgumentCount("Aggregation operator", name, arguments.size(), 1);
+            checkArgumentTypes("Aggregation operator", name, arguments, {ResultType::INSTANT_VECTOR});
+        }
+        else if (name == "count_values")
+        {
+            checkArgumentCount("Aggregation operator", name, arguments.size(), 2);
+            checkArgumentTypes("Aggregation operator", name, arguments, {ResultType::STRING, ResultType::INSTANT_VECTOR});
+        }
+        else if (isOneOf(name, {"bottomk", "limitk", "topk", "quantile"}))
+        {
+            checkArgumentCount("Aggregation operator", name, arguments.size(), 2);
+            checkArgumentTypes("Aggregation operator", name, arguments, {ResultType::SCALAR, ResultType::INSTANT_VECTOR});
+        }
+    }
+
+    void validateBinaryOperator(const PrometheusQueryTree::BinaryOperator & binary)
+    {
+        const auto left_type = binary.getLeftArgument()->result_type;
+        const auto right_type = binary.getRightArgument()->result_type;
+        const bool both_vectors = left_type == ResultType::INSTANT_VECTOR && right_type == ResultType::INSTANT_VECTOR;
+
+        if (binary.on)
+        {
+            for (const auto & label : binary.labels)
+            {
+                if (std::find(binary.extra_labels.begin(), binary.extra_labels.end(), label) != binary.extra_labels.end())
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                        "label '{}' must not occur in ON and GROUP clause at once",
+                        label);
+                }
+            }
+        }
+
+        const bool has_vector_matching = !binary.labels.empty() || binary.group_left || binary.group_right;
+
+        if (binary.operator_name == "and" || binary.operator_name == "or" || binary.operator_name == "unless")
+        {
+            if (!both_vectors)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Binary operator '{}' expects two arguments of type {}, but got {} and {}",
+                                binary.operator_name, ResultType::INSTANT_VECTOR, left_type, right_type);
+            }
+            if (binary.bool_modifier)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Binary operator '{}' doesn't allow the bool modifier", binary.operator_name);
+            }
+            if (binary.group_left || binary.group_right)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Binary operator '{}' doesn't allow group modifiers", binary.operator_name);
+            }
+            return;
+        }
+
+        if (!isScalarOrInstantVector(left_type) || !isScalarOrInstantVector(right_type))
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "Binary operator '{}' expects arguments of type {} or {}, but got {} and {}",
+                            binary.operator_name, ResultType::SCALAR, ResultType::INSTANT_VECTOR, left_type, right_type);
+        }
+
+        const bool is_comparison = isOneOf(binary.operator_name, {"==", "!=", ">", "<", ">=", "<="});
+        if (is_comparison)
+        {
+            if (left_type == ResultType::SCALAR && right_type == ResultType::SCALAR && !binary.bool_modifier)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                "Comparison operator '{}' on scalars requires the bool modifier", binary.operator_name);
+            }
+        }
+        else if (binary.bool_modifier)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "Binary operator '{}' doesn't allow the bool modifier", binary.operator_name);
+        }
+
+        if (has_vector_matching && !both_vectors)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                            "Vector matching for binary operator '{}' requires two instant-vector arguments, but got {} and {}",
+                            binary.operator_name, left_type, right_type);
+        }
+    }
+
+    void validateNode(const Node * node)
+    {
+        for (const auto * child : node->children)
+            validateNode(child);
+
+        switch (node->node_type)
+        {
+            case PrometheusQueryTree::NodeType::Subquery:
+            {
+                const auto * subquery = static_cast<const PrometheusQueryTree::Subquery *>(node);
+                if (subquery->getExpression()->result_type != ResultType::INSTANT_VECTOR)
+                {
+                    throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                    "Subquery expression must have type {}, but got {}",
+                                    ResultType::INSTANT_VECTOR, subquery->getExpression()->result_type);
+                }
+                break;
+            }
+            case PrometheusQueryTree::NodeType::Offset:
+            {
+                const auto * offset = static_cast<const PrometheusQueryTree::Offset *>(node);
+                if (offset->getExpression()->result_type != ResultType::INSTANT_VECTOR
+                    && offset->getExpression()->result_type != ResultType::RANGE_VECTOR)
+                {
+                    throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                    "Offset expression must have type {} or {}, but got {}",
+                                    ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR, offset->getExpression()->result_type);
+                }
+                break;
+            }
+            case PrometheusQueryTree::NodeType::Function:
+                validateFunction(static_cast<const PrometheusQueryTree::Function &>(*node));
+                break;
+            case PrometheusQueryTree::NodeType::UnaryOperator:
+            {
+                const auto * unary = static_cast<const PrometheusQueryTree::UnaryOperator *>(node);
+                if (unary->operator_name != "+" && unary->operator_name != "-")
+                {
+                    throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                    "Unknown unary operator '{}'", unary->operator_name);
+                }
+                if (!isScalarOrInstantVector(unary->getArgument()->result_type))
+                {
+                    throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY,
+                                    "Unary operator '{}' expects an argument of type {} or {}, but got {}",
+                                    unary->operator_name, ResultType::SCALAR, ResultType::INSTANT_VECTOR,
+                                    unary->getArgument()->result_type);
+                }
+                break;
+            }
+            case PrometheusQueryTree::NodeType::BinaryOperator:
+                validateBinaryOperator(static_cast<const PrometheusQueryTree::BinaryOperator &>(*node));
+                break;
+            case PrometheusQueryTree::NodeType::AggregationOperator:
+                validateAggregationOperator(static_cast<const PrometheusQueryTree::AggregationOperator &>(*node));
+                break;
+            case PrometheusQueryTree::NodeType::Scalar:
+            case PrometheusQueryTree::NodeType::StringLiteral:
+            case PrometheusQueryTree::NodeType::RangeSelector:
+                break;
+            case PrometheusQueryTree::NodeType::InstantSelector:
+                validateInstantSelector(static_cast<const PrometheusQueryTree::InstantSelector &>(*node));
+                break;
+        }
+    }
 
     String quotePromQLString(std::string_view str)
     {
@@ -156,6 +555,612 @@ namespace
     String formatMetricName(const String & metric)
     {
         return canPrintMetricNameUnquoted(metric) ? metric : quotePromQLString(metric);
+    }
+
+    /// Prometheus uses strconv.Quote for strings, including Unicode printability rules.
+    bool isPrometheusPrintable(UInt32 code_point)
+    {
+        if (code_point <= 0xFF)
+            return (code_point >= 0x20 && code_point <= 0x7E) || (code_point >= 0xA1 && code_point != 0xAD);
+
+        Poco::Unicode::CharacterProperties properties{};
+        Poco::Unicode::properties(code_point, properties);
+        return properties.category == Poco::Unicode::UCP_LETTER
+            || properties.category == Poco::Unicode::UCP_MARK
+            || properties.category == Poco::Unicode::UCP_NUMBER
+            || properties.category == Poco::Unicode::UCP_PUNCTUATION
+            || properties.category == Poco::Unicode::UCP_SYMBOL;
+    }
+
+    String quotePrometheusString(std::string_view str)
+    {
+        static constexpr char hex_digits[] = "0123456789abcdef";
+
+        String result;
+        result.reserve(str.size() + 2);
+        result += '"';
+
+        const auto * data = reinterpret_cast<const UInt8 *>(str.data());
+        for (size_t i = 0; i < str.size();)
+        {
+            const UInt8 c = data[i];
+            switch (c)
+            {
+                case '"': result += "\\\""; ++i; break;
+                case '\\': result += "\\\\"; ++i; break;
+                case '\a': result += "\\a"; ++i; break;
+                case '\b': result += "\\b"; ++i; break;
+                case '\f': result += "\\f"; ++i; break;
+                case '\n': result += "\\n"; ++i; break;
+                case '\r': result += "\\r"; ++i; break;
+                case '\t': result += "\\t"; ++i; break;
+                case '\v': result += "\\v"; ++i; break;
+                default:
+                {
+                    if (c < 0x20 || c == 0x7F)
+                    {
+                        result += "\\x";
+                        result += hex_digits[c >> 4];
+                        result += hex_digits[c & 0x0F];
+                        ++i;
+                    }
+                    else if (c >= 0x80)
+                    {
+                        const size_t sequence_length = UTF8::seqLength(c);
+                        if (sequence_length <= str.size() - i
+                            && UTF8::isValidUTF8(data + i, sequence_length))
+                        {
+                            const auto code_point = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(data + i), sequence_length);
+                            if (code_point && isPrometheusPrintable(*code_point))
+                                result.append(str, i, sequence_length);
+                            else if (code_point && *code_point <= 0xFFFF)
+                                result += fmt::format("\\u{:04x}", *code_point);
+                            else if (code_point)
+                                result += fmt::format("\\U{:08x}", *code_point);
+                            else
+                            {
+                                result += "\\x";
+                                result += hex_digits[c >> 4];
+                                result += hex_digits[c & 0x0F];
+                            }
+                            i += sequence_length;
+                        }
+                        else
+                        {
+                            result += "\\x";
+                            result += hex_digits[c >> 4];
+                            result += hex_digits[c & 0x0F];
+                            ++i;
+                        }
+                    }
+                    else
+                    {
+                        result += static_cast<char>(c);
+                        ++i;
+                    }
+                    break;
+                }
+            }
+        }
+
+        result += '"';
+        return result;
+    }
+
+    String formatPrometheusLabelName(const String & label)
+    {
+        return isLegacyLabelName(label) ? label : quotePrometheusString(label);
+    }
+
+    String formatPrometheusMetricName(const String & metric)
+    {
+        return canPrintMetricNameUnquoted(metric) ? metric : quotePrometheusString(metric);
+    }
+
+    UInt64 unsignedAbsoluteValue(Int64 value)
+    {
+        if (value >= 0)
+            return static_cast<UInt64>(value);
+        return static_cast<UInt64>(-(value + 1)) + 1;
+    }
+
+    Int64 decimalToMilliseconds(Decimal64 value, UInt32 scale)
+    {
+        if (scale >= 3)
+            return value.value / DecimalUtils::scaleMultiplier<Decimal64>(scale - 3);
+
+        return value.value * DecimalUtils::scaleMultiplier<Decimal64>(3 - scale);
+    }
+
+    Int64 decimalToRoundedMilliseconds(Decimal64 value, UInt32 scale)
+    {
+        const Int64 milliseconds = decimalToMilliseconds(value, scale);
+        if (scale <= 3)
+            return milliseconds;
+
+        const Int64 divisor = DecimalUtils::scaleMultiplier<Decimal64>(scale - 3);
+        const Int64 remainder = value.value % divisor;
+        if (unsignedAbsoluteValue(remainder) * 2 < static_cast<UInt64>(divisor))
+            return milliseconds;
+
+        return milliseconds + (value.value < 0 ? -1 : 1);
+    }
+
+    String formatPrometheusTimestamp(const DateTime64 & timestamp, UInt32 scale)
+    {
+        const Int64 milliseconds = decimalToRoundedMilliseconds(Decimal64{timestamp}, scale);
+        const UInt64 absolute = unsignedAbsoluteValue(milliseconds);
+        return fmt::format("{}{}.{:03}", milliseconds < 0 ? "-" : "", absolute / 1000, absolute % 1000);
+    }
+
+    String formatPrometheusDuration(Decimal64 duration, UInt32 scale)
+    {
+        Int64 milliseconds = decimalToMilliseconds(duration, scale);
+        if (milliseconds == 0)
+            return "0s";
+
+        const bool negative = milliseconds < 0;
+        UInt64 remaining = unsignedAbsoluteValue(milliseconds);
+        String result;
+
+        auto append_unit = [&](std::string_view unit, UInt64 multiplier, bool exact)
+        {
+            if (exact && remaining % multiplier != 0)
+                return;
+
+            const UInt64 value = remaining / multiplier;
+            if (value == 0)
+                return;
+
+            result += fmt::format("{}{}", value, unit);
+            remaining -= value * multiplier;
+        };
+
+        /// This follows model.Duration.String(): years and weeks are only used
+        /// when they consume the whole duration, which keeps 90d readable.
+        append_unit("y", 365ULL * 24 * 60 * 60 * 1000, true);
+        append_unit("w", 7ULL * 24 * 60 * 60 * 1000, true);
+        append_unit("d", 24ULL * 60 * 60 * 1000, false);
+        append_unit("h", 60ULL * 60 * 1000, false);
+        append_unit("m", 60ULL * 1000, false);
+        append_unit("s", 1000, false);
+        append_unit("ms", 1, false);
+
+        if (negative)
+            result.insert(result.begin(), '-');
+        return result;
+    }
+
+    String formatPrometheusScalar(const PrometheusQueryTree::Scalar & scalar)
+    {
+        if (scalar.duration_value)
+            return formatPrometheusDuration(*scalar.duration_value, /* scale */ 3);
+
+        if (std::isinf(scalar.scalar))
+            return scalar.scalar < 0 ? "-Inf" : "+Inf";
+        if (std::isnan(scalar.scalar))
+            return "NaN";
+
+        char buffer[1100];
+        const auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), scalar.scalar, std::chars_format::fixed);
+        if (error != std::errc{})
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot format Prometheus scalar {}", scalar.scalar);
+        return {buffer, end};
+    }
+
+    using PrometheusMatcherType = PrometheusQueryTree::MatcherType;
+
+    String formatPrometheusMatcher(const PrometheusQueryTree::Matcher & matcher)
+    {
+        String result = formatPrometheusLabelName(matcher.label_name);
+        switch (matcher.matcher_type)
+        {
+            case PrometheusMatcherType::EQ:  result += '=';  break;
+            case PrometheusMatcherType::NE:  result += "!="; break;
+            case PrometheusMatcherType::RE:  result += "=~"; break;
+            case PrometheusMatcherType::NRE: result += "!~"; break;
+        }
+        result += quotePrometheusString(matcher.label_value);
+        return result;
+    }
+
+    String formatPrometheusAggregationPrefix(const PrometheusQueryTree::AggregationOperator & aggregation)
+    {
+        String result = aggregation.operator_name;
+        if (aggregation.without || (aggregation.by && !aggregation.labels.empty()))
+        {
+            result += aggregation.without ? " without (" : " by (";
+            for (size_t i = 0; i != aggregation.labels.size(); ++i)
+            {
+                if (i != 0)
+                    result += ", ";
+                result += formatPrometheusLabelName(aggregation.labels[i]);
+            }
+            result += ") ";
+        }
+        return result;
+    }
+
+    bool hasPrometheusVectorMatching(const PrometheusQueryTree::BinaryOperator & binary)
+    {
+        const bool both_vectors = binary.getLeftArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR
+            && binary.getRightArgument()->result_type == PrometheusQueryTree::ResultType::INSTANT_VECTOR;
+        return !binary.labels.empty() || (binary.on && both_vectors) || binary.group_left || binary.group_right;
+    }
+
+    constexpr size_t max_characters_per_line = 100;
+
+    String formatPrometheusNodeFlat(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree);
+
+    String formatPrometheusNode(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree, size_t level);
+
+    String formatPrometheusNodeWithParentheses(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree, size_t level);
+
+    bool needsPrometheusLeftParentheses(const PrometheusQueryTree::BinaryOperator & binary)
+    {
+        const auto precedence = binary.getPrecedence();
+        const auto left_precedence = binary.getLeftArgument()->getPrecedence();
+        return (precedence < left_precedence) || (precedence == left_precedence && binary.isRightAssociative());
+    }
+
+    bool needsPrometheusRightParentheses(const PrometheusQueryTree::BinaryOperator & binary)
+    {
+        return binary.getPrecedence() <= binary.getRightArgument()->getPrecedence();
+    }
+
+    String formatPrometheusSubquerySuffix(const PrometheusQueryTree::Subquery & subquery, const PrometheusQueryTree & tree)
+    {
+        String result = fmt::format("[{}:", formatPrometheusDuration(subquery.range, tree.getTimestampScale()));
+        if (subquery.step)
+            result += formatPrometheusDuration(*subquery.step, tree.getTimestampScale());
+        result += ']';
+        return result;
+    }
+
+    String formatPrometheusNodeWithParentheses(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree, size_t level)
+    {
+        const String flat = formatPrometheusNodeFlat(node, tree);
+        const String indent(level * 2, ' ');
+        if (flat.size() <= max_characters_per_line)
+        {
+            String result = indent + '(';
+            result += flat;
+            result += ')';
+            return result;
+        }
+
+        return indent + "(\n" + formatPrometheusNode(node, tree, level + 1) + "\n" + indent + ')';
+    }
+
+    String formatPrometheusNodeFlat(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree)
+    {
+        using NodeType = PrometheusQueryTree::NodeType;
+        switch (node.node_type)
+        {
+            case NodeType::Scalar:
+                return formatPrometheusScalar(static_cast<const PrometheusQueryTree::Scalar &>(node));
+
+            case NodeType::StringLiteral:
+                return quotePrometheusString(static_cast<const PrometheusQueryTree::StringLiteral &>(node).string);
+
+            case NodeType::InstantSelector:
+            {
+                const auto & selector = static_cast<const PrometheusQueryTree::InstantSelector &>(node);
+                size_t metric_name_matcher_count = 0;
+                size_t metric_name_pos = static_cast<size_t>(-1);
+                for (size_t i = 0; i != selector.matchers.size(); ++i)
+                {
+                    const auto & matcher = selector.matchers[i];
+                    if (matcher.label_name == "__name__")
+                    {
+                        ++metric_name_matcher_count;
+                        if (matcher.matcher_type == PrometheusMatcherType::EQ && metric_name_pos == static_cast<size_t>(-1))
+                            metric_name_pos = i;
+                    }
+                }
+
+                const bool can_hoist_metric_name
+                    = !selector.metric_name.empty()
+                    && metric_name_matcher_count == 1
+                    && metric_name_pos != static_cast<size_t>(-1)
+                    && selector.matchers[metric_name_pos].label_value == selector.metric_name
+                    && canPrintMetricNameUnquoted(selector.metric_name);
+
+                String result;
+                if (can_hoist_metric_name)
+                    result += formatPrometheusMetricName(selector.metric_name);
+
+                std::vector<String> matcher_strings;
+                matcher_strings.reserve(selector.matchers.size());
+                for (size_t i = 0; i != selector.matchers.size(); ++i)
+                {
+                    if (i == metric_name_pos && can_hoist_metric_name)
+                        continue;
+                    matcher_strings.push_back(formatPrometheusMatcher(selector.matchers[i]));
+                }
+                std::sort(matcher_strings.begin(), matcher_strings.end());
+
+                if (!matcher_strings.empty())
+                {
+                    result += "{";
+                    for (size_t i = 0; i != matcher_strings.size(); ++i)
+                    {
+                        if (i != 0)
+                            result += ',';
+                        result += matcher_strings[i];
+                    }
+                    result += "}";
+                }
+                return result;
+            }
+
+            case NodeType::RangeSelector:
+            {
+                const auto & range = static_cast<const PrometheusQueryTree::RangeSelector &>(node);
+                return fmt::format("{}[{}]", formatPrometheusNodeFlat(*range.getInstantSelector(), tree),
+                                   formatPrometheusDuration(range.range, tree.getTimestampScale()));
+            }
+
+            case NodeType::Subquery:
+            {
+                const auto & subquery = static_cast<const PrometheusQueryTree::Subquery &>(node);
+                const auto * expression = subquery.getExpression();
+                const bool need_parentheses = subquery.getPrecedence() <= expression->getPrecedence();
+                String result;
+                if (need_parentheses)
+                    result += '(';
+                result += formatPrometheusNodeFlat(*expression, tree);
+                if (need_parentheses)
+                    result += ')';
+                result += formatPrometheusSubquerySuffix(subquery, tree);
+                return result;
+            }
+
+            case NodeType::Offset:
+            {
+                const auto & offset = static_cast<const PrometheusQueryTree::Offset &>(node);
+                String result = formatPrometheusNodeFlat(*offset.getExpression(), tree);
+                switch (offset.at_modifier)
+                {
+                    case PrometheusQueryTree::Offset::AtModifier::None:
+                        break;
+                    case PrometheusQueryTree::Offset::AtModifier::Timestamp:
+                        chassert(offset.at_timestamp);
+                        result += " @ ";
+                        result += formatPrometheusTimestamp(*offset.at_timestamp, tree.getTimestampScale());
+                        break;
+                    case PrometheusQueryTree::Offset::AtModifier::Start:
+                        result += " @ start()";
+                        break;
+                    case PrometheusQueryTree::Offset::AtModifier::End:
+                        result += " @ end()";
+                        break;
+                }
+                if (offset.offset_value)
+                    result += fmt::format(" offset {}", formatPrometheusDuration(*offset.offset_value, tree.getTimestampScale()));
+                return result;
+            }
+
+            case NodeType::Function:
+            {
+                const auto & function = static_cast<const PrometheusQueryTree::Function &>(node);
+                String result = function.function_name + '(';
+                for (size_t i = 0; i != function.getArguments().size(); ++i)
+                {
+                    if (i != 0)
+                        result += ", ";
+                    result += formatPrometheusNodeFlat(*function.getArguments()[i], tree);
+                }
+                result += ')';
+                return result;
+            }
+
+            case NodeType::UnaryOperator:
+            {
+                const auto & unary = static_cast<const PrometheusQueryTree::UnaryOperator &>(node);
+                if (const auto * scalar = typeid_cast<const PrometheusQueryTree::Scalar *>(unary.getArgument()); scalar)
+                {
+                    if (std::isnan(scalar->scalar))
+                        return "NaN";
+                    if (unary.operator_name == "+")
+                        return formatPrometheusScalar(*scalar);
+                    if (std::isinf(scalar->scalar))
+                        return unary.operator_name + String(scalar->scalar < 0 ? "-Inf" : "Inf");
+                }
+
+                const bool need_parentheses = unary.getPrecedence() < unary.getArgument()->getPrecedence();
+                String result = unary.operator_name;
+                if (need_parentheses)
+                    result += '(';
+                result += formatPrometheusNodeFlat(*unary.getArgument(), tree);
+                if (need_parentheses)
+                    result += ')';
+                return result;
+            }
+
+            case NodeType::BinaryOperator:
+            {
+                const auto & binary = static_cast<const PrometheusQueryTree::BinaryOperator &>(node);
+                const bool need_left_parentheses = needsPrometheusLeftParentheses(binary);
+                const bool need_right_parentheses = needsPrometheusRightParentheses(binary);
+
+                String result;
+                if (need_left_parentheses)
+                    result += '(';
+                result += formatPrometheusNodeFlat(*binary.getLeftArgument(), tree);
+                if (need_left_parentheses)
+                    result += ')';
+                result += " ";
+                result += binary.operator_name;
+                if (binary.bool_modifier)
+                    result += " bool";
+                if (hasPrometheusVectorMatching(binary))
+                {
+                    result += binary.on ? " on (" : " ignoring (";
+                    for (size_t i = 0; i != binary.labels.size(); ++i)
+                    {
+                        if (i != 0)
+                            result += ", ";
+                        result += formatPrometheusLabelName(binary.labels[i]);
+                    }
+                    result += ')';
+                }
+                if (binary.group_left || binary.group_right)
+                {
+                    result += binary.group_left ? " group_left (" : " group_right (";
+                    for (size_t i = 0; i != binary.extra_labels.size(); ++i)
+                    {
+                        if (i != 0)
+                            result += ", ";
+                        result += formatPrometheusLabelName(binary.extra_labels[i]);
+                    }
+                    result += ')';
+                }
+                result += " ";
+                if (need_right_parentheses)
+                    result += '(';
+                result += formatPrometheusNodeFlat(*binary.getRightArgument(), tree);
+                if (need_right_parentheses)
+                    result += ')';
+                return result;
+            }
+
+            case NodeType::AggregationOperator:
+            {
+                const auto & aggregation = static_cast<const PrometheusQueryTree::AggregationOperator &>(node);
+                String result = formatPrometheusAggregationPrefix(aggregation) + '(';
+                for (size_t i = 0; i != aggregation.getArguments().size(); ++i)
+                {
+                    if (i != 0)
+                        result += ", ";
+                    result += formatPrometheusNodeFlat(*aggregation.getArguments()[i], tree);
+                }
+                result += ')';
+                return result;
+            }
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown Prometheus query node type");
+    }
+
+    String formatPrometheusNode(const PrometheusQueryTree::Node & node, const PrometheusQueryTree & tree, size_t level)
+    {
+        String flat = formatPrometheusNodeFlat(node, tree);
+        const String indent(level * 2, ' ');
+
+        switch (node.node_type)
+        {
+            case PrometheusQueryTree::NodeType::Function:
+            {
+                const auto & function = static_cast<const PrometheusQueryTree::Function &>(node);
+                if (flat.size() <= max_characters_per_line)
+                    return indent + flat;
+
+                String result = indent + function.function_name + "(\n";
+                for (size_t i = 0; i != function.getArguments().size(); ++i)
+                {
+                    if (i != 0)
+                        result += ",\n";
+                    result += formatPrometheusNode(*function.getArguments()[i], tree, level + 1);
+                }
+                result += "\n" + indent + ')';
+                return result;
+            }
+
+            case PrometheusQueryTree::NodeType::AggregationOperator:
+            {
+                const auto & aggregation = static_cast<const PrometheusQueryTree::AggregationOperator &>(node);
+                if (flat.size() <= max_characters_per_line)
+                    return indent + flat;
+
+                String result = indent + formatPrometheusAggregationPrefix(aggregation) + "(\n";
+                for (size_t i = 0; i != aggregation.getArguments().size(); ++i)
+                {
+                    if (i != 0)
+                        result += ",\n";
+                    result += formatPrometheusNode(*aggregation.getArguments()[i], tree, level + 1);
+                }
+                result += "\n" + indent + ')';
+                return result;
+            }
+
+            case PrometheusQueryTree::NodeType::BinaryOperator:
+            {
+                const auto & binary = static_cast<const PrometheusQueryTree::BinaryOperator &>(node);
+                const bool need_left_parentheses = needsPrometheusLeftParentheses(binary);
+                const bool need_right_parentheses = needsPrometheusRightParentheses(binary);
+                if (flat.size() <= max_characters_per_line)
+                    return indent + flat;
+
+                String result = need_left_parentheses
+                    ? formatPrometheusNodeWithParentheses(*binary.getLeftArgument(), tree, level + 1)
+                    : formatPrometheusNode(*binary.getLeftArgument(), tree, level + 1);
+                result += "\n" + indent + binary.operator_name;
+                if (binary.bool_modifier)
+                    result += " bool";
+                if (hasPrometheusVectorMatching(binary))
+                {
+                    result += binary.on ? " on (" : " ignoring (";
+                    for (size_t i = 0; i != binary.labels.size(); ++i)
+                    {
+                        if (i != 0)
+                            result += ", ";
+                        result += formatPrometheusLabelName(binary.labels[i]);
+                    }
+                    result += ')';
+                }
+                if (binary.group_left || binary.group_right)
+                {
+                    result += binary.group_left ? " group_left (" : " group_right (";
+                    for (size_t i = 0; i != binary.extra_labels.size(); ++i)
+                    {
+                        if (i != 0)
+                            result += ", ";
+                        result += formatPrometheusLabelName(binary.extra_labels[i]);
+                    }
+                    result += ')';
+                }
+                result += "\n";
+                result += need_right_parentheses
+                    ? formatPrometheusNodeWithParentheses(*binary.getRightArgument(), tree, level + 1)
+                    : formatPrometheusNode(*binary.getRightArgument(), tree, level + 1);
+                return result;
+            }
+
+            case PrometheusQueryTree::NodeType::UnaryOperator:
+            {
+                const auto & unary = static_cast<const PrometheusQueryTree::UnaryOperator &>(node);
+                if (flat.size() <= max_characters_per_line)
+                    return indent + flat;
+
+                const bool need_parentheses = unary.getPrecedence() < unary.getArgument()->getPrecedence();
+                String child = need_parentheses
+                    ? formatPrometheusNodeWithParentheses(*unary.getArgument(), tree, level)
+                    : formatPrometheusNode(*unary.getArgument(), tree, level);
+                const auto first_non_space = child.find_first_not_of(' ');
+                if (first_non_space != String::npos)
+                    child.erase(0, first_non_space);
+                return indent + unary.operator_name + child;
+            }
+
+            case PrometheusQueryTree::NodeType::Subquery:
+            {
+                const auto & subquery = static_cast<const PrometheusQueryTree::Subquery &>(node);
+                if (flat.size() <= max_characters_per_line)
+                    return flat;
+
+                const auto * expression = subquery.getExpression();
+                const bool need_parentheses = subquery.getPrecedence() <= expression->getPrecedence();
+                String result = need_parentheses
+                    ? formatPrometheusNodeWithParentheses(*expression, tree, level)
+                    : formatPrometheusNode(*expression, tree, level);
+                result += formatPrometheusSubquerySuffix(subquery, tree);
+                return result;
+            }
+
+            default:
+                return indent + flat;
+        }
     }
 
     template <typename NodeType>
@@ -419,6 +1424,12 @@ void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 timestamp
 bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 timestamp_scale_, String * error_message_, size_t * error_pos_)
 {
     return PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, error_message_, error_pos_);
+}
+
+void PrometheusQueryTree::validate() const
+{
+    if (root)
+        validateNode(root);
 }
 
 
@@ -755,6 +1766,13 @@ String PrometheusQueryTree::toString() const
     if (empty())
         return "";
     return getRoot()->toString(*this);
+}
+
+String PrometheusQueryTree::toPrometheusString() const
+{
+    if (empty())
+        return "";
+    return formatPrometheusNode(*getRoot(), *this, 0);
 }
 
 }

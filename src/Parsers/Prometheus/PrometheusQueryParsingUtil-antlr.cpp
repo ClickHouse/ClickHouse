@@ -248,11 +248,11 @@ namespace
             return true;
         }
 
-        bool parseScalar(const antlr4::tree::TerminalNode * ctx, ScalarType & result)
+        bool parseScalar(const antlr4::tree::TerminalNode * ctx, ScalarType & result, bool * is_duration = nullptr)
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseScalar(getText(ctx), result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseScalar(getText(ctx), result, &error_message, &error_pos, is_duration))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -272,11 +272,11 @@ namespace
             return true;
         }
 
-        bool parseDuration(const antlr4::tree::TerminalNode * ctx, DurationType & result)
+        bool parseDuration(const antlr4::tree::TerminalNode * ctx, UInt32 scale, DurationType & result)
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseDuration(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseDuration(getText(ctx), scale, result, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -338,13 +338,22 @@ namespace
         Node * makeScalar(antlr4::tree::TerminalNode * ctx)
         {
             ScalarType scalar = 0;
-            if (!parseScalar(ctx, scalar))
+            bool is_duration = false;
+            if (!parseScalar(ctx, scalar, &is_duration))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
             }
             auto new_node = std::make_unique<Scalar>();
             new_node->scalar = scalar;
+            if (is_duration)
+            {
+                if (!parseDuration(ctx, /* scale */ 3, new_node->duration_value.emplace()))
+                {
+                    chassert(error_listener.hasError());
+                    return nullptr;
+                }
+            }
             return addNode(std::move(new_node));
         }
 
@@ -373,6 +382,13 @@ namespace
             }
 
             label_name = ctx->getText();
+            if (ctx->getStart()->getType() == antlr4_grammars::PromQLParser::NUMBER
+                && !equalsCaseInsensitive(label_name, "inf")
+                && !equalsCaseInsensitive(label_name, "nan"))
+            {
+                error_listener.setError("invalid label name", getStartPos(ctx->getStart()));
+                return false;
+            }
             return true;
         }
 
@@ -466,7 +482,10 @@ namespace
             MatcherList matchers;
             auto * metric_name_ctx = ctx->metricName();
             if (metric_name_ctx)
+            {
+                new_node->metric_name = getMetricName(metric_name_ctx);
                 matchers.push_back(getMatcherForMetricName(metric_name_ctx));
+            }
 
             if (auto * label_matcher_list_ctx = ctx->labelMatcherList())
             {
@@ -577,7 +596,7 @@ namespace
                 if (!number_ctx)
                     throwInconsistentSchema("OffsetOp", ctx->getText());
                 auto & offset_value = new_node->offset_value.emplace();
-                ok &= parseDuration(number_ctx, offset_value);
+                ok &= parseDuration(number_ctx, timestamp_scale, offset_value);
                 if (ok && offset_value_ctx->SUB())
                     offset_value = -offset_value;
             }

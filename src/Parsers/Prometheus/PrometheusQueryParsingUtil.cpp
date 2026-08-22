@@ -410,6 +410,20 @@ namespace
         return has_hex_prefix;
     }
 
+    bool isOctalFormat(std::string_view input)
+    {
+        if (input.length() < 2 || input[0] != '0')
+            return false;
+
+        const String str = removeUnderscoresBetweenDigits</* is_hex = */ false>(input);
+        for (size_t i = 1; i != str.length(); ++i)
+        {
+            if (str[i] < '0' || str[i] > '7')
+                return false;
+        }
+        return true;
+    }
+
     /// Tries to parse an unsigned scalar in hex format, for example "0x23_F_B".
     /// The function recognizes prefixes "0x" and "0X" and ignores underscores between digits.
     /// If it succeeds the function returns true and sets `result`.
@@ -444,6 +458,42 @@ namespace
             if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<T>(scale), result.value))
             {
                 setErrorMessage(error_message, "Cannot parse {} {} in hexadecimal format: Overflow, the number is too big", getTypeName<T>(), quoteString(input));
+                setErrorPos(error_pos, 0);
+                return false;
+            }
+        }
+        else
+        {
+            result = static_cast<T>(value);
+        }
+
+        return true;
+    }
+
+    template <typename T>
+    bool tryParseOctalFormat(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    {
+        if (!isOctalFormat(input))
+        {
+            setErrorMessage(error_message, "Cannot parse {} {} in octal format: Expected a leading '0'", getTypeName<T>(), quoteString(input));
+            setErrorPos(error_pos, 0);
+            return false;
+        }
+
+        const String str = removeUnderscoresBetweenDigits</* is_hex = */ false>(input);
+        Int64 value = 0;
+        if (!tryParseIntInBase<8>(value, std::string_view{str}.substr(1)))
+        {
+            setErrorMessage(error_message, "Cannot parse {} {} in octal format", getTypeName<T>(), quoteString(str));
+            setErrorPos(error_pos, 1);
+            return false;
+        }
+
+        if constexpr (is_decimal<T>)
+        {
+            if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<T>(scale), result.value))
+            {
+                setErrorMessage(error_message, "Cannot parse {} {} in octal format: Overflow, the number is too big", getTypeName<T>(), quoteString(input));
                 setErrorPos(error_pos, 0);
                 return false;
             }
@@ -672,10 +722,19 @@ namespace
 
         bool ok = false;
 
-        /// Parse an unsigned number in one of three formats.
+        /// Parse an unsigned number in one of four formats.
         if (isHexFormat(unsigned_input))
         {
             ok = tryParseHexFormat(unsigned_input, scale, result, error_message, error_pos);
+        }
+        else if (isOctalFormat(unsigned_input))
+        {
+            ok = tryParseOctalFormat(unsigned_input, scale, result, error_message, error_pos);
+            if constexpr (std::is_same_v<T, ScalarType>)
+            {
+                if (!ok)
+                    ok = tryParseNumberFormat(unsigned_input, scale, result, error_message, error_pos);
+            }
         }
         else if (isDurationFormat(unsigned_input))
         {
@@ -701,8 +760,24 @@ namespace
 }
 
 
-bool PrometheusQueryParsingUtil::tryParseScalar(std::string_view input, ScalarType & res_scalar, String * error_message, size_t * error_pos)
+bool PrometheusQueryParsingUtil::tryParseScalar(
+    std::string_view input, ScalarType & res_scalar, String * error_message, size_t * error_pos, bool * is_duration)
 {
+    if (is_duration)
+    {
+        size_t start_pos = 0;
+        if (input.starts_with('+') || input.starts_with('-'))
+            ++start_pos;
+        while (start_pos != input.length() && std::isspace(input[start_pos]))
+            ++start_pos;
+
+        size_t end_pos = input.length();
+        while (end_pos != start_pos && std::isspace(input[end_pos - 1]))
+            --end_pos;
+
+        *is_duration = isDurationFormat(input.substr(start_pos, end_pos - start_pos));
+    }
+
     /// Here `scale` is set to `0` because it's unused when parsing a floating-point number.
     return tryParseNumber(input, /* scale */ 0, res_scalar, error_message, error_pos);
 }

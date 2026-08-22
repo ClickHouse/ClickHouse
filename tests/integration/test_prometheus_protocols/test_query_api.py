@@ -158,6 +158,228 @@ def test_range_query_accepts_positive_step_for_equal_start_and_end():
     assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
 
 
+def test_format_query_get():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": "foo/bar"},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {"status": "success", "data": "foo / bar"}
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("0755", "493"),
+        ("0_755", "493"),
+        ("-0755", "-493"),
+        ("08", "8"),
+        ("-NaN", "NaN"),
+        ("foo @ 0755", "foo @ 493"),
+        ("+1", "1"),
+        ("+1e3", "1000"),
+        ("+5m", "5m"),
+        ("+foo", "+foo"),
+    ],
+)
+def test_format_query_formats_numeric_literals_like_prometheus(query, expected):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    assert response.json() == {"status": "success", "data": expected}
+
+
+def test_format_query_accepts_overflowing_octal_literal():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": "077777777777777777777777777777"},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    assert response.json()["status"] == "success"
+
+
+@pytest.mark.parametrize("method", ["put", "delete"])
+def test_format_query_rejects_unsupported_methods(method):
+    request = getattr(requests, method)
+    response = request(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        data={"query": "foo"},
+        params={"query": "foo"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == requests.codes.method_not_allowed, response.text
+    assert response.headers["Allow"] == "GET, POST"
+    assert response.json() == {
+        "status": "error",
+        "errorType": "method_not_allowed",
+        "error": "method not allowed",
+    }
+
+
+def test_format_query_allows_trailing_comment_without_newline():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": "foo # comment"},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {"status": "success", "data": "foo"}
+
+
+def test_format_query_uses_prometheus_string_escapes():
+    query = r'label_replace(foo, "label", "\a\v\000\001\037\177", "source", "regex")'
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {"status": "success", "data": r'label_replace(foo, "label", "\a\v\x00\x01\x1f\x7f", "source", "regex")'}
+
+
+def test_format_query_post_urlencoded():
+    response = requests.post(
+        f"http://{node.ip_address}:9093/dynamic_table/api/v1/format_query",
+        data={"query": "# comment\nsum by (job) (rate(http_requests_total[5m]))"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {"status": "success", "data": "sum by (job) (rate(http_requests_total[5m]))"}
+
+
+def test_format_query_rounds_timestamp_to_milliseconds():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": "foo @ 1.23456789"},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"] == "foo @ 1.235"
+
+
+def test_format_query_sorts_matchers_like_prometheus():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": 'foo{z="last",a="first"}'},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {"status": "success", "data": 'foo{a="first",z="last"}'}
+
+
+def test_format_query_formats_long_expressions_on_multiple_lines():
+    query = 'label_replace(foo, "label", "this string is long enough to make the PromQL call exceed the line length limit", "source", "regex")'
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {
+        "status": "success",
+        "data": "label_replace(\n"
+        "  foo,\n"
+        '  "label",\n'
+        '  "this string is long enough to make the PromQL call exceed the line length limit",\n'
+        '  "source",\n'
+        '  "regex"\n'
+        ")",
+    }
+
+
+@pytest.mark.parametrize("query", ["", "foo +"])
+def test_format_query_rejects_invalid_query(query):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.bad_request, response.text
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["errorType"] == "bad_data"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "time(1)",
+        "sum(foo, bar)",
+        "sum(1)",
+        "rate(foo)",
+        "foo + bar[5m]",
+        "foo and 1",
+        "1 == 2",
+        "topk(foo, bar)",
+        '{job=~"["}',
+        '{job=~".*"}',
+        '{__name__="foo",__name__="bar"}',
+        "foo + on(job) group_left(job) bar",
+        "foo + on(job) group_right(job) bar",
+    ],
+)
+def test_format_query_rejects_semantically_invalid_query(query):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.bad_request, response.text
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["errorType"] == "bad_data"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "time()",
+        "sum(foo)",
+        "rate(foo[5m])",
+        "topk(3, foo)",
+        "foo + on(job) group_left(instance) bar",
+        "foo + ignoring(job) group_left(job) bar",
+        "1 + ignoring() 2",
+        "1 + on() 2",
+        '{job=~".+"}',
+        'label_replace(foo, "label", "value", "source", "regex")',
+    ],
+)
+def test_format_query_accepts_semantically_valid_query(query):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"]
+
+
+@pytest.mark.parametrize("query", ["1 + ignoring() 2", "1 + on() 2"])
+def test_format_query_drops_empty_vector_matching_for_scalars(query):
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": query},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {"status": "success", "data": "1 + 2"}
+
+
+def test_format_query_does_not_require_a_time_series_table():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/dynamic_table/api/v1/format_query",
+        params={"query": "foo/bar"},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    data = response.json()
+    assert data == {"status": "success", "data": "foo / bar"}
+
+
 def test_query_lookback_delta():
     query = 'foo{shape="circle"}'
     timestamp = 151
