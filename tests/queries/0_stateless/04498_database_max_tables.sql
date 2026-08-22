@@ -60,21 +60,6 @@ RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.moved TO {CLICKHOUSE_DATABASE_1:Id
 SELECT count() FROM system.tables WHERE database = currentDatabase();
 SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE:String} AND name = 'moved';
 
--- A full target must reject all cross-database rename paths before detaching the source table.
-SET allow_deprecated_database_ordinary = 1;
-DROP DATABASE IF EXISTS max_tables_ordinary_source_04498;
-CREATE DATABASE max_tables_ordinary_source_04498 ENGINE = Ordinary;
-CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Ordinary SETTINGS max_tables = 1;
-CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.target (x UInt32) ENGINE = MergeTree ORDER BY x;
-CREATE TABLE max_tables_ordinary_source_04498.ordinary_source (x UInt32) ENGINE = MergeTree ORDER BY x;
-RENAME TABLE max_tables_ordinary_source_04498.ordinary_source TO {CLICKHOUSE_DATABASE_2:Identifier}.ordinary_source; -- { serverError TOO_MANY_TABLES }
-SELECT count() FROM system.tables WHERE database = 'max_tables_ordinary_source_04498' AND name = 'ordinary_source';
-CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.atomic_source (x UInt32) ENGINE = MergeTree ORDER BY x;
-RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.atomic_source TO {CLICKHOUSE_DATABASE_2:Identifier}.atomic_source; -- { serverError TOO_MANY_TABLES }
-SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE:String} AND name = 'atomic_source';
-DROP DATABASE max_tables_ordinary_source_04498;
-DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
-
 -- A failed UNDROP must leave metadata in the dropped-table queue.
 -- The drop has to be asynchronous, otherwise there is nothing to undrop.
 SET database_atomic_wait_for_drop_and_detach_synchronously = 0;
@@ -137,5 +122,20 @@ SET force_remove_data_recursively_on_drop = 1;
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 SET force_remove_data_recursively_on_drop = 0;
+
+-- A full target must reject all cross-database rename paths before detaching the source table.
+-- Both databases are per-test unique, so the test stays runnable in parallel with itself.
+SET allow_deprecated_database_ordinary = 1;
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Ordinary SETTINGS max_tables = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.target (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ordinary_source (x UInt32) ENGINE = MergeTree ORDER BY x;
+RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ordinary_source TO {CLICKHOUSE_DATABASE_2:Identifier}.ordinary_source; -- { serverError TOO_MANY_TABLES }
+SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'ordinary_source';
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.atomic_source (x UInt32) ENGINE = MergeTree ORDER BY x;
+RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.atomic_source TO {CLICKHOUSE_DATABASE_2:Identifier}.atomic_source; -- { serverError TOO_MANY_TABLES }
+SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE:String} AND name = 'atomic_source';
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
 
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS max_tables = -1; -- { serverError CANNOT_CONVERT_TYPE }
