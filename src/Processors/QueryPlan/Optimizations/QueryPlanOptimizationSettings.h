@@ -55,6 +55,7 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
     bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
@@ -148,6 +149,7 @@ struct QueryPlanOptimizationSettings
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
     bool optimize_lazy_materialization_for_object_storage = false;
+    bool optimize_lazy_materialization_for_file = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled

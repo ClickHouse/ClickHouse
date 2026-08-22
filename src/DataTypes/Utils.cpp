@@ -126,19 +126,18 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         }
         case TypeIndex::Nullable:
         {
-            /// A Nullable source is only safely castable to a Nullable target: a NULL value cannot be
-            /// represented in a non-Nullable column, so a strict cast would throw or drop the null.
-            if (!to_type_was_nullable)
-                return false;
+            if (to_type_was_nullable)
+            {
+                const auto & from_type_nullable = assert_cast<const DataTypeNullable &>(*from_type);
+                return canBeSafelyCast(from_type_nullable.getNestedType(), to_type_unwrapped);
+            }
 
-            const auto & from_type_nullable = assert_cast<const DataTypeNullable &>(*from_type);
-            return canBeSafelyCast(from_type_nullable.getNestedType(), to_type_unwrapped);
+            return false;
         }
         case TypeIndex::LowCardinality:
         {
-            /// Recurse against the LowCardinality-stripped target, keeping its Nullable wrapper, so a
-            /// LowCardinality(Nullable(X)) source is still judged against the target's real nullability
-            /// (otherwise LowCardinality(Nullable(X)) -> Nullable(X) is wrongly rejected as unsafe).
+            /// The target keeps its nullability here, because a Nullable dictionary type needs a target
+            /// that can hold a NULL. Stripping only LowCardinality leaves the unwrapped target the same.
             const auto & from_type_low_cardinality = assert_cast<const DataTypeLowCardinality &>(*from_type);
             return canBeSafelyCast(from_type_low_cardinality.getDictionaryType(), removeLowCardinality(to_type));
         }
@@ -227,14 +226,16 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         case TypeIndex::QBit:
             return to_which_type.isQBit();
         case TypeIndex::Object:
-        case TypeIndex::Variant:
-        case TypeIndex::Dynamic:
         {
             if (to_which_type.isString())
                 return true;
 
             return false;
         }
+        case TypeIndex::Variant:
+        case TypeIndex::Dynamic:
+            /// Both encode a NULL via NULL_DISCRIMINATOR, so only a target that can hold one is safe.
+            return to_type_was_nullable && to_which_type.isString();
         case TypeIndex::String:
         case TypeIndex::Set:
         case TypeIndex::Interval:
