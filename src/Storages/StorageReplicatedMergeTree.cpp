@@ -8613,7 +8613,13 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
 {
     auto statuses = queue.getMutationsStatus();
     if (statuses.empty())
+    {
+        /// The last mutation left the queue; its cached denominator (and everyone else's) is
+        /// not needed anymore and would otherwise survive until the next mutation or restart.
+        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
+        mutation_initial_bytes.clear();
         return statuses;
+    }
 
     /// Byte-weighted progress is resolved here, outside of the queue's state lock: part
     /// sizes need the parts set, and parts locks must not be taken under the queue mutex.
@@ -8678,8 +8684,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
             std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
             auto & stored = mutation_initial_bytes[status.id];
             for (const auto & [part_name, part_bytes] : sized_parts_to_do)
-                if (stored.counted_parts.insert(part_name).second)
-                    stored.bytes += part_bytes;
+                stored.account(MergeTreePartInfo::fromPartName(part_name, format_version), part_bytes);
             initial_bytes = stored.bytes;
         }
 

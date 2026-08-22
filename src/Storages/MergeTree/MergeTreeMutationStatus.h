@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/Names.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <optional>
 #include <map>
 #include <ctime>
@@ -9,6 +10,18 @@
 
 namespace DB
 {
+
+/// The denominator for byte-weighted mutation progress: the byte weight of the mutation's remaining
+/// scope, counted once per covered block range rather than once per part name.
+struct MutationScopeInitialBytes
+{
+    UInt64 bytes = 0;
+    std::map<MergeTreePartInfo, UInt64> counted_parts;
+
+    /// Still-pending work reappearing under a new name (a merge of pending parts, or an earlier
+    /// mutation's rewrite) replaces the weight of the counted parts it covers instead of adding to it.
+    void account(const MergeTreePartInfo & info, UInt64 part_bytes);
+};
 
 /// Postpone reasons for parts that cannot be merged or mutated
 namespace PostponeReasons

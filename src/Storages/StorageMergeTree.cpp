@@ -984,8 +984,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         if (part->info.getDataVersion() < version)
         {
-            prepared.entry.initial_bytes_to_do += part->getBytesOnDisk();
-            prepared.entry.counted_parts_in_initial_bytes.insert(part->name);
+            prepared.entry.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
         }
     }
 
@@ -1276,6 +1275,7 @@ struct PartVersionWithName
     Int64 version;
     String name;
     UInt64 bytes_on_disk = 0;
+    MergeTreePartInfo info;
 };
 
 bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
@@ -1433,7 +1433,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     auto data_parts = getDataPartsVectorForInternalUsage();
     part_versions_with_names.reserve(data_parts.size());
     for (const auto & part : data_parts)
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk()});
+        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info});
     std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
 
     /// The live fraction of the parts currently being rewritten, for byte-weighted progress.
@@ -1480,8 +1480,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             /// Scope discovered after the entry was created (e.g. a part committed under an
             /// earlier block number) grows the denominator, so the work finished before the
             /// discovery keeps its share of `progress`.
-            if (entry.counted_parts_in_initial_bytes.insert(part_version.name).second)
-                entry.initial_bytes_to_do += part_version.bytes_on_disk;
+            entry.initial_bytes_to_do.account(part_version.info, part_version.bytes_on_disk);
             /// A rewrite of this part may stop short of this mutation's version, in which case it
             /// advances an earlier mutation only. `parts_in_progress_names` holds the right cutoff.
             if (std::find(parts_in_progress_names.begin(), parts_in_progress_names.end(), part_version.name) == parts_in_progress_names.end())
@@ -1492,7 +1491,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         /// The denominator is the byte weight the mutation's scope had when each part entered
         /// it (re-measured from what remains after a restart), so finished parts keep their
         /// pre-mutation weight whatever size the rewrite left behind.
-        UInt64 initial_bytes = std::max(entry.initial_bytes_to_do, bytes_to_do);
+        UInt64 initial_bytes = std::max(entry.initial_bytes_to_do.bytes, bytes_to_do);
         Float64 progress = std::clamp(
             1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
                 / std::max<Float64>(static_cast<Float64>(initial_bytes), 1.0),
@@ -1673,18 +1672,15 @@ void StorageMergeTree::loadMutations()
     {
         /// Re-snapshot the denominators for byte-weighted progress from what remains: the byte
         /// weight of the parts finished before the restart is not recoverable.
-        std::vector<std::tuple<Int64, UInt64, String>> version_bytes_name;
+        std::vector<std::tuple<Int64, UInt64, MergeTreePartInfo>> version_bytes_info;
         for (const auto & part : getDataPartsVectorForInternalUsage())
-            version_bytes_name.emplace_back(part->info.getDataVersion(), part->getBytesOnDisk(), part->name);
+            version_bytes_info.emplace_back(part->info.getDataVersion(), part->getBytesOnDisk(), part->info);
         for (auto & mutation : current_mutations_by_version)
         {
-            for (const auto & [data_version, bytes, name] : version_bytes_name)
+            for (const auto & [data_version, bytes, info] : version_bytes_info)
             {
                 if (data_version < static_cast<Int64>(mutation.first))
-                {
-                    mutation.second.initial_bytes_to_do += bytes;
-                    mutation.second.counted_parts_in_initial_bytes.insert(name);
-                }
+                    mutation.second.initial_bytes_to_do.account(info, bytes);
             }
         }
     }
