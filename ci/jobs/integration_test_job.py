@@ -91,7 +91,7 @@ COMPOSE_VALUED_OPTIONS = {
     "-p",
 }
 
-# Subcommands whose wait is bounded by docker and the registry alone, so exceeding the
+# Subcommands whose timeout does not mean the server failed to respond, so exceeding the
 # python-side budget says nothing about the server under test.
 ORCHESTRATION_LIFECYCLE_VERBS = {
     "config",
@@ -108,10 +108,9 @@ ORCHESTRATION_LIFECYCLE_VERBS = {
     "up",
 }
 
-# Subcommands that wait on the server exiting: `shutdown()` runs
-# `run_and_check(base_cmd + ["stop"])` with no `--timeout`, so the wait is bounded by
-# the generated template's `stop_grace_period: 10m`, which outlives the python-side
-# budget. A server ignoring SIGTERM for that long is a product defect.
+# Subcommands that wait on the server exiting: an unguarded `stop` with no `--timeout`
+# (cluster.py:2641) is bounded only by the generated template's `stop_grace_period: 10m`,
+# which outlives the python-side budget, so its timeout means the server did not respond.
 ORCHESTRATION_PRODUCT_VERBS = {"kill", "pause", "restart", "stop"}
 
 

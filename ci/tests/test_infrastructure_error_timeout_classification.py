@@ -39,6 +39,7 @@ from ci.jobs.integration_test_job import (
     _is_orchestration_lifecycle_timeout,
     _mark_infrastructure_errors,
     _raising_exception_lines,
+    _timed_out_orchestration_verbs,
 )
 from ci.praktika.result import Result, ResultTranslator
 
@@ -462,14 +463,56 @@ def test_image_pull_timeout_in_the_space_joined_rendering_stays_infrastructure()
     )
 
 
-def test_product_shutdown_hang_is_a_failure():
-    """A server that will not exit on SIGTERM makes teardown block past the python-side
+def test_lifecycle_timeout_without_docker_context_stays_a_failure_on_the_fail_branch():
+    """On the FAIL branch the docker-context test is a conjunct, not a disjunct.
+
+    An uncaught `run_and_check` timeout renders only the space-joined argv, so a row can
+    name a lifecycle subcommand while carrying neither a quoted `'docker'` nor an
+    `images_pull_cmd`. Relabelling on the subcommand alone would accept every such row
+    and reintroduce the widening the conjunct exists to prevent.
+
+    Text taken from a real row (`test_ddl_config_hostname::test_ddl_queue_delete_add_replica`,
+    recorded FAIL); 35 corpus row/status pairs have this shape.
+    """
+    r = _translate(
+        "test_ddl_config_hostname/test.py::test_ddl_queue_delete_add_replica",
+        [
+            ("test_ddl_config_hostname/test.py", 18, "    cluster.start()", "started_cluster"),
+            ("helpers/cluster.py", 3999, "    run_and_check(minio_start_cmd)", "start"),
+            ("helpers/cluster.py", 194, "    raise Exception(", "run_and_check"),
+        ],
+        "E   Exception: Command [docker compose --project-name "
+        "roottestddlconfighostname-gw2 --env-file /w/test_ddl_config_hostname/"
+        "_instances-gw2/.env --file /w/compose/docker_compose_minio.yml --verbose up -d] "
+        "timed out after 300s\nE   stdout:\nE   \nE   stderr:",
+    )
+    # the fixture's own precondition: neither docker-context token is present, so the
+    # conjunct is the only thing that can reject this row
+    assert "'docker'" not in r.info
+    assert "images_pull_cmd" not in r.info
+    # the row IS orchestration, so the subcommand split is not what rejects it
+    assert _is_docker_compose_timeout(r.info)
+    assert _is_orchestration_lifecycle_timeout(r.info)
+    r.status = Result.Status.FAIL
+    assert not _is_infrastructure_error(r)
+    assert _mark_infrastructure_errors([r]) == 0
+    assert r.status == Result.Status.FAIL
+
+
+def test_product_stop_hang_on_ip_change_is_a_failure():
+    """A server that will not exit on SIGTERM makes a `stop` block past the python-side
     budget, and that is a product defect, not infrastructure.
 
-    `shutdown()` runs `run_and_check(self.base_cmd + ["stop"])` with no `--timeout`
-    (cluster.py:4394-4395), so the wait is bounded by the generated compose template's
-    `stop_grace_period: 10m` (cluster.py:4880), which is longer than `run_and_check`'s
-    300 s default.
+    `restart_instance_with_ip_change` runs `run_and_check(self.base_cmd + ["stop", name])`
+    with no `--timeout` and no enclosing `try` (cluster.py:2641), so the wait is bounded
+    only by the generated compose template's `stop_grace_period: 10m` (cluster.py:4880),
+    which outlives `run_and_check`'s 300 s default, and the timeout propagates to the
+    classifier. Reachable from 9 call sites across 3 modules.
+
+    `shutdown()`'s own `stop` (cluster.py:4395) and `down --volumes` (:4443) sit inside
+    `try`s, so neither reaches the classifier on its own. The `stop`'s handler re-raises
+    through the `kill` at :4401, so a teardown surfaces as the `kill` arm below, carrying
+    the `stop` with it as an implicitly chained cause.
 
     Asserted on the faithful two-exception shape: the cause's `E ` line carries the
     repr'd argv, which supplies the quoted `'docker'` the FAIL branch looks for, so a
@@ -477,10 +520,10 @@ def test_product_shutdown_hang_is_a_failure():
     separates them.
     """
     r = _run_and_check_chain(
-        "test_parallel_replicas_custom_key/test.py::test_custom_key",
+        "test_dns_cache/test.py::test_user_access_ip_change",
         [
-            ("test_parallel_replicas_custom_key/test.py", 24, "    cluster.shutdown()"),
-            ("helpers/cluster.py", 4395, "    run_and_check(self.base_cmd + ['stop'])"),
+            ("test_dns_cache/test.py", 381, "    cluster.restart_instance_with_ip_change(node4, node4_ipv6)"),
+            ("helpers/cluster.py", 2641, "    run_and_check(self.base_cmd + ['stop', node.name])"),
         ],
         COMPOSE_STOP_ARGV,
     )
@@ -497,8 +540,9 @@ def test_product_shutdown_hang_is_a_failure():
 
 def test_product_kill_hang_is_a_failure():
     """`shutdown()` falls back to `run_and_check(base_cmd + ["kill"])` when `stop` fails
-    (cluster.py:4401), and `kill` waits on the container dying too. One real corpus row
-    carries this shape."""
+    (cluster.py:4401), and that call is unguarded, so it is the one teardown command whose
+    timeout reaches the classifier. `kill` waits on the container dying too. One real
+    corpus row carries this shape, with `cluster.py:4284 ... ["kill"]` as its frame."""
     r = _run_and_check_chain(
         "test_parallel_replicas_custom_key/test.py::test_custom_key",
         [
@@ -511,11 +555,85 @@ def test_product_kill_hang_is_a_failure():
     assert not _is_infrastructure_error(r)
 
 
+IMPLICIT_CHAIN_SOURCE = '''
+import subprocess
+
+STOP = ["docker", "compose", "--project-name", "roottestx-gw2", "stop"]
+KILL = ["docker", "compose", "--project-name", "roottestx-gw2", "kill"]
+
+
+def run_and_check_like(argv):
+    try:
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=300)
+    except subprocess.TimeoutExpired as ex:
+        raise Exception(
+            "Command [%s] timed out after 300s\\nstdout:\\n\\nstderr:\\n" % " ".join(argv)
+        ) from ex
+
+
+def shutdown_like():
+    try:
+        run_and_check_like(STOP)
+    except Exception:
+        run_and_check_like(KILL)
+
+
+def test_teardown():
+    shutdown_like()
+'''
+
+
+def test_teardown_reporting_both_stop_and_kill_is_a_failure():
+    """The shape a real teardown produces, generated by pytest rather than assembled.
+
+    `shutdown()` calls `kill` from inside the handler of the `stop`'s `try`
+    (cluster.py:4395/4401), so python attaches the `stop` to the `kill` as a context and
+    pytest renders four exceptions, each with its own `E ` line. Both subcommands are
+    product-sensitive, so the row must stay a failure however many of them it names.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "test_implicit_chain.py")
+        with open(src, "w") as f:
+            f.write(IMPLICIT_CHAIN_SOURCE)
+        report = os.path.join(d, "rl.jsonl")
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", src, "--tb=short", "-q",
+             "-p", "no:cacheprovider", f"--report-log={report}"],
+            cwd=d,
+            capture_output=True,
+        )
+        assert os.path.isfile(report), (
+            f"pytest produced no report-log (rc={proc.returncode}): "
+            f"{proc.stdout.decode()[-2000:]}"
+        )
+        real = ResultTranslator.from_pytest_jsonl(report)
+
+    candidates = real if isinstance(real, list) else [real]
+    stack, leaves = list(candidates), []
+    while stack:
+        node = stack.pop()
+        children = getattr(node, "results", None) or []
+        stack.extend(children) if children else leaves.append(node)
+    r = next(l for l in leaves if l.info)
+
+    # the fixture's own precondition: both subcommands really are on raising lines, so
+    # the arm measures the decision and not a rendering that dropped one of them
+    assert _timed_out_orchestration_verbs(r.info) == {"stop", "kill"}
+    r.status = Result.Status.FAIL
+    assert not _is_infrastructure_error(r)
+    assert _mark_infrastructure_errors([r]) == 0
+    assert r.status == Result.Status.FAIL
+
+
 def test_mixed_lifecycle_and_product_verbs_is_a_failure():
-    """A teardown reports more than one command: `shutdown()` tries `stop`, and on
-    failure `kill`, then `down --volumes`. `test_huge_concurrent_restore` rows carry
-    exactly this mix. A product-sensitive subcommand anywhere in the row means the server
-    is what did not respond, so the presence of a lifecycle verb must not outvote it."""
+    """A product-sensitive subcommand anywhere in the row means the server is what did not
+    respond, so the presence of a lifecycle verb must not outvote it.
+
+    A single result can name several subcommands: `shutdown()` calls `kill` from the
+    handler of the `stop`'s `try` (cluster.py:4395/4401), so python chains the two and
+    pytest gives each its own `E ` line. That real pair is product+product; this fixture
+    mixes a lifecycle verb in instead, which is the direction that could go wrong.
+    """
     r = _translate(
         "test_backup_restore_on_cluster/test_huge_concurrent_restore.py::test_huge",
         [
