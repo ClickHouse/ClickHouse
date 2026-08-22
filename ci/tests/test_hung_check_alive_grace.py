@@ -10,14 +10,20 @@ again 89 s after the verdict and then shut down cleanly.
 Report:
 https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=756b18a3921e9a5daec71d5c4413bfdad78a8275&name_0=MasterCI&name_1=Stateless%20tests%20%28amd_tsan%2C%20parallel%29
 
-So the two evidence classes must stay apart: a process that is gone aborts on
-the first failed probe, a process that is still there gets a bounded grace.
-These tests drive the real class on a fake clock with the probe and the PID
-lookup stubbed out; no server and no `ps` are involved.
+So the two evidence classes must stay apart: a server that is gone aborts on
+the first failed probe, a server that is still there gets a bounded grace.
+"Still there" means the server behind the probed port, not any visible
+`clickhouse-server`, so the fixture turns a `get_server_pid` call into a
+failure.  The monitor tests drive the real class on a fake clock with the probe
+and the process lookup stubbed out; the lookup itself is tested against a real
+listening socket.
 """
 
 import importlib.machinery
 import importlib.util
+import os
+import socket
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -64,22 +70,35 @@ def _env(monkeypatch):
     answering, so a failing probe advances the clock the way the real one does.
     """
     clock = FakeClock()
-    state = {"alive": True, "pid": 588, "probe_cost": 0.0, "probes": []}
+    state = {
+        "alive": True,
+        # (alive, pid) as reported for the server behind the probed port.
+        "process": (True, 588),
+        "probe_cost": 0.0,
+        "probes": [],
+    }
 
     def fake_check_server_liveness(_args, max_retries=10):
         state["probes"].append(max_retries)
         clock.advance(state["probe_cost"])
         return state["alive"]
 
-    def fake_get_server_pid(_args):
-        return state["pid"]
+    def fake_probed_server_process(_args):
+        return state["process"]
+
+    def unexpected_get_server_pid(_args):
+        raise AssertionError(
+            "the grace must be keyed off the probed port, not off any visible "
+            "clickhouse-server process"
+        )
 
     monkeypatch.setattr(_ct, "time", clock)
     monkeypatch.setattr(_ct, "check_server_liveness", fake_check_server_liveness)
-    monkeypatch.setattr(_ct, "get_server_pid", fake_get_server_pid)
+    monkeypatch.setattr(_ct, "probed_server_process", fake_probed_server_process)
+    monkeypatch.setattr(_ct, "get_server_pid", unexpected_get_server_pid)
 
     state["clock"] = clock
-    state["monitor"] = _ct.HungCheckMonitor(args=None)
+    state["monitor"] = _ct.HungCheckMonitor(args=Namespace(http_port=8123))
     return state
 
 
@@ -94,17 +113,51 @@ def test_healthy_server_is_never_hung_and_keeps_the_full_probe_budget(env):
 def test_dead_process_aborts_on_the_first_failed_probe(env):
     """No live process - the pre-existing latency, no grace."""
     env["alive"] = False
-    env["pid"] = None
+    env["process"] = (False, None)
     env["probe_cost"] = 165.0  # the full retry budget of a real failing probe
     assert env["monitor"].is_hung() is True
     assert env["probes"] == [10]
 
 
-def test_unknown_pid_reads_as_dead(env):
-    """`ps` unavailable or a server on another host must not buy a grace."""
+def test_unknown_liveness_reads_as_dead(env):
+    """No `/proc`, or a server on another host, must not buy a grace."""
     env["alive"] = False
-    env["pid"] = None
+    env["process"] = (None, None)
     assert env["monitor"].is_hung() is True
+
+
+def test_a_surviving_replica_does_not_buy_a_grace_for_the_probed_server(env):
+    """The multi-replica harness keeps other servers on `18123` / `28123`.
+
+    Nothing listens on the probed port any more, so the main server is gone and
+    the run must abort at the old latency even though `clickhouse-server`
+    processes are still visible - the fixture makes any use of `get_server_pid`
+    an error.
+    """
+    env["alive"] = False
+    env["process"] = (False, None)
+    assert env["monitor"].is_hung() is True
+
+
+def test_probed_server_process_follows_the_listening_socket():
+    """The real helper, against a real socket - no `/proc` stubbing."""
+    if not os.path.exists("/proc/net/tcp"):
+        pytest.skip("needs Linux /proc")
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        args = Namespace(tcp_host="localhost", http_port=port)
+        assert _ct.probed_server_process(args) == (True, os.getpid())
+        # A server on another host cannot be judged from here.
+        assert _ct.probed_server_process(
+            Namespace(tcp_host="some-other-host", http_port=port)
+        ) == (None, None)
+    finally:
+        listener.close()
+    assert _ct.probed_server_process(args) == (False, None)
 
 
 def test_live_process_stalled_then_recovering_does_not_abort(env):

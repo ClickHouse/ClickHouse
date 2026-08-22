@@ -5000,6 +5000,99 @@ def check_server_liveness(args, max_retries=10) -> bool:
     return False
 
 
+# `/proc/net/tcp` state column for TCP_LISTEN, from `include/net/tcp_states.h`.
+_TCP_LISTEN_STATE = "0A"
+
+
+def _listening_socket_inodes(port: int) -> Optional[Set[str]]:
+    """Inodes of the sockets listening on `port` on this host.
+
+    `None` when the tables cannot be read at all (no `/proc`, i.e. not Linux) -
+    that is "cannot tell", not "nothing is listening".
+    """
+    inodes = set()
+    read_any = False
+    for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.read().splitlines()[1:]
+        except OSError:
+            continue
+        read_any = True
+        for line in lines:
+            fields = line.split()
+            # local_address, st, ..., inode
+            if len(fields) < 10 or fields[3] != _TCP_LISTEN_STATE:
+                continue
+            try:
+                if int(fields[1].rsplit(":", 1)[-1], 16) != port:
+                    continue
+            except ValueError:
+                continue
+            inodes.add(fields[9])
+    return inodes if read_any else None
+
+
+def _pid_owning_sockets(inodes: Set[str]) -> Optional[int]:
+    """The process holding one of `inodes`, or None when it cannot be resolved.
+
+    Diagnostics only: the socket table already proves the owner is alive, and
+    `/proc/<pid>/fd` is only readable for our own processes, so a server
+    running as another user resolves to None without changing any verdict.
+    """
+    targets = {f"socket:[{inode}]" for inode in inodes}
+    try:
+        pids = [int(entry) for entry in os.listdir("/proc") if entry.isdigit()]
+    except OSError:
+        return None
+    for pid in pids:
+        try:
+            for fd in os.listdir(f"/proc/{pid}/fd"):
+                try:
+                    if os.readlink(f"/proc/{pid}/fd/{fd}") in targets:
+                        return pid
+                except OSError:
+                    continue
+        except OSError:
+            continue
+    return None
+
+
+def _probed_host_is_local(args) -> bool:
+    """True when the liveness probe talks to a server on this host."""
+    host = getattr(args, "tcp_host", None) or "localhost"
+    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "[::1]"):
+        return True
+    return host in (socket.gethostname(), socket.getfqdn())
+
+
+def probed_server_process(args) -> Tuple[Optional[bool], Optional[int]]:
+    """Is the server the liveness probe talks to still running?
+
+    Returns `(alive, pid)`, where `alive` is True when a process on this host
+    still holds the listening socket on the probed port, False when nothing
+    listens there any more, and None when it cannot be told (a server on
+    another host, or no `/proc`).  `pid` is best-effort and only used in
+    messages.
+
+    The socket, not `pgrep`: `get_all_server_pids` sees every
+    `clickhouse-server` of this user, and the multi-replica functional harness
+    keeps extra replicas on other ports (`18123` / `28123`), so it would call a
+    dead main server "alive" for as long as any replica survives.  A listening
+    socket is owned by exactly one process and the kernel drops it when that
+    process dies, while a process merely parked - the stall this whole class
+    exists for - keeps it.
+    """
+    if not _probed_host_is_local(args):
+        return None, None
+    inodes = _listening_socket_inodes(args.http_port)
+    if inodes is None:
+        return None, None
+    if not inodes:
+        return False, None
+    return True, _pid_owning_sockets(inodes)
+
+
 class HungCheckMonitor:
     """Decides when a server that stopped answering means the run must be aborted.
 
@@ -5018,12 +5111,13 @@ class HungCheckMonitor:
       * the process is still there: keep probing, and only call it a hang once
         the server has stayed silent for `GRACE_WITH_LIVE_PROCESS`.
 
-    Not being able to tell (no `ps`, or a server on another host) reads as
-    gone - without positive evidence of a live process we keep the previous
-    behaviour instead of sitting out the grace.  `get_server_pid` picks the
-    first of the servers it can see, so in a multi-replica setup a surviving
-    replica delays the verdict on a dead main server by the grace; it does not
-    lose it.
+    "Still there" is decided by the listening socket on the probed port, not by
+    `pgrep`: the process behind that socket is exactly the one the probe talks
+    to, so a surviving replica on another port cannot buy a grace for a dead
+    main server (see `probed_server_process`).  Not being able to tell (no
+    `/proc`, or a server on another host) reads as gone - without positive
+    evidence of a live server we keep the previous behaviour instead of sitting
+    out the grace.
     """
 
     # Long enough to cover the multi-minute whole-process stalls observed on
@@ -5078,12 +5172,14 @@ class HungCheckMonitor:
             self.unresponsive_since = now
         unresponsive_for = time() - self.unresponsive_since
 
-        server_pid = get_server_pid(self.args)
-        if server_pid is None or unresponsive_for >= self.GRACE_WITH_LIVE_PROCESS:
+        alive, server_pid = probed_server_process(self.args)
+        if not alive or unresponsive_for >= self.GRACE_WITH_LIVE_PROCESS:
             return True
+        where = f"process {server_pid}" if server_pid is not None else "its process"
         print(
-            f"Server did not answer the liveness check, but process {server_pid} "
-            f"is still alive ({unresponsive_for:.0f}s so far) - waiting up to "
+            "Server did not answer the liveness check, but the listening socket "
+            f"on port {self.args.http_port} is still held, so {where} is still "
+            f"alive ({unresponsive_for:.0f}s so far) - waiting up to "
             f"{self.GRACE_WITH_LIVE_PROCESS:.0f}s for it to recover before "
             "declaring a hang."
         )
