@@ -138,8 +138,10 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_dry_run_budget SELECT number FROM numbers(3);   -- all_2_2_0
 "
 
-TMP_DIR=$($CLICKHOUSE_CLIENT --send_logs_level=trace \
-    --query "OPTIMIZE TABLE t_dry_run_budget DRY RUN PARTS 'all_1_1_0', 'all_2_2_0'" 2>&1 \
+# `send_logs_level` as a query setting rather than a client option: the client refuses the option
+# twice, and `CLICKHOUSE_CLIENT` already carries it in some CI configurations.
+TMP_DIR=$($CLICKHOUSE_CLIENT \
+    --query "OPTIMIZE TABLE t_dry_run_budget DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS send_logs_level='trace'" 2>&1 \
     | grep -o 'tmp_merge_dry_run_[0-9a-f]*' | head -n 1)
 
 echo "temporary directory length ${#TMP_DIR}"
