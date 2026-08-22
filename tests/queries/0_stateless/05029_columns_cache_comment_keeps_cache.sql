@@ -28,7 +28,7 @@ SELECT count() FROM system.columns_cache
 WHERE database = currentDatabase() AND table = 't_columns_cache_comment' AND column = 'a';
 
 SELECT sum(a), count() FROM t_columns_cache_comment
-SETTINGS log_comment = '05024_read_after_comment';
+SETTINGS log_comment = '05029_read_after_comment';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -36,7 +36,7 @@ SELECT ProfileEvents['ColumnsCacheHits'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
-    AND log_comment = '05024_read_after_comment'
+    AND log_comment = '05029_read_after_comment'
 ORDER BY event_time_microseconds
 LIMIT 1;
 
