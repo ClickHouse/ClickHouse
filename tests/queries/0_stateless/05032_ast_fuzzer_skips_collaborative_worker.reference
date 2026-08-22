@@ -1,0 +1,13 @@
+workers_ran	1
+workers_not_fuzzed	1
+source_rows_written	1
+plain_query_no_workers	1
+declared_spelling_workers_ran	1
+declared_spelling_not_fuzzed	1
+cluster_function_read	1
+cluster_function_workers_ran	1
+cluster_function_not_fuzzed	1
+view_read	1999000
+view_workers_ran	1
+view_not_fuzzed	1
+alive
