@@ -23,6 +23,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <array>
 #include <chrono>
 #include <memory>
@@ -154,7 +155,7 @@ ProcessList::EntryPtr ProcessList::insert(
     if (client_info.current_query_id.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
-    bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal;
+    bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port;
     std::shared_ptr<QueryStatus> query;
 
     // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
@@ -218,14 +219,13 @@ ProcessList::EntryPtr ProcessList::insert(
 
         /// `queue_max_wait_ms` / `max_execution_time` are user-controllable and may be set to enormous values.
         /// `steady_clock::now() + milliseconds(effective_wait_ms)` converts the duration to nanoseconds
-        /// (multiplying by 1'000'000), which overflows `int64_t` for waits beyond ~292 years and is undefined
-        /// behavior. Clamp to ~100 years, which is "effectively infinite" for an admission wait, so the
-        /// deadline arithmetic here and the `wait_until` calls below can never overflow.
-        static constexpr UInt64 max_effective_wait_ms = 100ULL * 365 * 24 * 3600 * 1000;
-        effective_wait_ms = std::min(effective_wait_ms, max_effective_wait_ms);
+        /// (multiplying by 1'000'000), which overflows `int64_t` for huge waits and is undefined behavior.
+        /// Clamp with the shared `saturatedMilliseconds` helper, whose cap is "effectively infinite" for an
+        /// admission wait, so the deadline arithmetic here and the `wait_until` calls below cannot overflow.
+        const auto effective_wait = saturatedMilliseconds(effective_wait_ms);
+        effective_wait_ms = effective_wait.count();
 
-        const auto admission_deadline = std::chrono::steady_clock::now()
-            + std::chrono::milliseconds(effective_wait_ms);
+        const auto admission_deadline = std::chrono::steady_clock::now() + effective_wait;
 
         /// --- FIFO admission control (see ProcessList.h for design overview) ---
         /// An `admission_tracked` query holds an admission slot for its whole lifetime whenever the
@@ -274,7 +274,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
                 const auto replace_running_query_max_wait_ms = settings[Setting::replace_running_query_max_wait_ms].totalMilliseconds();
                 const auto replace_deadline = std::chrono::steady_clock::now()
-                    + std::chrono::milliseconds(replace_running_query_max_wait_ms);
+                    + saturatedMilliseconds(replace_running_query_max_wait_ms);
                 auto old_query_finished = [&]
                 {
                     running_query = user_process_list_ptr->queries.find(client_info.current_query_id);
@@ -519,7 +519,7 @@ ProcessList::EntryPtr ProcessList::insert(
             {
                 if (queue_max_wait_ms)
                     LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
-                if (!queue_max_wait_ms || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
+                if (!queue_max_wait_ms || !query_finished.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
                         [&]{ return non_internal_processes < max_size; }))
                     throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                     "Too many simultaneous queries. Maximum: {}",
@@ -589,7 +589,7 @@ ProcessList::EntryPtr ProcessList::insert(
                 if (got_admission_slot
                     ? !passes_secondary_limit(under_limit, drain_can_clear)
                     : (!queue_max_wait_ms
-                       || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
+                       || !query_finished.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
                               under_limit)))
                     throw Exception(
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
@@ -630,7 +630,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     if (got_admission_slot
                         ? !passes_secondary_limit(under_limit, drain_can_clear)
                         : (!queue_max_wait_ms
-                           || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
+                           || !query_finished.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
                                   under_limit)))
                         throw Exception(
                             ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
@@ -723,7 +723,7 @@ ProcessList::EntryPtr ProcessList::insert(
             client_info,
             priorities.insert(
                 settings[Setting::priority],
-                std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
+                saturatedMilliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
             std::move(query_slot),
             std::move(memory_reservation),
             got_admission_slot,

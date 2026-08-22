@@ -890,10 +890,17 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
         }
 
         writer = disk->writeFile(snapshot_file_name);
+        /// A CompressedWriteBuffer does not own the buffer it writes into, so in that case the file
+        /// buffer needs its own finalize and sync. The zstd decorator owns it and forwards both,
+        /// which is why only the uncompressed branch tracks the file buffer separately.
+        WriteBuffer * unowned_file_buffer = nullptr;
         if (compress_snapshots_zstd)
             compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
         else
+        {
+            unowned_file_buffer = writer.get();
             compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+        }
 
         const size_t bytes_before = compressed_writer->count();
         KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
@@ -902,8 +909,12 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
 
         compressed_writer->finalize();
 
+        if (unowned_file_buffer)
+            unowned_file_buffer->finalize();
+        WriteBuffer & file_buffer = unowned_file_buffer ? *unowned_file_buffer : *compressed_writer;
+
         Stopwatch watch;
-        compressed_writer->sync();
+        file_buffer.sync();
         ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
         compressed_writer.reset();
