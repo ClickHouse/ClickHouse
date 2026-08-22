@@ -1588,6 +1588,13 @@ static DataTypePtr descendJSONPolicySourceIntoMember(DataTypePtr type, std::stri
     return nullptr;
 }
 
+/// A name containing the "[]" step is never a physical column or subcolumn name, but a JSON column
+/// resolves any dotted tail as a path subcolumn, which would donate a policy-free Dynamic type.
+static bool containsSubscriptMemberStep(std::string_view name)
+{
+    return name.find(String(".") + String(SUBSCRIPT_MEMBER)) != std::string_view::npos;
+}
+
 /// Resolves a member-qualified candidate ("t.doc", "m.values", "t.2") against `try_get_column`: takes
 /// the longest prefix that is a physical column and descends the remaining members through its type,
 /// so only the member the projection actually read donates its policy.
@@ -1597,7 +1604,11 @@ static DataTypePtr resolveMemberQualifiedPolicySource(const String & candidate_n
     for (size_t pos = candidate_name.rfind('.'); pos != String::npos;
          pos = (pos == 0 ? String::npos : candidate_name.rfind('.', pos - 1)))
     {
-        auto base = try_get_column(candidate_name.substr(0, pos));
+        auto prefix = candidate_name.substr(0, pos);
+        if (containsSubscriptMemberStep(prefix))
+            continue;
+
+        auto base = try_get_column(prefix);
         if (!base)
             continue;
 
@@ -1661,7 +1672,12 @@ static DataTypePtr resolveJSONSharedDataPathPolicyForCandidates(
         for (const auto & candidate_name : candidate_names)
         {
             DataTypePtr policy_source_type;
-            if (auto source_column = try_get_source_column(candidate_name))
+            /// See containsSubscriptMemberStep(): "arr.[]" must not be taken as a JSON path subcolumn.
+            if (containsSubscriptMemberStep(candidate_name))
+            {
+                policy_source_type = resolveMemberQualifiedPolicySource(candidate_name, try_get_source_column);
+            }
+            else if (auto source_column = try_get_source_column(candidate_name))
             {
                 policy_source_type = source_column->type;
             }
