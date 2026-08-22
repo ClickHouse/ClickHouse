@@ -199,13 +199,17 @@ void ReadSharedDictionaryIndexes(benchmark::State & state)
     SingleLowCardinalityMethod<UInt128> method(key_columns, key_sizes, context);
     const bool used_dictionary_cache = method.isUsingDictionaryCache();
 
-    for (auto _ : state)
+    auto read_indexes = [&](auto & dispatched_method)
     {
-        UInt64 checksum = 0;
-        for (size_t row = 0; row < rows; ++row)
-            checksum += method.getIndexAt(row);
-        benchmark::DoNotOptimize(checksum);
-    }
+        for (auto _ : state)
+        {
+            UInt64 checksum = 0;
+            for (size_t row = 0; row < rows; ++row)
+                checksum += dispatched_method.getIndexAt(row);
+            benchmark::DoNotOptimize(checksum);
+        }
+    };
+    ColumnsHashing::dispatchLowCardinalityDictionaryCache(method, read_indexes);
 
     const auto iterations = static_cast<int64_t>(state.iterations());
     const auto processed_rows = static_cast<int64_t>(rows);

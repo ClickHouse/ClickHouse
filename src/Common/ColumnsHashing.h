@@ -256,38 +256,40 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     bool isUsingDictionaryCache() const { return use_dictionary_cache; }
 
+    template <typename Index>
+    ALWAYS_INLINE size_t getIndexAt(size_t row) const
+    {
+        if constexpr (use_raw_positions)
+            return unalignedLoad<Index>(positions + row * sizeof(Index));
+        else
+            return assert_cast<const ColumnVector<Index> *>(positions)->getElement(row);
+    }
+
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
     {
         switch (size_of_index_type)
         {
             case sizeof(UInt8):
-                if constexpr (use_raw_positions)
-                    return unalignedLoad<UInt8>(positions + row * sizeof(UInt8));
-                else
-                    return assert_cast<const ColumnUInt8 *>(positions)->getElement(row);
+                return getIndexAt<UInt8>(row);
             case sizeof(UInt16):
-                if constexpr (use_raw_positions)
-                    return unalignedLoad<UInt16>(positions + row * sizeof(UInt16));
-                else
-                    return assert_cast<const ColumnUInt16 *>(positions)->getElement(row);
+                return getIndexAt<UInt16>(row);
             case sizeof(UInt32):
-                if constexpr (use_raw_positions)
-                    return unalignedLoad<UInt32>(positions + row * sizeof(UInt32));
-                else
-                    return assert_cast<const ColumnUInt32 *>(positions)->getElement(row);
+                return getIndexAt<UInt32>(row);
             case sizeof(UInt64):
-                if constexpr (use_raw_positions)
-                    return unalignedLoad<UInt64>(positions + row * sizeof(UInt64));
-                else
-                    return assert_cast<const ColumnUInt64 *>(positions)->getElement(row);
+                return getIndexAt<UInt64>(row);
             default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
         }
+    }
+
+    ALWAYS_INLINE auto getKeyHolderAtIndex(size_t index, Arena & pool) const
+    {
+        return Base::getKeyHolder(index, pool);
     }
 
     /// Get the key holder from the key columns for insertion into the hash table.
     ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
     {
-        return Base::getKeyHolder(getIndexAt(row), pool);
+        return getKeyHolderAtIndex(getIndexAt(row), pool);
     }
 
     template <typename Data>
@@ -482,18 +484,21 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     template <typename Data>
     ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
     {
-        row = getIndexAt(row);
-        if (row < saved_hash.size())
-            return saved_hash[row];
-
-        return Base::getHash(data, row, pool);
+        return getHashAtIndex(data, getIndexAt(row), pool);
     }
 
-    /// The dictionary-cache decision depends on the current dictionary size, while the aggregation
-    /// loops are templated on the hashing state. Expose two compile-time views so callers can make
-    /// the runtime decision once per state instead of branching for every row.
-    template <bool use_dictionary_cache_>
-    struct DictionaryCacheState
+    template <typename Data>
+    ALWAYS_INLINE size_t getHashAtIndex(const Data & data, size_t index, Arena & pool)
+    {
+        if (index < saved_hash.size())
+            return saved_hash[index];
+
+        return Base::getHash(data, index, pool);
+    }
+
+    /// Large dictionaries normally use UInt32 indexes. Specialize that hot uncached case without
+    /// multiplying every aggregation loop by all cache modes and index widths.
+    struct UncachedUInt32State
     {
         static constexpr bool has_mapped = HashMethodSingleLowCardinalityColumn::has_mapped;
         static constexpr bool has_cheap_key_calculation = HashMethodSingleLowCardinalityColumn::has_cheap_key_calculation;
@@ -502,38 +507,40 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         HashMethodSingleLowCardinalityColumn & state;
 
+        ALWAYS_INLINE size_t getIndexAt(size_t row) const
+        {
+            return state.template getIndexAt<UInt32>(row);
+        }
+
         ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
         {
-            return state.getKeyHolder(row, pool);
+            return state.getKeyHolderAtIndex(getIndexAt(row), pool);
         }
 
         template <typename Data>
         ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
         {
-            row = state.getIndexAt(row);
-            if constexpr (use_dictionary_cache_)
-                return state.emplaceKeyWithDictionaryCache(data, row, pool);
-            else
-                return state.emplaceKeyWithoutDictionaryCache(data, row, pool);
+            row = getIndexAt(row);
+            return state.emplaceKeyWithoutDictionaryCache(data, row, pool);
         }
 
         template <typename Data>
         ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
         {
-            row = state.getIndexAt(row);
-            if constexpr (use_dictionary_cache_)
-                return state.findKeyWithDictionaryCache(data, row, pool);
-            else
-                return state.findKeyWithoutDictionaryCache(data, row, pool);
+            row = getIndexAt(row);
+            return state.findKeyWithoutDictionaryCache(data, row, pool);
         }
 
         template <typename Data>
         ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
         {
-            return state.getHash(data, row, pool);
+            return state.getHashAtIndex(data, getIndexAt(row), pool);
         }
 
-        ALWAYS_INLINE bool isNullAt(size_t row) { return state.isNullAt(row); }
+        ALWAYS_INLINE bool isNullAt(size_t row)
+        {
+            return state.is_nullable && getIndexAt(row) == 0;
+        }
         ALWAYS_INLINE void resetCache() { state.resetCache(); }
         ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const { return state.hasOnlyOneValueSinceLastReset(); }
         ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const { return state.getCacheMissesSinceLastReset(); }
@@ -544,22 +551,19 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     {
         if constexpr (use_raw_positions && has_mapped)
         {
-            if (use_dictionary_cache)
+            if (!use_dictionary_cache && size_of_index_type == sizeof(UInt32))
             {
-                DictionaryCacheState<true> state{*this};
+                UncachedUInt32State state{*this};
                 return callback(state);
             }
-
-            DictionaryCacheState<false> state{*this};
-            return callback(state);
         }
-        else
-            return callback(*this);
+
+        return callback(*this);
     }
 };
 
-/// HashMethodSingleLowCardinalityColumn performs a per-state runtime dispatch. All other hashing
-/// states pass through unchanged, keeping call sites generic.
+/// HashMethodSingleLowCardinalityColumn specializes the common large-dictionary path once per state.
+/// All other hashing states pass through unchanged, keeping call sites generic.
 template <typename State, typename Callback>
 decltype(auto) dispatchLowCardinalityDictionaryCache(State & state, Callback && callback)
 {
