@@ -13,6 +13,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 
@@ -1638,4 +1639,45 @@ TEST(ColumnBinary, ZeroRowConstColumnRoundTrip)
     ASSERT_EQ(chunk.getNumColumns(), 1u);
     ASSERT_EQ(chunk.getNumRows(), 0u);
     EXPECT_EQ(chunk.getColumns()[0]->size(), 0u);
+}
+
+// ── precomputeSerializedSize must model the same layout as consume ───────────
+//
+// consume() strips Sparse/Replicated wrappers before building descriptors, so
+// precomputeSerializedSize() has to as well: buildColDescriptor has no notion of
+// them, and a sparse String would miss the ColumnString branch and throw instead
+// of returning a size. The two passes disagreeing would mis-size the buffer a
+// caller preallocates from the precomputed value.
+
+TEST(ColumnBinary, PrecomputeStripsSparseAndMatchesConsume)
+{
+    auto type = std::make_shared<DataTypeString>();
+
+    auto values = ColumnString::create();
+    values->insertDefault();          // ColumnSparse's values[0] is the default value
+    values->insertData("abc", 3);
+    auto offsets = ColumnUInt64::create();
+    offsets->getData().push_back(3);  // only row 3 is non-default
+
+    const size_t rows = 5;
+    auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), rows);
+    ASSERT_TRUE(typeid_cast<const ColumnSparse *>(sparse.get()) != nullptr);
+
+    Block header;
+    header.insert(ColumnWithTypeAndName{type->createColumn(), type, "col0"});
+
+    Block block;
+    block.insert(ColumnWithTypeAndName{std::move(sparse), type, "col0"});
+
+    WriteBufferFromOwnString obuf;
+    ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
+                                    /*disable_preallocation=*/false, /*max_frame_size=*/0);
+
+    std::optional<uint64_t> precomputed;
+    ASSERT_NO_THROW(precomputed = output.precomputeSerializedSize(block, rows));
+    ASSERT_TRUE(precomputed.has_value());
+
+    // The size consume() actually writes must match what precompute promised.
+    output.write(block);
+    EXPECT_EQ(obuf.str().size(), *precomputed);
 }

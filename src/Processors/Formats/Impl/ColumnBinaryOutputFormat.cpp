@@ -50,11 +50,21 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
 
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        const IColumn & raw_col = *block.getByPosition(i).column;
-        bool is_const = isColumnConst(raw_col);
-        const IColumn * actual = is_const
-            ? &static_cast<const ColumnConst &>(raw_col).getDataColumn()
-            : &raw_col;
+        // Strip `Sparse` / `Replicated` wrappers exactly as `consume` does below (keeping the
+        // const wrapper), so both passes model the same layout. `buildColDescriptor` has no
+        // notion of them: a sparse `String` would miss the `ColumnString` branch and throw,
+        // and a sparse fixed-width column would be mis-sized, since
+        // `ColumnSparse::sizeOfValueIfFixed` reports the value plus offset width. Today the
+        // only caller is the buffered WASM path, whose function does not override
+        // `useDefaultImplementationForSparseColumns` / `...ForReplicatedColumns`, so
+        // `IExecutableFunction` has already removed both before `executeImpl` runs - but the
+        // two passes must not disagree about the frame size if that ever changes.
+        const ColumnPtr & raw_ptr = block.getByPosition(i).column;
+        bool is_const = isColumnConst(*raw_ptr);
+        ColumnPtr stripped = is_const
+            ? removeSpecialRepresentations(static_cast<const ColumnConst &>(*raw_ptr).getDataColumnPtr())
+            : removeSpecialRepresentations(raw_ptr);
+        const IColumn * actual = stripped.get();
         bool is_nullable = typeid_cast<const ColumnNullable *>(actual) != nullptr;
         uint32_t col_rows = is_const ? 1u : static_cast<uint32_t>(rows);
 
