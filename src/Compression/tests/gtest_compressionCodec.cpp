@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <Compression/CompressionFactory.h>
+#include <Compression/FFOR.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -24,6 +25,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <typeinfo>
@@ -2846,6 +2848,19 @@ protected:
         return dest;
     }
 
+    /// Appends a `FFOR` bit-packed lane block for the given per-lane values, using the encoder's
+    /// own packer so the forged payload does not depend on the packing layout.
+    static void appendPackedLanes(std::vector<UInt8> & payload, UInt8 bits, const std::map<UInt16, UInt64> & lanes)
+    {
+        std::vector<UInt64> values(DB::Compression::FFOR::DEFAULT_VALUES, 0);
+        for (const auto & [index, value] : lanes)
+            values[index] = value;
+        std::vector<UInt64> packed(DB::Compression::FFOR::DEFAULT_VALUES, 0);
+        DB::Compression::FFOR::bitPack(values.data(), packed.data(), bits, UInt64{0});
+        const auto * bytes = reinterpret_cast<const UInt8 *>(packed.data());
+        payload.insert(payload.end(), bytes, bytes + DB::Compression::FFOR::calculateBitpackedBytes(bits));
+    }
+
     template <typename T = DataTypeFloat64>
     static void verifyDecompressExpectedException(const std::vector<UInt8> & payload, const std::string & expected_message, UInt32 dest_size)
     {
@@ -3118,10 +3133,9 @@ TEST_F(WallabyTest, DecompressMalformedInputNonZeroDeltaAtNonQuantizableExceptio
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 0
         0x01, 0x00                                      // exception_count = 1
     };
-    /// Float64 FFOR packs the first 16 lanes in separate UInt64 words. Set the lane at
-    /// position 1 to one, which a valid encoder cannot emit for the NaN exception below.
-    vectors.resize(vectors.size() + 128);
-    vectors[11 + sizeof(UInt64)] = 0x01;
+    /// Set the lane at position 1 to one, which a valid encoder cannot emit for the NaN
+    /// exception below.
+    appendPackedLanes(vectors, 1, {{1, 1}});
     vectors.insert(vectors.end(), {0x01, 0x00}); // exception position = 1
     vectors.insert(vectors.end(), {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x7F}); // quiet NaN
 
@@ -3143,10 +3157,9 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptDeltaAtQuantizableException)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 0
         0x01, 0x00                                      // exception_count = 1
     };
-    /// Float64 FFOR packs the first 16 lanes in separate UInt64 words. The lane at position 1
-    /// is zigzag value two, which decodes to +1 instead of the raw exception's quantized 1000.
-    vectors.resize(vectors.size() + 256);
-    vectors[11 + sizeof(UInt64)] = 0x02;
+    /// The lane at position 1 is zigzag value two, which decodes to +1 instead of the raw
+    /// exception's quantized 1000.
+    appendPackedLanes(vectors, 2, {{1, 2}});
     vectors.insert(vectors.end(), {0x01, 0x00}); // exception position = 1
     vectors.insert(vectors.end(), {0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x8F, 0x40}); // 1000.0
 
