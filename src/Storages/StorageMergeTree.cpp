@@ -1497,6 +1497,12 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 / std::max<Float64>(static_cast<Float64>(initial_bytes), 1.0),
             0.0, 1.0);
 
+        /// An uncommitted lower block can still add a part to this mutation's scope, so
+        /// nothing-visible-left does not mean done yet.
+        const bool mutation_is_done = parts_to_do_names.empty() && (lowest_uncommitted_insert_block >= mutation_version);
+        if (mutation_is_done)
+            entry.initial_bytes_to_do.finalize();
+
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
         std::map<String, String> parts_postpone_reasons_map;
@@ -1530,9 +1536,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 parts_in_progress_names,
                 parts_to_do_names,
                 parts_postpone_reasons_map,
-                /// An uncommitted lower block can still add a part to this mutation's scope, so
-                /// nothing-visible-left does not mean done yet.
-                /* is_done = */parts_to_do_names.empty() && lowest_uncommitted_insert_block >= mutation_version,
+                /* is_done = */mutation_is_done,
                 entry.latest_failed_part,
                 entry.latest_fail_time,
                 entry.latest_fail_reason,

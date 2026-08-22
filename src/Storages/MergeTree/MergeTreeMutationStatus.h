@@ -21,6 +21,9 @@ struct MutationScopeInitialBytes
     /// Still-pending work reappearing under a new name (a merge of pending parts, or an earlier
     /// mutation's rewrite) replaces the weight of the counted parts it covers instead of adding to it.
     void account(const MergeTreePartInfo & info, UInt64 part_bytes);
+
+    /// A finished mutation's scope cannot grow again, so only the scalar denominator is kept.
+    void finalize();
 };
 
 /// Postpone reasons for parts that cannot be merged or mutated

@@ -8685,6 +8685,9 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
             auto & stored = mutation_initial_bytes[status.id];
             for (const auto & [part_name, part_bytes] : sized_parts_to_do)
                 stored.account(MergeTreePartInfo::fromPartName(part_name, format_version), part_bytes);
+            /// A finished mutation stays listed until queue cleanup; only its scalar denominator is needed.
+            if (status.is_done)
+                stored.finalize();
             initial_bytes = stored.bytes;
         }
 
