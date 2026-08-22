@@ -315,37 +315,24 @@ void Context::init(const Params& params)
 				_caPaths.caDefaultFile = file;
 				errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
 			}
+			else if (poco_dir_cert(dir) && poco_dir_contains_certs(dir))
+			{
+				_caPaths.caDefaultDir = dir;
+				errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
+			}
 			else
 			{
-				if (poco_dir_cert(dir))
-				{
-					errCode = 0;
-					if (!poco_dir_contains_certs(dir))
-					{
-						errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
+				/// The default locations are missing or contain no certificates (e.g. a container built
+				/// "from scratch"): probe the well-known locations, and then fall back to the certificates
+				/// embedded into the binary, if any.
+				///
+				/// `SSL_CTX_set_default_verify_paths` must not be used as a fallback here: it reports success
+				/// even when the default locations are an empty directory or a missing file, which would
+				/// silently produce an empty trust store and only fail later, at handshake time.
+				errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
 
-						/// The default directory exists, but neither it nor the probed locations contain
-						/// certificates. Add the certificates embedded into the binary, as the store
-						/// would be empty otherwise.
-						if (errCode == 0)
-							poco_load_embedded_certificates(_pSSLContext, _caPaths);
-					}
-
-					if (errCode == 0)
-					{
-						errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
-						_caPaths.caDefaultDir = dir;
-					}
-				}
-				else
-				{
-					errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
-
-					/// No CA certificates anywhere on the filesystem (e.g. a container built "from scratch"):
-					/// fall back to the certificates embedded into the binary, if any.
-					if (errCode != 1)
-						errCode = poco_load_embedded_certificates(_pSSLContext, _caPaths);
-				}
+				if (errCode != 1)
+					errCode = poco_load_embedded_certificates(_pSSLContext, _caPaths);
 			}
 
 			if (errCode != 1)
