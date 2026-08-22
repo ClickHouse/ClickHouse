@@ -13,6 +13,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFilterInfo.h>
@@ -1368,8 +1369,10 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
     auto result = std::make_unique<StorageInMemoryMetadata>();
+    /// Refreshing the in-memory columns is not itself a read: the same table is reachable through
+    /// entrypoints that read the stored columns without passing here, so gating it would only decide
+    /// what a query sees by which entrypoint it took. The read paths carry the check instead.
     auto schema = *persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id);
-    rejectGeoTypesIfNotAllowed(schema, local_context);
     result->setColumns(ColumnsDescription{schema});
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);

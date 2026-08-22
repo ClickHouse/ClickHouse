@@ -75,6 +75,14 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${INFERRED} ENGINE = IcebergLocal('${
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${INFERRED}"
 run_allowed --allow_experimental_geo_types_in_iceberg=1 --query "CREATE TABLE ${INFERRED} ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')"
 
+# Reading the columns already stored for an attached table is not gated, and every entrypoint that
+# does so agrees. One of these refreshes the in-memory metadata first and the others read it as it
+# stands, so gating the refresh would make the same table visible or not according to which
+# statement the user picked.
+run_allowed --query "DESCRIBE TABLE ${TABLE}"
+run_allowed --query "SHOW COLUMNS FROM ${TABLE}"
+run_allowed --query "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = '${TABLE}'"
+
 # A geometry nested inside a Tuple is gated the same way.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${NESTED}"
 ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "
