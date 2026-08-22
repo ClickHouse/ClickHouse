@@ -79,7 +79,7 @@ Estimation:
 Para pular a varredura empírica na memória e estimar com base nas [estatísticas da coluna](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), primeiro defina-as nas colunas relevantes (elas ficam desativadas por padrão), aguarde a conclusão da mutação de materialização e, em seguida, desative a abordagem empírica:
 
 ```sql
-ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t ADD STATISTICS b TYPE tdigest;
 ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
