@@ -43,6 +43,15 @@ PRODUCTION_RESET = (
     "docker: failed to copy: read tcp 172.31.94.218:51334->54.231.230.177:443: "
     "read: connection reset by peer"
 )
+# The verbatim line the pull printed in the DNS failure, from that job's own log.
+# The resolver answered badly for the registry proxy's name, mid-transfer.
+PRODUCTION_DNS_SERVFAIL = (
+    "failed to copy: httpReadSeeker: failed open: failed to do request: Get "
+    '"http://dockerhub-proxy.dockerhub-proxy-zone:5000/v2/clickhouse/stateless-test'
+    "/blobs/sha256:180a6c6776d6b8af402bc3f036f2a9cd65e49d65b4ae2f4c4a4c6f5df000de79"
+    '?ns=docker.io": dial tcp: lookup dockerhub-proxy.dockerhub-proxy-zone on '
+    "127.0.0.53:53: server misbehaving"
+)
 # A permanent failure: must never be retried.
 PERMANENT_ERROR = (
     "Error response from daemon: pull access denied for foo, "
@@ -350,18 +359,76 @@ def test_allowlisted_phrase_on_stdout_does_not_trigger_a_retry(tmp_path):
         "TLS handshake timeout",
         "i/o timeout",
         "unexpected EOF",
+        "server misbehaving",
     ],
 )
 def test_each_transport_phrase_is_retried(tmp_path, phrase):
     """Arms 2 and 4b already pin `connection reset by peer` and arm 8 pins
     `sending signal TERM to command`; without these, dropping any of the other
-    four entries from the production list would leave the suite green."""
+    five entries from the production list would leave the suite green."""
     cmd, counter = _counting_command(tmp_path, [], [f"docker: {phrase}"], exit_code=1)
     rc = Shell.run(
         cmd, retries=_IMAGE_PULL_RETRIES, retry_errors=_IMAGE_PULL_RETRY_ERRORS
     )
     assert rc != 0
     assert _attempts(counter) == _IMAGE_PULL_RETRIES
+
+
+# --------------------------------------------------------------------------- #
+# 4d. The production DNS failure, verbatim, against both lists.
+# --------------------------------------------------------------------------- #
+def test_the_production_dns_failure_is_retried(tmp_path):
+    """Arm 4c feeds a bare phrase, so it cannot tell whether the entry matches the
+    line docker actually prints, where the phrase is the tail of a nested resolver
+    error inside a URL. Feed that line verbatim instead.
+
+    The list with the entry dropped is the control: without it a pass here would
+    also be produced by some other entry matching, which is what the pre-fix job
+    disproved by stopping after one attempt."""
+    retried_dir = tmp_path / "retried"
+    retried_dir.mkdir()
+    cmd, counter = _counting_command(
+        retried_dir, [], [PRODUCTION_DNS_SERVFAIL], exit_code=1
+    )
+    seen = []
+    rc = Shell.run(
+        cmd,
+        retries=_IMAGE_PULL_RETRIES,
+        retry_errors=_IMAGE_PULL_RETRY_ERRORS,
+        on_retry=lambda matched, attempt, attempts: seen.append(matched),
+    )
+    assert rc != 0
+    assert _attempts(counter) == _IMAGE_PULL_RETRIES
+    # The retry is reported, so an operator sees why the job took a second attempt.
+    assert seen == ["server misbehaving"] * (_IMAGE_PULL_RETRIES - 1)
+
+    without_dns = [e for e in _IMAGE_PULL_RETRY_ERRORS if e != "server misbehaving"]
+    assert len(without_dns) == len(_IMAGE_PULL_RETRY_ERRORS) - 1
+    control_dir = tmp_path / "control"
+    control_dir.mkdir()
+    cmd2, counter2 = _counting_command(
+        control_dir, [], [PRODUCTION_DNS_SERVFAIL], exit_code=1
+    )
+    assert Shell.run(cmd2, retries=_IMAGE_PULL_RETRIES, retry_errors=without_dns) != 0
+    assert _attempts(counter2) == 1
+
+
+def test_the_permanent_resolver_failure_is_not_retried(tmp_path):
+    """`no such host` is the resolver's NXDOMAIN verdict: the name does not exist, so
+    a typo'd image host must fail on attempt 1 rather than burn every attempt. Pins
+    that the entry above was not widened to `dial tcp` or `lookup `, either of which
+    would readmit this line."""
+    nxdomain = (
+        "failed to do request: Get "
+        '"http://dockerhub-proxy.dockerhub-proxy-zone:5000/v2/foo/bar/manifests/x": '
+        "dial tcp: lookup dockerhub-proxy.dockerhub-proxy-zone: no such host"
+    )
+    cmd, counter = _counting_command(tmp_path, [], [nxdomain], exit_code=1)
+    rc = Shell.run(
+        cmd, retries=_IMAGE_PULL_RETRIES, retry_errors=_IMAGE_PULL_RETRY_ERRORS
+    )
+    assert rc != 0
+    assert _attempts(counter) == 1
 
 
 # --------------------------------------------------------------------------- #
