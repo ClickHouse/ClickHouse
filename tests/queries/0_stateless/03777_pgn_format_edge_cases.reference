@@ -21,3 +21,8 @@ Test 7: Malformed PGN
 Invalid PGN tag
 Test 8: Unterminated comment
 Invalid PGN: unterminated comment
+Test 9: Unknown ELO ratings
+0	0
+Alice	1500
+Test 10: Non-numeric ELO rating
+Invalid PGN: tag 'WhiteElo' has a non-numeric value 'two thousand'

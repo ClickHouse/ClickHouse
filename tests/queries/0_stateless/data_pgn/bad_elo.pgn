@@ -1,0 +1,7 @@
+[Event "Broken rating"]
+[White "Alice"]
+[Black "Bob"]
+[Result "1-0"]
+[WhiteElo "two thousand"]
+
+1.e4 e5 1-0

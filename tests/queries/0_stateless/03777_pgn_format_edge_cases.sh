@@ -40,3 +40,17 @@ $CLICKHOUSE_LOCAL -q "SELECT event FROM file('$CURDIR/data_pgn/malformed.pgn', P
 echo "Test 8: Unterminated comment"
 $CLICKHOUSE_LOCAL -q "SELECT event FROM file('$CURDIR/data_pgn/malformed_comment.pgn', PGN, 'event String')" 2>&1 \
     | grep -oF "Invalid PGN: unterminated comment"
+
+# Test 9: An unknown rating is reported as absent, so a table DEFAULT expression is applied
+echo "Test 9: Unknown ELO ratings"
+$CLICKHOUSE_LOCAL -q "SELECT white_elo, black_elo FROM file('$CURDIR/data_pgn/unknown_elo.pgn', PGN, 'white_elo Int32, black_elo Int32')"
+$CLICKHOUSE_LOCAL -q "
+CREATE TABLE test_pgn_unknown_elo (white String, white_elo Int32 DEFAULT 1500) ENGINE = Memory;
+INSERT INTO test_pgn_unknown_elo FROM INFILE '$CURDIR/data_pgn/unknown_elo.pgn' FORMAT PGN;
+SELECT * FROM test_pgn_unknown_elo;
+" < /dev/null
+
+# Test 10: A non-numeric rating is a malformed file
+echo "Test 10: Non-numeric ELO rating"
+$CLICKHOUSE_LOCAL -q "SELECT white_elo FROM file('$CURDIR/data_pgn/bad_elo.pgn', PGN, 'white_elo Int32')" 2>&1 \
+    | grep -oF "Invalid PGN: tag 'WhiteElo' has a non-numeric value 'two thousand'"

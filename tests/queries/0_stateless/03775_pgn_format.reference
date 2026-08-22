@@ -63,9 +63,9 @@ Fabiano Caruana	Praggnanandhaa R	0-1
 Magnus Carlsen	Ian Nepomniachtchi	1-0
 Ding Liren	Alireza Firouzja	1/2-1/2
 Test 17: Limit 1
-	
+Magnus Carlsen	Ian Nepomniachtchi
 Test 18: Offset
-	
+Fabiano Caruana	Praggnanandhaa R
 Test 19: NULL handling for missing/default values
 Magnus Carlsen	Ian Nepomniachtchi	2859
 Fabiano Caruana	Praggnanandhaa R	2770
