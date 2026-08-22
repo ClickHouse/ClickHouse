@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <thread>
 #include <mutex>
@@ -158,6 +159,10 @@ public:
     /// If any thread has thrown an exception, the first exception will be rethrown from this method,
     /// and the exception will be cleared.
     void wait();
+
+    /// Same as 'wait', but gives up and returns false when the deadline is reached.
+    /// Doesn't rethrow exceptions (use 'wait' method to rethrow exceptions).
+    [[nodiscard]] bool waitUntil(std::chrono::steady_clock::time_point deadline);
 
     /// Stop accepting new jobs: further scheduling produces CANNOT_SCHEDULE_TASK, and the jobs that are
     /// already queued but have not started yet are discarded instead of being run.
