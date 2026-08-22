@@ -78,16 +78,31 @@ bool isDestinationAlreadyExistsError(const Exception & e)
         || (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"));
 }
 
-/// True when the "already existing" destination provably holds the same bytes as the source:
-/// equal sizes and equal content-derived ETags. Then the move is already complete - typically our
-/// own earlier copy committed and only a post-copy step (e.g. the `check_objects_after_upload`
-/// verification) failed before `copied` could be set - and removing the source loses nothing.
-/// S3 ETags of non-multipart objects are the content MD5, so equality implies identity; multipart
-/// ETags and Azure's opaque per-blob ETags never compare equal here, which keeps the conservative
-/// collision handling for them.
-bool destinationHasSameContent(size_t source_size, const String & source_etag, size_t destination_size, const String & destination_etag)
+/// Provenance stamped onto the destination as object metadata: which source key (and which content
+/// version of it, by ETag) this copy was made from. Lowercase to survive the S3 round-trip verbatim.
+constexpr auto move_source_path_attribute = "clickhouse_move_source_path";
+constexpr auto move_source_etag_attribute = "clickhouse_move_source_etag";
+
+std::optional<ObjectAttributes> makeMoveProvenance(const String & source_path, const String & source_etag)
 {
-    return source_size == destination_size && !source_etag.empty() && source_etag == destination_etag;
+    if (source_etag.empty())
+        return std::nullopt;
+    return ObjectAttributes{{move_source_path_attribute, source_path}, {move_source_etag_attribute, source_etag}};
+}
+
+/// True when the "already existing" destination records this exact source object (key + content ETag) as its
+/// origin: our own earlier copy committed and only a post-copy step failed, so removing the source loses nothing.
+bool destinationIsOwnCommittedCopy(const std::optional<ObjectAttributes> & provenance, const ObjectAttributes & destination_attributes)
+{
+    if (!provenance)
+        return false;
+    for (const auto & [key, value] : *provenance)
+    {
+        auto it = destination_attributes.find(key);
+        if (it == destination_attributes.end() || it->second != value)
+            return false;
+    }
+    return true;
 }
 
 }
@@ -320,27 +335,29 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                         if (!copied)
                         {
                             LOG_TRACE(log, "Copying object {} to {}", object_from.remote_path, object_to.remote_path);
+                            /// Stamped onto the destination so a later attempt can prove "this is my own
+                            /// earlier copy" on a rejected precondition.
+                            auto source_metadata = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/ false);
+                            auto provenance = source_metadata ? makeMoveProvenance(object_from.remote_path, source_metadata->etag) : std::nullopt;
                             try
                             {
                                 object_storage->copyObject(
                                     object_from,
                                     object_to,
                                     read_settings,
-                                    move_write_settings);
+                                    move_write_settings,
+                                    provenance);
                             }
                             catch (const Exception & e)
                             {
-                                /// Losing the race is a final answer, not something to retry - unless
-                                /// the destination holds exactly the source's bytes, which means an
-                                /// earlier attempt committed the copy and failed only afterwards.
+                                /// Losing the race is a final answer, not something to retry - unless the
+                                /// destination records this source as its origin: an earlier attempt
+                                /// committed the copy and failed only afterwards.
                                 if (isDestinationAlreadyExistsError(e))
                                 {
-                                    auto source_metadata = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/ false);
                                     auto destination_metadata = object_storage->tryGetObjectMetadata(object_to.remote_path, /*with_tags=*/ false);
-                                    if (!source_metadata || !destination_metadata
-                                        || !destinationHasSameContent(
-                                            source_metadata->size_bytes, source_metadata->etag,
-                                            destination_metadata->size_bytes, destination_metadata->etag))
+                                    if (!destination_metadata
+                                        || !destinationIsOwnCommittedCopy(provenance, destination_metadata->attributes))
                                     {
                                         destination_exists = true;
                                         return;
@@ -486,19 +503,21 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         if (!copied)
                         {
                             const String src_bucket = s3_storage->getObjectsNamespace();
-                            size_t object_size = S3::getObjectSize(
+                            const auto source_info = S3::getObjectInfo(
                                 *src_client,
                                 src_bucket,
                                 object_from.remote_path);
+                            /// See moveWithinBucket(): lets a later attempt recognize its own committed copy.
+                            const auto provenance = makeMoveProvenance(object_from.remote_path, source_info.etag);
 
-                            LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, object_size, dst_uri.bucket);
+                            LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, source_info.size, dst_uri.bucket);
                             try
                             {
                                 copyS3File(
                                     src_client,
                                     /*src_bucket=*/ src_bucket,
                                     /*src_key=*/ object_from.remote_path,
-                                    /*src_size=*/ object_size,
+                                    /*src_size=*/ source_info.size,
                                     /*dest_s3_client=*/ dst_client,
                                     /*dest_bucket=*/ dst_uri.bucket,
                                     /*dest_key=*/ object_to.remote_path,
@@ -509,20 +528,18 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                     /*fallback_file_reader=*/ [&]{
                                         return s3_storage->readObject(object_from, read_settings_to_use);
                                     },
-                                    /*object_metadata=*/ std::nullopt,
+                                    /*object_metadata=*/ provenance,
                                     /*dest_if_none_match=*/ move_if_none_match);
                             }
                             catch (const Exception & e)
                             {
-                                /// See moveWithinBucket(): a destination holding exactly the source's
-                                /// bytes means an earlier attempt committed the copy and failed only
-                                /// afterwards, so the move can proceed to the removal.
+                                /// See moveWithinBucket(): a destination recording this source as its origin
+                                /// means an earlier attempt committed the copy and failed only afterwards.
                                 if (isDestinationAlreadyExistsError(e))
                                 {
-                                    const auto source_info = S3::getObjectInfoIfExists(*src_client, src_bucket, object_from.remote_path);
-                                    const auto destination_info = S3::getObjectInfoIfExists(*dst_client, dst_uri.bucket, object_to.remote_path);
-                                    if (!destinationHasSameContent(
-                                            source_info.size, source_info.etag, destination_info.size, destination_info.etag))
+                                    const auto destination_info = S3::getObjectInfoIfExists(
+                                        *dst_client, dst_uri.bucket, object_to.remote_path, /*version_id=*/ {}, /*with_metadata=*/ true);
+                                    if (!destinationIsOwnCommittedCopy(provenance, destination_info.metadata))
                                     {
                                         destination_exists = true;
                                         return;
