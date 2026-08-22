@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
