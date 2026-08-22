@@ -221,6 +221,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
+
+    static constexpr UInt16 FORMAT_VERSION = 4;
 };
 
 
@@ -248,8 +250,6 @@ public:
     {
         return Aggregator{Base::window, Base::timestamp_scale_multiplier};
     }
-
-    static constexpr UInt16 FORMAT_VERSION = 4;
 };
 
 /// Each SQL function as a 3-argument template with its `is_rate` / `check_resets` variant baked in, so

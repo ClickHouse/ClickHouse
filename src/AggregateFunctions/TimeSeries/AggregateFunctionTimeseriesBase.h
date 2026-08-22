@@ -507,7 +507,9 @@ private:
     /// the sparse path uses `::sort` (pdqsort).
     static constexpr double BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN = 0.35;
 
-    static constexpr UInt16 FORMAT_VERSION = FunctionImpl::FORMAT_VERSION;
+    /// The serialized state is the set of buckets, so the format version is defined by the traits
+    /// (which define the bucket type).
+    static constexpr UInt16 FORMAT_VERSION = Traits::FORMAT_VERSION;
 
     /// Validates and normalizes the grid step. For a single-point grid (`start == end`) the step is irrelevant, so it
     /// is normalized to 0 (making each window a single bucket); otherwise it must be positive.

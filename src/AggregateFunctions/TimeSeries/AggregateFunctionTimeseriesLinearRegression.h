@@ -148,6 +148,8 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
+
+    static constexpr UInt16 FORMAT_VERSION = 3;
 };
 
 
@@ -213,8 +215,6 @@ public:
         const size_t stack_size = use_two_stacks ? std::min(Base::buckets_per_window, num_populated_buckets) : 0;
         return Aggregator{stack_size, Base::start_timestamp, predict_offset, Base::timestamp_scale_multiplier};
     }
-
-    static constexpr UInt16 FORMAT_VERSION = 3;
 
 protected:
     const Float64 predict_offset{};    /// Predict offset used by timeSeriesPredictLinearToGrid function, used to calculate the timestamp of the predicted value

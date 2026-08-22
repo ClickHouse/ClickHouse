@@ -116,6 +116,8 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
 
     /// Resample keeps no preaggregated summary - the bucket (its newest sample) is fed to the aggregator as-is.
     using Bucket = Summary;
+
+    static constexpr UInt16 FORMAT_VERSION = 4;
 };
 
 
@@ -137,8 +139,6 @@ public:
     {
         return {};
     }
-
-    static constexpr UInt16 FORMAT_VERSION = 4;
 };
 
 }

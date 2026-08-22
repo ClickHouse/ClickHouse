@@ -134,6 +134,8 @@ struct AggregateFunctionTimeseriesChangesTraits
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
+
+    static constexpr UInt16 FORMAT_VERSION = 3;
 };
 
 
@@ -157,8 +159,6 @@ public:
     {
         return {};
     }
-
-    static constexpr UInt16 FORMAT_VERSION = 3;
 };
 
 /// Each SQL function as a 3-argument template with its is_resets variant baked in, so registration names the
