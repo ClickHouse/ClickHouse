@@ -110,6 +110,17 @@ namespace
             /// `children` walks never see. The tree hash folds `names` in, so the walks must
             /// reach it too.
             visit_if(create_user->names);
+
+            /// The same holds for every other `ASTCreateUserQuery` member that
+            /// `updateTreeHashImpl` folds in: they all live outside `children`, so without
+            /// visiting them the AST-limit, placeholder and typed-parameter walks stay blind to
+            /// e.g. `CREATE USER u SETTINGS max_threads = 1` or `GRANTEES r`.
+            visit_if(create_user->default_database);
+            visit_if(create_user->roles);
+            visit_if(create_user->default_roles);
+            visit_if(create_user->settings);
+            visit_if(create_user->alter_settings);
+            visit_if(create_user->grantees);
         }
         else if (auto * create_role = node.template as<ASTCreateRoleQuery>())
         {
