@@ -26,13 +26,13 @@ SELECT count() FROM t_matcher_guard_partition;
 
 DROP TABLE t_matcher_guard_partition;
 
-SELECT '-- no repair mutation is queued for an empty table';
+SELECT '-- an empty table still plans the repair mutation';
 
 DROP TABLE IF EXISTS t_matcher_guard_empty;
 
--- `allow_non_metadata_alters = 0` forbids any ALTER that would rewrite data. On a table
--- without active parts there is nothing to rebuild, so an ALTER that only changes the
--- effective expression of a skip index must stay a pure metadata change.
+-- An `INSERT` can still be in flight with the pre-ALTER metadata snapshot, so an empty active-parts
+-- set does not prove that the ALTER touches no data. The repair mutation is planned regardless,
+-- which makes the ALTER a non-metadata one: `allow_non_metadata_alters = 0` rejects it.
 CREATE TABLE t_matcher_guard_empty
 (
     a UInt64,
@@ -41,9 +41,10 @@ CREATE TABLE t_matcher_guard_empty
 )
 ENGINE = MergeTree ORDER BY a;
 
-ALTER TABLE t_matcher_guard_empty MODIFY COLUMN x UInt64 ALIAS a + 2 SETTINGS allow_non_metadata_alters = 0;
+ALTER TABLE t_matcher_guard_empty MODIFY COLUMN x UInt64 ALIAS a + 2 SETTINGS allow_non_metadata_alters = 0; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
-SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_matcher_guard_empty';
+-- With the default setting the ALTER goes through and the index rebuild is queued.
+ALTER TABLE t_matcher_guard_empty MODIFY COLUMN x UInt64 ALIAS a + 2;
 
 SHOW CREATE TABLE t_matcher_guard_empty;
 
