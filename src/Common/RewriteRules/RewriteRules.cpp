@@ -93,7 +93,6 @@ namespace ErrorCodes
     extern const int REWRITE_RULE_DUPLICATED_QUERY_PARAMETER;
     extern const int REWRITE_RULE_UNKNOWN_QUERY_PARAMETER;
     extern const int REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE;
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -818,12 +817,18 @@ void RewriteRules::remove(const std::string & rule_name, std::lock_guard<std::mu
         [&](const auto & entry) { return entry.first == rule_name; });
 }
 
+/// `loaded_rewrite_rules` must never decide whether a rule exists for DDL purposes: with
+/// replicated (ZooKeeper/Keeper) storage that cache is refreshed asynchronously by the background
+/// watcher, so within the watcher-lag window it can be stale in both directions - a rule created on
+/// another replica still looks absent here, and a rule dropped there still looks present. The
+/// storage is the source of truth, and its `create` / `update` / `removeIfExists` decide
+/// atomically; the checks below only exist to produce a nicer message in the common case.
 void RewriteRules::createRule(const ASTCreateRewriteRuleQuery & query)
 {
     validateRuleTemplates(query);
     std::lock_guard lock(mutex);
     loadIfNot(lock);
-    if (exists(query.rule_name, lock))
+    if (storage->exists(query.rule_name))
     {
         throw Exception(
             ErrorCodes::REWRITE_RULE_ALREADY_EXISTS,
@@ -832,25 +837,30 @@ void RewriteRules::createRule(const ASTCreateRewriteRuleQuery & query)
     }
     auto ptr = RewriteRuleObject::create(query);
     storage->create(ptr);
-    add(query.rule_name, std::move(ptr), lock);
+    /// The cache may hold a stale entry for this name (dropped on another replica and recreated
+    /// here), so overwrite instead of `add`, which would throw on a stale-positive cache.
+    remove(query.rule_name, lock);
+    loaded_rewrite_rules.emplace_back(query.rule_name, std::move(ptr));
 }
 
 void RewriteRules::removeRule(const ASTDropRewriteRuleQuery & query)
 {
     std::lock_guard lock(mutex);
     loadIfNot(lock);
-    if (!exists(query.rule_name, lock))
-    {
-        if (query.if_exists)
-            return;
+    /// `removeIfExists` consults and mutates the storage atomically, so a rule that another
+    /// replica has already dropped does not make `DROP RULE IF EXISTS` throw, and one that
+    /// another replica has just created is dropped instead of being silently ignored.
+    const bool removed = storage->removeIfExists(query.rule_name);
+    /// Drop the possibly stale cache entry either way.
+    remove(query.rule_name, lock);
 
+    if (!removed && !query.if_exists)
+    {
         throw Exception(
             ErrorCodes::REWRITE_RULE_DOESNT_EXIST,
             "A rewrite rule `{}` doesn't exists",
             query.rule_name);
     }
-    storage->remove(query.rule_name);
-    remove(query.rule_name, lock);
 }
 
 void RewriteRules::updateRule(const ASTAlterRewriteRuleQuery & query)
@@ -858,27 +868,20 @@ void RewriteRules::updateRule(const ASTAlterRewriteRuleQuery & query)
     validateRuleTemplates(query);
     std::lock_guard lock(mutex);
     loadIfNot(lock);
-    if (!exists(query.rule_name, lock))
-    {
-        throw Exception(
-            ErrorCodes::REWRITE_RULE_DOESNT_EXIST,
-            "A rewrite rule `{}` doesn't exists",
-            query.rule_name);
-    }
+
+    auto ptr = RewriteRuleObject::create(query);
+    /// `update` never creates a rule: it fails with `REWRITE_RULE_DOESNT_EXIST` when the rule is
+    /// absent from the storage. That check - not the local cache - decides, so `ALTER RULE` works
+    /// on a rule another replica has just created and fails on one it has just dropped.
+    storage->update(ptr);
 
     auto it = std::find_if(
         loaded_rewrite_rules.begin(), loaded_rewrite_rules.end(),
         [&](const auto & entry) { return entry.first == query.rule_name; });
     if (it == loaded_rewrite_rules.end())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "The rewrite rule {} unexpectedly does not exist.",
-            query.rule_name);
-    }
-    auto ptr = RewriteRuleObject::create(query);
-    storage->update(ptr);
-    it->second = std::move(ptr);
+        loaded_rewrite_rules.emplace_back(query.rule_name, std::move(ptr));
+    else
+        it->second = std::move(ptr);
 }
 
 /// Rules loaded from persisted storage bypass the `CREATE RULE` / `ALTER RULE` entrypoints,

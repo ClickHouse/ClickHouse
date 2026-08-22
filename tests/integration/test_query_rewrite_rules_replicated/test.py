@@ -57,3 +57,37 @@ def test_rules_propagate_between_replicas(started_cluster):
     assert "REWRITE_RULE_DOESNT_EXIST" in node2.query_and_get_error(
         "SELECT 100", settings=QUERY_RULES
     )
+
+
+def test_ddl_consults_keeper_not_the_stale_cache(started_cluster):
+    # The per-replica cache of loaded rules is refreshed asynchronously by the background
+    # watcher, so `ALTER RULE` / `DROP RULE` must consult Keeper instead. Every statement below
+    # is issued immediately after the previous one, i.e. inside the watcher-lag window on the
+    # other replica.
+    node1.query("CREATE RULE rule_stale AS (SELECT 111) REWRITE TO (SELECT 222)")
+
+    # node2 has most likely not reloaded yet: with the cache as the source of truth this used to
+    # fail with `REWRITE_RULE_DOESNT_EXIST`.
+    node2.query("ALTER RULE rule_stale AS (SELECT 111) REWRITE TO (SELECT 333)")
+    assert (
+        node2.query("SELECT 111", settings={"query_rules": "rule_stale"}).strip()
+        == "333"
+    )
+    assert_eq_with_retry(
+        node1, "SELECT 111", "333", settings={"query_rules": "rule_stale"}
+    )
+
+    # The inverse direction: node1 drops the rule, and node2 - whose cache may still hold it -
+    # must honour `IF EXISTS` instead of failing on the missing znode.
+    node1.query("DROP RULE rule_stale")
+    node2.query("DROP RULE IF EXISTS rule_stale")
+
+    # Without `IF EXISTS` the same situation is a normal `REWRITE_RULE_DOESNT_EXIST`, never a
+    # Keeper `ZNONODE` error leaking through.
+    assert "REWRITE_RULE_DOESNT_EXIST" in node2.query_and_get_error(
+        "DROP RULE rule_stale"
+    )
+
+    # And the rule really is gone everywhere.
+    assert_eq_with_retry(node1, "SELECT count() FROM system.query_rules", "0")
+    assert_eq_with_retry(node2, "SELECT count() FROM system.query_rules", "0")

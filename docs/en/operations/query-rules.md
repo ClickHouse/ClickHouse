@@ -121,6 +121,13 @@ Config example:
 </clickhouse>
 ```
 
+With ZooKeeper/Keeper storage every replica keeps a local cache of the rules that a background
+watcher refreshes asynchronously, so the cache can lag behind by up to one update interval. DDL
+does not rely on that cache: `CREATE RULE`, `ALTER RULE` and `DROP RULE` consult the coordination
+storage itself, so a rule created on one replica can be altered or dropped on another one
+immediately, and `DROP RULE IF EXISTS` stays a no-op for a rule that another replica has already
+dropped.
+
 ## System tables {#system-tables}
 
 System table `system.query_rules` stores all created/altered query rules.
