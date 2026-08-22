@@ -34,8 +34,6 @@ class AggregateFunctionLast2Samples final :
     public IAggregateFunctionHelper<AggregateFunctionLast2Samples<TimestampType, ValueType>>
 {
 public:
-    static constexpr bool DateTime64Supported = true;
-
     using Base = IAggregateFunctionHelper<AggregateFunctionLast2Samples<TimestampType, ValueType>>;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;

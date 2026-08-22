@@ -64,8 +64,6 @@ class AggregateFunctionTimeseriesBase :
     public IAggregateFunctionHelper<AggregateFunctionTimeseriesBase<FunctionImpl, Traits>>
 {
 public:
-    static constexpr bool DateTime64Supported = true;
-
     using Base = IAggregateFunctionHelper<AggregateFunctionTimeseriesBase<FunctionImpl, Traits>>;
 
     using TimestampType = typename Traits::TimestampType;

@@ -28,8 +28,6 @@ class AggregateFunctionTimeSeriesGroupArray final :
     public IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType, array_arguments>>
 {
 public:
-    static constexpr bool DateTime64Supported = true;
-
     using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType, array_arguments>>;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;

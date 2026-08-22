@@ -215,7 +215,6 @@ public:
     }
 
     static constexpr UInt16 FORMAT_VERSION = 3;
-    static constexpr bool DateTime64Supported = true;
 
 protected:
     const Float64 predict_offset{};    /// Predict offset used by timeSeriesPredictLinearToGrid function, used to calculate the timestamp of the predicted value

@@ -159,7 +159,6 @@ public:
     }
 
     static constexpr UInt16 FORMAT_VERSION = 3;
-    static constexpr bool DateTime64Supported = true;
 };
 
 /// Each SQL function as a 3-argument template with its is_resets variant baked in, so registration names the

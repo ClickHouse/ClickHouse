@@ -139,7 +139,6 @@ public:
     }
 
     static constexpr UInt16 FORMAT_VERSION = 4;
-    static constexpr bool DateTime64Supported = true;
 };
 
 }
