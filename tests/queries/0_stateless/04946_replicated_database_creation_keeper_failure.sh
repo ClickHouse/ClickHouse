@@ -185,5 +185,45 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}_nopub.t"
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB}_nopub SYNC"
 
+#### 9 - A CREATE TABLE whose entry transaction is rejected atomically cleans Keeper up
+
+# The entry transaction of an initial query creates the metadata node of the new table, so a
+# pre-existing node there makes the whole transaction fail atomically. It writes nothing, so the entry
+# never gets its `/committed` and no other replica can execute it, which makes the registration this
+# statement left behind its own to remove.
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_reject SYNC"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB}_reject ENGINE=Replicated('${ZK}/reject', 's1', 'r1')"
+
+REJECT_ZK="/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/reject_table"
+
+${CLICKHOUSE_CLIENT} -q "INSERT INTO system.zookeeper (name, path, value) VALUES ('t', '${ZK}/reject/metadata', 'blocks the entry transaction')"
+
+# Arming condition, asserted separately from the oracle below
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT count() FROM system.zookeeper WHERE path='${ZK}/reject/metadata' AND name='t'"
+
+${CLICKHOUSE_CLIENT} --database_replicated_allow_replicated_engine_arguments=3 --distributed_ddl_output_mode=none \
+    -q "CREATE TABLE ${DB}_reject.t (k UInt64) ENGINE=ReplicatedMergeTree('${REJECT_ZK}/{shard}', '{replica}') ORDER BY k" 2>&1 | grep -cm1 "Transaction failed (Node exists)"
+
+# Premise: the entry is unpublished, so no other replica will ever execute it
+REJECT_ENTRY=$(${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT max(name) FROM system.zookeeper WHERE path='${ZK}/reject/log'")
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT count() FROM system.zookeeper WHERE path='${ZK}/reject/log/${REJECT_ENTRY}' AND name='committed'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database='${DB}_reject' AND name='t'"
+
+# Oracle: the registration this statement created is gone
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT count() FROM system.zookeeper WHERE path='${REJECT_ZK}/s1/replicas'"
+
+# Which is what the removal buys: the same table Keeper path is reusable, whereas a leftover
+# registration of an implicit UUID matches no later statement and could never be reused
+${CLICKHOUSE_CLIENT} --database_replicated_allow_replicated_engine_arguments=3 --distributed_ddl_output_mode=none \
+    -q "CREATE TABLE ${DB}_reject.t2 (k UInt64) ENGINE=ReplicatedMergeTree('${REJECT_ZK}/{shard}', '{replica}') ORDER BY k"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}_reject.t2 SELECT 1"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}_reject.t2"
+
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB}_reject SYNC"
+
 # No failpoint may leak into a later run of this test
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.fail_points WHERE enabled AND name IN ('database_replicated_create_replica_nodes_lose_response', 'database_atomic_fail_after_committing_metadata_transaction', 'database_on_disk_fail_before_commit_create_table')"

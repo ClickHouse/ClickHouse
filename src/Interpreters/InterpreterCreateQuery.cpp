@@ -2468,12 +2468,25 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (database->isTableExist(create.getTable(), getContext()))
             return;
 
-        /// A `Replicated` database's DDL entry is executable on the other replicas only once its
-        /// metadata transaction's commit creates `/committed`, and a secondary query replays an entry
-        /// that is already published. Removing a published replica would diverge this replica from the
-        /// ones where the same entry succeeded, so only an unpublished registration is ours to remove.
+        /// A `Replicated` database's DDL entry becomes executable on the other replicas only once its
+        /// commit creates `/committed`, and a secondary query replays an already published entry. Only an
+        /// unpublished registration is this statement's alone, so unprovable visibility counts as published.
         auto txn = getContext()->getZooKeeperMetadataTransaction();
-        const bool published = txn && (txn->isExecuted() || !txn->isInitialQuery());
+        bool published = txn != nullptr;
+        if (published)
+        {
+            try
+            {
+                /// A transaction carrying no task path is not an entry of the DDL log.
+                const String task_path = txn->getTaskZooKeeperPath();
+                if (txn->isInitialQuery() && !task_path.empty())
+                    published = txn->getZooKeeper()->exists(fs::path(task_path) / "committed");
+            }
+            catch (...)
+            {
+                tryLogCurrentException("InterpreterCreateQuery");
+            }
+        }
         bool registration_is_ours = replicated_storage->hasProvableCreationIdentity() && !published;
 
         try

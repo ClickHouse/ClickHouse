@@ -704,7 +704,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
     catch (...)
     {
-        if (mode < LoadingStrictnessLevel::ATTACH)
+        /// Only an initiating CREATE owns what it registered: a SECONDARY_CREATE replays a published DDL
+        /// entry or restores a backup, so its registration is shared with whoever else is creating it.
+        if (mode == LoadingStrictnessLevel::CREATE)
             tryRemoveOwnReplicaFromZooKeeper();
 
         /// If replica was not created, rollback creation of data directory.
