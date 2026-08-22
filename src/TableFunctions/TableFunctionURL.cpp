@@ -277,7 +277,12 @@ StoragePtr TableFunctionURL::executeImpl(
             /*check_create_temporary_table=*/false,
             /*check_source_access=*/false);
 
-    return ITableFunctionFileLike::executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
+    /// Stored columns accompany a table definition rather than an ad-hoc query, so creation and
+    /// replay must resolve to the same storage.
+    const bool keep_creation_storage_choice = is_insert_query || !cached_columns.empty();
+
+    return ITableFunctionFileLike::executeImpl(
+        ast_function, context, table_name, std::move(cached_columns), keep_creation_storage_choice);
 }
 
 bool TableFunctionURL::needStructureHint() const
