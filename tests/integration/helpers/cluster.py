@@ -5825,12 +5825,17 @@ class ClickHouseInstance:
         look_behind_lines=10000,
     ):
         start_time = time.time()
+        # The container-side `timeout` must be the budget that expires first, so the
+        # pipeline below can exit and its collected lines be returned. The outer
+        # (python) budget therefore needs headroom over it: enough for `docker exec`
+        # teardown, which is a fixed cost and does not scale with the wait length.
         result = self.exec_in_container(
             [
                 "bash",
                 "-c",
                 f"timeout {timeout} stdbuf -o0 -e0 tail -Fn{look_behind_lines} {shlex.quote(filename)} | stdbuf -o0 -e0 tee -a {filename}.wait_for_log_line | grep -Em {repetitions} {shlex.quote(regexp)}",
-            ]
+            ],
+            timeout=timeout + 60,
         )
 
         # if repetitions>1 grep will return success even if not enough lines were collected,
