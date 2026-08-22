@@ -1966,6 +1966,10 @@ Chunk StorageFileSource::generate()
                 });
             }
 
+            /// `update_row_numbers_info = true`: the File lazy-materialization path later builds
+            /// `__global_row_index` from `ChunkInfoRowNumbers`. These deferred filters can drop
+            /// rows after the format reader attached that metadata, so it must stay aligned with
+            /// the surviving rows (same as `StorageObjectStorageSource`).
             if (deferred_row_level_filter)
             {
                 auto row_level_actions = std::make_shared<ExpressionActions>(deferred_row_level_filter->actions.clone());
@@ -1975,7 +1979,11 @@ Chunk StorageFileSource::generate()
                         header,
                         row_level_actions,
                         deferred_row_level_filter->column_name,
-                        deferred_row_level_filter->do_remove_column);
+                        deferred_row_level_filter->do_remove_column,
+                        /*on_totals=*/false,
+                        /*rows_filtered=*/nullptr,
+                        /*condition=*/std::nullopt,
+                        /*update_row_numbers_info=*/true);
                 });
             }
 
@@ -1988,7 +1996,11 @@ Chunk StorageFileSource::generate()
                         header,
                         prewhere_actions,
                         deferred_prewhere_info->prewhere_column_name,
-                        deferred_prewhere_info->remove_prewhere_column);
+                        deferred_prewhere_info->remove_prewhere_column,
+                        /*on_totals=*/false,
+                        /*rows_filtered=*/nullptr,
+                        /*condition=*/std::nullopt,
+                        /*update_row_numbers_info=*/true);
                 });
             }
 

@@ -8,7 +8,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
