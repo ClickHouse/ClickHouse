@@ -1831,6 +1831,10 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
     /// encoder runs first (so the loser starts from a tight size bound), and the winning decimal
     /// scale is evaluated first by the chooser. Both are guesses verified by measurement, so a
     /// stale hint after a data change costs speed on one vector, never correctness or size.
+    /// The scale hint is dropped as soon as a vector is not won by a decimal mode: otherwise a
+    /// column that starts with decimal data and then turns non-decimal would keep paying an
+    /// extra full `quantize_all` pass for the dead scale on every remaining vector, not only on
+    /// the vector where the data changes.
     std::optional<VectorMode> previous_winner;
     std::optional<Int32> previous_alpha;
 
@@ -1908,6 +1912,7 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
             memcpy(out, xor_scratch.data(), xor_size);
             out += xor_size;
             previous_winner = VectorMode::Xor;
+            previous_alpha.reset();
         }
         else
         {
@@ -1915,6 +1920,7 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
             memcpy(out, words.data(), raw_size);
             out += raw_size;
             previous_winner = VectorMode::Raw;
+            previous_alpha.reset();
         }
 
         processed += count;
