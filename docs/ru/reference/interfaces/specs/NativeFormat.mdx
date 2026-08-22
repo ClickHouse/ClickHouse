@@ -30,30 +30,9 @@ keywords: ['формат Native', 'столбцовый', 'блок', 'форм�
 
 `data` столбца организованы в соответствии с *семейством*, к которому относится его тип. Семейства в порядке возрастания сложности декодера:
 
-```mermaid
-flowchart TD
-    B[Block]
-    B --> BI[BlockInfo]
-    B --> NC[num_columns]
-    B --> NR[num_rows]
-    B --> Cs["columns[ ]"]
+<img className="w-full h-auto" src="/images/interfaces/native-format/block-structure.webp" alt="Структура столбцового блока, передаваемого по сети, и семейства структур данных" width="1568" height="976" loading="lazy" />
 
-    Cs --> Col[Column]
-    Col --> Cname[name]
-    Col --> Ctype[type]
-    Col --> Chcs[has_custom_serialization]
-    Col --> Cdata["data — layout depends on type family"]
-
-    Cdata --> Fixed["Fixed-width<br/>bytes_per_value × num_rows"]
-    Cdata --> Comp["Composite<br/>recursive, shape from type string"]
-    Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
-
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
-    Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
-    Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
-```
-
-* Типы **фиксированной ширины** представляют `data` как необработанные байты размером `bytes_per_value × num_rows`, без какого-либо построчного фреймирования.
+* Типы **фиксированной разрядности** представляют `data` как необработанные байты размером `bytes_per_value × num_rows`, без какого-либо построчного фреймирования.
 * **Составные** типы (`Nullable`, `Array`, `Tuple`, `Map`, `Nested`) имеют рекурсивную структуру, полностью выводимую из строки типа, без префикса версии и без состояния, общего для разных блоков.
 * **Версионируемые / с сохранением состояния** типы (`LowCardinality`, `JSON`, `Variant`, `Dynamic`) начинают каждый непустой block с префикса версии сериализации/состояния. В протоколе `Native` этот префикс и любой словарь являются **отдельными для каждого блока** — формат не хранит состояние *между* блоками (writer создает новое состояние сериализации для каждого блока и устанавливает `low_cardinality_max_dictionary_size = 0`). Состояние между блоками относится к хранению MergeTree на диске, а не к структуре протокола Native.
 
@@ -209,16 +188,7 @@ BlockInfo — это последовательность полей, каждо
   Поле `type` является текстовым `String` только в режиме по умолчанию. Если установлена настройка запроса `output_format_native_encode_types_in_binary_format = 1`, это поле вместо текста содержит **двоичное кодирование типа** — то же кодирование на основе тегов, которое описано в [двоичном кодировании типов данных](/ru/reference/data-types/data-types-binary-encoding), — а списки сглаженных типов `Dynamic` также используют это двоичное кодирование для имён отдельных типов. Декодер, который всегда читает поле 2 как строку с префиксом длины, примет первый двоичный тег типа за длину строки и потеряет синхронизацию, поэтому он должен знать, в каком режиме передаётся поток.
 </Info>
 
-```mermaid
-flowchart TD
-    T["type string<br/>(e.g. Array(String))"]
-    T --> P["strip outer (...)<br/>to find the base type"]
-    P --> F{"base type family?"}
-    F -->|fixed-width| FW["read bytes_per_value × num_rows<br/>(no per-row framing)"]
-    F -->|variable-length| VL["read per-value length prefixes"]
-    F -->|composite| CO["read each sub-stream;<br/>recurse on the inner types"]
-    F -->|versioned| VE["read state prefix (version)<br/>at the start of each non-empty block,<br/>then that block's payload"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="Маршрутизация декодера от описания типа к семейству его кодирования" width="1568" height="854" loading="lazy" />
 
 <div id="kind-stack-and-sparse-encoding">
   #### kind_stack и разреженное кодирование
@@ -947,16 +917,7 @@ Values (5 × UInt32 LE = 20 bytes):
 
 Каждое смещение — это накопленная позиция *конца* фрагмента строки в общем потоке значений; начало — предыдущее смещение (или `0` для строки 0). Одинаковые последовательные смещения обозначают пустую строку:
 
-```mermaid
-flowchart LR
-    subgraph V["values stream: [10, 20, 30, 40, 50]"]
-        direction LR
-        v0["10"] --- v1["20"] --- v2["30"] --- v3["40"] --- v4["50"]
-    end
-    r0["row 0"] -->|"[0 .. offsets[0]=3)"| v0
-    r1["row 1"] -.->|"[3 .. offsets[1]=3) empty"| V
-    r2["row 2"] -->|"[offsets[1]=3 .. offsets[2]=5)"| v3
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/array-offsets.webp" alt="Смещения сопоставляют строки с общим потоком значений" width="1568" height="388" loading="lazy" />
 
 `Array(String)` со строками `[["a", "bb"], []]` (всего 20 байт):
 
@@ -976,7 +937,7 @@ Values (2 strings, 4 bytes total):
 * Средний `Array(UInt32)` декодирует 3 строки со смещениями `[2, 3, 5]`.
 * Самый внутренний `UInt32` декодирует 5 значений: `[1, 2, 3, 4, 5]`.
 
-Итого: 24 (внешние смещения) + 24 (внутренние смещения) + 20 (значения) = 68 байт.
+Итого: 24 (внешние смещения) + 24 (средние смещения) + 20 (значения) = 68 байт.
 
 <div id="tuple">
   #### Tuple(T1, T2, ...)
@@ -1080,13 +1041,7 @@ Values (2 × UInt32 LE = 8 bytes):
 
 Представление `Nested` при передаче зависит от настройки `flatten_nested` на стороне сервера, поэтому возможны два различных случая.
 
-```mermaid
-flowchart TD
-    N["column declared Nested(a T1, b T2, ...)"]
-    N --> Q{"flatten_nested?"}
-    Q -->|"= 1 (server default)"| A["N parallel Array(T_i) columns<br/>with dotted names (n.a, n.b)<br/>— no Nested wire type"]
-    Q -->|"= 0"| B["one column, type string Nested(...)<br/>laid out byte-identically to<br/>Array(Tuple(T1, ..., Tn))"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/nested-layout.webp" alt="Структура составного столбца с выравниванием и без него" width="1172" height="1068" loading="lazy" />
 
 **Случай A: `flatten_nested = 1` (значение сервера по умолчанию).** Если таблица создана с настройками по умолчанию, `Nested` **не является wire-типом**. Сервер хранит и представляет столбец как N параллельных столбцов `Array(T_i)` с **именами через точку** (`outer.field1`, `outer.field2` и так далее). На уровне формата здесь нет ничего нового — каждый столбец с именем через точку является обычным [Array](#array):
 
@@ -1097,7 +1052,7 @@ n.a    Array(UInt8)
 n.b    Array(String)
 ```
 
-**Случай B: `flatten_nested = 0`.** Если таблица была создана с `flatten_nested = 0`, столбец передаётся по wire как один столбец со строкой типа `Nested(name1 T1, name2 T2, ...)`, а его структура после строки типа **побайтово идентична `Array(Tuple(T1, T2, ..., Tn))`** — включая внутреннюю [фазу префикса](#composite-types), поэтому любое версионируемое поле `T_i` сначала записывает свой префикс состояния, перед смещениями. В примере ниже используются неверсируемые поля, поэтому фаза префикса пуста:
+**Случай B: `flatten_nested = 0`.** Если таблица была создана с `flatten_nested = 0`, столбец передаётся по wire как один столбец со строкой типа `Nested(name1 T1, name2 T2, ...)`, а его структура после строки типа **побайтово идентична `Array(Tuple(T1, T2, ..., Tn))`** — включая внутреннюю [фазу префикса](#composite-types), поэтому любое версионируемое поле `T_i` сначала записывает свой префикс состояния, перед смещениями. В примере ниже используются неверсионируемые поля, поэтому фаза префикса пуста:
 
 ```text
 Nested(a UInt8, b String) bytes (after type string):
@@ -1190,9 +1145,9 @@ Field 'b' stream (3 strings, 6 bytes):
 | Область действия       | Для всего соединения                        | Для каждого типа и каждого столбца                   |
 | Согласовывается        | Да, при рукопожатии                         | Нет — отправитель записывает, приёмник читает        |
 | Определяет             | Какие возможности на уровне пакетов активны | Какой вариант представления одного типа используется |
-| Обязательно для чтения | Да                                          | Да, для каждого столбца с версией                    |
+| Обязательно для чтения | Да                                          | Да, для каждого версионируемого столбца              |
 
-Большинство типов с версией записывают её как UInt64 в формате little-endian непосредственно перед любыми другими данными префикса состояния; некоторые используют VarUInt или UInt8. Декодер сначала считывает версию и отклоняет неизвестные значения — более высокая версия означает более новый формат отправителя, который декодер не понимает, а неправильный разбор повреждает каждый последующий байт.
+Большинство версионируемых типов записывают её как UInt64 в формате little-endian непосредственно перед любыми другими данными префикса состояния; некоторые используют VarUInt или UInt8. Декодер сначала считывает версию и отклоняет неизвестные значения — более высокая версия означает более новый формат отправителя, который декодер не понимает, а неправильный разбор повреждает каждый последующий байт.
 
 Префикс состояния выводится в начале **каждого блока, количество строк в котором больше нуля**, непосредственно перед полезной нагрузкой этого блока.
 
@@ -1200,19 +1155,7 @@ Field 'b' stream (3 strings, 6 bytes):
 
 Поэтому блоки заголовка (rows = 0) и пустые блоки ничего не выводят, и декодер должен заново считывать префикс состояния в начале каждого непустого блока. Если декодер считывает префикс только один раз и считает последующие блоки содержащими только полезную нагрузку, он прочитает префикс следующего блока как данные и потеряет синхронизацию:
 
-```mermaid
-sequenceDiagram
-    participant S as Server (writer)
-    participant C as Client (decoder)
-    S->>C: Header block (num_rows = 0)
-    Note right of C: no state prefix
-    S->>C: First block with rows > 0
-    Note right of C: read state prefix,<br/>then block payload
-    S->>C: Next block with rows > 0
-    Note right of C: read state prefix again,<br/>then block payload
-    S->>C: Empty block (end marker)
-    Note right of C: no state prefix
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/state-prefix-per-block.webp" alt="Префикс состояния повторяется для каждого непустого блока" width="1226" height="1162" loading="lazy" />
 
 <div id="serialization-version-reference">
   #### Справочник версий сериализации
@@ -1355,7 +1298,7 @@ sequenceDiagram
 
 Строка типа: `Variant(T1, T2, ...)`. Сервер канонизирует порядок (типы варианта сортируются по имени), поэтому полученная строка типа уже перечисляет типы в **порядке глобального дискриминатора**: дискриминатор `0` выбирает первый указанный тип, `1` — второй и так далее. `255` (`NULL_DISCRIMINATOR`) означает, что строка имеет значение NULL. Элементы Variant никогда не бывают `Nullable` — за NULL отвечает дискриминатор. Примеры: `Variant(String, UInt64)`, `Variant(Array(UInt8), String)`.
 
-Префикс состояния содержит режим дискриминаторов `UInt64 LE`: `0` = BASIC (дискриминатор каждой строки записывается в явном виде), `1` = COMPACT (кодирование granule по длинам серий). По умолчанию сервер использует BASIC через собственный протокол (`use_compact_variant_discriminators_serialization = false`); здесь определён только BASIC.
+Префикс состояния содержит режим дискриминаторов `UInt64 LE`: `0` = BASIC (дискриминатор каждой строки записывается в явном виде), `1` = COMPACT (кодирование гранулы по длинам серий). По умолчанию сервер использует BASIC через собственный протокол (`use_compact_variant_discriminators_serialization = false`); здесь определён только BASIC.
 
 ```text
 [per block with rows > 0]:
@@ -1388,24 +1331,7 @@ sequenceDiagram
 
 Поток дискриминаторов служит индексом; каждый дискриминатор, отличный от NULL, берёт следующее значение из плотной последовательности своего типа, тогда как `255` (NULL) ничего не потребляет. Этот же проход восстанавливает [Dynamic](#dynamic), который отличается только способом кодирования NULL:
 
-```mermaid
-flowchart LR
-    subgraph D["discriminators (one per row)"]
-        direction TB
-        d0["row 0 → 1"]
-        d1["row 1 → 0"]
-        d2["row 2 → 255"]
-    end
-    subgraph SR["String run (discriminator 0)"]
-        s0["[0] = hi"]
-    end
-    subgraph UR["UInt64 run (discriminator 1)"]
-        u0["[0] = 42"]
-    end
-    d0 -->|"counter[1] = 0"| u0
-    d1 -->|"counter[0] = 0"| s0
-    d2 -.->|"255 = NULL,<br/>no value consumed"| X["(skip)"]
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/variant-discriminators.webp" alt="Дискриминаторы, выбирающие значения из плотных последовательностей для конкретных типов" width="1568" height="624" loading="lazy" />
 
 <div id="dynamic">
   #### Dynamic
@@ -1539,7 +1465,7 @@ ClickHouse может сжимать данные столбцов потока 
 Таким образом, клиент, реализовавший только несжатую структуру `FORMAT Native`, всё равно должен добавить этот слой фреймирования, чтобы читать сжатый HTTP-ответ `Native` или отправлять тело запроса `decompress=1`.
 
 <div id="frame-format">
-  ### Формат фрейма
+  ### Формат рамки окна
 </div>
 
 ```text
@@ -1550,21 +1476,9 @@ ClickHouse может сжимать данные столбцов потока 
 [N bytes:  compressed body]        ← N = compressed_size - 9
 ```
 
-Общий размер фрейма составляет `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`. Обратите внимание на два диапазона: контрольная сумма охватывает 9-байтный заголовок и тело, тогда как `compressed_size` включает заголовок и тело, но **не** саму контрольную сумму:
+Общий размер рамки окна составляет `16 + compressed_size` = `16 + 9 + body_size` = `25 + body_size`. Обратите внимание на два диапазона: контрольная сумма охватывает 9-байтный заголовок и тело, тогда как `compressed_size` включает заголовок и тело, но **не** саму контрольную сумму:
 
-```mermaid
-flowchart LR
-    CK["checksum<br/>16 B<br/>CityHash128"]
-    subgraph SPAN["counted by compressed_size (9 + N)"]
-        direction LR
-        M["method<br/>1 B"]
-        CS["compressed_size<br/>4 B LE"]
-        US["uncompressed_size<br/>4 B LE"]
-        BODY["compressed body<br/>N = compressed_size − 9 B"]
-        M --> CS --> US --> BODY
-    end
-    CK --> M
-```
+<img className="w-full h-auto" src="/images/interfaces/native-format/compression-frame.webp" alt="Поля рамки окна сжатия и граница compressed-size" width="1568" height="206" loading="lazy" />
 
 <div id="method-byte-values">
   ### Значения байта метода

@@ -110,10 +110,62 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
     #endif
 
     factory.registerSource("ytsaurus", create_dictionary_source, Documentation{
-        .description = "Reads dictionary data from a YTsaurus cluster."
-            " This source is experimental; set the `allow_experimental_ytsaurus_dictionary_source` setting to enable it."
+        .description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+# YTsaurus dictionary source
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+<Info>
+This is an experimental feature that may change in backwards-incompatible ways in future releases.
+Enable usage of the YTsaurus dictionary source
+using setting [`allow_experimental_ytsaurus_dictionary_source`](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_dictionary_source).
+</Info>
+
+Example of settings:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+SOURCE(YTSAURUS(
+    http_proxy_urls 'http://localhost:8000'
+    cypress_path '//tmp/test'
+    oauth_token 'password'
+))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<source>
+    <ytsaurus>
+        <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+        <cypress_path>//tmp/test</cypress_path>
+        <oauth_token>password</oauth_token>
+        <check_table_schema>1</check_table_schema>
+    </ytsaurus>
+</source>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+Setting fields:
+
+| Setting | Description |
+|---------|-------------|
+| `http_proxy_urls` | URL to the YTsaurus http proxy. |
+| `cypress_path` | Cypress path to the table source. |
+| `oauth_token` | OAuth token. |
+)DOCS_MD"
 #if !USE_YTSAURUS
-            " Currently unavailable, because this ClickHouse build does not include YTsaurus support."
+            "\n\nCurrently unavailable, because this ClickHouse build does not include YTsaurus support."
 #endif
         ,
         .syntax = "SOURCE(YTSAURUS(http_proxy_urls 'url' cypress_path '//path' oauth_token 'token'))",

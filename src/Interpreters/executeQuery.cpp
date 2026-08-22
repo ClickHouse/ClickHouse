@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
+#include <Common/saturatedDuration.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -2917,7 +2918,7 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::wait_for_async_insert])
                 {
-                    auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+                    auto timeout = saturatedMilliseconds(settings[Setting::wait_for_async_insert_timeout].totalMilliseconds()).count();
                     auto source = std::make_shared<WaitForAsyncInsertSource>(
                         std::move(result.future),
                         timeout,
@@ -3119,7 +3120,7 @@ static BlockIO executeQueryImpl(
                     if (checkCanWriteQueryResultCache(out_ast, context))
                     {
                             auto created_at = std::chrono::system_clock::now();
-                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+                            auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
 
                             QueryResultCache::Key key(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
