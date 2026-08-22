@@ -1674,7 +1674,8 @@ static bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
     }
-    else if (!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+    else if ((!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+             || !canBeAccurateCastOrNullTarget(in_argument_type))
     {
         /// We cannot apply castColumnAccurateOrNull() because it will throw exception
         return false;
@@ -2177,7 +2178,10 @@ static bool applyDeterministicDagToColumn(
         /// transform DAG still receives the type it was built against.
         const DataTypePtr probe_type = removeLowCardinality(target_type);
 
-        if (!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+        /// passes it and then throws in the cast below.
+        if ((!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+            || !canBeAccurateCastOrNullTarget(probe_type))
         {
             /// We cannot apply castColumnAccurateOrNull() because it will throw exception
             return false;
@@ -2589,7 +2593,9 @@ static bool tryPrepareSetColumnsForIndex(
             continue;
         }
 
-        if (!key_column_type->canBeInsideNullable())
+        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+        /// passes it and then throws in `castColumnAccurateOrNull` below.
+        if (!key_column_type->canBeInsideNullable() || !canBeAccurateCastOrNullTarget(key_column_type))
             return false;
 
         /// Marks the elements that are NULL in the set itself, e.g. the NULL in `notHas([1, NULL], x)`
@@ -2668,16 +2674,32 @@ static bool tryPrepareSetColumnsForIndex(
 }
 
 /// `has` compares array elements as raw Fields, whereas `MergeTreeSetIndex` converts them to the
-/// key type. Only use a set atom when those two representations have the same equality semantics.
-/// In particular, a String array element does not equal an Enum key even if the String can be cast
-/// to that Enum's name. Native integer Fields are the one cross-type case with compatible equality.
+/// key type with an accurate cast. For an `Enum` key the two disagree: `castColumnAccurateOrNull`
+/// accepts a `String` that names one of the enum labels, but `has` never treats a `String` element
+/// as equal to an enum value. Numeric elements are fine, because `has` compares enums numerically
+/// (see `00674_has_array_enum`) and the cast accepts the codes of declared values, so only a
+/// non-integral element next to an enum is rejected. Everything unrelated to enums is left alone -
+/// the conversion of such elements is handled by `tryPrepareSetColumnsForIndex`.
 static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_type, const DataTypePtr & key_column_type)
 {
     const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
     const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
 
-    if (set_type->equals(*key_type) || (isNativeInteger(set_type) && isNativeInteger(key_type)))
-        return true;
+    const bool set_is_enum = isEnum(set_type);
+    const bool key_is_enum = isEnum(key_type);
+
+    if (set_is_enum || key_is_enum)
+    {
+        if (set_type->equals(*key_type))
+            return true;
+
+        /// Two different enums can map the same label to different codes, and neither of the two
+        /// representations is the one `has` compares against, so decline the set atom.
+        if (set_is_enum && key_is_enum)
+            return false;
+
+        return isNativeInteger(set_is_enum ? key_type : set_type);
+    }
 
     const auto * set_tuple_type = typeid_cast<const DataTypeTuple *>(set_type.get());
     const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get());
@@ -2686,7 +2708,7 @@ static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_typ
         const auto & set_elements = set_tuple_type->getElements();
         const auto & key_elements = key_tuple_type->getElements();
         if (set_elements.size() != key_elements.size())
-            return false;
+            return true;
 
         for (size_t i = 0; i < set_elements.size(); ++i)
         {
@@ -2698,8 +2720,10 @@ static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_typ
 
     const auto * set_array_type = typeid_cast<const DataTypeArray *>(set_type.get());
     const auto * key_array_type = typeid_cast<const DataTypeArray *>(key_type.get());
-    return set_array_type && key_array_type
-        && areTypesCompatibleForHasSetIndex(set_array_type->getNestedType(), key_array_type->getNestedType());
+    if (set_array_type && key_array_type)
+        return areTypesCompatibleForHasSetIndex(set_array_type->getNestedType(), key_array_type->getNestedType());
+
+    return true;
 }
 
 static bool areSetAndKeyTypesCompatibleForHas(
@@ -2729,7 +2753,7 @@ static bool areSetAndKeyTypesCompatibleForHas(
         }
 
         if (!has_tuple)
-            return false;
+            return true;
 
         set_types = std::move(unpacked_set_types);
     }
@@ -2738,7 +2762,7 @@ static bool areSetAndKeyTypesCompatibleForHas(
     {
         const auto set_element_index = indexes_mapping[index].tuple_index;
         if (set_element_index >= set_types.size())
-            return false;
+            return true;
 
         /// When the key is a chain of deterministic functions, the set element is pushed through the
         /// same chain before the comparison, so it is the chain's input - the column `has` compares
