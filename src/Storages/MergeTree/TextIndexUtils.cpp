@@ -363,6 +363,7 @@ void MergeTextIndexesTask::flushDictionaryBlock()
     chassert(current_mark.offset_in_decompressed_block == 0);
 
     auto first_token = output_tokens->getDataAt(0);
+    TextIndexSerialization::checkTokenSize(first_token.size());
     assert_cast<ColumnString &>(*sparse_index_tokens).insertData(first_token.data(), first_token.size());
     assert_cast<ColumnUInt64 &>(*sparse_index_offsets).insertValue(current_mark.offset_in_compressed_file);
 
