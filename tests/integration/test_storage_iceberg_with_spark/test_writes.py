@@ -525,11 +525,6 @@ def test_writes_decimal_minmax_pruning(started_cluster_iceberg_with_spark, stora
             f"SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log "
             f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         ).strip()
-        print(
-            "MINMAX_REPORT predicate={!r} pruned={} same_result={} off={!r} on={!r}".format(
-                predicate, pruned, without_pruning == with_pruning, without_pruning, with_pruning
-            )
-        )
         return without_pruning, with_pruning, int(pruned or 0)
 
     predicates = [
@@ -597,3 +592,62 @@ def test_writes_decimal_partition(started_cluster_iceberg_with_spark, storage_ty
     assert prunned_files(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == 0
     assert prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE tag < 0 ORDER BY ALL") == 2
     assert prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE tag > 2 ORDER BY ALL") == 2
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_writes_decimal_partition_not_first(started_cluster_iceberg_with_spark, storage_type):
+    """Every partition field must be serialized against its own Avro node.
+
+    The decimal is deliberately neither the first nor the last partition field, and it is
+    surrounded by fields of other shapes: a plain `long`, a `Nullable` union whose branch has to
+    be picked from the union's own schema, and a `DateTime64`, which shares `DecimalField` with a
+    decimal but goes into the manifest as a `long`.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = "test_writes_decimal_partition_not_first_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        "(id Int64, note Nullable(String), tag Decimal(7, 2), ts DateTime64(6), number Int64)",
+        2,
+        partition_by="(id, note, tag, ts)",
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES "
+        f"(1, 'a', 1.50, '2025-08-27 12:34:56.000000', 10), "
+        f"(1, NULL, -3.25, '2025-08-27 12:34:56.000000', 20), "
+        f"(2, 'a', 1.50, '2026-08-27 12:34:56.000000', 30)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert (
+        instance.query(
+            f"SELECT * FROM {TABLE_NAME} ORDER BY ALL",
+            settings={"output_format_decimal_trailing_zeros": 1},
+        )
+        == "1\t\\N\t-3.25\t2025-08-27 12:34:56.000000\t20\n"
+        "1\ta\t1.50\t2025-08-27 12:34:56.000000\t10\n"
+        "2\ta\t1.50\t2026-08-27 12:34:56.000000\t30\n"
+    )
+
+    def prunned_files(select_expression):
+        return check_validity_and_get_prunned_files_general(
+            instance,
+            TABLE_NAME,
+            {"use_iceberg_partition_pruning": 0},
+            {"use_iceberg_partition_pruning": 1},
+            "IcebergPartitionPrunedFiles",
+            select_expression,
+        )
+
+    assert prunned_files(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == 0
+    assert prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE tag < 0 ORDER BY ALL") == 2
+    assert prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE tag > 1 ORDER BY ALL") == 1
+    assert prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE id = 2 ORDER BY ALL") == 2
+    assert (
+        prunned_files(f"SELECT * FROM {TABLE_NAME} WHERE ts > '2026-01-01 00:00:00' ORDER BY ALL")
+        == 2
+    )

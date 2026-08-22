@@ -25,6 +25,12 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB::Iceberg
 {
 
@@ -141,35 +147,42 @@ ManifestFilesPruner::ManifestFilesPruner(
 namespace
 {
 
+/// Iceberg keeps a decimal partition value as an Avro `fixed`: the unscaled value in two's-complement
+/// big-endian form, using the minimum number of bytes. ClickHouse reads such a `fixed` as a `String`,
+/// so restore the decimal here. Accumulate into the unsigned counterpart, pre-filled with the sign
+/// bits, so that the sign extension comes out of the shifts themselves.
 template <typename DecimalType>
-std::optional<Field> decodePartitionDecimal(const String & bytes, UInt32 scale)
+Field decodePartitionDecimal(const String & bytes, const IDataType & type)
 {
     using NativeType = typename DecimalType::NativeType;
+    using UnsignedType = make_unsigned_t<NativeType>;
+
     if (bytes.empty() || bytes.size() > sizeof(NativeType))
-        return std::nullopt;
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {} bytes of {}",
+            bytes.size(),
+            sizeof(NativeType),
+            type.getName());
 
-    NativeType unscaled_value = 0;
+    UnsignedType unscaled_value = (bytes[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
     for (const auto byte : bytes)
-        unscaled_value = (unscaled_value << 8) | static_cast<uint8_t>(byte);
+        unscaled_value = (unscaled_value << 8) | static_cast<UInt8>(byte);
 
-    if (bytes.size() < sizeof(NativeType) && (bytes[0] & 0x80))
-        unscaled_value |= (~NativeType(0)) << (8 * bytes.size());
-
-    return DecimalField<DecimalType>(unscaled_value, scale);
+    return DecimalField<DecimalType>(static_cast<NativeType>(unscaled_value), getDecimalScale(type));
 }
 
-std::optional<Field> decodePartitionDecimalByType(const String & bytes, const IDataType & type)
+Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
 {
-    const UInt32 scale = getDecimalScale(type);
     if (checkDecimal<Decimal32>(type))
-        return decodePartitionDecimal<Decimal32>(bytes, scale);
+        return decodePartitionDecimal<Decimal32>(bytes, type);
     if (checkDecimal<Decimal64>(type))
-        return decodePartitionDecimal<Decimal64>(bytes, scale);
+        return decodePartitionDecimal<Decimal64>(bytes, type);
     if (checkDecimal<Decimal128>(type))
-        return decodePartitionDecimal<Decimal128>(bytes, scale);
+        return decodePartitionDecimal<Decimal128>(bytes, type);
     if (checkDecimal<Decimal256>(type))
-        return decodePartitionDecimal<Decimal256>(bytes, scale);
-    return std::nullopt;
+        return decodePartitionDecimal<Decimal256>(bytes, type);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal type {} of an Iceberg partition column", type.getName());
 }
 
 }
@@ -191,10 +204,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
             else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
                 field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
             else if (field.getType() == Field::Types::String && WhichDataType(type).isDecimal())
-            {
-                if (auto decoded = decodePartitionDecimalByType(field.safeGet<String>(), *type))
-                    field = *decoded;
-            }
+                field = decodePartitionDecimalByType(field.safeGet<String>(), *type);
         }
 
         bool can_be_true = partition_key_condition->mayBeTrueInRange(

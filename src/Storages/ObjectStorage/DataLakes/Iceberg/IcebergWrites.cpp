@@ -191,7 +191,12 @@ avro::GenericDatum makeDecimalFixedDatum(const Field & field, const avro::NodePt
     using NativeType = typename DecimalType::NativeType;
     const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
 
-    chassert(schema->type() == avro::AVRO_FIXED);
+    if (schema->type() != avro::AVRO_FIXED)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg decimal partition values are written as an Avro `fixed`, but the manifest schema declares {}",
+            avro::toString(schema->type()));
+
     const size_t size = schema->fixedSize();
     std::vector<uint8_t> bytes(size, unscaled_value < 0 ? 0xFF : 0x00);
     for (size_t i = 0; i < size && i < sizeof(NativeType); ++i)
@@ -574,10 +579,33 @@ void generateManifestFile(
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
             size_t field_index = 0;
+            if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Partition field {} not found in manifest schema",
+                    partition_columns[i]);
+
             const avro::NodePtr & field_schema = partition_record.schema()->leafAt(static_cast<UInt32>(field_index));
 
+            /// Build the Avro datum holding the partition value; throws on an unsupported type.
             auto make_value_datum = [&](const avro::NodePtr & value_schema) -> avro::GenericDatum
             {
+                /// Decimals are dispatched on the column type rather than on the `Field` type, because
+                /// `DateTime64` also lives in a `DecimalField` while Iceberg writes it as a plain `long`.
+                switch (removeNullable(partition_types[i])->getTypeId())
+                {
+                    case TypeIndex::Decimal32:
+                        return makeDecimalFixedDatum<Decimal32>(partition_values[i], value_schema);
+                    case TypeIndex::Decimal64:
+                        return makeDecimalFixedDatum<Decimal64>(partition_values[i], value_schema);
+                    case TypeIndex::Decimal128:
+                        return makeDecimalFixedDatum<Decimal128>(partition_values[i], value_schema);
+                    case TypeIndex::Decimal256:
+                        return makeDecimalFixedDatum<Decimal256>(partition_values[i], value_schema);
+                    default:
+                        break;
+                }
+
                 switch (partition_values[i].getType())
                 {
                     case Field::Types::Int64:
@@ -588,13 +616,9 @@ void generateManifestFile(
                     case Field::Types::Float64:
                         return avro::GenericDatum(partition_values[i].safeGet<Float64>());
                     case Field::Types::Decimal32:
-                        return makeDecimalFixedDatum<Decimal32>(partition_values[i], value_schema);
+                        return avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
                     case Field::Types::Decimal64:
-                        return makeDecimalFixedDatum<Decimal64>(partition_values[i], value_schema);
-                    case Field::Types::Decimal128:
-                        return makeDecimalFixedDatum<Decimal128>(partition_values[i], value_schema);
-                    case Field::Types::Decimal256:
-                        return makeDecimalFixedDatum<Decimal256>(partition_values[i], value_schema);
+                        return avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
                     default:
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,

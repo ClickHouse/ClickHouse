@@ -557,15 +557,18 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
+/// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
+/// minimum number of bytes that can hold every value of the declared precision. One bit of that
+/// space is taken by the sign, hence `8 * bytes - 1`.
 static size_t icebergDecimalRequiredBytes(UInt32 precision)
 {
-    Int256 max_value = 1;
+    UInt256 max_value = 1;
     for (UInt32 i = 0; i < precision; ++i)
         max_value *= 10;
     max_value -= 1;
 
     size_t bytes = 1;
-    while ((Int256(1) << (8 * bytes - 1)) - 1 < max_value)
+    while (bytes < sizeof(UInt256) && (max_value >> (8 * bytes - 1)) != 0)
         ++bytes;
     return bytes;
 }
