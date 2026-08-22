@@ -612,6 +612,10 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     if (is_stale_marker_type)
         samples_header.insert(ColumnWithTypeAndName{is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
+
+    /// The recent samples table (if any) receives a copy of every samples block.
+    if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
+        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
 }
 
 
@@ -843,6 +847,10 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         if (is_stale_marker_column)
             samples_block.insert(ColumnWithTypeAndName{std::move(is_stale_marker_column), is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
 
+        /// The copy is cheap: a Block copy only copies column pointers.
+        if (recent_samples_pipeline)
+            recent_samples_pipeline->push(samples_block);
+
         samples_pipeline->push(std::move(samples_block));
     }
 }
@@ -930,6 +938,8 @@ void TimeSeriesSink::onFinish()
         tags_pipeline->executor->finish();
     if (samples_pipeline)
         samples_pipeline->executor->finish();
+    if (recent_samples_pipeline)
+        recent_samples_pipeline->executor->finish();
     if (metrics_pipeline)
         metrics_pipeline->executor->finish();
 }
