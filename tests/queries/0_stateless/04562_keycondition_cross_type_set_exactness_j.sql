@@ -405,8 +405,11 @@ SELECT 'dyn UInt64/Dynamic(UInt8) IN',
     (SELECT count() FROM at_dyn WHERE k IN (SELECT arrayJoin(CAST([toUInt8(1)], 'Array(Dynamic)')))) = (SELECT count() FROM ao_dyn WHERE k IN (SELECT arrayJoin(CAST([toUInt8(1)], 'Array(Dynamic)')))),
     (SELECT count() FROM at_dyn WHERE k NOT IN (SELECT arrayJoin(CAST([toUInt8(1)], 'Array(Dynamic)')))) = (SELECT count() FROM ao_dyn WHERE k NOT IN (SELECT arrayJoin(CAST([toUInt8(1)], 'Array(Dynamic)'))));
 -- The same element under `has` keeps the index, which is what makes the decline above specific to `IN`
--- rather than a blanket refusal of every `Dynamic`.
-SELECT 'dyn UInt64/Dynamic(UInt8) has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyn WHERE has(CAST([toUInt8(1)], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%in 1-element set%';
+-- rather than a blanket refusal of every `Dynamic`. Both polarities assert an exact part reduction: a
+-- relaxed atom is still printed and still prunes positively, but it forces `can_be_false`, so only the
+-- negated form distinguishes an exact atom from a relaxed one.
+SELECT 'dyn UInt64/Dynamic(UInt8) has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyn WHERE has(CAST([toUInt8(1)], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%Parts: 1/2%';
+SELECT 'dyn UInt64/Dynamic(UInt8) notHas prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyn WHERE notHas(CAST([toUInt8(1)], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%Parts: 1/2%';
 SELECT 'dyn UInt64/Dynamic(UInt8) has',
     (SELECT count() FROM at_dyn WHERE has(CAST([toUInt8(1)], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyn WHERE has(CAST([toUInt8(1)], 'Array(Dynamic)'), k)),
     (SELECT count() FROM at_dyn WHERE notHas(CAST([toUInt8(1)], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyn WHERE notHas(CAST([toUInt8(1)], 'Array(Dynamic)'), k));
@@ -420,14 +423,18 @@ CREATE TABLE ao_dyns (k String) ENGINE = Memory;
 INSERT INTO at_dyns VALUES ('3'), ('3.0'), ('3.00'), ('4');
 INSERT INTO ao_dyns VALUES ('3'), ('3.0'), ('3.00'), ('4');
 SELECT 'dyn String/Dynamic(Float64) has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyns WHERE has(CAST([3.0], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%in 1-element set%';
+-- The rows that only a loose comparison reaches: a Float64 element equals '3', '3.0' and '3.00' at
+-- runtime while the index would hold the single value '3', so this is the wrong-results arm.
+SELECT 'dyn String/Dynamic(Float64) has reads all', (SELECT count() FROM at_dyns WHERE has(CAST([3.0], 'Array(Dynamic)'), k)) = 3;
 SELECT 'dyn String/Dynamic(Float64) has',
     (SELECT count() FROM at_dyns WHERE has(CAST([3.0], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyns WHERE has(CAST([3.0], 'Array(Dynamic)'), k)),
     (SELECT count() FROM at_dyns WHERE notHas(CAST([3.0], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyns WHERE notHas(CAST([3.0], 'Array(Dynamic)'), k));
 -- A `String`-holding `Dynamic` compares exactly against the same key, so it keeps the index: the decline
 -- above is driven by the type stored, not by `Dynamic`.
-SELECT 'dyn String/Dynamic(String) has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyns WHERE has(CAST(['3'], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%in 1-element set%';
+SELECT 'dyn String/Dynamic(String) has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyns WHERE has(CAST(['3'], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%Granules: 1/4%';
 SELECT 'dyn String/Dynamic(String) has',
-    (SELECT count() FROM at_dyns WHERE has(CAST(['3'], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyns WHERE has(CAST(['3'], 'Array(Dynamic)'), k));
+    (SELECT count() FROM at_dyns WHERE has(CAST(['3'], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyns WHERE has(CAST(['3'], 'Array(Dynamic)'), k)),
+    (SELECT count() FROM at_dyns WHERE notHas(CAST(['3'], 'Array(Dynamic)'), k)) = (SELECT count() FROM ao_dyns WHERE notHas(CAST(['3'], 'Array(Dynamic)'), k));
 -- One inexact type in a mixed set is enough to decline the whole element.
 SELECT 'dyn String/Dynamic(String,Float64) has declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM at_dyns WHERE has(CAST(['3', 3.0], 'Array(Dynamic)'), k)) WHERE explain ILIKE '%in 1-element set%';
 SELECT 'dyn String/Dynamic(String,Float64) has',

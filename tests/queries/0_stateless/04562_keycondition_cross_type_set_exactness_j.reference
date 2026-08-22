@@ -80,10 +80,12 @@ attr Tuple(Bool,UInt8)/Tuple(UInt8,UInt8)	1
 dyn UInt64/Dynamic(UInt8) IN declines	1
 dyn UInt64/Dynamic(UInt8) IN	1	1
 dyn UInt64/Dynamic(UInt8) has prunes	1
+dyn UInt64/Dynamic(UInt8) notHas prunes	1
 dyn UInt64/Dynamic(UInt8) has	1	1
 dyn String/Dynamic(Float64) has declines	1
+dyn String/Dynamic(Float64) has reads all	1
 dyn String/Dynamic(Float64) has	1	1
 dyn String/Dynamic(String) has prunes	1
-dyn String/Dynamic(String) has	1
+dyn String/Dynamic(String) has	1	1
 dyn String/Dynamic(String,Float64) has declines	1
 dyn String/Dynamic(String,Float64) has	1
