@@ -20,7 +20,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 ClickHouse Cloud サービスへのアクセスを AWS PrivateLink のアドレス経由のみに制限するには、ClickHouse Cloud の [IP Access Lists](/ja/products/cloud/guides/security/connectivity/setting-ip-filters) の手順に従ってください。
 
 <Note>
-  ClickHouse Cloud は、以下のリージョンからの [cross-region PrivateLink](https://aws.amazon.com/about-aws/whats-new/2024/11/aws-privatelink-across-region-connectivity/) をサポートしています。
+  ClickHouse Cloud は、以下のリージョンからの [クロスリージョン PrivateLink](https://aws.amazon.com/about-aws/whats-new/2024/11/aws-privatelink-across-region-connectivity/) をサポートしています。
 
   * sa-east-1
   * il-central-1
@@ -42,6 +42,7 @@ ClickHouse Cloud サービスへのアクセスを AWS PrivateLink のアドレ�
   * ap-northeast-2
   * ap-northeast-3
   * ap-south-1
+  * ap-southeast-5
   * ap-southeast-4
   * ap-southeast-3
   * ap-south-2
@@ -51,7 +52,10 @@ ClickHouse Cloud サービスへのアクセスを AWS PrivateLink のアドレ�
   * us-west-1
   * us-east-2
   * us-east-1
-    料金に関する注意: クロスリージョンのデータ転送については AWS から課金されます。料金は[こちら](https://aws.amazon.com/privatelink/pricing/)を参照してください。
+</Note>
+
+<Note>
+  クロスリージョンのデータ転送については AWS から課金されます。詳細は [AWS PrivateLink pricing](https://aws.amazon.com/privatelink/pricing/) を参照してください。
 </Note>
 
 **AWS PrivateLink を有効にするには、以下を完了してください**:
@@ -163,7 +167,9 @@ AWS コンソールを開き、**VPC** → **Endpoints** → **Create endpoints*
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="AWS PrivateLink エンドポイント設定" border />
 
-PrivateLink 経由でクロスリージョン接続を確立する場合は、&quot;Cross region endpoint&quot; チェックボックスをオンにして、サービスのリージョンを指定します。サービスのリージョンは、ClickHouse インスタンスが稼働しているリージョンです。
+<Note>
+  クロスリージョン接続の場合は、**Cross region endpoint** チェックボックスをオンにして、ClickHouse service が稼働しているリージョンを指定します。
+</Note>
 
 &quot;Service name couldn&#39;t be verified.&quot; という error が表示された場合は、サポート対象リージョンの一覧に新しいリージョンを追加するよう Customer Support へお問い合わせください。
 

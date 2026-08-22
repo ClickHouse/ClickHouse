@@ -19,14 +19,14 @@ Contém informações sobre as VIEWs dependentes executadas durante uma consulta
 
 Para começar o logging:
 
-1. Configure os parâmetros na seção [query&#95;views&#95;log](/pt-BR/reference/settings/server-settings/settings#query_views_log).
-2. Defina [log&#95;query&#95;views](/pt-BR/reference/settings/session-settings#log_query_views) como 1.
+1. Configure os parâmetros na seção [query&#95;views&#95;log](/pt-BR/reference/settings/server-settings/settings/query#query_views_log).
+2. Defina [log&#95;query&#95;views](/pt-BR/reference/settings/session-settings/log-query#log_query_views) como 1.
 
-O período de flush dos dados é definido pelo parâmetro `flush_interval_milliseconds` na seção de configurações do servidor [query&#95;views&#95;log](/pt-BR/reference/settings/server-settings/settings#query_views_log). Para forçar o flush, use a consulta [SYSTEM FLUSH LOGS](/pt-BR/reference/statements/system#flush-logs).
+O período de flush dos dados é definido pelo parâmetro `flush_interval_milliseconds` na seção de configurações do servidor [query&#95;views&#95;log](/pt-BR/reference/settings/server-settings/settings/query#query_views_log). Para forçar o flush, use a consulta [SYSTEM FLUSH LOGS](/pt-BR/reference/statements/system#flush-logs).
 
 O ClickHouse não exclui dados da tabela automaticamente. Consulte [Introdução](/pt-BR/reference/system-tables/overview#system-tables-introduction) para mais detalhes.
 
-Você pode usar a configuração [log&#95;queries&#95;probability](/pt-BR/reference/settings/session-settings#log_queries_probability)) para reduzir o número de consultas registradas na tabela `query_views_log`.
+Você pode usar a configuração [log&#95;queries&#95;probability](/pt-BR/reference/settings/session-settings/log-queries#log_queries_probability)) para reduzir o número de consultas registradas na tabela `query_views_log`.
 
 <div id="columns">
   ## Colunas
@@ -39,7 +39,7 @@ Você pode usar a configuração [log&#95;queries&#95;probability](/pt-BR/refere
 * `event_time` ([DateTime](/pt-BR/reference/data-types/datetime)) — A data e a hora em que a VIEW terminou a execução.
 * `event_time_microseconds` ([DateTime64(6)](/pt-BR/reference/data-types/datetime64)) — A data e a hora em que a VIEW terminou a execução, com precisão de microssegundos.
 * `view_duration_ms` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Duração da execução da VIEW (soma de seus estágios), em milissegundos.
-* `initial_query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta inicial (para execução distribuída de consultas).
+* `initial_query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta inicial na mesma cadeia de consultas.
 * `view_name` ([String](/pt-BR/reference/data-types/string)) — Nome da VIEW.
 * `view_uuid` ([UUID](/pt-BR/reference/data-types/uuid)) — UUID da VIEW.
 * `view_type` ([Enum8(&#39;Default&#39; = 1, &#39;Materialized&#39; = 2, &#39;Live&#39; = 3, &#39;Window&#39; = 4)](/pt-BR/reference/data-types/enum)) — Tipo da VIEW. Valores: &#39;Default&#39; = 1 — VIEWs padrão. Não deve aparecer neste log, &#39;Materialized&#39; = 2 — VIEWs materializadas, &#39;Live&#39; = 3 — visualizações em tempo real.

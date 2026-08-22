@@ -12,6 +12,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/saturatedDuration.h>
 
 namespace ProfileEvents
 {
@@ -131,8 +132,7 @@ public:
         /// One absolute deadline for the whole call, so a caller that goes round the loop again
         /// cannot restart its timeout. Clamped because the sum would otherwise wrap into the past.
         const bool has_deadline = timeout >= 0;
-        const auto deadline = std::chrono::steady_clock::now()
-            + std::chrono::milliseconds(std::clamp<Poco::Timespan::TimeDiff>(timeout, 0, max_wait_ms));
+        const auto deadline = std::chrono::steady_clock::now() + DB::saturatedMilliseconds(timeout);
 
         while (true)
         {
@@ -216,10 +216,6 @@ private:
       * cancellation; short enough to be prompt, long enough that an idle pool barely wakes.
       */
     static constexpr auto wait_slice = std::chrono::seconds(1);
-
-    /** Largest wait a steady_clock::time_point can represent, so `now() + timeout` cannot wrap. */
-    static constexpr Poco::Timespan::TimeDiff max_wait_ms
-        = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::duration::max()).count() / 2;
 
     /** Whether get() could return without waiting. Called under `mutex`. */
     bool hasAvailableObjectUnlocked() const
