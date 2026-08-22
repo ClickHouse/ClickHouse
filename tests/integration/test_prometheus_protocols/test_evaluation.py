@@ -1109,7 +1109,8 @@ def test_phase3_functions_over_time():
     )
 
     # predict_linear over 2-3 sample windows with exact slopes; windows with fewer than
-    # two samples (165, 180 after the left-open cut, and 195) yield nothing.
+    # two samples (165, 180 after the left-open cut, and 195) yield nothing. The regression
+    # arithmetic carries float noise (12.000000000000002), hence the epsilon.
     do_query_test(
         "predict_linear(test[25s], 30)[120s:15s]",
         210,
@@ -1120,6 +1121,7 @@ def test_phase3_functions_over_time():
                 "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',10),('1970-01-01 00:02:30.000',8),('1970-01-01 00:03:30.000',12)]",
             ]
         ],
+        eps=1e-9,
     )
 
 
