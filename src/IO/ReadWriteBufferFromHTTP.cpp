@@ -576,7 +576,10 @@ bool ReadWriteBufferFromHTTP::waitBeforeRetry(size_t milliseconds) const
         sleepForMilliseconds(interval);
         milliseconds -= interval;
 
-        CurrentThread::checkIfNotCancelled();
+        /// Throws for `KILL QUERY` and for a time limit with the `throw` overflow mode. Its `false`
+        /// answer - a soft timeout with the `break` overflow mode - is deliberately ignored: with no
+        /// cancellation token there is no owner to decide whether a partial result is safe here.
+        std::ignore = isQueryTimeLimitReached();
     }
 
     return false;
