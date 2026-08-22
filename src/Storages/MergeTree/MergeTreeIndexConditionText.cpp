@@ -1835,7 +1835,18 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Apply preprocessor + tokenizer + postprocessor so set elements use the same
         /// tokens that were stored in the index. Skipping the postprocessor here would
         /// produce false negatives for postprocessors like lower(), stem(), etc.
-        VectorWithMemoryTracking<String> tokens = stringToTokens(Field(String(ref)));
+        VectorWithMemoryTracking<String> tokens;
+        try
+        {
+            tokens = stringToTokens(Field(String(ref)));
+        }
+        catch (const Exception &)
+        {
+            /// An element the preprocessor cannot represent has no tokens to look up, so the
+            /// index cannot answer for it and the original predicate has to stand.
+            out.text_search_queries.clear();
+            return false;
+        }
 
         /// An element that tokenizes to nothing cannot be proven present by the index.
         /// Bail out to keep the original predicate.

@@ -13,6 +13,8 @@ DROP TABLE IF EXISTS t_preprocessed_map;
 DROP TABLE IF EXISTS t_preprocessed_folded;
 DROP TABLE IF EXISTS t_preprocessed_cast;
 DROP TABLE IF EXISTS t_preprocessed_cast_target;
+DROP TABLE IF EXISTS t_preprocessed_cast_narrow;
+DROP TABLE IF EXISTS t_preprocessed_cast_expanding;
 DROP TABLE IF EXISTS t_preprocessed_cast_fixed;
 DROP TABLE IF EXISTS t_preprocessed_cast_fixed_target;
 DROP TABLE IF EXISTS t_preprocessed_cast_nested;
@@ -220,6 +222,22 @@ INSERT INTO t_preprocessed_cast_target SELECT if(number = 5, 'word5', 'zz' || to
 
 SELECT 'preprocessor cast target used', count() FROM t_preprocessed_cast_target WHERE x IN ('word5') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
 SELECT 'preprocessor cast target rows', (SELECT count() FROM t_preprocessed_cast_target WHERE x IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_cast_target WHERE x IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+-- An element a `FixedString` result cannot hold has no tokens to look up, so such a set keeps
+-- the original predicate. A narrower element in the same set still prunes.
+CREATE TABLE t_preprocessed_cast_narrow (x String, INDEX i x TYPE text(tokenizer = splitByNonAlpha, preprocessor = CAST(x, 'FixedString(6)'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_preprocessed_cast_narrow SELECT if(number = 5, 'word5', 'zz' || toString(number)) FROM numbers(1000);
+
+SELECT 'preprocessor cast narrow fitting used', count() FROM t_preprocessed_cast_narrow WHERE x IN ('word5') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
+SELECT 'preprocessor cast narrow oversized rows', (SELECT count() FROM t_preprocessed_cast_narrow WHERE x IN ('toolongneedle') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_cast_narrow WHERE x IN ('toolongneedle') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+SELECT count() FROM t_preprocessed_cast_narrow WHERE x IN ('toolongneedle') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1; -- { serverError INDEX_NOT_USED }
+-- An expanding expression can exceed the width from an element that fits it, so the refusal
+-- cannot be decided from the element's own size.
+CREATE TABLE t_preprocessed_cast_expanding (x String, INDEX i x TYPE text(tokenizer = splitByNonAlpha, preprocessor = CAST(hex(x), 'FixedString(6)'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_preprocessed_cast_expanding SELECT if(number = 5, 'ab', 'z' || toString(number % 10)) FROM numbers(1000);
+
+SELECT 'preprocessor cast expanding fitting used', count() FROM t_preprocessed_cast_expanding WHERE x IN ('ab') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
+SELECT 'preprocessor cast expanding oversized rows', (SELECT count() FROM t_preprocessed_cast_expanding WHERE x IN ('abcd') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_cast_expanding WHERE x IN ('abcd') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+SELECT count() FROM t_preprocessed_cast_expanding WHERE x IN ('abcd') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1; -- { serverError INDEX_NOT_USED }
 -- A cast from `FixedString` drops the padding a set element still carries, so a value shorter than
 -- the width tokenizes differently on the two sides.
 CREATE TABLE t_preprocessed_cast_fixed (x FixedString(6), INDEX i x TYPE text(tokenizer = ngrams(3), preprocessor = CAST(x, 'String'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
@@ -310,6 +328,8 @@ DROP TABLE t_preprocessed_map;
 DROP TABLE t_preprocessed_folded;
 DROP TABLE t_preprocessed_cast;
 DROP TABLE t_preprocessed_cast_target;
+DROP TABLE t_preprocessed_cast_narrow;
+DROP TABLE t_preprocessed_cast_expanding;
 DROP TABLE t_preprocessed_cast_fixed;
 DROP TABLE t_preprocessed_cast_fixed_target;
 DROP TABLE t_preprocessed_cast_nested;

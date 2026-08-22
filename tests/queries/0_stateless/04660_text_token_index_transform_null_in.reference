@@ -69,6 +69,10 @@ preprocessor cast key used	1
 preprocessor cast key rows	1
 preprocessor cast target used	1
 preprocessor cast target rows	1
+preprocessor cast narrow fitting used	1
+preprocessor cast narrow oversized rows	1
+preprocessor cast expanding fitting used	1
+preprocessor cast expanding oversized rows	1
 preprocessor cast fixed rows	1
 preprocessor cast fixed target rows	1
 preprocessor cast nested rows	1
