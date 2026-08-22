@@ -538,6 +538,11 @@ static void splitAndModifyMutationCommands(
                                         "in table {} with metadata version {}",
                                         part->name, part_metadata_version, column.name,
                                         part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+
+                    LOG_WARNING(log, "Ignoring column {} from part {} because there is no such column in table {}. "
+                                     "Assuming the column was dropped", column.name, part->name,
+                                part->storage.getStorageID().getNameForLogs());
+                    continue;
                 }
 
                 for_interpreter.emplace_back(
