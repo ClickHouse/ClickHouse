@@ -16,7 +16,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -1138,37 +1141,63 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
 
     std::optional<ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate = nullptr;
-    if (select_query)
+    if (select_query && (select_query->prewhere() || select_query->where()))
     {
-        ASTPtr condition_ast;
-        if (select_query->prewhere() && select_query->where())
-            condition_ast = makeASTOperator("and", select_query->prewhere()->clone(), select_query->where()->clone());
-        else if (select_query->prewhere())
-            condition_ast = select_query->prewhere()->clone();
-        else if (select_query->where())
-            condition_ast = select_query->where()->clone();
-
-        if (condition_ast)
+        try
         {
-            try
-            {
-                const auto metadata = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
-                const auto snapshot = src_storage_cluster->getStorageSnapshot(metadata, local_context);
-                const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
-                auto syntax = TreeRewriter(local_context).analyze(condition_ast, columns);
-                filter_dag = ExpressionAnalyzer(condition_ast, syntax, local_context).getActionsDAG(true, true);
-                predicate = filter_dag->getOutputs().at(0);
-            }
-            catch (...)
-            {
-                /// Filter extraction is best-effort: if DAG construction fails for any reason
-                /// (e.g. the predicate references columns or functions not available in this
-                /// isolated analysis pass), silently fall back to no pruning so the query
-                /// still executes correctly.
-                tryLogCurrentException(logger, "Failed to build filter DAG for partition pruning in INSERT ... SELECT; continuing without pruning");
-                filter_dag.reset();
-                predicate = nullptr;
-            }
+            const auto metadata = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
+            const auto snapshot = src_storage_cluster->getStorageSnapshot(metadata, local_context);
+            const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+
+            /// `PREWHERE` and `WHERE` can reference aliases introduced in the `WITH` clause or in the `SELECT` list,
+            /// as in `WITH splitByChar(' ', line) AS values SELECT ... WHERE length(values) >= 3`.
+            /// The condition is analyzed here in isolation from the rest of the query, so the aliases have to be
+            /// substituted first - otherwise the analysis below would not be able to resolve them.
+            /// It is done on a copy, because the original AST has already been serialized for the remote nodes.
+            NameSet source_columns_set;
+            for (const auto & column : columns)
+                source_columns_set.insert(column.name);
+
+            ASTPtr select_copy = select_query->clone();
+            Aliases aliases;
+            QueryAliasesVisitor(aliases).visit(select_copy);
+            MarkTableIdentifiersVisitor::Data mark_identifiers_data{aliases};
+            MarkTableIdentifiersVisitor(mark_identifiers_data).visit(select_copy);
+            QueryNormalizer::Data normalizer_data(
+                aliases,
+                source_columns_set,
+                /*ignore_alias_=*/ false,
+                QueryNormalizer::ExtractedSettings(settings),
+                /*allow_self_aliases_=*/ true);
+            QueryNormalizer(normalizer_data).visit(select_copy);
+
+            const auto & normalized_select = select_copy->as<ASTSelectQuery &>();
+
+            ASTPtr condition_ast;
+            if (normalized_select.prewhere() && normalized_select.where())
+                condition_ast = makeASTOperator("and", normalized_select.prewhere()->clone(), normalized_select.where()->clone());
+            else if (normalized_select.prewhere())
+                condition_ast = normalized_select.prewhere()->clone();
+            else
+                condition_ast = normalized_select.where()->clone();
+
+            auto syntax = TreeRewriter(local_context).analyze(condition_ast, columns);
+            filter_dag = ExpressionAnalyzer(condition_ast, syntax, local_context).getActionsDAG(true, true);
+            predicate = filter_dag->getOutputs().at(0);
+        }
+        catch (...)
+        {
+            /// Filter extraction is best-effort: if DAG construction fails for any reason
+            /// (e.g. the predicate references columns or functions not available in this
+            /// isolated analysis pass), fall back to no pruning so the query still executes
+            /// correctly. This is an expected outcome for some queries rather than an error,
+            /// hence the low log level.
+            tryLogCurrentException(
+                logger,
+                "Cannot build the filter expression for pruning in INSERT ... SELECT; continuing without pruning",
+                LogsLevel::debug);
+            filter_dag.reset();
+            predicate = nullptr;
         }
     }
     const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
