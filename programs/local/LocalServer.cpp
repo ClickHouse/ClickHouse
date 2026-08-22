@@ -842,6 +842,13 @@ void LocalServer::startServers(const ServerType & server_type)
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Failed to start HTTP listener — check listen_host and http_port configuration");
 
+        /// While serving connections this process must log and continue like `clickhouse-server`: a
+        /// handler throws on client behavior it does not control, and terminating would let one client
+        /// end the process. Set before any accept thread starts, and never restored, since a handler
+        /// can still be draining after `stop`.
+        static ServerErrorHandler listener_error_handler;
+        Poco::ErrorHandler::set(&listener_error_handler);
+
         /// Phase 2: the whole requested set is bound and verified. Only now start the accept threads,
         /// so no listener admits a connection until the entire set is known-good. `createServer` no
         /// longer logs (it does not start the server), so emit the "Listening for ..." line here.
@@ -894,8 +901,9 @@ void LocalServer::cleanup()
     {
         connection.reset();
 
-        /// Signal cancellation so that active handlers (e.g. TCPHandler)
-        /// exit their receive loops promptly instead of waiting for socket timeout.
+        /// Signal cancellation: together with stopping the servers below, this makes active
+        /// handlers (e.g. TCPHandler) exit their receive loops promptly instead of waiting
+        /// for socket timeout.
         is_cancelled = true;
 
         /// Stop protocol servers before shutting down context.
@@ -1803,27 +1811,39 @@ void LocalServer::processConfig()
     /// cross-origin request is rejected by the browser - including the web UI opened from a `file://`
     /// URL, whose origin is `null`. A configuration file with its own `http_options_response` section
     /// replaces these defaults entirely.
+    Poco::Util::AbstractConfiguration::Keys http_options_response_keys;
+    getClientConfiguration().keys("http_options_response", http_options_response_keys);
     if (!getClientConfiguration().has("http_options_response"))
     {
-        static constexpr std::pair<const char *, const char *> default_http_options_response[]
+        if (http_options_response_keys.empty())
         {
-            {"Access-Control-Allow-Origin", "*"},
-            {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization"},
-            {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
-            {"Access-Control-Max-Age", "86400"},
-        };
+            static constexpr std::pair<const char *, const char *> default_http_options_response[]
+            {
+                {"Access-Control-Allow-Origin", "*"},
+                {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization"},
+                {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
+                {"Access-Control-Max-Age", "86400"},
+            };
 
-        /// The configuration layer that receives these keys is a flat key-value map with no notion of a
-        /// parent node, so the section itself has to be set explicitly - otherwise `config.has` does not
-        /// see it and the headers are never applied.
-        getClientConfiguration().setString("http_options_response", "");
+            /// The configuration layer that receives these keys is a flat key-value map with no notion of a
+            /// parent node, so the section itself has to be set explicitly - otherwise `config.has` does not
+            /// see it and the headers are never applied.
+            getClientConfiguration().setString("http_options_response", "");
 
-        for (size_t index = 0; index < std::size(default_http_options_response); ++index)
+            for (size_t index = 0; index < std::size(default_http_options_response); ++index)
+            {
+                const auto & [name, value] = default_http_options_response[index];
+                const String key = fmt::format("http_options_response.header[{}]", index);
+                getClientConfiguration().setString(key + ".name", name);
+                getClientConfiguration().setString(key + ".value", value);
+            }
+        }
+        else
         {
-            const auto & [name, value] = default_http_options_response[index];
-            const String key = fmt::format("http_options_response.header[{}]", index);
-            getClientConfiguration().setString(key + ".name", name);
-            getClientConfiguration().setString(key + ".value", value);
+            /// `argsToConfig` stores post-`--` arguments as flat keys, so a supplied header has children
+            /// but not its parent. Materialize the parent for the HTTP handler without overwriting the
+            /// supplied headers.
+            getClientConfiguration().setString("http_options_response", "");
         }
     }
 

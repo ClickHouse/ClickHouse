@@ -32,15 +32,15 @@ keywords: ['ネイティブプロトコル', 'tcp プロトコル', 'クライ�
 
 [client hello](/ja/resources/develop-contribute/native-protocol/client#hello) への応答。
 
-| フィールド             | 型       | 値               | 説明             |
-| ----------------- | ------- | --------------- | -------------- |
-| name              | String  | `Clickhouse`    | サーバー名          |
-| version&#95;major | UVarInt | `21`            | サーバーのメジャーバージョン |
-| version&#95;minor | UVarInt | `12`            | サーバーのマイナーバージョン |
-| revision          | UVarInt | `54452`         | サーバーのリビジョン     |
-| tz                | String  | `Europe/Moscow` | サーバーのタイムゾーン    |
-| display&#95;name  | String  | `Clickhouse`    | UI 用のサーバー名     |
-| version&#95;patch | UVarInt | `3`             | サーバーのパッチバージョン  |
+| フィールド             | 型       | 値                            | 説明             |
+| ----------------- | ------- | ---------------------------- | -------------- |
+| name              | String  | `ClickHouse`                 | サーバー名          |
+| version&#95;major | UVarInt | `21`                         | サーバーのメジャーバージョン |
+| version&#95;minor | UVarInt | `12`                         | サーバーのマイナーバージョン |
+| revision          | UVarInt | `54452`                      | サーバーのリビジョン     |
+| tz                | String  | `Europe/Moscow`              | サーバーのタイムゾーン    |
+| display&#95;name  | String  | `<display_name-or-hostname>` | UI 用のサーバー名     |
+| version&#95;patch | UVarInt | `3`                          | サーバーのパッチバージョン  |
 
 <div id="exception">
   ## Exception
