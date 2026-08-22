@@ -6822,6 +6822,9 @@ Use query plan for lazy materialization optimization.
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
 Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_materialization_for_file, true, R"(
+Use lazy materialization optimization for reading local Parquet files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+)", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
@@ -8681,6 +8684,9 @@ Enable experimental hash functions
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
+Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", EXPERIMENTAL) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
