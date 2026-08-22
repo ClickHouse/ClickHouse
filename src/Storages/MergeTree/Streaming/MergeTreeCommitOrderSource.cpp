@@ -224,7 +224,7 @@ IProcessor::Status MergeTreeCommitOrderSource::handleShutdown()
     return Status::Finished;
 }
 
-IProcessor::Status MergeTreeCommitOrderSource::handleReconfiguration(const ClassifiedPartitions & partitions)
+IProcessor::Status MergeTreeCommitOrderSource::handleReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated)
 {
     auto & output = outputs.front();
 
@@ -240,7 +240,7 @@ IProcessor::Status MergeTreeCommitOrderSource::handleReconfiguration(const Class
         return Status::Finished;
     }
 
-    if (read_state.hasWork(partitions))
+    if (subscription_updated && read_state.hasWork(partitions))
         return Status::Ready;
 
     if (current_round.has_value())
@@ -249,12 +249,12 @@ IProcessor::Status MergeTreeCommitOrderSource::handleReconfiguration(const Class
     return Status::Async;
 }
 
-IProcessor::Status MergeTreeCommitOrderSource::handleBoundedReconfiguration(const ClassifiedPartitions & partitions)
+IProcessor::Status MergeTreeCommitOrderSource::handleBoundedReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated)
 {
-    const auto result = handleReconfiguration(partitions);
+    const auto result = handleReconfiguration(partitions, subscription_updated);
 
     // Finish after the first completed read round, or once the first enrichment shows nothing (more) to read.
-    if (subscription->wasSubscriptionUpdated() && (finished_rounds > 0 || result == Status::Async))
+    if (subscription_updated && (finished_rounds > 0 || result == Status::Async))
     {
         outputs.front().finish();
         return Status::Finished;
@@ -263,20 +263,21 @@ IProcessor::Status MergeTreeCommitOrderSource::handleBoundedReconfiguration(cons
     return result;
 }
 
-bool MergeTreeCommitOrderSource::needToEmitGlobalIdle(const ClassifiedPartitions & partitions)
+bool MergeTreeCommitOrderSource::needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated)
 {
     if (!stream_settings.watermark)
+        return false;
+
+    /// Idle decisions are meaningful only against an applied partition assignment.
+    if (!subscription_updated)
         return false;
 
     /// The idle marker must not overtake the watermark extension emitted by the last idle-triggered rebuild.
     if (read_state.hasWork(partitions) || pending_round.has_value())
         return false;
 
-    const bool has_partitions = !partitions.changed_partitions.empty() || !partitions.unchanged_partitions.empty() || !partitions.idle_partitions.empty();
     const bool all_non_idle_empty = partitions.changed_partitions.empty() && partitions.unchanged_partitions.empty();
-    const bool source_idle = has_partitions ? all_non_idle_empty : subscription->wasSubscriptionUpdated();
-
-    return !read_state.isSourceMarkedIdle() && source_idle;
+    return !read_state.isSourceMarkedIdle() && all_non_idle_empty;
 }
 
 IProcessor::Status MergeTreeCommitOrderSource::handleEmitGlobalIdle()
@@ -313,19 +314,20 @@ IProcessor::Status MergeTreeCommitOrderSource::prepare()
         LOG_TEST(log, "Finished read round #{}", finished_rounds);
     }
 
-    const auto safe_block_numbers = subscription->snapshot();
+    const auto [safe_block_numbers, subscription_updated] = subscription->snapshot();
     const auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
-    read_state.updatePartitionSet(classification);
+    if (subscription_updated)
+        read_state.updatePartitionSet(classification);
 
-    const bool need_mark_source_idle = needToEmitGlobalIdle(classification);
+    const bool need_mark_source_idle = needToEmitGlobalIdle(classification, subscription_updated);
     if (need_mark_source_idle)
         return handleEmitGlobalIdle();
 
     const bool is_bounded_subscription = !stream_settings.subscribe_for_updates;
     if (is_bounded_subscription)
-        return handleBoundedReconfiguration(classification);
+        return handleBoundedReconfiguration(classification, subscription_updated);
 
-    return handleReconfiguration(classification);
+    return handleReconfiguration(classification, subscription_updated);
 }
 
 void MergeTreeCommitOrderSource::work()
@@ -337,8 +339,9 @@ void MergeTreeCommitOrderSource::work()
     if (subscription->isDisabled())
         return;
 
-    const auto safe_block_numbers = subscription->snapshot();
+    const auto [safe_block_numbers, was_updated] = subscription->snapshot();
     const auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
+    chassert(was_updated);
 
     read_state.updatePartitionSet(classification);
     read_state.startReadRound(classification, safe_block_numbers);

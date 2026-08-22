@@ -16,7 +16,7 @@ TEST(MergeTreeBoundsSubscription, UpdateMonotonic)
     sub.update({{"p1", 5}}, {});
     sub.update({{"p1", 10}}, {});
 
-    auto snap = sub.snapshot();
+    auto snap = sub.snapshot().safe_block_numbers;
     ASSERT_EQ(snap.size(), 1u);
     ASSERT_EQ(snap.at("p1"), 10);
 }
@@ -27,7 +27,7 @@ TEST(MergeTreeBoundsSubscription, NewPartitionInsertedFromAbsent)
 
     sub.update({{"p1", 3}, {"p2", 7}}, {});
 
-    auto snap = sub.snapshot();
+    auto snap = sub.snapshot().safe_block_numbers;
     ASSERT_EQ(snap.size(), 2u);
     ASSERT_EQ(snap.at("p1"), 3);
     ASSERT_EQ(snap.at("p2"), 7);
@@ -40,7 +40,7 @@ TEST(MergeTreeBoundsSubscription, UpdateRemovesPartitions)
     sub.update({{"p1", 3}, {"p2", 7}}, {});
     sub.update({}, {"p1"});
 
-    auto snap = sub.snapshot();
+    auto snap = sub.snapshot().safe_block_numbers;
     ASSERT_EQ(snap.size(), 1u);
     ASSERT_EQ(snap.at("p2"), 7);
 }
@@ -56,7 +56,7 @@ TEST(MergeTreeBoundsSubscription, DisablePreventsUpdate)
     /// Should be a no-op.
     sub.update({{"p1", 10}}, {});
 
-    auto snap = sub.snapshot();
+    auto snap = sub.snapshot().safe_block_numbers;
     ASSERT_EQ(snap.at("p1"), 5);
 }
 
@@ -104,12 +104,12 @@ TEST(MergeTreeBoundsSubscription, FdReadableAfterDisable)
 TEST(MergeTreeBoundsSubscription, EmptyUpdateWakesOnlyFirstTime)
 {
     MergeTreeBoundsSubscription sub(1, 0);
-    ASSERT_FALSE(sub.wasSubscriptionUpdated());
+    ASSERT_FALSE(sub.snapshot().was_updated);
 
     /// The first update wakes readers even when empty — a source over a shard with
     /// no partitions learns there is nothing to wait for.
     sub.update({}, {});
-    ASSERT_TRUE(sub.wasSubscriptionUpdated());
+    ASSERT_TRUE(sub.snapshot().was_updated);
     pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
     ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/1000), 1);
     sub.drain();
@@ -127,8 +127,8 @@ TEST(MergeTreeBoundsSubscription, UpdateIsNoOpAfterDisable)
     sub.drain();
 
     sub.update({{"p1", 1}}, {});
-    ASSERT_FALSE(sub.wasSubscriptionUpdated());
-    ASSERT_TRUE(sub.snapshot().empty());
+    ASSERT_FALSE(sub.snapshot().was_updated);
+    ASSERT_TRUE(sub.snapshot().safe_block_numbers.empty());
 
     pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
     ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);

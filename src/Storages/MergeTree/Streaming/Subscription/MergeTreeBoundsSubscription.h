@@ -15,14 +15,19 @@ namespace DB
 {
 
 /// Per-coordinator subscription holding the per-partition table cursor.
-class MergeTreeBoundsSubscription : public IStreamSubscription
+struct MergeTreeBoundsSubscription : public IStreamSubscription
 {
+    struct Snapshot
+    {
+        std::map<std::string, Int64> safe_block_numbers;
+        bool was_updated = false;
+    };
+
 public:
     MergeTreeBoundsSubscription(size_t query_subscriptions_count_, size_t current_subscription_index_);
 
     bool update(std::map<std::string, int64_t> promoted_partitions, std::set<std::string> removed_partitions);
-    bool wasSubscriptionUpdated() const;
-    std::map<std::string, Int64> snapshot() const;
+    Snapshot snapshot() const;
 
     /// Disabled subscription will not be updated anymore.
     void disable();

@@ -26,10 +26,10 @@ class MergeTreeCommitOrderSource final : public IProcessor
 {
     Status handleRunningPipeline();
     Status handleShutdown();
-    Status handleReconfiguration(const ClassifiedPartitions & partitions);
-    Status handleBoundedReconfiguration(const ClassifiedPartitions & partitions);
+    Status handleReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
+    Status handleBoundedReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
 
-    bool needToEmitGlobalIdle(const ClassifiedPartitions & partitions);
+    bool needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated);
     Status handleEmitGlobalIdle();
 
 public:

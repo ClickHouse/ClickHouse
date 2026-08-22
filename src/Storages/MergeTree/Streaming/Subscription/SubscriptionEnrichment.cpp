@@ -13,7 +13,7 @@ bool enrichSubscription(
     const LocalPartsByPartition & local_parts,
     const CursorPromotersMap & promoters)
 {
-    auto snapshot = subscription.snapshot();
+    auto safe_block_numbers = subscription.snapshot().safe_block_numbers;
 
     std::map<std::string, int64_t> promoted_partitions;
     for (const auto & [partition_id, parts] : local_parts)
@@ -29,7 +29,7 @@ bool enrichSubscription(
         const MergeTreeCursorPromoter & promoter = promoters.at(partition_id);
 
         Int64 starting_cursor = -1;
-        if (auto it = snapshot.find(partition_id); it != snapshot.end())
+        if (auto it = safe_block_numbers.find(partition_id); it != safe_block_numbers.end())
             starting_cursor = it->second;
 
         Int64 cursor = starting_cursor;
@@ -58,7 +58,7 @@ bool enrichSubscription(
     }
 
     std::set<std::string> removed_partitions;
-    for (const auto & [partition_id, _] : snapshot)
+    for (const auto & [partition_id, _] : safe_block_numbers)
         if (!local_parts.contains(partition_id))
             removed_partitions.insert(partition_id);
 

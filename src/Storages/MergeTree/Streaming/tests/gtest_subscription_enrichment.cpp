@@ -24,7 +24,7 @@ TEST(SubscriptionEnrichment, NotEnrichedWhenPromotionBlocked)
     ASSERT_TRUE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_FALSE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_FALSE(enrichSubscription(sub, local_parts, promoters));
-    ASSERT_TRUE(sub.snapshot().empty());
+    ASSERT_TRUE(sub.snapshot().safe_block_numbers.empty());
 }
 
 TEST(SubscriptionEnrichment, EnrichedWhenContiguousFromStart)
@@ -41,7 +41,7 @@ TEST(SubscriptionEnrichment, EnrichedWhenContiguousFromStart)
     auto promoters = constructPromoters(committing, ranges);
 
     ASSERT_TRUE(enrichSubscription(sub, local_parts, promoters));
-    ASSERT_EQ(sub.snapshot().at("p"), 3);
+    ASSERT_EQ(sub.snapshot().safe_block_numbers.at("p"), 3);
 }
 
 TEST(SubscriptionEnrichment, PartialRoundAdvancesReadablePartition)
@@ -60,8 +60,8 @@ TEST(SubscriptionEnrichment, PartialRoundAdvancesReadablePartition)
     auto promoters = constructPromoters(committing, ranges);
 
     ASSERT_TRUE(enrichSubscription(sub, local_parts, promoters));
-    ASSERT_EQ(sub.snapshot().at("b"), 3);
-    ASSERT_FALSE(sub.snapshot().contains("a"));
+    ASSERT_EQ(sub.snapshot().safe_block_numbers.at("b"), 3);
+    ASSERT_FALSE(sub.snapshot().safe_block_numbers.contains("a"));
 }
 
 TEST(SubscriptionEnrichment, PromoterOnlyPartitionIsNotEnriched)
@@ -78,5 +78,5 @@ TEST(SubscriptionEnrichment, PromoterOnlyPartitionIsNotEnriched)
     ASSERT_TRUE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_FALSE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_FALSE(enrichSubscription(sub, local_parts, promoters));
-    ASSERT_TRUE(sub.snapshot().empty());
+    ASSERT_TRUE(sub.snapshot().safe_block_numbers.empty());
 }

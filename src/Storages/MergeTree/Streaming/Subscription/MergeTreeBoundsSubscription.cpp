@@ -37,16 +37,10 @@ bool MergeTreeBoundsSubscription::update(std::map<std::string, int64_t> promited
     return changed;
 }
 
-bool MergeTreeBoundsSubscription::wasSubscriptionUpdated() const
+MergeTreeBoundsSubscription::Snapshot MergeTreeBoundsSubscription::snapshot() const
 {
     std::lock_guard guard(mutex);
-    return was_updated;
-}
-
-std::map<std::string, Int64> MergeTreeBoundsSubscription::snapshot() const
-{
-    std::lock_guard guard(mutex);
-    return safe_block_numbers;
+    return {safe_block_numbers, was_updated};
 }
 
 bool MergeTreeBoundsSubscription::isDisabled() const
