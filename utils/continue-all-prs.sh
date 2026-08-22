@@ -746,9 +746,11 @@ prepare_worktree_for_task()
         'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
     if (( SKIP_SUBMODULES )); then
         # Restore initialized submodules to the superproject gitlinks without
-        # initializing absent ones. Resetting each submodule above is not
-        # enough: it retains a stale but clean submodule `HEAD`.
-        git -C "$wt" submodule update --checkout --force --recursive --no-fetch
+        # initializing absent ones. `submodule update` can nevertheless
+        # initialize submodules selected by `submodule.active`, so check out
+        # the recorded SHA directly in the submodules that `foreach` found.
+        git -C "$wt" submodule foreach --quiet --recursive \
+            'git checkout --detach -q "$sha1"'
     else
         git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
     fi

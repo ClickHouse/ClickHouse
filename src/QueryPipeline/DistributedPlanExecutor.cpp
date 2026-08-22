@@ -683,10 +683,10 @@ ExchangeLookupPtr createExchangeLookup(
     const ExchangeDescriptions & exchanges_,
     const ExchangeStreamSources & exchange_stream_sources,
     TemporaryFileLookupPtr temporary_files_,
-    ContextPtr context)
+    ContextPtr context,
+    bool execute_locally)
 {
-    bool run_locally = context->getSettingsRef()[Setting::distributed_plan_execute_locally];
-    if (run_locally)
+    if (execute_locally)
     {
         LOG_DEBUG(getLogger("createExchangeLookup"), "`distributed_plan_execute_locally` setting is enabled, using in-memory queues for all exchanges");
         return std::make_shared<ExchangeViaChunks>(query_id);
@@ -741,7 +741,7 @@ ExchangeLookupPtr createExchangeLookup(
         query_id, ExchangeConnections::instance(), sources_with_ports);
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
-    UNUSED(exchange_stream_sources);
+    UNUSED(exchange_stream_sources, context);
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "Streaming exchanges are only supported on Linux and macOS; "
         "use `distributed_plan_force_exchange_kind = 'Persisted'`");
@@ -772,7 +772,7 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
 
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
-    std::function<bool()> is_cancelled, ProgressCallback progress_callback)
+    bool execute_locally, std::function<bool()> is_cancelled, ProgressCallback progress_callback)
 {
     Stopwatch execute_task_watch;
     const auto & task = task_description.task;
@@ -814,7 +814,8 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         task_description.exchanges,
         task_description.exchange_stream_sources,
         temporary_files,
-        context);
+        context,
+        execute_locally);
 
     auto optimization_settings = QueryPlanOptimizationSettings(context);
 
@@ -933,7 +934,9 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
     auto query_scope = QueryScope::create(task_context);
     setThreadName(ThreadName::DISTRIBUTED_QUERY_TASK);
 
-    doExecuteTask(task, object_storage, object_storage_path, toString(unique_query_id), std::move(task_context), [cancellation]() -> bool { return cancellation->isCancelled(); });
+    /// Only DistributedQueryPlanExecutorLocal reaches here, so the task always runs in-process.
+    doExecuteTask(task, object_storage, object_storage_path, toString(unique_query_id), std::move(task_context),
+        /*execute_locally=*/true, [cancellation]() -> bool { return cancellation->isCancelled(); });
 }
 
 /// Runs tasks in local threads. Useful for testing and debugging.
@@ -1136,10 +1139,7 @@ UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_str
 
 TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
 {
-    /// Local execution runs every stage in-process over in-memory exchanges and
-    /// never dials a worker, so it needs no hosts and must not lease any.
-    if (context_->getSettingsRef()[Setting::distributed_plan_execute_locally])
-        return;
+    /// Only constructed for a plan that runs on workers; a local plan gets a null map instead.
     fillWorkerAddresses(context_);
 
     /// Cap the host list to match the node count the optimizer planned for.
@@ -1292,6 +1292,9 @@ public:
         , task_to_host_map(std::move(task_to_host_map_))
         , running_tasks(8, context, cancellation, logger)
     {
+        /// A null map belongs to an in-process plan, which createDistributedQueryExecutor routes to
+        /// the local executor instead.
+        chassert(task_to_host_map);
         QueryStatusPtr query_status = context->getProcessListElement();
         Strings worker_hosts;
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
@@ -1969,9 +1972,11 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     ContextPtr context,
     DistributedQueryCancellationPtr cancellation)
 {
-    bool run_locally = context->getSettingsRef()[Setting::distributed_plan_execute_locally];
+    /// A null map means the plan was built for in-process execution, so it carries no worker hosts.
+    /// Deriving the branch from the map instead of re-reading `distributed_plan_execute_locally` keeps
+    /// the executor kind and the map consistent by construction.
     std::unique_ptr<DistributedQueryPlanExecutor> executor;
-    if (run_locally)
+    if (!task_to_host_map)
     {
         ProfileEvents::increment(ProfileEvents::DistributedPlanLocalExecution);
         executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, cancellation);

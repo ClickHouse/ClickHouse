@@ -182,7 +182,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
   ## 異なるテーブルのカラムに対する不等式条件付き JOIN
 </div>
 
-ClickHouse は現在、等価条件に加えて不等式条件を含む `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` をサポートしています。不等式条件をサポートするのは、`hash` および `grace_hash` JOIN アルゴリズムのみです。不等式条件は `join_use_nulls` と併用できません。
+ClickHouse は現在、等価条件に加えて不等式条件を含む `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` をサポートしています。不等式条件をサポートするのは、`hash`、`parallel_hash`、および `grace_hash` JOIN アルゴリズムのみです。JOIN 中に評価される非等価条件には `arrayJoin` を含めることはできません。このような条件では行数を維持する必要があるためです。一方の側にのみ適用される条件と、`arrayJoin` に対する等価キーは JOIN 前に抽出されるため、影響を受けません。また、選言を含まない `ALL INNER JOIN` 条件も、代わりに JOIN 後に適用されるため影響を受けません。展開が一方の側のみに依存する場合は、JOIN 前のサブクエリ内の `ARRAY JOIN` に移動してください。`arrayJoin` の引数が両側のカラムを参照する条件は、再構成する必要があります。
 
 **例**
 
