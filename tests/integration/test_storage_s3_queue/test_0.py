@@ -535,12 +535,15 @@ def test_move_after_processing_basename_collision(started_cluster):
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
-def test_move_after_processing_existing_destination(started_cluster, engine_name):
+@pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
+def test_move_after_processing_existing_destination(started_cluster, engine_name, move_to):
     """A destination that already exists must not be overwritten.
 
     Only one file is processed, so the in-batch duplicate detection cannot see the collision:
     the destination is occupied by an object written beforehand, standing in for one written by
     an earlier batch or by a concurrent mover. The move must fail closed and leave the source.
+    The another_bucket variant drives the same guard through the external-destination paths
+    (`after_processing_move_uri` for S3, `after_processing_move_container` for Azure).
     """
     node = started_cluster.instances["instance"]
     token = generate_random_string()
@@ -548,6 +551,7 @@ def test_move_after_processing_existing_destination(started_cluster, engine_name
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     processed_prefix = f"{token}_move_to_prefix"
+    processed_bucket = "sink-bucket-exist" if move_to == "another_bucket" else None
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     is_s3 = engine_name == "S3Queue"
 
@@ -560,13 +564,19 @@ def test_move_after_processing_existing_destination(started_cluster, engine_name
         files=[(f"{files_path}/a/part.csv", 0)],
     )
 
+    if move_to == "another_bucket":
+        if is_s3:
+            recreate_minio_bucket(started_cluster, processed_bucket)
+        else:
+            recreate_azurite_container(started_cluster, processed_bucket)
+
     # With after_processing_move_preserve_path = 0 the source flattens onto this key.
     occupied = f"{processed_prefix}/part.csv"
     sentinel = b"9,9,9\n"
     if is_s3:
-        put_s3_file_content(started_cluster, occupied, sentinel)
+        put_s3_file_content(started_cluster, occupied, sentinel, bucket=processed_bucket)
     else:
-        put_azure_file_content(started_cluster, occupied, sentinel)
+        put_azure_file_content(started_cluster, occupied, sentinel, bucket=processed_bucket)
 
     create_table(
         started_cluster,
@@ -578,6 +588,7 @@ def test_move_after_processing_existing_destination(started_cluster, engine_name
         engine_name=engine_name,
         after_processing="move",
         move_to_prefix=processed_prefix,
+        move_to_bucket=processed_bucket,
     )
     create_mv(node, table_name, dst_table_name)
 
@@ -591,15 +602,17 @@ def test_move_after_processing_existing_destination(started_cluster, engine_name
     # destination still holds the bytes that were there before.
     def counts():
         if is_s3:
-            bucket = started_cluster.minio_bucket
+            src_bucket = started_cluster.minio_bucket
+            dst_bucket = processed_bucket or src_bucket
             return (
-                count_minio_objects(started_cluster, bucket, processed_prefix),
-                count_minio_objects(started_cluster, bucket, files_path),
+                count_minio_objects(started_cluster, dst_bucket, processed_prefix),
+                count_minio_objects(started_cluster, src_bucket, files_path),
             )
-        container = started_cluster.azurite_container
+        src_container = started_cluster.azurite_container
+        dst_container = processed_bucket or src_container
         return (
-            count_azurite_blobs(started_cluster, container, processed_prefix),
-            count_azurite_blobs(started_cluster, container, files_path),
+            count_azurite_blobs(started_cluster, dst_container, processed_prefix),
+            count_azurite_blobs(started_cluster, src_container, files_path),
         )
 
     for _ in range(30):
@@ -613,11 +626,11 @@ def test_move_after_processing_existing_destination(started_cluster, engine_name
 
     if is_s3:
         minio = started_cluster.minio_client
-        data = minio.get_object(started_cluster.minio_bucket, occupied).read()
+        dst_bucket = processed_bucket or started_cluster.minio_bucket
+        data = minio.get_object(dst_bucket, occupied).read()
     else:
-        client = started_cluster.blob_service_client.get_blob_client(
-            started_cluster.azurite_container, occupied
-        )
+        dst_container = processed_bucket or started_cluster.azurite_container
+        client = started_cluster.blob_service_client.get_blob_client(dst_container, occupied)
         data = client.download_blob().readall()
     assert data == sentinel, f"pre-existing destination was overwritten: {data!r}"
 

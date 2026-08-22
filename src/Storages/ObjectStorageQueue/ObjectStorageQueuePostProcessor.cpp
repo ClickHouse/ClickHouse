@@ -78,6 +78,18 @@ bool isDestinationAlreadyExistsError(const Exception & e)
         || (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"));
 }
 
+/// True when the "already existing" destination provably holds the same bytes as the source:
+/// equal sizes and equal content-derived ETags. Then the move is already complete - typically our
+/// own earlier copy committed and only a post-copy step (e.g. the `check_objects_after_upload`
+/// verification) failed before `copied` could be set - and removing the source loses nothing.
+/// S3 ETags of non-multipart objects are the content MD5, so equality implies identity; multipart
+/// ETags and Azure's opaque per-blob ETags never compare equal here, which keeps the conservative
+/// collision handling for them.
+bool destinationHasSameContent(size_t source_size, const String & source_etag, size_t destination_size, const String & destination_etag)
+{
+    return source_size == destination_size && !source_etag.empty() && source_etag == destination_etag;
+}
+
 }
 
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
@@ -318,13 +330,24 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                             }
                             catch (const Exception & e)
                             {
-                                /// Losing the race is a final answer, not something to retry.
+                                /// Losing the race is a final answer, not something to retry - unless
+                                /// the destination holds exactly the source's bytes, which means an
+                                /// earlier attempt committed the copy and failed only afterwards.
                                 if (isDestinationAlreadyExistsError(e))
                                 {
-                                    destination_exists = true;
-                                    return;
+                                    auto source_metadata = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/ false);
+                                    auto destination_metadata = object_storage->tryGetObjectMetadata(object_to.remote_path, /*with_tags=*/ false);
+                                    if (!source_metadata || !destination_metadata
+                                        || !destinationHasSameContent(
+                                            source_metadata->size_bytes, source_metadata->etag,
+                                            destination_metadata->size_bytes, destination_metadata->etag))
+                                    {
+                                        destination_exists = true;
+                                        return;
+                                    }
                                 }
-                                throw;
+                                else
+                                    throw;
                             }
                             copied = true;
                         }
@@ -491,12 +514,22 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             }
                             catch (const Exception & e)
                             {
+                                /// See moveWithinBucket(): a destination holding exactly the source's
+                                /// bytes means an earlier attempt committed the copy and failed only
+                                /// afterwards, so the move can proceed to the removal.
                                 if (isDestinationAlreadyExistsError(e))
                                 {
-                                    destination_exists = true;
-                                    return;
+                                    const auto source_info = S3::getObjectInfoIfExists(*src_client, src_bucket, object_from.remote_path);
+                                    const auto destination_info = S3::getObjectInfoIfExists(*dst_client, dst_uri.bucket, object_to.remote_path);
+                                    if (!destinationHasSameContent(
+                                            source_info.size, source_info.etag, destination_info.size, destination_info.etag))
+                                    {
+                                        destination_exists = true;
+                                        return;
+                                    }
                                 }
-                                throw;
+                                else
+                                    throw;
                             }
                             copied = true;
                         }
@@ -639,8 +672,12 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             catch (const Azure::Core::RequestFailedException & e)
                             {
                                 /// Azure answers 409 BlobAlreadyExists / 412 for a rejected If-None-Match.
-                                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
-                                    || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+                                /// Without the precondition (path-preserving moves) such a status is no
+                                /// evidence of a collision, so it is not swallowed - mirroring
+                                /// AzureObjectStorage::copyObject.
+                                if (!move_if_none_match.empty()
+                                    && (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+                                        || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed))
                                 {
                                     destination_exists = true;
                                     return;
