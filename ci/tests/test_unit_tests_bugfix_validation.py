@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 from ci.jobs.unit_tests_bugfix_validation_job import (
     _UNIT_TEST_FILE_RE,
     BEFORE_SRC,
+    BEFORE_SRC_NORMALIZED,
     attribute_compile_errors,
     before_run_started_a_test,
     build_gtest_filter,
@@ -688,6 +689,131 @@ def test_attribute_compile_errors_survives_an_unreadable_log(tmp_path):
 def test_attribute_compile_errors_handles_no_files():
     assert attribute_compile_errors(_FakeResult(None), [_OVERLAID]) == ([], [])
     assert attribute_compile_errors(_FakeResult([]), [_OVERLAID]) == ([], [])
+
+
+# --------------------------------------------------------------------------
+# main(): the compile-failure branch that turns the attribution tuple into a
+# user-visible verdict. `attribute_compile_errors` is only half the contract —
+# the other half is `if overlaid_errors and not other_errors` in main(), which
+# is the single place where a RED before-build becomes a GREEN `XFAIL`. These
+# tests drive the real branch end to end with the *absolute*
+# `/ClickHouse/ci/tmp/before_src/...` diagnostics the production build actually
+# emits (cmake is configured from `BEFORE_SRC_NORMALIZED`), so both the
+# marker-based path normalization and the XFAIL-vs-ERROR decision are pinned.
+# --------------------------------------------------------------------------
+def _run_main_with_compile_failure(monkeypatch, tmp_path, log_text, test_files):
+    """Drive main() up to the compile step, which fails with the given log.
+
+    Everything before the compile is stubbed out (no git, no worktree, no cmake);
+    the compile failure is a real `Result` carrying a real log file, so the
+    production attribution and branch run unmodified.
+    """
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    class _Info:
+        pr_labels = ["pr-bugfix"]
+        sha = "prheadsha777"
+        base_branch = "master"
+        is_local_run = False
+
+        def get_changed_files(self):
+            return list(test_files)
+
+    monkeypatch.setattr(job, "Info", _Info)
+    monkeypatch.setattr(job, "get_changed_unit_test_files", lambda info: list(test_files))
+    monkeypatch.setattr(job, "derive_test_suites", lambda files: ["SuiteA"])
+    monkeypatch.setattr(job, "gitmodules_shape_violation", lambda: None)
+    monkeypatch.setattr(job, "determine_merge_base", lambda info: "mergebase123")
+    monkeypatch.setattr(
+        job.Shell, "get_output", staticmethod(lambda cmd, **kw: "checkouthead999")
+    )
+    monkeypatch.setattr(job, "get_submodule_state_changes", lambda base, head: [])
+    monkeypatch.setattr(job, "prepare_before_worktree", lambda base, sha, files: True)
+    monkeypatch.setattr(
+        job,
+        "configure_before_binary",
+        lambda info: job.Result(name="Configure before-binary", status=job.Result.Status.OK),
+    )
+
+    log = tmp_path / "compile.log"
+    log.write_text(log_text)
+    monkeypatch.setattr(
+        job,
+        "compile_before_binary",
+        lambda: job.Result(
+            name="Compile before-binary (ninja unit_tests_dbms, without the fix)",
+            status=job.Result.Status.FAIL,
+            files=[str(log)],
+        ),
+    )
+
+    finalized = {}
+
+    def fake_finalize(results, info_lines):
+        finalized["results"] = results
+        finalized["info"] = info_lines
+
+    monkeypatch.setattr(job, "finalize", fake_finalize)
+    # Nothing may run after the compile branch: the before-binary does not exist.
+    monkeypatch.setattr(
+        job,
+        "run_gtests",
+        lambda *a, **kw: pytest.fail("main() must stop at the compile failure"),
+    )
+
+    job.main()
+    assert "results" in finalized, "main() returned without finalizing a report"
+    return job, finalized
+
+
+def test_main_compile_failure_only_in_overlaid_tests_is_xfail(monkeypatch, tmp_path):
+    # Every error is inside the PR's overlaid test file, addressed by its real
+    # absolute path in the before-worktree: nothing to validate, report XFAIL.
+    job, finalized = _run_main_with_compile_failure(
+        monkeypatch,
+        tmp_path,
+        f"FAILED: src/CMakeFiles/unit_tests_dbms.dir/{_OVERLAID}.o\n"
+        f"{BEFORE_SRC_NORMALIZED}/{_OVERLAID}:42:5: error: no matching function for call to 'createExchangeLookup'\n"
+        "ninja: build stopped: subcommand failed.\n",
+        [_OVERLAID],
+    )
+    compile_result = finalized["results"][-1]
+    assert compile_result.status == job.Result.Status.XFAIL
+    assert job.Result.Label.XFAIL in [
+        label["name"] for label in compile_result.ext.get("labels", [])
+    ]
+    assert _OVERLAID in compile_result.info
+    assert "Nothing to validate on the unit side" in finalized["info"]
+
+
+def test_main_compile_failure_outside_overlaid_tests_is_error(monkeypatch, tmp_path):
+    # The overlaid test fails to compile too, but so does a fix source: the
+    # failure cannot be attributed to the test changes — fail close with ERROR.
+    job, finalized = _run_main_with_compile_failure(
+        monkeypatch,
+        tmp_path,
+        f"{BEFORE_SRC_NORMALIZED}/{_OVERLAID}:42:5: error: no matching function\n"
+        f"{BEFORE_SRC_NORMALIZED}/src/Interpreters/ExchangeLookup.cpp:17:9: error: use of undeclared identifier 'x'\n",
+        [_OVERLAID],
+    )
+    compile_result = finalized["results"][-1]
+    assert compile_result.status == job.Result.Status.ERROR
+    assert "src/Interpreters/ExchangeLookup.cpp" in compile_result.info
+    assert "inconclusive" in finalized["info"]
+
+
+def test_main_compile_failure_without_a_diagnostic_is_error(monkeypatch, tmp_path):
+    # A link failure produces no compiler diagnostic at all: unattributable, ERROR.
+    job, finalized = _run_main_with_compile_failure(
+        monkeypatch,
+        tmp_path,
+        "ld.lld: error: undefined symbol: DB::createExchangeLookup()\n"
+        "ninja: build stopped: subcommand failed.\n",
+        [_OVERLAID],
+    )
+    compile_result = finalized["results"][-1]
+    assert compile_result.status == job.Result.Status.ERROR
+    assert "inconclusive" in finalized["info"]
 
 
 if __name__ == "__main__":
