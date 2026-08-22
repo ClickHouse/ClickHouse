@@ -222,12 +222,20 @@ def _feature_flags_xml(flags):
     )
 
 
-def _coord_settings_xml(overrides_xml=None):
+def _coord_settings_xml(lsmt_backend, overrides_xml=None):
     """Generate XML for coordination settings.
 
     Args:
+        lsmt_backend: If True, enable the on-disk (LSMT) node storage
         overrides_xml: Optional XML fragment or full <coordination_settings> block to merge
     """
+    lsmt = (
+        "<use_lsmt_storage>1</use_lsmt_storage>"
+        "<storage_memory_only>0</storage_memory_only>"
+        if lsmt_backend
+        else ""
+    )
+
     settings = (
         "<async_replication>1</async_replication>"
         "<compress_logs>false</compress_logs>"
@@ -263,7 +271,7 @@ def _coord_settings_xml(overrides_xml=None):
         "<shutdown_timeout>5000</shutdown_timeout>"
         f"{settings}"
         f"{overrides_content}"
-        "</coordination_settings>"
+        f"{lsmt}</coordination_settings>"
     )
 
 
@@ -303,6 +311,9 @@ def _normalize_backend(backend):
 
 def _build_feature_flags(feature_flags):
     ff = feature_flags
+    # Do not allow use_lsmt_storage under <feature_flags>; it belongs to coordination_settings
+    ff.pop("use_lsmt_storage", None)
+
     ff.setdefault("check_not_exists", "1")
     ff.setdefault("create_if_not_exists", "1")
     ff.setdefault("remove_recursive", "1")
@@ -362,6 +373,7 @@ def _build_node_config_xml(server_id, peers_xml, coord_settings, feature_flags_x
     path_block = (
         "<log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>"
         "<snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>"
+        "<data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>"
     )
     keeper_server = _keeper_server_xml(
         server_id, peers_xml, path_block, _http_control_xml(), coord_settings, feature_flags_xml
@@ -525,8 +537,9 @@ class ClusterBuilder:
         feature_flags = dict(opts.get("feature_flags", {}))
         _build_feature_flags(feature_flags)
         feature_flags_xml = _feature_flags_xml(feature_flags)
-        # Always build base settings, merge overrides if provided
+        # Always build base settings with backend support, merge overrides if provided
         coord_settings = _coord_settings_xml(
+            backend_norm == "lsmt",
             overrides_xml=opts.get("coord_overrides_xml"),
         )
 
@@ -556,19 +569,19 @@ class ClusterBuilder:
 
     def cleanup(self, clean_artifacts=True):
         """Clean up cluster and associated files.
-        
+
         Args:
             clean_artifacts: If True, also remove instance directories and config directories
         """
         if not self.cluster:
             return
-        
+
         try:
             # Shutdown cluster (stops containers, removes networks, etc.)
             self.cluster.shutdown()
         except Exception:
             pass
-        
+
         if clean_artifacts:
             try:
                 if self.conf_dir and self.conf_dir.exists():
