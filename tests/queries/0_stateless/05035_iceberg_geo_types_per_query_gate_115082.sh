@@ -112,6 +112,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT id, wkt(g) FROM ${MERGE_GEO}" 2>&1 | grep -
 # equally on master. What this test is about is who is allowed to read, so it asserts exactly that.
 run_allowed --optimize_trivial_count_query=1 --allow_experimental_geo_types_in_iceberg=1 --query "SELECT count() FROM ${MERGE_GEO}"
 ${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT id, wkt(g) FROM ${MERGE_GEO}"
+${CLICKHOUSE_CLIENT} --allow_experimental_geo_types_in_iceberg=1 --query "SELECT id, wkt(g) FROM ${TABLE}"
 
 # Warm: the same two flag-less reads must still be refused. Enforcement that depends on whether an
 # earlier query happened to warm the state is the defect this test guards against.
