@@ -2299,21 +2299,24 @@ Possible values:
 \
     DECLARE(DeduplicateInsertMode, deduplicate_insert, DeduplicateInsertMode::ENABLE, R"(
 Enables or disables block deduplication of  `INSERT INTO` (for Replicated\* tables).
-The setting overrides `insert_deduplicate` and `async_insert_deduplicate` settings.
+The setting applies to both synchronous and asynchronous inserts, and it supersedes the `insert_deduplicate` and `async_insert_deduplicate` settings.
 That setting has three possible values:
 - disable — Deduplication is disabled for `INSERT INTO` query.
 - enable — Deduplication is enabled for `INSERT INTO` query.
 - backward_compatible_choice — Deduplication is enabled if `insert_deduplicate` or `async_insert_deduplicate` are enabled for specific insert type.
+
+For `INSERT SELECT` queries, [`deduplicate_insert_select`](#deduplicate_insert_select) is consulted first. Deduplication also requires the destination table to keep a deduplication log, see [replicated_deduplication_window](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) and [non_replicated_deduplication_window](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 )", 0) \
 \
     DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
 Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
-The setting overrids `insert_deduplicate` and `deduplicate_insert` for `INSERT SELECT` queries.
+For `INSERT SELECT` queries this setting is consulted before [`deduplicate_insert`](#deduplicate_insert).
+A `SELECT` is stable when it carries `ORDER BY ALL` and its pipeline ends in a single stream. A non-empty [`insert_deduplication_token`](#insert_deduplication_token) is an equivalent substitute for stability.
 That setting has four possible values:
 - disable — Deduplication is disabled for `INSERT SELECT` query.
-- force_enable — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
-- enable_when_possible — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
-- enable_even_for_bad_queries - Deduplication is enabled if `insert_deduplicate` is enable. If select result is not stable, warning is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
+- force_enable — Deduplication is enabled for `INSERT SELECT` query, regardless of `deduplicate_insert`. If select result is not stable and no token is provided, exception is thrown.
+- enable_when_possible — Deduplication is enabled if it is enabled by `deduplicate_insert` and the select result is stable, otherwise disabled.
+- enable_even_for_bad_queries - Deduplication is enabled if it is enabled by `deduplicate_insert`, regardless of whether the select result is stable. If select result is not stable, a message is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
 )", 0) \
 \
     DECLARE(Bool, insert_deduplicate, true, R"(
@@ -2973,6 +2976,9 @@ Try using an index if there is a subquery or a table expression on the right sid
 )", 0) \
     DECLARE(UInt64, use_index_for_in_with_subqueries_max_values, 0, R"(
 The maximum size of the set in the right-hand side of the IN operator to use table index for filtering. It allows to avoid performance degradation and higher memory usage due to the preparation of additional data structures for large queries. Zero means no limit.
+)", 0) \
+    DECLARE(UInt64, statistics_max_set_size_for_exact_selectivity_estimation, 10000, R"(
+The maximum size of the set in the right-hand side of the `IN` operator for which the selectivity estimator derives the exact ranges covered by the set. Deriving them costs a `Field` per element, a sort, and one statistics probe per element, which for a large set dominates query planning. Above this limit the estimator instead derives the selectivity from the size of the set and its bounding range, which is a single linear pass over the set without the sort or the per-element statistics probes. Zero means no limit.
 )", 0) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
@@ -5975,6 +5981,15 @@ Possible values:
     DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
 If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0) \
+    DECLARE(NonZeroUInt64, iceberg_delete_manifest_decode_concurrency, 4, R"(
+Maximum number of Iceberg delete manifest files decoded concurrently during query execution before any data file is read.
+
+All delete manifests must be decoded before any data file is read, so this work sits on the critical path before the first row is returned. Decoding several at a time overlaps both the object storage round-trips and the per-row pruning work.
+
+Higher values raise peak memory during query initialization when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
+
+Must be greater than zero; `1` decodes the manifests one at a time.
+)", 0) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 
@@ -6621,6 +6636,19 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
+Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
+down in the execution plan, below `Sorting` and `Filter` steps. The fixed-size result replaces the
+wide `String` / `FixedString` argument, so the argument is no longer carried through those steps.
+The rewrite is only applied when the argument column is not needed above the step it is pushed below.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
 )", 0) \
@@ -6770,6 +6798,9 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
 Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+)", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_materialization_for_file, true, R"(
+Use lazy materialization optimization for reading local Parquet files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
@@ -8488,6 +8519,10 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Bool, enable_function_early_short_circuit, false, R"(
+Enable early short-circuit constant folding for `and` and `or` during query analysis.
+When enabled, eligible dead scalar-subquery branches are analyzed to preserve their types and validate query semantics, but they are not executed. The optimization falls back to normal analysis when scalar cardinality or runtime values are required.
+)", 0) \
     DECLARE(Bool, query_plan_remove_unused_columns, true, R"(
 Toggles a query-plan-level optimization which tries to remove unused columns (both input and output columns) from query plan steps.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -8642,7 +8677,19 @@ implementation.
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
-If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
+If it is set to true, allow to specify any experimental compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_alp_codec, false, R"(
+Allows using the experimental `ALP` compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_quantized_codec, false, R"(
+Allows using the experimental `Quantized` compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_sz3_codec, false, R"(
+Allows using the experimental `SZ3` compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_zxc_codec, false, R"(
+Allows using the experimental `ZXC` compression codec.
 )", EXPERIMENTAL) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
