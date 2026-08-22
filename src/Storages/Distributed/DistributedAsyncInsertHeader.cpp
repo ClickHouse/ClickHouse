@@ -104,6 +104,14 @@ DistributedAsyncInsertHeader readHeader(ReadBufferFromFile & in, LoggerPtr log)
         if (header_buf.hasPendingData())
             readBinary(distributed_header.client_info.is_internal, header_buf);
 
+        /// Trailing fields: the SQL-defined HTTP handler name and the request URL of the initiating query
+        /// (kept out of the embedded `ClientInfo` above for layout compatibility, like `client_agent`).
+        if (header_buf.hasPendingData())
+            readStringBinary(distributed_header.client_info.http_handler_name, header_buf);
+
+        if (header_buf.hasPendingData())
+            readStringBinary(distributed_header.client_info.http_request_url, header_buf);
+
         /// Add handling new data here, for example:
         ///
         /// if (header_buf.hasPendingData())

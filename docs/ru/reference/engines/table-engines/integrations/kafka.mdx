@@ -58,7 +58,9 @@ SETTINGS
     [kafka_consumer_acquire_timeout_ms = 30000,]
     [kafka_max_rows_per_message = 1,]
     [kafka_compression_codec = '',]
-    [kafka_compression_level = -1];
+    [kafka_compression_level = -1,]
+    [kafka_partition_shard_num = '',]
+    [kafka_shard_count = 0];
 ```
 
 Обязательные параметры:
@@ -78,13 +80,13 @@ SETTINGS
 * `kafka_schema` — параметр, который необходимо использовать, если для формата требуется определение схемы. Например, [Cap&#39;n Proto](https://capnproto.org/) требует указать путь к файлу схемы и имя корневого объекта `schema.capnp:Message`.
 * `kafka_schema_registry_skip_bytes` — Количество байтов, которое нужно пропустить в начале каждого сообщения при использовании schema registry с заголовками обёртки (например, AWS Glue Schema Registry, который добавляет 19-байтную обёртку). Диапазон: `[0, 255]`. По умолчанию: `0`.
 * `kafka_num_consumers` — Количество consumers на таблицу. Укажите больше consumers, если пропускной способности одного consumer недостаточно. Общее количество consumers не должно превышать количество партиций в topic, поскольку на одну партицию может быть назначен только один consumer, и не должно быть больше количества физических ядер на сервере, где развернут ClickHouse. По умолчанию: `1`.
-* `kafka_max_block_size` — Максимальный размер батча (в сообщениях) при выполнении poll. По умолчанию: [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings#max_insert_block_size).
+* `kafka_max_block_size` — Максимальный размер батча (в сообщениях) при выполнении poll. По умолчанию: [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `kafka_skip_broken_messages` — допустимое для парсера сообщений Kafka число несовместимых со схемой сообщений на блок. Если `kafka_skip_broken_messages = N`, то движок пропускает *N* сообщений Kafka, которые не удаётся разобрать (одно сообщение соответствует одной строке данных). Значение по умолчанию: `0`.
 * `kafka_commit_every_batch` — Выполнять коммит для каждого потреблённого и обработанного батча, а не один коммит после записи всего блока. По умолчанию: `0`.
 * `kafka_client_id` — идентификатор клиента. По умолчанию пустой.
-* `kafka_poll_timeout_ms` — тайм-аут для одного опроса из Kafka. По умолчанию: [stream&#95;poll&#95;timeout&#95;ms](/ru/reference/settings/session-settings#stream_poll_timeout_ms).
-* `kafka_poll_max_batch_size` — Максимальное количество сообщений, получаемых за один опрос Kafka. По умолчанию: [max&#95;block&#95;size](/ru/reference/settings/session-settings#max_block_size).
-* `kafka_flush_interval_ms` — Тайм-аут для сброса данных из Kafka. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings#stream_flush_interval_ms).
+* `kafka_poll_timeout_ms` — тайм-аут для одного опроса из Kafka. По умолчанию: [stream&#95;poll&#95;timeout&#95;ms](/ru/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+* `kafka_poll_max_batch_size` — Максимальное количество сообщений, получаемых за один опрос Kafka. По умолчанию: [max&#95;block&#95;size](/ru/reference/settings/session-settings/max#max_block_size).
+* `kafka_flush_interval_ms` — Тайм-аут для сброса данных из Kafka. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `kafka_consumer_reschedule_ms` — интервал перепланирования при остановке потоковой обработки Kafka (например, когда нет доступных для чтения сообщений). Эта настройка определяет задержку перед тем, как consumer повторит опрос. Не должно превышать `kafka_consumers_pool_ttl_ms`. По умолчанию: `500` миллисекунд.
 * `kafka_thread_per_consumer` — Выделяет отдельный поток для каждого консьюмера. Если включен, каждый консьюмер независимо сбрасывает данные, параллельно (в противном случае строки от нескольких консьюмеров объединяются в один блок). По умолчанию: `0`.
 * `kafka_handle_error_mode` — как обрабатывать ошибки в движке Kafka. Возможные значения: default (если не удастся разобрать сообщение, будет сгенерировано исключение), stream (сообщение об исключении и исходное сообщение будут сохранены в виртуальных столбцах `_error` и `_raw_message`), dead&#95;letter&#95;queue (данные, связанные с ошибкой, будут сохранены в system.dead&#95;letter&#95;queue).
@@ -104,6 +106,8 @@ SETTINGS
 * `kafka_compression_codec` — кодек сжатия, используемый при отправке сообщений. Поддерживаются: пустая строка, `none`, `gzip`, `snappy`, `lz4`, `zstd`. Если указана пустая строка, кодек сжатия таблицей не задаётся, поэтому будут использоваться значения из файлов конфигурации или значение по умолчанию из `librdkafka`. По умолчанию: пустая строка.
 * `kafka_compression_level` — параметр уровня сжатия для алгоритма, выбранного с помощью kafka&#95;compression&#95;codec. Более высокие значения обеспечивают лучшее сжатие, но требуют больше ресурсов CPU. Допустимый диапазон зависит от алгоритма: `[0-9]` для `gzip`; `[0-12]` для `lz4`; только `0` для `snappy`; `[0-12]` для `zstd`; `-1` = уровень сжатия по умолчанию, зависящий от кодека. Значение по умолчанию: `-1`.
 * `kafka_map_virtual_columns_on_write` — Если включено, столбцы со специальными именами `_key`, `_timestamp`, `_headers.name` и `_headers.value` в схеме таблицы сопоставляются с соответствующими метаданными сообщений Kafka при `INSERT` и исключаются из полезной нагрузки сообщения. См. [Сопоставление столбцов с метаданными сообщений Kafka](#mapping-columns-to-kafka-message-metadata). По умолчанию: `false`.
+* `kafka_partition_shard_num` — Текущий номер сегмента для статической привязки партиций к сегментам. Должен быть от 1 до `kafka_shard_count` включительно. Партиции назначаются по формуле `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Поддерживает раскрытие макросов (например, `'{shard}'`). Должен использоваться вместе с `kafka_shard_count`. Поддерживается только в StorageKafka2 (требуются `kafka_keeper_path` и `kafka_replica_name`). По умолчанию: `''` (отключено).
+* `kafka_shard_count` — Общее количество сегментов, участвующих в потреблении. Используется вместе с `kafka_partition_shard_num` для статического назначения партиций. Должен использоваться вместе с `kafka_partition_shard_num`. Поддерживается только в StorageKafka2. По умолчанию: `0` (отключено).
 
 Примеры:
 
@@ -164,7 +168,7 @@ CREATE TABLE queue3 (
 
 `SELECT` не особенно полезен для чтения сообщений (кроме отладки), потому что каждое сообщение можно прочитать только один раз. Гораздо практичнее создавать потоки в реальном времени с помощью materialized view. Для этого:
 
-1. Используйте движок, чтобы создать consumer Kafka, и рассматривайте его как поток данных.
+1. Используйте движок, чтобы создать потребитель Kafka, и рассматривайте его как поток данных.
 2. Создайте таблицу с нужной структурой.
 3. Создайте materialized view, которое преобразует данные из движка и помещает их в ранее созданную таблицу.
 
@@ -201,7 +205,7 @@ CREATE TABLE queue3 (
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Чтобы повысить производительность, полученные сообщения группируются в блоки размером [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings#max_insert_block_size). Если блок не был сформирован в течение [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings#stream_flush_interval_ms) миллисекунд, данные будут записаны в таблицу независимо от полноты блока.
+Чтобы повысить производительность, полученные сообщения группируются в блоки размером [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings/max-insert#max_insert_block_size). Если блок не был сформирован в течение [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms) миллисекунд, данные будут записаны в таблицу независимо от полноты блока.
 
 Чтобы прекратить получение данных из топика или изменить логику преобразования, отсоедините materialized view:
 
@@ -455,10 +459,10 @@ INSERT INTO kafka_out VALUES
 Количество строк в одном сообщении Kafka зависит от того, является ли формат построчным или блочным:
 
 * Для построчных форматов количество строк в одном сообщении Kafka можно задать с помощью настройки `kafka_max_rows_per_message`.
-* Для блочных форматов блок нельзя разбить на более мелкие части, но количество строк в одном блоке можно задать с помощью общей настройки [max&#95;block&#95;size](/ru/reference/settings/session-settings#max_block_size).
+* Для блочных форматов блок нельзя разбить на более мелкие части, но количество строк в одном блоке можно задать с помощью общей настройки [max&#95;block&#95;size](/ru/reference/settings/session-settings/max#max_block_size).
 
 <div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
-  ## Движок для хранения зафиксированных смещений в ClickHouse Keeper
+  ## Движок для хранения зафиксированного смещения в ClickHouse Keeper
 </div>
 
 <ExperimentalBadge />
@@ -468,7 +472,47 @@ INSERT INTO kafka_out VALUES
 * `kafka_keeper_path` задает путь к таблице в ClickHouse Keeper
 * `kafka_replica_name` задает имя реплики в ClickHouse Keeper
 
-Должны быть заданы либо обе настройки, либо ни одна из них. Если заданы обе, будет использоваться новый экспериментальный движок Kafka. Этот новый движок не зависит от хранения зафиксированных смещений в Kafka, а хранит их в ClickHouse Keeper. Он по-прежнему пытается коммитить смещения в Kafka, но опирается на них только при создании таблицы. Во всех остальных случаях (при перезапуске таблицы или восстановлении после какой-либо ошибки) для продолжения чтения сообщений будут использоваться смещения, сохраненные в ClickHouse Keeper. Помимо зафиксированного смещения, он также хранит количество сообщений, прочитанных в последнем батче, поэтому, если вставка завершится ошибкой, будет снова прочитано то же количество сообщений, что при необходимости позволяет выполнить дедупликацию.
+Должны быть заданы либо обе настройки, либо ни одна из них. Если заданы обе, будет использоваться новый экспериментальный движок Kafka. Этот новый движок не зависит от хранения зафиксированного смещения в Kafka, а хранит их в ClickHouse Keeper. Он по-прежнему пытается коммитить смещения в Kafka, но опирается на них только при создании таблицы. Во всех остальных случаях (при перезапуске таблицы или восстановлении после какой-либо ошибки) для продолжения чтения сообщений будут использоваться смещения, сохраненные в ClickHouse Keeper. Помимо зафиксированного смещения, он также хранит количество сообщений, прочитанных в последнем батче, поэтому, если вставка завершится ошибкой, будет снова прочитано то же количество сообщений, что при необходимости позволяет выполнить дедупликацию.
+
+<div id="static-partition-to-shard-affinity">
+  ### Статическая привязка партиций к сегментам
+</div>
+
+При использовании `StorageKafka2` можно включить статическую привязку партиций к сегментам, указав `kafka_partition_shard_num` и `kafka_shard_count`. Это позволяет нескольким экземплярам ClickHouse (сегментам) читать данные из одного топика Kafka, при этом каждый сегмент обрабатывает только детерминированное подмножество партиций согласно формуле:
+
+```text
+partition_id % kafka_shard_count == kafka_partition_shard_num - 1
+```
+
+Оба параметра необходимо указывать вместе; указание только одного из них вызывает исключение. Значение `kafka_partition_shard_num` должно находиться в диапазоне от 1 до `kafka_shard_count` включительно. Поддерживается раскрытие макросов (например, `'{shard}'`), которое повторно выполняется при каждом запуске сервера. Это позволяет использовать общие метаданные таблицы для всех сегментов в базе данных `Replicated`, при этом каждый сегмент подставляет собственное значение. Проверка выполняется после раскрытия макросов.
+
+Все сегменты должны использовать одно и то же значение `kafka_keeper_path`. Все реплики используют общие закоммиченные смещения и размеры намерений, но за блокировки партиций конкурируют только реплики с одинаковым номером сегмента (при условии, что у всех реплик одинаковое количество сегментов).
+
+Пример для 3 сегментов, потребляющих топик с 12 партициями:
+
+```sql
+-- Shard 1: consumes partitions 0, 3, 6, 9
+CREATE TABLE kafka_shard1 (key UInt64, value String)
+ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
+SETTINGS
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
+    kafka_replica_name = '{replica}',
+    kafka_partition_shard_num = '1',
+    kafka_shard_count = 3
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+
+-- Shard 2: consumes partitions 1, 4, 7, 10
+CREATE TABLE kafka_shard2 (key UInt64, value String)
+ENGINE = Kafka('localhost:9092', 'my-topic', 'my-group', 'JSONEachRow')
+SETTINGS
+    kafka_keeper_path = '/clickhouse/kafka/{database}',
+    kafka_replica_name = '{replica}',
+    kafka_partition_shard_num = '2',
+    kafka_shard_count = 3
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+```
+
+В сочетании с репликами (несколькими значениями `kafka_replica_name`, использующими один и тот же `kafka_keeper_path`) фильтр привязки сначала определяет доступные партиции, после чего блокировки ZooKeeper распределяют их между репликами.
 
 Пример:
 
@@ -489,11 +533,12 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 
 * Быстрое удаление и повторное создание таблицы либо указание одного и того же пути ClickHouse Keeper для разных движков может привести к проблемам. В качестве рекомендации можно использовать `{uuid}` в `kafka_keeper_path`, чтобы избежать конфликтов путей.
 * Чтобы обеспечить повторяемые чтения, нельзя потреблять сообщения из нескольких партиций в одном потоке. С другой стороны, потребителей Kafka нужно регулярно опрашивать, чтобы они оставались активными. Из-за этих двух требований мы решили разрешить создание нескольких потребителей только при включённом `kafka_thread_per_consumer`, иначе становится слишком сложно избежать проблем, связанных с их регулярным опросом.
+* При использовании привязки к партициям все сегменты должны использовать одинаковое значение `kafka_shard_count`; в противном случае некоторые партиции могут потребляться несколькими сегментами или остаться непотреблёнными.
 
 **См. также**
 
 * [Виртуальные столбцы](/ru/reference/engines/table-engines/index#table_engines-virtual_columns)
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ru/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ru/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)
 * [system.kafka&#95;consumers](/ru/reference/system-tables/kafka_consumers)
 
 {/*AUTOGENERATED_END*/}

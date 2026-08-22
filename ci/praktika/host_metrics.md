@@ -21,9 +21,9 @@ the window's peak instead of being averaged away.
 | `duration` | Sampled command runtime, seconds. |
 | `cpu_count` | Logical CPUs (whole-VM `cpu%` denominator). |
 | `mem_total_gb` / `disk_total_gb` | Total RAM / workspace-filesystem size. |
-| `series.cpu` / `series.mem` / `series.disk` | Timelines of `[t, avg, peak]` (percent), decimated to `HOST_METRICS_MAX_POINTS` while preserving the envelope. |
-| `averages.{cpu,mem,disk}` | Whole-run **time-weighted** average utilization %. |
-| `peaks.{cpu,mem,disk}` | Exact max utilization % over every fine sample (never decimated away); `mem_gb` / `disk_gb` are the same in absolute units. |
+| `series.cpu` / `series.iowait` / `series.mem` / `series.disk` | Timelines of `[t, avg, peak]` (percent), decimated to `HOST_METRICS_MAX_POINTS` while preserving the envelope. |
+| `averages.{cpu,iowait,mem,disk}` | Whole-run **time-weighted** average utilization %. |
+| `peaks.{cpu,iowait,mem,disk}` | Exact max utilization % over every fine sample (never decimated away); `mem_gb` / `disk_gb` are the same in absolute units. |
 | `psi.cpu_s` | Seconds at least one task stalled waiting for CPU (PSI `some`). |
 | `psi.mem_some_s` / `psi.mem_full_s` | Seconds ≥1 task / **all** tasks stalled on memory. |
 | `psi.io_some_s` / `psi.io_full_s` | Seconds ≥1 task / **all** tasks stalled on I/O. |
@@ -32,6 +32,15 @@ the window's peak instead of being averaged away.
 `disk` and `psi` are omitted when unavailable (bad `HOST_METRICS_DISK_PATH`,
 kernel without PSI). `peaks` are rate-independent; PSI totals are accumulated by
 the kernel continuously, so they capture contention even between samples.
+
+`cpu` counts `iowait` as idle (a core waiting on the disk does no work), so
+`cpu + iowait <= 100` and a job blocked on I/O is not mistaken for an idle one.
+Beware that the kernel charges `iowait` per CPU — only cores that go idle while a
+task of theirs is blocked in I/O — so a single stalled task shows up as a small
+fraction of a large host's capacity. `psi.io_*` is the fraction-of-time
+counterpart and does not dilute: a build that spends 100 s of a 950 s job
+flushing a freshly pulled docker image to a slow volume reads as ~0% `cpu`,
+single-digit `iowait` and ~100 s of `io_full_s`.
 
 ### Utilization labels
 

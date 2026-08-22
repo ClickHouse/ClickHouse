@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- `CREATE NAMED COLLECTION` from SQL, used to prove the PEM contents survive the
+         collection's own persistence (serialization to disk and reload). -->
+    <users>
+        <default>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>
