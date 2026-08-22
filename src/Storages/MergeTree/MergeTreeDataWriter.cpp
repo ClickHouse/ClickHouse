@@ -1428,7 +1428,10 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                         && lambda_arg->arguments->children.size() == 2
                     ? lambda_arg->arguments->children[0]->as<ASTFunction>()
                     : nullptr;
-                const auto * body_tuple = params_tuple ? lambda_arg->arguments->children[1]->as<ASTFunction>() : nullptr;
+                /// The body may sit under a transparent wrapper: mapApply((k, v) -> materialize(tuple(k, v)), m).
+                const auto * body_tuple = params_tuple
+                    ? unwrapTransparentProjectionExpression(*lambda_arg->arguments->children[1])->as<ASTFunction>()
+                    : nullptr;
                 const auto * map_identifier = unwrapTransparentProjectionExpression(*args[1])->as<ASTIdentifier>();
                 if (params_tuple && params_tuple->name == "tuple" && params_tuple->arguments
                     && params_tuple->arguments->children.size() == 2 && map_identifier
@@ -1463,7 +1466,8 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                 /// reconstruct per-slot candidates by substituting each lambda parameter with its
                 /// bound array argument, so the whole-type merge cannot cross slots.
                 auto [lambda_params_tuple, lambda_body] = extractLambdaParamsAndBody(args);
-                const auto * body_tuple = lambda_body ? lambda_body->as<ASTFunction>() : nullptr;
+                /// The body may sit under a transparent wrapper: arrayMap((x, y) -> materialize(tuple(x, y)), ...).
+                const auto * body_tuple = lambda_body ? unwrapTransparentProjectionExpression(*lambda_body)->as<ASTFunction>() : nullptr;
                 if (lambda_params_tuple && body_tuple && body_tuple->name == "tuple" && body_tuple->arguments
                     && body_tuple->arguments->children.size() >= 2)
                 {
