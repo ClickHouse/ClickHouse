@@ -88,6 +88,8 @@ A shape applies to the result of a single statement, so it is not offered for a 
 
 A shape belongs to the statement it was made on. Running a different statement — after editing the query, or moving the cursor to another statement of a multi-statement editor — drops it, rather than applying an `ORDER BY` or a `WHERE` on a column the new statement may not have.
 
+It belongs to the context that statement was run in as well: the selected database, the server and user it was sent to, and the values of its query parameters. The same text names different columns after any of those change — `SELECT * FROM events` after switching databases, or `SELECT * FROM {tbl:Identifier}` after editing the parameter — so the shape is dropped there too, and the next run returns the unshaped result.
+
 ## Downloading and copying {#downloading-and-copying}
 
 Download re-runs the producing query with the same shape, so the exported file holds the same rows in the same order as the result on screen. Copy uses the rendered result and therefore matches it too.
