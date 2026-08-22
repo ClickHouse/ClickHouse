@@ -56,3 +56,4 @@ echo '--invalid regexp--'
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP USER IF EXISTS $user1, $user2;
 EOF
+

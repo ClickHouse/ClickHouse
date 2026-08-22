@@ -24,3 +24,4 @@ ${CLICKHOUSE_CLIENT} --user $user --query "SELECT * FROM s3('http://localhost:11
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP USER IF EXISTS $user;
 EOF
+
