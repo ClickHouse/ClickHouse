@@ -84,7 +84,10 @@ struct MergeTreeDataPartTTLInfos
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
-    void update(const MergeTreeDataPartTTLInfos & other_infos);
+    /// `other_part_has_rows` tells whether the source part these infos come from contains any rows.
+    /// A part with no rows describes no rows-TTL timestamps at all, so it neither carries nor destroys
+    /// the rows-TTL provenance of the other merge sources.
+    void update(const MergeTreeDataPartTTLInfos & other_infos, bool other_part_has_rows = true);
 
     /// Has any TTLs which are not calculated on completely expired parts.
     bool hasAnyNonFinishedTTLs() const;

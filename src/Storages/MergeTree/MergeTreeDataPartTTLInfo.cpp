@@ -37,7 +37,7 @@ void MergeTreeDataPartTTLInfo::update(const MergeTreeDataPartTTLInfo & other_inf
         ttl_finished = other_info.finished();
 }
 
-void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_infos)
+void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_infos, bool other_part_has_rows)
 {
     for (const auto & [name, ttl_info] : other_infos.columns_ttl)
     {
@@ -68,30 +68,38 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     /// be an old epoch-only part: before `has_epoch_timestamps` was serialized, such a part had neither a
     /// table TTL section nor a fingerprint. Preserve that unknown provenance across the rest of the merge
     /// so a sibling fingerprint cannot make the merged part eligible for the metadata-only fast path.
-    const bool other_has_known_rows_ttl_provenance =
-        !other_infos.table_ttl_expression.empty() && !other_infos.table_ttl_timezone.empty() && !other_infos.has_unknown_rows_ttl_provenance;
-    if (!other_has_known_rows_ttl_provenance || has_unknown_rows_ttl_provenance)
+    /// A source with no rows is exempt: it describes no row timestamps, so its missing fingerprint says
+    /// nothing about the rows the merged part will contain (an empty part is produced with no fingerprint
+    /// by every `createEmptyPart` caller, e.g. the fully expired fast path of `MutateTask` and the
+    /// `TTLDrop` short circuit of `MergeTask`), and it must not disable the fast path for its live siblings.
+    if (other_part_has_rows)
     {
-        table_ttl_expression.clear();
-        table_ttl_timezone.clear();
-        has_unknown_rows_ttl_provenance = true;
-    }
-    else if (table_ttl_expression.empty() && table_ttl_timezone.empty())
-    {
-        table_ttl_expression = other_infos.table_ttl_expression;
-        table_ttl_timezone = other_infos.table_ttl_timezone;
-    }
-    else
-    {
-        if (table_ttl_expression != other_infos.table_ttl_expression)
+        const bool other_has_known_rows_ttl_provenance =
+            !other_infos.table_ttl_expression.empty() && !other_infos.table_ttl_timezone.empty()
+            && !other_infos.has_unknown_rows_ttl_provenance;
+        if (!other_has_known_rows_ttl_provenance || has_unknown_rows_ttl_provenance)
         {
             table_ttl_expression.clear();
-            has_unknown_rows_ttl_provenance = true;
-        }
-        if (table_ttl_timezone != other_infos.table_ttl_timezone)
-        {
             table_ttl_timezone.clear();
             has_unknown_rows_ttl_provenance = true;
+        }
+        else if (table_ttl_expression.empty() && table_ttl_timezone.empty())
+        {
+            table_ttl_expression = other_infos.table_ttl_expression;
+            table_ttl_timezone = other_infos.table_ttl_timezone;
+        }
+        else
+        {
+            if (table_ttl_expression != other_infos.table_ttl_expression)
+            {
+                table_ttl_expression.clear();
+                has_unknown_rows_ttl_provenance = true;
+            }
+            if (table_ttl_timezone != other_infos.table_ttl_timezone)
+            {
+                table_ttl_timezone.clear();
+                has_unknown_rows_ttl_provenance = true;
+            }
         }
     }
 
