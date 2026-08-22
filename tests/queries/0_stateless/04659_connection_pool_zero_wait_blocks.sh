@@ -22,14 +22,26 @@ function running() {
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id IN (${1})"
 }
 
+# Bounded by wall clock rather than by a number of attempts: one poll spawns a client, which is the
+# dominant cost here and takes seconds under a sanitizer, so an attempt count bounds no amount of
+# time. A condition that can no longer hold has to be reported here, well inside the test budget.
+function wait_running() {
+    local wanted=$1 ids=$2 deadline=$((SECONDS + $3))
+    while (( SECONDS < deadline )); do
+        [[ $(running "${ids}") == "${wanted}" ]] && return 0
+        sleep 0.05
+    done
+    return 1
+}
+
 # Runs one pair of queries at the given connection_pool_max_wait_ms and leaves the log rows the
-# assertion below reads. The holder does not finish on its own: it is killed once the waiter is
-# seen contending, so the pool is always full while the waiter reaches it and no attempt has to be
-# repeated to land that overlap.
+# assertion below reads. The holder does not finish on its own: it is killed only once the arm's own
+# expected event has been observed, so the pool is full for the whole of the waiter's wait and no
+# attempt has to be repeated to land that overlap.
 function contend() {
     local wait_ms=$1 label=$2
     local holder="${QUERY_PREFIX}_${label}_holder" waiter="${QUERY_PREFIX}_${label}_waiter"
-    local holder_pid waiter_pid contended=0
+    local holder_pid waiter_pid
 
     # Read the clock from the server the log rows come from, so the predicate needs no clock
     # alignment.
@@ -44,13 +56,8 @@ function contend() {
     " < /dev/null > /dev/null 2>&1 &
     holder_pid=$!
 
-    # Only the holder can free the connection, so the waiter starts once the holder owns it. The
-    # bound stops the loop from hanging if the holder failed outright, in which case its wait below
-    # reports it.
-    for _ in {1..600}; do
-        [[ $(running "'${holder}'") != 0 ]] && break
-        sleep 0.1
-    done
+    # Only the holder can free the connection, so the waiter starts once the holder owns it.
+    wait_running 1 "'${holder}'" 60 || echo "the holder never started, so the pool was never full"
 
     timeout 60 ${CLICKHOUSE_CLIENT} --query_id "${waiter}" --query "
         SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(1)) WHERE sleepEachRow(1)
@@ -59,16 +66,29 @@ function contend() {
     " < /dev/null > /dev/null 2>&1 &
     waiter_pid=$!
 
-    # Both queries in flight together is what leaves the waiter on a full pool.
-    for _ in {1..600}; do
-        [[ $(running "'${holder}', '${waiter}'") == 2 ]] && { contended=1; break; }
-        sleep 0.05
-    done
+    # What ends the waiter's wait differs by arm, so what has to be observed before the kill does
+    # too. The two are ordered rather than timed: whichever event the arm expects is waited for, so
+    # neither depends on the kill landing inside a window.
+    local waiter_rc=0
+    if [[ $3 == succeeds ]]; then
+        # Here only the kill can end the wait, so the waiter has to be in it first: a kill that
+        # landed earlier would free the connection before there was any wait to hand it over to.
+        wait_running 1 "'${waiter}'" 60 || echo "the waiter never started, so it never reached the pool"
 
-    # Being in system.processes only means the waiter has started, so give it time to reach the pool
-    # and log. On the finite wait this is also the window its retries fall in, which is what the
-    # frequency limiter has to throttle.
-    sleep 2
+        # Being in system.processes only means the waiter has started, so give it time to reach the
+        # pool and log.
+        sleep 2
+    else
+        # Here the waiter ends on its own deadline, which is the whole point of the arm, so the kill
+        # must not come first: waiting for the waiter to exit is what orders the two. Its own bound
+        # caps this, and the retries it logs on the way out are what the assertion below reads.
+        wait "$waiter_pid" || waiter_rc=$?
+    fi
+
+    # The holder is the only connection holder, so it still running here is what made the pool full
+    # for the whole of the waiter's wait. On the arm above the waiter has already given up, so this
+    # also separates a waiter that hit its deadline from one the holder released early.
+    [[ $(running "'${holder}'") != 0 ]] || echo "the holder released before the waiter, so the pool was never full"
 
     # Bounded and asynchronous because on the failing arm the zero length wait starves the whole
     # server: the holder does not return, and neither does a kill that waits for it. The bound is
@@ -82,13 +102,16 @@ function contend() {
     # good, never woken, would still satisfy the log assertions below; on a finite wait it is expected
     # to give up first, so the same check has to be inverted rather than dropped.
     wait "$holder_pid" || true
-    if wait "$waiter_pid"; then
+    [[ $3 == fails ]] || wait "$waiter_pid" || waiter_rc=$?
+    if [[ ${waiter_rc} == 0 ]]; then
         [[ $3 == succeeds ]] || echo "the waiter succeeded, so its timeout never expired"
     else
         [[ $3 == fails ]] || echo "the waiter did not get the connection back"
     fi
-
-    [[ ${contended} == 1 ]] || echo "the queries never ran at the same time, so the pool was never full"
+    # 124 is the waiter's own bound firing, i.e. it was still in the pool wait when it was taken out,
+    # which neither arm expects: the blocking one is handed the connection by the kill and the finite
+    # one gives up on its deadline.
+    [[ ${waiter_rc} != 124 ]] || echo "the waiter was still in the pool wait when its bound fired"
 }
 
 contend 0 zero succeeds
@@ -115,11 +138,9 @@ ${CLICKHOUSE_CLIENT} --query "
 # with a ten second interval, so a run shortly after another one can legitimately see it suppressed
 # entirely. The bound alone would also hold if a positive timeout were translated to the infinite
 # branch, which emits no line of this shape at all, so the branch is named as well.
-# The deadline has to expire before the kill below frees the connection, or the waiter is handed it
-# and succeeds, which measures the handover rather than the timeout. The kill is two seconds after
-# contention is seen, and contention is seen within about a twentieth of a second, so 500 ms leaves a
-# wide margin either way: the waiter gives up after three attempts of 500 ms, still well before the
-# kill.
+# The deadline has to expire before the kill frees the connection, or the waiter is handed it and
+# succeeds, which measures the handover rather than the timeout. That ordering is waited for rather
+# than timed, so the value only has to be short against the holder's thirty second hold.
 contend 500 finite fails
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
@@ -168,7 +189,7 @@ ${CLICKHOUSE_CLIENT} --query "
 function cancel_waiter() {
     local mode=$1 label=$2 pool_wait_ms=${3:-0}
     local holder="${QUERY_PREFIX}_${label}_holder" waiter="${QUERY_PREFIX}_${label}_waiter"
-    local holder_pid waiter_pid contended=0 rc=0 limit=""
+    local holder_pid waiter_pid rc=0 limit=""
 
     # The holder does not wait, so the value is inert for it; it is kept identical to the waiter's so
     # the pair is queueing under one configuration.
@@ -179,10 +200,7 @@ function cancel_waiter() {
     " < /dev/null > /dev/null 2>&1 &
     holder_pid=$!
 
-    for _ in {1..600}; do
-        [[ $(running "'${holder}'") != 0 ]] && break
-        sleep 0.1
-    done
+    wait_running 1 "'${holder}'" 60 || echo "the holder never started, so the pool was never full"
 
     # A soft deadline the pool wait has to observe by itself. A wait that does not only reports the
     # timeout once the connection comes back, which is the regression this arm pins.
@@ -195,10 +213,10 @@ function cancel_waiter() {
     " < /dev/null > /dev/null 2>&1 &
     waiter_pid=$!
 
-    for _ in {1..600}; do
-        [[ $(running "'${holder}', '${waiter}'") == 2 ]] && { contended=1; break; }
-        sleep 0.05
-    done
+    # Sampling for both at once is sound on these arms, unlike on the one above that gives up: here
+    # nothing ever releases the connection, so the waiter stays in the wait until it is cancelled.
+    wait_running 2 "'${holder}', '${waiter}'" 60 \
+        || echo "the queries never ran at the same time, so the pool was never full"
 
     # Being in system.processes only means the waiter has started, so give it time to reach the pool.
     sleep 2
@@ -213,7 +231,6 @@ function cancel_waiter() {
     [[ ${rc} != 124 ]] || echo "the waiter stayed in the pool wait past its own end"
 
     [[ $(running "'${holder}'") != 0 ]] || echo "the holder finished first, so the waiter was freed by the handover"
-    [[ ${contended} == 1 ]] || echo "the queries never ran at the same time, so the pool was never full"
 
     # shellcheck disable=SC2086
     timeout 30 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '${holder}' ASYNC" > /dev/null
