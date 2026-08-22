@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -71,7 +73,13 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
+    extern const TimeSeriesSettingsUInt64 recent_samples_ttl_seconds;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+}
+
+namespace Setting
+{
+    extern const SettingsBool time_series_prefer_recent_samples_table;
 }
 
 StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
@@ -807,7 +815,27 @@ void StorageTimeSeriesSelector::readImpl(
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
-    auto samples_table_id = time_series_storage->getTargetTableID(ViewTarget::Samples, context);
+    /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
+    auto samples_table_kind = ViewTarget::Samples;
+    const auto recent_samples_ttl_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_ttl_seconds].value;
+    if (recent_samples_ttl_seconds && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
+    {
+        /// `ttl_only_drop_parts` keeps samples >= now() - TTL present; the margin covers TTL asynchrony and its whole-second precision.
+        static constexpr Int64 safety_margin_seconds = 60;
+        UInt32 timestamp_scale = tryGetDecimalScale(*config.timestamp_data_type).value_or(0);
+        Int64 now_seconds = std::time(nullptr);
+        Int64 min_guaranteed_time = (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds)
+            * DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
+        if ((config.min_time.value >= min_guaranteed_time)
+            && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
+        {
+            samples_table_kind = ViewTarget::RecentSamples;
+            LOG_DEBUG(log, "Selector {} time range [{}, {}] fits in the recent samples TTL window: reading from the recent samples table",
+                      quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
+        }
+    }
+
+    auto samples_table_id = time_series_storage->getTargetTableID(samples_table_kind, context);
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
 
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
@@ -824,7 +852,7 @@ void StorageTimeSeriesSelector::readImpl(
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
 
-    auto samples_table_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, context)->getInMemoryMetadataPtr(context, false);
+    auto samples_table_metadata = time_series_storage->getTargetTable(samples_table_kind, context)->getInMemoryMetadataPtr(context, false);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
 
     ASTs whole_metric_id_range_conditions = tryMakeWholeMetricIDRangeConditions(
