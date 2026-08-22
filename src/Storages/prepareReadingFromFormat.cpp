@@ -36,11 +36,11 @@ namespace
 {
 /// Also read inputs of DEFAULT expressions so AddingDefaultsTransform can evaluate them.
 ///
+/// Whether the file stores a `DEFAULT`-declared column is unknown here: this runs before any
+/// file is opened, and `file_columns` is derived from the table schema, not from the data.
+///
 /// Skip hive partition columns: they are parsed from the file path and appended to the chunk
-/// only after `AddingDefaultsTransform` runs. If they were pinned into `columns_description`
-/// without being in the format block, `evaluateMissingDefaults` would substitute a type default
-/// for the unread input instead of failing with `UNKNOWN_IDENTIFIER` — silently wrong values for
-/// `DEFAULT` expressions that depend on hive columns (a pre-existing limitation we must preserve).
+/// only after `AddingDefaultsTransform` runs.
 void appendColumnsRequiredForDefaults(
     Strings & columns_to_read,
     const ColumnsDescription & all_columns,

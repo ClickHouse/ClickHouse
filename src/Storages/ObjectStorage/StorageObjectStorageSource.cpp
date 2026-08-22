@@ -1058,6 +1058,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         Block initial_header = read_from_format_info.format_header;
         bool schema_changed = false;
+        /// Columns physically present in this object when a per-file schema is known
+        /// (Iceberg / Delta via getInitialSchemaByPath). Empty means "unknown".
+        NameSet columns_present_in_this_file;
 
         if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
         {
@@ -1065,6 +1068,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             for (const auto & [name, type] : *initial_schema)
             {
                 sample_header.insert({type->createColumn(), type, name});
+                columns_present_in_this_file.insert(name);
             }
             initial_header = sample_header;
             schema_changed = true;
@@ -1087,22 +1091,27 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             bool format_supports_prewhere =
                 FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings);
 
-            /// Do not push filters that need DEFAULT columns into the format reader.
-            auto filter_requires_defaulted_column = [&](const NamesAndTypesList & required_columns) -> bool
+            /// Do not push filters that need DEFAULT columns into the format reader when this
+            /// file omits the column (so AddingDefaults must compute it first). If the file
+            /// schema shows the column is on disk, keep reader-side PREWHERE / row-group pruning.
+            auto filter_requires_missing_defaulted_column = [&](const NamesAndTypesList & required_columns) -> bool
             {
                 for (const auto & column : required_columns)
                 {
-                    if (read_from_format_info.columns_description.hasDefault(column.name))
-                        return true;
+                    if (!read_from_format_info.columns_description.hasDefault(column.name))
+                        continue;
+                    if (!columns_present_in_this_file.empty() && columns_present_in_this_file.contains(column.name))
+                        continue;
+                    return true;
                 }
                 return false;
             };
             if (format_supports_prewhere && read_from_format_info.columns_description.hasDefaults())
             {
                 if ((format_filter_info->row_level_filter
-                     && filter_requires_defaulted_column(format_filter_info->row_level_filter->actions.getRequiredColumns()))
+                     && filter_requires_missing_defaulted_column(format_filter_info->row_level_filter->actions.getRequiredColumns()))
                     || (format_filter_info->prewhere_info
-                        && filter_requires_defaulted_column(format_filter_info->prewhere_info->prewhere_actions.getRequiredColumns())))
+                        && filter_requires_missing_defaulted_column(format_filter_info->prewhere_info->prewhere_actions.getRequiredColumns())))
                     format_supports_prewhere = false;
             }
 

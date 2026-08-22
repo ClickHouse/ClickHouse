@@ -448,7 +448,8 @@ StorageURLSource::StorageURLSource(
         else
         {
             /// Defer filters that need DEFAULT columns until after AddingDefaultsTransform
-            /// (same invariant as StorageFile / StorageObjectStorageSource).
+            /// when those columns may be missing from the file. Without a per-file schema,
+            /// table-level hasDefault is the signal that the column may be absent (same as File).
             FilterDAGInfoPtr deferred_row_level_filter;
             PrewhereInfoPtr deferred_prewhere_info;
             FormatFilterInfoPtr reader_format_filter_info = format_filter_info;

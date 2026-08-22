@@ -1858,7 +1858,11 @@ Chunk StorageFileSource::generate()
                 }
             }
 
-            /// Defer filters that need DEFAULT columns until after AddingDefaultsTransform.
+            /// Defer filters that need DEFAULT columns until after AddingDefaultsTransform when
+            /// those columns may be missing from the file. Without a per-file schema (unlike
+            /// Iceberg/Delta via getInitialSchemaByPath), table-level hasDefault is the signal
+            /// that the column may be absent — keeping pushdown would evaluate the policy on
+            /// type defaults instead of computed DEFAULT values.
             FilterDAGInfoPtr deferred_row_level_filter;
             PrewhereInfoPtr deferred_prewhere_info;
             FormatFilterInfoPtr reader_format_filter_info = format_filter_info;
