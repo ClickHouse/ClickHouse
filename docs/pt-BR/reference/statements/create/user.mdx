@@ -12,10 +12,10 @@ Sintaxe:
 
 ```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] 
+    [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-    [VALID UNTIL datetime]
     [IN access_storage_type]
     [ROLE role [,...]]
     [DEFAULT ROLE role [,...]]
@@ -197,8 +197,14 @@ Outra forma de especificar o host é usar a sintaxe `@` após o nome de usuário
   ## Cláusula VALID UNTIL
 </div>
 
-Permite especificar a data de expiração e, opcionalmente, a hora de um método de autenticação. Aceita uma string como parâmetro. Recomenda-se usar o formato `YYYY-MM-DD [hh:mm:ss] [timezone]` para valores de data e hora, em que `[timezone]` deve ser um deslocamento numérico, como `+09:00`, ou um entre `UTC`, `GMT`, `Z`, `MSK`, `MSD`; zonas IANA nomeadas, como `Asia/Tokyo`, não são reconhecidas (veja a observação abaixo). Por padrão, esse parâmetro é igual a `'infinity'`.
-A cláusula `VALID UNTIL` só pode ser especificada junto com um método de autenticação, exceto quando nenhum método de autenticação tiver sido especificado na consulta. Nesse cenário, a cláusula `VALID UNTIL` será aplicada a todos os métodos de autenticação existentes.
+Permite especificar a data de expiração e, opcionalmente, a hora de um método de autenticação. Aceita uma string como parâmetro. Recomenda-se usar o formato `YYYY-MM-DD [hh:mm:ss] [timezone]` para data e hora, em que `[timezone]` deve ser um deslocamento numérico, como `+09:00`, ou um dos seguintes: `UTC`, `GMT`, `Z`, `MSK`, `MSD`; zonas IANA nomeadas, como `Asia/Tokyo`, não são reconhecidas (consulte a observação abaixo). Por padrão, esse parâmetro é igual a `'infinity'`. O intervalo aceito para o prazo vai de `1900-01-01 00:00:00 UTC` a `9999-12-31 09:59:59 UTC` — o instante mais recente que permanece no ano 9999 em todos os fusos horários, garantindo que o instante armazenado nunca seja limitado ao ser exibido. Um prazo no passado significa que as credenciais já expiraram. Prazos anteriores a `1970-01-01 00:00:01 UTC` são aceitos apenas como um marcador de &quot;já expirado&quot;: são normalizados para o menor instante expirado canônico, um segundo após a epoch Unix (`1970-01-01 00:00:01 UTC`), de modo que `SHOW CREATE USER` informa esse instante em vez do prazo especificado. Prazos a partir desse instante são armazenados exatamente.
+
+Um prazo é armazenado como um instante absoluto, mas `SHOW CREATE USER` e [`system.users`](/pt-BR/reference/system-tables/users) o exibem no fuso horário do servidor ou da sessão. Assim, o mesmo instante armazenado aparece como horários locais diferentes em servidores configurados de forma distinta: o instante expirado normalizado acima, por exemplo, é exibido como `1970-01-01 00:00:01` em um servidor com fuso horário `UTC` e como `1970-01-01 14:00:01` em um servidor com fuso horário `Pacific/Kiritimati`. A validação sempre usa o instante armazenado, não sua representação exibida.
+
+O posicionamento da cláusula determina a quais métodos de autenticação ela se aplica:
+
+* Antes da cláusula `IDENTIFIED` (ou quando a consulta não especifica nenhum método de autenticação): o prazo é definido no nível do usuário e se aplica a todos os métodos de autenticação desse usuário.
+* Após um método de autenticação: o prazo se aplica somente a esse método. Portanto, uma cláusula escrita após toda a lista `IDENTIFIED` se vincula somente ao último método, deixando os métodos anteriores sem expiração.
 
 Exemplos:
 
@@ -206,11 +212,26 @@ Exemplos:
 * `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
 * `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 +09:00'`
 * `CREATE USER name1 VALID UNTIL 'infinity'`
-* `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'`
+* `CREATE USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — o prazo no nível do usuário se aplica a ambos os métodos.
+* `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — o prazo se aplica somente ao método `bcrypt_password`; `plaintext_password` nunca expira.
 
 <Note>
-  A string de data e hora é analisada por `parseDateTimeBestEffort`, que reconhece apenas os tokens de fuso horário `UTC`, `GMT`, `Z`, `MSK`, `MSD` e deslocamentos numéricos, como `+09:00` ou `-05:00`. Fusos horários IANA nomeados, como `Asia/Tokyo` ou `Europe/London`, não são suportados, e um deslocamento fixo não é equivalente a uma zona IANA em regiões que adotam horário de verão; portanto, você deve calcular o deslocamento correto para a data específica que está codificando.
+  A string de data e hora é convertida por `parseDateTimeBestEffort`, que reconhece somente os tokens de fuso horário `UTC`, `GMT`, `Z`, `MSK`, `MSD` e deslocamentos numéricos como `+09:00` ou `-05:00`. Fusos horários IANA nomeados, como `Asia/Tokyo` ou `Europe/London`, não são suportados, e um deslocamento fixo não é equivalente a uma zona IANA em regiões que adotam horário de verão. Portanto, você deve calcular o deslocamento correto para a data específica que está codificando.
 </Note>
+
+<div id="valid-for-clause">
+  ## Cláusula VALID FOR
+</div>
+
+A cláusula `VALID FOR` é uma abreviação conveniente de `VALID UNTIL`. Em vez de uma data e hora absolutas, ela aceita um [intervalo](/pt-BR/reference/data-types/special-data-types/interval), e o prazo de expiração é calculado como a hora atual mais esse intervalo no momento da execução da consulta. O resultado é então armazenado no formato `VALID UNTIL`, portanto `SHOW CREATE USER` sempre exibe o prazo absoluto resultante. Ela pode ser usada em todos os lugares em que `VALID UNTIL` pode ser usado e segue as mesmas regras de posicionamento: antes de `IDENTIFIED` (ou sem método de autenticação), define um prazo no nível do usuário que se aplica a todos os métodos; após um método de autenticação, aplica-se apenas a esse método. O prazo é armazenado e aplicado com precisão de segundos; portanto, intervalos com frações de segundo (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`) são rejeitados, e a menor unidade aceita é `SECOND`. Um intervalo negativo é aceito para marcar as credenciais como já expiradas; se o prazo resultante for anterior a `1970-01-01 00:00:01 UTC`, ele será normalizado para esse menor instante expirado, que é o valor informado por `SHOW CREATE USER` — exibido no fuso horário do servidor ou da sessão, conforme descrito em [`VALID UNTIL`](#valid-until-clause).
+
+Exemplos:
+
+* `CREATE USER name1 VALID FOR INTERVAL 1 DAY`
+* `CREATE USER name1 VALID FOR INTERVAL 3 MONTH`
+* `CREATE USER name1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR`
+* `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — o prazo no nível do usuário se aplica a ambos os métodos.
+* `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — o prazo se aplica apenas ao método `bcrypt_password`; `plaintext_password` nunca expira.
 
 <div id="grantees-clause">
   ## Cláusula GRANTEES

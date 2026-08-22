@@ -12,10 +12,10 @@ doc_type: 'reference'
 
 ```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] 
+    [{VALID UNTIL datetime | VALID FOR interval}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-    [VALID UNTIL datetime]
     [IN access_storage_type]
     [ROLE role [,...]]
     [DEFAULT ROLE role [,...]]
@@ -197,8 +197,14 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   ## VALID UNTIL 子句
 </div>
 
-允许你为某种身份验证方法指定失效日期，并可选择指定具体时间。它接受一个字符串参数。建议日期时间使用 `YYYY-MM-DD [hh:mm:ss] [timezone]` 格式，其中 `[timezone]` 必须是数值偏移量 (如 `+09:00`) ，或 `UTC`、`GMT`、`Z`、`MSK`、`MSD` 之一；像 `Asia/Tokyo` 这样的 IANA 具名时区无法识别 (见下方说明) 。默认情况下，该参数的值为 `'infinity'`。
-除非查询中未指定任何身份验证方法，否则 `VALID UNTIL` 子句只能与某种身份验证方法一起指定。在这种情况下，`VALID UNTIL` 子句将应用于所有现有的身份验证方法。
+用于指定身份验证方法的到期日期，以及可选的到期时间。它接受字符串参数。建议日期时间采用 `YYYY-MM-DD [hh:mm:ss] [timezone]` 格式，其中 `[timezone]` 必须是数值偏移量 (如 `+09:00`) ，或 `UTC`、`GMT`、`Z`、`MSK`、`MSD` 之一；不支持 `Asia/Tokyo` 这类命名 IANA 时区 (请参阅下方说明) 。默认情况下，此参数为 `'infinity'`。可接受的截止时间范围为 `1900-01-01 00:00:00 UTC` 至 `9999-12-31 09:59:59 UTC`——后者是在所有时区中均仍处于 9999 年内的最晚时刻，因此存储的时刻在显示时绝不会被截断。过去的截止时间表示凭据已过期。早于 `1970-01-01 00:00:01 UTC` 的截止时间仅会作为“已过期”标记被接受：它们会被规范化为最早的过期时刻，即 Unix 纪元后一秒 (`1970-01-01 00:00:01 UTC`) ，因此 `SHOW CREATE USER` 显示的是该时刻，而非您指定的截止时间。自该时刻起的截止时间将按原样存储。
+
+截止时间以绝对时刻存储，但 `SHOW CREATE USER` 和 [`system.users`](/zh/reference/system-tables/users) 会按服务器或会话时区显示它，因此同一存储时刻在配置不同的服务器上会显示为不同的本地时间文本：例如，上述规范化后的过期时刻在 `UTC` 服务器上显示为 `1970-01-01 00:00:01`，在 `Pacific/Kiritimati` 服务器上则显示为 `1970-01-01 14:00:01`。实际执行时始终使用存储的时刻，而非其显示结果。
+
+子句的位置决定其适用的身份验证方法：
+
+* 位于 `IDENTIFIED` 子句之前 (或查询完全未指定身份验证方法时) ：截止时间为用户级截止时间，适用于该用户的所有身份验证方法。
+* 位于某个身份验证方法之后：截止时间仅适用于该方法。因此，写在整个 `IDENTIFIED` 列表之后的子句只会绑定到最后一个方法，之前的方法不会过期。
 
 示例：
 
@@ -206,11 +212,26 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 * `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
 * `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 +09:00'`
 * `CREATE USER name1 VALID UNTIL 'infinity'`
-* `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'`
+* `CREATE USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — 用户级截止时间适用于两种方法。
+* `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — 截止时间仅适用于 `bcrypt_password` 方法；`plaintext_password` 永不过期。
 
 <Note>
-  日期时间字符串由 `parseDateTimeBestEffort` 解析，它只识别时区标记 `UTC`、`GMT`、`Z`、`MSK`、`MSD` 以及 `+09:00` 或 `-05:00` 这类数值偏移量。不支持 `Asia/Tokyo` 或 `Europe/London` 这类 IANA 具名时区；此外，对于实行夏令时的区域，固定偏移量并不等同于 IANA 时区，因此你必须针对要编码的具体日期计算正确的偏移量。
+  日期时间字符串由 `parseDateTimeBestEffort` 解析，该函数仅识别时区标记 `UTC`、`GMT`、`Z`、`MSK`、`MSD`，以及 `+09:00` 或 `-05:00` 等数值偏移量。不支持 `Asia/Tokyo` 或 `Europe/London` 这类命名 IANA 时区；对于采用夏令时的区域，固定偏移量并不等同于 IANA 时区，因此必须根据要编码的具体日期计算正确的偏移量。
 </Note>
+
+<div id="valid-for-clause">
+  ## VALID FOR 子句
+</div>
+
+`VALID FOR` 子句是 `VALID UNTIL` 的便捷简写。它不使用绝对日期和时间，而是接受一个[时间间隔](/zh/reference/data-types/special-data-types/interval)，并在执行查询时将过期截止时间计算为当前时间加上该时间间隔。结果随后以 `VALID UNTIL` 形式存储，因此 `SHOW CREATE USER` 始终显示解析出的绝对截止时间。它可在任何可使用 `VALID UNTIL` 的位置使用，并遵循相同的放置规则：位于 `IDENTIFIED` 之前 (或未指定身份验证方法时) 时，它是适用于所有方法的用户级截止时间；位于某个身份验证方法之后时，则仅适用于该方法。截止时间以秒级精度存储和强制执行，因此不接受亚秒级时间间隔 (`NANOSECOND`、`MICROSECOND`、`MILLISECOND`) ；可接受的最小单位为 `SECOND`。负时间间隔可用于将凭据标记为已过期；如果计算得到的截止时间早于 `1970-01-01 00:00:01 UTC`，则会将其规范化为该最早的过期时刻，之后 `SHOW CREATE USER` 将报告该时刻——如 [`VALID UNTIL`](#valid-until-clause) 所述，它会以服务器或会话时区显示。
+
+示例：
+
+* `CREATE USER name1 VALID FOR INTERVAL 1 DAY`
+* `CREATE USER name1 VALID FOR INTERVAL 3 MONTH`
+* `CREATE USER name1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR`
+* `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — 用户级截止时间适用于这两种方法。
+* `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — 截止时间仅适用于 `bcrypt_password` 方法；`plaintext_password` 永不过期。
 
 <div id="grantees-clause">
   ## GRANTEES 子句
