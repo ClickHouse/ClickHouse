@@ -38,8 +38,6 @@ namespace Setting
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
     extern const SettingsUInt64 log_queries_cut_to_length;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_query_size;
     }
 
@@ -302,7 +300,12 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 
     ParserQuery parser_query(end, settings[Setting::allow_settings_after_format_in_insert]);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    /// The entry text is server-owned: it is the AST the initiator parsed and validated, formatted back to SQL.
+    /// It is therefore parsed without limits, the same way its size is not limited - the caller's
+    /// `max_parser_depth` / `max_parser_backtracks` would only reject here what the initiator already accepted.
+    /// This is what lets an `ON CLUSTER` query issued by a server-owned handler query (whose text may be nested
+    /// deeper than the invoking request allows) execute on every host of the cluster.
+    query = parseQuery(parser_query, begin, end, description, 0, 0, 0);
 }
 
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)

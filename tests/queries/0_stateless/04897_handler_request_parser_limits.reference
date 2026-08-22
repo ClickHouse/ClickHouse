@@ -13,3 +13,7 @@ TOO_DEEP_RECURSION
 === invoked through PARALLEL WITH under the same request limit ===
 1
 1
+=== invoked in the background under the same request limit ===
+1
+=== invoked with a remote fan-out under the same request limit ===
+0

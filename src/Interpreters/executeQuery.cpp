@@ -2219,6 +2219,10 @@ static BlockIO executeQueryImpl(
         context->getClientInfo().is_internal = true;
     if (flags.parse_server_owned_query_without_limits)
         context->setParseServerOwnedQueryWithoutLimits(true);
+    /// A context that already carries the flag re-executes the same server-owned text: `executeQueryInBackground`
+    /// hands a copy of the invoking query context to the background pool and re-parses the stored text there
+    /// (with `QueryFlags{ .background = true }` only), so the parse mode has to be taken from the context as well.
+    const bool parse_server_owned_query_without_limits = context->shouldParseServerOwnedQueryWithoutLimits();
 
     /// Gates concurrency limits, throttling, query-size limit, logging.
     const bool internal = flags.internal;
@@ -2261,11 +2265,20 @@ static BlockIO executeQueryImpl(
 
     size_t max_query_size = settings[Setting::max_query_size];
     /// Don't limit the size of internal queries or distributed subquery.
-    if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    const bool is_secondary_query = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    if (internal || is_secondary_query)
         max_query_size = 0;
-    size_t max_query_size_for_query_text = flags.parse_server_owned_query_without_limits ? 0 : max_query_size;
-    size_t max_parser_depth_for_query_text = flags.parse_server_owned_query_without_limits ? 0 : settings[Setting::max_parser_depth];
-    size_t max_parser_backtracks_for_query_text = flags.parse_server_owned_query_without_limits ? 0 : settings[Setting::max_parser_backtracks];
+    /// The text of a secondary query is not user input: the initiator parsed and validated the query, and what
+    /// arrives here is that AST formatted back to SQL. Applying the caller's parser limits to it would only
+    /// reject on the shard what the initiator already accepted - which is how a server-owned query lifted above
+    /// the caller's limits (a `CREATE HANDLER` / `<predefined_query_handler>` query) used to break as soon as it
+    /// fanned out over `Distributed` / `cluster()`. Nothing is weakened by this: the limits a shard would apply
+    /// are the ones the initiator sent, so they never protect the shard from its initiator; runaway recursion is
+    /// still stopped by `checkStackSize`.
+    const bool parse_without_limits = parse_server_owned_query_without_limits || is_secondary_query;
+    size_t max_query_size_for_query_text = parse_without_limits ? 0 : max_query_size;
+    size_t max_parser_depth_for_query_text = parse_without_limits ? 0 : settings[Setting::max_parser_depth];
+    size_t max_parser_backtracks_for_query_text = parse_without_limits ? 0 : settings[Setting::max_parser_backtracks];
 
     String query;
     String query_for_logging;

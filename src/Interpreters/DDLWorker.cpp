@@ -588,7 +588,20 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_scope = QueryScope::create(query_context);
 
         NullWriteBuffer nullwb;
-        executeQuery(istr, nullwb, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
+        /// The entry text is server-owned - the AST the initiator parsed and validated, formatted back to SQL -
+        /// so it is parsed here without the initiator's parser limits, the same way `parseQueryFromEntry` does.
+        /// Those limits would only reject on this host what the initiator already accepted, which is how an
+        /// `ON CLUSTER` query issued by a server-owned handler query (nested deeper than the invoking request
+        /// allows) used to fail on every host of the cluster.
+        executeQuery(
+            istr,
+            nullwb,
+            query_context,
+            {},
+            QueryFlags{
+                .internal = internal,
+                .distributed_backup_restore = task.entry.is_backup_restore,
+                .parse_server_owned_query_without_limits = true });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
