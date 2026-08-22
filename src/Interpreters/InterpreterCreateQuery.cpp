@@ -1990,6 +1990,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             properties.columns = getColumnsDescription(
                 *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
         }
+
+        /// Constraints need the same treatment: `MergeTree` reparses them from the rewritten AST, but most
+        /// engines take `properties.constraints` verbatim, so a `CHECK` or `ASSUME` mentioning `toTime`
+        /// would be enforced with the session spelling in memory and with `toTimeWithFixedDate` after a
+        /// reload, accepting and rejecting the same row on the two sides of a restart.
+        if (create.columns_list)
+            properties.constraints
+                = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
     }
 
     DatabasePtr database;
