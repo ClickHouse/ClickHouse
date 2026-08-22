@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"input_format_sqlite_table_name", "", "", "New setting for the `SQLite` input format: the name of the table to read."},
             {"output_format_sqlite_table_name", "table", "table", "New setting for the `SQLite` output format: the name of the table to write."},
+            {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},
             {"query_plan_push_down_volume_reducing_functions", false, true, "New setting to push volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`) below `Sorting` and `Filter` steps, so the wide argument column is replaced by the fixed-size result. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no push down)."},
             {"enable_alp_codec", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."},
             {"enable_quantized_codec", false, false, "New setting to enable the experimental `Quantized` compression codec individually, without the `allow_experimental_codecs`."},
