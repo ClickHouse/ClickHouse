@@ -76,6 +76,8 @@ struct HashMapCell
 
     /// Get the key (externally).
     external_key_type getKey() const { return static_cast<external_key_type>(value.first); }
+    /// See HashTableCell::relocateKey.
+    void ALWAYS_INLINE relocateKey(const Key & new_key) { value.first = new_key; }
     Mapped & getMapped() { return value.second; }
     const Mapped & getMapped() const { return value.second; }
     const value_type & getValue() const { return value; }

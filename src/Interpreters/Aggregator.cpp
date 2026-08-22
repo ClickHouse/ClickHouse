@@ -801,6 +801,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
     cache_settings.enable_prefetch = params.enable_prefetch;
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
+    /// Both aggregation loops below call `commitKeyBatch` once they are done with a block.
+    cache_settings.commits_key_batch = true;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
@@ -1232,6 +1234,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     if (all_keys_are_const)
     {
         emplace(0);
+        state.commitKeyBatch(method.data);
         return;
     }
 
@@ -1252,6 +1255,8 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 
         emplace(i);
     }
+
+    state.commitKeyBatch(method.data);
 }
 
 /// A set method has no aggregate states at all, so the batch never gets past registering the keys.
@@ -4305,6 +4310,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
     for (size_t i = row_begin; i < row_end; ++i)
         state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
+
+    state.commitKeyBatch(data);
 }
 
 template <typename State, typename Table>

@@ -1,0 +1,35 @@
+<test>
+    <!-- Several string keys, long enough that the serialized method skips batch serialization.
+         Without aggregate functions the cells hold only the key, and the block's keys are
+         serialized straight into the arena instead of one buffer per row. -->
+
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 1000), 100, '0') AS k1, leftPad(toString(number % 13), 100, '0') AS k2 FROM numbers_mt(10000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 100, '0') AS k1, leftPad(toString(number % 13), 100, '0') AS k2 FROM numbers_mt(10000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 5000000), 100, '0') AS k1, leftPad(toString(number % 13), 100, '0') AS k2 FROM numbers_mt(10000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <!-- The same keys with an aggregate function: the cells hold a state pointer, so the keys are
+         serialized one row at a time, into a buffer reused across the block. -->
+    <query short="1">
+        SELECT k1, k2, count()
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 100, '0') AS k1, leftPad(toString(number % 13), 100, '0') AS k2 FROM numbers_mt(10000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+</test>

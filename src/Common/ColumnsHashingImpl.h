@@ -32,6 +32,10 @@ struct HashMethodContextSettings
     /// Threshold on the hash table's buffer size below which prefetching is skipped
     /// because the table fits into caches. Zero disables the threshold.
     size_t min_bytes_for_prefetch = 0;
+    /// Set by a caller that calls `commitKeyBatch` once it is done with a block. A method that
+    /// serializes the block's keys into the arena upfront needs that call to reclaim the bytes the
+    /// duplicate rows took, so without it it keeps serializing key by key.
+    bool commits_key_batch = false;
 };
 
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.
@@ -245,10 +249,10 @@ public:
                 const auto & hashes = derived.precomputed_hashes;
                 if (row + derived.prefetch_look_ahead < hashes.size())
                     data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
-                return emplaceImpl<false>(key_holder, data, hashes[row]);
+                return emplaceImpl<false>(key_holder, data, hashes[row], row);
             }
         }
-        return emplaceImpl<true>(key_holder, data, 0);
+        return emplaceImpl<true>(key_holder, data, 0, row);
     }
 
     template <typename Data>
@@ -365,6 +369,16 @@ public:
         }
     }
 
+    /// Called for every row that goes through `emplaceKey`. A method that materialises the block's
+    /// keys upfront overrides this to learn which row ended up owning which cell.
+    template <typename Data, typename LookupResult>
+    void ALWAYS_INLINE onEmplaced(size_t, Data &, LookupResult, bool) {}
+
+    /// Called once the caller is done with the block. A method that materialises the block's keys
+    /// upfront overrides this to finalise them.
+    template <typename Data>
+    void commitKeyBatch(Data &) {}
+
 protected:
     Cache cache;
     /// Cached raw pointer to the null map bytes for the current block. Each element is 0/1.
@@ -431,7 +445,8 @@ protected:
     }
 
     template <bool compute_hash, typename Data, typename KeyHolder>
-    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data, [[maybe_unused]] size_t hash_value)
+    ALWAYS_INLINE EmplaceResult emplaceImpl(
+        KeyHolder & key_holder, Data & data, [[maybe_unused]] size_t hash_value, [[maybe_unused]] size_t row)
     {
         if constexpr (consecutive_keys_optimization)
         {
@@ -446,6 +461,8 @@ protected:
             data.emplace(key_holder, it, inserted);
         else
             data.emplace(key_holder, it, inserted, hash_value);
+
+        static_cast<Derived &>(*this).onEmplaced(row, data, it, inserted);
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)

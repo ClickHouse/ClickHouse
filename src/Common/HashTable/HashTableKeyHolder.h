@@ -80,10 +80,15 @@ struct ArenaKeyHolder
     /// When key is not held by any external instance, then it is held by this unique_ptr.
     std::unique_ptr<char[]> holder{};
 
-    ArenaKeyHolder(const std::string_view key_, Arena & pool_, std::unique_ptr<char[]> holder_ = {})
+    /// Set when the key already sits in the arena where it will stay - a whole block serialized
+    /// there at once - so persisting it must not copy it a second time.
+    bool prepared = false;
+
+    ArenaKeyHolder(const std::string_view key_, Arena & pool_, std::unique_ptr<char[]> holder_ = {}, bool prepared_ = false)
         : key(key_)
         , pool(pool_)
         , holder(std::move(holder_))
+        , prepared(prepared_)
     {
     }
 };
@@ -97,6 +102,9 @@ inline std::string_view & ALWAYS_INLINE keyHolderGetKey(DB::ArenaKeyHolder & hol
 
 inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
 {
+    if (holder.prepared)
+        return;
+
     // Normally, our hash table shouldn't ask to persist a zero key,
     // but it can happened in the case of clearable hash table (ClearableHashSet, for example).
     // The clearable hash table doesn't use zero storage and
