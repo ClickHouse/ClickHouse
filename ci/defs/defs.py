@@ -132,6 +132,12 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
+        name="clickhouse/utils",
+        path="./ci/docker/utils",
+        platforms=[Docker.Platforms.AMD],
+        depends_on=["clickhouse/fasttest"],
+    ),
+    Docker.Config(
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
@@ -377,6 +383,7 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
+    SIGN_MACOS = "Sign macOS binary"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
@@ -389,6 +396,7 @@ class JobNames:
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
+    PROMQL_COMPLIANCE = "PromQL Compliance"
     BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
@@ -425,6 +433,7 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
+    PARSER_MEMORY_CHECK = "Parser memory check"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
     COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
@@ -465,6 +474,10 @@ class ArtifactNames:
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
+    CH_AMD_DARWIN_PLAIN = "CH_AMD_DARWIN_PLAIN"
+    CH_ARM_DARWIN_PLAIN = "CH_ARM_DARWIN_PLAIN"
+    CH_AMD_DARWIN_SIGNED = "CH_AMD_DARWIN_SIGNED"
+    CH_ARM_DARWIN_SIGNED = "CH_ARM_DARWIN_SIGNED"
     CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
@@ -482,16 +495,10 @@ class ArtifactNames:
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
-    DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
+    # Packages are built for the release builds only - they are what gets published, and
+    # everything else in CI runs from the `CH_*` binary.
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_AMD_ASAN_UBSAN = "DEB_AMD_ASAN_UBSAN"
-    DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAN = "DEB_AMD_MSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
-    DEB_ARM_DEBUG = "DEB_ARM_DEBUG"
-    DEB_ARM_ASAN_UBSAN = "DEB_ARM_ASAN_UBSAN"
-    DEB_ARM_TSAN = "DEB_ARM_TSAN"
-    DEB_ARM_MSAN = "DEB_ARM_MSAN"
 
     RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
     RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
@@ -506,7 +513,6 @@ class ArtifactNames:
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
     CH_AMD_CFI = "CH_AMD_CFI"
-    DEB_AMD_CFI = "DEB_AMD_CFI"
 
     CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
     CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
@@ -615,6 +621,27 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_CFI,
         ]
     )
+    clickhouse_darwin_plain_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        compress_zst=True,
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ArtifactNames.CH_ARM_DARWIN_PLAIN,
+        ]
+    )
+    clickhouse_darwin_signed_zips = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-macos.zip",
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_SIGNED,
+            ArtifactNames.CH_ARM_DARWIN_SIGNED,
+        ]
+    )
     llvm_profdata_file = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
@@ -642,16 +669,7 @@ class ArtifactConfigs:
     ).parametrize(
         names=[
             ArtifactNames.DEB_AMD_RELEASE,
-            ArtifactNames.DEB_AMD_DEBUG,
-            ArtifactNames.DEB_AMD_ASAN_UBSAN,
-            ArtifactNames.DEB_AMD_TSAN,
-            ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_ARM_RELEASE,
-            ArtifactNames.DEB_ARM_DEBUG,
-            ArtifactNames.DEB_ARM_ASAN_UBSAN,
-            ArtifactNames.DEB_ARM_TSAN,
-            ArtifactNames.DEB_ARM_MSAN,
-            ArtifactNames.DEB_AMD_CFI,
         ]
     )
     clickhouse_rpms = Artifact.Config(

@@ -63,6 +63,7 @@ ASTPtr ASTStreamSettings::clone() const
     auto cloned_stream_settings = make_intrusive<ASTStreamSettings>();
 
     cloned_stream_settings->setSubscribeForUpdates(subscribe_for_updates);
+    cloned_stream_settings->setUnordered(unordered);
     if (cursor)
         cloned_stream_settings->setCursor(cursor->clone());
     if (watermark)
@@ -73,12 +74,17 @@ ASTPtr ASTStreamSettings::clone() const
 
 bool ASTStreamSettings::hasTweaks() const
 {
-    return !subscribe_for_updates || cursor != nullptr || watermark != nullptr;
+    return !subscribe_for_updates || unordered || cursor != nullptr || watermark != nullptr;
 }
 
 void ASTStreamSettings::setSubscribeForUpdates(bool subscribe_for_updates_)
 {
     subscribe_for_updates = subscribe_for_updates_;
+}
+
+void ASTStreamSettings::setUnordered(bool unordered_)
+{
+    unordered = unordered_;
 }
 
 void ASTStreamSettings::setCursor(CursorTreeNodePtr cursor_)
@@ -99,6 +105,14 @@ void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings & fo
     if (!subscribe_for_updates)
     {
         ostr << "BOUNDED";
+        need_space = true;
+    }
+
+    if (unordered)
+    {
+        if (need_space)
+            ostr << ' ';
+        ostr << "UNORDERED";
         need_space = true;
     }
 
@@ -133,6 +147,9 @@ void ASTStreamSettings::writeJSON(WriteBuffer & out) const
     if (!subscribe_for_updates)
         w.writeInt("subscribe_for_updates", 0);
 
+    if (unordered)
+        w.writeInt("unordered", 1);
+
     if (cursor)
         w.writeFieldValue("cursor_tree", Field(cursorTreeToMap(cursor)));
 
@@ -150,6 +167,9 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
 
     if (r.has("subscribe_for_updates"))
         setSubscribeForUpdates(r.getInt("subscribe_for_updates") != 0);
+
+    if (r.has("unordered"))
+        setUnordered(r.getInt("unordered") != 0);
 
     if (r.has("cursor_tree"))
     {

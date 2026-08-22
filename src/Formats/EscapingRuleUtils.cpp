@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Common/isValidUTF8.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -92,6 +94,19 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
     }
 }
 
+bool isCSVSeparateColumnsTuple(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    /// A non-empty `custom_delimiter` means the field boundary is that string rather than
+    /// `csv.delimiter`, which is then stale, so the tuple stays inside one field.
+    if (!format_settings.csv.custom_delimiter.empty())
+        return false;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    return tuple_type && !tuple_type->getElements().empty()
+        && format_settings.csv.deserialize_separate_columns_into_tuple
+        && format_settings.csv.tuple_delimiter == format_settings.csv.delimiter;
+}
+
 bool deserializeFieldByEscapingRule(
     const DataTypePtr & type,
     const SerializationPtr & serialization,
@@ -117,7 +132,7 @@ bool deserializeFieldByEscapingRule(
                 serialization->deserializeTextQuoted(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::CSV:
-            if (parse_as_nullable)
+            if (parse_as_nullable && !isCSVSeparateColumnsTuple(type, format_settings))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, buf, format_settings, serialization);
             else
                 serialization->deserializeTextCSV(column, buf, format_settings);
@@ -171,6 +186,45 @@ void serializeFieldByEscapingRule(
             break;
         case FormatSettings::EscapingRule::None:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot serialize field with None escaping rule");
+    }
+}
+
+bool settingsLiteralsMayProduceRawBytes(const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule)
+{
+    auto is_not_valid_utf8 = [](const String & s)
+    {
+        return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
+    };
+
+    /// `SerializationBool` writes these verbatim in the plain text, `Escaped`, `CSV`, and `Raw` kinds
+    /// (see `serializeCustom` there); the `Quoted`, `JSON`, and `XML` kinds write `true` / `false`.
+    const bool bool_representations = is_not_valid_utf8(format_settings.bool_true_representation)
+        || is_not_valid_utf8(format_settings.bool_false_representation);
+
+    switch (escaping_rule)
+    {
+        case FormatSettings::EscapingRule::Escaped:
+        case FormatSettings::EscapingRule::Raw:
+            /// `SerializationNullable::serializeNullEscaped` / `serializeNullRaw` write the `TSV`
+            /// `NULL` representation verbatim.
+            return bool_representations || is_not_valid_utf8(format_settings.tsv.null_representation);
+        case FormatSettings::EscapingRule::CSV:
+            /// `SerializationNullable::serializeNullCSV` writes the `CSV` `NULL` representation
+            /// verbatim, and `SerializationTuple::serializeTextCSV` writes the tuple delimiter
+            /// verbatim between the elements when a `Tuple` is serialized into a single field.
+            /// A single byte >= 0x80 is never valid UTF-8 on its own.
+            return bool_representations
+                || is_not_valid_utf8(format_settings.csv.null_representation)
+                || static_cast<unsigned char>(format_settings.csv.tuple_delimiter) >= 0x80;
+        /// `None` stands here for the plain `serializeText` kind used by the presentational formats
+        /// (`Pretty`, `Vertical`) and by the `*Strings*` JSON variants: `NULL` is a constant there,
+        /// but the `Bool` representations still apply.
+        case FormatSettings::EscapingRule::None:
+            return bool_representations;
+        case FormatSettings::EscapingRule::Quoted:
+        case FormatSettings::EscapingRule::JSON:
+        case FormatSettings::EscapingRule::XML:
+            return false;
     }
 }
 

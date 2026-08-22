@@ -53,6 +53,7 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
     if (stream_settings.has_value())
     {
         hash_state.update(stream_settings->subscribe_for_updates);
+        hash_state.update(stream_settings->unordered);
 
         if (stream_settings->cursor)
         {

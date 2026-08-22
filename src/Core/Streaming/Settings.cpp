@@ -46,6 +46,9 @@ bool StreamSettings::operator==(const StreamSettings & rhs) const
     if (subscribe_for_updates != rhs.subscribe_for_updates)
         return false;
 
+    if (unordered != rhs.unordered)
+        return false;
+
     /// Compare cursors
     {
         if ((cursor == nullptr) != (rhs.cursor == nullptr))
