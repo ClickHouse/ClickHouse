@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 #include <Common/CurrentThread.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
 #include <Common/saturatedDuration.h>
