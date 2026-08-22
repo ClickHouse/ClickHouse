@@ -95,7 +95,7 @@ class Labels:
     # Disables the unresolved-review-threads CI gate (see review_threads.py)
     IGNORE_UNRESOLVED_THREADS = "ignore-unresolved-threads"
 
-    # Gates the PromQL compliance PR comment from integration-test post-hooks (see promql_compliance_hook.py).
+    # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
     COMP_PROMQL = "comp-promql"
 
     # automatic backport for critical bug fixes
