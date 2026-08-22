@@ -12,7 +12,9 @@ DROP TABLE IF EXISTS t_preprocessed_plain;
 DROP TABLE IF EXISTS t_preprocessed_map;
 DROP TABLE IF EXISTS t_preprocessed_folded;
 DROP TABLE IF EXISTS t_preprocessed_cast;
+DROP TABLE IF EXISTS t_preprocessed_cast_target;
 DROP TABLE IF EXISTS t_preprocessed_cast_fixed;
+DROP TABLE IF EXISTS t_preprocessed_cast_fixed_target;
 DROP TABLE IF EXISTS t_preprocessed_cast_nested;
 DROP TABLE IF EXISTS t_map_fixed;
 DROP TABLE IF EXISTS t_map_nullable;
@@ -211,6 +213,13 @@ INSERT INTO t_preprocessed_cast SELECT if(number = 5, 'word5', 'zz' || toString(
 
 SELECT 'preprocessor cast key used', count() FROM t_preprocessed_cast WHERE x IN ('word5') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
 SELECT 'preprocessor cast key rows', (SELECT count() FROM t_preprocessed_cast WHERE x IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_cast WHERE x IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+-- The cast target is applied to both sides alike, so a wrapper-preserving one is prunable on the
+-- same payload.
+CREATE TABLE t_preprocessed_cast_target (x Nullable(String), INDEX i x TYPE text(tokenizer = splitByNonAlpha, preprocessor = CAST(x, 'Nullable(String)'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_preprocessed_cast_target SELECT if(number = 5, 'word5', 'zz' || toString(number)) FROM numbers(1000);
+
+SELECT 'preprocessor cast target used', count() FROM t_preprocessed_cast_target WHERE x IN ('word5') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
+SELECT 'preprocessor cast target rows', (SELECT count() FROM t_preprocessed_cast_target WHERE x IN ('word5') SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_cast_target WHERE x IN ('word5') SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 -- A cast from `FixedString` drops the padding a set element still carries, so a value shorter than
 -- the width tokenizes differently on the two sides.
 CREATE TABLE t_preprocessed_cast_fixed (x FixedString(6), INDEX i x TYPE text(tokenizer = ngrams(3), preprocessor = CAST(x, 'String'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
@@ -218,6 +227,12 @@ INSERT INTO t_preprocessed_cast_fixed SELECT toFixedString(if(number = 5, 'word5
 
 SELECT count() FROM t_preprocessed_cast_fixed WHERE x IN (toFixedString('word5', 6)) SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1; -- { serverError INDEX_NOT_USED }
 SELECT 'preprocessor cast fixed rows', (SELECT count() FROM t_preprocessed_cast_fixed WHERE x IN (toFixedString('word5', 6)) SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_cast_fixed WHERE x IN (toFixedString('word5', 6)) SETTINGS transform_null_in = 1, use_skip_indexes = 0);
+-- The payload decides, not the target: a wrapper-preserving cast off `FixedString` diverges too.
+CREATE TABLE t_preprocessed_cast_fixed_target (x Nullable(FixedString(6)), INDEX i x TYPE text(tokenizer = ngrams(3), preprocessor = CAST(x, 'Nullable(String)'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_preprocessed_cast_fixed_target SELECT toFixedString(if(number = 5, 'word5', 'zz' || toString(number)), 6) FROM numbers(1000);
+
+SELECT count() FROM t_preprocessed_cast_fixed_target WHERE x IN (toFixedString('word5', 6)) SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1; -- { serverError INDEX_NOT_USED }
+SELECT 'preprocessor cast fixed target rows', (SELECT count() FROM t_preprocessed_cast_fixed_target WHERE x IN (toFixedString('word5', 6)) SETTINGS transform_null_in = 1) = (SELECT count() FROM t_preprocessed_cast_fixed_target WHERE x IN (toFixedString('word5', 6)) SETTINGS transform_null_in = 1, use_skip_indexes = 0);
 -- A cast wrapping anything but the index column itself carries that expression's own divergence:
 -- here the type name is read from the carrier, which the set element never spells.
 CREATE TABLE t_preprocessed_cast_nested (x LowCardinality(String), INDEX i x TYPE text(tokenizer = ngrams(3), preprocessor = CAST(concat(toTypeName(x), ':', x), 'String'))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
@@ -294,7 +309,9 @@ DROP TABLE t_preprocessed_plain;
 DROP TABLE t_preprocessed_map;
 DROP TABLE t_preprocessed_folded;
 DROP TABLE t_preprocessed_cast;
+DROP TABLE t_preprocessed_cast_target;
 DROP TABLE t_preprocessed_cast_fixed;
+DROP TABLE t_preprocessed_cast_fixed_target;
 DROP TABLE t_preprocessed_cast_nested;
 DROP TABLE t_map_fixed;
 DROP TABLE t_map_nullable;

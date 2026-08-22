@@ -163,13 +163,12 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
             }
         }
 
-        /// Detect the exact form CAST(<index column>, 'String').
+        /// Detect the form CAST(<index column>, '<type>'), for any target type.
         if (func && func->arguments && func->arguments->children.size() == 2
             && getFunctionCanonicalNameIfAny(func->name) == "CAST")
         {
             const auto * target = func->arguments->children[1]->as<ASTLiteral>();
-            is_cast_to_string = target != nullptr && target->value.getType() == Field::Types::String
-                && target->value.safeGet<String>() == "String"
+            is_cast_of_index_column = target != nullptr && target->value.getType() == Field::Types::String
                 && func->arguments->children[0]->getColumnName() == index_description.column_names.front();
         }
     }

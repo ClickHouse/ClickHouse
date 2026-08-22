@@ -1797,7 +1797,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         || !textIndexSetElementIsComparable(
                types[*set_key_position], indexed_type, *tokenizer, has_preprocessor,
                has_preprocessor && preprocessor->isLowerOrUpper(),
-               has_preprocessor && preprocessor->isCastToString()))
+               has_preprocessor && preprocessor->isCastOfIndexColumn()))
         return false;
 
     const bool set_column_is_nullable = set_column.isNullable();
