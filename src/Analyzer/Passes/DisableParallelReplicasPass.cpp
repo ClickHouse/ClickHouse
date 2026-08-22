@@ -6,6 +6,7 @@
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -48,21 +49,29 @@ public:
             return;
 
         if (auto * query_node = node->as<QueryNode>())
-            query_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
+            disable(query_node->getMutableContext());
         if (auto * union_node = node->as<UnionNode>())
-            union_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
+            disable(union_node->getMutableContext());
     }
 
 private:
+    /// Every (sub)query carries its own context, and a nested `SETTINGS` clause can enable parallel
+    /// replicas for one alone, so eligibility is a property of this node rather than of the query.
+    /// It is also false on a follower, which must keep reading its assigned ranges.
+    static void disable(const ContextMutablePtr & node_context)
+    {
+        if (!node_context->canUseParallelReplicasOnInitiator())
+            return;
+
+        node_context->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
+    }
+
     bool must_disable = false;
 };
 
 
 void DisableParallelReplicasPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    if (!context->canUseParallelReplicasOnInitiator())
-        return;
-
     DisableParallelReplicasVisitor visitor(context);
     visitor.visit(query_tree_node);
 }

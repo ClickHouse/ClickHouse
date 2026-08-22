@@ -62,6 +62,28 @@ SETTINGS enable_analyzer = 1,
          automatic_parallel_replicas_mode = 0,
          max_recursive_cte_evaluation_depth = 20;
 
+SELECT '-- the recursive CTE stays on the initiator even when only the subquery enables parallel replicas';
+SELECT * FROM
+(
+    WITH RECURSIVE d AS
+    (
+        SELECT span_id FROM rcte_pr WHERE parent_span_id = 0 AND op = 'query'
+        UNION ALL
+        SELECT l.span_id FROM rcte_pr AS l INNER JOIN d AS dd ON l.parent_span_id = dd.span_id
+    )
+    SELECT countIf(op = 'query') AS a, countIf(op = 'query' AND span_id IN (SELECT span_id FROM d)) AS b
+    FROM rcte_pr
+    WHERE span_id = (SELECT any(span_id) FROM rcte_pr WHERE op = 'query')
+    SETTINGS enable_analyzer = 1,
+             allow_experimental_parallel_reading_from_replicas = 1,
+             max_parallel_replicas = 3,
+             cluster_for_parallel_replicas = 'parallel_replicas',
+             parallel_replicas_for_non_replicated_merge_tree = 1,
+             automatic_parallel_replicas_mode = 0,
+             max_recursive_cte_evaluation_depth = 10
+)
+SETTINGS enable_analyzer = 1, allow_experimental_parallel_reading_from_replicas = 0;
+
 SELECT '-- a query over the same table without a recursive CTE is still sent to the replicas';
 SELECT count() FROM (
     EXPLAIN
@@ -73,5 +95,45 @@ SELECT count() FROM (
              parallel_replicas_for_non_replicated_merge_tree = 1,
              automatic_parallel_replicas_mode = 0
 ) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
+
+-- Locality: a query counted by ParallelReplicasQueryCount reached the replica-reading coordinator,
+-- so the pair below distinguishes "ran on the initiator" from "did not run at all". Both aggregate
+-- over the parts rather than answering from part counters, which never reach the coordinator.
+SELECT '-- ParallelReplicasQueryCount: 0 for the recursive CTE, non-zero for the plain query';
+SELECT sum(span_id) FROM rcte_pr
+SETTINGS enable_analyzer = 1,
+         allow_experimental_parallel_reading_from_replicas = 1,
+         max_parallel_replicas = 3,
+         cluster_for_parallel_replicas = 'parallel_replicas',
+         parallel_replicas_for_non_replicated_merge_tree = 1,
+         automatic_parallel_replicas_mode = 0,
+         log_comment = 'rcte_pr_ships';
+
+WITH RECURSIVE d AS
+(
+    SELECT span_id FROM rcte_pr WHERE parent_span_id = 0
+    UNION ALL
+    SELECT l.span_id FROM rcte_pr AS l INNER JOIN d AS dd ON l.parent_span_id = dd.span_id
+)
+SELECT sum(span_id) FROM d
+SETTINGS enable_analyzer = 1,
+         allow_experimental_parallel_reading_from_replicas = 1,
+         max_parallel_replicas = 3,
+         cluster_for_parallel_replicas = 'parallel_replicas',
+         parallel_replicas_for_non_replicated_merge_tree = 1,
+         automatic_parallel_replicas_mode = 0,
+         max_recursive_cte_evaluation_depth = 10,
+         log_comment = 'rcte_pr_stays_local';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['ParallelReplicasQueryCount'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND event_date >= yesterday()
+  AND type = 'QueryFinish'
+  AND is_initial_query
+  AND log_comment IN ('rcte_pr_ships', 'rcte_pr_stays_local')
+ORDER BY log_comment
+SETTINGS enable_analyzer = 1, allow_experimental_parallel_reading_from_replicas = 0;
 
 DROP TABLE rcte_pr;

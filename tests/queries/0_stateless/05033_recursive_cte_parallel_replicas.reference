@@ -11,5 +11,12 @@
 4
 -- a recursive CTE referencing another recursive CTE, see issue 89844
 5
+-- the recursive CTE stays on the initiator even when only the subquery enables parallel replicas
+1	1
 -- a query over the same table without a recursive CTE is still sent to the replicas
 1
+-- ParallelReplicasQueryCount: 0 for the recursive CTE, non-zero for the plain query
+10
+10
+rcte_pr_ships	1
+rcte_pr_stays_local	0
