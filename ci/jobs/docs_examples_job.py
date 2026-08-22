@@ -61,6 +61,12 @@ class Server:
                 os.remove(link)
             os.symlink(binary, link)
 
+        # The downloaded binary is self-extracting: the first invocation decompresses the real ELF
+        # in place. Trigger that synchronously here, because `start` runs the server and probes it
+        # with `clickhouse-client` - the same file - and two decompressors racing each other corrupt
+        # the binary they both rewrite (the server then dies with `open: Is a directory`).
+        subprocess.run([binary, "--version"], stdout=subprocess.DEVNULL, check=True)
+
         Utils.add_to_PATH(TEMP_DIR)
         return True
 
