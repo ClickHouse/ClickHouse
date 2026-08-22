@@ -5,15 +5,37 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/castColumn.h>
 
 #include <optional>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int CANNOT_PARSE_BOOL;
+    extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_PARSE_UUID;
+    extern const int DECIMAL_OVERFLOW;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+}
 
 namespace LowCardinalityExecutionHelpers
 {
@@ -165,6 +187,58 @@ inline ColumnPtr dictionaryMatchesForSelectedIndexes(
     return sparse_matches;
 }
 
+/// Is [code] a cast declining its input, rather than a fault of the caller? Anything else (a memory
+/// limit, a logical error, a cancellation) is not an answer about the value and must propagate.
+inline bool isConstantCastDecline(int code)
+{
+    return code == ErrorCodes::CANNOT_CONVERT_TYPE
+        || code == ErrorCodes::CANNOT_PARSE_BOOL
+        || code == ErrorCodes::CANNOT_PARSE_DATE
+        || code == ErrorCodes::CANNOT_PARSE_DATETIME
+        || code == ErrorCodes::CANNOT_PARSE_IPV4
+        || code == ErrorCodes::CANNOT_PARSE_IPV6
+        || code == ErrorCodes::CANNOT_PARSE_NUMBER
+        || code == ErrorCodes::CANNOT_PARSE_TEXT
+        || code == ErrorCodes::CANNOT_PARSE_UUID
+        || code == ErrorCodes::DECIMAL_OVERFLOW
+        || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+        || code == ErrorCodes::NOT_IMPLEMENTED
+        || code == ErrorCodes::TOO_LARGE_STRING_SIZE
+        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
+        || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+}
+
+/// Did [value] survive the cast that produced [image]? The cast alone cannot report loss, since it
+/// truncates UInt64(256) to UInt8(0) and succeeds, so compare the two in the type they meet in, where
+/// neither side's padding is a difference.
+inline bool targetTypeRepresentsValue(
+    const ColumnPtr & value, const DataTypePtr & value_type, const ColumnPtr & image, const DataTypePtr & image_type)
+{
+    try
+    {
+        /// Without a common type the pair only compares as numbers, so [value_type] is where they meet.
+        const auto common_type = tryGetLeastSupertype(DataTypes{value_type, image_type});
+        const auto compare_type = common_type ? makeNullable(common_type) : makeNullable(value_type);
+
+        const auto restored = castColumnAccurateOrNull({image, image_type, ""}, compare_type);
+        if (restored->empty() || restored->isNullAt(0))
+            return false;
+
+        const auto original = castColumnAccurateOrNull({value, value_type, ""}, compare_type);
+        if (original->empty() || original->isNullAt(0))
+            return false;
+
+        return accurateEquals((*restored)[0], (*original)[0]);
+    }
+    catch (const Exception & e)
+    {
+        if (!isConstantCastDecline(e.code()))
+            throw;
+
+        return false;
+    }
+}
+
 /// Returns false if the constant value is not present in the dictionary. If the constant is NULL,
 /// returns true and sets [dictionary_index] to the default LC null index, matching the existing
 /// Array(LowCardinality) index-function behavior.
@@ -183,13 +257,32 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
         return true;
 
     auto value_type_without_low_cardinality = recursiveRemoveLowCardinality(value_type);
+    auto original_value = value;
+    auto cast_type = target_type;
     value = castColumn({value, value_type_without_low_cardinality, ""}, target_type);
 
     if (value->isNullable())
+    {
         value = assert_cast<const ColumnNullable &>(*value).getNestedColumnPtr();
+        cast_type = removeNullable(cast_type);
+    }
 
-    std::string_view elem = value->getDataAt(0);
-    if (auto maybe_index = low_cardinality_data.getDictionary().getOrFindValueIndex(elem))
+    const auto & dictionary = low_cardinality_data.getDictionary();
+
+    auto find_in_dictionary = [&](std::string_view elem) -> std::optional<UInt64>
+    {
+        /// The default slot holds its value whether or not any row references it, and the cast above
+        /// narrows without reporting loss, so UInt64(256) reaches it as UInt8(0). Answering from that
+        /// slot requires the constant to have survived the cast; one that did not equals no element.
+        if (elem == dictionary.getNestedNotNullableColumn()->getDataAt(dictionary.getNestedTypeDefaultValueIndex())
+            && !target_type->equals(*value_type_without_low_cardinality)
+            && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
+            return {};
+
+        return dictionary.getOrFindValueIndex(elem);
+    };
+
+    if (auto maybe_index = find_in_dictionary(value->getDataAt(0)))
     {
         dictionary_index = *maybe_index;
         return true;
