@@ -12,6 +12,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Common/Documentation.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 #include <IO/ReadHelpers.h>
@@ -516,6 +517,60 @@ void registerInputFormatFreeform(FormatFactory & factory)
         "Freeform",
         [](ReadBuffer & buf, const Block & header, const RowInputFormatParams & params, const FormatSettings & settings)
         { return std::make_shared<FreeformRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings); });
+
+    factory.setDocumentation("Freeform", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✔     | ✗       |       |
+
+## Description {#description}
+
+The `Freeform` format reads tabular text whose escaping rules are not known in advance, such as
+delimiter-separated files that are almost, but not quite, `CSV`, or space-separated files with an
+arbitrary quoting style. Unlike [`Template`](/interfaces/formats/Template), it needs no format
+string: the structure is inferred from the data.
+
+Every field of the first row is parsed with each of the supported escaping rules - `JSON`, `CSV`,
+raw (up to the next whitespace), `Quoted` and `Escaped` - and each sequence of rules that parses
+the whole row is a candidate *solution*. A solution is scored by the escaping rule and by the type
+of every field it produces, so that the more specific a type is, the higher it scores: a date or a
+date-time scores above a container, which scores above a number, which scores above a string. The
+solutions are then tried in the order of their score against up to 100 rows, and the first one that
+parses all of them and infers a consistent type for every column wins.
+
+Column names come from the data where the escaping rule provides them - a `JSON` object contributes
+one column per key, named after that key - and are `c0`, `c1`, ... otherwise. A JSON object is
+inferred as a `Map`, not as a named `Tuple`, because consecutive rows of a freeform file are free to
+carry a different set of keys.
+
+## Example usage {#example-usage}
+
+Reading a file whose format is not known:
+
+```sql
+SELECT * FROM file('access.log', 'Freeform')
+```
+
+Inspecting the inferred structure:
+
+```sql
+DESCRIBE file('access.log', 'Freeform')
+```
+
+## Format settings {#format-settings}
+
+The number of rows the candidate solutions are checked against is
+[`input_format_max_rows_to_read_for_schema_inference`](/operations/settings/formats#input_format_max_rows_to_read_for_schema_inference),
+capped at 100.
+
+:::note
+This format expects the input to be *tabular*: every row has to have the same structure. A file
+mixing many differently-shaped messages - the general log-parsing problem solved by algorithms such
+as Drain and Brain - has no single solution, and no schema is inferred for it.
+:::
+)DOCS_MD",
+    });
 }
 
 void registerFreeformSchemaReader(FormatFactory & factory);
