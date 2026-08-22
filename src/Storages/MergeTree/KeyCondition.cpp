@@ -36,7 +36,9 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
@@ -2667,6 +2669,41 @@ static bool setIndexTypesHaveSameFieldRepresentation(
     return left.equals(right);
 }
 
+/// The types a `Dynamic` column holds, or nullopt when they cannot be established: the shared variant
+/// stores binary-serialized values of arbitrary types, so its presence leaves them unknown. An empty
+/// result means every row is NULL, which constrains no conversion.
+static std::optional<DataTypes> getDynamicVariantsInUse(const IColumn & column)
+{
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(&column))
+        return getDynamicVariantsInUse(column_const->getDataColumn());
+
+    const auto * column_dynamic = typeid_cast<const ColumnDynamic *>(&column);
+    if (!column_dynamic)
+        return {};
+
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(column_dynamic->getVariantInfo().variant_type.get());
+    if (!variant_type)
+        return {};
+
+    /// `DataTypeVariant` sorts its variants by name, so this list is indexed by global discriminator.
+    const auto & variants = variant_type->getVariants();
+    const auto & variant_column = column_dynamic->getVariantColumn();
+    const auto shared_discriminator = column_dynamic->getSharedVariantDiscriminator();
+
+    DataTypes types_in_use;
+    for (size_t row = 0; row < variant_column.size(); ++row)
+    {
+        const auto discriminator = variant_column.globalDiscriminatorAt(row);
+        /// A NULL row holds no value to convert; the null filtering downstream owns it.
+        if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+            continue;
+        if (discriminator == shared_discriminator || discriminator >= variants.size())
+            return {};
+        types_in_use.push_back(variants[discriminator]);
+    }
+    return types_in_use;
+}
+
 /// Index preparation casts the set values into the key type, while runtime membership casts the key into
 /// the set type. An atom is an exact image of the predicate only when both directions preserve equality,
 /// which holds in two cases: `equals`-equal types that also agree on custom names (no cast runs, or it
@@ -2786,7 +2823,18 @@ static bool tryPrepareSetColumnsForIndex(
             set_element_type = transformed_set_type;
         }
 
-        if (!setIndexConversionPreservesEquality(key_column_type, set_element_type, composite_field_identity_is_enough))
+        /// `Dynamic` is judged by the types it holds, not by itself: it declares nothing about its values,
+        /// and each stored type converts on its own terms. All of them must preserve equality.
+        if (isDynamic(removeNullable(recursiveRemoveLowCardinality(set_element_type))))
+        {
+            const auto variants_in_use = getDynamicVariantsInUse(*set_column);
+            if (!variants_in_use)
+                return false;
+            for (const auto & variant : *variants_in_use)
+                if (!setIndexConversionPreservesEquality(key_column_type, variant, composite_field_identity_is_enough))
+                    return false;
+        }
+        else if (!setIndexConversionPreservesEquality(key_column_type, set_element_type, composite_field_identity_is_enough))
             return false;
 
         if (canBeSafelyCast(set_element_type, key_column_type))
