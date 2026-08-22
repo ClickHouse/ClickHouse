@@ -524,7 +524,7 @@ keywords: ['ClickHouse 2019', '2019年の変更履歴', 'リリースノート',
   #### 新機能
 </div>
 
-* 階層型ストレージ: MergeTree エンジンのテーブルで複数のストレージボリュームを使用できるようになりました。新しいデータは SSD に保存し、古いデータは自動的に HDD に移動できます。([example](https://clickhouse.github.io/clickhouse-presentations/meetup30/new_features/#12)). [#4918](https://github.com/ClickHouse/ClickHouse/pull/4918) ([Igr](https://github.com/ObjatieGroba)) [#6489](https://github.com/ClickHouse/ClickHouse/pull/6489) ([alesapin](https://github.com/alesapin))
+* 階層型ストレージ: MergeTree エンジンのテーブルで複数のストレージボリュームを使用できるようになりました。新しいデータは SSD に保存し、古いデータは自動的に HDD に移動できます。 [#4918](https://github.com/ClickHouse/ClickHouse/pull/4918) ([Igr](https://github.com/ObjatieGroba)) [#6489](https://github.com/ClickHouse/ClickHouse/pull/6489) ([alesapin](https://github.com/alesapin))
 * `INSERT SELECT` クエリで入力データを読み取るためのテーブル関数 `input` を追加しました。 [#5450](https://github.com/ClickHouse/ClickHouse/pull/5450) ([palasonic1](https://github.com/palasonic1)) [#6832](https://github.com/ClickHouse/ClickHouse/pull/6832) ([Anton Popov](https://github.com/CurtizJ))
 * `hashed` layout と機能的には同等ですが、よりメモリ効率の高い `sparse_hashed` Dictionary layout を追加しました。値の取得速度は遅くなる一方で、使用メモリ量はおよそ半分になります。 [#6894](https://github.com/ClickHouse/ClickHouse/pull/6894) ([Azat Khuzhin](https://github.com/azat))
 * Dictionaries へのアクセス用にユーザー一覧を定義できるようにしました。現在接続中のデータベースでのみ使用されます。 [#6907](https://github.com/ClickHouse/ClickHouse/pull/6907) ([Guillaume Tassery](https://github.com/YiuRULE))
@@ -615,7 +615,7 @@ keywords: ['ClickHouse 2019', '2019年の変更履歴', 'リリースノート',
   #### ビルド/テスト/パッケージングの改善
 </div>
 
-* ミューテーションの適用待ちが必要なため、[不安定な](https://clickhouse-test-reports.s3.yandex.net/6944/aab95fd5175a513413c7395a73a82044bdafb906/functional_stateless_tests_\(debug\).html) テスト `00715_fetch_merged_or_mutated_part_zookeeper` をシェルスクリプトに書き換えて修正しました。[#6977](https://github.com/ClickHouse/ClickHouse/pull/6977) ([Alexander Kazakov](https://github.com/Akazz))
+* ミューテーションの適用待ちが必要なため、不安定なテスト `00715_fetch_merged_or_mutated_part_zookeeper` をシェルスクリプトに書き換えて修正しました。[#6977](https://github.com/ClickHouse/ClickHouse/pull/6977) ([Alexander Kazakov](https://github.com/Akazz))
 * 空の Array 引数を持つ関数 `groupUniqArray` で発生していた UBSan および MemSan の失敗を修正しました。原因は、ゼロセルの値のコンストラクタが呼び出されていなかったため、空の `PaddedPODArray` がハッシュテーブルのゼロセルに配置されていたことでした。[#6937](https://github.com/ClickHouse/ClickHouse/pull/6937) ([Amos Bird](https://github.com/amosbird))
 
 <div id="clickhouse-release-19-14-3-3-2019-09-10">
@@ -764,7 +764,7 @@ keywords: ['ClickHouse 2019', '2019年の変更履歴', 'リリースノート',
 * 挿入データの送信中に発生したサーバー例外は、クライアント側でも処理されるようになりました。 [#5891](https://github.com/ClickHouse/ClickHouse/issues/5891) [#6711](https://github.com/ClickHouse/ClickHouse/pull/6711) ([dimarub2000](https://github.com/dimarub2000))
 * 分散テーブルによってリモートサーバーへの送信対象として選択されたファイルシステム内のファイル総数を示すメトリック `DistributedFilesToInsert` を追加しました。この数はすべての分片にわたって合計されます。[#6600](https://github.com/ClickHouse/ClickHouse/pull/6600) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * JOIN の準備ロジックの大半を `ExpressionAction/ExpressionAnalyzer` から `AnalyzedJoin` に移しました。[#6785](https://github.com/ClickHouse/ClickHouse/pull/6785) ([Artem Zuikov](https://github.com/4ertus2))
-* TSan の[警告](https://clickhouse-test-reports.s3.yandex.net/6399/c1c1d1daa98e199e620766f1bd06a5921050a00d/functional_stateful_tests_\(thread\).html) &#39;lock-order-inversion&#39; を修正しました。[#6740](https://github.com/ClickHouse/ClickHouse/pull/6740) ([Vasily Nemkov](https://github.com/Enmk))
+* TSan の警告 &#39;lock-order-inversion&#39; を修正しました。[#6740](https://github.com/ClickHouse/ClickHouse/pull/6740) ([Vasily Nemkov](https://github.com/Enmk))
 * Linux capabilities が不足している場合の情報メッセージを改善。致命的なエラーを &quot;fatal&quot; レベルでログに記録するようにし、`system.text_log` で見つけやすくしました。 [#6441](https://github.com/ClickHouse/ClickHouse/pull/6441) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * `GROUP BY`、`ORDER BY` の実行中にメモリ使用量を制限するために一時データを `disk` にダンプする機能を有効にしている場合、これまではディスクの空き容量が確認されていませんでした。この修正では、新しい設定 `min_free_disk_space` が追加され、ディスクの空き容量がしきい値を下回ると、クエリは停止し、`ErrorCodes::NOT_ENOUGH_SPACE` をスローするようになりました。[#6678](https://github.com/ClickHouse/ClickHouse/pull/6678) ([Weiqing Xu](https://github.com/weiqxu)) [#6691](https://github.com/ClickHouse/ClickHouse/pull/6691) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * スレッドごとの再帰的な rwlock を削除しました。スレッドはクエリ間で再利用されるため、この仕組みには意味がありません。`SELECT` クエリは、あるスレッドでロックを取得し、別のスレッドでそのロックを保持したまま、最初のスレッドから抜けることがあります。同時に、最初のスレッドが `DROP` クエリに再利用される可能性があります。これにより、誤った &quot;Attempt to acquire exclusive lock recursively&quot; メッセージが出ることがあります。[#6771](https://github.com/ClickHouse/ClickHouse/pull/6771) ([alexey-milovidov](https://github.com/alexey-milovidov))

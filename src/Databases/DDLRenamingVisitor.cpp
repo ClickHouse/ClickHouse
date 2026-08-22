@@ -1,9 +1,11 @@
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
 #include <Common/isLocalAddress.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -127,8 +129,19 @@ namespace
         if (new_qualified_name == qualified_name)
             return;
 
-        expr.database_and_table_name = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
-        expr.children.push_back(expr.database_and_table_name);
+        /// A table reference carries state besides its name, notably the alias the surrounding query
+        /// refers to, so rename it in place instead of substituting a newly built node.
+        if (auto * table_reference = expr.database_and_table_name->as<ASTTableIdentifier>())
+        {
+            table_reference->resetTable(new_qualified_name.database, new_qualified_name.table);
+            return;
+        }
+
+        /// `database_and_table_name` is registered as a child, so appending the renamed identifier
+        /// would leave the pre-rename one behind next to it. `replace` swaps both slots at once.
+        expr.replace(
+            expr.database_and_table_name,
+            make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table));
     }
 
     /// ASTDictionary keeps a dictionary definition, for example
@@ -277,10 +290,7 @@ namespace
 
     void visitFunction(const ASTFunction & function, const DDLRenamingVisitor::Data & data)
     {
-        if (function.name == "joinGet" ||
-            function.name == "dictHas" ||
-            function.name == "dictIsIn" ||
-            function.name.starts_with("dictGet"))
+        if (functionIsJoinGet(function.name) || functionIsDictGet(function.name))
         {
             replaceTableNameInArgument(function, data, 0);
         }

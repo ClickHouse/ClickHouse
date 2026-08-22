@@ -42,9 +42,7 @@ ClickHouse Cloud는 Google Cloud 서비스 계정에 연결된 HMAC(Hash-based M
 </div>
 
 <Steps>
-  <Step>
-    ### Google Cloud 서비스 계정 생성
-
+  <Step title="Google Cloud 서비스 계정 생성" id="create-gcs-account">
     1. Google Cloud Console에서 IAM &amp; Admin → Service Accounts로 이동합니다.
 
     <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
@@ -82,9 +80,7 @@ ClickHouse Cloud는 Google Cloud 서비스 계정에 연결된 HMAC(Hash-based M
     <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
   </Step>
 
-  <Step>
-    ### 서비스 계정에 버킷 액세스 권한 부여
-
+  <Step title="서비스 계정에 버킷 액세스 권한 부여" id="grant-bucket-access-to-service-account">
     프로젝트 수준 또는 개별 버킷 수준에서 액세스 권한을 부여할 수 있습니다.
 
     #### 옵션 1: 특정 버킷에 액세스 권한 부여(권장)
@@ -117,9 +113,7 @@ ClickHouse Cloud는 Google Cloud 서비스 계정에 연결된 HMAC(Hash-based M
     </Warning>
   </Step>
 
-  <Step>
-    ### 서비스 계정의 HMAC 키 생성
-
+  <Step title="서비스 계정의 HMAC 키 생성" id="generate-hmac-keys-for-service-account">
     `Cloud Storage` → `Settings` → `Interoperability`로 이동합니다:
 
     <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />

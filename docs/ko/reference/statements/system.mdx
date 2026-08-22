@@ -6,7 +6,7 @@ title: 'SYSTEM SQL 문'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <div id="reload-embedded-dictionaries">
   ## SYSTEM RELOAD EMBEDDED DICTIONARIES
@@ -21,7 +21,7 @@ import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBad
 </div>
 
 `SYSTEM RELOAD DICTIONARIES` 쿼리는 상태가 `LOADED`인 딕셔너리, 즉 이전에 성공적으로 로드된 딕셔너리를 다시 로드합니다([`system.dictionaries`](/ko/reference/system-tables/dictionaries)의 `status` 컬럼 참조).
-기본적으로 딕셔너리는 지연 로드됩니다([dictionaries&#95;lazy&#95;load](/ko/reference/settings/server-settings/settings#dictionaries_lazy_load) 참조). 따라서 시작 시 자동으로 로드되지 않으며, [`dictGet`](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet) 함수를 사용하거나 `ENGINE = Dictionary`인 테이블에서 `SELECT`를 실행해 처음 접근할 때 초기화됩니다.
+기본적으로 딕셔너리는 지연 로드됩니다([dictionaries&#95;lazy&#95;load](/ko/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load) 참조). 따라서 시작 시 자동으로 로드되지 않으며, [`dictGet`](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet) 함수를 사용하거나 `ENGINE = Dictionary`인 테이블에서 `SELECT`를 실행해 처음 접근할 때 초기화됩니다.
 
 **구문**
 
@@ -44,6 +44,33 @@ SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
 
 ```sql
 SELECT name, status FROM system.dictionaries;
+```
+
+<div id="unload-dictionary">
+  ## SYSTEM UNLOAD DICTIONARY
+</div>
+
+딕셔너리 상태가 `LOADED`인 경우, 메모리를 해제하기 위해 딕셔너리 `dictionary_name`의 로드를 해제합니다.
+필요한 경우 딕셔너리는 다시 지연 로드됩니다.
+
+```sql
+SYSTEM UNLOAD DICTIONARY dictionary_name
+```
+
+딕셔너리 상태는 `system.dictionaries` 테이블을 조회하여 확인할 수 있습니다.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+<div id="unload-dictionaries">
+  ## SYSTEM UNLOAD DICTIONARIES
+</div>
+
+`SYSTEM UNLOAD DICTIONARIES` 쿼리는 `LOADED` status를 가진 모든 딕셔너리, 즉 이전에 성공적으로 로드된 딕셔너리의 로드를 해제합니다([`system.dictionaries`](/ko/reference/system-tables/dictionaries)의 `status` 컬럼 참고).
+
+```sql
+SYSTEM UNLOAD DICTIONARIES
 ```
 
 <div id="reload-models">
@@ -92,7 +119,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
   ## SYSTEM RELOAD ASYNCHRONOUS METRICS
 </div>
 
-모든 [비동기 메트릭](/ko/reference/system-tables/asynchronous_metrics)을 다시 계산합니다. 비동기 메트릭은 설정 [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ko/reference/settings/server-settings/settings)에 따라 주기적으로 갱신되므로, 일반적으로는 이 구문을 사용해 수동으로 갱신할 필요가 없습니다.
+모든 [비동기 메트릭](/ko/reference/system-tables/asynchronous_metrics)을 다시 계산합니다. 비동기 메트릭은 설정 [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ko/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s)에 따라 주기적으로 갱신되므로, 일반적으로는 이 구문을 사용해 수동으로 갱신할 필요가 없습니다.
 
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
@@ -112,6 +139,13 @@ ClickHouse의 내부 DNS 캐시를 비웁니다. 경우에 따라(이전 ClickHo
 
 마크 캐시를 비웁니다.
 
+<div id="drop-primary-index-cache">
+  ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE
+</div>
+
+메모리에 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 프라이머리 키를 보관하는 프라이머리 인덱스 캐시를 비웁니다.
+크기는 서버 수준 설정인 [`primary_index_cache_size`](/ko/reference/settings/server-settings/settings/primary-index#primary_index_cache_size)로 지정합니다.
+
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
 </div>
@@ -130,17 +164,125 @@ Iceberg 메타데이터 캐시를 삭제합니다.
 
 Parquet 메타데이터 캐시를 비웁니다.
 
+<div id="drop-paimon-metadata-cache">
+  ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE
+</div>
+
+구문 분석된 Paimon 메타데이터 파일(manifest 목록 및 매니페스트)에 대한 인메모리 캐시를 지웁니다.
+
+<div id="drop-point-in-polygon-cache">
+  ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE
+</div>
+
+함수 [`pointInPolygon`](/ko/reference/functions/regular-functions/geo/coordinates#pointinpolygon)에서 사용하는 전처리된 상수 다각형의 캐시를 지웁니다. 구성된 크기 제한(`point_in_polygon_cache_size` server setting)은 변경되지 않으므로, 이후에도 캐시는 계속 새 항목을 저장합니다. 캐시를 비활성화하려면 대신 `point_in_polygon_cache_size`를 `0`으로 설정하십시오.
+
 <div id="drop-text-index-caches">
   ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
 </div>
 
-텍스트 인덱스의 헤더, 딕셔너리 및 포스팅 캐시를 지웁니다.
+텍스트 인덱스의 토큰, 헤더 및 포스팅 캐시를 지웁니다.
 
 이 캐시들 중 하나만 개별적으로 삭제하려면 다음을 실행할 수 있습니다.
 
-* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
-* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`, 또는
+* `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`, 또는
 * `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+<div id="drop-index-mark-cache">
+  ## SYSTEM CLEAR|DROP INDEX MARK CACHE
+</div>
+
+보조(데이터 스키핑) 인덱스용 마크 캐시를 비웁니다.
+
+<div id="drop-index-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE
+</div>
+
+보조(데이터 스키핑) 인덱스의 비압축 블록 캐시를 지웁니다.
+
+<div id="drop-mmap-cache">
+  ## SYSTEM CLEAR|DROP MMAP CACHE
+</div>
+
+메모리 매핑 파일의 캐시를 지웁니다.
+
+<div id="drop-page-cache">
+  ## SYSTEM CLEAR|DROP PAGE CACHE
+</div>
+
+사용자 공간 페이지 캐시, 즉 기반 저장소에서 읽은 데이터를 저장하는 ClickHouse 자체의 인메모리 캐시를 비웁니다.
+
+<div id="drop-vector-similarity-index-cache">
+  ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE
+</div>
+
+vector similarity index cache를 비웁니다.
+
+<div id="drop-connections-cache">
+  ## SYSTEM CLEAR|DROP CONNECTIONS CACHE
+</div>
+
+아웃바운드 연결에 사용되는 HTTP 연결 풀 캐시를 지웁니다.
+
+<div id="drop-s3-client-cache">
+  ## SYSTEM CLEAR|DROP S3 CLIENT CACHE
+</div>
+
+S3 클라이언트 캐시를 지웁니다.
+
+<div id="prewarm-mark-cache">
+  ## SYSTEM PREWARM MARK CACHE
+</div>
+
+테이블의 마크를 [마크 캐시](#drop-mark-cache)에 로드합니다. 보조 인덱스 마크도 [인덱스 마크 캐시](#drop-index-mark-cache)에 함께 로드합니다.
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="prewarm-primary-index-cache">
+  ## SYSTEM PREWARM PRIMARY INDEX CACHE
+</div>
+
+`MergeTree` 테이블의 프라이머리 인덱스를 [프라이머리 인덱스 캐시](#drop-primary-index-cache)에 적재합니다.
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="drop-disk-metadata-cache">
+  ## SYSTEM CLEAR|DROP DISK METADATA CACHE
+</div>
+
+지정한 디스크의 메타데이터 캐시를 지웁니다.
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+<div id="sync-filesystem-cache">
+  ## SYSTEM SYNC FILESYSTEM CACHE
+</div>
+
+ClickHouse의 파일 시스템 캐시에 대해 메모리에 있는 상태를 디스크에 실제로 존재하는 캐시 파일과 동기화하고, 캐시된 각 파일 세그먼트의 `cache_name`, `path`, 다운로드된 `size`를 반환합니다. 필요에 따라 캐시 이름을 지정하면 작업이 단일 캐시로 제한됩니다.
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+<div id="drop-distributed-cache">
+  ## SYSTEM CLEAR|DROP DISTRIBUTED CACHE
+</div>
+
+<Note>
+  `SYSTEM CLEAR|DROP DISTRIBUTED CACHE`는 ClickHouse Cloud에서만 사용할 수 있습니다.
+</Note>
+
+Distributed Cache를 삭제합니다. Distributed Cache 서버에 대한 캐시된 연결만 삭제하려면 `CONNECTIONS`를 사용하고, 단일 서버만 대상으로 하려면 서버 식별자를 지정하십시오.
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 <div id="drop-replica">
   ## SYSTEM DROP REPLICA
@@ -181,21 +323,27 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 비압축 데이터 캐시를 지웁니다.
-비압축 데이터 캐시는 쿼리/사용자/profile 수준 설정인 [`use_uncompressed_cache`](/ko/reference/settings/session-settings#use_uncompressed_cache)로 활성화하거나 비활성화할 수 있습니다.
-크기는 서버 수준 설정인 [`uncompressed_cache_size`](/ko/reference/settings/server-settings/settings#uncompressed_cache_size)로 구성할 수 있습니다.
+비압축 데이터 캐시는 쿼리/사용자/프로필 수준 설정인 [`use_uncompressed_cache`](/ko/reference/settings/session-settings/use#use_uncompressed_cache)로 활성화하거나 비활성화할 수 있습니다.
+크기는 서버 수준 설정인 [`uncompressed_cache_size`](/ko/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size)로 구성할 수 있습니다.
 
 <div id="drop-compiled-expression-cache">
   ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE
 </div>
 
 컴파일된 표현식 캐시를 비웁니다.
-컴파일된 표현식 캐시는 쿼리/사용자/프로필 수준의 설정인 [`compile_expressions`](/ko/reference/settings/session-settings#compile_expressions)로 활성화하거나 비활성화할 수 있습니다.
+컴파일된 표현식 캐시는 쿼리/사용자/프로필 수준의 설정인 [`compile_expressions`](/ko/reference/settings/session-settings/compile#compile_expressions)로 활성화하거나 비활성화할 수 있습니다.
 
 <div id="drop-query-condition-cache">
   ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
 </div>
 
 쿼리 조건 캐시를 삭제합니다.
+
+<div id="drop-encryption-headers-cache">
+  ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE
+</div>
+
+암호화 headers 캐시를 지웁니다. 이 캐시는 암호화된 파일 앞부분에서 읽은 암호화 headers를 저장하며, 실험적 `use_reader_executor` 읽기 경로에서 이를 다시 읽지 않도록 사용됩니다. 크기는 `encryption_header_cache_size` server setting으로 설정됩니다.
 
 <div id="drop-query-cache">
   ## SYSTEM CLEAR|DROP QUERY CACHE
@@ -213,12 +361,12 @@ SYSTEM CLEAR QUERY CACHE TAG '<tag>'
   ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
 </div>
 
-[`format_schema_path`](/ko/reference/settings/server-settings/settings#format_schema_path)에서 로드된 스키마 캐시를 지웁니다.
+[`format_schema_path`](/ko/reference/settings/server-settings/settings/format#format_schema_path)에서 로드된 스키마 캐시를 지웁니다.
 
 지원되는 대상:
 
 * Protobuf: 메모리에서 가져온 Protobuf 메시지 정의를 제거합니다.
-* Files: `format_schema_source`가 `query`로 설정된 경우 [`format_schema_path`](/ko/reference/settings/server-settings/settings#format_schema_path)에 로컬로 저장된 캐시된 스키마 파일을 삭제합니다.
+* Files: `format_schema_source`가 `query`로 설정된 경우 [`format_schema_path`](/ko/reference/settings/server-settings/settings/format#format_schema_path)에 로컬로 저장된 캐시된 스키마 파일을 삭제합니다.
   참고: 대상을 지정하지 않으면 두 캐시가 모두 지워집니다.
 
 ```sql
@@ -375,7 +523,7 @@ SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
   ## 분산 테이블 관리
 </div>
 
-ClickHouse에서는 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블을 관리할 수 있습니다. 사용자가 이러한 테이블에 데이터를 삽입하면 ClickHouse는 먼저 클러스터(cluster) 노드로 전송할 데이터 큐를 만든 다음, 이를 비동기적으로 전송합니다. [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), [`START DISTRIBUTED SENDS`](#start-distributed-sends) 쿼리를 사용해 큐 처리를 관리할 수 있습니다. 또한 [`distributed_foreground_insert`](/ko/reference/settings/session-settings#distributed_foreground_insert) 설정을 사용하면 분산 데이터를 동기적으로 삽입할 수도 있습니다.
+ClickHouse에서는 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블을 관리할 수 있습니다. 사용자가 이러한 테이블에 데이터를 삽입하면 ClickHouse는 먼저 클러스터(cluster) 노드로 전송할 데이터 큐를 만든 다음, 이를 비동기적으로 전송합니다. [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), [`START DISTRIBUTED SENDS`](#start-distributed-sends) 쿼리를 사용해 큐 처리를 관리할 수 있습니다. 또한 [`distributed_foreground_insert`](/ko/reference/settings/session-settings/distributed#distributed_foreground_insert) 설정을 사용하면 분산 데이터를 동기적으로 삽입할 수도 있습니다.
 
 <div id="stop-distributed-sends">
   ### SYSTEM STOP DISTRIBUTED SENDS
@@ -388,7 +536,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 <Note>
-  [`prefer_localhost_replica`](/ko/reference/settings/session-settings#prefer_localhost_replica)가 활성화되어 있으면(기본값) 데이터는 어쨌든 로컬 세그먼트에 삽입됩니다.
+  [`prefer_localhost_replica`](/ko/reference/settings/session-settings/prefer#prefer_localhost_replica)가 활성화되어 있으면(기본값) 데이터는 어쨌든 로컬 세그먼트에 삽입됩니다.
 </Note>
 
 <div id="flush-distributed">
@@ -922,6 +1070,88 @@ SYSTEM WAIT VIEW [db.]name
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
+
+<div id="managing-background-activity">
+  ## 백그라운드 활동 관리
+</div>
+
+단일 테이블 또는 서버 내 모든 해당 테이블의 백그라운드 활동을 제어하는 엔진 독립적 명령입니다. 다음에 적용됩니다.
+
+* [갱신 가능 구체화 뷰](/ko/reference/statements/create/view#refreshable-materialized-view)의 주기적 갱신
+* 외부 소스에서 지속적으로 데이터를 소비하는 스트리밍 테이블 엔진: [Kafka](/ko/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/ko/reference/engines/table-engines/integrations/rabbitmq), [NATS](/ko/reference/engines/table-engines/integrations/nats), [S3Queue](/ko/reference/engines/table-engines/integrations/s3queue), [AzureQueue](/ko/reference/engines/table-engines/integrations/azure-queue)
+
+갱신 가능 구체화 뷰의 경우, 각 동사는 [갱신 가능 구체화 뷰 관리](#managing-refreshable-materialized-views)에 있는 해당 `SYSTEM ... VIEW` 명령의 별칭입니다. 따라서 `SYSTEM STOP [db.]name`은 `SYSTEM STOP VIEW [db.]name`과 정확히 동일하게 동작하며, 다른 명령도 마찬가지입니다.
+
+테이블별 형식과 와일드카드 형식은 백그라운드 활동이 없는 테이블을 처리하는 방식이 다릅니다. 테이블별 형식(`SYSTEM STOP [db.]table`)은 지정한 테이블이 스트리밍 엔진이나 갱신 가능 구체화 뷰가 아니면 오류를 발생시킵니다. 와일드카드 형식은 이러한 테이블을 조용히 건너뛰므로 언제든 안전하게 실행할 수 있습니다.
+
+`STOP`과 `CANCEL`은 가능한 한 빨리 소비를 중단합니다. [Kafka](/ko/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/ko/reference/engines/table-engines/integrations/rabbitmq), [NATS](/ko/reference/engines/table-engines/integrations/nats)의 경우 소스 읽기는 중단하지만 이미 시작된 삽입은 중단하지 않습니다. 구체화 뷰에 기록 중인 블록은 끝까지 기록된 후 커밋됩니다. [S3Queue](/ko/reference/engines/table-engines/integrations/s3queue)와 [AzureQueue](/ko/reference/engines/table-engines/integrations/azure-queue)는 단일 파이프라인에서 읽기와 삽입을 수행합니다. 중복 제거가 활성화된 경우(기본값)에는 삽입도 취소되고 파일은 나중에 다시 처리됩니다. 중복 제거가 비활성화된 경우에는 행 중복을 방지하기 위해 진행 중인 Batch가 대신 완료된 후 커밋됩니다(위 엔진과 동일). 읽었지만 아직 커밋되지 않은 데이터는 나중에 다시 소비되므로, 재전송할 수 없어 이를 삭제하는 JetStream 없는 core NATS를 제외하면 데이터는 손실되지 않습니다.
+
+`PAUSE`는 실행 중인 삽입을 중단하지 않으므로 일반적으로 데이터가 손실되지 않습니다. core NATS는 예외입니다. 일시 중지하면 소비가 중단되고 이미 수신했지만 아직 삽입하지 않은 메시지는 삭제되며, core NATS는 이를 재전송할 수 없습니다.
+
+<Note>
+  이러한 상태는 서버를 재시작해도 유지되지 않습니다. 재시작 후 갱신 가능 뷰는 구성된 일정에 따라 다시 갱신되고, 스트리밍 엔진은 다시 소비를 시작합니다.
+</Note>
+
+<div id="stop-background">
+  ### SYSTEM STOP
+</div>
+
+백그라운드 활동을 중지하고 중지 상태를 유지합니다. 현재 실행 중인 작업을 중단하고, `SYSTEM START`를 실행할 때까지 추가 작업을 실행하지 않습니다. `PAUSE` + `CANCEL`과 동일합니다.
+
+```sql
+SYSTEM STOP [db.]table
+SYSTEM STOP ALL BACKGROUND
+```
+
+<div id="start-background">
+  ### SYSTEM START
+</div>
+
+이전에 실행한 `SYSTEM STOP` 또는 `SYSTEM PAUSE`를 되돌리고 작업을 재개합니다. 작업이 중단되지는 않습니다.
+
+```sql
+SYSTEM START [db.]table
+SYSTEM START ALL BACKGROUND
+```
+
+<div id="pause-background">
+  ### SYSTEM PAUSE
+</div>
+
+추가 백그라운드 활동이 시작되지 않도록 하되, 현재 실행 중인 작업은 완료될 때까지 기다립니다.
+
+```sql
+SYSTEM PAUSE [db.]table
+SYSTEM PAUSE ALL BACKGROUND
+```
+
+<div id="cancel-background">
+  ### SYSTEM CANCEL
+</div>
+
+향후 활동에는 영향을 주지 않고 현재 실행 중인 활동만 중단합니다. 테이블은 일정에 따라 계속 갱신되거나 데이터를 소비합니다. 진행 중인 활동이 없으면 아무 작업도 수행하지 않습니다.
+
+```sql
+SYSTEM CANCEL [db.]table
+SYSTEM CANCEL ALL BACKGROUND
+```
+
+<div id="refresh-background">
+  ### SYSTEM REFRESH
+</div>
+
+일정에 따라 실행되는 사이클 외에 추가로 한 번 실행합니다. 스트리밍 테이블에서는 테이블이 중지되었거나 일시 중지된 상태에서도 즉시 한 번 실행됩니다. 갱신 가능 구체화 뷰에서는 `SYSTEM REFRESH VIEW`처럼 동작합니다. 뷰가 중지된 경우 갱신 요청이 저장되며, `SYSTEM START`로 중지가 해제되면 한 번 실행됩니다.
+
+```sql
+SYSTEM REFRESH [db.]table
+SYSTEM REFRESH ALL BACKGROUND
+```
+
+<div id="background-privileges">
+  ### 권한
+</div>
+
+각 명령을 실행하려면 대상 엔진에 해당하는 권한이 필요합니다. 갱신 가능 구체화 뷰에는 `SYSTEM VIEWS` 권한이, 스트리밍 테이블에는 `SYSTEM STREAMING ENGINES` 권한이 필요합니다. 두 권한은 모두 `SYSTEM BACKGROUND`의 하위 권한이므로, `SYSTEM BACKGROUND`를 부여하면 이러한 모든 테이블의 백그라운드 활동을 제어할 수 있습니다. `ALL BACKGROUND` 형식은 사용자가 제어할 수 있는 테이블에만 적용되며, 나머지 테이블은 조용히 건너뜁니다.
 
 <div id="flush-object-storage-queue">
   ## SYSTEM FLUSH OBJECT STORAGE QUEUE

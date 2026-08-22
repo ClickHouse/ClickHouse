@@ -5,11 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Tests subset-of-columns reading with the native Arrow IPC reader
-# (input_format_arrow_use_native_reader=1): when a query requests only some columns, the native reader
-# must skip (prune) the others while keeping the requested columns correct. Reading a subset must give
-# exactly the same result as the Apache Arrow library reader, and must work for both the Arrow (file)
-# and ArrowStream formats. The data is written once with diverse column types (numeric, string,
+# Tests subset-of-columns reading with the native Arrow IPC reader: when a query requests only some
+# columns, the native reader must skip (prune) the others while keeping the requested columns correct,
+# for both the Arrow (file) and ArrowStream formats. The data is written once with diverse column types (numeric, string,
 # fixed_string, list, tuple/struct, map, LowCardinality/dictionary, nullable) so the skip covers many
 # Arrow buffer layouts.
 
@@ -36,13 +34,21 @@ write_data() {
     "
 }
 
-# For a given format and column list, the native reader (pruning) and the library reader must agree.
+# Reading a subset of columns (which prunes the rest) must return exactly what reading every column and
+# then projecting the same subset returns. The reference side materializes `SELECT *` into a temporary
+# table first: a subquery would be shrunk back to the requested columns by
+# `RemoveUnusedProjectionColumnsPass`, which would compare the pruned reader against itself, while an
+# `INSERT` of every column is a barrier the analyzer cannot see through. Any pruning bug therefore shows
+# up as a difference between the two.
 check_subset() {
     local file="$1" format="$2" cols="$3"
-    local native library
-    native=$(${CLICKHOUSE_LOCAL}  --query "SELECT ${cols} FROM file('${file}', '${format}') ORDER BY c_i32 SETTINGS input_format_arrow_use_native_reader = 1")
-    library=$(${CLICKHOUSE_LOCAL} --query "SELECT ${cols} FROM file('${file}', '${format}') ORDER BY c_i32 SETTINGS input_format_arrow_use_native_reader = 0")
-    if [ "$native" = "$library" ]; then echo "OK   ${format}: ${cols}"; else echo "MISMATCH   ${format}: ${cols}"; fi
+    local pruned full
+    pruned=$(${CLICKHOUSE_LOCAL} --query "SELECT ${cols} FROM file('${file}', '${format}') ORDER BY c_i32")
+    full=$(${CLICKHOUSE_LOCAL} --query "
+    CREATE TEMPORARY TABLE all_columns ENGINE = Memory AS SELECT * FROM file('${file}', '${format}');
+    SELECT ${cols} FROM all_columns ORDER BY c_i32;
+    ")
+    if [ "$pruned" = "$full" ]; then echo "OK   ${format}: ${cols}"; else echo "MISMATCH   ${format}: ${cols}"; fi
 }
 
 for FMT in ArrowStream Arrow; do
@@ -65,8 +71,8 @@ done
 echo "--- values of a pruned subset (native) ---"
 DATA_FILE="${CLICKHOUSE_TMP}/04341_prune.ArrowStream"
 write_data "${DATA_FILE}" "ArrowStream"
-${CLICKHOUSE_LOCAL} --query "SELECT c_i32, c_lc, c_list FROM file('${DATA_FILE}', 'ArrowStream') ORDER BY c_i32 LIMIT 5 SETTINGS input_format_arrow_use_native_reader = 1"
+${CLICKHOUSE_LOCAL} --query "SELECT c_i32, c_lc, c_list FROM file('${DATA_FILE}', 'ArrowStream') ORDER BY c_i32 LIMIT 5"
 
 echo "--- count() only (native, no columns decoded) ---"
-${CLICKHOUSE_LOCAL} --query "SELECT count() FROM file('${DATA_FILE}', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 1"
+${CLICKHOUSE_LOCAL} --query "SELECT count() FROM file('${DATA_FILE}', 'ArrowStream')"
 rm -f "${DATA_FILE}"

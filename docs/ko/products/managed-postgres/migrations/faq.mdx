@@ -1,23 +1,23 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: 'FAQ'
-title: 'Managed Postgres 마이그레이션 FAQ'
+title: 'ClickHouse Managed Postgres 마이그레이션 FAQ'
 description: 'ClickHouse Managed Postgres로 데이터를 마이그레이션할 때 자주 묻는 질문입니다.'
 keywords: ['postgres', '마이그레이션', 'faq', 'Managed Postgres', '논리적 복제', 'enum', '고유 제약 조건']
 doc_type: '참고'
 ---
 
-import PrivatePreviewBadge from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-`TOAST` 컬럼, replication slot, publication, 스키마 변경, 데이터 타입 매핑 등 Postgres 복제의 작동 방식과 관련된 많은 질문은 [ClickPipes for Postgres FAQ](/ko/integrations/clickpipes/postgres/faq)에서 다룹니다. 해당 정보는 Managed Postgres 마이그레이션에도 적용됩니다.
+`TOAST` 컬럼, replication slot, publication, 스키마 변경, 데이터 타입 매핑 등 Postgres 복제의 작동 방식과 관련된 많은 질문은 [ClickPipes for Postgres FAQ](/ko/integrations/clickpipes/postgres/faq)에서 다룹니다. 해당 정보는 ClickHouse Managed Postgres 마이그레이션에도 적용됩니다.
 
 <div id="invalid-enum-value">
   ### 복제 중 &quot;enum의 입력 값이 잘못되었습니다&quot; 오류가 표시됩니다
 </div>
 
-이 오류는 원본 Postgres에 있는 enum 값이 대상 Managed Postgres에는 없을 때 발생합니다. 논리적 복제는 `ALTER TYPE ... ADD VALUE` 명령을 자동으로 전파하지 않으므로, 초기 스키마 설정 후 원본에 추가된 새 enum 값 때문에 대상에서 삽입이 실패합니다.
+이 오류는 원본 Postgres에 있는 enum 값이 대상 ClickHouse Managed Postgres에는 없을 때 발생합니다. 논리적 복제는 `ALTER TYPE ... ADD VALUE` 명령을 자동으로 전파하지 않으므로, 초기 스키마 설정 후 원본에 추가된 새 enum 값 때문에 대상에서 삽입이 실패합니다.
 
 이 문제를 해결하려면 대상 Postgres의 enum 유형에 누락된 값을 추가하십시오:
 
@@ -27,28 +27,36 @@ ALTER TYPE your_enum_type ADD VALUE 'new_value';
 
 `your_enum_type`을 enum 유형 이름으로, `'new_value'`를 오류 메시지에 표시된 누락된 값으로 바꾸십시오.
 
-<div id="unique-constraint-violation">
-  ### 복제 중 고유 제약 조건 위반 오류가 발생하는 경우
+<div id="constraint-violation">
+  ### 복제 중 고유 제약 조건 또는 검사 제약 조건 위반 오류가 발생합니다
 </div>
 
-논리적 복제 중에는 복제 순서로 인해 대상에 이미 존재하는 고유 제약 조건과 충돌이 발생하여 고유 제약 조건 위반이 생길 수 있습니다. 이는 후속 업데이트에서 해결되기 전에 일시적으로 고유성 위반이 발생하는 작업을 재생하는 CDC 워크로드에서 나타날 수 있습니다.
+논리적 복제 중 복제 순서가 대상의 기존 제약 조건과 충돌하면 제약 조건 위반이 발생할 수 있습니다.
 
-복제를 다시 진행할 수 있도록 대상 Postgres에서 고유 제약 조건을 삭제하세요:
+* **고유 제약 조건**: 변경 사항은 프라이머리 키별 최신 값을 기록하는 일괄 `MERGE`/`UPSERT` 작업으로 적용되므로, 특정 키의 작업 순서가 고유 인덱스에서 예상하는 순서와 일치하지 않을 수 있습니다. 이로 인해 `MERGE`가 완료된 후에는 제약 조건이 충족되더라도 트랜잭션 내에서는 일시적으로 `UNIQUE` 제약 조건을 위반할 수 있습니다. Postgres는 외래 키처럼 고유 인덱스 검사를 지연할 수 없으므로, 검사를 트랜잭션 종료 시점까지 미룰 방법이 없습니다. 이는 데이터 일관성에 영향을 주지 않습니다. 행 아이덴티티는 프라이머리 키로 정의되며, `MERGE` 로직도 동일한 프라이머리 키를 기준으로 하기 때문입니다.
+* **검사 제약 조건**: 대상의 검사 제약 조건이 원본보다 더 엄격할 수 있으며, 일괄 `MERGE` 중간 상태가 최종 상태에서는 제약 조건을 충족하더라도 일시적으로 이를 충족하지 못할 수 있습니다. 고유 제약 조건과 마찬가지로, `MERGE`는 행 아이덴티티를 정의하는 프라이머리 키를 기준으로 하므로 이는 데이터 일관성에 영향을 주지 않습니다.
+
+복제를 재개하려면 대상 Postgres에서 문제가 되는 제약 조건을 삭제하십시오:
 
 ```sql
+-- Drop a unique constraint
 ALTER TABLE your_table DROP CONSTRAINT your_constraint_name;
+
+-- Drop a check constraint
+ALTER TABLE your_table DROP CONSTRAINT your_check_constraint_name;
 ```
 
-다음을 실행하여 제약 조건 이름을 확인할 수 있습니다:
+오류 메시지에 표시된 이름으로 제약 조건의 세부 정보를 확인할 수 있습니다:
 
 ```sql
-SELECT conname, conrelid::regclass
+SELECT conname, conrelid::regclass, contype
 FROM pg_constraint
-WHERE contype = 'u';
+WHERE conname = 'your_constraint_name';
 ```
 
-복제가 완료되어 소스가 더 이상 활성 상태가 아니면 컷오버 시점에 제약 조건을 다시 추가하십시오:
+복제가 완료되고 원본가 더 이상 활성 상태가 아니면 전환 시 제약 조건을 다시 추가하십시오:
 
 ```sql
 ALTER TABLE your_table ADD CONSTRAINT your_constraint_name UNIQUE (column1, column2);
+ALTER TABLE your_table ADD CONSTRAINT your_check_constraint_name CHECK (column1 > 0);
 ```

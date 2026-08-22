@@ -1,0 +1,15 @@
+unknown_disable Code: 36
+unknown_enable Code: 36
+unknown_wait Code: 36
+unknown_wait_pause Code: 36
+unknown_notify Code: 36 Cannot find fail point
+registered_not_enabled_disable rc=0 out=[]
+registered_not_enabled_wait rc=0 out=[]
+registered_not_enabled_wait_pause rc=0 out=[]
+registered_notify_no_channel Code: 36 Cannot find channel for fail point
+registered_enabled_wait rc=0 out=[]
+enabled	1
+disabled	0
+armed	1
+still_armed	1
+disarmed	0

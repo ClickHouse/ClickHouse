@@ -75,9 +75,9 @@ int IProcessor::schedule()
 }
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-std::pair<int, uint32_t> IProcessor::scheduleForEvent()
+std::tuple<int, uint32_t, Int64> IProcessor::scheduleForEvent()
 {
-    return {schedule(), EPOLLIN | EPOLLERR};
+    return {schedule(), EPOLLIN | EPOLLERR, -1};
 }
 #endif
 

@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <IO/Operators.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/Port.h>
@@ -47,6 +48,8 @@ void NegativeLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const
 {
     auto transform = std::make_shared<NegativeLimitTransform>(
         pipeline.getSharedHeader(), limit, offset, pipeline.getNumStreams(), with_ties, description);
+    if (is_shard_limit)
+        transform->markAsShardLimit();
 
     pipeline.addTransform(std::move(transform));
 }

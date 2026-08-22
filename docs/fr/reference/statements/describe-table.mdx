@@ -21,13 +21,13 @@ L&#39;instruction `DESCRIBE` renvoie une ligne pour chaque colonne de la table, 
 * `default_type` — Une clause utilisée dans l&#39;[expression par défaut](/fr/reference/statements/create/table) de la colonne : `DEFAULT`, `MATERIALIZED` ou `ALIAS`. S&#39;il n&#39;y a pas d&#39;expression par défaut, une chaîne vide est renvoyée.
 * `default_expression` — Une expression spécifiée après la clause `DEFAULT`.
 * `comment` — Un [commentaire de colonne](/fr/reference/statements/alter/column#comment-column).
-* `codec_expression` — Un [codec](/fr/reference/statements/create/table#column_compression_codec) appliqué à la colonne.
+* `codec_expression` — Un [codec](/fr/reference/statements/create/table/codec) appliqué à la colonne.
 * `ttl_expression` — Une expression [TTL](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
-* `is_subcolumn` — Un indicateur égal à `1` pour les sous-colonnes internes. Il n&#39;est inclus dans le résultat que si la description des sous-colonnes est activée par le paramètre [describe&#95;include&#95;subcolumns](/fr/reference/settings/session-settings#describe_include_subcolumns).
+* `is_subcolumn` — Un indicateur égal à `1` pour les sous-colonnes internes. Il n&#39;est inclus dans le résultat que si la description des sous-colonnes est activée par le paramètre [describe&#95;include&#95;subcolumns](/fr/reference/settings/session-settings/describe-include#describe_include_subcolumns).
 
 Toutes les colonnes des structures de données [Nested](/fr/reference/data-types/nested-data-structures/index) sont décrites séparément. Le nom de chaque colonne est préfixé par le nom de la colonne parente, suivi d&#39;un point.
 
-Pour afficher les sous-colonnes internes d&#39;autres types de données, utilisez le paramètre [describe&#95;include&#95;subcolumns](/fr/reference/settings/session-settings#describe_include_subcolumns).
+Pour afficher les sous-colonnes internes d&#39;autres types de données, utilisez le paramètre [describe&#95;include&#95;subcolumns](/fr/reference/settings/session-settings/describe-include#describe_include_subcolumns).
 
 **Exemple**
 
@@ -81,4 +81,4 @@ Cette utilisation permet de renvoyer des métadonnées sur les colonnes de résu
 
 **Voir aussi**
 
-* paramètre [describe&#95;include&#95;subcolumns](/fr/reference/settings/session-settings#describe_include_subcolumns).
+* paramètre [describe&#95;include&#95;subcolumns](/fr/reference/settings/session-settings/describe-include#describe_include_subcolumns).

@@ -234,6 +234,57 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
+<div id="example-projection-with-where">
+  ### `WHERE` 절이 있는 PROJECTION 예시
+</div>
+
+PROJECTION에는 일부 행만 저장하도록 `WHERE` 절을 포함할 수 있습니다. 이는 쿼리에서 정해진 프레디케이트를 기준으로 자주 필터링하는 경우에 유용합니다. PROJECTION은 일치하는 행만 구체화하여 저장하므로 스토리지 사용량을 줄이고 쿼리 성능을 향상합니다.
+
+테이블을 생성하고 필터링된 PROJECTION을 추가합니다:
+
+```sql
+CREATE TABLE events
+(
+    `event_type` String,
+    `time` DateTime,
+    `message` String
+)
+ENGINE = MergeTree()
+ORDER BY time;
+
+ALTER TABLE events ADD PROJECTION proj_pageview (
+    SELECT event_type, time, message
+    WHERE event_type = 'pageview'
+    ORDER BY time
+);
+
+ALTER TABLE events MATERIALIZE PROJECTION proj_pageview;
+```
+
+데이터 삽입:
+
+```sql
+INSERT INTO events VALUES
+    ('pageview', '2024-01-01', 'homepage'),
+    ('click', '2024-01-02', 'button'),
+    ('pageview', '2024-01-03', 'about');
+```
+
+쿼리의 `WHERE` 절이 PROJECTION의 `WHERE` 절을 **포함**하는 경우(즉, PROJECTION 필터의 모든 조건이 쿼리 필터에도 포함된 경우), 옵티마이저는 이것이 유리하다고 판단하면 자동으로 해당 PROJECTION을 사용할 수 있습니다:
+
+```sql
+-- This query implies the projection's WHERE, so the projection may be used:
+SELECT time, message FROM events WHERE event_type = 'pageview';
+
+-- A stricter query also implies the projection's WHERE:
+SELECT time, message FROM events WHERE event_type = 'pageview' AND time > '2024-01-01';
+
+-- This query does NOT imply the projection, so the base table is scanned:
+SELECT time, message FROM events WHERE event_type = 'click';
+```
+
+함의 검사(implication check)는 보수적으로 동작합니다 — 표현식의 정규 형식에서 각 conjunct를 정확히 일치시키는 방식을 사용합니다. 일부 유효한 최적화 기회(예: 범위 함의)는 놓칠 수 있지만, 잘못된 결과를 생성하지는 않습니다.
+
 <div id="manipulating-projections">
   ## 프로젝션 관리
 </div>
@@ -244,11 +295,19 @@ SETTINGS enable_shared_storage_snapshot_in_query = 1
   ### ADD PROJECTION
 </div>
 
-아래 SQL 문을 사용하여 테이블 메타데이터에 프로젝션 설명을 추가하십시오:
+아래 문을 사용하여 테이블 메타데이터에 PROJECTION 설명을 추가합니다:
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+-- Normal projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+
+-- Aggregate projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+<Note>
+  PROJECTION이 `WHERE` 절을 정의하면 프레디케이트를 만족하는 행만 구체화됩니다. 옵티마이저는 쿼리의 `WHERE`가 PROJECTION의 `WHERE`를 논리적으로 함의하고, 해당 PROJECTION이 쿼리 계획에 도움이 되는 경우 이러한 PROJECTION을 사용할 수 있습니다. 이는 일반 PROJECTION과 집계 PROJECTION 모두에 적용됩니다.
+</Note>
 
 <div id="with-settings">
   #### `WITH SETTINGS` 절
@@ -317,7 +376,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [I
 
 쿼리를 실행하면 ClickHouse는 원본 테이블 또는 해당 프로젝션 중 어디에서 읽을지 선택합니다.
 원본 테이블과 프로젝션 중 어느 쪽에서 읽을지는 각 테이블 파트별로 개별적으로 결정됩니다.
-일반적으로 ClickHouse는 가능한 한 적은 양의 데이터만 읽으려고 하며, 예를 들어 파트의 기본 키를 샘플링하는 등 읽기에 가장 적합한 파트를 식별하기 위해 몇 가지 기법을 사용합니다.
+일반적으로 ClickHouse는 가능한 한 적은 양의 데이터만 읽으려고 하며, 예를 들어 파트의 프라이머리 키를 샘플링하는 등 읽기에 가장 적합한 파트를 식별하기 위해 몇 가지 기법을 사용합니다.
 경우에 따라 원본 테이블 파트에 대응하는 프로젝션 파트가 없을 수 있습니다.
 예를 들어 SQL에서 테이블의 프로젝션 생성은 기본적으로 &quot;lazy&quot;하게 동작하므로, 새로 삽입된 데이터에만 영향을 주고 기존 파트는 변경하지 않습니다.
 
@@ -327,13 +386,13 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [I
 예를 들어 테이블이 `ReplacingMergeTree` 테이블 엔진을 사용한다고 가정해 보겠습니다.
 머지 중 여러 입력 파트에서 동일한 행이 발견되면 가장 최신 행 버전(가장 최근에 삽입된 파트의 행)만 유지되고, 이전 버전은 모두 삭제됩니다.
 
-마찬가지로 테이블이 `AggregatingMergeTree` 테이블 엔진을 사용하는 경우, 머지 작업은 입력 파트의 동일한 행을(기본 키 값을 기준으로) 하나의 행으로 합쳐 부분 집계 상태를 갱신할 수 있습니다.
+마찬가지로 테이블이 `AggregatingMergeTree` 테이블 엔진을 사용하는 경우, 머지 작업은 입력 파트의 동일한 행을(프라이머리 키 값을 기준으로) 하나의 행으로 합쳐 부분 집계 상태를 갱신할 수 있습니다.
 
-ClickHouse v24.8 이전에는 프로젝션 파트가 메인 데이터와 조용히 불일치 상태가 되거나, 테이블에 프로젝션이 있으면 데이터베이스가 자동으로 예외를 발생시켰기 때문에 업데이트 및 삭제와 같은 특정 작업을 아예 실행할 수 없었습니다.
+ClickHouse v24.8 이전에는 프로젝션 파트가 메인 데이터와 조용히 불일치 상태가 되거나, 테이블에 프로젝션이 있으면 데이터베이스가 자동으로 예외를 발생시켰기 때문에 UPDATE 및 삭제와 같은 특정 작업을 아예 실행할 수 없었습니다.
 
-v24.8부터는 새로운 테이블 수준 설정 [`deduplicate_merge_projection_mode`](/ko/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode)으로 앞서 설명한 비단순한 백그라운드 머지 작업이 원본 테이블의 파트에서 발생할 때의 동작을 제어할 수 있습니다.
+v24.8부터는 새로운 테이블 수준 설정 [`deduplicate_merge_projection_mode`](/ko/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode)으로 앞서 설명한 비단순한 백그라운드 머지 작업이 원본 테이블의 파트에서 발생할 때의 동작을 제어할 수 있습니다.
 
-삭제 뮤테이션도 원본 테이블의 파트에서 행을 제거하는 파트 병합 작업의 또 다른 예입니다. v24.7부터는 경량한 삭제에 의해 트리거된 삭제 뮤테이션의 동작을 제어하는 설정 [`lightweight_mutation_projection_mode`](/ko/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode)도 제공됩니다.
+삭제 뮤테이션도 원본 테이블의 파트에서 행을 제거하는 파트 병합 작업의 또 다른 예입니다. v24.7부터는 경량한 삭제에 의해 트리거된 삭제 뮤테이션의 동작을 제어하는 설정 [`lightweight_mutation_projection_mode`](/ko/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode)도 제공됩니다.
 
 아래는 `deduplicate_merge_projection_mode`와 `lightweight_mutation_projection_mode`에 사용할 수 있는 값입니다:
 

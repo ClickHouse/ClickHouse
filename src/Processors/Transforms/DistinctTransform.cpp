@@ -248,8 +248,12 @@ void DistinctTransform::transform(Chunk & chunk)
     if (num_selected == 0)
         return;
 
+    /// In case of overflow_mode = 'break' `check` returns false instead of throwing.
+    /// Stop reading, but still emit the new rows from the current chunk (their keys are
+    /// already in the set): 'break' means return a partial result as if the source data
+    /// ran out, not discard it.
     if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
-        return;
+        stopReading();
 
     if (num_selected == num_rows)
     {

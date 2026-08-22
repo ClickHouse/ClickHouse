@@ -63,7 +63,11 @@ SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')
 
 ينشئ [معرّفًا فريدًا عالميًا قابلًا للفرز معجميًا (ULID)](https://github.com/ulid/spec).
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للوسيطات نفسها.
+</Note>
+
+**بنية**
 
 ```sql
 generateULID([x])

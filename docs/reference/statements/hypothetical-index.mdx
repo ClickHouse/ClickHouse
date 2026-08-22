@@ -75,7 +75,7 @@ Estimation:
 To skip the in-memory empirical scan and estimate from [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) instead, define them on the relevant columns first (they are off by default), wait for the materialize mutation to finish, then disable the empirical path:
 
 ```sql
-ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t ADD STATISTICS b TYPE tdigest;
 ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;

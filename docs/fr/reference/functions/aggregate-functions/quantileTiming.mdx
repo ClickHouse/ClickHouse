@@ -52,7 +52,7 @@ quantileTiming(level)(expr)
 
 **Arguments**
 
-* `expr` — Expression sur des valeurs de colonne qui renvoie un nombre de type Float*. Si des valeurs négatives sont transmises à la fonction, le comportement est indéfini. Si la valeur est supérieure à 30 000 (un temps de chargement de page de plus de 30 secondes), elle est considérée comme égale à 30 000. [`Float*`](/fr/reference/data-types/float)
+* `expr` — Expression sur les valeurs d’une colonne produisant des types de données numériques, `Date` ou `DateTime`. Si des valeurs négatives sont transmises à la fonction, le comportement est indéfini. Si la valeur est supérieure à 30 000 (un temps de chargement de page de plus de 30 secondes), elle est considérée comme égale à 30 000. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
 
 **Valeur renvoyée**
 

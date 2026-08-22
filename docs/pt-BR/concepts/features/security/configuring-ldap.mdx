@@ -14,9 +14,7 @@ import SelfManaged from '/snippets/pt-BR/_self_managed_only_no_roadmap.mdx';
 O ClickHouse pode ser configurado para usar LDAP na autenticação de usuários de banco de dados do ClickHouse. Este guia apresenta um exemplo simples de integração do ClickHouse com um sistema LDAP para autenticação em um diretório disponível publicamente.
 
 <Steps>
-  <Step>
-    ## Configure as definições de conexão LDAP no ClickHouse
-
+  <Step title="Configure as definições de conexão LDAP no ClickHouse" id="1-configure-ldap-connection-settings-in-clickhouse">
     1. Teste a conexão com este servidor LDAP público:
 
        ```bash
@@ -116,9 +114,7 @@ O ClickHouse pode ser configurado para usar LDAP na autenticação de usuários 
     4. Reinicie o servidor ClickHouse para aplicar as configurações.
   </Step>
 
-  <Step>
-    ## Configure roles e permissões do banco de dados ClickHouse
-
+  <Step title="Configure roles e permissões do banco de dados ClickHouse" id="2-configure-clickhouse-database-roles-and-permissions">
     <Note>
       Os procedimentos desta seção presumem que o SQL Access Control and Account Management no ClickHouse esteja habilitado. Para habilitá-lo, consulte o [guia SQL Users and Roles](/pt-BR/concepts/features/security/access-rights).
     </Note>
@@ -134,9 +130,7 @@ O ClickHouse pode ser configurado para usar LDAP na autenticação de usuários 
        ```
   </Step>
 
-  <Step>
-    ## Teste a configuração do LDAP
-
+  <Step title="Teste a configuração do LDAP" id="3-test-the-ldap-configuration">
     1. Faça login usando o clickhouse client
        ```bash
        $ clickhouse-client --user einstein --password password

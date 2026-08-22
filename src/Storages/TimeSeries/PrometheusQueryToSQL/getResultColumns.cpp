@@ -11,7 +11,7 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-ColumnsDescription getResultColumns(const PQT & promql_tree, const PrometheusQueryEvaluationSettings & settings)
+ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, const PrometheusQueryEvaluationSettings & settings)
 {
     auto result_type = getResultType(promql_tree, settings);
     const auto & timestamp_data_type = settings.timestamp_data_type;

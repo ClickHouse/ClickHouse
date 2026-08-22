@@ -20,7 +20,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_map_old_part"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_map_old_part (id UInt64, s UInt64, m Map(String, String))
     ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 "
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_map_old_part SELECT number, number, map('id', toString(number), 'k', toString(number * 2)) FROM numbers(1000)"

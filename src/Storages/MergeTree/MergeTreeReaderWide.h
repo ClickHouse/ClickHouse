@@ -33,7 +33,6 @@ public:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     size_t readRows(
         size_t from_mark,
-        size_t current_task_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
         size_t offset,
@@ -55,7 +54,6 @@ private:
         Priority priority,
         size_t num_columns,
         size_t from_mark,
-        size_t current_task_last_mark,
         bool continue_reading,
         bool deserialize_prefixes);
 
@@ -70,7 +68,6 @@ private:
         const NameAndTypePair & name_and_type,
         size_t from_mark,
         bool seek_to_mark,
-        size_t current_task_last_mark,
         ISerialization::SubstreamsCache & cache);
 
     FileStreams::iterator addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
@@ -81,7 +78,6 @@ private:
         ColumnPtr & column,
         size_t from_mark,
         bool continue_reading,
-        size_t current_task_last_mark,
         size_t max_rows_to_read,
         size_t rows_offset,
         ISerialization::SubstreamsCache & cache,
@@ -94,24 +90,22 @@ private:
         const SerializationPtr & serialization,
         size_t from_mark,
         bool continue_reading,
-        size_t current_task_last_mark,
         ISerialization::SubstreamsCache & cache);
 
     void deserializePrefix(
         const SerializationPtr & serialization,
         const NameAndTypePair & name_and_type,
         size_t from_mark,
-        size_t current_task_last_mark,
         DeserializeBinaryBulkStateMap & deserialize_state_map,
         ISerialization::SubstreamsCache & cache,
         ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
         ISerialization::StreamCallback prefixes_prefetch_callback);
 
-    void deserializePrefixForAllColumns(size_t num_columns, size_t from_mark, size_t current_task_last_mark);
-    void deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t from_mark, size_t current_task_last_mark, Priority priority);
+    void deserializePrefixForAllColumns(size_t num_columns, size_t from_mark);
+    void deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t from_mark, Priority priority);
 
     using StreamCallbackGetter = std::function<ISerialization::StreamCallback(const NameAndTypePair &)>;
-    void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t from_mark, size_t current_task_last_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
+    void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t from_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
 
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;

@@ -6,7 +6,7 @@ title: 'تعليمات SYSTEM'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <div id="reload-embedded-dictionaries">
   ## SYSTEM RELOAD EMBEDDED DICTIONARIES
@@ -21,7 +21,7 @@ import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBad
 </div>
 
 يعيد الاستعلام `SYSTEM RELOAD DICTIONARIES` تحميل القواميس التي تكون حالتها `LOADED` (راجع العمود `status` في [`system.dictionaries`](/ar/reference/system-tables/dictionaries))، أي القواميس التي سبق تحميلها بنجاح.
-تُحمَّل القواميس افتراضيًا بأسلوب التحميل عند الطلب (راجع [dictionaries&#95;lazy&#95;load](/ar/reference/settings/server-settings/settings#dictionaries_lazy_load))، لذلك بدلًا من تحميلها تلقائيًا عند بدء التشغيل، تُهيَّأ عند أول وصول إليها باستخدام الدالة [`dictGet`](/ar/reference/functions/regular-functions/ext-dict-functions#dictGet) أو بتنفيذ `SELECT` على الجداول التي تستخدم `ENGINE = Dictionary`.
+تُحمَّل القواميس افتراضيًا بأسلوب التحميل عند الطلب (راجع [dictionaries&#95;lazy&#95;load](/ar/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load))، لذلك بدلًا من تحميلها تلقائيًا عند بدء التشغيل، تُهيَّأ عند أول وصول إليها باستخدام الدالة [`dictGet`](/ar/reference/functions/regular-functions/ext-dict-functions#dictGet) أو بتنفيذ `SELECT` على الجداول التي تستخدم `ENGINE = Dictionary`.
 
 **الصياغة**
 
@@ -44,6 +44,33 @@ SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
 
 ```sql
 SELECT name, status FROM system.dictionaries;
+```
+
+<div id="unload-dictionary">
+  ## SYSTEM UNLOAD DICTIONARY
+</div>
+
+يفرّغ القاموس `dictionary_name` لتحرير الذاكرة التي يستخدمها إذا كانت حالة القاموس هي `LOADED`.
+ويُعاد تحميل القاموس تلقائيًا عند الحاجة إليه مجددًا.
+
+```sql
+SYSTEM UNLOAD DICTIONARY dictionary_name
+```
+
+يمكن التحقق من حالة القاموس عبر الاستعلام عن جدول `system.dictionaries`.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+<div id="unload-dictionaries">
+  ## SYSTEM UNLOAD DICTIONARIES
+</div>
+
+يفرّغ الاستعلام `SYSTEM UNLOAD DICTIONARIES` جميع القواميس التي تكون حالتها `LOADED` (راجع العمود `status` في [`system.dictionaries`](/ar/reference/system-tables/dictionaries))، أي القواميس التي سبق تحميلها بنجاح.
+
+```sql
+SYSTEM UNLOAD DICTIONARIES
 ```
 
 <div id="reload-models">
@@ -92,7 +119,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
   ## SYSTEM RELOAD ASYNCHRONOUS METRICS
 </div>
 
-يعيد حساب جميع [المقاييس غير المتزامنة](/ar/reference/system-tables/asynchronous_metrics). ونظرًا إلى أن المقاييس غير المتزامنة تُحدَّث دوريًا استنادًا إلى الإعداد [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ar/reference/settings/server-settings/settings)، فلا تكون هناك حاجة عادةً إلى تحديثها يدويًا باستخدام هذه العبارة.
+يعيد حساب جميع [المقاييس غير المتزامنة](/ar/reference/system-tables/asynchronous_metrics). ونظرًا إلى أن المقاييس غير المتزامنة تُحدَّث دوريًا استنادًا إلى الإعداد [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ar/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s)، فلا تكون هناك حاجة عادةً إلى تحديثها يدويًا باستخدام هذه العبارة.
 
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
@@ -112,6 +139,13 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 يمسح ذاكرة تخزين العلامات المؤقتة.
 
+<div id="drop-primary-index-cache">
+  ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للفهرس الأساسي، التي تحتفظ بالمفاتيح الأساسية لجداول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) في الذاكرة.
+يُضبط حجمها باستخدام الإعداد [`primary_index_cache_size`](/ar/reference/settings/server-settings/settings/primary-index#primary_index_cache_size) على مستوى الخادم.
+
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
 </div>
@@ -130,17 +164,125 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 يمسح ذاكرة التخزين المؤقت للبيانات الوصفية لملفات Parquet.
 
+<div id="drop-paimon-metadata-cache">
+  ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت الموجودة في الذاكرة لملفات البيانات الوصفية المحلَّلة الخاصة بـ Paimon (manifest lists وmanifests).
+
+<div id="drop-point-in-polygon-cache">
+  ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للمضلعات الثابتة المُعالجة مسبقًا والمستخدمة من قِبل الدالة [`pointInPolygon`](/ar/reference/functions/regular-functions/geo/coordinates#pointinpolygon). ويظل حد الحجم المُعدّ (إعداد الخادم `point_in_polygon_cache_size`) دون تغيير، لذلك تواصل ذاكرة التخزين المؤقت قبول الإدخالات بعد ذلك. ولتعطيل ذاكرة التخزين المؤقت بدلًا من ذلك، اضبط `point_in_polygon_cache_size` على `0`.
+
 <div id="drop-text-index-caches">
   ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
 </div>
 
-يمسح ذاكرات التخزين المؤقت لترويسة الفهرس النصي والقاموس وpostings.
+يمسح ذاكرات التخزين المؤقت للرموز وترويسة الفهرس النصي وpostings.
 
-إذا أردت مسح إحدى هذه الذاكرات المؤقتة بشكل منفصل، يمكنك تشغيل:
+إذا أردت مسح إحدى هذه الذاكرات المؤقتة بشكل منفصل، يمكنك تشغيل
 
-* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
-* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`، أو
+* `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`، أو
 * `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+<div id="drop-index-mark-cache">
+  ## SYSTEM CLEAR|DROP INDEX MARK CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت لعلامات الفهارس الثانوية (لتخطي البيانات).
+
+<div id="drop-index-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE
+</div>
+
+يفرّغ ذاكرة التخزين المؤقت للكتل غير المضغوطة الخاصة بالفهارس الثانوية (لتخطي البيانات).
+
+<div id="drop-mmap-cache">
+  ## SYSTEM CLEAR|DROP MMAP CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للملفات المُعيَّنة في الذاكرة.
+
+<div id="drop-page-cache">
+  ## SYSTEM CLEAR|DROP PAGE CACHE
+</div>
+
+يمسح userspace page cache، وهي ذاكرة ClickHouse المؤقتة الخاصة داخل الذاكرة للبيانات المقروءة من طبقة التخزين الأساسية.
+
+<div id="drop-vector-similarity-index-cache">
+  ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت الخاصة بفهرس تشابه المتجهات.
+
+<div id="drop-connections-cache">
+  ## SYSTEM CLEAR|DROP CONNECTIONS CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت لمجمّعات اتصالات HTTP المستخدمة في الاتصالات الصادرة.
+
+<div id="drop-s3-client-cache">
+  ## SYSTEM CLEAR|DROP S3 CLIENT CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت لعملاء S3.
+
+<div id="prewarm-mark-cache">
+  ## SYSTEM PREWARM MARK CACHE
+</div>
+
+يحمّل علامات الجدول إلى [ذاكرة تخزين العلامات المؤقتة](#drop-mark-cache). كما تُحمَّل أيضًا علامات الفهرس الثانوية إلى [ذاكرة التخزين المؤقت لعلامات الفهرس](#drop-index-mark-cache).
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="prewarm-primary-index-cache">
+  ## SYSTEM PREWARM PRIMARY INDEX CACHE
+</div>
+
+يحمّل الفهارس الأساسية لجدول `MergeTree` إلى [ذاكرة التخزين المؤقت للفهرس الأساسي](#drop-primary-index-cache).
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+<div id="drop-disk-metadata-cache">
+  ## SYSTEM CLEAR|DROP DISK METADATA CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت للبيانات الوصفية للقرص المحدد.
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+<div id="sync-filesystem-cache">
+  ## SYSTEM SYNC FILESYSTEM CACHE
+</div>
+
+يُطابِق الحالة الموجودة في الذاكرة لذاكرة التخزين المؤقت لنظام الملفات في ClickHouse مع ملفات ذاكرة التخزين المؤقت الموجودة فعليًا على القرص، ويُرجع `cache_name` و`path` و`size` المُنزَّل لكل جزء ملف مخزَّن مؤقتًا. ويمكن استخدام اسم ذاكرة تخزين مؤقت اختياري لقصر العملية على ذاكرة تخزين مؤقت واحدة.
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+<div id="drop-distributed-cache">
+  ## SYSTEM CLEAR|DROP DISTRIBUTED CACHE
+</div>
+
+<Note>
+  يتوفر `SYSTEM CLEAR|DROP DISTRIBUTED CACHE` فقط في ClickHouse Cloud.
+</Note>
+
+يحذف ذاكرة التخزين المؤقت الموزعة. استخدم `CONNECTIONS` لحذف الاتصالات المخزنة مؤقتًا بخوادم ذاكرة التخزين المؤقت الموزعة فقط، أو مرّر معرّف خادم لاستهداف خادم واحد.
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 <div id="drop-replica">
   ## SYSTEM DROP REPLICA
@@ -181,21 +323,27 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 يمسح الذاكرة المؤقتة للبيانات غير المضغوطة.
-يُفعَّل أو يُعطَّل التخزين المؤقت للبيانات غير المضغوطة باستخدام الإعداد [`use_uncompressed_cache`](/ar/reference/settings/session-settings#use_uncompressed_cache) على مستوى الاستعلام/المستخدم/ملف التعريف.
-يمكن تهيئة حجمه باستخدام الإعداد [`uncompressed_cache_size`](/ar/reference/settings/server-settings/settings#uncompressed_cache_size) على مستوى الخادم.
+يُفعَّل أو يُعطَّل التخزين المؤقت للبيانات غير المضغوطة باستخدام الإعداد [`use_uncompressed_cache`](/ar/reference/settings/session-settings/use#use_uncompressed_cache) على مستوى الاستعلام/المستخدم/ملف التعريف.
+يمكن تهيئة حجمه باستخدام الإعداد [`uncompressed_cache_size`](/ar/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) على مستوى الخادم.
 
 <div id="drop-compiled-expression-cache">
   ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE
 </div>
 
 يمسح ذاكرة التخزين المؤقت للتعبيرات المترجمة.
-يمكن تمكين ذاكرة التخزين المؤقت للتعبيرات المترجمة أو تعطيلها عبر الإعداد [`compile_expressions`](/ar/reference/settings/session-settings#compile_expressions) على مستوى الاستعلام/المستخدم/الملف الشخصي.
+يمكن تمكين ذاكرة التخزين المؤقت للتعبيرات المترجمة أو تعطيلها عبر الإعداد [`compile_expressions`](/ar/reference/settings/session-settings/compile#compile_expressions) على مستوى الاستعلام/المستخدم/ملف التعريف.
 
 <div id="drop-query-condition-cache">
   ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
 </div>
 
 يمسح ذاكرة التخزين المؤقت لشرط الاستعلام.
+
+<div id="drop-encryption-headers-cache">
+  ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE
+</div>
+
+يمسح ذاكرة التخزين المؤقت لرؤوس التشفير. تحتفظ هذه الذاكرة برؤوس التشفير المقروءة من بداية الملفات المشفّرة، ويستخدمها مسار القراءة التجريبي `use_reader_executor` لتجنّب إعادة قراءتها؛ ويُضبط حجمها من خلال إعداد الخادم `encryption_header_cache_size`.
 
 <div id="drop-query-cache">
   ## SYSTEM CLEAR|DROP QUERY CACHE
@@ -213,12 +361,12 @@ SYSTEM CLEAR QUERY CACHE TAG '<tag>'
   ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
 </div>
 
-يمسح ذاكرة التخزين المؤقت للمخططات المحمّلة من [`format_schema_path`](/ar/reference/settings/server-settings/settings#format_schema_path).
+يمسح ذاكرة التخزين المؤقت للمخططات المحمّلة من [`format_schema_path`](/ar/reference/settings/server-settings/settings/format#format_schema_path).
 
 الأهداف المدعومة:
 
 * Protobuf: يزيل تعريفات رسائل Protobuf المستوردة من الذاكرة.
-* Files: يحذف ملفات المخططات المخزّنة مؤقتًا والمحفوظة محليًا في [`format_schema_path`](/ar/reference/settings/server-settings/settings#format_schema_path)، والتي تُنشأ عند تعيين `format_schema_source` إلى `query`.
+* Files: يحذف ملفات المخططات المخزّنة مؤقتًا والمحفوظة محليًا في [`format_schema_path`](/ar/reference/settings/server-settings/settings/format#format_schema_path)، والتي تُنشأ عند تعيين `format_schema_source` إلى `query`.
   ملاحظة: إذا لم يتم تحديد أي هدف، فستُمسح كلتا الذاكرتين المؤقتتين.
 
 ```sql
@@ -375,7 +523,7 @@ SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
   ## إدارة الجداول الموزعة
 </div>
 
-يمكن لـ ClickHouse إدارة جداول [Distributed](/ar/reference/engines/table-engines/special/distributed). عند إدراج مستخدمٍ بياناتٍ في هذه الجداول، ينشئ ClickHouse أولًا قائمة انتظار للبيانات المطلوب إرسالها إلى عُقد cluster، ثم يرسلها بشكل غير متزامن. يمكنك إدارة معالجة قائمة الانتظار باستخدام الاستعلامات [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends) و[FLUSH DISTRIBUTED](#flush-distributed) و[`START DISTRIBUTED SENDS`](#start-distributed-sends). ويمكنك أيضًا إدراج البيانات الموزعة بشكل متزامن باستخدام الإعداد [`distributed_foreground_insert`](/ar/reference/settings/session-settings#distributed_foreground_insert).
+يمكن لـ ClickHouse إدارة جداول [Distributed](/ar/reference/engines/table-engines/special/distributed). عند إدراج مستخدمٍ بياناتٍ في هذه الجداول، ينشئ ClickHouse أولًا قائمة انتظار للبيانات المطلوب إرسالها إلى عُقد عنقود، ثم يرسلها بشكل غير متزامن. يمكنك إدارة معالجة قائمة الانتظار باستخدام الاستعلامات [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends) و[FLUSH DISTRIBUTED](#flush-distributed) و[`START DISTRIBUTED SENDS`](#start-distributed-sends). ويمكنك أيضًا إدراج البيانات الموزعة بشكل متزامن باستخدام الإعداد [`distributed_foreground_insert`](/ar/reference/settings/session-settings/distributed#distributed_foreground_insert).
 
 <div id="stop-distributed-sends">
   ### SYSTEM STOP DISTRIBUTED SENDS
@@ -388,7 +536,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 <Note>
-  إذا كان [`prefer_localhost_replica`](/ar/reference/settings/session-settings#prefer_localhost_replica) مُمكّنًا (وهو الإعداد الافتراضي)، فستُدرَج البيانات في الشظية المحلية على أي حال.
+  إذا كان [`prefer_localhost_replica`](/ar/reference/settings/session-settings/prefer#prefer_localhost_replica) مُمكّنًا (وهو الإعداد الافتراضي)، فستُدرَج البيانات في الشظية المحلية على أي حال.
 </Note>
 
 <div id="flush-distributed">
@@ -922,6 +1070,88 @@ SYSTEM WAIT VIEW [db.]name
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
+
+<div id="managing-background-activity">
+  ## إدارة النشاط في الخلفية
+</div>
+
+أوامر مستقلة عن المحرك للتحكم في النشاط في الخلفية لجدول واحد، أو لجميع هذه الجداول على الخادم دفعةً واحدة. وتشمل:
+
+* [العروض المادية القابلة للتحديث](/ar/reference/statements/create/view#refreshable-materialized-view) (التحديث الدوري)، و
+* محركات الجداول المتدفقة التي تستهلك باستمرار من مصدر خارجي: [Kafka](/ar/reference/engines/table-engines/integrations/kafka)، و[RabbitMQ](/ar/reference/engines/table-engines/integrations/rabbitmq)، و[NATS](/ar/reference/engines/table-engines/integrations/nats)، و[S3Queue](/ar/reference/engines/table-engines/integrations/s3queue)، و[AzureQueue](/ar/reference/engines/table-engines/integrations/azure-queue).
+
+بالنسبة إلى العرض المادي القابل للتحديث، يكون كل فعل اسمًا مستعارًا لأمر `SYSTEM ... VIEW` المقابل من [إدارة العروض المادية القابلة للتحديث](#managing-refreshable-materialized-views)، لذا يتصرف `SYSTEM STOP [db.]name` تمامًا مثل `SYSTEM STOP VIEW [db.]name`، وهكذا.
+
+تختلف صيغ الجدول الواحد وصيغ البدل في كيفية تعاملها مع الجداول التي لا يوجد لها نشاط في الخلفية. تُصدر صيغة الجدول الواحد (`SYSTEM STOP [db.]table`) خطأً إذا لم يكن الجدول المحدد محركًا متدفقًا ولا عرضًا ماديًا قابلًا للتحديث. أما صيغة البدل فتتخطى هذه الجداول بصمت، لذا يكون تشغيلها آمنًا دائمًا.
+
+يوقف `STOP` و`CANCEL` الاستهلاك في أقرب وقت ممكن. بالنسبة إلى [Kafka](/ar/reference/engines/table-engines/integrations/kafka)، و[RabbitMQ](/ar/reference/engines/table-engines/integrations/rabbitmq)، و[NATS](/ar/reference/engines/table-engines/integrations/nats)، فإنهما يوقفان القراءة من المصدر، لكنهما لا يقاطعان عملية insert بدأت بالفعل: إذ تكتمل الكتلة التي بدأت كتابتها في العروض المادية وتُثبّت. يقرأ [S3Queue](/ar/reference/engines/table-engines/integrations/s3queue) و[AzureQueue](/ar/reference/engines/table-engines/integrations/azure-queue) البيانات ويُدرجانها ضمن خط معالجة واحد. عند تمكين إزالة التكرار (وهو الإعداد الافتراضي)، تُلغى عملية insert أيضًا وتُعاد معالجة الملفات لاحقًا. وعند تعطيل إزالة التكرار، تكتمل الدفعة قيد التنفيذ وتُثبّت بدلًا من ذلك (كما في المحركات المذكورة أعلاه) لتجنب تكرار الصفوف. تُستهلك البيانات التي قُرئت ولم تُثبّت بعد مجددًا لاحقًا، لذلك لا يُفقد شيء، باستثناء NATS الأساسي (من دون JetStream)، إذ لا يمكنه إعادة تسليمها ويتخلص منها.
+
+لا يقاطع `PAUSE` عملية insert قيد التنفيذ، لذا لا يؤدي عادةً إلى فقدان أي بيانات. ويُعد NATS الأساسي الاستثناء: إذ يؤدي الإيقاف المؤقت إلى إيقاف الاستهلاك والتخلص من الرسائل التي تلقاها بالفعل ولم يُدرجها بعد، ولا يستطيع NATS الأساسي إعادة تسليمها.
+
+<Note>
+  لا تستمر أي من هذه الحالات بعد إعادة تشغيل الخادم. بعد إعادة التشغيل، تستأنف العروض القابلة للتحديث جداولها الزمنية المكوّنة، وتستأنف المحركات المتدفقة الاستهلاك.
+</Note>
+
+<div id="stop-background">
+  ### SYSTEM STOP
+</div>
+
+أوقف النشاطات التي تعمل في الخلفية وأبقِها متوقفة: أوقف ما يعمل حاليًا، ولا تشغّل أي شيء آخر حتى `SYSTEM START`. وهو مكافئ لـ `PAUSE` + `CANCEL`.
+
+```sql
+SYSTEM STOP [db.]table
+SYSTEM STOP ALL BACKGROUND
+```
+
+<div id="start-background">
+  ### SYSTEM START
+</div>
+
+يستأنف النشاط بعد `SYSTEM STOP` أو `SYSTEM PAUSE` سابق. لا يؤدي ذلك إلى مقاطعة أي نشاط.
+
+```sql
+SYSTEM START [db.]table
+SYSTEM START ALL BACKGROUND
+```
+
+<div id="pause-background">
+  ### SYSTEM PAUSE
+</div>
+
+أوقف أي نشاط في الخلفية، مع السماح للعمليات الجارية حاليًا بالانتهاء أولًا.
+
+```sql
+SYSTEM PAUSE [db.]table
+SYSTEM PAUSE ALL BACKGROUND
+```
+
+<div id="cancel-background">
+  ### SYSTEM CANCEL
+</div>
+
+يوقف النشاط الجاري حاليًا فقط، دون منع الأنشطة المستقبلية — يواصل الجدول التحديث أو الاستهلاك وفق جدوله الزمني. لا يفعل شيئًا إذا لم يكن هناك نشاط قيد التنفيذ.
+
+```sql
+SYSTEM CANCEL [db.]table
+SYSTEM CANCEL ALL BACKGROUND
+```
+
+<div id="refresh-background">
+  ### SYSTEM REFRESH
+</div>
+
+شغّل دورة إضافية خارج الجدول الزمني المحدد. في جدول متدفق، تُنفَّذ فورًا ولمرة واحدة، حتى إذا كان الجدول متوقفًا أو في حالة إيقاف مؤقت. أما في العرض المادي القابل للتحديث، فيتصرف كما يتصرف `SYSTEM REFRESH VIEW`: إذا كان العرض متوقفًا، يُتذكَّر طلب التحديث ويُنفَّذ مرة واحدة عند استئنافه بواسطة `SYSTEM START`.
+
+```sql
+SYSTEM REFRESH [db.]table
+SYSTEM REFRESH ALL BACKGROUND
+```
+
+<div id="background-privileges">
+  ### الامتيازات
+</div>
+
+يتطلب كل أمر امتياز المحرك المستهدف: `SYSTEM VIEWS` للعرض المادي القابل للتحديث، و`SYSTEM STREAMING ENGINES` للجدول المتدفق. وكلاهما يندرج ضمن `SYSTEM BACKGROUND`، لذا يتيح منح `SYSTEM BACKGROUND` التحكم في النشاط في الخلفية لجميع هذه الجداول. ولا تنطبق صيغ `ALL BACKGROUND` إلا على الجداول التي يملك المستخدم صلاحية التحكم فيها، وتتجاوز البقية بصمت.
 
 <div id="flush-object-storage-queue">
   ## SYSTEM FLUSH OBJECT STORAGE QUEUE

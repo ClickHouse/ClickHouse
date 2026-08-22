@@ -2,23 +2,23 @@
 slug: /cloud/managed-postgres/scaling
 sidebarTitle: 'Escalado'
 title: 'Escalado'
-description: 'Escala verticalmente tu instancia de Postgres managed by ClickHouse con tipos de VM flexibles y escalado independiente de recursos'
+description: 'Escala verticalmente tu instancia de ClickHouse Managed Postgres con tipos de VM flexibles y escalado independiente de recursos'
 keywords: ['escalado de Postgres', 'escalado vertical', 'tipos de VM', 'escalado de NVMe', 'tipos de instancia', 'escalado de rendimiento']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
-Managed Postgres ofrece opciones de escalado flexible para adaptarse a las necesidades de su carga de trabajo. Con más de 50 tipos de instancia con almacenamiento NVMe entre los que elegir, puede escalar CPU, memoria y almacenamiento de forma independiente para optimizar el rendimiento y el costo según su caso de uso específico.
+ClickHouse Managed Postgres ofrece opciones de escalado flexible para adaptarse a las necesidades de su carga de trabajo. Con más de 50 tipos de instancia con almacenamiento NVMe entre los que elegir, puede escalar CPU, memoria y almacenamiento de forma independiente para optimizar el rendimiento y el costo según su caso de uso específico.
 
 <div id="instance-types">
   ## Tipos de instancia y flexibilidad
 </div>
 
-Managed Postgres ofrece una amplia variedad de tipos de instancia, cada uno optimizado para distintas cargas de trabajo:
+ClickHouse Managed Postgres ofrece una amplia variedad de tipos de instancia, cada uno optimizado para distintas cargas de trabajo:
 
 * **Más de 50 tipos de instancia** disponibles en configuraciones optimizadas para cómputo, memoria y almacenamiento
 * **Almacenamiento basado en NVMe** en todos los tipos de instancia para ofrecer una E/S de disco uniforme y de alto rendimiento
@@ -46,7 +46,7 @@ Las distintas cargas de trabajo se benefician de diferentes configuraciones de r
   ## Cómo funciona el escalado
 </div>
 
-Cuando cambias de tipo de instancia, Managed Postgres realiza una operación de escalado vertical que aprovisiona nueva infraestructura y migra tu base de datos con un tiempo de inactividad mínimo.
+Cuando cambias de tipo de instancia, ClickHouse Managed Postgres realiza una operación de escalado vertical que aprovisiona nueva infraestructura y migra tu base de datos con un tiempo de inactividad mínimo.
 
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="Configuración del escalado" size="md" border />
 
@@ -95,11 +95,11 @@ El tiempo de restauración puede variar de unos minutos a varias horas, pero el 
   ### Restauración en paralelo con WAL-G
 </div>
 
-Managed Postgres usa [WAL-G](https://github.com/wal-g/wal-g) para acelerar la restauración de copias de seguridad durante las operaciones de escalado. Cabe destacar que el creador de WAL-G forma parte del equipo de Ubicloud, con el que nos hemos asociado, lo que aporta una gran experiencia al proceso de restauración.
+ClickHouse Managed Postgres usa [WAL-G](https://github.com/wal-g/wal-g) para acelerar la restauración de backups durante las operaciones de escalado. Cabe destacar que el creador de WAL-G forma parte del equipo de Ubicloud, con el que nos hemos asociado, lo que aporta una gran experiencia al proceso de restauración.
 
 WAL-G proporciona:
 
-* **Descarga y descompresión en paralelo**: varios segmentos de la copia de seguridad se recuperan de S3 y se descomprimen simultáneamente
+* **Descarga y descompresión en paralelo**: varios segmentos del backup se recuperan de S3 y se descomprimen simultáneamente
 * **Reproducción eficiente de WAL**: los cambios incrementales del WAL se aplican en paralelo cuando es posible
 * **Streaming optimizado**: streaming directo desde el almacenamiento S3 sin copias intermedias
 * **Restauración rápida**: aunque el tiempo total depende del tamaño de los datos, el enfoque en paralelo hace que el proceso sea bastante rápido
@@ -110,7 +110,7 @@ Estas optimizaciones reducen significativamente el tiempo necesario para poner e
   ### Iniciar una operación de escalado
 </div>
 
-Para escalar su instancia de Managed Postgres:
+Para escalar su instancia de ClickHouse Managed Postgres:
 
 1. Vaya a la pestaña **Configuración** de su instancia
 2. En la sección **Escalado**, desplácese hasta **Tamaño del servicio**
@@ -125,7 +125,7 @@ Para escalar su instancia de Managed Postgres:
   ### Escalado vertical
 </div>
 
-El escalado vertical (cambiar los tipos de instancia) es el método principal para ajustar los recursos en Managed Postgres. Este enfoque ofrece:
+El escalado vertical (cambiar los tipos de instancia) es el método principal para ajustar los recursos en ClickHouse Managed Postgres. Este enfoque ofrece:
 
 * **Control granular**: Elija entre más de 50 tipos de instancia para ajustar con precisión la CPU, la memoria y el almacenamiento
 * **Optimización de la carga de trabajo**: Seleccione configuraciones optimizadas para su carga de trabajo específica (intensiva en cómputo, memoria o almacenamiento)
@@ -156,10 +156,50 @@ Si estás replicando datos a ClickHouse mediante [ClickPipes](/es/products/manag
 Esto te permite optimizar el rendimiento de la replicación por separado de los recursos de tu instancia de Postgres.
 
 <div id="autoscaling">
-  ## Autoescalado
+  ## Escalado automático
 </div>
 
-Cuando el uso del disco alcance el 90 %, su tipo de instancia cambiará automáticamente a uno superior.
+ClickHouse Managed Postgres supervisa el uso de disco y escala el almacenamiento automáticamente para evitar que su instancia se quede sin espacio:
+
+* **85 % de uso de disco**: Recibe una [notificación](/es/products/managed-postgres/monitoring/notifications) a través de la consola de Cloud y por correo electrónico.
+* **90 % de uso de disco**: Se inicia el escalado automático. El almacenamiento aumenta al siguiente tamaño disponible para la familia de instancias correspondiente. La CPU y la memoria se mantienen igual, salvo que el tamaño actual de la instancia no admita un disco más grande; en ese caso, también se aumenta el tamaño de la instancia. Las [réplicas de lectura](/es/products/managed-postgres/read-replicas) se escalan junto con la instancia primaria.
+* **95 % de uso de disco**: La conmutación omite cualquier ventana de mantenimiento configurada y se realiza en cuanto el nuevo servidor está listo.
+
+Si su instancia ya cuenta con la configuración más grande disponible, el escalado automático no puede ampliarla más. Libere espacio en disco o póngase en contacto con [soporte](https://clickhouse.com/support/program).
+
+<div id="autoscaling-cutover">
+  ### Conmutación y conexiones
+</div>
+
+El almacenamiento no se redimensiona in situ. El escalado automático sigue el mismo [proceso de escalado](#scaling-process) que un cambio manual del tipo de instancia: se aprovisiona un servidor de reemplazo con más almacenamiento, se restaura a partir del backup más reciente, se pone al día con el WAL y una conmutación controlada lo promueve a servidor primario. Las instancias con [alta disponibilidad](/es/products/managed-postgres/high-availability) obtienen instancias standby de reemplazo con el nuevo tamaño como parte de la misma operación.
+
+La conmutación es el único paso que implica tiempo de inactividad, normalmente de menos de un minuto. Si se configura una [ventana de mantenimiento](/es/products/managed-postgres/upgrades#maintenance-windows), la conmutación espera hasta esa ventana, a menos que el uso de disco alcance el 95 %. Durante la conmutación, se cierran las conexiones abiertas y se revierten las transacciones en curso. La cadena de conexión no cambia: se actualiza el DNS para que apunte al nuevo servidor primario y las aplicaciones con lógica de reconexión estándar se recuperan automáticamente.
+
+<div id="autoscaling-read-only">
+  ### Modo de solo lectura
+</div>
+
+Si las operaciones de escritura llenan el disco más rápido de lo que tarda en completarse el escalado automático, la instancia pasa a modo de solo lectura para evitar que el disco se llene por completo. El desencadenante es el espacio libre restante:
+
+| Tamaño total del disco | Solo lectura por debajo de | Las escrituras se reanudan por encima de |
+| ---------------------- | -------------------------- | ---------------------------------------- |
+| Hasta 64 GB            | 1 GB libre                 | 2 GB libres                              |
+| Hasta 128 GB           | 5 GB libres                | 7 GB libres                              |
+| Hasta 512 GB           | 7 GB libres                | 10 GB libres                             |
+| Más de 512 GB          | 2 % libre                  | 3 % libre                                |
+
+Las lecturas siguen funcionando, mientras que las operaciones de escritura generan el error estándar de Postgres `cannot execute INSERT in a read-only transaction`. Si el espacio libre sigue reduciéndose, se cierran las conexiones existentes para que cada sesión aplique la configuración de solo lectura; las lecturas vuelven a funcionar cuando los clientes se reconectan. El modo de solo lectura se desactiva automáticamente cuando se recupera el espacio libre, normalmente justo después de completarse la transición del scale-up.
+
+<div id="autoscaling-example">
+  ### Ejemplo
+</div>
+
+Una instancia con 1024 GB de almacenamiento ejecuta una carga de trabajo con un uso intensivo de escritura:
+
+1. Cuando se utilizan 870 GB (85 %), recibe una notificación de almacenamiento.
+2. Cuando se utilizan 922 GB (90 %), se inicia el escalado automático. Se aprovisiona un servidor de reemplazo con 2048 GB de almacenamiento y se restaura a partir del backup más reciente mientras la instancia sigue atendiendo tráfico.
+3. Cuando el reemplazo se ha puesto al día, se realiza la conmutación, dentro de la ventana de mantenimiento si hay una configurada. Las conexiones se interrumpen durante menos de un minuto, la aplicación se vuelve a conectar al mismo hostname y el uso vuelve a situarse en torno al 45 %.
+4. Si el espacio libre cae por debajo del 2 % (unos 20 GB) antes de que se complete la conmutación, la instancia pasa a modo de solo lectura. Las escrituras se reanudan automáticamente cuando finaliza la conmutación al disco más grande.
 
 <div id="resources">
   ## Recursos adicionales

@@ -8,6 +8,7 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذا الدليل مخصص للمستخدمين الذين لديهم دور Admin في ClickHouse Cloud.
 
@@ -20,42 +21,32 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكن أن تتضمن الأدوار المخصصة مجموعةً من أذونات المؤسسة والخدمة وقاعدة البيانات. ويمكن تطبيق الأذونات على جميع الخدمات وقواعد البيانات أو على مجموعة فرعية منها.
 
 <Steps>
-  <Step>
-    ### الوصول إلى إعدادات المؤسسة واختيار `Users and roles`
-
+  <Step title="الوصول إلى إعدادات المؤسسة واختيار `Users and roles`" id="users-and-roles-1">
     من صفحة الخدمات، اختر اسم مؤسستك. ثم اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### اختر علامة التبويب `Roles`
-
+  <Step title={<>اختر علامة التبويب <code>Roles</code></>} id="roles-tab">
     اختر علامة التبويب `Roles` من أعلى منتصف الشاشة.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### اختر `Create new role` من أعلى اليمين
-
+  <Step title={<>اختر <code>Create new role</code> من أعلى اليمين</>} id="create-new-role">
     اختر الزر `Create new role` في أعلى يمين الشاشة.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### سمِّ الدور
-
+  <Step title="سمِّ الدور" id="name-the-role">
     أدخل اسمًا وصفيًا للدور. سيكون هذا هو الاسم الذي ستراه عند تعيين الأدوار للمستخدمين ولمفاتيح API.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### انقر على `Allow` وحدد نطاق الأذونات
-
-    انقر على الزر `Allow` واختر أذونات المؤسسة و/أو الخدمة و/أو قاعدة البيانات. للاطلاع على وصف جميع الأذونات، راجع [أدوار Console والأذونات](/ar/products/cloud/reference/security/console-roles).
+  <Step title={<>انقر على <code>Allow</code> وحدد نطاق الأذونات</>} id="scope-permissions">
+    انقر على الزر `Allow` واختر أذونات المؤسسة و/أو الخدمة و/أو قاعدة البيانات. للاطلاع على وصف جميع الأذونات، راجع [Console roles and permissions](/ar/products/cloud/reference/security/console-roles).
 
     <Tip>
       تأكد من أن المستخدمين الذين سيسجلون الدخول إلى Console لديهم كحد أدنى أذونات Organization &gt; Access organization.
@@ -64,20 +55,72 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Info>
       **الوصول إلى علامة التبويب مصادر البيانات**
 
-      للوصول إلى علامة التبويب **مصادر البيانات**، يتطلب الدور حاليًا الإذن `Manage and Delete Selected Services`.
+      للوصول إلى علامة التبويب **مصادر البيانات**، يتطلب الدور حاليًا الإذن `Manage selected services`.
     </Info>
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### راجع دورك الجديد
-
+  <Step title="راجع دورك الجديد" id="review-role">
     راجع الأذونات المعيَّنة إلى دورك الجديد قبل الإنهاء. انقر على `Create role` عند الانتهاء.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
   </Step>
 </Steps>
+
+<div id="manage-database-roles">
+  ## إدارة أدوار قاعدة البيانات (Beta)
+</div>
+
+<BetaBadge />
+
+بالإضافة إلى أذونات Console، يمكن أن تتضمن الأدوار المخصصة أذونات للبيانات تتحكم في الوصول إلى قواعد بيانات الخدمات المحددة. يتيح لك ذلك إدارة الوصول إلى Console وقواعد البيانات من مكان واحد بدلًا من إدارة أدوار منفصلة في كل قاعدة بيانات.
+
+<Note>
+  هذه الميزة في مرحلة Beta، وهي متاحة للخدمات التي تعمل بإصدار ClickHouse 26.4 أو أحدث.
+</Note>
+
+عند إضافة أذونات للبيانات إلى دور مخصص، ينشئ ClickHouse Cloud دورًا مطابقًا في كل خدمة محددة، مع البادئة `cloud:`. على سبيل المثال، يظهر الدور المخصص المسمى `readonly` في قاعدة البيانات باسم `cloud:readonly`. يحصل أعضاء الدور المخصص على أذونات قاعدة البيانات هذه عند اتصالهم بالخدمة عبر المصادقة من دون كلمة مرور في SQL Console.
+
+<Info>
+  تكون للأدوار المعيّنة يدويًا في قاعدة البيانات باستخدام [اصطلاح التسمية `sql-console-role:<email>`](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) أولوية على الأدوار المعيّنة عبر Console.
+</Info>
+
+<Steps>
+  <Step title="إضافة أذونات للبيانات إلى دور" id="add-data-permissions">
+    [أنشئ دورًا مخصصًا](#create-custom-role) أو حرّر دورًا موجودًا. في مربع حوار الدور، انقر فوق الزر `Allow permissions` واختر `Data`.
+  </Step>
+
+  <Step title="تحديد الخدمة" id="select-data-permissions-service">
+    حدد الخدمة التي تنطبق عليها الأذونات. أضف المزيد من الخدمات لتطبيق الأذونات على خدمات متعددة.
+  </Step>
+
+  <Step title="اختيار مستوى الوصول" id="choose-data-access-level">
+    حدد مستوى الوصول `Read-only` أو `Admin` أو `Custom`. عند اختيار `Custom`، عرّف أذونات محددة للوصول إلى البيانات باستخدام عبارات [`GRANT`](/ar/reference/statements/grant) في ClickHouse.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="مربع حوار إنشاء دور جديد مع أذونات للبيانات محددة بعبارات منح مخصصة" size="md" />
+  </Step>
+
+  <Step title="إنشاء الدور" id="create-role-with-data-permissions">
+    انقر فوق `Create role`. تُنشأ أدوار قاعدة البيانات في الخدمات المحددة.
+  </Step>
+</Steps>
+
+<div id="verify-database-roles">
+  ### التحقق من أدوار قاعدة البيانات
+</div>
+
+تُنشأ الأدوار المُدارة عبر Console في قاعدة البيانات بالبادئة `cloud:` ونوع التخزين `cloud`. لعرضها، نفّذ query على table `system.roles` في الخدمة:
+
+```sql
+SELECT * FROM system.roles;
+```
+
+```response
+┌─name───────────┬─id───────────────────────────────────┬─storage─┐
+│ cloud:readonly │ 9a4910f4-abcf-4904-466a-717c8c75ac42 │ cloud   │
+└────────────────┴──────────────────────────────────────┴─────────┘
+```
 
 <div id="update-custom-role">
   ## تحديث الأدوار المخصصة

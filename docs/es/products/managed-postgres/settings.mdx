@@ -2,17 +2,17 @@
 slug: /cloud/managed-postgres/settings
 sidebarTitle: 'Configuración'
 title: 'Configuración'
-description: 'Configura los parámetros de PostgreSQL y PgBouncer y administra la configuración de la instancia de Managed Postgres'
+description: 'Configura los parámetros de PostgreSQL y PgBouncer y administra la configuración de la instancia de ClickHouse Managed Postgres'
 keywords: ['configuración de Postgres', 'configuración de PostgreSQL', 'PgBouncer']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
 
-Puedes modificar los parámetros de configuración y gestionar la configuración de tu instancia de Managed Postgres desde la pestaña **Configuración** de la barra lateral.
+Puedes modificar los parámetros de configuración y gestionar la configuración de tu instancia de ClickHouse Managed Postgres desde la pestaña **Configuración** de la barra lateral.
 
 <div id="service-actions">
   ## Service actions y escalado
@@ -20,7 +20,7 @@ Puedes modificar los parámetros de configuración y gestionar la configuración
 
 <Image img="/images/managed-postgres/service-actions.webp" alt="Service actions y escalado" size="md" border />
 
-La barra de herramientas **Service actions** proporciona controles para administrar tu instancia de Managed Postgres:
+La barra de herramientas **Service actions** proporciona controles para administrar tu instancia de ClickHouse Managed Postgres:
 
 * **Reset password**: Actualiza la contraseña del superusuario (solo cuando la instancia está en estado `Running`)
 * **Restart**: Reinicia la instancia de base de datos (solo cuando la instancia está en estado `Running`)

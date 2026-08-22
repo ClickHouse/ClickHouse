@@ -64,6 +64,16 @@ function configure
     cp -av --dereference "$repo_dir"/programs/server/user* $CONFIG_DIR
     # TODO figure out which ones are needed
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml $CONFIG_DIR/config.d
+    # Named test clusters so the fuzzer's remote()/cluster()/Distributed queries resolve.
+    cp -av --dereference "$repo_dir"/tests/config/config.d/clusters.xml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/config.d/test_cluster_with_incorrect_pw.xml $CONFIG_DIR/config.d
+    # Enable TLS (tcp_port_secure 9440 / https_port 8443) so the fuzzer's RemoteSecure() and
+    # https url() mutations reach the table-function logic instead of failing to connect.
+    cp -av --dereference "$repo_dir"/tests/config/config.d/secure_ports.xml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/config.d/ssl_certs.xml $CONFIG_DIR/config.d
+    # Without this the server applies its 1GiB core_dump.size_limit default, which truncates cores.
+    cp -av --dereference "$repo_dir"/tests/config/config.d/core_dump.yaml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/tests/config/server.crt "$repo_dir"/tests/config/server.key $CONFIG_DIR
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml $CONFIG_DIR/users.d
@@ -134,9 +144,12 @@ function fuzz
               --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1
       exit "${PIPESTATUS[0]}" ) &
     server_bg_pid=$!
-    for _ in {1..30}
+    # A debug or sanitizer server can take over a minute from fork to listening;
+    # give it the same 120s budget as `wait_ready` in `clickhouse_proc.py`.
+    # A dead server is detected early, so the deadline only affects hung servers.
+    for _ in {1..120}
     do
-        if clickhouse-client --receive_timeout=5 --query "select 1"
+        if clickhouse-client --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
         then
             break
         fi

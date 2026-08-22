@@ -27,7 +27,18 @@
                     <max>200</max>
                 </table_function_remote_max_addresses>
 
-                <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
+                <!--
+                    Don't waste cycles testing the old interpreter. Spend time in the analyzer instead.
+                    `<min>1</min>` rather than `<readonly/>`: a no-op explicit `enable_analyzer=1` must
+                    still be accepted, because `compatibility` in the same request stops the constraint
+                    check from filtering unchanged settings and `<readonly/>` would reject it.
+
+                    This constraint only rejects an explicit change. `compatibility` below 24.3 reverts
+                    `enable_analyzer` to 0 without one, so the `<enable_analyzer>1</enable_analyzer>`
+                    value in the profile below is load-bearing too: it keeps the setting `changed`,
+                    which is what makes `compatibility` leave it alone. Do not remove it as redundant.
+                    `ast_fuzzer_job.py` additionally never picks a compatibility version below 24.3.
+                -->
                 <enable_analyzer>
                     <min>1</min>
                 </enable_analyzer>
@@ -62,6 +73,7 @@
             <allow_experimental_database_unity_catalog>1</allow_experimental_database_unity_catalog>
             <allow_experimental_delta_kernel_rs>1</allow_experimental_delta_kernel_rs>
             <allow_experimental_delta_lake_writes>1</allow_experimental_delta_lake_writes>
+            <allow_experimental_eval_table_function>1</allow_experimental_eval_table_function>
             <allow_experimental_paimon_storage_engine>1</allow_experimental_paimon_storage_engine>
             <allow_experimental_expire_snapshots>1</allow_experimental_expire_snapshots>
             <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>
@@ -108,6 +120,8 @@
             <allow_suspicious_types_in_group_by>1</allow_suspicious_types_in_group_by>
             <allow_suspicious_types_in_order_by>1</allow_suspicious_types_in_order_by>
             <allow_suspicious_variant_types>1</allow_suspicious_variant_types>
+            <!-- Not just a default: this pin is what stops `compatibility` from reverting the
+                 analyzer behind the constraint's back. See the constraint comment above. -->
             <enable_analyzer>1</enable_analyzer>
             <enable_deflate_qpl_codec>1</enable_deflate_qpl_codec>
             <enable_full_text_index>1</enable_full_text_index>

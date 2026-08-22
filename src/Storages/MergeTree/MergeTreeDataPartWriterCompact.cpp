@@ -7,6 +7,7 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
 #include <Common/FailPoint.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -77,6 +78,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
 {
+    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -91,11 +93,24 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
 
         /// If we can use special codec than just get it
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
+        {
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
+            compression_codec = maybeAdaptiveDefaultCodec(column_uses_default_codec, subtype, compression_codec);
+        }
         else /// otherwise return only generic codecs and don't use info about data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
         UInt64 codec_id = compression_codec->getHash();
+        /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
+        /// object, so they must not be shared between streams. Make the key unique per stream so that
+        /// every such stream gets its own codec instance, while still being tracked for finalize/cancel.
+        if (compression_codec->needsVectorDimensionUpfront())
+        {
+            SipHash codec_hash;
+            codec_hash.update(codec_id);
+            codec_hash.update(stream_name.data(), stream_name.size());
+            codec_id = codec_hash.get64();
+        }
         /// Exception safety: if `make_shared` throws, the map is not modified, avoiding null entries in `cancel`.
         auto it = streams_by_codec.find(codec_id);
         if (it == streams_by_codec.end())
@@ -107,6 +122,11 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             it = streams_by_codec.emplace(codec_id, std::make_shared<CompressedStream>(plain_hashing, compression_codec)).first;
         }
 
+        /// No lossy codec is ever assigned to a structural substream (`Array` offsets, null map, ...): the
+        /// only lossy codec, `SZ3`, is non-generic, and structural substreams take the generic-only branch
+        /// above (`isSpecialCompressionAllowed` == false), which drops it. So every stream that carries a
+        /// lossy codec is a genuine float data stream that must keep it - in particular each element of a
+        /// pure-float `Tuple`.
         compressed_streams.emplace(stream_name, it->second);
     };
 
@@ -320,6 +340,20 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} not found", stream_name, name_and_type->name);
 
                 auto & result_stream = stream_it->second;
+
+                /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
+                /// require specifying the array dimensions before compression starts.
+                /// For 1D arrays, it's simply the length. The dimension is a property of the whole column
+                /// and `setAndCheckVectorDimension` accumulates it monotonically, so it only needs to be
+                /// computed once per block: rescanning the full column on every granule would make SZ3
+                /// writes O(rows * granules) in the insert/merge hot path. Do it while writing the first
+                /// granule, before its data is compressed.
+                if (&granule == &granules.front())
+                {
+                    auto compression_codec = result_stream->compressed_buf.getCodec();
+                    setVectorDimensionsIfNeeded(compression_codec, block.getColumnOrSubcolumnByName(name_and_type->name).column.get());
+                }
+
                 /// Write one compressed block per column in granule for more optimal reading.
                 if (prev_stream && prev_stream != result_stream)
                 {
