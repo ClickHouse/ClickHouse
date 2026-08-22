@@ -125,7 +125,12 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         request.setHost(current_uri.getHost());
 
     if (out_stream_callback)
-        request.setChunkedTransferEncoding(true);
+    {
+        if (out_stream_fixed_content_length)
+            request.setContentLength(static_cast<std::streamsize>(*out_stream_fixed_content_length));
+        else
+            request.setChunkedTransferEncoding(true);
+    }
     else if (method == Poco::Net::HTTPRequest::HTTP_POST)
         request.setContentLength(0);    /// No callback - no body
 
@@ -225,6 +230,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     bool enable_url_encoding_,
     OutStreamCallback out_stream_callback_,
     CancellationPtr cancellation_,
+    std::optional<size_t> out_stream_fixed_content_length_,
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
@@ -246,6 +252,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , use_external_buffer(use_external_buffer_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , out_stream_callback(std::move(out_stream_callback_))
+    , out_stream_fixed_content_length(out_stream_fixed_content_length_)
     , redirect_callback(std::move(redirect_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
@@ -1049,6 +1056,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         enable_url_encoding,
         out_stream_callback,
         cancellation,
+        out_stream_fixed_content_length,
         use_external_buffer,
         http_skip_not_found_url,
         header_entries,

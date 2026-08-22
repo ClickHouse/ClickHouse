@@ -84,6 +84,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -160,6 +162,8 @@ ALTER TABLE table DROP INDEX text_idx;
   请注意，每个分隔符字符串都可以包含多个字符 (如示例中的 `', '`) 。
   如果未显式指定，默认分隔符列表 (例如 `tokenizer = splitByString`) 为单个空格字符 `[' ']`。
 * `asciiCJK` 使用 Unicode 单词边界规则将字符串拆分为标记 (类似于 [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)) 。ASCII 字母数字字符和下划线会与连接符一起组成标记 (字母使用 ASCII `:`，同类字符使用 `.` 和 `'`) 。非 ASCII Unicode 字符 (包括 [CJK](https://en.wikipedia.org/wiki/CJK_characters) 字符) 会成为单字符标记。
+* `chinese[(granularity)]` 使用字典和隐马尔可夫模型将中文文本分词 (该算法遵循 [jieba](https://github.com/fxsjy/jieba)；内置字典和模型数据源自 [cppjieba](https://github.com/yanyiwu/cppjieba))。与将每个非 ASCII 字符视为单字符标记的 `asciiCJK` 不同，`chinese` 会将连续的中文字符组合成词语 (例如 `北京大学` 会成为一个标记 `北京大学`，而不是四个单字符标记)。这可为中文文本生成更有意义的标记，并提高搜索质量。对于通用/混合文本，请使用 `asciiCJK`；对于纯中文文本，请使用 `chinese`。可选的 `granularity` 参数可以是 `'coarse_grained'` (未指定时的默认值) 或 `'fine_grained'`。后者还会枚举重叠的子词，例如 `北京邮电大学` 还会生成 `北京`、`邮电`、`大学`。细粒度分词可提高召回率，但会导致索引更大。
+  使用 [hasAnyTokens](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens) 搜索 `chinese` 文本索引 (它们会使用 `chinese` 分词器对 needle 进行分词)，而不要使用 `hasToken` (它只按 ASCII 分隔符拆分)。
 * `icu(locale)` 使用 [ICU](https://icu.unicode.org/) 库的 Unicode 词语分割 (UAX #29) 将字符串拆分为单词标记。对于词语之间不使用空格的文字系统 (例如中文、日文、泰文)，ICU 会应用基于字典的分词，因此与 `asciiCJK` 不同，此类文本会被拆分为有意义的多字符词语，而非单个字符。此处的“字典”是指 ICU 为这些文字系统内置的词表 (参见 [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries))；ICU 会从这些词语中选择最可能的拆分方式。
   `locale` 是传递给分词器的 ICU 区域设置；分词主要由文字系统和字典驱动，区域设置则选择 ICU 针对该区域的特定调整。这是必需参数，例如 `tokenizer = icu('ja')` 或 `tokenizer = icu('zh')`。
   可用的区域设置可通过 `SELECT * FROM system.collations` 列出。
@@ -266,6 +270,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 对于非 ASCII 文本，建议使用 `asciiCJK` 分词器，因为它能正确处理包括 CJK 字符在内的 Unicode 词边界。
 对于不以空白字符分隔词语的语言 (例如中文、日语或泰语) ，`icu(locale)` 分词器会通过 ICU 基于字典的词语分割生成有意义的多字符词标记。
 对于日语，`japanese` 分词器 (MeCab) 会将文本分割为词语而非单个字符，通常能提供更好的搜索结果。
+对于中文，`chinese` 分词器 (jieba) 会将文本分割为词语而非单个字符，通常能提供更好的搜索结果。
 
 <a id="preprocessor-argument-optional" />**预处理器参数 (可选)&#x20;**。预处理器是指在分词前应用于输入字符串的表达式。
 
@@ -1461,6 +1466,40 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/zh/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 此优化仅支持 `like` 和 `ilike` 函数。
+
+<div id="count-queries-perf">
+  ### 简单计数查询
+</div>
+
+仅统计匹配文本搜索条件的行数的查询
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+可由文本索引直接得出，无需读取匹配的行。
+ClickHouse 从索引中倒排列表的基数获取计数，跳过标记匹配行的虚拟列及其聚合。对于单个标记，只需读取其在字典中的基数，无需读取倒排列表；对于多标记谓词，则仅读取倒排列表以进行并集 (`hasAnyTokens`) 或交集 (`hasAllTokens`) 操作。由于文本索引覆盖整个分片，即使分片非常大，计数也完全精确且速度很快。
+
+该优化适用于仅按单个 `hasToken`、`hasAnyTokens` 或 `hasAllTokens` 谓词 (或等效的 `Array`/`Map`) 过滤的 `count()`。使用 `AND`/`OR`/`NOT` 组合谓词、添加额外过滤条件 (例如 `... AND id > 10`) 、使用 `m['key'] = 'value'` 之类的提示模式谓词、选择计数以外的内容，或进行短语搜索、`LIKE`/模式搜索，都会导致查询改为读取行。对于没有 materialized 索引的分片，仍会通过读取其中的行来正确计数。
+
+要确认是否启用了此优化，请在查询计划中检查 `ReadFromTextIndexCount`：
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+此优化由 [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/zh/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) 控制 (默认启用) 。它依赖于[直接读取](#direct-read)，因此还必须启用 [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/zh/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index)、[use&#95;skip&#95;indexes](/zh/reference/settings/session-settings/use-skip-indexes#use_skip_indexes) 和 [optimize&#95;trivial&#95;count&#95;query](/zh/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) (均默认启用) 。
 
 <div id="caching">
   ### 缓存

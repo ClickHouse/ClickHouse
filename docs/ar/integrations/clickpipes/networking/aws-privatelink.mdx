@@ -177,7 +177,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 راجع دليل [البدء](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html) لمزيد من التفاصيل.
 
 <Info>
-  حدّث سياسة مجموعة MSK، وأضف `072088201116` إلى الكيانات الرئيسية المسموح بها بالوصول إلى مجموعة MSK.
+  تمتلك ClickPipes شبكة VPC الخاصة بالعميل وتنشئ اتصال VPC المُدار. ولإنشاء اتصال الشبكة، فعّل اتصال multi-VPC الخاص في مجموعة MSK، وفوّض حساب AWS الخاص بـ ClickPipes في سياسة المجموعة.
   راجع دليل AWS حول [إرفاق سياسة لمجموعة](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html) لمزيد من التفاصيل.
 </Info>
 
