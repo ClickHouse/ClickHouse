@@ -1275,7 +1275,7 @@ struct PartVersionWithName
     Int64 version;
     String name;
     UInt64 bytes_on_disk = 0;
-    MergeTreePartInfo info;
+    MergeTreePartInfo info = {};
 };
 
 bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
