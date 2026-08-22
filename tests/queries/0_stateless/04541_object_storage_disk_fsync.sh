@@ -137,6 +137,54 @@ run_merge_case 1 "merge, fsync on"
 # With both merge thresholds at 0 neither disk syncs anything during the merge.
 run_merge_case 0 "merge, fsync off"
 
+# A mutation entry is written straight through the disk rather than through a part transaction, so it
+# commits its own metadata file instead of having commit() do it, and needs its own case. The entry
+# is always synced, so there is no setting that turns this off and no negative arm to pair with it.
+run_alter_case() {
+    local suffix="alter"
+    # fsync_after_insert = 0 and the merge thresholds at their non-triggering values keep the inserts
+    # and any merge out of the measurement, so the only sync attributable to the ALTER's query id is
+    # the mutation entry's. min_bytes_for_wide_part / min_bytes_for_full_part_storage are pinned for
+    # the same reason run_merge_case pins them: CI randomization would change the file count.
+    local common="min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+                  fsync_after_insert = 0, min_rows_to_fsync_after_merge = 0,
+                  min_compressed_bytes_to_fsync_after_merge = 0"
+    local disk_name="objd_${suffix}_${CLICKHOUSE_DATABASE}"
+
+    $CLICKHOUSE_CLIENT -m -q "
+        drop table if exists local_${suffix};
+        drop table if exists objstore_${suffix};
+        create table local_${suffix} (id UInt64, v UInt64) engine = MergeTree order by id
+        settings ${common};
+        create table objstore_${suffix} (id UInt64, v UInt64) engine = MergeTree order by id
+        settings disk = disk(name = '${disk_name}', type = object_storage,
+                             object_storage_type = local_blob_storage, path = '${disk_name}/'),
+                 ${common};
+        insert into local_${suffix} select number, number from numbers(2000);
+        insert into objstore_${suffix} select number, number from numbers(2000);
+    "
+
+    local local_id="local-${suffix}-$CLICKHOUSE_DATABASE"
+    local objstore_id="objstore-${suffix}-$CLICKHOUSE_DATABASE"
+    # mutations_sync = 2 so the entry is written and attributed before query_log is read.
+    $CLICKHOUSE_CLIENT --query_id "$local_id" -q "alter table local_${suffix} update v = v + 1 where id < 10 settings mutations_sync = 2"
+    $CLICKHOUSE_CLIENT --query_id "$objstore_id" -q "alter table objstore_${suffix} update v = v + 1 where id < 10 settings mutations_sync = 2"
+
+    local local_files local_dirs objstore_files objstore_dirs
+    read -r local_files local_dirs <<<"$(fsync_events "$local_id")"
+    read -r objstore_files objstore_dirs <<<"$(fsync_events "$objstore_id")"
+
+    echo "alter, fsync on: local synced=$((local_files > 0)) objstore syncs more=$((objstore_files > local_files))"
+
+    $CLICKHOUSE_CLIENT -m -q "
+        select count(), sum(id) from objstore_${suffix};
+        drop table local_${suffix};
+        drop table objstore_${suffix};
+    "
+}
+
+run_alter_case
+
 # fsync_part_directory alone syncs nothing on these disks, which is what a local disk does for
 # fsync_after_insert = 0: the directory sync is a separate setting from the file contents sync.
 $CLICKHOUSE_CLIENT -m -q "
