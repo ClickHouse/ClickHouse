@@ -138,3 +138,58 @@ def test_expired_token_does_not_run_deferred_query_runner_job(start_cluster):
     node.query("DROP USER u_deferred_query_runner")
     node.query("DROP TABLE default.runner_deferred_expiry")
     node.query("DROP TABLE default.t_deferred_query_runner")
+
+
+def test_credential_grants_survive_deferred_query_runner_job(start_cluster):
+    """The deferred `QueryRunner` job must run under the *credential's* grant limit, not the user's full rights.
+
+    The user is granted `INSERT` on both target tables, but the authentication method used to submit the
+    jobs lists only one of them in its `GRANTS` clause. If `StorageQueryRunner::makeJobContext` stopped
+    replaying `authentication_grants`, the deferred job would widen back to the full user and the insert
+    into the unlisted table would land.
+    """
+    node.query("DROP USER IF EXISTS u_query_runner_grants")
+    node.query("DROP TABLE IF EXISTS default.runner_grants")
+    node.query("DROP TABLE IF EXISTS default.t_query_runner_listed")
+    node.query("DROP TABLE IF EXISTS default.t_query_runner_unlisted")
+
+    node.query("CREATE TABLE default.t_query_runner_listed (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node.query("CREATE TABLE default.t_query_runner_unlisted (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node.query(
+        "CREATE TABLE default.runner_grants (query String, settings Map(String, String)) "
+        "ENGINE = QueryRunner SETTINGS mode = 'asynchronous', threads = 1 SQL SECURITY INVOKER"
+    )
+
+    # The credential may write to the runner and to the *listed* table only; the unlisted table is
+    # deliberately absent from the `GRANTS` clause.
+    node.query(
+        "CREATE USER u_query_runner_grants IDENTIFIED WITH sha256_password BY 'pw' "
+        "GRANTS (INSERT ON default.runner_grants, INSERT ON default.t_query_runner_listed)"
+    )
+    # The user itself is granted `INSERT` on *both* targets, so only the credential limit can deny the
+    # second job - which makes the assertion below non-vacuous.
+    node.query("GRANT INSERT ON default.runner_grants TO u_query_runner_grants")
+    node.query("GRANT INSERT ON default.t_query_runner_listed TO u_query_runner_grants")
+    node.query("GRANT INSERT ON default.t_query_runner_unlisted TO u_query_runner_grants")
+
+    # Both jobs are accepted at push time: pushing only requires `INSERT` on the runner table, which the
+    # credential is allowed to do. The inner queries run later, under the replayed identity.
+    node.query(
+        "INSERT INTO default.runner_grants VALUES "
+        "('INSERT INTO default.t_query_runner_listed VALUES (1)', {'log_comment': 'query_runner_grants_listed'}), "
+        "('INSERT INTO default.t_query_runner_unlisted VALUES (1)', {'log_comment': 'query_runner_grants_unlisted'})",
+        user="u_query_runner_grants",
+        password="pw",
+    )
+
+    node.query("SYSTEM WAIT QUERY RUNNER default.runner_grants")
+
+    # The listed table is inside the credential's grant limit, so its deferred job executed.
+    assert node.query("SELECT count() FROM default.t_query_runner_listed").strip() == "1"
+    # The unlisted one is outside it, so its deferred job was denied even though the user could do it.
+    assert node.query("SELECT count() FROM default.t_query_runner_unlisted").strip() == "0"
+
+    node.query("DROP USER u_query_runner_grants")
+    node.query("DROP TABLE default.runner_grants")
+    node.query("DROP TABLE default.t_query_runner_listed")
+    node.query("DROP TABLE default.t_query_runner_unlisted")
