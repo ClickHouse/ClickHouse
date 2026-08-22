@@ -4,7 +4,7 @@
       "group": "ClickHouse Cloud",
       "pages": [
         {
-          "group": "Get started",
+          "group": "はじめに",
           "pages": [
             "ja/products/cloud/getting-started/cloud-get-started",
             "ja/products/cloud/getting-started/intro",
@@ -12,7 +12,7 @@
           ]
         },
         {
-          "group": "Features",
+          "group": "機能",
           "pages": [
             "ja/products/cloud/features/cloud-tiers",
             "ja/products/cloud/features/cli",
@@ -22,7 +22,7 @@
             "ja/products/cloud/reference/supported-regions",
             {
               "expanded": false,
-              "group": "SQL console",
+              "group": "SQLコンソール",
               "pages": [
                 "ja/products/cloud/features/sql-console-features/sql-console",
                 "ja/products/cloud/features/sql-console-features/query-insights",
@@ -34,10 +34,10 @@
             },
             {
               "expanded": false,
-              "group": "Infrastructure",
+              "group": "インフラストラクチャ",
               "pages": [
                 {
-                  "group": "Automatic scaling",
+                  "group": "自動スケーリング",
                   "pages": [
                     "ja/products/cloud/features/autoscaling/overview",
                     "ja/products/cloud/features/autoscaling/vertical",
@@ -51,6 +51,7 @@
                 },
                 "ja/products/cloud/features/large-single-replica-services",
                 "ja/products/cloud/features/infrastructure/parallel-replicas",
+                "ja/products/cloud/features/infrastructure/replica-aware-routing",
                 "ja/products/cloud/features/infrastructure/deployment-options",
                 "ja/products/cloud/features/infrastructure/shared-catalog",
                 "ja/products/cloud/features/infrastructure/shared-merge-tree",
@@ -75,7 +76,7 @@
             "ja/products/cloud/features/security",
             {
               "expanded": false,
-              "group": "Monitoring",
+              "group": "監視",
               "pages": [
                 "ja/products/cloud/features/monitoring/overview",
                 "ja/products/cloud/features/monitoring/cloud-console",
@@ -87,7 +88,7 @@
               ]
             },
             {
-              "group": "Backups",
+              "group": "バックアップ",
               "pages": [
                 "ja/products/cloud/features/backups/overview"
               ]
@@ -111,7 +112,7 @@
                     "ja/products/cloud/features/ai-ml/agents/quickstart",
                     "ja/products/cloud/features/ai-ml/agents/chat",
                     {
-                      "group": "Agent Builder",
+                      "group": "エージェントビルダー",
                       "pages": [
                         "ja/products/cloud/features/ai-ml/agents/builder/index",
                         "ja/products/cloud/features/ai-ml/agents/builder/model-parameters",
@@ -136,7 +137,7 @@
           ]
         },
         {
-          "group": "Cloud reference",
+          "group": "Cloudリファレンス",
           "pages": [
             "ja/products/cloud/reference/index",
             "ja/products/cloud/reference/service-uptime",
@@ -151,12 +152,12 @@
           ]
         },
         {
-          "group": "Billing",
+          "group": "請求",
           "pages": [
             "ja/products/cloud/reference/billing/billing-overview",
             {
               "expanded": false,
-              "group": "Marketplace",
+              "group": "マーケットプレイス",
               "pages": [
                 "ja/products/cloud/reference/billing/marketplace/overview",
                 "ja/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
@@ -185,11 +186,11 @@
           ]
         },
         {
-          "group": "Guides",
+          "group": "ガイド",
           "pages": [
             "ja/products/cloud/guides/index",
             {
-              "group": "Best practices",
+              "group": "ベストプラクティス",
               "pages": [
                 "ja/products/cloud/guides/best-practices/index",
                 "ja/products/cloud/guides/best-practices/multitenancy",
@@ -198,7 +199,7 @@
             },
             {
               "expanded": false,
-              "group": "General",
+              "group": "一般",
               "pages": [
                 "ja/products/cloud/guides/cloud-compatibility",
                 "ja/products/cloud/guides/production-readiness"
@@ -206,14 +207,14 @@
             },
             {
               "expanded": false,
-              "group": "Migration",
+              "group": "移行",
               "pages": [
                 "ja/products/cloud/guides/migration/upload-a-csv-file"
               ]
             },
             {
               "expanded": false,
-              "group": "SQL console",
+              "group": "SQL コンソール",
               "pages": [
                 "ja/products/cloud/guides/sql-console/connection-details",
                 "ja/products/cloud/guides/sql-console/query-endpoints"
@@ -221,14 +222,14 @@
             },
             {
               "expanded": false,
-              "group": "Backups",
+              "group": "バックアップ",
               "pages": [
                 "ja/products/cloud/guides/backups/index",
                 "ja/products/cloud/guides/backups/review-and-restore-backups",
                 "ja/products/cloud/guides/backups/configurable-backups",
                 {
                   "expanded": false,
-                  "group": "Bring Your Own Backup",
+                  "group": "独自バックアップの持ち込み",
                   "pages": [
                     "ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "ja/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -239,7 +240,7 @@
             },
             {
               "expanded": false,
-              "group": "Data sources",
+              "group": "データソース",
               "pages": [
                 "ja/products/cloud/guides/data-sources/index",
                 "ja/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -251,11 +252,11 @@
             },
             {
               "expanded": false,
-              "group": "Infrastructure",
+              "group": "インフラストラクチャ",
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Deployment modes",
+                  "group": "デプロイメントモード",
                   "pages": [
                     "ja/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
                     "ja/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
@@ -265,11 +266,11 @@
             },
             {
               "expanded": false,
-              "group": "Security",
+              "group": "セキュリティ",
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Cloud access management",
+                  "group": "クラウドアクセス管理",
                   "pages": [
                     "ja/products/cloud/guides/security/cloud-access-management/index",
                     "ja/products/cloud/guides/security/cloud-access-management/manage-my-account",
@@ -288,12 +289,12 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Connectivity",
+                  "group": "接続性",
                   "pages": [
                     "ja/products/cloud/guides/security/connectivity/setting-ip-filters",
                     {
                       "expanded": false,
-                      "group": "Private networking",
+                      "group": "プライベートネットワーキング",
                       "pages": [
                         "ja/products/cloud/guides/security/connectivity/private-networking/index",
                         "ja/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
@@ -305,7 +306,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Audit logging",
+                  "group": "監査ログ",
                   "pages": [
                     "ja/products/cloud/guides/security/audit-logging/index",
                     "ja/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -315,7 +316,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Data security",
+                  "group": "データセキュリティ",
                   "pages": [
                     "ja/products/cloud/guides/security/data-masking",
                     "ja/products/cloud/guides/security/cmek"
@@ -323,7 +324,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Compliance",
+                  "group": "コンプライアンス",
                   "pages": [
                     "ja/products/cloud/guides/security/compliance/hipaa-onboarding",
                     "ja/products/cloud/guides/security/compliance/pci-onboarding"
@@ -334,7 +335,7 @@
           ]
         },
         {
-          "group": "API reference",
+          "group": "API リファレンス",
           "openapi": {
             "directory": "ja/products/cloud/api-reference",
             "source": "_specs/cloud-openapi.json"

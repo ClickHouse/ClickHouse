@@ -8,6 +8,7 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
@@ -169,11 +170,12 @@ TEST(CompressionCodecFactory, IsDefaultCodec)
 {
     const auto codec = [](const String & expr)
     {
+        static const Settings settings;
         ParserCodec parser;
         const String query = "(" + expr + ")";
         ASTPtr parsed = parseQuery(parser, query, /*max_query_size=*/0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         return CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-            parsed, /*column_type=*/nullptr, /*sanity_check=*/true, /*allow_experimental_codecs=*/false);
+            parsed, /*column_type=*/nullptr, CodecValidationSettings(settings));
     };
 
     /// No CODEC clause resolves to the default codec.
