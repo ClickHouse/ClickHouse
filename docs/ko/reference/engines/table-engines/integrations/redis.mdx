@@ -37,6 +37,7 @@ PRIMARY KEY(primary_key_name);
 
   `PRIMARY KEY`는 하나의 컬럼만 지원합니다. 기본 키는 Redis 키로 바이너리 직렬화됩니다.
   기본 키를 제외한 컬럼은 해당 순서대로 Redis 값으로 바이너리 직렬화됩니다.
+  선택한 Redis 데이터베이스에 ClickHouse에서 기록하지 않은 키 또는 값이 포함된 경우 `SELECT * FROM redis_table`을 사용한 전체 스캔은 바이너리 역직렬화 오류로 실패할 수 있습니다.
 </Info>
 
 인수는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 사용해 전달할 수도 있습니다. 이 경우 `host`와 `port`는 별도로 지정해야 합니다. 이 방식은 운영 환경에 권장됩니다. 현재는 이름이 지정된 컬렉션을 사용해 Redis에 전달하는 모든 매개변수가 필수입니다.

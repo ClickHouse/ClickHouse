@@ -29,7 +29,7 @@ Un par clave-valor consiste en una clave seguida de un `key_value_delimiter` y u
 **Sintaxis**
 
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Argumentos**
@@ -38,7 +38,7 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 * `key_value_delimiter` - Carácter que se usará como delimitador entre la clave y el valor. El valor predeterminado es `:`. [String](/es/reference/data-types/string) o [FixedString](/es/reference/data-types/fixedstring).
 * `pair_delimiters` - Conjunto de caracteres que se usarán como delimitadores entre pares. El valor predeterminado es `\space`, `,` y `;`. [String](/es/reference/data-types/string) o [FixedString](/es/reference/data-types/fixedstring).
 * `quoting_character` - Carácter que se usará como carácter de cita. El valor predeterminado es `"`. [String](/es/reference/data-types/string) o [FixedString](/es/reference/data-types/fixedstring).
-* `unexpected_quoting_character_strategy` - Estrategia para manejar caracteres de cita en ubicaciones inesperadas durante la fase de `read_key` y `read_value`. Valores posibles: `invalid`, `accept` y `promote`. `invalid` descartará la clave o el valor y volverá al estado `WAITING_KEY`. `accept` lo tratará como un carácter normal. `promote` cambiará al estado `READ_QUOTED_{KEY/VALUE}` y comenzará desde el siguiente carácter. El valor predeterminado es `INVALID`
+* `unexpected_quoting_character_strategy` - Estrategia para manejar caracteres de cita en ubicaciones inesperadas durante la fase de `read_key` y `read_value`. Valores posibles: `invalid`, `accept` y `promote`. `invalid` descartará la clave o el valor y volverá al estado `WAITING_KEY`. `accept` lo tratará como un carácter normal. `promote` cambiará al estado `READ_QUOTED_{KEY/VALUE}` y comenzará desde el siguiente carácter. El valor predeterminado es `PROMOTE`
 
 **Valores devueltos**
 
@@ -161,7 +161,7 @@ Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 **Sintaxis**
 
 ```sql
-extractKeyValuePairs(input)
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Alias**: `str_to_map`, `mapFromString`
@@ -211,7 +211,7 @@ Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 **Sintaxis**
 
 ```sql
-extractKeyValuePairsWithEscaping(input)
+extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Argumentos**
@@ -785,8 +785,8 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 Introducido en: v21.2.0
 
 Devuelve las claves de un mapa.
-Esta función puede optimizarse al habilitar el ajuste [`optimize_functions_to_subcolumns`](/es/reference/settings/session-settings#optimize_functions_to_subcolumns).
-Con este ajuste habilitado, la función solo lee la subcolumna `keys` en lugar del mapa completo.
+Esta función puede optimizarse al habilitar el SETTING [`optimize_functions_to_subcolumns`](/es/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
+Con este SETTING habilitado, la función solo lee la subcolumna `keys` en lugar del mapa completo.
 La consulta `SELECT mapKeys(m) FROM table` se transforma en `SELECT m.keys FROM table`.
 
 **Sintaxis**
@@ -1098,8 +1098,8 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 Introducida en: v21.2.0
 
 Devuelve los valores de un mapa dado.
-Esta función se puede optimizar al habilitar la configuración [`optimize_functions_to_subcolumns`](/es/reference/settings/session-settings#optimize_functions_to_subcolumns).
-Con esta configuración habilitada, la función solo lee la subcolumna `values` en lugar del mapa completo.
+Esta función se puede optimizar al habilitar la SETTING [`optimize_functions_to_subcolumns`](/es/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
+Con esta SETTING habilitada, la función solo lee la subcolumna `values` en lugar del mapa completo.
 La consulta `SELECT mapValues(m) FROM table` se transforma en `SELECT m.values FROM table`.
 
 **Sintaxis**

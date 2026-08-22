@@ -2514,7 +2514,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     /// BF index types: require positional arguments — swap name only, keep args.
     static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1", "sparse_grams"};
     /// Simple no-arg tokenizers valid as text index tokenizer values.
-    static const Strings simple_tokenizers = {"splitByNonAlpha", "splitByString", "array", "asciiCJK", "unicodeWord"};
+    static const Strings simple_tokenizers = {"splitByNonAlpha", "splitByString", "array", "keyword", "asciiCJK", "unicodeWord"};
     /// Non-empty separators for the splitByString tokenizer (empty ones are rejected).
     static const Strings tokenizer_separators = {" ", ",", ";", ".", "\t", "\n", "ab", "叫", "😉"};
     static const Strings posting_list_codecs = {"none", "bitpacking"};
@@ -3427,7 +3427,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 
     static const std::unordered_map<ASTExplainQuery::ExplainKind, DB::Strings> settings_by_kind = {
         {ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
-        {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes"}},
+        {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes", "single_record"}},
         {ASTExplainQuery::QueryTree, {"run_passes", "dump_tree", "dump_passes", "dump_ast", "passes"}},
         {ASTExplainQuery::ExplainKind::QueryPlan,
          {"header",
@@ -4805,6 +4805,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"empty", "notEmpty", "length", "lengthUTF8"},
         /// Array/string containment checks
         {"has",
+         "notHas",
          "hasAll",
          "hasAny",
          "hasToken",
