@@ -2,9 +2,12 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
+#include <base/hex.h>
 #include <fmt/ranges.h>
 
 
@@ -24,29 +27,54 @@ namespace
 
     String quotePromQLString(std::string_view str)
     {
-        static constexpr char hex_digits[] = "0123456789abcdef";
-
         String result;
         result.reserve(str.size() + 2);
         result.push_back('"');
 
-        for (unsigned char c : str)
+        for (size_t i = 0; i < str.size();)
         {
-            if (c == '"' || c == '\\')
+            const auto c = static_cast<UInt8>(str[i]);
+
+            if (c >= 0x80)
             {
-                result.push_back('\\');
-                result.push_back(static_cast<char>(c));
+                const size_t sequence_length = UTF8::seqLength(c);
+                if (sequence_length <= str.size() - i
+                    && UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data() + i), sequence_length))
+                {
+                    result.append(str.data() + i, sequence_length);
+                    i += sequence_length;
+                    continue;
+                }
             }
-            else if (c < 0x20 || c == 0x7F)
+
+            switch (c)
             {
-                result.append("\\x");
-                result.push_back(hex_digits[c >> 4]);
-                result.push_back(hex_digits[c & 0x0F]);
+                case '"':
+                case '\\':
+                    result.push_back('\\');
+                    result.push_back(static_cast<char>(c));
+                    break;
+                case '\a': result.append("\\a"); break;
+                case '\b': result.append("\\b"); break;
+                case '\f': result.append("\\f"); break;
+                case '\n': result.append("\\n"); break;
+                case '\r': result.append("\\r"); break;
+                case '\t': result.append("\\t"); break;
+                case '\v': result.append("\\v"); break;
+                default:
+                    if (c < 0x20 || c == 0x7F || c >= 0x80)
+                    {
+                        result.append("\\x");
+                        result += getHexUIntLowercase(c);
+                    }
+                    else
+                    {
+                        result.push_back(static_cast<char>(c));
+                    }
+                    break;
             }
-            else
-            {
-                result.push_back(static_cast<char>(c));
-            }
+
+            ++i;
         }
 
         result.push_back('"');
@@ -58,18 +86,12 @@ namespace
         if (label.empty())
             return false;
 
-        auto is_alpha = [](char c)
-        {
-            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-        };
-        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
-
-        if (!is_alpha(label.front()) && label.front() != '_')
+        if (!isAlphaASCII(label.front()) && label.front() != '_')
             return false;
 
         for (char c : label.substr(1))
         {
-            if (!is_alpha(c) && !is_digit(c) && c != '_')
+            if (!isAlphaNumericASCII(c) && c != '_')
                 return false;
         }
 
@@ -81,18 +103,12 @@ namespace
         if (metric.empty())
             return false;
 
-        auto is_alpha = [](char c)
-        {
-            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-        };
-        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
-
-        if (!is_alpha(metric.front()) && metric.front() != '_' && metric.front() != ':')
+        if (!isAlphaASCII(metric.front()) && metric.front() != '_' && metric.front() != ':')
             return false;
 
         for (char c : metric.substr(1))
         {
-            if (!is_alpha(c) && !is_digit(c) && c != '_' && c != ':')
+            if (!isAlphaNumericASCII(c) && c != '_' && c != ':')
                 return false;
         }
 

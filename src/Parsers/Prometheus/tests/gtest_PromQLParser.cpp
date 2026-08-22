@@ -269,6 +269,13 @@ TEST(PromQLParser, InvalidQuotedGroupingLabels)
 }
 
 
+TEST(PromQLParser, PromQLStringSerializationRoundTrip)
+{
+    expectRoundTrip(R"("line\n\t\r\b\f\v")", R"("line\n\t\r\b\f\v")");
+    expectRoundTrip(R"("invalid \xff")", R"("invalid \xff")");
+}
+
+
 /// Parse queries from https://github.com/prometheus/compliance/blob/main/promql/promql-test-queries.yml
 TEST(PromQLParser, ComplianceQueries)
 {
@@ -1660,7 +1667,7 @@ PrometheusQueryTree(STRING):
     EXPECT_EQ(parse(R"(
         "\n"
         )"), R"(
-"\x0a"
+"\n"
 
 PrometheusQueryTree(STRING):
     StringLiteral('\n')
@@ -1669,7 +1676,7 @@ PrometheusQueryTree(STRING):
     EXPECT_EQ(parse(R"(
         "these are unescaped: \n \\ ' \" ` \t"
         )"), R"(
-"these are unescaped: \x0a \\ ' \" ` \x09"
+"these are unescaped: \n \\ ' \" ` \t"
 
 PrometheusQueryTree(STRING):
     StringLiteral('these are unescaped: \n \\ \' " ` \t')
@@ -1678,7 +1685,7 @@ PrometheusQueryTree(STRING):
     EXPECT_EQ(parse(R"(
         'these are unescaped: \n \\ \' " ` \t'
         )"), R"(
-"these are unescaped: \x0a \\ ' \" ` \x09"
+"these are unescaped: \n \\ ' \" ` \t"
 
 PrometheusQueryTree(STRING):
     StringLiteral('these are unescaped: \n \\ \' " ` \t')
