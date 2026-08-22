@@ -431,6 +431,52 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantSparseStateSamplesRepeatedP
     EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }
 
+/// The state leaf of a `ColumnSparse` is a `cut` view of its `values`, which shares the states instead of
+/// owning them, so the view's `byteSize` is one pointer per row while the sparse carrier's `byteSize` still
+/// counts the original `values` column together with the arena it owns. Sizing the carrier's own payload as
+/// `byteSize` minus the leaf must subtract the original column's bytes, or the whole state payload stays in
+/// the plain bytes and is counted a second time by the serialized-state measurement.
+TEST(RuntimeDataflowStatisticsStateSampling, SparseStateArenaIsNotCountedAsPlainPayload)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 200;
+    constexpr size_t elements_in_state = 4000;
+
+    AggregateFunctionPtr function;
+    /// Row zero is the sparse implicit default, row one the stored value; unlike a column assembled with
+    /// `insertFrom`, this one builds its states in its own arena, which `byteSize` counts.
+    auto values = createSkewedGroupArrayColumn(/*rows=*/2, /*giant_state_row=*/1, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    ASSERT_GT(values->byteSize(), elements_in_state * sizeof(UInt64));
+
+    auto offsets = ColumnUInt64::create();
+    offsets->insert(0);
+    auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), /*size_=*/1);
+    ColumnPtr constant = ColumnConst::create(std::move(sparse), rows);
+
+    /// As in `ConstantSparseStateSamplesRepeatedPayload`, the wire ground truth is the equivalent
+    /// materialized column: `NativeWriter` cannot serialize a constant over a sparse column.
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    auto materialized = ColumnAggregateFunction::create(function);
+    for (size_t row = 0; row < rows; ++row)
+        materialized->insertFrom(*source_state, 0);
+
+    const size_t cache_key = 0x111985 + 13;
+    const auto exact_compressed_bytes = compressedColumnSize({std::move(materialized), state_type, "sparse_state_arena"});
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, state_type, "sparse_state_arena"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(constant)}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
 /// The implicit default at `ColumnSparse::values[0]` is one outer `Array` row, but that row contains no
 /// nested aggregate states. The state leaf in the following real row must therefore not be skipped while
 /// sampling. This is the same row-expanding layout `Map` uses for its nested key/value arrays.

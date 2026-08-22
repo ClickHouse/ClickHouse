@@ -205,14 +205,23 @@ static std::pair<size_t, size_t> estimateRepeatedCompressedColumnSize(const Colu
 /// recurses through the subcolumns of `isState()` results to attach the shared arenas to nested
 /// `ColumnAggregateFunction` leaves, so e.g. `SELECT tuple(uniqExactState(x))` emits a `ColumnTuple` around
 /// an aggregate-state leaf. Visit every such leaf, whether the column is one itself or wraps some.
+///
+/// `carrier_byte_size` is how many bytes the visited column's own `byteSize` attributes to that leaf. It is
+/// the leaf's `byteSize` everywhere except below a `ColumnSparse`, where the leaf is a `cut` view of the
+/// sparse `values`: `cut` shares the states through `src`, so the view's `byteSize` counts only its pointer
+/// array while the sparse carrier still counts the original `values` column with the arena it owns.
+/// Callers that size the carrier's own payload as `column->byteSize()` minus the leaves must subtract this
+/// figure, otherwise the whole state payload stays behind as plain bytes and is counted a second time by
+/// the serialized-state measurement.
 static void forEachAggregateStateLeaf(
     const IColumn & column,
-    const std::function<void(const ColumnAggregateFunction &, size_t skip_rows, const ColumnPtr & owner)> & callback,
+    const std::function<void(const ColumnAggregateFunction &, size_t skip_rows, const ColumnPtr & owner, size_t carrier_byte_size)> &
+        callback,
     const ColumnPtr & owner = {})
 {
     if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&column))
     {
-        callback(*aggregate_column, 0, owner);
+        callback(*aggregate_column, 0, owner, aggregate_column->byteSize());
         return;
     }
     if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(&column))
@@ -221,17 +230,31 @@ static void forEachAggregateStateLeaf(
         /// serialization does not write it, so remove that row before visiting nested state leaves. This
         /// matters for row-expanding carriers such as `Array` and `Map`: their default row has no nested
         /// elements, so their aggregate-state leaves already begin with the first serialized value.
-        const auto values = sparse_column->getValuesPtr()->cut(1, sparse_column->getValuesPtr()->size() - 1);
+        const auto & original_values = sparse_column->getValuesPtr();
+        const auto values = original_values->cut(1, original_values->size() - 1);
         if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(values.get()))
         {
-            callback(*aggregate_column, 0, values);
+            callback(*aggregate_column, 0, values, original_values->byteSize());
             return;
         }
+        /// The cut preserves the structure, so the original values column has the same leaves in the same
+        /// order; pair them up positionally to recover each leaf's share of the carrier's `byteSize`.
+        std::vector<size_t> original_leaf_bytes;
+        original_values->forEachSubcolumnRecursively(
+            [&](const IColumn & subcolumn)
+            {
+                if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
+                    original_leaf_bytes.push_back(aggregate_column->byteSize());
+            });
+        size_t leaf_index = 0;
         values->forEachSubcolumnRecursively(
             [&](const IColumn & subcolumn)
             {
                 if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
-                    callback(*aggregate_column, 0, values);
+                {
+                    callback(*aggregate_column, 0, values, original_leaf_bytes.at(leaf_index));
+                    ++leaf_index;
+                }
             });
         return;
     }
@@ -239,14 +262,14 @@ static void forEachAggregateStateLeaf(
         [&](const IColumn & subcolumn)
         {
             if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
-                callback(*aggregate_column, 0, owner);
+                callback(*aggregate_column, 0, owner, aggregate_column->byteSize());
         });
 }
 
 static bool hasAggregateStateLeaf(const IColumn & column)
 {
     bool has_leaf = false;
-    forEachAggregateStateLeaf(column, [&](const ColumnAggregateFunction &, size_t, const ColumnPtr &) { has_leaf = true; });
+    forEachAggregateStateLeaf(column, [&](const ColumnAggregateFunction &, size_t, const ColumnPtr &, size_t) { has_leaf = true; });
     return has_leaf;
 }
 
@@ -393,7 +416,9 @@ static void sampleNonStatePartsCompression(
     /// structure): count its own payload as incompressible rather than applying the leaves' ratio to it.
     size_t leaves_byte_size = 0;
     forEachAggregateStateLeaf(
-        *column, [&](const ColumnAggregateFunction & leaf, size_t, const ColumnPtr &) { leaves_byte_size += leaf.byteSize(); });
+        *column,
+        [&](const ColumnAggregateFunction &, size_t, const ColumnPtr &, size_t carrier_byte_size)
+        { leaves_byte_size += carrier_byte_size; });
     const size_t carrier_bytes = (column->byteSize() - leaves_byte_size) * repetitions;
     sample_bytes += carrier_bytes;
     compressed_bytes += carrier_bytes;
@@ -455,11 +480,11 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         size_t state_leaves_byte_size = 0;
         forEachAggregateStateLeaf(
             *column,
-            [&](const ColumnAggregateFunction & leaf, size_t skip_rows, const ColumnPtr & owner)
+            [&](const ColumnAggregateFunction & leaf, size_t skip_rows, const ColumnPtr & owner, size_t carrier_byte_size)
             {
                 col_has_states[i] = 1;
                 state_leaves.emplace_back(&leaf, owner, repetitions, skip_rows);
-                state_leaves_byte_size += leaf.byteSize();
+                state_leaves_byte_size += carrier_byte_size;
             });
         /// The carrier's own payload (null maps, sibling tuple elements, array offsets, ...) is sized by
         /// `byteSize` like any plain column; the state leaves are sized from their serialized states below.
