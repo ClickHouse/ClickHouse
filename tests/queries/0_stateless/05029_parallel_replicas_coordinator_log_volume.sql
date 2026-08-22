@@ -1,13 +1,16 @@
 -- Tags: no-random-settings
 -- The parallel replicas coordinator used to dump the whole working set (every part with all of its mark ranges)
--- into `TRACE` and `DEBUG` messages, which is megabytes of logs per query for a table with many parts.
+-- into `TRACE` and `DEBUG` messages, which is megabytes of logs per query for a large working set.
 -- Only the totals are logged now; the detailed listing is kept under the `TEST` level.
 
 DROP TABLE IF EXISTS t_coordinator_log_volume;
 
--- One part per partition: the size of the old messages grew linearly with the number of parts.
-CREATE TABLE t_coordinator_log_volume (k UInt32) ENGINE = MergeTree ORDER BY k PARTITION BY k;
-INSERT INTO t_coordinator_log_volume SELECT number FROM numbers(150) SETTINGS max_partitions_per_insert_block = 0;
+-- The size of the old messages grew linearly with the number of parts and with the number of mark ranges in
+-- every part. `index_granularity = 1` turns every row into a separate granule, so a sparse `IN` set gives a
+-- working set of hundreds of non-adjacent ranges without writing a table that is expensive to create.
+CREATE TABLE t_coordinator_log_volume (k UInt32) ENGINE = MergeTree ORDER BY k PARTITION BY intDiv(k, 300)
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+INSERT INTO t_coordinator_log_volume SELECT number FROM numbers(1200);
 
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1;
@@ -16,17 +19,30 @@ SET parallel_replicas_local_plan = 0;  -- without a local plan every replica tal
 SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 
 -- Default coordinator.
-SELECT count() FROM t_coordinator_log_volume WHERE NOT ignore(*)
+SELECT count() FROM t_coordinator_log_volume WHERE k IN (SELECT number * 4 FROM numbers(300)) AND NOT ignore(*)
     SETTINGS log_comment = '05029_9bd90c3e-1fd4-4d0c-8a4a-0f0f1bd6d5a9_default';
 
 -- Reading in order coordinator.
-SELECT k FROM t_coordinator_log_volume ORDER BY k LIMIT 5 OFFSET 140
+SELECT k FROM t_coordinator_log_volume WHERE k IN (SELECT number * 4 FROM numbers(300)) ORDER BY k LIMIT 5 OFFSET 290
     SETTINGS optimize_read_in_order = 1, log_comment = '05029_9bd90c3e-1fd4-4d0c-8a4a-0f0f1bd6d5a9_inorder';
 
 SYSTEM FLUSH LOGS text_log, query_log;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 
--- Messages of the coordinator and of the parallel replicas read pools must not grow with the number of parts.
+-- The check below is meaningless unless the queries really had a large working set. The counters are only
+-- reported by the replicas, the initiator does not read anything on its own without a local plan.
+SELECT max(ProfileEvents['SelectedParts']) >= 4, max(ProfileEvents['SelectedRanges']) >= 100
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND type = 'QueryFinish'
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+            AND current_database = currentDatabase()
+            AND log_comment IN ('05029_9bd90c3e-1fd4-4d0c-8a4a-0f0f1bd6d5a9_default', '05029_9bd90c3e-1fd4-4d0c-8a4a-0f0f1bd6d5a9_inorder'))
+SETTINGS enable_parallel_replicas = 0;
+
+-- Messages of the coordinator and of the parallel replicas read pools must not grow with the size of the working set.
 -- The `Test` level is excluded on purpose: the detailed listing is still allowed there.
 SELECT count() > 0, max(length(message)) < 1000
 FROM system.text_log
