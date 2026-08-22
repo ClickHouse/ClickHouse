@@ -2225,3 +2225,96 @@ def test_date_to_string_milliseconds(started_cluster):
     assert without_ids(result) == [{"text": "12:34:56.789"}]
 
     node.query("DROP TABLE db.date_format SYNC", password="123")
+
+
+def test_an_unacknowledged_write_concern_is_an_error(started_cluster):
+    """`w: 0` asks for a write the client is not told about: it does not wait for a reply and no
+    write error is reported. Every write of this endpoint runs the statement and answers with its
+    result, so the weaker contract is refused rather than answered as the stronger one."""
+    database = make_client()["db"]
+    database.drop_collection("unacknowledged")
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database.command(
+            {
+                "insert": "unacknowledged",
+                "documents": [{"id": 1}],
+                "writeConcern": {"w": 0},
+            }
+        )
+
+    assert "unacknowledged" not in database.list_collection_names()
+
+
+def test_a_write_concern_of_a_drop_or_an_index_is_checked(started_cluster):
+    """`drop`, `dropDatabase` and `createIndexes` write as much as an `insert` does, so a write
+    concern this server cannot honour has to be an error for them too, rather than an `ok` for a
+    weaker write than the one asked for."""
+    database = make_client()["db"]
+    collection = database["write_concern_of_a_drop"]
+    collection.drop()
+    collection.insert_one({"id": 1})
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database.command({"drop": "write_concern_of_a_drop", "writeConcern": {"w": 2}})
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database.command(
+            {
+                "createIndexes": "write_concern_of_a_drop",
+                "indexes": [{"key": {"id": 1}, "name": "id_1"}],
+                "writeConcern": {"j": True},
+            }
+        )
+    with pytest.raises(pymongo.errors.OperationFailure):
+        make_client()["db_of_a_dropped_database"].command(
+            {"dropDatabase": 1, "writeConcern": {"w": 0}}
+        )
+
+    # The refused commands changed nothing.
+    assert [document["id"] for document in collection.find({})] == [1]
+
+    # What the endpoint does satisfy is still accepted.
+    database.command({"drop": "write_concern_of_a_drop", "writeConcern": {"w": 1}})
+    assert "write_concern_of_a_drop" not in database.list_collection_names()
+
+
+def test_a_read_command_option_that_is_not_implemented_is_an_error(started_cluster):
+    """A `collation` decides which documents a filter matches and which values are the same one,
+    and a `batchSize` bounds how many documents a batch carries while everything is answered in the
+    first one. Neither is translated, so a read command that asks for one is refused rather than
+    answered as a query that does not ask for it."""
+    database = make_client()["db"]
+    collection = database["read_options"]
+    collection.drop()
+    collection.insert_many([{"id": 1, "value": "a"}, {"id": 2, "value": "b"}])
+
+    for command in [
+        {"find": "read_options", "filter": {}, "collation": {"locale": "en"}},
+        {"find": "read_options", "filter": {}, "batchSize": 1},
+        {"count": "read_options", "query": {}, "collation": {"locale": "en"}},
+        {"distinct": "read_options", "key": "value", "collation": {"locale": "en"}},
+        {
+            "aggregate": "read_options",
+            "pipeline": [],
+            "cursor": {},
+            "collation": {"locale": "en"},
+        },
+        {"aggregate": "read_options", "pipeline": [], "cursor": {"batchSize": 1}},
+        {"find": "read_options", "filter": {}, "maxTimeMS": 1000},
+    ]:
+        with pytest.raises(pymongo.errors.OperationFailure):
+            database.command(command)
+
+    # The same commands without the option they cannot honour are answered.
+    assert database.command({"count": "read_options", "query": {}})["n"] == 2
+    assert sorted(
+        document["id"]
+        for document in database.command({"find": "read_options", "filter": {}})[
+            "cursor"
+        ]["firstBatch"]
+    ) == [1, 2]
+    assert sorted(
+        database.command({"distinct": "read_options", "key": "value"})["values"]
+    ) == ["a", "b"]
+
+    collection.drop()

@@ -107,7 +107,11 @@ void validateReadConcern(const rapidjson::Value & json, const char * command)
         /// cannot keep, so they are refused rather than answered with a plain read.
         if (name == "level")
         {
-            const std::string_view level(field->value.IsString() ? field->value.GetString() : "", field->value.IsString() ? field->value.GetStringLength() : 0);
+            if (!field->value.IsString())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "The 'level' of the 'readConcern' of the '{}' command must be a string", command);
+
+            const std::string_view level(field->value.GetString(), field->value.GetStringLength());
             if (level == "local" || level == "available" || level == "majority")
                 continue;
             throw Exception(
