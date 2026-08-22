@@ -1168,6 +1168,21 @@ def test_postgres_query_passing(started_cluster):
     assert node1.query(f'SELECT "weird name" FROM {q_quoted} ORDER BY id').rstrip() == "quoted_value"
     cursor.execute(f"DROP TABLE {quoted_name}")
 
+    # An identifier that does not need quoting is emitted unquoted, so PostgreSQL keeps applying its
+    # ordinary lower-case folding and `Foo` resolves to the column `foo`. Force-quoting every identifier
+    # would make PostgreSQL look for a case-sensitive `Foo` and fail with `column "Foo" does not exist`.
+    folded_name = "test_query_passing_folded"
+    cursor.execute(f"DROP TABLE IF EXISTS {folded_name}")
+    cursor.execute(f"CREATE TABLE {folded_name} (id integer, foo text)")
+    cursor.execute(f"INSERT INTO {folded_name} VALUES (1, 'folded_value')")
+    started_cluster.postgres_conn.commit()
+    q_folded = (
+        f"postgresql('{host}', 'postgres', "
+        f"(SELECT Id, Foo FROM {folded_name}), 'postgres', '{pg_pass}')"
+    )
+    assert node1.query(f"SELECT foo FROM {q_folded} ORDER BY id").rstrip() == "folded_value"
+    cursor.execute(f"DROP TABLE {folded_name}")
+
     # external_table_strict_query: an outer filter that cannot be pushed down into the passed query is
     # applied locally by default, but rejected with INCORRECT_QUERY under external_table_strict_query = 1.
     q_strict = f"postgresql('{host}', 'postgres', query('SELECT a, b FROM {table_name}'), 'postgres', '{pg_pass}')"

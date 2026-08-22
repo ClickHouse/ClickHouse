@@ -834,9 +834,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         }
 
         /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
+        /// Identifiers are quoted only when they need to be: PostgreSQL folds an unquoted identifier to
+        /// lower case, while a quoted one is matched case-sensitively, so force-quoting every identifier
+        /// would make `(SELECT Foo FROM t)` look for the column `Foo` instead of `foo` and break queries
+        /// that rely on the ordinary unquoted name resolution.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL,
-            IdentifierQuotingRule::Always);
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
