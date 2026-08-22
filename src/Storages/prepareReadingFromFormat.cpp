@@ -35,7 +35,16 @@ namespace Setting
 namespace
 {
 /// Also read inputs of DEFAULT expressions so AddingDefaultsTransform can evaluate them.
-void appendColumnsRequiredForDefaults(Strings & columns_to_read, const ColumnsDescription & all_columns)
+///
+/// Skip hive partition columns: they are parsed from the file path and appended to the chunk
+/// only after `AddingDefaultsTransform` runs. If they were pinned into `columns_description`
+/// without being in the format block, `evaluateMissingDefaults` would substitute a type default
+/// for the unread input instead of failing with `UNKNOWN_IDENTIFIER` — silently wrong values for
+/// `DEFAULT` expressions that depend on hive columns (a pre-existing limitation we must preserve).
+void appendColumnsRequiredForDefaults(
+    Strings & columns_to_read,
+    const ColumnsDescription & all_columns,
+    const UnorderedMapWithMemoryTracking<std::string, DataTypePtr> & hive_partition_columns)
 {
     std::unordered_set<std::string> present(columns_to_read.begin(), columns_to_read.end());
     std::vector<String> to_visit = columns_to_read;
@@ -51,6 +60,8 @@ void appendColumnsRequiredForDefaults(Strings & columns_to_read, const ColumnsDe
         for (const auto & required : columns_context.requiredColumns())
         {
             if (!all_columns.has(required))
+                continue;
+            if (hive_partition_columns.contains(required))
                 continue;
             if (present.insert(required).second)
             {
@@ -188,7 +199,10 @@ ReadFromFormatInfo prepareReadingFromFormat(
             columns_to_read.push_back(ExpressionActions::getSmallestColumn(columns_in_data_file).name);
         }
 
-        appendColumnsRequiredForDefaults(columns_to_read, storage_snapshot->metadata->getColumns());
+        appendColumnsRequiredForDefaults(
+            columns_to_read,
+            storage_snapshot->metadata->getColumns(),
+            hive_parameters.hive_partition_columns_to_read_from_file_path_map);
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }
