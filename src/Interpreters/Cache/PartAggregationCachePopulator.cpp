@@ -198,7 +198,8 @@ void populatePartAggregationCache(
 
                 aggregator.executeOnBlock(
                     std::move(aggregator_columns), 0, block.rows(),
-                    data_variants, key_columns, aggregate_columns, no_more_keys);
+                    data_variants, key_columns, aggregate_columns, no_more_keys,
+                    /*adaptive=*/ nullptr);
             }
 
             /// `PullingPipelineExecutor::pull` returns `false` on normal end-of-stream, but also on
