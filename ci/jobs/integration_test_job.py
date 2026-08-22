@@ -130,9 +130,10 @@ def _is_infrastructure_error(result: Result) -> bool:
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
-        return (
-            has_docker_context and _non_timeout_patterns_match(result.info)
-        ) or _is_docker_compose_timeout(result.info)
+        return has_docker_context and (
+            _non_timeout_patterns_match(result.info)
+            or _is_docker_compose_timeout(result.info)
+        )
     return False
 
 
