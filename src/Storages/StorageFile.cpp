@@ -161,7 +161,6 @@ namespace ErrorCodes
     extern const int FILE_CHANGED_DURING_READ;
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_ROWS;
-    extern const int FILE_CHANGED_DURING_READ;
 }
 
 using String = std::string;
