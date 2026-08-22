@@ -316,9 +316,9 @@ public:
     /// Replace each node listed in `substitutions` (a node of this DAG) with a constant COLUMN node.
     void substitute(const std::unordered_map<const Node *, ColumnWithTypeAndName> & substitutions);
 
-    /// Rewire consumers of the input named `input_name` to a constant, leaving the input node and the
-    /// outputs untouched: expressions computed here see `replacement`, while a passthrough output of
-    /// the same name keeps the value supplied for the input.
+    /// Rewire consumers of the input named `input_name` to a constant. The input node and the output
+    /// list are unchanged, so an output that IS that input keeps the value supplied for it; an output
+    /// computed FROM it, including an alias, is a consumer and sees `replacement`.
     void substituteInputForConsumersOnly(const std::string & input_name, const ColumnWithTypeAndName & replacement);
 
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
