@@ -1,5 +1,6 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
@@ -37,6 +38,15 @@ String storageColumnNameForDefaults(const ColumnsDescription & columns, const St
 {
     if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
         return column->getNameInStorage();
+
+    /// Dynamic subcolumns (`json.a`, `d.some.path`) are not enumerated in the description, so
+    /// `tryGetColumnOrSubcolumn` does not resolve them: fall back to the existing name prefix.
+    for (auto [column_name, _] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        if (columns.has(String(column_name)))
+            return String(column_name);
+    }
+
     return name;
 }
 
@@ -140,16 +150,19 @@ void appendColumnsRequiredForDefaults(
 
         RequiredSourceColumnsVisitor::Data columns_context;
         RequiredSourceColumnsVisitor(columns_context).visit(default_desc->expression->clone());
+        /// A DEFAULT expression can reference a subcolumn (`d DEFAULT json.a`): the format reads
+        /// its parent, so the dependency is the parent.
         for (const auto & required : columns_context.requiredColumns())
         {
-            if (!all_columns.has(required))
+            const auto storage_name = storageColumnNameForDefaults(all_columns, required);
+            if (!all_columns.has(storage_name))
                 continue;
-            if (hive_partition_columns.contains(required))
+            if (hive_partition_columns.contains(storage_name))
                 continue;
-            if (present.insert(required).second)
+            if (present.insert(storage_name).second)
             {
-                columns_to_read.push_back(required);
-                to_visit.push_back(required);
+                columns_to_read.push_back(storage_name);
+                to_visit.push_back(storage_name);
             }
         }
     }
@@ -198,9 +211,12 @@ NameSet collectColumnsRequiredForDefaults(
         RequiredSourceColumnsVisitor(columns_context).visit(default_desc->expression->clone());
         for (const auto & required : columns_context.requiredColumns())
         {
-            required_inputs.insert(required);
-            if (columnOrStorageParentHasDefault(columns_description, required))
-                to_visit.push_back(storageColumnNameForDefaults(columns_description, required));
+            /// `format_header` holds storage-level names, so keep the parent of a subcolumn
+            /// dependency - that is what pruning must not drop.
+            const auto storage_name = storageColumnNameForDefaults(columns_description, required);
+            required_inputs.insert(storage_name);
+            if (columns_description.hasDefault(storage_name))
+                to_visit.push_back(storage_name);
         }
     }
 
