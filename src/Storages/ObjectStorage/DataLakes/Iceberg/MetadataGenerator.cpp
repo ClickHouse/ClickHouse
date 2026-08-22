@@ -176,7 +176,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
     std::optional<Int64> user_defined_timestamp,
-    SnapshotOperation operation)
+    SnapshotOperation operation,
+    const std::optional<String> & refresh_cursor)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
@@ -228,6 +229,9 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     else if (num_deleted_rows != 0)
         operation_name = Iceberg::f_overwrite;
     summary->set(Iceberg::f_operation, operation_name);
+    /// Commit the incremental refreshable-MV cursor atomically with the appended data files.
+    if (refresh_cursor.has_value())
+        summary->set(Iceberg::f_refresh_cursor, *refresh_cursor);
     summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
     summary->set(Iceberg::f_added_records, std::to_string(added_records));
     summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));

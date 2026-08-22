@@ -114,6 +114,10 @@ public:
         /// the dependency's latest last_success_end_time, we should start a refresh.
         AllDependenciesInfo last_success_dependencies;
 
+        /// Serialized per-partition cursor of the last successfully processed snapshot, for incremental refresh
+        /// (`SETTINGS refresh_incremental = 1`). Empty when the view is not incremental or nothing has been processed yet.
+        std::string cursor;
+
         /// Znode version. Not serialized.
         int32_t version = -1;
 
@@ -395,7 +399,7 @@ private:
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked.
-    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message);
+    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, String & out_cursor);
 
     DependencyRefreshInfo getInfoForDependentViewsLocked(const std::unique_lock<std::mutex> &) const;
 
