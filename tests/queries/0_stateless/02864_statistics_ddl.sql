@@ -263,8 +263,8 @@ SHOW CREATE TABLE tab;
 
 DROP TABLE tab;
 
--- Statistics of a column that is not physically stored can never be built: the column is computed
--- on read and is absent from every written block. Such a definition is refused at DDL time.
+-- Statistics of a column that is not physically stored can never be built: the column is absent from
+-- every written block. Such a definition is refused at DDL time.
 
 CREATE TABLE tab (a UInt64, b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (a UInt64, b UInt64 EPHEMERAL 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
@@ -305,6 +305,11 @@ ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1 SETTINGS mutations_sync = 0;
 SYSTEM START MERGES tab;
 ALTER TABLE tab MATERIALIZE STATISTICS a SETTINGS mutations_sync = 2;
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tab' AND NOT is_done;
+DROP TABLE tab;
+
+-- Naming a non-physical column with no statistics description is rejected, not silently skipped.
+CREATE TABLE tab (a UInt64, b UInt64 ALIAS a + 1) Engine = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '';
+ALTER TABLE tab MATERIALIZE STATISTICS b; -- { serverError ILLEGAL_STATISTICS }
 DROP TABLE tab;
 
 -- Redeclaring a column that already exists is a no-op and must stay one.

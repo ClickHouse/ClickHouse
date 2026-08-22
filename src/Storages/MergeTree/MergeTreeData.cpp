@@ -5415,9 +5415,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
-    /// Statistics of a column that is not physically stored can never be built: the column is computed
-    /// on read and is absent from every written block. Only the state after all commands can decide,
-    /// because one command can turn a column non-physical and another give it statistics.
+    /// Statistics of a column that is not physically stored can never be built: the column is absent
+    /// from every written block. Only the state after all commands can decide, because one command can
+    /// turn a column non-physical and another give it statistics.
     /// A `Replicated` database re-executes the ALTER per replica here, so only the initial execution
     /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
     {
