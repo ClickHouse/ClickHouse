@@ -14,6 +14,11 @@
 #include <memory>
 #include <variant>
 
+namespace rocksdb
+{
+struct Options;
+}
+
 namespace DB
 {
 
@@ -44,6 +49,8 @@ public:
     Phase getServerState() const;
     void setServerState(Phase server_state_);
 
+    bool ignoreSystemPathOnStartup() const;
+
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
     bool digestEnabledOnCommit() const;
@@ -58,20 +65,8 @@ public:
     std::vector<DiskPtr> getOldSnapshotDisks() const;
     void setSnapshotDisk(DiskPtr disk);
 
-    /// Test-only: set the latest-snapshot storage alone (`setSnapshotDisk` overwrites both).
-    void setLatestSnapshotDisk(DiskPtr disk);
-
     DiskPtr getStateFileDisk() const;
     void setStateFileDisk(DiskPtr disk);
-
-    /// Disk for the on-disk node storage. Initialized only if coordination setting
-    /// `use_lsmt_storage` is enabled and `storage_memory_only` is disabled; throws otherwise.
-    DiskPtr getDataDisk() const;
-    void setDataDisk(DiskPtr disk);
-
-    /// Used by keeper-bench when it needs data disk but not the rest of `initialize`.
-    void initializeDiskSelector(const Poco::Util::AbstractConfiguration & config);
-    void initializeDataDisk(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     const std::unordered_map<std::string, std::string> & getSystemNodesWithData() const;
     const KeeperFeatureFlags & getFeatureFlags() const;
@@ -81,8 +76,16 @@ public:
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
+    void setRocksDBDisk(DiskPtr disk);
+    DiskPtr getTemporaryRocksDBDisk() const;
+
+    void setRocksDBOptions(std::shared_ptr<rocksdb::Options> rocksdb_options_ = nullptr);
+    std::shared_ptr<rocksdb::Options> getRocksDBOptions() const { return rocksdb_options; }
+
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
     void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
+
+    static void initializeKeeperMemorySoftLimit(Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
 
     void updateSettings(CoordinationSettingsPtr new_settings);
 
@@ -131,16 +134,10 @@ private:
     void initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config);
     void initializeDisks(const Poco::Util::AbstractConfiguration & config);
 
-    /// Check that write_snapshot_version is supported and not lower than the enabled
-    /// feature flags require. Throws BAD_ARGUMENTS otherwise. Used both on startup
-    /// and on hot reload, so that SYSTEM RELOAD CONFIG cannot put Keeper into a
-    /// configuration that would be rejected on startup.
-    void validateWriteSnapshotVersion(const CoordinationSettings & settings) const;
-
+    Storage getRocksDBPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
-    Storage getDataPathFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config) const;
 
     DiskPtr getDisk(const Storage & storage) const;
 
@@ -154,17 +151,20 @@ private:
 
     std::atomic<Phase> server_state{Phase::INIT};
 
+    bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
 
     std::shared_ptr<DiskSelector> disk_selector;
 
+    Storage rocksdb_storage;
     Storage log_storage;
     Storage latest_log_storage;
     Storage snapshot_storage;
     Storage latest_snapshot_storage;
     Storage state_file_storage;
-    Storage data_storage;
+
+    std::shared_ptr<rocksdb::Options> rocksdb_options;
 
     std::vector<std::string> old_log_disk_names;
     std::vector<std::string> old_snapshot_disk_names;

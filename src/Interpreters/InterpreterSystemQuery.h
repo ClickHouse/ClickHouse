@@ -68,9 +68,6 @@ private:
     void syncReplica(ASTSystemQuery & query);
     void setReplicaReadiness(bool ready);
     void waitLoadingParts();
-    void waitQueryRunner();
-
-    void restartDisk(const String & disk_name);
 
     void scheduleMerge(ASTSystemQuery & query);
     void syncMerges();
@@ -100,9 +97,6 @@ private:
     std::optional<String> getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_);
 
     RefreshTaskList getRefreshTasks();
-    RefreshTaskList getAccessibleRefreshTasks();
-    std::vector<StoragePtr> getAccessibleStreamingStorages();
-    void controlBackgroundActivity(const ASTSystemQuery & query);
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);

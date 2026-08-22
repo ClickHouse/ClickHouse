@@ -4,9 +4,6 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
 
-extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv);
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
-
 /// This fuzzer supports its own arguments:
 /// - `-max_parser_depth=N` sets the maximum parser depth (default: 150 for debug/sanitizer, 300 otherwise)
 /// - `-max_parser_backtracks=N` sets the maximum parser backtracks (default: DBMS_DEFAULT_MAX_PARSER_BACKTRACKS)
@@ -17,17 +14,17 @@ using namespace DB;
 
 
 #if defined(SANITIZER) || !defined(NDEBUG)
-    static size_t max_parser_depth = 150;
+    size_t max_parser_depth = 150;
 #else
-    static size_t max_parser_depth = 300;
+    size_t max_parser_depth = 300;
 #endif
-static size_t max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
-static size_t max_ast_depth = 1000;
-static size_t max_ast_elements = 50000;
+size_t max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
+size_t max_ast_depth = 1000;
+size_t max_ast_elements = 50000;
 
 
 // Helper function to check if this is a merge run
-static bool isMerge(int argc, char ** argv)
+bool isMerge(int argc, char ** argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -41,7 +38,7 @@ static bool isMerge(int argc, char ** argv)
 }
 
 // Helper function to parse settings from command line arguments
-static std::unordered_map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+std::unordered_map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     std::unordered_map<std::string, std::string> settings; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     bool ignore_remaining = false;

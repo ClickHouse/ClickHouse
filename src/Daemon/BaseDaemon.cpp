@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
@@ -71,7 +70,6 @@ namespace DB
     {
         extern const int SYSTEM_ERROR;
         extern const int LOGICAL_ERROR;
-        extern const int NOT_IMPLEMENTED;
     }
 }
 
@@ -139,7 +137,8 @@ BaseDaemon::~BaseDaemon()
 {
     try
     {
-        stopSignalListener();
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
+        signal_listener_thread.join();
         HandledSignals::instance().reset();
     }
     catch (...)
@@ -191,7 +190,7 @@ void BaseDaemon::closeFDs()
     {
         /// in /proc/self/fd directory filenames are numeric file descriptors.
         /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
-        VectorWithMemoryTracking<int> fds;
+        std::vector<int> fds;
         for (const auto & path : fs::directory_iterator(proc_path))
             fds.push_back(parse<int>(path.path().filename()));
 
@@ -284,7 +283,7 @@ void BaseDaemon::initialize(Application & self)
     /// (query profiler creates lots of timers - timer_create(), and this requires slot in pending signals)
     if (auto pending_signals = config().getUInt64("pending_signals", 0); pending_signals > 0)
     {
-        struct rlimit rlim{};
+        struct rlimit rlim;
         if (getrlimit(RLIMIT_SIGPENDING, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -353,7 +352,7 @@ void BaseDaemon::initialize(Application & self)
         ///     }
         if (access(stderr_path.c_str(), W_OK))
         {
-            int fd = 0;
+            int fd;
             if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
@@ -363,26 +362,18 @@ void BaseDaemon::initialize(Application & self)
             }
         }
 
-        /// musl defines `stderr` and `stdout` as recursive macros `(stderr)` / `(stdout)`,
-        /// which trigger `-Wdisabled-macro-expansion` when used as function arguments.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
         setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
-#pragma clang diagnostic pop
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
     {
         std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout.log");
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stdout_path.c_str(), "a+", stdout))
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
-#pragma clang diagnostic pop
     }
 
     /// Change path for logging.
@@ -479,56 +470,19 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-#if defined(OS_HAS_SIGNAL_HANDLERS)
-    /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
-    /// for - and the blocking read of that pipe is all the listener thread does.
     signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"), [this](int, bool) { onTerminateRequestSignal(); });
-#endif
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
 
-    startSignalListener();
+    signal_listener_thread.start(*signal_listener);
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
     if (!executable_path.empty())
         stored_binary_hash = Elf(executable_path).getStoredBinaryHash();
-#endif
-}
-
-void BaseDaemon::startSignalListener()
-{
-#if defined(OS_HAS_SIGNAL_HANDLERS)
-    /// The signal listener thread only drains the signal pipe; it must never run a signal handler itself.
-    /// Poco already blocks `SIGQUIT`, `SIGTERM` and `SIGPIPE` in every thread it starts, but not the rest
-    /// of the asynchronously delivered handled signals. Block them here, so that the thread inherits the
-    /// mask at creation (doing it inside `SignalListener::run` would leave a window right after the start),
-    /// and restore the mask of this thread afterwards.
-    ///
-    /// This is what makes it possible to keep every thread out of the signal handling path for a while:
-    /// see `remapExecutable` in `Server::main`, which unmaps the code of the handlers themselves.
-    BlockSignalsScope block_signals(asynchronousHandledSignals());
-    signal_listener_thread.start(*signal_listener);
-    signal_listener_thread_started = true;
-#endif
-}
-
-void BaseDaemon::stopSignalListener()
-{
-#if defined(OS_HAS_SIGNAL_HANDLERS)
-    if (!signal_listener_thread_started)
-        return;
-
-    /// `isRunning` only reports that Poco still has a runnable target. A listener which has already
-    /// returned still has a joinable native thread, so always join a started listener. Only send the
-    /// stop request while it can still consume it.
-    if (signal_listener_thread.isRunning())
-        writeSignalIDtoSignalPipe(SignalListener::StopThread);
-    signal_listener_thread.join();
-    signal_listener_thread_started = false;
 #endif
 }
 
@@ -581,16 +535,8 @@ void BaseDaemon::onTerminateRequestSignal()
 
 void BaseDaemon::waitForTerminationRequest()
 {
-#if defined(OS_HAS_SIGNAL_HANDLERS)
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
     signal_listener->waitForTerminationRequest();
-#else
-    /// There is no listener without signals, and nothing could deliver a termination request to it
-    /// anyway: waiting here would block forever. Daemon-style entry points are not supported on
-    /// such a platform, so say so instead of hanging or dereferencing a null listener.
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED, "Waiting for a termination request requires POSIX signals, which this platform does not have");
-#endif
 }
 
 
@@ -623,7 +569,7 @@ void BaseDaemon::setupWatchdog()
         /// Temporarily close the logging thread and open it in each process later
         auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
         if (async_channel)
-            async_channel->closeAndJoinThreads();
+            async_channel->close();
         pid = fork();
 
 #if USE_JEMALLOC
@@ -773,7 +719,7 @@ void BaseDaemon::setupWatchdog()
             _exit(WEXITSTATUS(status));
         }
 
-        int exit_code = 0;
+        int exit_code;
 
         if (WIFSIGNALED(status))
         {
@@ -836,7 +782,7 @@ void systemdNotify(const std::string_view & command)
 
     const size_t len = strlen(path);
 
-    struct sockaddr_un addr{};
+    struct sockaddr_un addr;
 
     addr.sun_family = AF_UNIX;
 

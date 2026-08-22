@@ -165,7 +165,7 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::P
     return new_expr;
 }
 
-static String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & ch_op)
+String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & ch_op)
 {
     String tmp_arg(token_pos->begin, token_pos->end);
 
@@ -186,7 +186,7 @@ static String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_
     return new_expr;
 }
 
-static String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & kql_op, const String & ch_op)
+String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & kql_op, const String & ch_op)
 {
     ParserKQLParenExpression kqlfun_p;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -239,7 +239,7 @@ static String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_
     return new_expr;
 }
 
-static std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, const std::string & ch_op)
+std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, const std::string & ch_op)
 {
     ParserKQLParenExpression kqlfun_p;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -317,14 +317,14 @@ String KQLOperators::genHaystackOpExpr(
     String needle;
     String raw_needle; /// needle without wildcards for position-based fallback
     bool needle_is_literal = false;
-    if (token_pos->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
+    if ((token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
     {
         raw_needle = "'" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "'";
         needle = "'" + left_wildcards + left_space + String(token_pos->begin + 1, token_pos->end - 1)
             + right_space + right_wildcards + "'";
         needle_is_literal = true;
     }
-    else if (token_pos->type == TokenType::BareWord)
+    else if ((token_pos)->type == TokenType::BareWord)
     {
         auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
         raw_needle = tmp_arg;
@@ -375,12 +375,12 @@ String KQLOperators::genHaystackOpExpr(
         }
         else if (ch_op == "startsWith" || ch_op == "not startsWith")
         {
-            bool negated = ch_op.contains("not");
+            bool negated = ch_op.find("not") != String::npos;
             new_expr = fmt::format("toBool({}startsWith({}, {}))", negated ? "not " : "", haystack, safe_needle);
         }
         else if (ch_op == "endsWith" || ch_op == "not endsWith")
         {
-            bool negated = ch_op.contains("not");
+            bool negated = ch_op.find("not") != String::npos;
             new_expr = fmt::format("toBool({}endsWith({}, {}))", negated ? "not " : "", haystack, safe_needle);
         }
         else if (ch_op == "match")

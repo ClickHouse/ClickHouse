@@ -1,6 +1,6 @@
 import random
 import time
-from typing import Type
+from typing import List, Type
 
 
 def retry(

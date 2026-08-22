@@ -1,35 +1,14 @@
-import os
-
 import pytest
 import requests
-from helpers import keeper_utils
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
+import time
 
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.xml"],
-)
-
-cluster_node1 = cluster.add_instance(
-    "cluster_node1",
-    main_configs=["configs/cluster_keeper1.xml"],
-    stay_alive=True,
-    with_zookeeper=False,
-)
-cluster_node2 = cluster.add_instance(
-    "cluster_node2",
-    main_configs=["configs/cluster_keeper2.xml"],
-    stay_alive=True,
-    with_zookeeper=False,
-)
-cluster_node3 = cluster.add_instance(
-    "cluster_node3",
-    main_configs=["configs/cluster_keeper3.xml"],
-    stay_alive=True,
-    with_zookeeper=False,
 )
 
 
@@ -48,87 +27,13 @@ def test_prometheus_keeper_metrics_only(start_cluster):
     )
     assert keeper_only_async_metric_exists
 
-    keeper_leader_election_metric_exists = int(
-        node.query("SELECT count() > 0 FROM system.asynchronous_metrics WHERE metric = 'KeeperLastLeaderElectionTime'").strip()
-    )
-    assert keeper_leader_election_metric_exists
-
-    keeper_leader_unavailable_metric_exists = int(
-        node.query("SELECT count() > 0 FROM system.asynchronous_metrics WHERE metric = 'KeeperLastLeaderUnavailableTime'").strip()
-    )
-    assert keeper_leader_unavailable_metric_exists
-
     prometheus_handler_response = requests.get(
         f"http://{node.ip_address}:8001/metrics",
         timeout=5,
     )
     assert prometheus_handler_response.status_code == 200
     assert "ClickHouseAsyncMetrics_KeeperIsStandalone" in prometheus_handler_response.text
-    assert "ClickHouseAsyncMetrics_KeeperLastLeaderElectionTime" in prometheus_handler_response.text
-    assert "ClickHouseAsyncMetrics_KeeperLastLeaderUnavailableTime" in prometheus_handler_response.text
     assert "PolygonDictionaryThreads" not in prometheus_handler_response.text
-
-
-def test_prometheus_keeper_accepts_server_only_constant_label():
-    # A keeper_metrics_only endpoint uses the Keeper writer surface, which only exposes keeper_* families.
-    # "group" is a *server* histogram-family label that Keeper never emits, so it must be accepted as a
-    # constant label and applied to every exported sample.
-    # A distinct name keeps this cluster's docker compose project and instances directory separate
-    # from the module-scoped cluster; otherwise starting/stopping it destroys the shared cluster.
-    group_cluster = ClickHouseCluster(__file__, name="label_group")
-    group_node = group_cluster.add_instance(
-        "node_keeper_label_group",
-        main_configs=["configs/config_label_group.xml"],
-    )
-    try:
-        group_cluster.start()
-        response = requests.get(
-            f"http://{group_node.ip_address}:8001/metrics", timeout=10
-        )
-        assert response.status_code == 200
-        metric_lines = [
-            line.rstrip()
-            for line in response.text.split("\n")
-            if line.strip() and not line.startswith("#")
-        ]
-        assert metric_lines
-        for line in metric_lines:
-            # The constant label is present on every sample and never duplicated.
-            assert 'group="prod"' in line, line
-            assert line.count("group=") == 1, line
-    finally:
-        group_cluster.shutdown()
-
-
-def test_prometheus_keeper_rejects_keeper_family_constant_label():
-    # "operation_type" is a per-sample label of a Keeper histogram family (keeper_response_time_ms),
-    # which this endpoint exposes, so it must be rejected as a constant label.
-    # A distinct name keeps this cluster's docker compose project and instances directory separate
-    # from the module-scoped cluster; otherwise starting/stopping it destroys the shared cluster.
-    optype_cluster = ClickHouseCluster(__file__, name="label_operation_type")
-    optype_cluster.add_instance(
-        "node_keeper_label_optype",
-        main_configs=["configs/config_label_operation_type.xml"],
-    )
-    try:
-        with pytest.raises(Exception):
-            optype_cluster.start()
-
-        error_logs_file = os.path.join(
-            optype_cluster.instances_dir,
-            "node_keeper_label_optype",
-            "logs",
-            "clickhouse-server.err.log",
-        )
-        with open(error_logs_file, "r") as f:
-            logs = f.read()
-
-        assert (
-            "Invalid Prometheus label name 'operation_type' in the configuration: this name is reserved"
-            in logs
-        )
-    finally:
-        optype_cluster.shutdown()
 
 
 def test_asynchronous_metric_log(start_cluster):
@@ -145,137 +50,3 @@ def test_skip_alias_columns(start_cluster):
     # it should be absent from the table schema.
     error = node.query_and_get_error("SELECT build_id FROM system.trace_log LIMIT 0")
     assert "UNKNOWN_IDENTIFIER" in error
-
-
-def test_keeper_cluster_invariants(start_cluster):
-    nodes = (cluster_node1, cluster_node2, cluster_node3)
-    for n in nodes:
-        keeper_utils.wait_until_connected(cluster, n)
-
-    invariants_query = (
-        """
-        SELECT
-            count(),
-            uniqExact(server_id),
-            countIf(is_self),
-            countIf(is_leader),
-            countIf(last_log_index IS NOT NULL),
-            countIf(last_log_index IS NOT NULL AND is_self)
-        FROM system.keeper_cluster
-        """
-    )
-    for keeper_node in nodes:
-        assert_eq_with_retry(keeper_node, invariants_query, "3\t3\t1\t1\t1\t1")
-
-
-def test_system_keeper_changelogs(start_cluster):
-    keeper_utils.wait_until_connected(cluster, node)
-
-    # Force one entry into the active changelog so its size/last_entry_index are more deterministic.
-    zk = keeper_utils.get_fake_zk(cluster, "node")
-    try:
-        zk.create("/test_system_keeper_changelogs", b"data")
-    finally:
-        zk.stop()
-        zk.close()
-
-    assert_eq_with_retry(
-        node,
-        "SELECT count() FROM system.keeper_changelogs WHERE active",
-        "1",
-    )
-
-    row = node.query(
-        "SELECT from_log_index, to_log_index, last_entry_index, entries, path, disk_name, "
-        "size_bytes, toUnixTimestamp(modification_time), is_compressed, is_broken "
-        "FROM system.keeper_changelogs WHERE active LIMIT 1 FORMAT TSV"
-    ).strip().split("\t")
-
-    (
-        from_log_index,
-        to_log_index,
-        last_entry_index,
-        entries,
-        path,
-        disk_name,
-        size_bytes,
-        modification_time,
-        is_compressed,
-        is_broken,
-    ) = row
-
-    assert int(from_log_index) >= 1
-    assert int(entries) >= 1
-    assert int(last_entry_index) == int(from_log_index) + int(entries) - 1
-    assert path.startswith("changelog_") and "bin" in path
-    assert disk_name != ""
-    assert int(size_bytes) > 0
-    assert int(modification_time) > 0
-    assert is_broken == "false"
-
-
-def test_system_keeper_snapshots(start_cluster):
-    keeper_utils.wait_until_connected(cluster, node)
-    response = keeper_utils.send_4lw_cmd(cluster, node, cmd="csnp")
-    assert response.strip().isdigit(), f"csnp did not return a log index: {response!r}"
-
-    assert_eq_with_retry(
-        node,
-        "SELECT count() >= 1 FROM system.keeper_snapshots WHERE NOT is_received",
-        "1",
-    )
-
-    row = node.query(
-        "SELECT last_log_index, path, disk_name, size_bytes, toUnixTimestamp(last_modified_at) "
-        "FROM system.keeper_snapshots "
-        "WHERE NOT is_received LIMIT 1 FORMAT TSV"
-    ).strip().split("\t")
-
-    last_log_index, path, disk_name, size_bytes, last_modified_at = row
-    assert int(last_log_index) > 0
-    assert path.startswith("snapshot_") and (path.endswith(".bin") or path.endswith(".bin.zstd"))
-    assert disk_name
-    assert int(size_bytes) > 0
-    assert int(last_modified_at) > 0
-
-
-def test_system_keeper_storage(start_cluster):
-    keeper_utils.wait_until_connected(cluster, node)
-
-    zk = keeper_utils.get_fake_zk(cluster, "node")
-    try:
-        zk.create("/test_system_keeper_storage", b"root_data")
-        zk.create("/test_system_keeper_storage/child", b"")
-        zk.set("/test_system_keeper_storage/child", b"child_data")
-        zk.create("/test_system_keeper_storage/eph", b"", ephemeral=True)
-        zk.create("/test_system_keeper_storage/seq-", b"", sequence=True)
-
-        assert node.query(
-            "SELECT data, czxid > 0, mzxid = czxid, pzxid > czxid, "
-            "toUnixTimestamp64Milli(ctime) > 0, mtime = ctime, "
-            "version, cversion, aversion, ephemeral_owner, data_length, "
-            "num_children, seq_num, ttl, acl_id "
-            "FROM system.keeper_storage WHERE path = '/test_system_keeper_storage'"
-        ) == "root_data\t1\t1\t1\t1\t1\t0\t4\t0\t0\t9\t3\t3\t0\t0\n"
-
-        assert node.query(
-            "SELECT version, data, mzxid > czxid FROM system.keeper_storage "
-            "WHERE path = '/test_system_keeper_storage/child'"
-        ) == "1\tchild_data\t1\n"
-
-        assert node.query(
-            "SELECT ephemeral_owner FROM system.keeper_storage "
-            "WHERE path = '/test_system_keeper_storage/eph'"
-        ) == f"{zk.client_id[0]}\n"
-
-        assert node.query(
-            "SELECT count() FROM system.keeper_storage "
-            "WHERE path LIKE '/test_system_keeper_storage/%'"
-        ) == "3\n"
-
-        assert node.query(
-            "SELECT count() FROM system.keeper_storage WHERE path IN ('/', '/keeper')"
-        ) == "2\n"
-    finally:
-        zk.stop()
-        zk.close()

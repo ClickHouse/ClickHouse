@@ -445,8 +445,6 @@ Token Lexer::nextTokenImpl()
             ++pos;
             if (pos < end && *pos == '|')
                 return Token(TokenType::Concatenation, token_begin, ++pos);
-            if (pos < end && *pos == '>')
-                return Token(TokenType::PipeOperator, token_begin, ++pos);
             return Token(TokenType::PipeMark, token_begin, pos);
         }
         case '@':
@@ -589,8 +587,6 @@ const char * getErrorTokenDescription(TokenType type)
 }
 
 #else
-
-#include <Parsers/clickhouse_lexer.h>
 
 extern "C"
 {
