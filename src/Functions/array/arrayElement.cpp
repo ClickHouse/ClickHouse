@@ -2481,13 +2481,18 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWit
     const size_t element_size = qbit_type.getElementSize();
     const size_t bytes_per_group = DataTypeQBit::bitsToBytes(stride);
 
-    const auto * nullable_qbit = checkAndGetColumn<ColumnNullable>(arguments[0].column.get());
+    /// A constant nullable source arrives as `ColumnConst(ColumnNullable(ColumnQBit))`, so the constant
+    /// has to be peeled before the null map is looked for.
+    const bool qbit_is_const = isColumnConst(*arguments[0].column);
+    const IColumn & unwrapped_qbit
+        = qbit_is_const ? assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumn() : *arguments[0].column;
+    const auto * nullable_qbit = checkAndGetColumn<ColumnNullable>(&unwrapped_qbit);
     const auto * source_null_map = nullable_qbit ? &nullable_qbit->getNullMapData() : nullptr;
-    const IColumn & qbit_column = nullable_qbit ? nullable_qbit->getNestedColumn() : *arguments[0].column;
-    const bool qbit_is_const = isColumnConst(qbit_column);
-    const auto & qbit_col = assert_cast<const ColumnQBit &>(
-        qbit_is_const ? assert_cast<const ColumnConst &>(qbit_column).getDataColumn() : qbit_column);
+    const auto & qbit_col = assert_cast<const ColumnQBit &>(nullable_qbit ? nullable_qbit->getNestedColumn() : unwrapped_qbit);
     const auto & tuple = qbit_col.getNestedData();
+
+    /// The null map of a constant source holds a single row.
+    auto source_is_null = [&](size_t row) { return source_null_map && (*source_null_map)[qbit_is_const ? 0 : row]; };
 
     const ColumnArray * index_array = checkAndGetColumn<ColumnArray>(arguments[1].column.get());
     ColumnPtr materialized_index;
@@ -2545,7 +2550,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitWithArrayIndex(const ColumnsWit
             const size_t begin = row ? offsets[row - 1] : 0;
             for (size_t pos = begin; pos < offsets[row]; ++pos, ++output_row)
             {
-                if (source_null_map && (*source_null_map)[row])
+                if (source_is_null(row))
                 {
                     null_map->getData()[output_row] = 1;
                     continue;
@@ -2639,14 +2644,18 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
     const size_t bytes_per_group = DataTypeQBit::bitsToBytes(stride);
 
     /// The QBit column stays constant when only the index is a full column (useDefaultImplementationForConstants
-    /// unwraps constants only when every argument is constant).
-    const auto * nullable_qbit = checkAndGetColumn<ColumnNullable>(arguments[0].column.get());
+    /// unwraps constants only when every argument is constant). A constant nullable source arrives as
+    /// `ColumnConst(ColumnNullable(ColumnQBit))`, so the constant has to be peeled before the null map is looked for.
+    const bool qbit_is_const = isColumnConst(*arguments[0].column);
+    const IColumn & unwrapped_qbit
+        = qbit_is_const ? assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumn() : *arguments[0].column;
+    const auto * nullable_qbit = checkAndGetColumn<ColumnNullable>(&unwrapped_qbit);
     const auto * source_null_map = nullable_qbit ? &nullable_qbit->getNullMapData() : nullptr;
-    const IColumn & qbit_column = nullable_qbit ? nullable_qbit->getNestedColumn() : *arguments[0].column;
-    const bool qbit_is_const = isColumnConst(qbit_column);
-    const auto & qbit_col = assert_cast<const ColumnQBit &>(
-        qbit_is_const ? assert_cast<const ColumnConst &>(qbit_column).getDataColumn() : qbit_column);
+    const auto & qbit_col = assert_cast<const ColumnQBit &>(nullable_qbit ? nullable_qbit->getNestedColumn() : unwrapped_qbit);
     const auto & tuple = qbit_col.getNestedData();
+
+    /// The null map of a constant source holds a single row.
+    auto source_is_null = [&](size_t row) { return source_null_map && (*source_null_map)[qbit_is_const ? 0 : row]; };
 
     auto res = ColumnVector<T>::create(input_rows_count);
     auto & res_data = res->getData();
@@ -2741,7 +2750,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
         {
             for (size_t row = 0; row < input_rows_count; ++row)
             {
-                if (source_null_map && (*source_null_map)[row])
+                if (source_is_null(row))
                     null_map->getData()[row] = 1;
                 else
                     set_out_of_range(row);
@@ -2762,7 +2771,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
                 const size_t shift = element_size - 1 - bit;
                 for (size_t row = 0; row < input_rows_count; ++row)
                 {
-                    if (source_null_map && (*source_null_map)[row])
+                    if (source_is_null(row))
                     {
                         null_map->getData()[row] = 1;
                         continue;
@@ -2788,7 +2797,7 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
             const auto & indices = col_index->getData();
             for (size_t row = 0; row < input_rows_count; ++row)
             {
-                if (source_null_map && (*source_null_map)[row])
+                if (source_is_null(row))
                 {
                     null_map->getData()[row] = 1;
                     continue;
@@ -2834,11 +2843,10 @@ String FunctionArrayElement<mode>::getName() const
 template <ArrayElementExceptionMode mode>
 DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    const bool arg_is_qbit = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0]).get());
-
     /// `useDefaultImplementationForNulls` is disabled for the whole overload set because of QBit
     /// (see executeImpl). Reproduce the type of the default adapter for a NULL literal argument.
-    if (!arg_is_qbit && (arguments[0]->onlyNull() || arguments[1]->onlyNull()))
+    /// This convention holds for every source type, QBit included.
+    if (arguments[0]->onlyNull() || arguments[1]->onlyNull())
         return makeNullable(std::make_shared<DataTypeNothing>());
 
     if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
@@ -3004,12 +3012,13 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     /// Nullable. It is therefore handled by executeQBit below, and `useDefaultImplementationForNulls`
     /// is disabled for the whole overload set. The established Array and Map paths keep the
     /// conventions of the default adapter, which are reproduced here.
+    /// A NULL literal argument makes the result a NULL constant, without evaluating the function.
+    /// This convention holds for every source type, QBit included.
+    if (arguments[0].type->onlyNull() || arguments[1].type->onlyNull())
+        return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
     if (!is_qbit)
     {
-        /// A NULL literal argument makes the result a NULL constant, without evaluating the function.
-        if (arguments[0].type->onlyNull() || arguments[1].type->onlyNull())
-            return result_type->createColumnConstWithDefaultValue(input_rows_count);
-
         if (arguments[1].type->isNullable())
         {
             /// The same for a constant NULL of a nullable type, as long as the result can hold a NULL.

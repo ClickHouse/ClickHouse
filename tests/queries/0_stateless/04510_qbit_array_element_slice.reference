@@ -69,3 +69,23 @@ NULL arguments of the non-QBit paths keep the default conventions
 20	Nullable(UInt8)
 \N	Nullable(UInt8)
 \N	Nullable(String)
+Constant Nullable(QBit) source with a varying index
+0	1	Nullable(Float32)
+1	2	Nullable(Float32)
+2	3	Nullable(Float32)
+3	4	Nullable(Float32)
+0	[1,2]	Array(Nullable(Float32))
+1	[2,3]	Array(Nullable(Float32))
+0	\N	Nullable(Float32)
+1	\N	Nullable(Float32)
+0	[NULL,NULL]	Array(Nullable(Float32))
+1	[NULL,NULL]	Array(Nullable(Float32))
+0	[2,3]	Nullable(QBit(Float32, 2))
+1	[2,3]	Nullable(QBit(Float32, 2))
+A bare NULL index of a QBit keeps the default NULL convention
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+A NULL offset of arraySlice is a no-op for a QBit, as it is for an Array
+[1,2,3,4]	Array(UInt8)
+[1,2,3,4]	QBit(Float32, 4)

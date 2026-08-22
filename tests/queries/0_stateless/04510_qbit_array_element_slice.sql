@@ -97,4 +97,20 @@ SELECT materialize([10, 20])[CAST(2, 'Nullable(UInt8)')] AS v, toTypeName(v);
 SELECT materialize([10, 20])[materialize(CAST(NULL, 'Nullable(UInt8)'))] AS v, toTypeName(v);
 SELECT materialize(map('a', 'b'))[CAST(NULL, 'Nullable(String)')] AS v, toTypeName(v);
 
+SELECT 'Constant Nullable(QBit) source with a varying index';
+SELECT number, arrayElement(CAST([1, 2, 3, 4] AS Nullable(QBit(Float32, 4))), number + 1) AS v, toTypeName(v) FROM numbers(4);
+SELECT number, arrayElement(CAST([1, 2, 3, 4] AS Nullable(QBit(Float32, 4))), [number + 1, number + 2]) AS v, toTypeName(v) FROM numbers(2);
+SELECT number, arrayElement(CAST(NULL AS Nullable(QBit(Float32, 4))), number + 1) AS v, toTypeName(v) FROM numbers(2);
+SELECT number, arrayElement(CAST(NULL AS Nullable(QBit(Float32, 4))), [number + 1, 1]) AS v, toTypeName(v) FROM numbers(2);
+SELECT number, arraySlice(CAST([1, 2, 3, 4] AS Nullable(QBit(Float32, 4))), 2, 2) AS v, toTypeName(v) FROM numbers(2);
+
+SELECT 'A bare NULL index of a QBit keeps the default NULL convention';
+SELECT CAST([1, 2, 3, 4] AS QBit(Float32, 4))[NULL] AS v, toTypeName(v);
+SELECT arrayElement(CAST([1, 2, 3, 4] AS QBit(Float32, 4)), NULL) AS v, toTypeName(v);
+SELECT arrayElementOrNull(CAST([1, 2, 3, 4] AS QBit(Float32, 4)), NULL) AS v, toTypeName(v);
+
+SELECT 'A NULL offset of arraySlice is a no-op for a QBit, as it is for an Array';
+SELECT arraySlice([1, 2, 3, 4], NULL) AS v, toTypeName(v);
+SELECT arraySlice(CAST([1, 2, 3, 4] AS QBit(Float32, 4)), NULL) AS v, toTypeName(v);
+
 DROP TABLE qbit;
