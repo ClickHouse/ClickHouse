@@ -1836,6 +1836,21 @@ def test_predict_linear_with_time_horizon_on_float32_table():
             "1770582640, 1770582700, 60)"
         )
         assert "the evaluation time would be rounded to that type" in error
+
+        # A calendar component collapses the instant to a small exact integer (hour of 20:30:40 is 20),
+        # so it is not rejected: the horizon is 20 seconds and the prediction is fitted value + 20.
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_epoch, "
+                "'predict_linear(m[120], scalar(hour(vector(time()))))', 1770582640, 1770582700, 60)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('2026-02-08 20:30:40.000',90),('2026-02-08 20:31:40.000',150)]",
+                ]
+            ],
+        )
     finally:
         node.query("DROP TABLE prometheus_f32_epoch SYNC")
 

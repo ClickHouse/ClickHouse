@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -170,6 +171,7 @@ const PrometheusQueryTree::Function * findTimeCallThroughScalarVectorWrappers(co
 namespace
 {
     /// Whether `node`'s subtree calls `time()` anywhere, i.e. whether its value can be of evaluation-time magnitude.
+    /// A date/time component function collapses the instant to a small exact integer, so its subtree doesn't count.
     bool containsTimeCall(const Node * node)
     {
         if (node->node_type == NodeType::Function)
@@ -177,6 +179,8 @@ namespace
             const auto * function = static_cast<const PrometheusQueryTree::Function *>(node);
             if (isFunctionTime(function->function_name) && function->getArguments().empty())
                 return true;
+            if (isDateTimeFunction(function->function_name))
+                return false;
         }
 
         for (const auto * child : node->children)
