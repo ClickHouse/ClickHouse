@@ -4,6 +4,10 @@
 #include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -136,8 +140,29 @@ static void checkOld(
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
     SelectQueryInfo query_info;
     SelectQueryOptions select_options;
+    /// The static table list of `State` carries no aliases, while the real old-analyzer pipeline builds
+    /// them from the query (`JoinedTables::tablesWithColumns`). Do the same here, otherwise a query such as
+    /// `test.table AS t ... WHERE t.apply_id = 1` cannot resolve its qualified names.
+    auto tables_with_columns = state.getTables(table_num);
+    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->tables())
+    {
+        for (const auto & child : select->tables()->children)
+        {
+            const auto * element = child->as<ASTTablesInSelectQueryElement>();
+            const auto * table_expression
+                = element && element->table_expression ? element->table_expression->as<ASTTableExpression>() : nullptr;
+            if (!table_expression || !table_expression->database_and_table_name)
+                continue;
+            const DatabaseAndTableWithAlias db_and_table(*table_expression, "test");
+            if (db_and_table.alias.empty())
+                continue;
+            for (auto & table : tables_with_columns)
+                if (table.table.table == db_and_table.table)
+                    table.table.alias = db_and_table.alias;
+        }
+    }
     query_info.syntax_analyzer_result
-        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(table_num));
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, tables_with_columns);
     query_info.query = ast;
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info,
