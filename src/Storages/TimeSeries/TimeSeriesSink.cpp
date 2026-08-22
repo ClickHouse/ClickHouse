@@ -232,6 +232,11 @@ namespace
 
             if (num_histograms > 0)
             {
+                /// The remote-write path checks these invariants on the protobuf; the SQL surface
+                /// needs the same, so readers never meet a payload they cannot decode.
+                for (size_t j = hist_start; j != hist_end; ++j)
+                    validateTimeSeriesHistogramSample(hist_tuples, j);
+
                 out_id_column.insertManyFrom(id_column, id_index, num_histograms);
                 for (size_t j = 0; j != out_columns.size(); ++j)
                     out_columns[j]->insertRangeFrom(hist_tuples.getColumn(j), hist_start, num_histograms);

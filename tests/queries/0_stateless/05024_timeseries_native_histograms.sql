@@ -112,3 +112,26 @@ CREATE TABLE ts_ext_badtype ENGINE = TimeSeries HISTOGRAMS hist_bad_type; -- { s
 DROP TABLE hist_data;
 DROP TABLE hist_missing_column;
 DROP TABLE hist_bad_type;
+
+SELECT '-- the SQL insert surface rejects payloads readers cannot decode';
+CREATE TABLE ts_validate ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
+
+-- Spans cover 2 buckets but only 1 value is given.
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, 0, 0., 1., 1., 0., [(0, 2)], [1.], [], [], [])]); -- { serverError INCORRECT_DATA }
+-- A negative bucket count.
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, 0, 0., 1., 1., 0., [(0, 1)], [-1.], [], [], [])]); -- { serverError INCORRECT_DATA }
+-- An undefined bucket schema (between the custom-bucket value and the exponential range).
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, -20, 0., 1., 1., 0., [], [], [], [], [])]); -- { serverError INCORRECT_DATA }
+-- Custom bucket bounds on an exponential schema.
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, 0, 0., 1., 1., 0., [], [], [], [], [1., 2.])]); -- { serverError INCORRECT_DATA }
+-- Custom buckets reaching past the bounds they declare.
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, -53, 0., 2., 3., 0., [(0, 2)], [1., 1.], [], [], [])]); -- { serverError INCORRECT_DATA }
+-- Custom buckets with negative buckets.
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, -53, 0., 1., 1., 0., [], [], [(0, 1)], [1.], [1., 2.])]); -- { serverError INCORRECT_DATA }
+-- An unknown flag bit.
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 8, 0, 0., 1., 1., 0., [], [], [], [], [])]); -- { serverError INCORRECT_DATA }
+
+-- The same payloads with the invariants held are accepted.
+INSERT INTO ts_validate (metric_name, tags, histograms) VALUES ('m', map('a', 'b'), [(toDateTime64(1, 3), 0, -53, 0., 2., 3., 0., [(0, 2)], [1., 1.], [], [], [1., 2.])]);
+SELECT count() FROM timeSeriesHistograms(ts_validate);
+DROP TABLE ts_validate;

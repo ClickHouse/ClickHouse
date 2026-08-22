@@ -157,4 +157,63 @@ std::vector<HistogramBucket> expandHistogramSpans(const IColumn & spans_column, 
     return buckets;
 }
 
+
+void validateTimeSeriesHistogramSample(const ColumnTuple & tuple, size_t row)
+{
+    const UInt8 flags = static_cast<UInt8>(tuple.getColumn(TimeSeriesHistogramsTupleIndex::Flags).getUInt(row));
+    constexpr UInt8 known_flags
+        = TimeSeriesHistogramFlags::IsFloat | TimeSeriesHistogramFlags::CounterResetHintMask | TimeSeriesHistogramFlags::StaleMarker;
+    if (flags & ~known_flags)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has unknown flag bits set: {}", flags);
+
+    const Int64 schema = tuple.getColumn(TimeSeriesHistogramsTupleIndex::Schema).getInt(row);
+    const bool custom_buckets = (schema == HISTOGRAM_CUSTOM_BUCKETS_SCHEMA);
+    if (!custom_buckets && (schema < HISTOGRAM_EXPONENTIAL_SCHEMA_MIN || schema > HISTOGRAM_EXPONENTIAL_SCHEMA_MAX))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has an invalid bucket schema: {}", schema);
+
+    /// NaN is a valid count only as part of a stale marker, and it compares false here either way.
+    const Float64 count = tuple.getColumn(TimeSeriesHistogramsTupleIndex::Count).getFloat64(row);
+    const Float64 zero_count = tuple.getColumn(TimeSeriesHistogramsTupleIndex::ZeroCount).getFloat64(row);
+    const Float64 zero_threshold = tuple.getColumn(TimeSeriesHistogramsTupleIndex::ZeroThreshold).getFloat64(row);
+    if (count < 0 || zero_count < 0 || zero_threshold < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Native histogram has a negative count ({}), zero count ({}) or zero threshold ({})",
+            count, zero_count, zero_threshold);
+
+    const auto positive_buckets = expandHistogramSpans(
+        tuple.getColumn(TimeSeriesHistogramsTupleIndex::PositiveSpans),
+        tuple.getColumn(TimeSeriesHistogramsTupleIndex::PositiveValues), row);
+    const auto negative_buckets = expandHistogramSpans(
+        tuple.getColumn(TimeSeriesHistogramsTupleIndex::NegativeSpans),
+        tuple.getColumn(TimeSeriesHistogramsTupleIndex::NegativeValues), row);
+    for (const auto * buckets : {&positive_buckets, &negative_buckets})
+        for (const auto & bucket : *buckets)
+            if (bucket.count < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has a negative bucket count: {}", bucket.count);
+
+    const auto & custom_values_offsets = typeid_cast<const ColumnArray &>(
+        tuple.getColumn(TimeSeriesHistogramsTupleIndex::CustomValues)).getOffsets();
+    const size_t num_custom_values = custom_values_offsets[row] - ((row == 0) ? 0 : custom_values_offsets[row - 1]);
+    if (!custom_buckets)
+    {
+        if (num_custom_values != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Native histogram has an exponential bucket schema ({}) but carries {} custom bucket bounds",
+                schema, num_custom_values);
+        return;
+    }
+
+    if (!negative_buckets.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram with custom buckets must not have negative buckets");
+
+    /// `custom_values` holds upper bounds, so an index may reach one past the last one: that
+    /// bucket's upper bound is +Inf. Anything beyond has no bound to render when read back.
+    for (const auto & bucket : positive_buckets)
+        if (bucket.index < 0 || bucket.index > static_cast<Int64>(num_custom_values))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Native histogram with custom buckets reaches bucket index {}, "
+                "which is not covered by its {} custom bucket bounds",
+                bucket.index, num_custom_values);
+}
+
 }

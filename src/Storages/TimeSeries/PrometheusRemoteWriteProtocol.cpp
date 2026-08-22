@@ -27,7 +27,10 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
+#include <algorithm>
 #include <bit>
+#include <optional>
+#include <utility>
 
 
 namespace ProfileEvents
@@ -96,6 +99,33 @@ void checkIntegerCountIsExact(UInt64 count, std::string_view what)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Native histogram has an integer {} of {}, which is above the largest value ({}) that can be "
             "stored without losing precision", what, count, MAX_EXACT_INTEGER_COUNT);
+}
+
+/// The range of bucket indexes the spans reach, following the same accumulation as span expansion
+/// (`expandHistogramSpans`). Returns nullopt when the spans cover no buckets at all.
+std::optional<std::pair<Int64, Int64>> getSpanBucketIndexRange(
+    const google::protobuf::RepeatedPtrField<prometheus::BucketSpan> & spans)
+{
+    std::optional<std::pair<Int64, Int64>> range;
+    Int64 idx = 0;
+    bool first_span = true;
+    for (const auto & span : spans)
+    {
+        idx += span.offset();
+        if (!first_span)
+            ++idx;
+        first_span = false;
+        for (UInt64 k = 0; k < span.length(); ++k)
+        {
+            if (range)
+                range = {std::min(range->first, idx), std::max(range->second, idx)};
+            else
+                range = {idx, idx};
+            ++idx;
+        }
+        --idx;
+    }
+    return range;
 }
 
 /// Appends decoded bucket values (absolute counts) of one direction of a native histogram.
@@ -243,9 +273,38 @@ ColumnPtr makeHistogramsColumn(
             if (histogram.reset_hint() < prometheus::Histogram::UNKNOWN || histogram.reset_hint() > prometheus::Histogram::GAUGE)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has an unknown counter reset hint: {}", static_cast<int>(histogram.reset_hint()));
-            if (histogram.schema() < -53 || histogram.schema() > 8)
+            /// Only -53 (custom buckets) and the exponential range are defined; the values in
+            /// between are not, and readers reject them, so do not accept them here either.
+            const bool custom_buckets = histogram.schema() == -53;
+            if (!custom_buckets && (histogram.schema() < -4 || histogram.schema() > 8))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has an out-of-range bucket schema: {}", histogram.schema());
+
+            /// `custom_values` holds the upper bounds of the custom buckets, so a bucket index may
+            /// reach one past the last bound (that bucket's upper bound is +Inf). Anything beyond
+            /// stores fine but fails when the series is read back, so reject it at ingest.
+            if (custom_buckets)
+            {
+                if (!histogram.negative_spans().empty() || !histogram.negative_deltas().empty()
+                    || !histogram.negative_counts().empty())
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Native histogram with custom buckets must not have negative buckets");
+
+                if (auto range = getSpanBucketIndexRange(histogram.positive_spans()))
+                {
+                    if (range->first < 0 || range->second > histogram.custom_values_size())
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Native histogram with custom buckets reaches bucket indexes {}..{}, "
+                            "which are not covered by its {} custom bucket bounds",
+                            range->first, range->second, histogram.custom_values_size());
+                }
+            }
+            else if (histogram.custom_values_size() != 0)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram has an exponential bucket schema ({}) but carries {} custom bucket bounds",
+                    histogram.schema(), histogram.custom_values_size());
+            }
 
             UInt8 histogram_flags = 0;
             if (is_float)
