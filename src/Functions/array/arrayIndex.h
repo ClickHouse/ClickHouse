@@ -84,7 +84,7 @@ struct FixedStringElements
 /// constant needle keeps stride 0, so every row reads the single stored value.
 struct StringLikeNeedle
 {
-    const UInt8 * chars;
+    const UInt8 * chars = nullptr;
     const ColumnString::Offsets * offsets = nullptr;
     size_t fixed_size = 0;
     size_t stride = 0;
