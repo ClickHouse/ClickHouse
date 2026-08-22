@@ -5,4 +5,7 @@
     <gcs_included_without_headers>
         <skip_access_check>1</skip_access_check>
     </gcs_included_without_headers>
+    <gcs_included_service_account_key>
+        <service_account_key>{"type": "service_account", "client_email": "server-managed@example.com"}</service_account_key>
+    </gcs_included_service_account_key>
 </clickhouse>

@@ -107,9 +107,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool has_concrete_non_gcs_type = false;
     bool has_explicit_non_gcs_object_storage_type = false;
     /// Native GCS credential fields the AST supplied as literal values (vouched for by the SQL definition
-    /// itself); reported through `info` for the post-`include` re-check.
+    /// itself); their values are reported through `info` for the post-`include` re-check.
     bool has_gcs_service_account_key = false;
     bool has_gcs_access_token = false;
+    std::unordered_map<String, String> ast_gcs_credentials;
     std::unordered_map<String, String> ast_gcs_headers;
 
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
@@ -166,6 +167,9 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_indirect_auth_field = true;
         if (indirect && is_gcs_credential_field(key))
             has_indirect_gcs_credential_field = true;
+        /// Keep the first occurrence, matching how `Poco::Util::XMLConfiguration` reads duplicate siblings.
+        if (!indirect && is_gcs_credential_field(key) && !value_str.empty())
+            ast_gcs_credentials.emplace(key, value_str);
         if (indirect && (startsWith(key, "header") || startsWith(key, "access_header")))
             has_indirect_gcs_header = true;
         if (!indirect && (startsWith(key, "header") || startsWith(key, "access_header")))
@@ -359,11 +363,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         info->ast_has_explicit_gcp_adc = has_explicit_gcp_adc;
         info->restriction_exempt = restriction_exempt;
         info->for_system_database = for_system_database;
-        info->ast_has_gcs_service_account_key = has_gcs_service_account_key;
-        info->ast_has_gcs_access_token = has_gcs_access_token;
-        info->ast_has_google_adc_client_id = has_google_adc_client_id;
-        info->ast_has_google_adc_client_secret = has_google_adc_client_secret;
-        info->ast_has_google_adc_refresh_token = has_google_adc_refresh_token;
+        info->ast_gcs_credentials = std::move(ast_gcs_credentials);
         info->ast_gcs_headers = std::move(ast_gcs_headers);
         /// Persist the opt-in for a fresh create that resolves server credentials and is currently allowed
         /// (the session opted in), so the disk is not re-restricted on reload.
@@ -637,13 +637,28 @@ void validateResolvedGCSDiskCredentials(
         /// The other credential fields are allowed only when the SQL definition itself supplied them as literal
         /// values on the disk root; a value resolved from the `include` -- including any credential field on an
         /// `include`-created `locations` child, which the AST cannot vouch for -- is server-managed auth material.
+        /// The resolved value is compared with the literal one rather than merely asking whether the AST carried
+        /// a field of that name: `doIncludesRecursive` inserts the included children before the `<include>` node
+        /// and duplicate siblings resolve to the first one, so `include = 'creds', service_account_key = 'dummy'`
+        /// reads the *included* key while the AST vouched only for `'dummy'`.
         const bool is_root = prefix.empty();
-        const bool has_foreign_credential_field
-            = (!config.getString(key("service_account_key"), "").empty() && !(is_root && info.ast_has_gcs_service_account_key))
-            || (!config.getString(key("access_token"), "").empty() && !(is_root && info.ast_has_gcs_access_token))
-            || (!config.getString(key("google_adc_client_id"), "").empty() && !(is_root && info.ast_has_google_adc_client_id))
-            || (!config.getString(key("google_adc_client_secret"), "").empty() && !(is_root && info.ast_has_google_adc_client_secret))
-            || (!config.getString(key("google_adc_refresh_token"), "").empty() && !(is_root && info.ast_has_google_adc_refresh_token));
+        /// Whether the field's resolved value is exactly the literal the SQL definition put on the disk root.
+        auto resolved_is_vouched_for = [&](const String & field)
+        {
+            const String resolved = config.getString(key(field), "");
+            if (resolved.empty() || !is_root)
+                return false;
+            const auto it = info.ast_gcs_credentials.find(field);
+            return it != info.ast_gcs_credentials.end() && it->second == resolved;
+        };
+        auto resolved_is_foreign = [&](const String & field)
+        {
+            return !config.getString(key(field), "").empty() && !resolved_is_vouched_for(field);
+        };
+
+        const bool has_foreign_credential_field = resolved_is_foreign("service_account_key")
+            || resolved_is_foreign("access_token") || resolved_is_foreign("google_adc_client_id")
+            || resolved_is_foreign("google_adc_client_secret") || resolved_is_foreign("google_adc_refresh_token");
         if (has_foreign_credential_field)
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
@@ -679,14 +694,10 @@ void validateResolvedGCSDiskCredentials(
         /// credential field. A `locations.<name>` child is constructed independently, so credentials on the root
         /// must never authorize a credential-less child resolved from `include`.
         const bool no_sign_request = config.getBool(key("no_sign_request"), false);
-        const bool root_has_vouched_service_account_key
-            = is_root && info.ast_has_gcs_service_account_key && !config.getString(key("service_account_key"), "").empty();
-        const bool root_has_vouched_access_token
-            = is_root && info.ast_has_gcs_access_token && !config.getString(key("access_token"), "").empty();
-        const bool root_has_vouched_adc = is_root && info.ast_has_google_adc_client_id && info.ast_has_google_adc_client_secret
-            && info.ast_has_google_adc_refresh_token && !config.getString(key("google_adc_client_id"), "").empty()
-            && !config.getString(key("google_adc_client_secret"), "").empty()
-            && !config.getString(key("google_adc_refresh_token"), "").empty();
+        const bool root_has_vouched_service_account_key = resolved_is_vouched_for("service_account_key");
+        const bool root_has_vouched_access_token = resolved_is_vouched_for("access_token");
+        const bool root_has_vouched_adc = resolved_is_vouched_for("google_adc_client_id")
+            && resolved_is_vouched_for("google_adc_client_secret") && resolved_is_vouched_for("google_adc_refresh_token");
 
         if (!no_sign_request && !root_has_vouched_service_account_key && !root_has_vouched_access_token && !root_has_vouched_adc)
             throw Exception(

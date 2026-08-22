@@ -165,6 +165,31 @@ def test_dynamic_gcs_disk_rejects_header_from_include_even_with_credential_opt_i
     assert "ACCESS_DENIED" in error and "header" in error, error
 
 
+def test_dynamic_gcs_disk_rejects_service_account_key_shadowed_by_include(started_cluster):
+    """An `include` written before a literal credential shadows it.
+
+    `ConfigProcessor` inserts the included children before the `<include>` node and duplicate siblings
+    resolve to the first one, so the disk would authenticate with the *included* (server-managed)
+    `service_account_key` while the SQL definition only ever vouched for its own literal value.
+    """
+    node = started_cluster.instances["node"]
+    node.query("DROP TABLE IF EXISTS gcs_include_shadowed_key SYNC")
+    error = node.query_and_get_error(
+        "CREATE TABLE gcs_include_shadowed_key (x UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk("
+        "  name = 'gcs_include_shadowed_key_disk',"
+        "  type = object_storage,"
+        "  object_storage_type = gcs,"
+        "  metadata_type = local,"
+        f"  endpoint = '{gcs_url('include-shadowed-key/')}',"
+        "  include = 'gcs_included_service_account_key',"
+        "  service_account_key = 'user-supplied-key'"
+        ")",
+        settings={"dynamic_disk_allow_include": 1, "use_native_gcs": 1},
+    )
+    assert "ACCESS_DENIED" in error and "service_account_key" in error, error
+
+
 def test_dynamic_gcs_disk_allows_literal_header_with_unrelated_include(started_cluster):
     """A literal SQL header remains valid when `include` contributes unrelated disk settings."""
     node = started_cluster.instances["node"]

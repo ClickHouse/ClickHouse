@@ -53,15 +53,16 @@ struct DynamicS3DiskCredentialInfo
     bool ast_has_use_environment_credentials_off = false;   /// literal `use_environment_credentials = 0`, no `role_arn`
     bool ast_has_explicit_gcp_adc = false;                  /// complete literal Google ADC triple
 
-    /// For the post-`include` GCS re-check (`validateResolvedGCSDiskCredentials`): whether the AST itself
-    /// supplied each native GCS credential field as a literal value. A resolved field the AST did not vouch
-    /// for came from the included (server-side) configuration, i.e. server-managed auth material.
     bool for_system_database = false;                       /// server-internal disk, exempt like the AST-level GCS checks
-    bool ast_has_gcs_service_account_key = false;
-    bool ast_has_gcs_access_token = false;
-    bool ast_has_google_adc_client_id = false;
-    bool ast_has_google_adc_client_secret = false;
-    bool ast_has_google_adc_refresh_token = false;
+    /// For the post-`include` GCS re-check (`validateResolvedGCSDiskCredentials`): the literal value the AST
+    /// itself supplied for each native GCS credential field, by field name. The *value* is kept rather than a
+    /// "the AST had this field" flag, because knowing only that the AST carried some literal
+    /// `service_account_key` does not say which one the resolved configuration reads: `doIncludesRecursive`
+    /// inserts the included children before the `<include>` node and `Poco::Util::XMLConfiguration` resolves
+    /// duplicate siblings to the first one, so an included key of the same name shadows the literal whenever
+    /// `include` precedes it in the SQL definition. A resolved field that does not match the literal came from
+    /// the included (server-side) configuration, i.e. it is server-managed auth material.
+    std::unordered_map<String, String> ast_gcs_credentials;
     /// Literal native GCS authentication headers supplied by the SQL AST. The post-`include` validation
     /// compares these with the resolved configuration so an unrelated `include` does not reject them.
     std::unordered_map<String, String> ast_gcs_headers;
