@@ -286,6 +286,11 @@ ALTER TABLE tab MODIFY COLUMN b UInt64 MATERIALIZED a + 1 STATISTICS(tdigest);
 INSERT INTO tab (a) SETTINGS materialize_statistics_on_insert = 1 VALUES (1);
 SELECT a, b FROM tab;
 SELECT column, has(statistics, 'TDigest') FROM system.parts_columns WHERE database = currentDatabase() AND table = 'tab' AND active ORDER BY column;
+-- Turning that column non-physical is refused even without a statistics clause: the explicit
+-- statistics it already carries would survive the conversion. `DROP STATISTICS b` first.
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab DROP STATISTICS b;
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1;
 DROP TABLE tab;
 
 -- Statistics that `auto_statistics_types` supplied are dropped on conversion, not refused.
