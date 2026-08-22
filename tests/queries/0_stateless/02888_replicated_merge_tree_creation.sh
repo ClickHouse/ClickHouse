@@ -268,5 +268,38 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_after_commit"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_after_commit SYNC"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/after_commit/replicas'"
 
+#### 12 - The rollback also removes the zero-copy lock root, which lives outside the table subtree
+
+# The zero-copy root is created during the constructor, so a rollback that only removed the table
+# subtree would orphan it under a path shared by all tables. Its own root keeps this arm independent
+# of the default one, which is shared with every other table on the server.
+ZC_ROOT="/clickhouse/zero_copy_$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_zero_copy SYNC"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT replicated_merge_tree_fail_after_creating_replica"
+
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_zero_copy (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/zero_copy', 'r1') ORDER BY date
+        SETTINGS storage_policy='local_cache', allow_remote_fs_zero_copy_replication=1,
+                 remote_fs_zero_copy_zookeeper_path='$ZC_ROOT'" 2>&1 | grep -cm1 "Fault injected (after creating replica)"
+
+# The table subtree is gone, and so is the per-table lock node under the zero-copy root. The root
+# itself is shared infrastructure that a plain DROP TABLE does not remove either.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX' AND name='zero_copy'"
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT count() FROM system.zookeeper WHERE path='$ZC_ROOT/zero_copy_local_blob_storage'"
+
+# The retry then succeeds, and its own drop leaves the same state
+${CLICKHOUSE_CLIENT} \
+    -q "CREATE TABLE test_zero_copy (date Date) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/zero_copy', 'r1') ORDER BY date
+        SETTINGS storage_policy='local_cache', allow_remote_fs_zero_copy_replication=1,
+                 remote_fs_zero_copy_zookeeper_path='$ZC_ROOT'"
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT count() FROM system.zookeeper WHERE path='$ZC_ROOT/zero_copy_local_blob_storage'"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_zero_copy SYNC"
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT count() FROM system.zookeeper WHERE path='$ZC_ROOT/zero_copy_local_blob_storage'"
+
 # No failpoint may leak into a later run of this test
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.fail_points WHERE enabled AND name IN ('replicated_merge_tree_fail_after_creating_replica', 'database_on_disk_fail_before_commit_create_table', 'database_on_disk_fail_after_commit_create_table')"

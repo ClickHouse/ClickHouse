@@ -86,3 +86,60 @@ ${CLICKHOUSE_CLIENT} \
     -q "CREATE DATABASE ${DB}_aux_2 ENGINE=Replicated('${AUX}', 's1', 'r1')" 2>&1 | grep -cm1 "FROM ZKPATH '${AUX}'"
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB}_aux SYNC"
+
+#### 6 - A CREATE TABLE carried by a DDL log entry keeps Keeper intact when it fails after the commit
+
+# The entry's metadata transaction is committed before the table reaches the database, so the table is
+# absent locally while the entry is already visible to the other replicas. Removing the replica here
+# would delete a table subtree those replicas are about to use.
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_txn SYNC"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB}_txn ENGINE=Replicated('${ZK}/txn', 's1', 'r1')"
+
+TBL_ZK="/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/txn_commit"
+
+# The digest starts at 0 and the entry's transaction is what advances it, so a non-zero value below is
+# what proves this arm really runs after the commit rather than before it
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT value FROM system.zookeeper WHERE path='${ZK}/txn/replicas/s1|r1' AND name='digest'"
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT database_atomic_fail_after_committing_metadata_transaction"
+
+${CLICKHOUSE_CLIENT} --database_replicated_allow_replicated_engine_arguments=3 --distributed_ddl_output_mode=none \
+    -q "CREATE TABLE ${DB}_txn.t (k UInt64) ENGINE=ReplicatedMergeTree('${TBL_ZK}/{shard}', '{replica}') ORDER BY k" 2>&1 | grep -cm1 "Fault injected (after committing metadata"
+
+# Keeper keeps what the committed entry published: the entry itself, and the table subtree with this
+# replica's registration, which the other replicas are about to use
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT count() FROM system.zookeeper WHERE path='${ZK}/txn/metadata' AND name='t'"
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT name FROM system.zookeeper WHERE path='${TBL_ZK}/s1/replicas'"
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT count() FROM system.zookeeper WHERE path='${TBL_ZK}/s1' AND name='metadata'"
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
+    -q "SELECT value != '0' FROM system.zookeeper WHERE path='${ZK}/txn/replicas/s1|r1' AND name='digest'"
+
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB}_txn SYNC"
+
+#### 7 - The local data directory is still cleaned up when the registration has to be kept
+
+# Keeping the registration must not also keep the local directory. With an explicit UUID the retry
+# resolves to the same data path, so a leftover directory fails it with TABLE_ALREADY_EXISTS.
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB}_retry SYNC"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB}_retry ENGINE=Replicated('${ZK}/retry', 's1', 'r1')"
+
+RETRY_UUID=$(${CLICKHOUSE_CLIENT} -q "SELECT reinterpretAsUUID('${CLICKHOUSE_DATABASE}retry')")
+
+${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 3 \
+    --create_replicated_merge_tree_fault_injection_probability=1 --distributed_ddl_output_mode=none \
+    -q "CREATE TABLE ${DB}_retry.t UUID '${RETRY_UUID}' (k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k" 2>&1 | grep -cm1 "Fault injected"
+
+# The retry reuses both the registration and the freed data path, so the table ends up usable
+${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid 3 --distributed_ddl_output_mode=none \
+    -q "CREATE TABLE ${DB}_retry.t UUID '${RETRY_UUID}' (k UInt64) ENGINE=ReplicatedMergeTree ORDER BY k"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}_retry.t SELECT 1"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}_retry.t"
+
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB}_retry SYNC"
+
+# No failpoint may leak into a later run of this test
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.fail_points WHERE enabled AND name IN ('database_replicated_create_replica_nodes_lose_response', 'database_atomic_fail_after_committing_metadata_transaction')"

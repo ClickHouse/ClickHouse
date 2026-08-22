@@ -704,7 +704,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
     catch (...)
     {
-        if (mode < LoadingStrictnessLevel::ATTACH && hasProvableCreationIdentity())
+        if (mode < LoadingStrictnessLevel::ATTACH)
             tryRemoveOwnReplicaFromZooKeeper();
 
         /// If replica was not created, rollback creation of data directory.
@@ -722,13 +722,16 @@ void StorageReplicatedMergeTree::tryRemoveOwnReplicaFromZooKeeper()
     /// the user must see.
     try
     {
+        /// The identity compared below distinguishes nothing unless the table UUID is unique.
+        if (!hasProvableCreationIdentity())
+            return;
+
         auto zookeeper = getZooKeeperIfTableShutDown();
 
         /// Remove the registration only if it is the one this statement created. `creator_info` is
         /// written atomically with the replica nodes and pins them to this table UUID and this server,
         /// so a leftover of another statement, table or server never matches and is kept for
-        /// SYSTEM DROP REPLICA. This distinguishes nothing unless the table UUID is unique, which is
-        /// what hasProvableCreationIdentity() asserts.
+        /// SYSTEM DROP REPLICA.
         String creator_info;
         if (!zookeeper->tryGet(replica_path + "/creator_info", creator_info)
             || creator_info != toString(getStorageID().uuid) + "|" + toString(ServerUUID::get()))
@@ -739,10 +742,16 @@ void StorageReplicatedMergeTree::tryRemoveOwnReplicaFromZooKeeper()
         if (zookeeper->exists(replica_path + "/is_active"))
             return;
 
-        /// Not drop(): the table has no parts and no table_shared_id yet, and collecting zero-copy lock
-        /// paths would have to load them. This keeps the /replicas + /dropped lock protocol that lets a
+        /// The zero-copy lock roots live outside the table subtree that dropReplica removes, so they are
+        /// collected here and removed below, as drop() does. Reached only with zero-copy replication
+        /// enabled, where createNewZooKeeperNodes has already created them.
+        auto zero_copy_locks_paths = getZookeeperZeroCopyLockPaths();
+
+        /// Not drop(): the table has no parts, and loading outdated parts to discover them is pure risk on
+        /// a table that never started up. This keeps the /replicas + /dropped lock protocol that lets a
         /// concurrent creator of the same table win.
-        dropReplica(zookeeper, zookeeper_info, log.load(), getSettings(), &has_metadata_in_zookeeper);
+        if (dropReplica(zookeeper, zookeeper_info, log.load(), getSettings(), &has_metadata_in_zookeeper))
+            dropZookeeperZeroCopyLockPaths(zookeeper, zero_copy_locks_paths, log.load());
     }
     catch (...)
     {

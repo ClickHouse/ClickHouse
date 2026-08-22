@@ -2457,20 +2457,33 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// A constructed replicated storage has its replica registered in Keeper, and a registration left
     /// there makes every retry of the CREATE fail with REPLICA_ALREADY_EXISTS. Best effort, because the
     /// original exception is the one the user must see.
-    auto rollback_replica_in_keeper = [&]
+    auto rollback_failed_creation = [&]
     {
-        if (!replicated_storage || create.attach || !replicated_storage->hasProvableCreationIdentity())
+        if (!replicated_storage || create.attach)
             return;
 
-        /// Once the database has accepted the storage, removing its data from under the database map
-        /// would leave an attached table with no data. The registration is then left for
-        /// SYSTEM DROP REPLICA instead.
+        /// Once the database has accepted the storage, removing anything from under the database map
+        /// would leave an attached table with no data. Both the registration and the local directory are
+        /// then left for DROP TABLE.
         if (database->isTableExist(create.getTable(), getContext()))
             return;
 
+        /// The registration is only ours to remove when it can be attributed to this statement, and when
+        /// this statement did not already publish the table to the other replicas: a CREATE carried by an
+        /// entry of a `Replicated` database's DDL log commits its metadata transaction before the table
+        /// reaches the database, and removing the replica after that diverges this replica from the ones
+        /// where the same entry succeeded.
+        bool registration_is_ours = replicated_storage->hasProvableCreationIdentity()
+            && !getContext()->getZooKeeperMetadataTransaction();
+
         try
         {
-            replicated_storage->drop();
+            if (registration_is_ours)
+                replicated_storage->drop();
+            else
+                /// The local directory is this statement's either way, and a leftover fails the retry with
+                /// TABLE_ALREADY_EXISTS.
+                replicated_storage->dropIfEmpty();
         }
         catch (...)
         {
@@ -2485,7 +2498,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (fault(thread_local_rng))
         {
             /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
-            rollback_replica_in_keeper();
+            rollback_failed_creation();
 
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }
@@ -2497,7 +2510,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
     catch (...)
     {
-        rollback_replica_in_keeper();
+        rollback_failed_creation();
         throw;
     }
 
