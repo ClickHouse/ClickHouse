@@ -13,11 +13,10 @@ runs the touched test suites on it — at least one must FAIL or crash. When the
 alone (every compiler error is inside them, or every translation unit that failed to
 compile is one of them), the changed test code depends on the interface the fix
 introduces (the typical case is a call site adapted to a changed function signature);
-the unit side
-then has nothing it can judge at runtime, the PR author cannot avoid the adaptation,
-and the job reports the build failure as expected (XFAIL, nothing to validate)
-instead of staying red forever. Any other build failure is an infrastructure or
-attribution problem and stays an ERROR (inconclusive).
+the unit side then has nothing it can judge at runtime, the PR author cannot avoid the
+adaptation, and the job reports the build failure as expected (XFAIL, nothing to
+validate) instead of staying red forever. Any other build failure is an infrastructure
+or attribution problem and stays an ERROR (inconclusive).
 
 Like the functional/integration validators, this job only checks the "before" side.
 The complementary "the touched tests PASS on the PR binary" side is delegated to the
@@ -558,13 +557,19 @@ def compile_failure_attribution(compile_result, test_files):
       a broken fix source or contrib header is a different translation unit and fails
       its own edge.
 
-    The second basis requires all three of the following, and each one keeps a fail-close
-    property: a parsable compiler error must exist somewhere (a killed compiler or an
-    internal ninja error is not attributable), every failed edge must be a compile whose
-    source could be extracted (a link failure is not attributable), and every one of
-    those sources must be an overlaid test file.
+    A failed edge that is not a compile at all (a link step, an archive step, a custom
+    command) defeats BOTH bases: whatever the diagnostics say, the build also failed
+    somewhere no translation unit can be named, so nothing states the failure is confined
+    to the overlaid tests.
+
+    The second basis additionally requires a parsable compiler error to exist somewhere (a
+    killed compiler or an internal ninja error is not attributable) and every failed
+    compile edge to be an overlaid test file.
     """
     overlaid_errors, other_errors = attribute_compile_errors(compile_result, test_files)
+    sources, unattributable = failed_compile_edge_sources(compile_result)
+    if unattributable:
+        return "", other_errors
     if overlaid_errors and not other_errors:
         return (
             "every compile error is inside the PR's changed test files ("
@@ -574,8 +579,7 @@ def compile_failure_attribution(compile_result, test_files):
         )
     if not (overlaid_errors or other_errors):
         return "", other_errors
-    sources, unattributable = failed_compile_edge_sources(compile_result)
-    if unattributable or not sources:
+    if not sources:
         return "", other_errors
     if any(source not in set(test_files) for source in sources):
         return "", other_errors
@@ -803,17 +807,17 @@ def main():
     # at runtime. Attribute the failure instead:
     #  * every compiler error inside the overlaid test files, or every translation unit
     #    that failed to compile being an overlaid test file (compile_failure_attribution)
-    #    → the changed test code
-    #    depends on the fix's interface (typically a call site adapted to a changed
-    #    signature). The PR author cannot avoid that adaptation and the unit side has
-    #    nothing left to judge, so report the step as an expected failure (XFAIL) with
-    #    nothing to validate — NOT as a reproduction. When the PR also carries
-    #    functional/integration tests, new_tests_check.py still demands a real
-    #    validation from those jobs; for a unit-only PR the merge gate already treats
-    #    inconclusive as non-blocking, so this changes report truthfulness, not gating.
+    #    → the changed test code depends on the fix's interface (typically a call site
+    #    adapted to a changed signature). The PR author cannot avoid that adaptation and
+    #    the unit side has nothing left to judge, so report the step as an expected
+    #    failure (XFAIL) with nothing to validate — NOT as a reproduction. When the PR
+    #    also carries functional/integration tests, new_tests_check.py still demands a
+    #    real validation from those jobs; for a unit-only PR the merge gate already
+    #    treats inconclusive as non-blocking, so this changes report truthfulness, not
+    #    gating.
     #  * anything else (a failed fix-source or contrib translation unit, the linker, no
-    #    parsable diagnostic)
-    #    → cannot be attributed to the touched test changes; fail close (ERROR).
+    #    parsable diagnostic) → cannot be attributed to the touched test changes; fail
+    #    close (ERROR).
     compile_result = compile_before_binary()
     if not compile_result.is_ok():
         attributed_to, other_errors = compile_failure_attribution(

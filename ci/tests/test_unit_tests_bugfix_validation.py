@@ -678,24 +678,56 @@ def test_attribution_fails_close_when_a_contrib_translation_unit_fails(tmp_path)
     assert reason == ""
 
 
+def _link_failure_edge():
+    """A failed `unit_tests_dbms` link edge: no `-c <source>` on its command line."""
+    return (
+        "FAILED: src/unit_tests_dbms \n"
+        ": && /usr/local/bin/clang++-22 -fsanitize=address src/CMakeFiles/x.dir/a.o "
+        "-o src/unit_tests_dbms && :\n"
+        "ld.lld: error: undefined symbol: DB::WriteBufferInlineOrBlob::finalizeImpl()\n"
+    )
+
+
 def test_attribution_fails_close_on_a_link_failure(tmp_path):
-    """A failed edge with no `-c <source>` (the linker) is not attributable, even though
-    a compiler-style `error:` line inside an overlaid test is present as well."""
+    """A failed edge with no `-c <source>` (the linker) is not attributable. Here the only
+    `error:` path is the libcxx header, so this covers the translation-unit basis."""
     log = (
         _failed_compile_edge(
             "src/CMakeFiles/x.dir/gtest_wb.cpp.o", f"{_BEFORE}/{_TEST_FILE}"
         )
         + _TEMPLATE_INSTANTIATION_DIAGNOSTIC
-        + "FAILED: src/unit_tests_dbms \n"
-        + ": && /usr/local/bin/clang++-22 -fsanitize=address src/CMakeFiles/x.dir/a.o "
-        "-o src/unit_tests_dbms && :\n"
-        "ld.lld: error: undefined symbol: DB::WriteBufferInlineOrBlob::finalizeImpl()\n"
+        + _link_failure_edge()
     )
-    sources, unattributable = failed_compile_edge_sources(_compile_log(tmp_path, log))
+    result = _compile_log(tmp_path, log)
+    assert attribute_compile_errors(result, [_TEST_FILE]) == (
+        [],
+        ["contrib/llvm-project/libcxx/include/__memory/unique_ptr.h"],
+    )
+    sources, unattributable = failed_compile_edge_sources(result)
     assert sources == [_TEST_FILE]
     assert unattributable == ["src/unit_tests_dbms"]
 
-    reason, _ = compile_failure_attribution(_compile_log(tmp_path, log), [_TEST_FILE])
+    reason, _ = compile_failure_attribution(result, [_TEST_FILE])
+    assert reason == ""
+
+
+def test_attribution_fails_close_on_a_link_failure_with_an_overlaid_error(tmp_path):
+    """The same link failure alongside an `error:` line inside the overlaid test itself.
+    The error-path basis is satisfied on its own, so the unattributable link edge is what
+    has to hold attribution back."""
+    log = (
+        _failed_compile_edge(
+            "src/CMakeFiles/x.dir/gtest_wb.cpp.o", f"{_BEFORE}/{_TEST_FILE}"
+        )
+        + f"{_BEFORE}/{_TEST_FILE}:56:21: error: too many arguments to function call\n"
+        + _link_failure_edge()
+    )
+    result = _compile_log(tmp_path, log)
+    # The error-path basis alone would say "attributable".
+    assert attribute_compile_errors(result, [_TEST_FILE]) == ([_TEST_FILE], [])
+    assert failed_compile_edge_sources(result) == ([_TEST_FILE], ["src/unit_tests_dbms"])
+
+    reason, _ = compile_failure_attribution(result, [_TEST_FILE])
     assert reason == ""
 
 
@@ -780,6 +812,118 @@ def test_failed_compile_edge_sources_handles_a_truncated_log(tmp_path):
 def test_failed_compile_edge_sources_handles_no_files():
     assert failed_compile_edge_sources(_FakeResult(None)) == ([], [])
     assert failed_compile_edge_sources(_FakeResult([])) == ([], [])
+
+
+# --------------------------------------------------------------------------
+# main() step 4b: the transition the whole job is about. The helpers above are
+# pure, so they stay green even if the call site stops consulting them or stops
+# flipping the status. These two tests assert the Result main() really produced.
+# --------------------------------------------------------------------------
+def _drive_main_to_compile_step(monkeypatch, tmp_path, compile_log):
+    """Stub everything before step 4b so main() reaches the compile attribution with a
+    failed compile Result whose log is `compile_log`. Returns the captured
+    `(results, info_lines)` that main() passed to finalize."""
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    class _Info:
+        pr_labels = ["pr-bugfix"]
+        sha = "prheadsha777"
+        base_branch = "master"
+        is_local_run = False
+
+        def get_changed_files(self):
+            return [_TEST_FILE]
+
+    log = tmp_path / "compile.log"
+    log.write_text(compile_log)
+    compile_result = job.Result(
+        name="Compile before-binary (ninja unit_tests_dbms, without the fix)",
+        status=job.Result.Status.FAIL,
+        files=[str(log)],
+    )
+
+    captured = {}
+    monkeypatch.setattr(job, "Info", _Info)
+    monkeypatch.setattr(job, "get_changed_unit_test_files", lambda info: [_TEST_FILE])
+    monkeypatch.setattr(job, "derive_test_suites", lambda files: ["WriteBufferSuite"])
+    monkeypatch.setattr(job, "gitmodules_shape_violation", lambda: None)
+    monkeypatch.setattr(job, "determine_merge_base", lambda info: "mergebase123")
+    monkeypatch.setattr(
+        job.Shell,
+        "get_output",
+        staticmethod(lambda cmd, **kw: "checkouthead999" if "rev-parse HEAD" in cmd else ""),
+    )
+    monkeypatch.setattr(job, "get_submodule_state_changes", lambda base, head: [])
+    monkeypatch.setattr(job, "prepare_before_worktree", lambda *a, **kw: True)
+    monkeypatch.setattr(
+        job,
+        "configure_before_binary",
+        lambda info: job.Result(name="Configure", status=job.Result.Status.OK),
+    )
+    monkeypatch.setattr(job, "compile_before_binary", lambda: compile_result)
+    # A reproduction must never be reached: step 4b returns either way.
+    monkeypatch.setattr(
+        job, "run_gtests", lambda *a, **kw: pytest.fail("main() ran the gtests")
+    )
+    monkeypatch.setattr(
+        job,
+        "finalize",
+        lambda results, info_lines: captured.update(
+            results=results, info_lines=info_lines
+        ),
+    )
+
+    job.main()
+    assert captured, "main() returned without calling finalize"
+    return captured["results"], captured["info_lines"]
+
+
+def test_main_reports_xfail_for_an_error_inside_an_included_header(
+    monkeypatch, tmp_path
+):
+    """The job's headline outcome: the real #111391 shape (the only `error:` line is in
+    libcxx, the sole failed translation unit is the overlaid test) must come out of main()
+    as an XFAIL with nothing to validate, not as an ERROR."""
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    results, info_lines = _drive_main_to_compile_step(
+        monkeypatch, tmp_path, _template_instantiation_log()
+    )
+
+    compile_result = results[-1]
+    assert compile_result.status == job.Result.Status.XFAIL
+    assert job.Result.Label.XFAIL in compile_result.get_labels()
+    assert "every translation unit that failed to compile" in compile_result.info
+    assert _TEST_FILE in compile_result.info
+    assert "Nothing to validate on the unit side" in info_lines
+
+
+def test_main_reports_error_when_a_fix_source_also_fails(monkeypatch, tmp_path):
+    """Negative control for the test above: with a second failed edge on a fix source the
+    same code path must reach ERROR/inconclusive, so an XFAIL there is a real decision and
+    not "everything becomes XFAIL"."""
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    log = (
+        _failed_compile_edge(
+            "src/CMakeFiles/x.dir/gtest_wb.cpp.o", f"{_BEFORE}/{_TEST_FILE}"
+        )
+        + _TEMPLATE_INSTANTIATION_DIAGNOSTIC
+        + _failed_compile_edge(
+            "src/CMakeFiles/y.dir/WriteBufferInlineOrBlob.cpp.o",
+            f"{_BEFORE}/src/Disks/IO/WriteBufferInlineOrBlob.cpp",
+        )
+        + f"{_BEFORE}/src/Disks/IO/WriteBufferInlineOrBlob.cpp:12:9: error: "
+        "use of undeclared identifier 'sync_metadata_callback'\n"
+    )
+    results, info_lines = _drive_main_to_compile_step(monkeypatch, tmp_path, log)
+
+    compile_result = results[-1]
+    assert compile_result.status == job.Result.Status.ERROR
+    assert job.Result.Label.XFAIL not in compile_result.get_labels()
+    assert "cannot be attributed" in compile_result.info
+    assert "src/Disks/IO/WriteBufferInlineOrBlob.cpp" in compile_result.info
+    assert "inconclusive" in info_lines
 
 
 if __name__ == "__main__":
