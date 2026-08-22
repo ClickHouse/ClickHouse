@@ -43,8 +43,7 @@ namespace DB
 
 namespace FailPoints
 {
-    /// Pauses a bounded reader after it has taken both the round count and the snapshot, so a test
-    /// can land a full round while it sits between them.
+    /// Pauses a bounded reader after both of its observations are taken.
     extern const char streaming_bounded_pause_after_snapshot_observed[];
 }
 
@@ -419,14 +418,8 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfigur
 
     FailPointInjection::pauseFailPoint(FailPoints::streaming_bounded_pause_after_snapshot_observed);
 
-    /// A round publishes its partitions one at a time, so a snapshot no round has been applied to yet
-    /// may still be mid-publication and is not a completed one. Checked after handleReconfiguration
-    /// so a disabled subscription still finishes.
-    if (!round_applied)
-        return result == Status::Ready ? Status::Async : result;
-
     // Finish after the first completed snapshot, or once the first enrichment shows nothing (more) to read.
-    if (finished_snapshots > 0 || result == Status::Async)
+    if (round_applied && (finished_snapshots > 0 || result == Status::Async))
     {
         outputs.front().finish();
         return Status::Finished;

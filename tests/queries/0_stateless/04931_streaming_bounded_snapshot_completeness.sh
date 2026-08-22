@@ -43,7 +43,8 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_ROUND"
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_OBSERVED"
 
 # shellcheck disable=SC2086
-$CLICKHOUSE_CLIENT $STREAM_SETTINGS --query_id "${CLICKHOUSE_DATABASE}_between_pump" --query \
+$CLICKHOUSE_CLIENT $STREAM_SETTINGS --max_execution_time 30 \
+    --query_id "${CLICKHOUSE_DATABASE}_between_pump" --query \
     "SELECT 'pump', count() FROM t_bounded_between STREAM BOUNDED" > /dev/null 2>&1 &
 PUMP=$!
 
@@ -60,11 +61,12 @@ INSERT INTO t_bounded_between SELECT number, number * 10 FROM numbers(5, 5);"
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP_OBSERVED"
 
 # shellcheck disable=SC2086
-$CLICKHOUSE_CLIENT $STREAM_SETTINGS --query_id "${CLICKHOUSE_DATABASE}_between_reader" --query \
+$CLICKHOUSE_CLIENT $STREAM_SETTINGS --max_execution_time 30 \
+    --query_id "${CLICKHOUSE_DATABASE}_between_reader" --query \
     "SELECT 'observed_between', count(), sum(k), sum(v) FROM t_bounded_between STREAM BOUNDED" &
 READER=$!
 
-# Stop this reader between its two reads, both taken against the still-empty table.
+# Stop this reader once both its reads are taken, both against the still-empty table.
 timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_OBSERVED PAUSE" \
     || echo "observed_between reader barrier timed out"
 
