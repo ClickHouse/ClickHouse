@@ -1391,3 +1391,70 @@ TEST(BufferedShardByHashTransform, NoOwnershipAccountingWithoutAByteBudget)
         EXPECT_TRUE(outcome.finished) << "max_queue_length = " << max_queue_length;
     }
 }
+
+/// A downstream `LimitTransform` closes every input it holds the moment it reaches its limit, and so does a
+/// cancellation. When that lands after work() passed its `allOutputsFinished()` carve-out - so the split runs
+/// with only part of the outputs closed - `generateOutputChunks` skips the finished shards. It must not keep
+/// the per-shard copies it already materialized for them: nobody will ever consume those, and the pre-split
+/// charge that covered them is released at the end of the split, so they would sit resident while
+/// `total_buffered_bytes` no longer counts them - a query that already reached its outer `LIMIT` could hit
+/// `max_memory_usage` on data nobody will read.
+TEST(BufferedShardByHashTransform, ShardCopiesForFinishedOutputsAreFreed)
+{
+    const size_t num_rows = 4000;
+    const size_t num_shards = 4;
+    const size_t value_len = 1 << 20;  /// A 1 MiB constant payload - the bytes a leaked shard copy would hold.
+
+    ColumnPtr key = makeDistinctKeyColumn(num_rows);
+
+    auto payload = ColumnString::create();
+    const std::string big_value(value_len, 'x');
+    payload->insertData(big_value.data(), big_value.size());
+    ColumnPtr constant = ColumnConst::create(std::move(payload), num_rows);
+    /// `ColumnConst::scatter` hands every per-shard copy a reference to the same payload, so the payload's use
+    /// count says exactly how many of those copies are still alive.
+    ColumnPtr shared_payload = assert_cast<const ColumnConst &>(*constant).getDataColumnPtr();
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "c"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
+    /// Unbounded budget: this test observes residency, it must not throw.
+    BufferedShardByHashTransform transform(
+        header, num_shards, ColumnNumbers{0}, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
+
+    OutputPort source_output(header);
+    connect(source_output, transform.getInputs().front());
+
+    std::vector<std::unique_ptr<InputPort>> sinks;
+    for (auto & output : transform.getOutputs())
+    {
+        auto sink = std::make_unique<InputPort>(header);
+        connect(output, *sink);
+        sinks.push_back(std::move(sink));
+    }
+
+    source_output.push(Chunk(Columns{key, constant}, num_rows));
+
+    /// Only the first shard keeps a live consumer; the others are closed, as a `LimitTransform` closes them.
+    sinks.front()->setNeeded();
+    for (size_t shard = 1; shard < num_shards; ++shard)
+        sinks[shard]->close();
+
+    /// This test's own references: the local `ColumnPtr` and the `ColumnConst` holding the payload.
+    const auto payload_uses_before = shared_payload->use_count();
+
+    for (int step = 0; step < 8; ++step)
+    {
+        if (transform.prepare() != IProcessor::Status::Ready)
+            break;
+        transform.work();
+    }
+
+    /// Exactly one copy survives the split: the chunk parked in the one port that still has a consumer. The
+    /// copies built for the three closed outputs are gone (keeping them would read `num_shards` copies).
+    EXPECT_EQ(shared_payload->use_count(), payload_uses_before + 1);
+}

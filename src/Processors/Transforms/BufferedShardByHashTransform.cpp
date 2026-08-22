@@ -786,6 +786,20 @@ void BufferedShardByHashTransform::generateOutputChunks()
 
     for (const auto & column : columns)
     {
+        /// A downstream `LimitTransform` closes every input of this processor the moment it reaches its limit,
+        /// and so does a cancellation - that can happen after the `allOutputsFinished()` carve-out in work()
+        /// let this split start, while this loop is still materializing the per-shard copies. Re-check between
+        /// columns: once every output is finished nobody will ever consume them, so stop scattering, drop what
+        /// was built so far and release the pre-split charge. The next prepare() observes the finished outputs
+        /// and finishes this processor cleanly, exactly as on the pre-split carve-out in work().
+        if (allOutputsFinished())
+        {
+            for (auto & cols : shard_columns)
+                cols.clear();
+            dischargePendingInput();
+            return;
+        }
+
         auto split = column->scatter(num_shards, selector);
         for (size_t s = 0; s < num_shards; ++s)
             shard_columns[s].push_back(std::move(split[s]));
@@ -871,8 +885,22 @@ void BufferedShardByHashTransform::generateOutputChunks()
                     }
                 }
             }
+            /// The per-shard copies are consumed by nobody now - free them instead of leaving a whole
+            /// scattered block resident until the next split or the destructor.
+            for (auto & cols : shard_columns)
+                cols.clear();
             throw;
         }
+
+        /// Every shard skipped above - a finished output, or no rows for it - still holds its scattered copy,
+        /// and an enqueued shard's vector is only left empty by the move into the chunk. Free them all here,
+        /// BEFORE the pre-split charge is released below: nothing will ever consume the skipped copies, and
+        /// leaving them in `shard_columns` keeps a whole scattered block resident - uncounted by
+        /// `total_buffered_bytes` once the pre-split charge is gone - until the next split or the destructor.
+        /// A query that already reached its outer `LIMIT` could otherwise hit `max_memory_usage` on data that
+        /// nobody will read.
+        for (auto & cols : shard_columns)
+            cols.clear();
 
         /// Release the provisional pre-split charge now that the exact post-split objects are registered above -
         /// any buffer this block shares with the pre-split chunk (unchanged by the split, e.g. a `LowCardinality`
