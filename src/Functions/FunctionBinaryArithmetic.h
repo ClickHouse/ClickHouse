@@ -3453,11 +3453,11 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
 
 /// Whether `plus`/`minus` is injective in its varying argument, given the other one fixed.
-/// Only integer arithmetic is: the result type is widened, and integer wrap-around is a bijection.
-/// Every other operand class maps distinct arguments to one result - an `Interval` collapses
-/// end-of-month days and days across a DST transition, a floating-point or `Decimal` operand
-/// collapses by rounding or by rescaling, a constant of a narrower date type collapses many
-/// arguments into one day, and a NULL constant maps every argument to NULL.
+/// Only integer arithmetic is recognized: the result type is widened, and integer wrap-around is a
+/// bijection. Every other operand class contains cases that map distinct arguments to one result -
+/// an `Interval` collapses end-of-month days and DST transitions, rounding or rescaling collapses a
+/// float or `Decimal`, a narrower date constant collapses many days into one, a NULL constant maps
+/// everything to NULL - and by type they are indistinguishable from the safe cases beside them.
 inline bool plusMinusWithConstantsIsInjective(
     const ColumnWithTypeAndName & left, const ColumnWithTypeAndName & right, const DataTypePtr & return_type)
 {
@@ -4108,7 +4108,7 @@ public:
             {
                 return_type = getReturnType(sample_columns);
             }
-            catch (...)
+            catch (const Exception &)
             {
                 return false;
             }

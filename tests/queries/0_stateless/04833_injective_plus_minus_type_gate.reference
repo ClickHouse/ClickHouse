@@ -85,6 +85,31 @@ SELECT count() FROM (SELECT x + y AS k, count() FROM t_two_cols GROUP BY k) SETT
 SELECT count() FROM (SELECT x + y AS k, count() FROM t_two_cols GROUP BY k) SETTINGS allow_aggregate_partitions_independently = 0;
 109
 DROP TABLE t_two_cols;
+-- per-partition set building reads the same predicate. The set fill deduplicates across
+-- partitions anyway, so the merged answer stays correct and only the plan shape shows the
+-- decline; the bare-key arm is the control that the fixture reaches the optimization.
+DROP TABLE IF EXISTS t_set_month;
+CREATE TABLE t_set_month (d Date, x UInt32) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+SYSTEM STOP MERGES t_set_month;
+INSERT INTO t_set_month SELECT toDate(concat(toString(2001 + intDiv(number, 300)), '-01-', toString(29 + (intDiv(number, 100) % 3)))) AS d, number FROM numbers_mt(5100) WHERE toYear(d) NOT IN (2004, 2008, 2012, 2016, 2020);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT count() FROM numbers(100) WHERE toDate('2001-02-28') + number IN (SELECT d + INTERVAL 1 MONTH FROM t_set_month) SETTINGS allow_creating_set_partitions_independently = 1) WHERE explain LIKE '%Pre-distinct%' OR explain LIKE '%Read each partition through separate port%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT count() FROM numbers(100) WHERE toDate('2001-02-28') + number IN (SELECT d FROM t_set_month) SETTINGS allow_creating_set_partitions_independently = 1) WHERE explain LIKE '%Pre-distinct%' OR explain LIKE '%Read each partition through separate port%';
+Pre-distinct: 1
+Read each partition through separate port: 1
+DROP TABLE t_set_month;
+-- an integer key keeps per-partition set building; the partition key is a function of the set's
+-- own output column, which the interval arm above cannot use because its key is the collapsing one
+DROP TABLE IF EXISTS t_set_int;
+CREATE TABLE t_set_int (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
+SYSTEM STOP MERGES t_set_int;
+INSERT INTO t_set_int SELECT number % 64, number FROM numbers_mt(400);
+INSERT INTO t_set_int SELECT number % 64, number FROM numbers_mt(400);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT count() FROM numbers(100) WHERE number IN (SELECT a + 1 FROM t_set_int) SETTINGS allow_creating_set_partitions_independently = 1) WHERE explain LIKE '%Pre-distinct%' OR explain LIKE '%Read each partition through separate port%';
+Pre-distinct: 1
+Read each partition through separate port: 1
+SELECT (SELECT count() FROM numbers(100) WHERE number IN (SELECT a + 1 FROM t_set_int) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(100) WHERE number IN (SELECT a + 1 FROM t_set_int) SETTINGS allow_creating_set_partitions_independently = 1);
+1
+DROP TABLE t_set_int;
 -- ---------------------------------------------------------------------------
 -- Preservation: integer arithmetic with an integer constant stays injective, so the
 -- optimization must keep firing. A correctness-only test would not notice this. Each arm
@@ -177,3 +202,19 @@ SELECT count() FROM (SELECT 1 FROM t_const_key GROUP BY materialize(1) + 1, k);
 SELECT count() FROM (SELECT k FROM t_const_key ORDER BY k LIMIT 1 BY materialize(1) + 1);
 1
 DROP TABLE t_const_key;
+-- ---------------------------------------------------------------------------
+-- The distributed sharding-key consumer reaches the same predicate through its own rejection
+-- loop and its own direct call, so it gets its own arms. Dropping the merge step is only
+-- correct when the group key determines the shard: a key that collapses distinct shard-key
+-- values leaves each shard's partial groups unmerged, so the same key is returned twice.
+-- The first arm counts merge steps (1 = kept, 0 = dropped), the second compares the answer
+-- against the unoptimized one, and the integer arm is the control that the optimization
+-- still fires where it is sound.
+-- ---------------------------------------------------------------------------
+
+SELECT count() FROM (EXPLAIN SELECT d + INTERVAL 1 MONTH AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30)), toUInt64(toYYYYMMDD(d))) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1) WHERE explain ILIKE '%MergingAggregated%';
+1
+SELECT (SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30)), toUInt64(toYYYYMMDD(d))) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 0)) = (SELECT count() FROM (SELECT d + INTERVAL 1 MONTH AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30)), toUInt64(toYYYYMMDD(d))) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1));
+1
+SELECT count() FROM (EXPLAIN SELECT x + 1 AS k, count() FROM remote('127.{1,2}', view(SELECT toDate('2001-01-29') + (number % 3) AS d, number AS x FROM numbers(30)), toUInt64(x)) GROUP BY k SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1) WHERE explain ILIKE '%MergingAggregated%';
+0
