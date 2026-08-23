@@ -29,7 +29,7 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 |-----------------|-------|------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `sql`           | str   | *required* | SQL query string to execute                                                                                                                                                                                                                                                                                     |
 | `output_format` | str   | `"CSV"`    | Output format for results. Supported formats:<br/>• `"CSV"` - Comma-separated values<br/>• `"JSON"` - JSON format<br/>• `"Arrow"` - Apache Arrow format<br/>• `"Parquet"` - Parquet format<br/>• `"DataFrame"` - Pandas DataFrame<br/>• `"ArrowTable"` - PyArrow Table<br/>• `"Debug"` - Enable verbose logging |
-| `path`          | str   | `""`       | Database file path. Defaults to a temporary, non-persistent database.<br/>Can be a file path, or `":memory:"` for a temporary database                                                                                                                                                                                               |
+| `path`          | str   | `""`       | Database file path. Defaults to a temporary, non-persistent database.<br/>Can be a file path, or `":memory:"` for an in-memory database                                                                                                                                                                                               |
 | `udf_path`      | str   | `""`       | Path to legacy subprocess-based UDF directory. Not needed for native Python UDFs ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                                                                                                                        |
 
 **Returns**
@@ -94,7 +94,7 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 |-----------------|-------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `sql`           | str   | *required* | SQL query string to execute                                                                                                                                                                                                                                                                              |
 | `output_format` | str   | `"CSV"`    | Output format for results. Supported formats:<br/>• `"CSV"` - Comma-separated values<br/>• `"JSON"` - JSON format<br/>• `"Arrow"` - Apache Arrow format<br/>• `"Parquet"` - Parquet format<br/>• `"DataFrame"` - Pandas DataFrame<br/>• `"ArrowTable"` - PyArrow Table<br/>• `"Debug"` - Enable verbose logging |
-| `path`          | str   | `""`       | Database file path. Defaults to a temporary, non-persistent database.<br/>Can be a file path, or `":memory:"` for a temporary database                                                                                                                                                                                         |
+| `path`          | str   | `""`       | Database file path. Defaults to a temporary, non-persistent database.<br/>Can be a file path, or `":memory:"` for an in-memory database                                                                                                                                                                                         |
 | `udf_path`      | str   | `""`       | Path to legacy subprocess-based UDF directory. Not needed for native Python UDFs ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                                                                                                                 |
 
 **Returns**
@@ -232,8 +232,7 @@ The following Session Functions are available:
 Create a connection to chDB background server.
 
 This function establishes a [Connection](#chdb-state-sqlitelike-connection) to the chDB (ClickHouse) database engine.
-Only one open connection is allowed per process.
-Multiple calls with the same connection string will return the same connection object.
+Each call returns an independent connection, and any number of connections to the same database path may be open at the same time.
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -702,8 +701,7 @@ id,name
 Create a [Connection](#chdb-state-sqlitelike-connection) to the chDB background server.
 
 This function establishes a connection to the chDB (ClickHouse) database engine.
-Only one open connection is allowed per process. Multiple calls with the same
-connection string will return the same connection object.
+Each call returns an independent connection, and any number of connections to the same database path may be open at the same time.
 
 **Syntax**
 
@@ -1743,7 +1741,7 @@ chdb.dbapi.connect(*args, **kwargs)
 
 | Parameter  | Type  | Default  | Description                                     |
 |------------|-------|----------|-------------------------------------------------|
-| `path`     | str   | `None`   | Database file path. None for a temporary, non-persistent database |
+| `path`     | str   | `None`   | Database file path. None for an in-memory database |
 
 **Raises**
 
@@ -1824,7 +1822,7 @@ class chdb.dbapi.connections.Connection(path=None)
 
 | Parameter  | Type  | Default  | Description                                                                                                        |
 |------------|-------|----------|--------------------------------------------------------------------------------------------------------------------|
-| `path`     | str   | `None`   | Database file path. If None, uses a temporary, non-persistent database. Can be a file path like 'database.db' or None for ':memory:' |
+| `path`     | str   | `None`   | Database file path. If None (the default), uses an in-memory database (`':memory:'`). Pass a file path like 'database.db' to persist to disk. |
 
 **Variables**
 
