@@ -10,6 +10,9 @@ SET enable_analyzer = 1;
 -- `auto_statistics_types` in CI does not add a Statistics section
 -- to the EXPLAIN output and break the reference file.
 SET use_statistics_for_part_pruning = 0;
+-- The EXPLAIN output depends on the plan shape: without PREWHERE optimization the WHERE step
+-- is a `Filter` instead of an `Expression`, so pin the setting randomized in CI.
+SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS test_skip_idx_rewrites;
 
