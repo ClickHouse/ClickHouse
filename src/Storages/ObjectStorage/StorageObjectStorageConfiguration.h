@@ -161,6 +161,13 @@ public:
     virtual bool isDataLakeConfiguration() const { return false; }
     virtual bool isIcebergConfiguration() const { return false; }
 
+    /// Data file formats a data lake engine can actually read back. A data lake stores its data
+    /// files in one of a few columnar/row formats named by the table format's own specification;
+    /// anything else either corrupts the table on write or is silently misread, because the
+    /// readers never consult the file extension to decide how to parse a data file.
+    /// Empty means "no restriction" - that is the case for the plain object storage engines.
+    virtual Strings getSupportedDataLakeFormats() const { return {}; }
+
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }

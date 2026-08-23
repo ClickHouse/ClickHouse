@@ -13,7 +13,12 @@
 #include <Storages/ObjectStorage/Common.h>
 #include <Storages/StorageURL.h>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+
+#include <fmt/ranges.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -166,6 +171,35 @@ void StorageObjectStorageConfiguration::initialize(
                 "The `compression_method` argument is not supported by data lake engines. "
                 "Data lake formats use their own internal compression codec; set it via the "
                 "format-specific setting (for example, `output_format_parquet_compression_method`) instead.");
+        }
+
+        /// Same reasoning for an explicit `format` that the lake cannot store its data files in.
+        /// A `DeltaLake` table written with, say, `format = 'RowBinary'` is corrupted for good:
+        /// the file is committed into the Delta log as an ordinary data file, and every reader -
+        /// including ClickHouse itself - parses it as `Parquet`, because the log records no
+        /// per-file format. Reading with such a format is worse still: it silently returns
+        /// garbage rows instead of throwing.
+        /// `auto` is left alone here - it is resolved to the lake's default below.
+        if (mode == LoadingStrictnessLevel::CREATE
+            && !is_restore_from_backup
+            && configuration_to_initialize.format != "auto")
+        {
+            const auto supported_formats = configuration_to_initialize.getSupportedDataLakeFormats();
+            const auto is_supported = std::any_of(
+                supported_formats.begin(),
+                supported_formats.end(),
+                [&](const auto & supported) { return boost::iequals(supported, configuration_to_initialize.format); });
+
+            if (!supported_formats.empty() && !is_supported)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The `{}` format is not supported by the {} data lake engine, which stores its data files as {}. "
+                    "Accepting it would write data files that no reader of this table format can parse.",
+                    configuration_to_initialize.format,
+                    configuration_to_initialize.getEngineName(),
+                    fmt::join(supported_formats, ", "));
+            }
         }
     }
     else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
