@@ -24,9 +24,8 @@ const CacheResolution * cellCovering(const PlanTier & tier, size_t off)
     return nullptr;
 }
 
-/// The smallest offset >= `from` this tier can serve (a hit run, or the committed prefix of a miss
-/// segment), or `span_end` when nothing at or after `from` is served - the point a FETCH run must stop
-/// so it never overruns bytes a tier already holds.
+/// The smallest offset >= `from` this tier can serve (a hit, or a miss's committed prefix), else
+/// `span_end` - where a FETCH must stop so it never overruns bytes a tier already holds.
 size_t firstServableAtOrAfter(const PlanTier & tier, size_t from, size_t span_end)
 {
     for (const auto & cell : tier.cells)
@@ -36,10 +35,8 @@ size_t firstServableAtOrAfter(const PlanTier & tier, size_t from, size_t span_en
         const size_t base = std::max(cell.range.offset, from);
         if (cell.kind == CacheResolution::Kind::Hit && cell.reader)
             return base;
-        /// A miss segment's committed prefix is `[cell.range.offset, committed())`; `base` falls in it
-        /// (and is servable from the writer) when the frontier is past `base`.
         if (cell.kind == CacheResolution::Kind::Miss && cell.writer && cell.writer->committed() > base)
-            return base;
+            return base;   /// `base` is inside the committed prefix `[cell.offset, committed())`
     }
     return span_end;
 }
@@ -53,8 +50,7 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
     if (offset < span_start || offset >= span_end)
         return run;
 
-    /// The executor-local memory hold (already-fetched bytes no tier accepted) is the fastest source:
-    /// serve it before any tier, up to its first gap (a gap means the next bytes are cached).
+    /// Memory hold (already fetched, no tier took it) is fastest - serve to its first gap.
     if (!memory.empty() && memory.covers(ByteRange{offset, 1}))
     {
         size_t end = memory.range().end();
@@ -65,7 +61,7 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         return run;
     }
 
-    /// Fastest tier that serves `offset`: a hit reader, or a miss segment already committed here.
+    /// Fastest tier serving `offset`: a hit reader, or a miss committed here (served from its writer).
     for (const auto & tier : tiers)
     {
         const CacheResolution * cell = cellCovering(tier, offset);
@@ -79,8 +75,6 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         }
         if (cell->kind == CacheResolution::Kind::Miss && cell->writer)
         {
-            /// `offset` is inside the committed prefix `[cell.range.offset, committed())` (its start is
-            /// covered by `cellCovering`), so the writer can serve `[offset, committed())` from cache.
             const size_t committed = cell->writer->committed();
             if (offset < committed)
             {
@@ -91,22 +85,17 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         }
     }
 
-    /// FETCH: no tier serves `offset`. The extent covers what one source read must pull to serve
-    /// `offset` and fill the segment(s) covering it:
-    ///  - right: coalesce forward to the nearest offset any tier already holds (so one read fills
-    ///    several cells and never re-reads a resident block), capped at `max_fetch_ahead` (the window).
-    ///  - left: down to the committed frontier of each populating segment covering `offset` - an
-    ///    incremental segment fills append-only from its frontier (its start when virgin), below
-    ///    `offset` when the read opens mid-segment; a whole-segment tier's frontier is its cell start.
-    ///  - whole cells: a whole-segment cell is populated only by a full-cell write, so the fetch must
-    ///    fully cover EVERY whole-segment miss cell it enters, not just the head - else a cell the fetch
-    ///    stops inside gets a partial (rejected) write and is never cached (re-read on the next window).
+    /// FETCH: the single source read that serves `offset` and fills the covering segments.
+    /// Right: coalesce to the nearest resident offset (one read fills several cells, never re-reads a
+    /// resident block), capped at the window.
     size_t fetch_end = span_end;
     for (const auto & tier : tiers)
         fetch_end = std::min(fetch_end, firstServableAtOrAfter(tier, offset, span_end));
     if (max_fetch_ahead < span_end - offset)
         fetch_end = std::min(fetch_end, offset + max_fetch_ahead);
 
+    /// Left: down to the committed frontier of each populating segment covering `offset` - below
+    /// `offset` when the read opens mid-segment (an incremental segment fills from its frontier).
     size_t fetch_start = offset;
     for (const auto & tier : tiers)
     {
@@ -117,9 +106,9 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
             fetch_start = std::min(fetch_start, cell->writer->committed());
     }
 
-    /// Extend to the end of any whole-segment miss cell the fetch straddles (its end even past
-    /// `span_end` - source always has it; cells never cross an object boundary). Each step lands on a
-    /// cell boundary, so the fixpoint converges (in practice one whole-segment tier, one step).
+    /// A whole-segment cell is populated only whole, so cover EVERY one the fetch enters (else a cell it
+    /// stops inside gets a rejected partial write and is re-read later). Fixpoint - converges on a
+    /// boundary; its end may pass `span_end` (source has it; cells never cross an object).
     for (bool grew = true; grew;)
     {
         grew = false;
@@ -169,14 +158,12 @@ void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolve
 {
     if (tiers.empty())
     {
-        /// First span after `reset`: adopt the tier list (metadata + cells), fastest-first. `span_start`
-        /// was set by `reset`; a leading cell may overhang below it (segment rounding), which is fine.
-        tiers = std::move(resolved);
+        tiers = std::move(resolved);   /// first span after `reset`: adopt the tier list, fastest-first
     }
     else
     {
-        /// Append each provider's new cells to its tier, dropping any that start before the already-held
-        /// end (a segment overhanging the previous sub-span is re-returned by the next `resolve`).
+        /// Append each tier's new cells, dropping any starting before its held end (a segment
+        /// overhanging the previous sub-span is re-returned by the next `resolve`).
         for (size_t i = 0; i < tiers.size() && i < resolved.size(); ++i)
         {
             size_t held_end = tiers[i].cells.empty() ? span_start : tiers[i].cells.back().range.end();

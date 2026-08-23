@@ -419,10 +419,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve)
     /// Serve one block from `pos`, capped by the window and by the run's contiguous extent.
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - pos}); };
 
-    /// `ensureResolved` catches up the plan to `pos` (resets on a jump, else retires anything a forward
-    /// jump skipped) and grows the look-ahead. The plan then decides the run: memory hold (already
-    /// fetched, no tier took it), a hit, a committed writer, or a source fetch. `max_serve` bounds a
-    /// FETCH extent to the window.
+    /// Catch the plan up to `pos` and grow the look-ahead; then it decides the run.
     ensureResolved(pos);
 
     const ReadPlan::PlanRun run = read_plan.runAt(pos, max_serve);
@@ -436,8 +433,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve)
     else
         out = fetchFillServe(pos, run.range, max_serve);
 
-    /// Eagerly retire what we just served - its cache pins and memory hold are freed now, not one window
-    /// later. The served bytes are independently owned by `out`, so dropping the plan's refs is safe.
+    /// Eagerly retire what we served, freeing its pins and memory hold now (`out` owns its bytes).
     if (!out.empty())
         read_plan.retireBefore(pos + out.totalBytes());
     return out;
@@ -447,24 +443,20 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
 {
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - pos}); };
 
-    /// `fetch_range` is the whole source-read extent `ReadPlan::runAt` decided: coalesced right (capped
-    /// at the window) and extended left to the covering segments' fill frontiers. We read it once, fill
-    /// the tiers it spans, and serve one block from `pos`.
+    /// `fetch_range` is the whole source-read extent `runAt` decided; read it once, fill the tiers it
+    /// spans, serve one block from `pos`.
     if (fetch_range.size == 0)
         return {};
 
     const auto writers = read_plan.writersFor(fetch_range);
 
-    /// No populating tier over the extent (all bypass): read it whole from source and serve it - nothing
-    /// is cached inside, so there is no waste.
+    /// All bypass (no populating tier): read the extent whole from source and serve it.
     if (writers.empty())
         return readSource(fetch_range.offset, fetch_range.size);
 
-    /// One pass over the tiers (fastest-first), resolving the head (`pos`) inline before any source read.
-    /// For the tier covering `pos`: if its committed prefix already reaches `pos` (filled since resolve),
-    /// serve from it; else if a concurrent downloader leads it (no claim), wait once and serve from cache
-    /// if it lands. Every populating tier contributes its download claim. Only after the pass, if nobody
-    /// served the head, do we fetch from source. One iteration - a wait that misses just falls through.
+    /// One pass over the writers (fastest-first) resolving the head inline: serve `pos` from a committed
+    /// prefix; else if a concurrent downloader leads it, wait once and serve from cache if it lands; else
+    /// take the download claim to fill below. A missed wait just falls through to the source read.
     struct Claimed { CacheWriter * writer; CacheWriter::Claim claim; };
     VectorWithMemoryTracking<Claimed> claimed;
     for (auto * writer : writers)
@@ -482,16 +474,15 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
         claimed.push_back({writer, std::move(claim)});
     }
 
-    /// One source read of the whole extent. With two populating layers, where `runAt` widened the extent
-    /// to complete an upper whole-segment cell a slower tier may already hold the middle/tail; we re-read
-    /// those from source rather than splice them from that tier - correctness over fewest source bytes on
-    /// this non-production multi-layer path.
+    /// One source read of the whole extent. (With two populating layers a slower tier may already hold
+    /// part of a widened whole-segment cell; we re-read it rather than splice - correctness over fewest
+    /// source bytes on that non-production path.)
     ChainedBuffers fetched = readSource(fetch_range.offset, fetch_range.size);
     const size_t fetched_end = fetched.empty() ? fetch_range.offset : fetched.range().end();
 
-    /// Populate the tiers we hold and record what each cache ACCEPTED - its committed prefix after the
-    /// write. `write` can reject bytes (no disk space, a reservation failure, a whole-segment cell not
-    /// fully covered) and `committed()` reflects exactly what landed, so the rest is what we must keep.
+    /// Fill the tiers we hold, and record what each cache ACCEPTED via `committed()` - `write` can reject
+    /// bytes (no disk space, reservation failure, a whole-segment cell not fully covered), so the rest is
+    /// what we must keep in memory.
     IntervalSet cached;
     for (auto & c : claimed)
     {
@@ -517,9 +508,8 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
         c.claim.reset();
     }
 
-    /// Serve one block now, and hand the un-served bytes no tier accepted (a read-only or detached tier,
-    /// or a rejected write) to the plan's memory hold - served on later windows, freed as the cursor
-    /// passes. A cold read whose writes all land holds nothing.
+    /// Serve one block; hand the un-served bytes no tier accepted to the memory hold. A cold read whose
+    /// writes all land holds nothing.
     const size_t serve_bytes = serve_len(fetched_end);
     const ByteRange unserved{pos + serve_bytes, fetched_end - pos - serve_bytes};
     ChainedBuffers rejected;

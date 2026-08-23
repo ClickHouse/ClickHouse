@@ -188,18 +188,14 @@ private:
     /// The single source-read entry point; spans object boundaries via `OffsetMap::map`. A
     /// known-size short read is truncation and throws.
     ChainedBuffers readSource(size_t file_offset, size_t want);
-    /// Serve one block at `pos` through the held `ReadPlan`: retire the consumed prefix, resolve the
-    /// look-ahead span if needed, then serve from the tier the plan reports - a hit/committed reader,
-    /// or a coalesced fetch from source that populates the miss run. Precondition: `!cache_chain.empty()`.
+    /// Serve one block at `pos` through the held `ReadPlan` (the plan reports memory hold / hit /
+    /// committed writer / fetch). Precondition: `!cache_chain.empty()`.
     ChainedBuffers readThroughCaches(size_t pos, size_t max_serve);
-    /// Grow `read_plan` forward to cover `[pos, pos + plan_look_ahead)` (clamped to the file end),
-    /// resolving each provider one object-piece at a time. Rebuilds from `pos` on a seek or gap.
+    /// Grow `read_plan` forward to cover `[pos, pos + plan_look_ahead)` (clamped to the file end);
+    /// rebuilds from `pos` on a seek or gap.
     void ensureResolved(size_t pos);
-    /// Serve one block from `pos` out of a FETCH run. `fetch_range` is the full source-read extent
-    /// `ReadPlan::runAt` decided (coalesced right, extended left to the covering segments' fill
-    /// frontiers). If a concurrent downloader already committed `pos`, serve from that tier; if one leads
-    /// the head, wait for it and serve from its cache. Otherwise read `fetch_range` from source once,
-    /// populate the tiers we hold the role for, and serve. No populating tier means serve from source.
+    /// Serve one block from `pos` out of a FETCH run: read `fetch_range` from source once, fill the
+    /// tiers it spans, hold what no tier accepted, and serve. (Details in the definition.)
     ChainedBuffers fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve);
     void dropLongConnection();
 

@@ -10,10 +10,8 @@
 namespace DB
 {
 
-/// One cache tier's resolution over the plan span, held across serves: the tier's cells in offset
-/// order (a hit owns a reader, a populating miss owns a writer), tiling `[ReadPlan::spanStart,
-/// ReadPlan::resolvedEnd)`. `populates` mirrors `ICacheProvider::populatesOnMiss` - a bypass tier
-/// contributes hits but never write targets.
+/// One tier's cells over the span, in offset order (a hit owns a reader, a populating miss a writer).
+/// `populates` mirrors `ICacheProvider::populatesOnMiss` - a bypass tier gives hits, never writers.
 struct PlanTier
 {
     CacheTier tier{};
@@ -21,25 +19,17 @@ struct PlanTier
     VectorWithMemoryTracking<ICacheProvider::CacheResolution> cells;
 };
 
-/// A resolved multi-tier view of a look-ahead span that PERSISTS across serves. The executor resolves
-/// the cache residency once, holds the pinned hit-readers and miss-writers here, grows the span on the
-/// right (`extend`) and drops the consumed prefix on the left (`retireBefore`) as the cursor advances -
-/// so a read serves one block per window without re-`resolve`-ing every window and reuses the same
-/// pins across serves.
-///
-/// It only DESCRIBES residency: `at` says which tier serves an offset and how far. It never fetches or
-/// coordinates downloads - on a miss the executor fetches from source and populates `writersFor`, so
-/// the claim / concurrent-download logic stays in one place. Not thread-safe; one instance per
-/// executor. (The later prefetch slice fills the held writers ahead of the cursor - each writer is
-/// individually locked - without changing this interface.)
+/// A multi-tier view of a look-ahead span, held across serves: resolve the cache residency once, keep
+/// the pinned hit-readers and miss-writers, grow right (`extend`) and retire the consumed prefix left
+/// (`retireBefore`) as the cursor advances - so each window serves without re-resolving. It only
+/// DESCRIBES residency (`runAt`); the executor does the fetching and download coordination. Not
+/// thread-safe; one instance per executor.
 class ReadPlan
 {
 public:
-    /// The merged, fastest-tier-wins run covering `offset` - the "universal plan" query. Served for
-    /// `[offset, range.end())` by exactly one of: `from_memory` (executor-local held bytes - see
-    /// `readMemory`), a hit `reader`, a committed miss `writer`, or - a FETCH run (all unset) - a source
-    /// read of the contiguous extent no tier serves, coalesced across cells and tiers up to the nearest
-    /// offset a tier holds so one read fills several segments and never overruns a resident block.
+    /// The run serving `[offset, range.end())`, from exactly one source: `from_memory` (executor-local
+    /// held bytes, see `readMemory`), a hit `reader`, a committed miss `writer`, or a FETCH (all unset) -
+    /// a source read of the extent no tier serves.
     struct PlanRun
     {
         ByteRange range{};
@@ -54,24 +44,20 @@ public:
     size_t resolvedEnd() const { return span_end; }
     bool coversForward(size_t offset) const { return offset >= span_start && offset < span_end; }
 
-    /// The merged run at `offset`. A FETCH run's range is the full source-read extent: coalesced right
-    /// (capped at `max_fetch_ahead`) and extended left to the covering segments' committed frontiers
-    /// (below `offset` when a segment must be filled from before it). CACHE runs ignore the cap.
+    /// The run at `offset` (see `PlanRun`); a FETCH extent is capped at `max_fetch_ahead` (the window),
+    /// other runs ignore it.
     PlanRun runAt(size_t offset, size_t max_fetch_ahead = std::numeric_limits<size_t>::max()) const;
 
-    /// The populating tiers' writers overlapping `range` - the write-up targets for one source read
-    /// of a FETCH run (several cells across tiers filled from one read). Each writer reports its own
-    /// segment discipline via `CacheWriter::fillsWholeSegment`.
+    /// The populating tiers' writers overlapping `range` - the write-up targets for one FETCH read.
     VectorWithMemoryTracking<CacheWriter *> writersFor(ByteRange range) const;
 
     /// Append the resolution of `[resolvedEnd(), new_end)`. `resolved` is one `PlanTier` per provider,
     /// fastest-first, matching the existing tier order (and set on the first call).
     void extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolved);
 
-    /// The executor-local memory hold: bytes a fetch pulled that no tier accepted (a read-only or
-    /// detached segment, or a rejected write). `hold` keeps them (served by a `from_memory` run);
-    /// `readMemory` serves a sub-range; the hold is freed as `retireBefore` passes it. Out of the tier
-    /// hierarchy - a fallback so already-fetched bytes are never re-read.
+    /// The executor-local memory hold - fetched bytes no tier accepted (read-only / detached / rejected
+    /// write). `hold` keeps them (served by a `from_memory` run), `readMemory` serves a sub-range; freed
+    /// as `retireBefore` passes them, so already-fetched bytes are never re-read.
     void hold(ChainedBuffers bytes);
     ChainedBuffers readMemory(ByteRange range) const;
 
