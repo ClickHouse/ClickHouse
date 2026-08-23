@@ -124,6 +124,7 @@ Paramètres :
 * `oneline` – Affiche la requête sur une seule ligne. Valeur par défaut : `0`.
 * `run_query_tree_passes` – Exécute les passes de l&#39;arbre de requête avant d&#39;en produire le dump. Valeur par défaut : `0`.
 * `query_tree_passes` – Si `run_query_tree_passes` est défini, indique combien de passes exécuter. Si `query_tree_passes` n&#39;est pas spécifié, toutes les passes sont exécutées.
+* `single_record` – Renvoie la requête reformatée sous la forme d&#39;un seul enregistrement sur plusieurs lignes au lieu d&#39;un enregistrement par ligne. Valeur par défaut : `1` (contrôlée par le paramètre `explain_syntax_single_record`). Définissez cette valeur sur `0` pour restaurer la sortie historique avec un enregistrement par ligne, ou définissez `explain_syntax_single_record = 0` (globalement ou dans `SETTINGS` par requête), ou définissez `compatibility` sur toute version antérieure à `26.8`.
 
 Exemples :
 
