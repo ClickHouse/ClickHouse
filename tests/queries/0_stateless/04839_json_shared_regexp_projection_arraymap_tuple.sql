@@ -57,3 +57,83 @@ FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='arraymap_notnull_04839' AND name = 'p' AND column LIKE 'arrayMap%' AND active;
 
 DROP TABLE arraymap_notnull_04839;
+
+-- A transparent wrapper *inside* a member access must not hide the member: mapValues(materialize(m))
+-- names `m.values`, not the whole `m`, whose Map shape no longer aligns with the Array(JSON) output.
+DROP TABLE IF EXISTS mapvalues_wrapped_04839;
+CREATE TABLE mapvalues_wrapped_04839
+(
+    id UInt64,
+    m Map(String, JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_'))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO mapvalues_wrapped_04839 VALUES (1, {'k': '{"tag_x":1}'});
+
+ALTER TABLE mapvalues_wrapped_04839 MODIFY COLUMN m Map(String, JSON(max_dynamic_paths=5));
+
+ALTER TABLE mapvalues_wrapped_04839
+    ADD PROJECTION p (SELECT id, mapValues(materialize(m)) WHERE id > 0 ORDER BY id);
+ALTER TABLE mapvalues_wrapped_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+SELECT 'wrapped member base keeps the values rule',
+       countIf(position(type, '^tag_') > 0)
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='mapvalues_wrapped_04839' AND name = 'p' AND column LIKE 'mapValues%' AND active;
+
+DROP TABLE mapvalues_wrapped_04839;
+
+-- A scalar lambda output reads one member of the bound element, so the donor is `arr.doc`. Donating
+-- the whole `arr` would leave two JSON siblings to choose from and drop the rule instead.
+DROP TABLE IF EXISTS arraymap_scalar_member_04839;
+CREATE TABLE arraymap_scalar_member_04839
+(
+    id UInt64,
+    arr Array(Tuple(doc JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_'), other JSON(max_dynamic_paths=5, SHARED REGEXP '^oth_')))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO arraymap_scalar_member_04839 VALUES (1, [('{"tag_x":1}', '{"oth_y":2}')]);
+
+ALTER TABLE arraymap_scalar_member_04839
+    MODIFY COLUMN arr Array(Tuple(doc JSON(max_dynamic_paths=5), other JSON(max_dynamic_paths=5)));
+
+ALTER TABLE arraymap_scalar_member_04839
+    ADD PROJECTION p (SELECT id, arrayMap(x -> tupleElement(x, 'doc'), arr) WHERE id > 0 ORDER BY id);
+ALTER TABLE arraymap_scalar_member_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+SELECT 'scalar lambda output keeps only its own member rule',
+       countIf(position(type, '^tag_') > 0 AND position(type, '^oth_') = 0)
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='arraymap_scalar_member_04839' AND name = 'p' AND column LIKE 'arrayMap%' AND active;
+
+DROP TABLE arraymap_scalar_member_04839;
+
+-- The bound source of a slot-wise reconstruction can itself be member-qualified: `tupleElement(t, 'arr')`
+-- must contribute `t.arr.doc`, not be dropped for failing a bare-identifier check.
+DROP TABLE IF EXISTS arraymap_qualified_source_04839;
+CREATE TABLE arraymap_qualified_source_04839
+(
+    id UInt64,
+    t Tuple(arr Array(Tuple(doc JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_'), n UInt8)))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO arraymap_qualified_source_04839 VALUES (1, ([('{"tag_x":1}', 1)]));
+
+ALTER TABLE arraymap_qualified_source_04839
+    MODIFY COLUMN t Tuple(arr Array(Tuple(doc JSON(max_dynamic_paths=5), n UInt8)));
+
+ALTER TABLE arraymap_qualified_source_04839
+    ADD PROJECTION p (SELECT id, arrayMap(x -> tuple(tupleElement(x, 'doc'), 1), tupleElement(t, 'arr')) WHERE id > 0 ORDER BY id);
+ALTER TABLE arraymap_qualified_source_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+SELECT 'member-qualified lambda source keeps the doc rule',
+       countIf(position(type, '^tag_') > 0)
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='arraymap_qualified_source_04839' AND name = 'p' AND column LIKE 'arrayMap%' AND active;
+
+DROP TABLE arraymap_qualified_source_04839;
