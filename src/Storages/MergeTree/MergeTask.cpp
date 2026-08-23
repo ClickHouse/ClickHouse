@@ -910,6 +910,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
 
+    const UInt64 max_uniq_number_for_low_cardinality
+        = (*merge_tree_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality];
+
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
     for (const auto & part : global_ctx->future_part->parts)
@@ -919,13 +922,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// `SerializationInfoByName` creates entries only for columns eligible for sparse
         /// serialization. Add an entry only when a source part is already automatically encoded,
         /// so a merge preserves the kind without adding metadata to unrelated String columns.
-        for (const auto & [name, info] : part_infos)
+        /// With the feature disabled the entry is not created either: the kind is dropped below.
+        if (max_uniq_number_for_low_cardinality != 0)
         {
-            if (!infos.contains(name)
-                && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+            for (const auto & [name, info] : part_infos)
             {
-                if (const auto column = global_ctx->storage_columns.tryGetByName(name))
-                    infos.emplace(name, column->type->createSerializationInfo(info_settings));
+                if (!infos.contains(name)
+                    && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+                {
+                    if (const auto column = global_ctx->storage_columns.tryGetByName(name))
+                        infos.emplace(name, column->type->createSerializationInfo(info_settings));
+                }
             }
         }
 
@@ -951,11 +958,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// The statistics that have to be rebuilt during the merge are not accounted here (they are not
     /// calculated yet), so the estimate can be lower than the real cardinality of the result part; the
     /// choice is a heuristic and does not affect correctness.
+    /// When the threshold is zero the feature is disabled, and the merge also drops the kind inherited
+    /// from the source parts, so that the encoding is rolled back on the next `OPTIMIZE`.
+    if (max_uniq_number_for_low_cardinality == 0)
+    {
+        removeAutomaticLowCardinalityKind(infos, global_ctx->storage_columns);
+    }
+    else
     {
         auto low_cardinality_candidates = chooseColumnsForAutomaticLowCardinality(
             global_ctx->storage_columns,
             global_ctx->gathered_data.statistics,
-            (*merge_tree_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality]);
+            max_uniq_number_for_low_cardinality);
 
         appendAutomaticLowCardinalityKind(infos, global_ctx->storage_columns, low_cardinality_candidates, info_settings);
     }

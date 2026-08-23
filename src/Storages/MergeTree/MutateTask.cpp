@@ -924,7 +924,6 @@ getColumnsForNewDataPart(
     const UInt64 max_uniq_number_for_low_cardinality
         = (*source_part->storage.getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality];
 
-    if (max_uniq_number_for_low_cardinality != 0)
     {
         NamesAndTypesList rewritten_columns;
         for (const auto & column : storage_columns)
@@ -933,12 +932,21 @@ getColumnsForNewDataPart(
                 rewritten_columns.push_back(column);
         }
 
-        /// The statistics are those of the source part: a mutation that changes the values of the column
-        /// makes them stale, which can only make the choice suboptimal, never incorrect.
-        auto low_cardinality_candidates = chooseColumnsForAutomaticLowCardinality(
-            rewritten_columns, source_part->loadStatistics(), max_uniq_number_for_low_cardinality);
+        if (max_uniq_number_for_low_cardinality == 0)
+        {
+            /// The feature is disabled: drop the kind inherited from the source part, so that setting the
+            /// threshold back to zero and running `ALTER TABLE ... REWRITE PARTS` rolls the encoding back.
+            removeAutomaticLowCardinalityKind(new_serialization_infos, rewritten_columns);
+        }
+        else
+        {
+            /// The statistics are those of the source part: a mutation that changes the values of the column
+            /// makes them stale, which can only make the choice suboptimal, never incorrect.
+            auto low_cardinality_candidates = chooseColumnsForAutomaticLowCardinality(
+                rewritten_columns, source_part->loadStatistics(), max_uniq_number_for_low_cardinality);
 
-        appendAutomaticLowCardinalityKind(new_serialization_infos, rewritten_columns, low_cardinality_candidates, settings);
+            appendAutomaticLowCardinalityKind(new_serialization_infos, rewritten_columns, low_cardinality_candidates, settings);
+        }
     }
 
     /// In compact parts we read all columns, because they all stored in a single file

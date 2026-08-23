@@ -56,4 +56,30 @@ void appendAutomaticLowCardinalityKind(
     }
 }
 
+
+void removeAutomaticLowCardinalityKind(
+    SerializationInfoByName & infos,
+    const NamesAndTypesList & columns)
+{
+    for (const auto & column : columns)
+    {
+        auto it = infos.find(column.name);
+        if (it == infos.end())
+            continue;
+
+        const auto & kind_stack = it->second->getKindStack();
+        if (!ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY))
+            continue;
+
+        ISerialization::KindStack new_kind_stack;
+        for (auto kind : kind_stack)
+        {
+            if (kind != ISerialization::Kind::LOW_CARDINALITY)
+                new_kind_stack.push_back(kind);
+        }
+
+        it->second->setKindStack(std::move(new_kind_stack));
+    }
+}
+
 }

@@ -228,7 +228,10 @@ The decision is made every time a part is written: on `INSERT`, on merges and on
 mutations. Enabling this setting on a table that already has data upgrades the existing parts on their
 next merge or rewrite.
 
-A value of `0` disables automatic `LowCardinality` serialization.
+A value of `0` disables automatic `LowCardinality` serialization: no new part is encoded, and a merge or a
+rewrite of an already encoded part drops the encoding, so setting it back to `0` and running
+`OPTIMIZE TABLE ... FINAL` or `ALTER TABLE ... REWRITE PARTS` rolls the table back to the plain
+representation.
 )", 0) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
 If the file name for column is too long (more than 'max_file_name_length'
