@@ -172,8 +172,7 @@ TEST(SaturatedWaitDuration, ConcurrentBoundedQueuePopKeepsHugeTimeout)
 
 TEST(SaturatedWaitDuration, ConcurrentBoundedQueuePushKeepsHugeTimeout)
 {
-    /// Same for emplaceImpl on a full queue. Both *Impl functions convert, so both need a case or
-    /// one of the two edits is untested.
+    /// Same for emplaceImpl on a full queue: both *Impl functions convert, so each needs a case.
     for (uint64_t timeout_ms : {uint64_t{9'223'372'036'854}, std::numeric_limits<uint64_t>::max()})
     {
         SCOPED_TRACE(timeout_ms);
