@@ -844,11 +844,14 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
     node->children = std::move(node->children[0]->children);
 }
 
-/// True if `column_name` is produced by `dag` as the unchanged input column of the same name (only
-/// possibly aliased). Such a column keeps its value, so a merge by it stays sort-preserving.
+/// True if `column_name` reaches the step's output with its value unchanged, so a merge by it stays
+/// sort-preserving. A column the `dag` does not mention is preserved: the step forwards it untouched.
+/// A column the `dag` does mention is preserved only if it is the input column of the same name.
 static bool isSortColumnPreserved(const ActionsDAG & dag, const String & column_name)
 {
-    const auto * node = &dag.findInOutputs(column_name);
+    const auto * node = dag.tryFindInOutputs(column_name);
+    if (!node)
+        return true;
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.front();
     return node->type == ActionsDAG::ActionType::INPUT && node->result_name == column_name;

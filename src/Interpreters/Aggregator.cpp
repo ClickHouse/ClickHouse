@@ -1373,11 +1373,14 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     auto emplace = [&](size_t row)
     {
         // For some methods we simply don't have a set counterpart, so a map method is used.
-        // Thus we have to set a `mapped` even though it will be unused.
+        // Thus we have to set a `mapped` even though nothing reads it. Only the row that creates the
+        // cell has to: for a key that is already there the cell holds the same sentinel, and writing it
+        // again is a store into a random place of the table on every row.
         if constexpr (State::has_mapped)
         {
             auto emplace_result = state.emplaceKey(method.data, row, *aggregates_pool);
-            emplace_result.setMapped(place);
+            if (emplace_result.isInserted())
+                emplace_result.setMapped(place);
             return emplace_result;
         }
         else

@@ -504,6 +504,9 @@ void optimizeTreeSecondPass(
             if (optimization_settings.distinct_partitions_independently)
                 optimizeDistinctPerPartition(frame_node, nodes, optimization_settings);
 
+            if (optimization_settings.creating_set_partitions_independently)
+                optimizeCreatingSetPerPartition(frame_node, nodes, optimization_settings);
+
             /// Skip when Cascades is enabled: it treats sorting as a physical property and
             /// strips `SortingStep::Full`, which this heuristic would otherwise rewrite to
             /// `FinishSorting` first.
