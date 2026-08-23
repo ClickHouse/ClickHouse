@@ -1227,7 +1227,8 @@ void MergeTreeData::checkProperties(
             if (projections_names.size() >= (*settings)[MergeTreeSetting::max_projections])
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections].value);
 
-            /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
+            /// A projection body cannot be altered (`MODIFY PROJECTION` replaces settings only and is
+            /// re-validated here as part of the new metadata), so we do not look it up in the old metadata.
             bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
             checkProperties(
                 *projection.metadata,
@@ -1237,14 +1238,6 @@ void MergeTreeData::checkProperties(
                 true /* allow_nullable_key */,
                 local_context);
 
-            if (!canUseAdaptiveGranularity() && projection.has_index_granularity_overrides)
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
-                    "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
-                    projection.name);
-            }
             projections_names.insert(projection.name);
         }
     }
@@ -1352,6 +1345,18 @@ void MergeTreeData::checkProperties(
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
+                projection.name);
+
+        /// A single `ALTER` may both add a projection granularity override and switch the table to fixed granularity
+        /// (`MODIFY`/`RESET SETTING index_granularity_bytes`), or switch to fixed granularity under a pre-existing override.
+        const bool effective_can_use_adaptive_granularity = effective_settings[MergeTreeSetting::index_granularity_bytes] != 0
+            && (effective_settings[MergeTreeSetting::enable_mixed_granularity_parts] || !has_non_adaptive_index_granularity_parts);
+
+        if (projection.has_index_granularity_overrides && !effective_can_use_adaptive_granularity)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
+                "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
                 projection.name);
     }
 
@@ -5000,6 +5005,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             AlterCommand::RENAME_COLUMN,
             AlterCommand::ADD_PROJECTION,
             AlterCommand::DROP_PROJECTION,
+            AlterCommand::MODIFY_PROJECTION,
             AlterCommand::MODIFY_ORDER_BY,
             AlterCommand::MODIFY_SAMPLE_BY,
         };
@@ -5543,6 +5549,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             if (!is_custom_partitioned)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ADD PROJECTION is not supported for tables with the old syntax");
+        }
+        if (command.type == AlterCommand::MODIFY_PROJECTION)
+        {
+            if (!is_custom_partitioned)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER MODIFY PROJECTION is not supported for tables with the old syntax");
         }
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
