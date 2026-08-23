@@ -1219,9 +1219,9 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
     [[maybe_unused]] AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
 
-    /// Every row of the range goes through `emplaceKey` below and `commitKeyBatch` follows, so a
-    /// method that can prepare the whole block's keys at once may do so.
-    state.enableKeyBatch();
+    /// The loops below go through the block's rows in order, which is all a method needs to prepare
+    /// their keys ahead of them.
+    state.enableKeyRegion();
 
     auto emplace = [&](size_t row)
     {
@@ -1236,7 +1236,6 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     if (all_keys_are_const)
     {
         emplace(0);
-        state.commitKeyBatch(method.data);
         return;
     }
 
@@ -1257,8 +1256,6 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 
         emplace(i);
     }
-
-    state.commitKeyBatch(method.data);
 }
 
 /// A set method has no aggregate states at all, so the batch never gets past registering the keys.
@@ -1454,6 +1451,10 @@ void NO_INLINE Aggregator::executeImplBatch(
     }
 
     state.resetCache();
+
+    /// The loop below goes through the block's rows in order, which is all a method needs to prepare
+    /// their keys ahead of it.
+    state.enableKeyRegion();
 
     /// For all rows.
     if (!no_more_keys)
@@ -4310,12 +4311,10 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     if (!arena_for_keys)
         arena_for_keys = aggregates_pool;
 
-    state.enableKeyBatch();
+    state.enableKeyRegion();
 
     for (size_t i = row_begin; i < row_end; ++i)
         state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
-
-    state.commitKeyBatch(data);
 }
 
 template <typename State, typename Table>

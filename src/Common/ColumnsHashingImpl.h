@@ -243,6 +243,10 @@ public:
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
                 const auto & hashes = derived.precomputed_hashes;
+                /// LOCAL EXPERIMENT ONLY
+                static const bool exp_check = std::getenv("CH_SER_CHECK") != nullptr;
+                if (exp_check && hashes[row] != data.hash(keyHolderGetKey(key_holder)))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Precomputed hash does not match the key at row {}", row);
                 if (row + derived.prefetch_look_ahead < hashes.size())
                     data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
                 return emplaceImpl<false>(key_holder, data, hashes[row], row);
@@ -312,12 +316,18 @@ public:
                 else
                     return FindResult(false, 0);
             }
-            return findKeyImpl(keyHolderGetKey(key_holder), data);
+            auto result = findKeyImpl(keyHolderGetKey(key_holder), data);
+            /// Nothing is inserted here, so a holder that took the key out of the arena has to give
+            /// it back - the same contract `emplace` follows for a key it does not keep.
+            keyHolderDiscardKey(key_holder);
+            return result;
         }
         else
         {
             auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-            return findKeyImpl(keyHolderGetKey(key_holder), data);
+            auto result = findKeyImpl(keyHolderGetKey(key_holder), data);
+            keyHolderDiscardKey(key_holder);
+            return result;
         }
     }
 
@@ -365,21 +375,15 @@ public:
         }
     }
 
-    /// Called by a loop that emplaces every row of a block and calls `commitKeyBatch` when it is
-    /// done. A method that can serialize the block's keys ahead of the loop overrides this to turn
-    /// that on - it is off by default, because a caller that only probes with the keys would never
-    /// reclaim what they took.
-    void enableKeyBatch() {}
+    /// Called by a loop that goes through the rows of a block in order. A method that can prepare
+    /// their keys ahead of the loop overrides this to turn that on - it is off by default, because a
+    /// caller that visits rows in any other order would make it prepare them over and over.
+    void enableKeyRegion() {}
 
     /// Called for every row that goes through `emplaceKey`. A method that materialises the block's
     /// keys upfront overrides this to learn which row ended up owning which cell.
     template <typename Data, typename LookupResult>
     void ALWAYS_INLINE onEmplaced(size_t, Data &, LookupResult, bool) {}
-
-    /// Called once the caller is done with the block. A method that materialises the block's keys
-    /// upfront overrides this to finalise them.
-    template <typename Data>
-    void commitKeyBatch(Data &) {}
 
 protected:
     Cache cache;

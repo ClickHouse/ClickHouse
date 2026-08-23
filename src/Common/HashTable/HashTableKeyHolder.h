@@ -73,6 +73,18 @@ namespace DB
   * ArenaKeyHolder is a key holder for hash tables that serializes a std::string_view
   * key to an Arena.
   */
+/// Where the key of an `ArenaKeyHolder` currently lives.
+enum class ArenaKeyPlacement : UInt8
+{
+    /// Somewhere temporary; persisting copies it into the arena.
+    NeedsCopy,
+    /// Already in the arena, in the place it will stay - a whole block serialized there at once.
+    /// Persisting keeps it as it is; a duplicate is dealt with by whoever laid the block out.
+    InArena,
+    /// The arena's last allocation: persisting keeps it, discarding gives it straight back.
+    ArenaTail,
+};
+
 struct ArenaKeyHolder
 {
     std::string_view key;
@@ -80,15 +92,17 @@ struct ArenaKeyHolder
     /// When key is not held by any external instance, then it is held by this unique_ptr.
     std::unique_ptr<char[]> holder{};
 
-    /// Set when the key already sits in the arena where it will stay - a whole block serialized
-    /// there at once - so persisting it must not copy it a second time.
-    bool prepared = false;
+    ArenaKeyPlacement placement = ArenaKeyPlacement::NeedsCopy;
 
-    ArenaKeyHolder(const std::string_view key_, Arena & pool_, std::unique_ptr<char[]> holder_ = {}, bool prepared_ = false)
+    ArenaKeyHolder(
+        const std::string_view key_,
+        Arena & pool_,
+        std::unique_ptr<char[]> holder_ = {},
+        ArenaKeyPlacement placement_ = ArenaKeyPlacement::NeedsCopy)
         : key(key_)
         , pool(pool_)
         , holder(std::move(holder_))
-        , prepared(prepared_)
+        , placement(placement_)
     {
     }
 };
@@ -102,7 +116,7 @@ inline std::string_view & ALWAYS_INLINE keyHolderGetKey(DB::ArenaKeyHolder & hol
 
 inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
 {
-    if (holder.prepared)
+    if (holder.placement != DB::ArenaKeyPlacement::NeedsCopy)
         return;
 
     // Normally, our hash table shouldn't ask to persist a zero key,
@@ -113,8 +127,12 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
     holder.key = std::string_view{holder.pool.insert(holder.key.data(), holder.key.size()), holder.key.size()};
 }
 
-inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeyHolder &)
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeyHolder & holder)
 {
+    /// The key was serialized straight onto the arena's head and nothing has been allocated since,
+    /// so a duplicate row costs the arena nothing.
+    if (holder.placement == DB::ArenaKeyPlacement::ArenaTail)
+        holder.pool.rollback(holder.key.size());
 }
 
 namespace DB
