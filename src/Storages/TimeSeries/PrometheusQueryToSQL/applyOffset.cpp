@@ -63,8 +63,11 @@ namespace
                     /// timestamp + INTERVAL x MILLISECONDS
                     chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
                     /// Round up the scale to next number divisible by 3.
-                    UInt32 scale = std::max<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
-                    Decimal64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale);
+                    UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
+                    /// The interval functions do not accept Decimal arguments, so the literal must be
+                    /// the integer number of units of 10^-scale seconds. The conversion is exact because
+                    /// scale >= timestamp_scale.
+                    Int64 scaled_offset_value = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
 
                     static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
                     std::string_view to_interval_function = to_interval_functions[scale / 3];
@@ -72,7 +75,7 @@ namespace
                     new_timestamp = makeASTFunction(
                         "plus",
                         make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value.value)));
+                        makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value)));
                 }
                 else
                 {
@@ -101,22 +104,29 @@ namespace
         UNREACHABLE();
     }
 
-    /// Applies setting a fixed evaluation time: <expression> @ 1609746000
+    /// Applies a fixed evaluation time: <expression> @ 1609746000, @ start(), or @ end()
     SQLQueryPiece setEvaluationTime(
         const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
     {
-        /// <expression> is expected to be calculated at a fixed evaluation time.
-        const auto expression_range = context.node_range_getter.get(offset_node->getExpression());
-        if (expression_range.start_time != expression_range.end_time)
+        /// A range vector already contains the samples evaluated at the fixed time. Keep its timestamps and, for a
+        /// subquery, its complete inner grid intact. A range-vector function will aggregate it at the fixed time.
+        if (expression.type == ResultType::RANGE_VECTOR)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Expression {} is expected to be calculated at a fixed evaluation time",
-                            getPromQLText(expression, context));
+            expression.node = offset_node;
+            return std::move(expression);
         }
 
         auto node_range = context.node_range_getter.get(offset_node);
         if (node_range.empty())
             return SQLQueryPiece{offset_node, offset_node->result_type, StoreMethod::EMPTY};
+
+        /// <expression> is expected to be calculated at a fixed evaluation time.
+        if (expression.start_time != expression.end_time)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Expression {} is expected to be calculated at a fixed evaluation time",
+                            getPromQLText(expression, context));
+        }
 
         expression.node = offset_node;
 
@@ -140,16 +150,6 @@ namespace
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
-                if (expression.type == ResultType::RANGE_VECTOR)
-                {
-                    /// A range vector (i.e. a subquery like `rate(x[1m])[30m:10s] @ 130`) must keep the samples of its
-                    /// fixed window intact - collapsing the grid to its first value here would throw the window away.
-                    /// `NodeEvaluationRangeGetter` has already planned the whole grid at the fixed evaluation time, and
-                    /// the range-vector function applied on top of this expression aggregates that fixed window before
-                    /// repeating the result across the query grid (see `applyFunctionOverRange`).
-                    return std::move(expression);
-                }
-
                 /// For scalar grid:
                 /// SELECT arrayResize([], <count_of_time_steps>, values[1])) AS values
                 /// FROM <scalar_grid>
@@ -187,10 +187,33 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// `RAW_DATA` always carries a range vector, and `NodeEvaluationRangeGetter` has already planned the
-                /// child range selector at the fixed evaluation time. Keep raw sample timestamps unchanged here so
-                /// range-vector functions can aggregate that fixed window first and then repeat the resulting value
-                /// across the outer query grid.
+                /// SELECT group,
+                ///        arrayJoin(timeSeriesRange(<start_time>, <end_time>, <step>)) AS timestamp,
+                ///        value
+                /// FROM <raw_data>
+                SelectQueryBuilder builder;
+
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+                auto new_timestamp = makeASTFunction(
+                    "arrayJoin",
+                    makeASTFunction(
+                        "timeSeriesRange",
+                        timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
+                        timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
+                        timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)));
+
+                new_timestamp->setAlias(ColumnNames::Timestamp);
+                builder.select_list.push_back(std::move(new_timestamp));
+
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+                auto & subqueries = context.subqueries;
+                subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);
+                builder.from_table = subqueries.back().name;
+
+                expression.select_query = builder.getSelectQuery();
+
                 return std::move(expression);
             }
         }
@@ -201,7 +224,7 @@ namespace
 
 SQLQueryPiece applyOffset(const PrometheusQueryTree::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
 {
-    if (offset_node->at_timestamp)
+    if (offset_node->hasAtModifier())
     {
         /// Set fixed evaluation time.
         return setEvaluationTime(offset_node, std::move(expression), context);

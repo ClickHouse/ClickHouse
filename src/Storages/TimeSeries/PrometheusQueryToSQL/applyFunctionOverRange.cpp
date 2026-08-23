@@ -46,6 +46,18 @@ namespace
         }
     }
 
+    /// Returns the fixed @ modifier directly applied to a range-vector argument, if any. Range-vector pieces keep
+    /// this node after setEvaluationTime(), so the fixed evaluation time can be resolved here without adding hidden
+    /// state to SQLQueryPiece.
+    const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & argument)
+    {
+        if (argument.type != ResultType::RANGE_VECTOR || !argument.node || argument.node->node_type != NodeType::Offset)
+            return nullptr;
+
+        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(argument.node);
+        return offset_node->hasAtModifier() ? offset_node : nullptr;
+    }
+
     struct ImplInfo
     {
         std::string_view ch_function_name;
@@ -175,27 +187,29 @@ SQLQueryPiece applyFunctionOverRange(
 
     auto argument = std::move(arguments[0]);
 
-    /// `<range_vector> @ <timestamp>` is evaluated once over its fixed window: `setEvaluationTime` (see
-    /// `applyOffset.cpp`) leaves the samples of a range vector intact, so the aggregation below has to run over that
-    /// fixed range and the single resulting value is then repeated across the query grid. This covers both a range
-    /// selector (`RAW_DATA`) and a subquery (`SCALAR_GRID` / `VECTOR_GRID`) under `@`.
-    std::optional<NodeEvaluationRange> fixed_argument_range;
-    if (argument.node->node_type == NodeType::Offset
-        && (argument.store_method == StoreMethod::RAW_DATA || argument.store_method == StoreMethod::SCALAR_GRID
-            || argument.store_method == StoreMethod::VECTOR_GRID))
-    {
-        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(argument.node);
-        if (offset_node->at_timestamp)
-            fixed_argument_range = context.node_range_getter.get(offset_node->getExpression());
-    }
+    const auto * fixed_at_node = getFixedAtModifier(argument);
+    auto aggregation_start_time = start_time;
+    auto aggregation_end_time = end_time;
+    auto aggregation_step = step;
 
-    const auto aggregation_start_time = fixed_argument_range ? fixed_argument_range->start_time : start_time;
-    const auto aggregation_end_time = fixed_argument_range ? fixed_argument_range->end_time : end_time;
-    const auto aggregation_step = fixed_argument_range ? fixed_argument_range->step : step;
+    if (fixed_at_node)
+    {
+        /// Under a fixed @ modifier the range function is evaluated once at the fixed timestamp, while the
+        /// range-vector argument retains its own inner grid.
+        const auto & fixed_range = context.node_range_getter.get(fixed_at_node->getExpression());
+        chassert(fixed_range.start_time == fixed_range.end_time);
+        aggregation_start_time = fixed_range.start_time;
+        aggregation_end_time = fixed_range.end_time;
+        aggregation_step = DurationType{0};
+    }
 
     SQLQueryPiece res = argument;
     res.node = node;
     res.type = ResultType::INSTANT_VECTOR;
+
+    const auto aggregation_grid_size = stepsInTimeSeriesRange(
+        aggregation_start_time, aggregation_end_time, aggregation_step);
+    const auto result_grid_size = stepsInTimeSeriesRange(start_time, end_time, step);
 
     bool has_group = false;
     ASTPtr timestamps;
@@ -306,12 +320,26 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    builder.select_list.push_back(addParametersToAggregateFunction(
+    auto aggregate_values = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
         timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
         timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
         timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type)));
+        timeSeriesDurationToAST(window, context.timestamp_data_type));
+
+    if (fixed_at_node)
+    {
+        /// A fixed @ expression is evaluated once by Prometheus. Repeat the single aggregate result on the outer
+        /// query grid instead of sliding the range function over the outer evaluation timestamps.
+        aggregate_values = makeASTFunction(
+            "arrayResize",
+            make_intrusive<ASTLiteral>(Array{}),
+            make_intrusive<ASTLiteral>(result_grid_size),
+            makeASTFunction(
+                "arrayElement", std::move(aggregate_values), make_intrusive<ASTLiteral>(aggregation_grid_size)));
+    }
+
+    builder.select_list.push_back(std::move(aggregate_values));
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
@@ -326,35 +354,9 @@ SQLQueryPiece applyFunctionOverRange(
     }
 
     res.select_query = builder.getSelectQuery();
-    res.start_time = aggregation_start_time;
-    res.end_time = aggregation_end_time;
-    res.step = aggregation_step;
-
-    if (fixed_argument_range)
-    {
-        SelectQueryBuilder repeat_builder;
-
-        if (has_group)
-            repeat_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-        auto new_values = makeASTFunction(
-            "arrayResize",
-            make_intrusive<ASTLiteral>(Array{}),
-            make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(start_time, end_time, step)),
-            makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
-
-        new_values->setAlias(ColumnNames::Values);
-        repeat_builder.select_list.push_back(std::move(new_values));
-
-        auto & subqueries = context.subqueries;
-        subqueries.emplace_back(subqueries.size(), std::move(res.select_query), SQLSubqueryType::TABLE);
-        repeat_builder.from_table = subqueries.back().name;
-
-        res.select_query = repeat_builder.getSelectQuery();
-        res.start_time = start_time;
-        res.end_time = end_time;
-        res.step = step;
-    }
+    res.start_time = start_time;
+    res.end_time = end_time;
+    res.step = step;
 
     if (has_group && impl_info->drop_metric_name)
         res = dropMetricName(std::move(res), context);
