@@ -119,7 +119,7 @@ public:
     };
 
 private:
-    static AuthenticationData fromASTImpl(const ASTAuthenticationData & query, ContextPtr context, bool validate);
+    static AuthenticationData fromASTImpl(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now);
 
     AuthenticationType type = AuthenticationType::NO_PASSWORD;
     Digest password_hash;

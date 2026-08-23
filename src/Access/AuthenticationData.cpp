@@ -518,7 +518,7 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attac
 
 AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now)
 {
-    auto auth_data = fromASTImpl(query, context, validate);
+    auto auth_data = fromASTImpl(query, context, validate, now);
 
     if (!query.grants.structurallyEmpty())
     {
@@ -594,7 +594,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 }
 
 
-AuthenticationData AuthenticationData::fromASTImpl(const ASTAuthenticationData & query, ContextPtr context, bool validate)
+AuthenticationData AuthenticationData::fromASTImpl(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now)
 {
     time_t valid_until = 0;
 
