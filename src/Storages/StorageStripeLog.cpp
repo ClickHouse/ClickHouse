@@ -78,18 +78,42 @@ namespace FailPoints
     extern const char stripe_log_sink_write_fallpoint[];
 }
 
+static bool blockContainsColumns(const IndexOfBlockForNativeFormat & block, const Names & column_names)
+{
+    return std::all_of(column_names.begin(), column_names.end(), [&](const auto & name)
+    {
+        return std::any_of(block.columns.begin(), block.columns.end(), [&](const auto & column)
+        {
+            return column.name == name;
+        });
+    });
+}
+
 static bool indexContainsColumns(const IndexForNativeFormat & index, const Names & column_names)
 {
     return std::all_of(index.blocks.begin(), index.blocks.end(), [&](const auto & block)
     {
-        return std::all_of(column_names.begin(), column_names.end(), [&](const auto & name)
-        {
-            return std::any_of(block.columns.begin(), block.columns.end(), [&](const auto & column)
-            {
-                return column.name == name;
-            });
-        });
+        return blockContainsColumns(block, column_names);
     });
+}
+
+static IndexForNativeFormat extractIndexForColumnsOrKeepAll(
+    const IndexForNativeFormat & index,
+    const NameSet & required_columns,
+    const Names & column_names)
+{
+    IndexForNativeFormat res;
+    res.blocks.reserve(index.blocks.size());
+
+    for (const auto & block : index.blocks)
+    {
+        if (blockContainsColumns(block, column_names))
+            res.blocks.emplace_back(block.extractIndexForColumns(required_columns));
+        else
+            res.blocks.emplace_back(block);
+    }
+
+    return res;
 }
 
 /// NOTE: The lock `StorageStripeLog::rwlock` is NOT kept locked while reading,
@@ -118,7 +142,7 @@ public:
         size_t file_size_,
         StorageMetadataPtr metadata_snapshot_,
         ContextPtr context_,
-        bool read_all_columns_)
+        bool read_blocks_individually_)
         : ISource(std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
         , physical_columns(std::move(physical_columns_))
         , virtual_columns(std::move(virtual_columns_))
@@ -131,7 +155,7 @@ public:
         , file_size(file_size_)
         , metadata_snapshot(std::move(metadata_snapshot_))
         , context(std::move(context_))
-        , read_all_columns(read_all_columns_)
+        , read_blocks_individually(read_blocks_individually_)
     {
     }
 
@@ -164,7 +188,7 @@ private:
     size_t file_size;
     const StorageMetadataPtr metadata_snapshot;
     const ContextPtr context;
-    const bool read_all_columns;
+    const bool read_blocks_individually;
 
     /** optional - to create objects only on first reading
       *  and delete objects (release buffers) after the source is exhausted
@@ -198,7 +222,7 @@ private:
             /// but we must not read beyond the snapshotted range that the index covers.
             data_in->setReadUntilPosition(file_size);
 
-            if (read_all_columns)
+            if (read_blocks_individually)
                 readNextBlock();
             else
                 block_in.emplace(*data_in, 0, index_begin, index_end);
@@ -227,14 +251,14 @@ private:
             return;
         }
 
-        if (read_all_columns)
+        if (read_blocks_individually)
         {
             ++next_index;
             block_in.reset();
             readNextBlock();
         }
 
-        if (read_all_columns)
+        if (read_blocks_individually)
         {
             bool has_missing_columns = std::any_of(physical_columns.begin(), physical_columns.end(), [&](const auto & column)
             {
@@ -503,11 +527,12 @@ Pipe StorageStripeLog::read(
 
     /// Filter out virtual columns - they are not stored on disk and not in the index.
     auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
-    bool read_all_columns = !indexContainsColumns(indices, physical_column_names);
+    const NameSet required_columns{physical_column_names.begin(), physical_column_names.end()};
+    const bool read_blocks_individually = !indexContainsColumns(indices, physical_column_names);
     auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(
-        read_all_columns
-            ? indices
-            : indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
+        read_blocks_individually
+            ? extractIndexForColumnsOrKeepAll(indices, required_columns, physical_column_names)
+            : indices.extractIndexForColumns(required_columns));
     auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
     auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
@@ -535,7 +560,7 @@ Pipe StorageStripeLog::read(
             data_file_size,
             storage_snapshot->metadata,
             local_context,
-            read_all_columns));
+            read_blocks_individually));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
