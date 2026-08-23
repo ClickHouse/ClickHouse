@@ -97,6 +97,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
+        optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
     };
 
@@ -222,6 +223,7 @@ void optimizeTreeSecondPass(
         optimization_settings.read_in_order_through_spilling_join,
         optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
+        optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
     };
 
@@ -512,6 +514,9 @@ void optimizeTreeSecondPass(
 
             if (optimization_settings.distinct_partitions_independently)
                 optimizeDistinctPerPartition(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.creating_set_partitions_independently)
+                optimizeCreatingSetPerPartition(frame_node, nodes, optimization_settings);
 
             /// Skip when Cascades is enabled: it treats sorting as a physical property and
             /// strips `SortingStep::Full`, which this heuristic would otherwise rewrite to
