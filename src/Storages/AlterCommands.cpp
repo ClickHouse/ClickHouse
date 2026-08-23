@@ -65,11 +65,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
     extern const SettingsUInt64 max_parser_depth;
@@ -83,6 +81,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
@@ -462,6 +461,20 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    if (command_ast->type == ASTAlterCommand::MODIFY_PROJECTION)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.projection_decl = command_ast->projection_decl->clone();
+        command.type = AlterCommand::MODIFY_PROJECTION;
+
+        const auto & ast_projection_decl = command_ast->projection_decl->as<ASTProjectionDeclaration &>();
+
+        command.projection_name = ast_projection_decl.name;
+        command.if_exists = command_ast->if_exists;
+
+        return command;
+    }
     if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT)
     {
         AlterCommand command;
@@ -679,7 +692,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, CodecValidationSettings::trusted());
 
         column.ttl = ttl;
 
@@ -757,7 +770,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                        codec, data_type ? data_type : column.type, CodecValidationSettings::trusted());
 
                 if (comment)
                     column.comment = *comment;
@@ -1047,6 +1061,47 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
+    else if (type == MODIFY_PROJECTION)
+    {
+        if (!metadata.projections.has(projection_name))
+        {
+            /// With `IF EXISTS` the whole command must be a no-op
+            if (if_exists)
+                return;
+
+            throw Exception(
+                ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+                "There is no projection {} in table{}",
+                projection_name,
+                metadata.projections.getHintsMessage(projection_name));
+        }
+
+        /// create a new projection with the modified settings
+        auto new_projection = ProjectionDescription::getProjectionFromAST(
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+
+        /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
+        auto definition_without_settings = [](const IAST & definition_ast)
+        {
+            auto cloned = definition_ast.clone();
+            auto & decl = cloned->as<ASTProjectionDeclaration &>();
+            cloned->reset(decl.with_settings);
+            return cloned->formatWithSecretsOneLine();
+        };
+
+        const auto & old_projection = metadata.projections.get(projection_name);
+        if (definition_without_settings(*old_projection.definition_ast) != definition_without_settings(*new_projection.definition_ast))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
+                "but the projection query differs from the existing one. "
+                "Use DROP PROJECTION and ADD PROJECTION to change the query",
+                projection_name);
+
+        /// Intentionally not a mutation because the new settings apply lazily
+        /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
+        metadata.projections.replace(std::move(new_projection));
+    }
     else if (type == DROP_PROJECTION)
     {
         if (!partition && !clear)
@@ -1061,7 +1116,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             metadata.primary_key,
             context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
                                                                                  : TTLValidationMode::Validate,
-            /* allow_experimental_codecs */ context->getSettingsRef()[Setting::allow_experimental_codecs]);
+            /* trusted_codecs */ false);
     }
     else if (type == REMOVE_TTL)
     {
@@ -1746,9 +1801,9 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     ///
     /// A TTL none of the commands touched is rebuilt from stored metadata here, not created as fresh DDL,
     /// so it is rebuilt with exactly the metadata-load semantics (`TTLValidationMode::Attach`, and the
-    /// `RECOMPRESS` codecs exempt from the experimental-codec gate): whatever the server loads must survive
+    /// `RECOMPRESS` codecs exempt from the codec checks): whatever the server loads must survive
     /// an unrelated `ALTER`, otherwise a table whose TTL was accepted under `allow_suspicious_ttl_expressions`
-    /// or whose `TTL ... RECOMPRESS` codec was accepted under `allow_experimental_codecs`, and which the
+    /// or whose `TTL ... RECOMPRESS` codec was accepted with an experimental codec enabled, and which the
     /// server happily loads on every start, would reject every `ALTER ADD COLUMN` in a session without those
     /// settings. This does not weaken the check that an `ALTER` may not break a TTL: the expression is still
     /// rebuilt against the new columns, and `checkTTLExpression` still requires a `Date` / `DateTime` result
@@ -1761,7 +1816,6 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     /// keeps the strict fresh-DDL validation and codec gate (`MODIFY TTL` is additionally validated against
     /// the session settings when the command itself is applied above).
     const auto & session_settings = context->getSettingsRef();
-    const bool session_allow_experimental_codecs = session_settings[Setting::allow_experimental_codecs];
     const auto fresh_ddl_validation_mode = session_settings[Setting::allow_suspicious_ttl_expressions]
         ? TTLValidationMode::SkipValidation
         : TTLValidationMode::Validate;
@@ -1808,7 +1862,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
                 context,
                 metadata_copy.primary_key,
                 changed_by_command ? fresh_ddl_validation_mode : TTLValidationMode::Attach,
-                /* allow_experimental_codecs */ !changed_by_command || session_allow_experimental_codecs);
+                /* trusted_codecs */ !changed_by_command);
             metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
         }
         catch (const Exception & exception)
@@ -1828,7 +1882,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
                 context,
                 metadata_copy.primary_key,
                 table_ttl_changed_by_command ? fresh_ddl_validation_mode : TTLValidationMode::Attach,
-                /* allow_experimental_codecs */ !table_ttl_changed_by_command || session_allow_experimental_codecs);
+                /* trusted_codecs */ !table_ttl_changed_by_command);
         }
         catch (const Exception & exception)
         {
@@ -2024,6 +2078,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -2076,12 +2131,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                const auto & settings = context->getSettingsRef();
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
                     command.data_type,
-                    !settings[Setting::allow_suspicious_codecs],
-                    settings[Setting::allow_experimental_codecs]);
+                    codec_validation_settings);
             }
 
             /// Advance the working snapshot with the exact columns apply() would materialize
@@ -2127,8 +2180,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
                     command.data_type ? command.data_type : all_columns.get(column_name).type,
-                    !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                    context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    codec_validation_settings);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)

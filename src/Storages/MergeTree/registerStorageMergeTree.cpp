@@ -48,7 +48,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -238,7 +237,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     const String & engine_name,
     ASTs & engine_args,
     LoadingStrictnessLevel mode,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    bool validate_substitutions)
 {
     chassert(isReplicated(engine_name));
 
@@ -253,7 +253,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
     auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name) -> TableZnodeInfo
     {
-        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context);
+        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate_substitutions);
         ast_zk_path->value = res.full_path_for_metadata;
         ast_replica_name->value = res.replica_name_for_metadata;
         return res;
@@ -365,8 +365,11 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
 
     try
     {
+        /// This only reads back the path of an already-created table, so it must never reject it:
+        /// the `catch` below turns a rejection into `nullopt`, which silently drops the table from a backup.
         auto res = extractZooKeeperPathAndReplicaNameFromEngineArgs(
-            query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context);
+            query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context,
+            /*validate_substitutions=*/ false);
         return res.full_path;
     }
     catch (Exception & e)
@@ -572,8 +575,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        /// Only a freshly supplied definition is validated: a CREATE, or a full-definition ATTACH.
+        /// Every other route re-derives a table that already exists and must keep loading. Such a
+        /// replay can arrive at CREATE, so `mode` cannot tell it apart and the context carries it.
+        const bool validate_substitutions = (args.mode <= LoadingStrictnessLevel::CREATE
+                || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
+            && !args.is_restore_from_backup
+            && !args.getLocalContext()->isRecoveryFromStoredMetadata();
         zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
-            args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext());
+            args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext(),
+            validate_substitutions);
 
         if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
@@ -861,7 +872,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// otherwise a strict session could attach a TTL that `CREATE TABLE` rejects, and the first
         /// strict TTL rebuild (`INSERT`, background TTL merge) would throw.
         /// A genuine metadata load also gates the recompression-codec normalization and exempts the codec
-        /// from the `allow_experimental_codecs` check; `allow_suspicious_ttl_expressions` must not by itself
+        /// from the codec checks; `allow_suspicious_ttl_expressions` must not by itself
         /// be treated as a metadata load, so a `CREATE` with it keeps a user-specified `RECOMPRESS` codec
         /// instead of having it silently normalized. See `TTLDescription::getTTLFromAST`.
         TTLValidationMode ttl_validation_mode = TTLValidationMode::Validate;
@@ -870,15 +881,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         else if (local_settings[Setting::allow_suspicious_ttl_expressions])
             ttl_validation_mode = TTLValidationMode::SkipValidation;
 
-        /// The experimental-codec gate is tied to `allow_experimental_codecs` only:
+        /// A fresh definition validates its `RECOMPRESS` codec against the session settings:
         /// `allow_suspicious_ttl_expressions` is an escape hatch for suspicious TTL *expressions* and must not
         /// double as a way to use an experimental codec in `TTL ... RECOMPRESS`.
-        bool allow_experimental_ttl_codecs = !is_fresh_definition || local_settings[Setting::allow_experimental_codecs];
+        bool trusted_ttl_codecs = !is_fresh_definition;
 
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode, allow_experimental_ttl_codecs);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode, trusted_ttl_codecs);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -907,12 +918,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// experimental codec (e.g. `ZXC`) could slip in through `SETTINGS default_compression_codec = ...`.
         /// For freshly introduced definitions (`is_fresh_definition` above) the merged value (explicit or
         /// inherited from the current `<merge_tree>` config defaults) is checked against
-        /// `allow_experimental_codecs`. For stored definitions values written in the stored `SETTINGS`
+        /// the experimental-codec gate. For stored definitions values written in the stored `SETTINGS`
         /// clause were already gated when they were introduced and are exempt, so existing tables
         /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
         /// introduce an experimental codec into existing tables via a config default plus a restart, without
-        /// anyone enabling `allow_experimental_codecs` (at startup the check runs against the default
+        /// anyone enabling that codec (at startup the check runs against the default
         /// profile, which is where such a config default can be legitimately allowed). Because such values
         /// are not persisted into the table metadata, a session-level opt-in is not durable: the table
         /// would fail this very check on the next load (short `ATTACH`, server restart), when it runs
@@ -922,9 +933,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// and is left alone.
         if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE)
         {
-            const bool session_allows = local_settings[Setting::allow_experimental_codecs];
-            const bool default_profile_allows
-                = context->getGlobalContext()->getDefaultProfileAllowExperimentalCodecs();
+            std::optional<Settings> default_profile_settings;
 
             const auto is_stored_in_definition = [&](std::string_view name)
             {
@@ -944,31 +953,36 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 {
                     /// Stored values are durable: they were gated when they were introduced, so only
                     /// fresh definitions are checked. The experimental part is gated by the session
-                    /// setting, but the untyped-safety part (`requiresColumnTypeToCompress`, e.g. `T64`)
-                    /// runs unconditionally, so that a fresh definition rejects such a codec CREATE-like
+                    /// settings, and the untyped-safety part (`requiresColumnTypeToCompress`, e.g. `T64`)
+                    /// runs along with it, so that a fresh definition rejects such a codec CREATE-like
                     /// instead of `MergeTreeData` silently dropping the setting on the sanitize path.
                     if (is_fresh_definition)
-                        CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ session_allows);
+                        CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
                 }
                 else
                 {
                     /// A config-inherited value is not marked as `changed`, so `checkCompressionCodecSettings`
                     /// will never look at it. This is the only place that rejects a codec which can never work
                     /// on an untyped stream (e.g. `T64`, via `requiresColumnTypeToCompress`), so that part of
-                    /// the validation runs unconditionally; only the experimental part follows the gates.
-                    const bool experimental_allowed = session_allows && default_profile_allows;
+                    /// the validation runs here as well; the experimental part must hold for both the session
+                    /// and the default profile, because only the latter survives a restart.
+                    CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
+
+                    if (!default_profile_settings)
+                        default_profile_settings = context->getGlobalContext()->getDefaultProfileSettings();
+
                     try
                     {
-                        CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, experimental_allowed);
+                        CompressionCodecFactory::instance().validateCodecString(
+                            codec, CodecValidationSettings(*default_profile_settings));
                     }
                     catch (Exception & e)
                     {
-                        if (session_allows && !experimental_allowed)
-                            e.addMessage(
-                                "The value of the setting '{}' is inherited from the <merge_tree> config defaults and is not stored "
-                                "in the table metadata, so enabling 'allow_experimental_codecs' only in the session is not enough: "
-                                "the table would fail to load after a server restart. Enable it in the default profile instead",
-                                name);
+                        e.addMessage(
+                            "The value of the setting '{}' is inherited from the <merge_tree> config defaults and is not stored "
+                            "in the table metadata, so enabling an experimental codec only in the session is not enough: "
+                            "the table would fail to load after a server restart. Enable it in the default profile instead",
+                            name);
                         throw;
                     }
                 }
@@ -1119,7 +1133,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, ttl_validation_mode, allow_experimental_ttl_codecs);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, ttl_validation_mode, trusted_ttl_codecs);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 

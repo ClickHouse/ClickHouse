@@ -7,6 +7,13 @@ DROP TABLE IF EXISTS t_pco_gate;
 CREATE TABLE t_pco_gate (x UInt32 CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_pco_gate (x UInt32 CODEC(Delta, PCO)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
+-- The dedicated `enable_pco_codec` setting enables PCO on its own, and only PCO.
+SET enable_pco_codec = 1;
+CREATE TABLE t_pco_gate (x UInt32 CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple();
+DROP TABLE t_pco_gate;
+CREATE TABLE t_pco_gate (x UInt64 CODEC(ZXC)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+SET enable_pco_codec = 0;
+
 SET allow_experimental_codecs = 1;
 
 -- Allowed once the switch is on.

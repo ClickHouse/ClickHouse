@@ -71,10 +71,12 @@ private:
 public:
     CompressionCodecSelector() = default;    /// Always returns the default method.
 
-    /// `allow_experimental_codecs` is the server-level policy (the default profile), not the setting of
+    /// `validation_settings` carries the server-level policy (the default profile), not the settings of
     /// whichever query happens to construct the selector first: the selector is built once and shared.
     CompressionCodecSelector(
-        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, bool allow_experimental_codecs)
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const CodecValidationSettings & validation_settings)
     {
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_prefix, keys);
@@ -95,9 +97,9 @@ public:
             /// and `primary_key_compression_codec` settings are validated — so a misconfiguration is
             /// reported when the server configuration is loaded. A lossy codec (e.g. `SZ3`) is rejected
             /// by `get` itself while resolving without a column type.
-            /// An experimental codec is rejected as well, unless the server-level `allow_experimental_codecs`
-            /// policy enables it: the selected codec becomes the default codec of every new part, so putting
-            /// an experimental codec there must be as explicit an opt-in as using one in a query.
+            /// An experimental codec is rejected as well, unless the server-level policy (the default
+            /// profile) enables it: the selected codec becomes the default codec of every new part, so
+            /// putting an experimental codec there must be as explicit an opt-in as using one in a query.
             auto codec = factory.get(element.family_name, element.level);
             if (codec->requiresColumnTypeToCompress())
                 throw Exception(
@@ -106,13 +108,21 @@ public:
                     " to untyped data",
                     config_prefix,
                     element.family_name);
-            if (codec->isExperimental() && !allow_experimental_codecs)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The '{}' configuration cannot use the experimental codec {} without the"
-                    " 'allow_experimental_codecs' setting enabled in the default profile",
-                    config_prefix,
-                    element.family_name);
+            if (codec->isExperimental())
+            {
+                try
+                {
+                    factory.validateCodec(element.family_name, element.level, validation_settings);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage(
+                        "while checking the '{}' configuration: an experimental codec can only be used there when it is"
+                        " enabled in the default profile",
+                        config_prefix);
+                    throw;
+                }
+            }
         }
     }
 

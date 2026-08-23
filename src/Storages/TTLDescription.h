@@ -139,16 +139,16 @@ struct TTLDescription
     ASTPtr recompression_codec;
 
     /// Parse TTL structure from definition. Able to parse both column and table TTLs.
-    /// `allow_experimental_codecs` exempts a `RECOMPRESS` codec from the experimental-codec gate; callers
-    /// derive it from the genuine metadata load, the `allow_suspicious_ttl_expressions` escape hatch, or the
-    /// `allow_experimental_codecs` setting.
+    /// `trusted_codecs` skips every codec check for a `RECOMPRESS` codec that was already accepted when it
+    /// was introduced (a genuine metadata load or replicated metadata); a fresh definition is validated
+    /// against the session settings instead.
     static TTLDescription getTTLFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
         ContextPtr context,
         const KeyDescription & primary_key,
         TTLValidationMode validation_mode,
-        bool allow_experimental_codecs);
+        bool trusted_codecs);
 
     TTLDescription() = default;
     TTLDescription(const TTLDescription & other);
@@ -190,7 +190,7 @@ struct TTLTableDescription
         ContextPtr context,
         const KeyDescription & primary_key,
         TTLValidationMode validation_mode,
-        bool allow_experimental_codecs);
+        bool trusted_codecs);
 
     /// Parse description from string
     static TTLTableDescription parse(
@@ -199,7 +199,7 @@ struct TTLTableDescription
         ContextPtr context,
         const KeyDescription & primary_key,
         TTLValidationMode validation_mode,
-        bool allow_experimental_codecs);
+        bool trusted_codecs);
 };
 
 }
