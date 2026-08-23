@@ -145,6 +145,7 @@ systemctl stop clickhouse-server
 ! /etc/init.d/clickhouse-server status""",
         "Install keeper rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-keeper*rpm
+systemctl is-enabled clickhouse-keeper
 bash -ex /packages/keeper_test.sh""",
     }
     return test_install(image, tests)
