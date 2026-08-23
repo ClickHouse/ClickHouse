@@ -1,0 +1,4 @@
+-- guard on payload.longitude protects the cast over payload.latitude
+66666
+-- the same with both coordinates guarded
+66666

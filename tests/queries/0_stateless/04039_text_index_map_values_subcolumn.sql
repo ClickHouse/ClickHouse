@@ -5,6 +5,8 @@
 SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
+-- The rewrite is disabled by default; this test is about the rewritten form.
+SET optimize_map_element_to_subcolumn = 1;
 
 DROP TABLE IF EXISTS tab;
 

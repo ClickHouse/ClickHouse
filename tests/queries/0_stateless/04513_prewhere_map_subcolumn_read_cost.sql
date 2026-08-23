@@ -9,6 +9,8 @@
 
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
+-- The h['k'] -> h.key_k rewrite is disabled by default; this test asserts it happens.
+SET optimize_map_element_to_subcolumn = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;

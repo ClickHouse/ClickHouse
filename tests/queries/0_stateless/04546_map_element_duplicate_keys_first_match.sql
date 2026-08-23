@@ -3,6 +3,10 @@
 -- result must not depend on optimize_functions_to_subcolumns, on preceding rows in the
 -- block, or on whether a filter isolates the row (issue #111203).
 
+-- The m['key'] -> m.key_<key> rewrite is disabled by default; the subcolumns=1 cases need it.
+-- It has no effect where optimize_functions_to_subcolumns = 0, which gates the whole pass.
+SET optimize_map_element_to_subcolumn = 1;
+
 DROP TABLE IF EXISTS t_map_dup;
 
 -- Wide part (min_bytes_for_wide_part = 0). Row 1 primes the cross-row key-position state:

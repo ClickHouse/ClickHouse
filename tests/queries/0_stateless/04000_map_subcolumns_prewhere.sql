@@ -5,6 +5,8 @@ SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
+-- The m['key'] -> m.key_<key> rewrite is disabled by default; this test asserts it happens.
+SET optimize_map_element_to_subcolumn = 1;
 
 -- ==========================================
 -- Section 1: PREWHERE optimization with with_buckets (wide parts)
