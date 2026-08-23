@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <base/bit_cast.h>
+#include <base/normalizeNegativeZero.h>
 #include <base/scope_guard.h>
 #include <base/sort.h>
 #include <base/unaligned.h>
@@ -86,8 +87,9 @@ template <typename T>
 static inline UInt32 weakHashValue32(T v) noexcept
 {
     /// `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type; hash its raw bits.
+    /// Negative zero has to be normalized explicitly here, because `hashCRC32` sees an integer.
     if constexpr (std::is_same_v<T, BFloat16>)
-        return static_cast<UInt32>(hashCRC32(v.raw(), WEAK_HASH32_INITIAL_VALUE));
+        return static_cast<UInt32>(hashCRC32(normalizeNegativeZero(v).raw(), WEAK_HASH32_INITIAL_VALUE));
     else
         return static_cast<UInt32>(hashCRC32(v, WEAK_HASH32_INITIAL_VALUE));
 }

@@ -1,0 +1,38 @@
+the original report
+1
+0	1
+equals
+1	1
+number of groups
+1
+1
+1
+1
+1
+1
+1
+1
+the key is canonicalized, so it is printed as a positive zero
+0
+distinct
+1
+uniq
+1	1	1	1
+in
+1	1
+1
+join
+1
+1
+1
+1
+1
+1
+the joined values are taken from the source blocks, so negative zero is preserved
+-0
+arrays
+1	[1,2]
+[0]	[0]
+nan is not equal to zero and is still grouped with itself
+0	0	0
+2

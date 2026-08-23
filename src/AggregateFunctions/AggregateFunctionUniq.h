@@ -8,6 +8,7 @@
 #include <city.h>
 
 #include <base/bit_cast.h>
+#include <base/normalizeNegativeZero.h>
 
 
 #include <DataTypes/DataTypesNumber.h>
@@ -273,7 +274,8 @@ struct AggregateFunctionUniqTraits
         }
         else if constexpr (is_floating_point<T>)
         {
-            return bit_cast<UInt64>(x);
+            /// Negative zero is equal to positive zero, but has a different binary representation.
+            return bit_cast<UInt64>(normalizeNegativeZero(x));
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
@@ -341,7 +343,14 @@ struct Adder
         else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaData>)
         {
             const auto & column = *columns[0];
-            data.set.insertOriginal(column.getDataAt(row_num));
+            if constexpr (is_floating_point<T>)
+            {
+                /// Negative zero is equal to positive zero, but has a different binary representation.
+                const T value = normalizeNegativeZero(assert_cast<const ColumnType &>(column).getData()[row_num]);
+                data.set.insertOriginal(std::string_view(reinterpret_cast<const char *>(&value), sizeof(value)));
+            }
+            else
+                data.set.insertOriginal(column.getDataAt(row_num));
         }
 #endif
         else
