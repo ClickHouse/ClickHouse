@@ -1,0 +1,31 @@
+<test>
+    <!-- Short string keys in a large block. The serialized method used to refuse the one-pass,
+         column-major serialization of the block's keys whenever the block did not fit in four times
+         L2 - which is exactly the case where that pass wins most, because the alternative is a
+         separate buffer and a separate serialization call per row. -->
+
+    <settings>
+        <max_block_size>1000000</max_block_size>
+    </settings>
+
+    <query short="1">
+        SELECT k1, k2, count()
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2 FROM numbers_mt(20000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2 FROM numbers_mt(20000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query short="1">
+        SELECT k1, k2, count()
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 40, '0') AS k1, leftPad(toString(number % 13), 40, '0') AS k2 FROM numbers_mt(20000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+</test>

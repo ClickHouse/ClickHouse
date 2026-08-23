@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/demangle.h>
-#include <base/getL2CacheSize.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashing/HashMethod.h>
@@ -520,11 +519,17 @@ struct HashMethodSerialized
         return true;
 #endif
 
-        size_t l2_size = getL2CacheSize();
-        // Calculate the average row size.
-        size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
-        // Use batch serialization only if total size fits in 4x L2 cache and average row size is small.
-        return total_size <= 4 * l2_size && avg_row_size < 128;
+        /// One pass per key column writes the block with a row-sized stride, and the hash table then
+        /// copies every inserted key out of that buffer, so it only pays while a row is a couple of
+        /// cache lines wide. Measured on `group_by_multiple_strings`: it wins up to ~256 bytes per row
+        /// with one thread and starts losing from ~128 upwards once threads compete for bandwidth.
+        ///
+        /// How large the block is does not belong in that decision: a large block of short rows is
+        /// exactly where the one pass wins most - a 1M-row block of 20-byte keys is 3.8x faster with
+        /// it - and the buffer is written and read back sequentially either way. Shrinking the block
+        /// 64x moves a long-row case by a fraction of the difference the row size makes.
+        const size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
+        return avg_row_size < 128;
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
