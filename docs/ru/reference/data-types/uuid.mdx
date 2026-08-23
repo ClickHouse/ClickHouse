@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Универсальный уникальный идентификатор (UUID) — это 16-байтовое значение, используемое для идентификации записей. Подробную информацию о UUID см. в [Википедии](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
-Хотя существуют разные варианты UUID, например UUIDv4 и UUIDv7 (см. [здесь](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)), ClickHouse не проверяет, соответствуют ли вставленные UUID какому-либо конкретному варианту.
+Хотя существуют разные варианты UUID, например UUIDv4 и UUIDv7 (см. [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562)), ClickHouse не проверяет, соответствуют ли вставленные UUID какому-либо конкретному варианту.
 Внутренне UUID рассматриваются как последовательность из 16 случайных байтов с представлением [8-4-4-4-12](https://en.wikipedia.org/wiki/Universally_unique_identifier#Textual_representation) на уровне SQL.
 
 Пример значения UUID:

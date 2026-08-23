@@ -1,4 +1,5 @@
 #include <Common/RWLock.h>
+#include <Common/saturatedDuration.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
@@ -31,6 +32,24 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+
+/// Comma-separated owner `query_id`s, each followed by its owner count when greater than 1.
+static String formatOwnerQueryIds(const std::unordered_map<String, size_t> & owner_queries)
+{
+    WriteBufferFromOwnString out;
+    bool need_comma = false;
+    for (const auto & [query_id, num_owners] : owner_queries)
+    {
+        if (need_comma)
+            out << ", ";
+        out << query_id;
+        if (num_owners != 1)
+            out << " (" << num_owners << ")";
+        need_comma = true;
+    }
+    return out.str();
 }
 
 
@@ -101,10 +120,13 @@ private:
 RWLockImpl::LockHolder
 RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & lock_timeout_ms, bool throw_in_fast_path)
 {
+    /// saturatedMilliseconds clamps into [0, MAX] so the ms-to-ns multiplication inside
+    /// steady_clock::now() + duration cannot overflow for a huge positive or negative timeout.
+    /// Zero keeps its special "wait forever" meaning; a negative value saturates to 0 (immediate deadline).
     const auto lock_deadline_tp =
         (lock_timeout_ms == std::chrono::milliseconds(0))
             ? std::chrono::time_point<std::chrono::steady_clock>::max()
-            : std::chrono::steady_clock::now() + lock_timeout_ms;
+            : std::chrono::steady_clock::now() + saturatedMilliseconds(lock_timeout_ms.count());
 
     const bool request_has_query_id = query_id != NO_QUERY;
 
@@ -134,7 +156,10 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             if (wrlock_owner != writers_queue.end())
             {
                 if (throw_in_fast_path)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): RWLock is already locked in exclusive mode");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "RWLockImpl::getLock(): RWLock is already locked in exclusive mode "
+                        "(requested for query_id '{}', which already holds {} lock(s); current owner query_ids: {})",
+                        query_id, owner_query_it->second, formatOwnerQueryIds(owner_queries));
                 return nullptr;
             }
 
@@ -142,7 +167,10 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             if (type == Write)
             {
                 if (throw_in_fast_path)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked "
+                        "(requested for query_id '{}', which already holds {} read lock(s); current owner query_ids: {})",
+                        query_id, owner_query_it->second, formatOwnerQueryIds(owner_queries));
                 return nullptr;
             }
 
@@ -384,19 +412,8 @@ std::unordered_map<String, size_t> RWLockImpl::getOwnerQueryIds() const
 
 String RWLockImpl::getOwnerQueryIdsDescription() const
 {
-    auto map = getOwnerQueryIds();
-    WriteBufferFromOwnString out;
-    bool need_comma = false;
-    for (const auto & [query_id, num_owners] : map)
-    {
-        if (need_comma)
-            out << ", ";
-        out << query_id;
-        if (num_owners != 1)
-            out << " (" << num_owners << ")";
-        need_comma = true;
-    }
-    return out.str();
+    /// Formats the copy made by `getOwnerQueryIds`, so `internal_state_mtx` is not held here.
+    return formatOwnerQueryIds(getOwnerQueryIds());
 }
 
 }

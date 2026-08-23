@@ -8,9 +8,8 @@ export const CloudNotSupportedBadge = () => {
             </svg>
 
         </div>
-            ClickHouse Cloud では利用できません
+            ClickHouse Cloud ではサポートされていません
         </a>
     )
 }
-
 export default CloudNotSupportedBadge;

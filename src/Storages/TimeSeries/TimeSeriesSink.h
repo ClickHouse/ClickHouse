@@ -103,6 +103,7 @@ private:
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
+    std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metrics_pipeline;
 };
 
