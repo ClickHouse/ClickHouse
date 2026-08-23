@@ -178,6 +178,13 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         {
             Names partition_by_names = sorting->getPartitionByColumnNames();
 
+            /// `max_rows_to_sort` / `max_bytes_to_sort` are enforced per stream by the checking
+            /// transforms of `fullSortStreams`, so which rows land in which stream is user-visible.
+            /// Skipping the scatter would regroup the streams by table partition and could fail a query
+            /// that passes with the scatter, so in that case the scatter is kept.
+            const auto & size_limits = sorting->getSettings().size_limits;
+            const bool has_size_limits = size_limits.max_rows != 0 || size_limits.max_bytes != 0;
+
             /// Unlike the single-stream reductions (final DISTINCT, LIMIT BY, set fill), the scatter's
             /// baseline is parallel: it redistributes the streams across all threads. Skipping it caps
             /// the window processing at the stream count, so when the streams come from per-partition
@@ -187,7 +194,7 @@ static StreamDisjointnessProperty applyStreamDisjointness(
             const bool profitable = !property.reading || settings.force_window_partitions_independently
                 || property.reading->isPartitionIndependentProcessingProfitable(ReadFromMergeTree::ProcessorKind::Window);
 
-            if (settings.window_partitions_independently && profitable
+            if (settings.window_partitions_independently && !has_size_limits && profitable
                 && partitionDeterminedByKeys(property, partition_by_names))
             {
                 sorting->skipScatterByPartition();

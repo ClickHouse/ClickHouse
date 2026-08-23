@@ -262,6 +262,14 @@ void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, cons
         || sorting_step->isSortingForMergeJoin())
         return;
 
+    /// `max_rows_to_sort` / `max_bytes_to_sort` are enforced per stream by the checking transforms of
+    /// `fullSortStreams`, so which rows land in which stream is user-visible. Skipping the scatter
+    /// would regroup the streams by table partition and could fail a query that passes with the
+    /// scatter, so the scatter is kept and per-partition reading has nothing to serve.
+    const auto & size_limits = sorting_step->getSettings().size_limits;
+    if (size_limits.max_rows != 0 || size_limits.max_bytes != 0)
+        return;
+
     auto * reading = findReadingStep(*node.children.front());
     if (!reading)
         return;
