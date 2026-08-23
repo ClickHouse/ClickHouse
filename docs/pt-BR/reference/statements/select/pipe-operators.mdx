@@ -1,0 +1,210 @@
+---
+description: 'Documentação sobre operadores de pipe'
+sidebarTitle: 'Operadores de pipe'
+slug: /sql-reference/statements/select/pipe-operators
+title: 'Operadores de pipe'
+doc_type: 'reference'
+---
+
+Os operadores de pipe permitem escrever consultas como uma sequência linear de transformações, lida de cima para baixo, semelhante à [sintaxe de pipe do GoogleSQL](https://research.google/pubs/sql-has-problems-we-can-fix-them-pipe-syntax-in-sql/):
+
+```sql
+FROM orders
+|> WHERE cancelled = 0
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> ORDER BY total DESC
+|> LIMIT 3
+```
+
+Qualquer consulta `SELECT` pode ser seguida por uma cadeia de operadores pipe. Cada operador começa com o token `|>`, recebe como entrada o resultado da consulta que o precede e aplica mais uma transformação a ele. Em cada operador, é usada a sintaxe padrão do ClickHouse.
+
+Os operadores pipe são uma extensão de sintaxe: cada operador encapsula a consulta que o precede em uma subconsulta. Portanto, a AST resultante é igual à AST da consulta equivalente escrita com subconsultas aninhadas, e a consulta acima equivale a:
+
+```sql
+SELECT * FROM
+(
+    SELECT customer, sum(amount) AS total FROM
+    (
+        SELECT * FROM
+        (
+            SELECT * FROM orders
+        )
+        WHERE cancelled = 0
+    )
+    GROUP BY customer
+)
+ORDER BY total DESC
+LIMIT 3
+```
+
+<div id="from-queries">
+  ## Consultas com FROM
+</div>
+
+Uma consulta pode começar com a cláusula `FROM`, e a cláusula `SELECT` é opcional nessas consultas. Quando omitida, a consulta funciona como se `SELECT *` tivesse sido escrito:
+
+```sql
+FROM orders;
+FROM orders WHERE amount > 100;
+FROM orders |> WHERE amount > 100;
+```
+
+Aliases de tabelas podem ser escritos com ou sem a palavra-chave `AS`, como na cláusula `FROM` de uma consulta `SELECT` comum: `FROM orders o WHERE o.amount > 100`. A única exceção é um alias escrito como a palavra isolada `select`: após as tabelas, ela inicia a cláusula `SELECT` explícita, em vez de ser tratada como um alias. Uma tabela chamada `select` não é afetada e mantém seu próprio alias: `FROM select s WHERE s.id = 1`.
+
+A cláusula `SELECT` não pode ser omitida quando o offset de amostragem da última tabela também puder ser interpretado como um `OFFSET` no nível da consulta, pois, em `FROM t SAMPLE 1/10 OFFSET 5`, o `OFFSET` pertence a `SAMPLE`, enquanto, em `FROM t SAMPLE 1/10 SELECT * OFFSET 5`, ele é um `OFFSET` no nível da consulta — o `SELECT` explícito é necessário para desambiguar os dois casos. Quando a consulta continua com uma cláusula que não pode ser precedida por um `OFFSET` no nível da consulta, não há ambiguidade, e a cláusula `SELECT` é opcional, como de costume: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
+
+<div id="operators">
+  ## Operadores
+</div>
+
+<div id="where">
+  ### WHERE
+</div>
+
+`|> WHERE condition` filtra as linhas de entrada. Quando aplicado após uma agregação, funciona como `HAVING`:
+
+```sql
+FROM orders
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> WHERE total > 100
+```
+
+<div id="select">
+  ### SELECT
+</div>
+
+`|> SELECT [DISTINCT] expr1 [AS alias1], ...` mantém apenas as expressões listadas como colunas de saída:
+
+```sql
+FROM orders |> SELECT customer, amount * 2 AS doubled
+```
+
+É permitido usar uma vírgula final na lista de expressões, nas mesmas posições que na cláusula `SELECT` de uma consulta comum — nesse caso, ela pode ser seguida pelo fim da consulta ou pelo próximo operador `|>`: `FROM orders |> SELECT customer, amount, |> LIMIT 1`. O mesmo se aplica aos operadores `EXTEND` e `AGGREGATE`.
+
+<div id="extend">
+  ### EXTEND
+</div>
+
+`|> EXTEND expr1 [AS alias1], ...` adiciona as expressões listadas às colunas de entrada; é equivalente a `SELECT *, expr1 AS alias1, ...`:
+
+```sql
+FROM orders |> EXTEND amount * 10 AS big
+```
+
+<div id="set">
+  ### SET
+</div>
+
+`|> SET column1 = expr1, ...` substitui os valores das colunas especificadas; é equivalente a `SELECT * REPLACE (expr1 AS column1, ...)`:
+
+```sql
+FROM orders |> SET amount = amount + 1000
+```
+
+<div id="drop">
+  ### DROP
+</div>
+
+`|> DROP column1, ...` remove as colunas especificadas; é equivalente a `SELECT * EXCEPT (column1, ...)`:
+
+```sql
+FROM orders |> DROP cancelled
+```
+
+<div id="as">
+  ### AS
+</div>
+
+`|> AS alias` atribui um alias à entrada do próximo operador, permitindo referenciá-la nesse operador, o que é especialmente útil em junções:
+
+```sql
+FROM orders
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> AS agg
+|> JOIN orders AS o ON agg.customer = o.customer
+```
+
+<div id="aggregate">
+  ### AGGREGATE
+</div>
+
+`|> AGGREGATE agg1 [AS alias1], ... [GROUP BY expr1 [AS alias1], ...]` agrega as linhas de entrada. As colunas de saída são as colunas de agrupamento, seguidas pelas colunas agregadas. Sem `GROUP BY`, toda a entrada é agregada em uma única linha:
+
+```sql
+FROM orders |> AGGREGATE count() AS c, sum(amount) AS total GROUP BY customer;
+FROM orders |> AGGREGATE count() AS c;
+```
+
+<div id="distinct">
+  ### DISTINCT
+</div>
+
+`|> DISTINCT` remove linhas duplicadas; é equivalente a `SELECT DISTINCT *`.
+
+<div id="order-by">
+  ### ORDER BY
+</div>
+
+`|> ORDER BY expr1 [ASC/DESC], ...` ordena as linhas de entrada. Há suporte à sintaxe completa da cláusula `ORDER BY`, incluindo `ORDER BY ALL`, `WITH FILL` e `INTERPOLATE`:
+
+```sql
+FROM orders |> ORDER BY amount DESC;
+FROM orders |> SELECT customer, amount |> ORDER BY ALL;
+FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
+```
+
+<div id="limit-and-offset">
+  ### LIMIT e OFFSET
+</div>
+
+`|> LIMIT length [OFFSET offset]` e `|> OFFSET offset` limitam o número de linhas:
+
+```sql
+FROM orders |> ORDER BY amount DESC |> LIMIT 3 OFFSET 1
+```
+
+<div id="join-and-array-join">
+  ### JOIN e ARRAY JOIN
+</div>
+
+`|> [GLOBAL] [ANY/ALL/ASOF/SEMI/ANTI] [INNER/LEFT/RIGHT/FULL/CROSS] JOIN table [ON expr | USING (columns)]` une a entrada a outra tabela, subconsulta ou função de tabela. Todos os tipos de [JOIN](/pt-BR/reference/statements/select/join) e [ARRAY JOIN](/pt-BR/reference/statements/select/array-join) são compatíveis, e um único operador pode conter várias junções, como em uma cláusula `FROM`:
+
+```sql
+FROM customers
+|> AS c
+|> LEFT JOIN orders AS o ON c.name = o.customer
+|> ARRAY JOIN tags
+```
+
+Como cada operador cria um novo escopo de subconsulta, os aliases de tabela são visíveis apenas dentro do mesmo operador (na condição `ON`). Os operadores subsequentes veem as colunas combinadas do resultado da junção, como após um `SELECT *`.
+
+A sintaxe com vírgula para uma junção cruzada também é compatível, com a entrada do operador no lado esquerdo: `FROM customers |> AS c |> , orders`. Assim como nas outras junções, a entrada precisa de um alias quando a configuração `joined_subquery_requires_alias` está habilitada (o que ocorre por padrão).
+
+Assim como na cláusula `FROM` de uma consulta comum, uma junção (cruzada) com vírgula não é compatível imediatamente após um `ARRAY JOIN`: uma vírgula após o `ARRAY JOIN` sempre pertence à sua lista de expressões.
+
+<div id="union-intersect-and-except">
+  ### UNION, INTERSECT e EXCEPT
+</div>
+
+`|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]`, `|> INTERSECT [ALL/DISTINCT] ...` e `|> EXCEPT [ALL/DISTINCT] ...` combinam a entrada com os resultados de outras consultas:
+
+```sql
+FROM orders
+|> SELECT customer
+|> UNION ALL (FROM customers |> SELECT name)
+|> DISTINCT
+```
+
+Os parênteses em torno de um operando são opcionais em uma única consulta, mas são obrigatórios quando a cadeia continua com outro operador de pipe após a operação de conjuntos — caso contrário, não ficaria claro se o próximo operador se aplica ao último operando ou ao resultado inteiro.
+
+<div id="notes">
+  ## Observações
+</div>
+
+* A cláusula `WITH` da consulta permanece visível em todos os operadores de pipe subsequentes, tanto para aliases escalares quanto para CTEs: `WITH 10 AS threshold FROM t |> WHERE x < threshold`.
+* Em `INSERT ... SELECT`, uma cláusula `WITH` escrita antes de `INSERT` é associada ao `SELECT` gerado mais externo e fica disponível nos estágios internos do pipe durante a interpretação por meio da configuração `enable_global_with_statement` (habilitada por padrão) — da mesma forma que em uma subconsulta aninhada escrita manualmente. Se essa configuração estiver desabilitada, os aliases e CTEs de um `WITH` no escopo de `INSERT` não ficarão visíveis dentro dos estágios do pipe, exatamente como não ficam visíveis em uma subconsulta escrita manualmente.
+* Como qualquer consulta `SELECT`, a consulta gerada por um operador de pipe pode terminar com uma cláusula `SETTINGS`, associada a essa consulta gerada: `FROM t |> LIMIT 1 SETTINGS max_threads = 1` equivale a `SELECT * FROM (SELECT * FROM t) LIMIT 1 SETTINGS max_threads = 1`. Isso também funciona quando não há uma etapa separada para configurações de consulta, como em uma subconsulta, em `CREATE VIEW` ou na função de tabela `view`. Uma cláusula `SETTINGS` no meio de uma cadeia permanece em seu estágio, que se torna uma subconsulta do operador seguinte. Após uma operação de conjunto com um operando entre parênteses, um `SETTINGS` final não é aceito — a consulta equivalente com subconsultas também não pode ter uma cláusula `SETTINGS` nessa posição.
+* Uma cláusula `SETTINGS` da consulta anterior ao primeiro operador de pipe permanece nessa consulta, que se torna uma subconsulta do wrapper gerado. As configurações comuns continuam funcionando, pois as configurações de uma subconsulta são aplicadas durante sua interpretação. A única exceção é o par de configurações que seleciona o analisador de consultas, `enable_analyzer` e seu alias `allow_experimental_analyzer`: não é permitido alterá-las em uma subconsulta, portanto `SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0 |> LIMIT 1` lança `INCORRECT_QUERY` — exatamente como a instrução equivalente escrita manualmente `SELECT * FROM (SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0) LIMIT 1`. Escreva essas duas configurações após o último operador de pipe ou passe-as fora da consulta.
+* Os operadores de pipe se associam a toda a consulta anterior, incluindo operações de conjunto: em `SELECT 1 UNION ALL SELECT 2 |> AGGREGATE count()`, a agregação é aplicada ao resultado de `UNION ALL`. Para continuar uma consulta com `UNION` após um operador de pipe, use o operador `|> UNION` ou parênteses.
+* Os operadores de pipe podem ser usados em qualquer lugar onde se espera uma consulta `SELECT`: em subconsultas, em `INSERT ... SELECT` (incluindo a forma `INSERT INTO t FROM src |> ...`), em `CREATE VIEW`, na função de tabela `view` e assim por diante.
+* A renomeação de colunas in loco não é disponibilizada como um operador separado; use `|> SELECT * EXCEPT (old_name), old_name AS new_name` ou os operadores `SET` e `DROP`.

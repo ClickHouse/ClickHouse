@@ -459,7 +459,7 @@ timeSeriesIdToGroup(id)
 
 **参数**
 
-* `id` — 时间序列的标识符。[`UInt64`](/zh/reference/data-types/int-uint) 或 [`UInt128`](/zh/reference/data-types/int-uint) 或 [`UUID`](/zh/reference/data-types/uuid) 或 [`FixedString(16)`](/zh/reference/data-types/fixedstring)
+* `id` — 时间序列的标识符。其类型必须与调用 [timeSeriesStoreTags()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags) 时使用的类型相同。[`Any`](/zh/reference/data-types/index)
 
 **返回值**
 
@@ -504,7 +504,7 @@ timeSeriesIdToTags(id)
 
 **参数**
 
-* `id` — 时间序列的标识符。[`UInt64`](/zh/reference/data-types/int-uint) 或 [`UInt128`](/zh/reference/data-types/int-uint) 或 [`UUID`](/zh/reference/data-types/uuid) 或 [`FixedString(16)`](/zh/reference/data-types/fixedstring)
+* `id` — 时间序列的标识符。必须与调用 [timeSeriesStoreTags()](/zh/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags) 时所用的类型相同。[`Any`](/zh/reference/data-types/index)
 
 **返回值**
 
@@ -832,8 +832,8 @@ timeSeriesStoreTags(id, tags_array, separate_tag_name_1, separate_tag_value_1, .
 
 **参数**
 
-* `id` — 时间序列的标识符。[`UInt64`](/zh/reference/data-types/int-uint) 或 [`UInt128`](/zh/reference/data-types/int-uint) 或 [`UUID`](/zh/reference/data-types/uuid) 或 [`FixedString(16)`](/zh/reference/data-types/fixedstring)
-* `tags_array` — 由 (`tag&#95;name`, `tag&#95;value`) 对组成的数组。[`Array(Tuple(String, String))`](/zh/reference/data-types/array) 或 [`NULL`](/zh/reference/syntax#null)
+* `id` — 时间序列的标识符。可以是任意可比较类型。标识符为 NULL 的行将被跳过。[`Any`](/zh/reference/data-types/index)
+* `tags_array` — Array (`tag&#95;name`, `tag&#95;value`) 对。[`Array(Tuple(String, String))`](/zh/reference/data-types/array) 或 [`NULL`](/zh/reference/syntax#null)
 * `separate_tag_name_i` — 标签名称。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
 * `separate_tag_value_i` — 标签值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`Nullable(String)`](/zh/reference/data-types/nullable)
 

@@ -378,6 +378,9 @@
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
+[submodule "contrib/darts-clone"]
+	path = contrib/darts-clone
+	url = https://github.com/s-yata/darts-clone
 [submodule "contrib/libcotp"]
 	path = contrib/libcotp
 	url = https://github.com/paolostivanin/libcotp.git
@@ -417,6 +420,9 @@
 [submodule "contrib/libucontext"]
 	path = contrib/libucontext
 	url = https://github.com/kaniini/libucontext
+[submodule "contrib/Jieba-CPP"]
+	path = contrib/Jieba-CPP
+	url = https://github.com/amosbird/Jieba-CPP
 [submodule "contrib/MeCab"]
 	path = contrib/MeCab
 	url = https://github.com/taku910/mecab
