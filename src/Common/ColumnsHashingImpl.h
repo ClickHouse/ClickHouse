@@ -243,10 +243,6 @@ public:
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
                 const auto & hashes = derived.precomputed_hashes;
-                /// LOCAL EXPERIMENT ONLY
-                static const bool exp_check = std::getenv("CH_SER_CHECK") != nullptr;
-                if (exp_check && hashes[row] != data.hash(keyHolderGetKey(key_holder)))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Precomputed hash does not match the key at row {}", row);
                 if (row + derived.prefetch_look_ahead < hashes.size())
                     data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
                 return emplaceImpl<false>(key_holder, data, hashes[row], row);

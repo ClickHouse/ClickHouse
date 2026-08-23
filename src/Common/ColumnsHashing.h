@@ -397,6 +397,7 @@ struct HashMethodSerialized
     /// allocated from it between one chunk and the next.
     static constexpr size_t region_bytes = 1024 * 1024;
     char * region_free = nullptr;   /// first byte no inserted key owns
+    VectorWithMemoryTracking<char *> chunk_memories;
     char * region_end = nullptr;
     size_t chunk_begin = 0;
     size_t chunk_end = 0;
@@ -468,13 +469,13 @@ struct HashMethodSerialized
             for (auto row_size : row_sizes)
                 total_size += row_size;
 
-            /// Serializing into the arena replaces a per-row buffer that is copied into the arena
-            /// on insert - one write per key instead of two, and no allocation per row. Against
-            /// batch serialization it would win nothing: the same bytes are written either way, and
-            /// moving a kept key over the holes costs what the copy costs. So it takes over exactly
-            /// where batch serialization steps aside.
-            can_use_key_region = total_size != 0 && !shouldUseBatchSerialize();
-            use_batch_serialize = !can_use_key_region && shouldUseBatchSerialize();
+            /// Where the cells hold only the key, serializing the block into a region of its own
+            /// and letting the kept keys stay there saves the copy that batch serialization needs
+            /// for every inserted key. Where they also hold an aggregate state it does not pay:
+            /// batch serialization puts a new key in the arena right in front of its state, and
+            /// keeping the two together is worth more than the copy.
+            can_use_key_region = total_size != 0 && !Base::has_mapped;
+            use_batch_serialize = !can_use_key_region;
             if (use_batch_serialize)
             {
                 serialized_buffer.resize(total_size);
@@ -552,23 +553,6 @@ struct HashMethodSerialized
             precomputed_hashes[i] = data.hash(serialized_keys[i]);
     }
 
-    bool shouldUseBatchSerialize() const
-    {
-#if defined(__aarch64__)
-        /// LOCAL EXPERIMENT ONLY: does the aarch64 shortcut still pay once the keys can be written
-        /// into a region instead of a per-row buffer?
-        static const bool exp_arm_heuristic = std::getenv("CH_SER_ARM_HEURISTIC") != nullptr;
-        if (!exp_arm_heuristic)
-            // On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
-            return true;
-#endif
-
-        size_t l2_size = getL2CacheSize();
-        // Calculate the average row size.
-        size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
-        // Use batch serialization only if total size fits in 4x L2 cache and average row size is small.
-        return total_size <= 4 * l2_size && avg_row_size < 128;
-    }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
@@ -594,6 +578,7 @@ struct HashMethodSerialized
     /// written over by the rows that follow.
     void NO_INLINE prepareKeyChunk(size_t first_row, Arena & pool)
     {
+
         const size_t rows = row_sizes.size();
         chunk_begin = first_row;
         chunk_end = first_row;
@@ -613,18 +598,23 @@ struct HashMethodSerialized
         }
 
         serialized_keys.resize(rows);
+        chunk_memories.resize(rows);
 
         char * memory = region_free;
         for (size_t i = chunk_begin; i < chunk_end; ++i)
         {
             serialized_keys[i] = std::string_view(memory, row_sizes[i]);
-            for (size_t j = 0; j < keys_size; ++j)
-            {
-                if constexpr (nullable)
-                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(i, memory, null_maps[j], &serialization_settings);
-                else
-                    memory = key_columns[j]->serializeValueIntoMemory(i, memory, &serialization_settings);
-            }
+            chunk_memories[i] = memory;
+            memory += row_sizes[i];
+        }
+
+        /// One pass per key column over the chunk, which keeps the per-row call out of the loop.
+        for (size_t j = 0; j < keys_size; ++j)
+        {
+            if constexpr (nullable)
+                key_columns[j]->batchSerializeValueIntoMemoryWithNull(chunk_memories, chunk_begin, chunk_end, null_maps[j], &serialization_settings);
+            else
+                key_columns[j]->batchSerializeValueIntoMemory(chunk_memories, chunk_begin, chunk_end, &serialization_settings);
         }
 
         /// The chunk's hashes are computed on the next `emplaceKey`, which is where `Data` is known.
