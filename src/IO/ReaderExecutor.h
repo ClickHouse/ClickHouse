@@ -234,6 +234,10 @@ private:
     size_t plan_look_ahead;
     /// Cache residency of the look-ahead span, held across serves (see `ReadPlan`). Empty without caches.
     ReadPlan read_plan;
+    /// Bytes a coalesced fetch pulled but could not fully hand out this window: the tail past the served
+    /// block, including cells no writer accepted (a read-only or detached tier). Held in memory and
+    /// served on the next windows instead of re-read from source. Bounded by the window; cleared on seek.
+    ChainedBuffers held_fetch;
 
 #if USE_SSL
     /// Immutable per-layer decryption config, parsed once by `initDecryption`. SSL builds only.

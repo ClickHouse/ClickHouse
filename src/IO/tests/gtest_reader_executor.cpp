@@ -99,6 +99,10 @@ struct MockCacheState
     /// (they are not in `resident`). `committed()` reports them - models a block a concurrent query
     /// populated in the window between our read-only probe and the claim.
     IntervalSet late_committed;
+    /// Blocks a POPULATING tier resolves as a writer-less miss because the segment is detached (cannot
+    /// take a downloader) - like `DiskCacheProvider`'s `emit_uncacheable_miss`. Served from source,
+    /// never populated, even though the tier populates in general.
+    IntervalSet detached;
     VectorWithMemoryTracking<ByteRange> writes;
     /// Model a `waitAndRead` timeout: when set, a writer's `waitAndRead` serves nothing, so the driver
     /// must fall back to a source read.
@@ -143,7 +147,11 @@ public:
             else
             {
                 r.kind = CacheResolution::Kind::Miss;
-                if (!bypass)   /// a passive `*_if_exists_otherwise_bypass` tier serves hits, never populates
+                /// A writer is attached only for a populating tier and a segment that can take one. A
+                /// bypass (read-only) tier never populates; a detached segment cannot, so both leave the
+                /// miss writer-less - served from source, never filled.
+                const bool block_detached = state->detached.subtract(block).empty();
+                if (!bypass && !block_detached)
                     r.writer = std::make_unique<Writer>(block, state);
             }
             out.push_back(std::move(r));
@@ -759,6 +767,109 @@ TEST_F(ReaderExecutorTest, BypassTierServesCachedCellAfterHeadMiss)
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 3 * block)
         << "the cell cached after a head miss was re-read from source (bypass path swallowed the window)";
     EXPECT_TRUE(state->writes.empty()) << "a bypass tier must not populate";
+}
+
+TEST_F(ReaderExecutorTest, NoCacheReadsFromSourceAndNeverTouchesCache)
+{
+    /// Case 1: an empty cache chain bypasses the plan entirely (`readNextWindow` -> `readSource`). Every
+    /// byte comes from source and no cache counter moves.
+    const size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 4 * block)};
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block});   /// no cache_chain
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 4 * block);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCacheGetRequests), 0u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCachePopulateRequests), 0u);
+}
+
+TEST_F(ReaderExecutorTest, DetachedSegmentServedFromSourceNotPopulated)
+{
+    /// Case 3: a POPULATING tier whose block-1 segment is detached resolves it as a writer-less miss
+    /// (like `DiskCacheProvider::emit_uncacheable_miss`). The cold read fetches every block from source
+    /// and populates all of them EXCEPT the detached one.
+    const size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 4 * block)};
+
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
+    state->detached.add(ByteRange{block, block});   /// block 1's segment is detached
+
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+
+    TestThreadGroup tg;
+    /// One coalesced window covers all four blocks: the fetch bridges the detached block 1 to fill its
+    /// writer-backed neighbours, and block 1's bytes - which no writer accepts - are retained in memory
+    /// and served on its window instead of re-read. So the file is read once: exactly 4*block from source.
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 4 * block);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    /// The whole file is read once; the retained bytes cover the detached block, no re-read.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block);
+    for (const auto & wr : state->writes)
+        EXPECT_NE(wr.offset, block) << "populated the detached block 1";
+    EXPECT_FALSE(state->resident.subtract(ByteRange{block, block}).empty())
+        << "the detached block must stay uncached";
+}
+
+TEST_F(ReaderExecutorTest, WriterlessMissNotRefreshedWithinHeldSpan)
+{
+    /// Case 4 (snapshot contract): a writer-less miss (here a read-only/bypass tier) is resolved once and
+    /// not re-resolved as the cursor advances, so a block that becomes resident AFTER `resolve` is still
+    /// read from source until the plan is rebuilt. Contrast `ServesBlockCommittedBetweenResolveAndClaim`,
+    /// where a writer-backed miss IS refreshed live via `committed()`. A writer-less miss is rare - the
+    /// cache is full or the segment is detached - so we deliberately do not re-probe it and add pressure
+    /// to a cache that already had no room.
+    const size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 4 * block)};
+
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state, /*bypass=*/true));
+
+    TestThreadGroup tg;
+    /// window == one block so each `readNextWindow` advances by a block; the whole file (< look-ahead) is
+    /// resolved on the first call, capturing block 3 as a writer-less miss before it turns resident.
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = block, .block_size = block, .cache_chain = std::move(chain)});
+
+    std::vector<char> data;
+    auto pull = [&]
+    {
+        ChainedBuffers w = ex.readNextWindow();
+        while (!w.atEnd()) { auto s = w.peek(); data.insert(data.end(), s.data, s.data + s.size); w.advance(s.size); }
+    };
+
+    pull();   /// window 0: resolves [0, look-ahead), serves block 0 from source
+
+    /// A concurrent query populates block 3 AFTER the plan captured it as a miss.
+    state->resident.add(ByteRange{3 * block, block});
+    for (size_t i = 3 * block; i < 4 * block; ++i)
+        state->store[i] = static_cast<char>(patternByte(i));
+
+    pull();
+    pull();
+    pull();   /// windows 1..3
+
+    ASSERT_EQ(data.size(), 4 * block);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    /// Block 3 is still read from source: the held writer-less miss keeps its snapshot residency.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block)
+        << "a writer-less miss must keep its snapshot residency until the plan is rebuilt";
 }
 
 TEST_F(ReaderExecutorTest, MultiObjectDataIsCorrect)

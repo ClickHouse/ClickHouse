@@ -1,5 +1,6 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/IntervalSet.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -414,10 +415,33 @@ void ReaderExecutor::ensureResolved(size_t pos)
 ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve)
 {
     chassert(!cache_chain.empty());
-    ensureResolved(pos);
 
     /// Serve one block from `pos`, capped by the window and by the run's contiguous extent.
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - pos}); };
+
+    /// Serve from the retained fetch first: bytes a prior coalesced fetch pulled but no tier cached (a
+    /// read-only or detached segment). Drop the prefix already passed - freeing that memory - then serve
+    /// the contiguous run at `pos`; a gap means the next bytes are cached, so fall through to the plan
+    /// (later retained ranges stay held).
+    if (!held_fetch.empty())
+    {
+        const size_t held_end = held_fetch.range().end();
+        if (pos >= held_end)
+            held_fetch = {};
+        else
+        {
+            held_fetch = held_fetch.slice(ByteRange{pos, held_end - pos});
+            if (held_fetch.covers(ByteRange{pos, 1}))
+            {
+                size_t contig_end = held_end;
+                if (auto g = held_fetch.gaps(ByteRange{pos, held_end - pos}); !g.empty())
+                    contig_end = g.front().offset;
+                return held_fetch.slice(ByteRange{pos, std::min({block_size, max_serve, contig_end - pos})});
+            }
+        }
+    }
+
+    ensureResolved(pos);
 
     /// `max_serve` bounds the FETCH extent to the window; the run then carries the full source-read
     /// range (coalesced right, extended left to the covering segments' fill frontiers).
@@ -468,9 +492,10 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
         claimed.push_back({writer, std::move(claim)});
     }
 
-    /// One source read of the whole extent. A later step can shrink this: where `runAt` widened the
-    /// extent to complete an upper whole-segment cell, a slower tier may already hold the middle/tail,
-    /// so those sub-ranges could be read from that tier and only the true gaps from source.
+    /// One source read of the whole extent. With two populating layers, where `runAt` widened the extent
+    /// to complete an upper whole-segment cell a slower tier may already hold the middle/tail; we re-read
+    /// those from source rather than splice them from that tier - correctness over fewest source bytes on
+    /// this non-production multi-layer path.
     ChainedBuffers fetched = readSource(fetch_range.offset, fetch_range.size);
     const size_t fetched_end = fetched.empty() ? fetch_range.offset : fetched.range().end();
 
@@ -496,7 +521,23 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
         c.claim.reset();
     }
 
-    return fetched.slice(ByteRange{pos, serve_len(fetched_end)});
+    /// Serve one block now. Retain only the un-served bytes that no writer cached (a read-only or
+    /// detached tier): the cached ranges are served from the cache on later windows, so we hold nothing
+    /// for them - a cold read (all writer-backed) holds nothing. The retained bytes are freed as the
+    /// cursor passes them (see `readThroughCaches`).
+    const size_t serve_bytes = serve_len(fetched_end);
+    IntervalSet uncached;
+    if (pos + serve_bytes < fetched_end)
+        uncached.add(ByteRange{pos + serve_bytes, fetched_end - pos - serve_bytes});
+    for (const auto & c : claimed)
+        if (c.claim)
+            uncached.remove(c.writer->range());
+
+    held_fetch = {};
+    for (const auto & r : uncached.ranges())
+        held_fetch.append(fetched.slice(r));
+
+    return fetched.slice(ByteRange{pos, serve_bytes});
 }
 
 void ReaderExecutor::dropLongConnection()
@@ -706,6 +747,7 @@ void ReaderExecutor::seek(size_t new_position)
     fetch_tracker.recordSeek(toPhysical(new_position));
     position = new_position;
     reached_eof = false;
+    held_fetch = {};   /// a jump: retained forward-read bytes no longer apply
 }
 
 }

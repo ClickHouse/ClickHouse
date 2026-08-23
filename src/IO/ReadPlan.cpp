@@ -105,7 +105,10 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         fetch_start = std::min(fetch_start, cell->writer->committed());
         if (cell->writer->fillsWholeSegment())
             /// The head whole-segment cell is populated only by a full-cell write, so it must be fetched
-            /// entire - to its true segment end even past `span_end` (source has it; the writer covers it).
+            /// entire - to its true segment end even past `span_end` (source always has it; cells never
+            /// straddle an object boundary). When a slower tier already holds part of the cell this
+            /// re-reads it from source: with two populating layers (page + filesystem cache) we aim for
+            /// correctness, not for the fewest source bytes.
             fetch_end = std::max(fetch_end, cell->range.end());
     }
 
