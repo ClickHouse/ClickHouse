@@ -48,7 +48,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         },
         { "parts_in_progress_names",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that are currently being mutated."},
         { "parts_to_do_names",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
-        { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete. Note: even if `parts_to_do` = 0, a mutation of a replicated table may not be completed yet due to a long-running INSERT that is creating a new data part that will need to be mutated."},
+        { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete. Note: even if `parts_to_do` = 0, a mutation may not be completed yet, because a lower-numbered block that is still uncommitted can add a part to its scope: a long-running INSERT on any table kind, or `ATTACH`/`REPLACE`/`MOVE PARTITION` on a non-replicated one."},
         { "bytes_to_do",                   std::make_shared<DataTypeUInt64>(), "The total size on disk of the data parts that need to be mutated for the mutation to complete. Byte-weighted counterpart of `parts_to_do`. "
             "On a replicated table only the parts already on this replica have a size, so this is a lower bound while the replica still has parts to fetch or merge."},
         { "progress",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
@@ -58,8 +58,9 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
             "The weight is kept in memory only: after a server restart, or on a replica that first sizes the mutation later, it is re-measured from what remains and `progress` "
             "restarts as a lower bound for the leftover portion. A regular merge can fold a part inserted after the mutation into its scope; the denominator grows along with such "
             "discovered work, and a merge can also retire pending parts at any moment, which makes `progress` jump forward. "
-            "`NULL` when the remaining work is not known yet. On a replicated table that happens while a mutation that is not done waits for an in-flight INSERT whose part is not "
-            "committed (`parts_to_do` = 0), and while any part it still has to rewrite has not been fetched or merged on this replica: neither has a size on disk to weigh."},
+            "`NULL` when the remaining work is not known yet. On either table kind that happens while a mutation that is not done waits for an uncommitted lower-numbered block whose "
+            "part still lands in its scope - a long-running INSERT, or `ATTACH`/`REPLACE`/`MOVE PARTITION` on a non-replicated table - and `parts_to_do` can read 0 meanwhile. "
+            "On a replicated table it also happens while any part the mutation still has to rewrite has not been fetched or merged here: neither has a size on disk to weigh."},
         { "parts_postpone_reasons",        std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "A map of part names to reasons why they are postponed."},
         { "is_done",                       std::make_shared<DataTypeUInt8>(),
             "The flag whether the mutation is done or not. Possible values: "
