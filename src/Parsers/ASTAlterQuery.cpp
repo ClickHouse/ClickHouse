@@ -460,6 +460,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             require(constraint, "constraint");
             break;
         case ASTAlterCommand::ADD_PROJECTION:
+        case ASTAlterCommand::MODIFY_PROJECTION:
             require(projection_decl, "projection_decl");
             break;
         case ASTAlterCommand::DROP_PROJECTION:
@@ -833,6 +834,11 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             ostr << " AFTER ";
             projection->format(ostr, settings, state, frame);
         }
+    }
+    else if (type == ASTAlterCommand::MODIFY_PROJECTION)
+    {
+        ostr << "MODIFY PROJECTION " << (if_exists ? "IF EXISTS " : "");
+        projection_decl->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_PROJECTION)
     {

@@ -20,6 +20,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Common/quoteString.h>
@@ -225,6 +226,13 @@ BlockIO InterpreterUpdateQuery::execute()
     BlockIO res;
     res.pipeline = table->updateLightweight(commands, getContext());
     res.pipeline.addStorageHolder(table);
+
+    /// The patch part is committed while the pipeline runs, so the share lock must outlive this
+    /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
+    QueryPlanResourceHolder update_resources;
+    update_resources.table_locks.emplace_back(std::move(table_lock));
+    res.pipeline.addResources(std::move(update_resources));
+
     return res;
 }
 

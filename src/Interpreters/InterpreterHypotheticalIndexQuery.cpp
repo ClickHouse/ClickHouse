@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTHypotheticalIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -44,7 +44,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     if (query.kind == ASTHypotheticalIndexQuery::DropAll)
     {
-        context->getHypotheticalIndexStore().clear();
+        context->getHypotheticalObjectStore().clear();
         return {};
     }
 
@@ -76,7 +76,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
             table_id.getDatabaseName(),
             table_id.getTableName());
 
-    auto & store = context->getHypotheticalIndexStore();
+    auto & store = context->getHypotheticalObjectStore();
 
     if (query.kind == ASTHypotheticalIndexQuery::Drop)
     {
