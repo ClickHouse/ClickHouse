@@ -195,6 +195,10 @@ class Docker:
         that pays the retries out of its own job timeout passes a budget that
         fits inside it.
         """
+        # Below these floors the budget silently widens: `timeout 0` runs unbounded,
+        # and Shell.run raises `retries` to 2 whenever `retry_errors` is set.
+        assert timeout_s >= 1, f"timeout_s must be >= 1, got [{timeout_s}]"
+        assert retries >= 2, f"retries must be >= 2, got [{retries}]"
         return Shell.run(
             f"timeout --verbose {timeout_s} docker pull {image}",
             strict=strict,
