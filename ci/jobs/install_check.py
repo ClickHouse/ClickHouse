@@ -139,7 +139,9 @@ bash -ex /packages/server_test.sh
 # RPM installs the unit under /usr/lib/systemd/system. The init script must
 # delegate to it instead of starting a second, daemonized server.
 /etc/init.d/clickhouse-server start
-/etc/init.d/clickhouse-server status""",
+/etc/init.d/clickhouse-server status
+systemctl stop clickhouse-server
+! /etc/init.d/clickhouse-server status""",
         "Install keeper rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-keeper*rpm
 bash -ex /packages/keeper_test.sh""",
