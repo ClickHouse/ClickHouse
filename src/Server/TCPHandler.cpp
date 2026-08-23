@@ -152,6 +152,7 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
+    extern const Event NativeProtocolSend;
     extern const Event ReadTaskRequestsSent;
     extern const Event MergeTreeReadTaskRequestsSent;
     extern const Event MergeTreeAllRangesAnnouncementsSent;
@@ -399,7 +400,8 @@ void TCPHandler::runImpl()
             return;
         }
 
-        out = std::make_shared<AutoCanceledWriteBuffer<TCPHandlerPocoChunkedWriter>>(socket(), write_event);
+        out = std::make_shared<AutoCanceledWriteBuffer<TCPHandlerPocoChunkedWriter>>(
+            socket(), write_event, ProfileEvents::NativeProtocolSend);
     }
     catch (const Exception & e)
     {
@@ -989,7 +991,10 @@ void TCPHandler::runImpl()
                 sendEndOfStream(*query_state);
 
                 if (query_state->run_query_in_background && !query_state->read_all_data)
+                {
+                    out->sync();
                     skipData(*query_state);
+                }
             }
 
             query_state->finalizeOut(out);
