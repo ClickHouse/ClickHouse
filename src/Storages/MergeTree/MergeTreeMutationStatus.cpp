@@ -26,7 +26,7 @@ void MutationScopeInitialBytes::account(const MergeTreePartInfo & info, UInt64 p
     for (auto prev = range_begin; prev != counted_parts.begin();)
     {
         --prev;
-        if (prev->first.kind != info.kind || prev->first.partition_id != info.partition_id
+        if (prev->first.getKind() != info.getKind() || prev->first.getPartitionId() != info.getPartitionId()
             || prev->first.max_block < info.max_block)
             break;
         /// A piece of an already-counted range keeps that range's weight.
@@ -35,7 +35,7 @@ void MutationScopeInitialBytes::account(const MergeTreePartInfo & info, UInt64 p
     }
 
     for (auto it = range_begin; it != counted_parts.end()
-         && it->first.kind == info.kind && it->first.partition_id == info.partition_id
+         && it->first.getKind() == info.getKind() && it->first.getPartitionId() == info.getPartitionId()
          && it->first.min_block <= info.max_block;)
     {
         if (info.contains(it->first))
