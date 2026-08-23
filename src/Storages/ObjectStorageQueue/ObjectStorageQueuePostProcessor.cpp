@@ -70,12 +70,14 @@ namespace
 {
 
 /// True when a copy made conditional with `If-None-Match: *` was rejected because the destination
-/// already exists. S3 answers `412 PreconditionFailed`; other object storages report it as
-/// FILE_ALREADY_EXISTS.
+/// already exists. S3 answers `412 PreconditionFailed`, whose S3Exception carries the XML `Message`
+/// ("...pre-conditions you specified did not hold"); other object storages report FILE_ALREADY_EXISTS.
 bool isDestinationAlreadyExistsError(const Exception & e)
 {
     return e.code() == ErrorCodes::FILE_ALREADY_EXISTS
-        || (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"));
+        || (e.code() == ErrorCodes::S3_ERROR
+            && (e.message().contains("PreconditionFailed")
+                || e.message().contains("pre-conditions you specified did not hold")));
 }
 
 /// Provenance stamped onto the destination as object metadata: which source key (and which content
@@ -341,11 +343,12 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                         {
                             LOG_TRACE(log, "Copying object {} to {}", object_from.remote_path, object_to.remote_path);
                             /// Stamped onto the destination so a later attempt can prove "this is my own
-                            /// earlier copy" on a rejected precondition.
-                            auto source_metadata = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/ false);
-                            auto provenance = source_metadata
-                                ? makeMoveProvenance(source_metadata->attributes, object_from.remote_path, source_metadata->etag)
-                                : std::nullopt;
+                            /// earlier copy" on a rejected precondition; an unguarded copy has no use for
+                            /// it and keeps the native copy's header/metadata preservation instead.
+                            std::optional<ObjectAttributes> provenance;
+                            if (!preserve_path)
+                                if (auto source_metadata = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/ false))
+                                    provenance = makeMoveProvenance(source_metadata->attributes, object_from.remote_path, source_metadata->etag);
                             try
                             {
                                 object_storage->copyObject(
@@ -516,8 +519,11 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                 object_from.remote_path,
                                 /*version_id=*/ {},
                                 /*with_metadata=*/ true);
-                            /// See moveWithinBucket(): lets a later attempt recognize its own committed copy.
-                            const auto provenance = makeMoveProvenance(source_info.metadata, object_from.remote_path, source_info.etag);
+                            /// See moveWithinBucket(): lets a later attempt recognize its own committed
+                            /// copy; an unguarded copy keeps the native header/metadata preservation instead.
+                            const auto provenance = move_if_none_match.empty()
+                                ? std::optional<ObjectAttributes>{}
+                                : makeMoveProvenance(source_info.metadata, object_from.remote_path, source_info.etag);
 
                             LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, source_info.size, dst_uri.bucket);
                             try

@@ -685,6 +685,14 @@ namespace
             /// A ranged copy must never reach whole-object CopyObject (it would copy the entire source).
             chassert(!(is_ranged_copy && use_single_operation_copy));
 
+            /// CopyObject silently ignores destination preconditions - only PutObject and
+            /// CompleteMultipartUpload honor If-None-Match - so a guarded copy cannot take it.
+            if (use_single_operation_copy && !dest_if_none_match.empty())
+            {
+                fallback_method();
+                return;
+            }
+
             if (use_single_operation_copy)
                 performSingleOperationCopy();
             else
@@ -730,9 +738,6 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
-
-            if (!dest_if_none_match.empty())
-                request.SetIfNoneMatch(dest_if_none_match);
 
             client_ptr->setKMSHeaders(request);
         }
