@@ -11,8 +11,8 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node")
 
 OLD_CLIENT_REVISION = 54452
-# Keep exact send-count assertions independent of sanitizer load by preventing
-# time-based interactive updates during these short queries.
+# Keep exact send-count assertions independent of sanitizer load. This is longer
+# than the test timeout, so time-based interactive updates cannot add sends.
 INTERACTIVE_DELAY_ONE_HOUR = 3_600_000_000
 
 
@@ -159,10 +159,11 @@ def test_select_groups_terminal_packets(compression):
     assert answer == "1\n"
     assert "Trace" in logs
 
-    # Server hello, header block, data block, and one grouped terminal write. The
-    # terminal write contains profile information, progress, the empty data block,
-    # final progress, logs, profile events, and `EndOfStream`.
-    assert native_send_count() - sends_before == 4
+    # Server hello, logs before reading temporary tables, header block, data block,
+    # and one grouped terminal write. The terminal write contains profile
+    # information, progress, the empty data block, final progress, logs, profile
+    # events, and `EndOfStream`.
+    assert native_send_count() - sends_before == 5
 
 
 def test_old_revision_groups_uncompressed_terminal_packets():
@@ -173,10 +174,11 @@ def test_old_revision_groups_uncompressed_terminal_packets():
     )
 
     assert node.http_query("EXISTS TABLE old_revision_probe") == "1\n"
-    # Server hello and one grouped query response. Revision 54452 predates
-    # compressed Log/ProfileEvents columns, so both writers use raw `out` even
-    # when `maybe_compressed_out` has not been initialized yet.
-    assert native_send_count() - sends_before == 2
+    # Server hello, logs flushed before reading temporary tables, and one grouped
+    # query response. Revision 54452 predates compressed Log/ProfileEvents columns,
+    # so both writers use raw `out` even when `maybe_compressed_out` has not been
+    # initialized yet.
+    assert native_send_count() - sends_before == 3
 
 
 def test_nonempty_data_does_not_wait_for_interactive_delay():
