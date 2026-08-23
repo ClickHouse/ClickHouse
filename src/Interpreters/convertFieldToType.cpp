@@ -471,8 +471,21 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 return src;
 
             /// in case if we need to make Time64(a) from Time64(b), a != b, we need to convert time value to the right scale
-            const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
-                                                       : from_type.getValue().value * scale_multiplier_diff;
+            Int64 value = from_type.getValue().value;
+
+            if (scale_from > scale_to)
+            {
+                value /= scale_multiplier_diff;
+            }
+            else if (scale_from < scale_to)
+            {
+                Int64 result = 0;
+                if (common::mulOverflow(value, scale_multiplier_diff.value, result))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
+                        src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
+                value = result;
+            }
+
             return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
         }
 

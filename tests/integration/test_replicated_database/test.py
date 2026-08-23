@@ -1389,7 +1389,7 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("CREATE TABLE table_structure.mem (n int) ENGINE=Memory")
-    dummy_node.query("DETACH DATABASE table_structure")
+    dummy_node.query("DETACH DATABASE table_structure SYNC")
 
     settings = {"distributed_ddl_task_timeout": 0}
     main_node.query(
@@ -1398,7 +1398,7 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
-    competing_node.query("DETACH DATABASE table_structure")
+    competing_node.query("DETACH DATABASE table_structure SYNC")
 
     main_node.query(
         "ALTER TABLE table_structure.rmt ADD COLUMN m int", settings=settings
@@ -2058,13 +2058,14 @@ def test_timeseries(started_cluster):
         "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
     )
 
+    # The outer table + 4 inner tables (samples, tags, metrics and the on-by-default recent samples).
     for node in [competing_node, main_node, dummy_node]:
         assert node.query(
             """
             SYSTEM SYNC DATABASE REPLICA ts_db;
             SELECT count() FROM system.tables WHERE database='ts_db';
             """, timeout=10
-        ) == "4\n", f"Node {node.name} failed"
+        ) == "5\n", f"Node {node.name} failed"
 
 
 def test_mv_false_cyclic_dependency(started_cluster):
