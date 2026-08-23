@@ -1,3 +1,8 @@
+-- Recursive CTEs are analyzer-only (the old analyzer rejects them with UNSUPPORTED_METHOD), and
+-- `enable_analyzer` may not differ between a subquery and its top-level query, so the analyzer is
+-- pinned once for the file rather than per query.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS rcte_pr;
 
 CREATE TABLE rcte_pr (span_id UInt64, parent_span_id UInt64, op String) ENGINE = MergeTree ORDER BY span_id;
@@ -13,8 +18,7 @@ WITH RECURSIVE d AS
 SELECT countIf(op = 'query'), countIf(op = 'query' AND span_id IN (SELECT span_id FROM d))
 FROM rcte_pr
 WHERE span_id = (SELECT any(span_id) FROM rcte_pr WHERE op = 'query')
-SETTINGS enable_analyzer = 1,
-         allow_experimental_parallel_reading_from_replicas = 1,
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
          max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'parallel_replicas',
          parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -29,8 +33,7 @@ WITH RECURSIVE d AS
     SELECT l.span_id FROM rcte_pr AS l INNER JOIN d AS dd ON l.parent_span_id = dd.span_id
 )
 SELECT span_id FROM d ORDER BY span_id
-SETTINGS enable_analyzer = 1,
-         allow_experimental_parallel_reading_from_replicas = 1,
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
          max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'parallel_replicas',
          parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -44,8 +47,7 @@ WITH RECURSIVE d AS
     SELECT l.span_id FROM rcte_pr AS l INNER JOIN d AS dd ON l.parent_span_id = dd.span_id
 )
 SELECT span_id FROM d ORDER BY span_id
-SETTINGS enable_analyzer = 1,
-         allow_experimental_parallel_reading_from_replicas = 0,
+SETTINGS allow_experimental_parallel_reading_from_replicas = 0,
          automatic_parallel_replicas_mode = 0,
          max_recursive_cte_evaluation_depth = 10;
 
@@ -54,8 +56,7 @@ WITH RECURSIVE
     outer_cte AS (SELECT 1 AS lp UNION ALL SELECT lp + 1 FROM outer_cte WHERE lp < 5),
     inner_cte AS (SELECT 1 AS n UNION ALL SELECT inner_cte.n + outer_cte.lp FROM inner_cte, outer_cte WHERE outer_cte.lp = 1 AND inner_cte.n < 5)
 SELECT max(n) FROM inner_cte
-SETTINGS enable_analyzer = 1,
-         allow_experimental_parallel_reading_from_replicas = 1,
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
          max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'parallel_replicas',
          parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -74,22 +75,20 @@ SELECT * FROM
     SELECT countIf(op = 'query') AS a, countIf(op = 'query' AND span_id IN (SELECT span_id FROM d)) AS b
     FROM rcte_pr
     WHERE span_id = (SELECT any(span_id) FROM rcte_pr WHERE op = 'query')
-    SETTINGS enable_analyzer = 1,
-             allow_experimental_parallel_reading_from_replicas = 1,
+    SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
              max_parallel_replicas = 3,
              cluster_for_parallel_replicas = 'parallel_replicas',
              parallel_replicas_for_non_replicated_merge_tree = 1,
              automatic_parallel_replicas_mode = 0,
              max_recursive_cte_evaluation_depth = 10
 )
-SETTINGS enable_analyzer = 1, allow_experimental_parallel_reading_from_replicas = 0;
+SETTINGS allow_experimental_parallel_reading_from_replicas = 0;
 
 SELECT '-- a query over the same table without a recursive CTE is still sent to the replicas';
 SELECT count() FROM (
     EXPLAIN
     SELECT span_id FROM rcte_pr
-    SETTINGS enable_analyzer = 1,
-             allow_experimental_parallel_reading_from_replicas = 1,
+    SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
              max_parallel_replicas = 3,
              cluster_for_parallel_replicas = 'parallel_replicas',
              parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -109,8 +108,7 @@ SELECT count() FROM (
                 SELECT l.span_id FROM rcte_pr AS l INNER JOIN d AS dd ON l.parent_span_id = dd.span_id
             )
             SELECT span_id FROM d
-            SETTINGS enable_analyzer = 1,
-                     allow_experimental_parallel_reading_from_replicas = 1,
+            SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
                      max_parallel_replicas = 3,
                      cluster_for_parallel_replicas = 'parallel_replicas',
                      parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -120,15 +118,14 @@ SELECT count() FROM (
         UNION ALL
         (
             SELECT span_id FROM rcte_pr
-            SETTINGS enable_analyzer = 1,
-                     allow_experimental_parallel_reading_from_replicas = 1,
+            SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
                      max_parallel_replicas = 3,
                      cluster_for_parallel_replicas = 'parallel_replicas',
                      parallel_replicas_for_non_replicated_merge_tree = 1,
                      automatic_parallel_replicas_mode = 0
         )
     )
-    SETTINGS enable_analyzer = 1, allow_experimental_parallel_reading_from_replicas = 0
+    SETTINGS allow_experimental_parallel_reading_from_replicas = 0
 ) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
 
 -- Locality: a query counted by ParallelReplicasQueryCount reached the replica-reading coordinator,
@@ -141,8 +138,7 @@ SELECT count() FROM (
 -- against one database, which the stress `--database` mode does.
 SELECT '-- ParallelReplicasQueryCount: 0 for the recursive CTE, non-zero for the plain query';
 SELECT sum(span_id) FROM rcte_pr
-SETTINGS enable_analyzer = 1,
-         allow_experimental_parallel_reading_from_replicas = 1,
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
          max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'parallel_replicas',
          parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -157,8 +153,7 @@ WITH RECURSIVE d AS
     SELECT l.span_id FROM rcte_pr AS l INNER JOIN d AS dd ON l.parent_span_id = dd.span_id
 )
 SELECT sum(span_id) FROM d
-SETTINGS enable_analyzer = 1,
-         allow_experimental_parallel_reading_from_replicas = 1,
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
          max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'parallel_replicas',
          parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -171,16 +166,14 @@ SELECT '-- the same pair with the settings on the subquery instead of the top-le
 SELECT * FROM
 (
     SELECT sum(span_id) AS s FROM rcte_pr
-    SETTINGS enable_analyzer = 1,
-             allow_experimental_parallel_reading_from_replicas = 1,
+    SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
              max_parallel_replicas = 3,
              cluster_for_parallel_replicas = 'parallel_replicas',
              parallel_replicas_for_non_replicated_merge_tree = 1,
              automatic_parallel_replicas_mode = 0,
              ast_fuzzer_runs = 0
 )
-SETTINGS enable_analyzer = 1,
-         allow_experimental_parallel_reading_from_replicas = 0,
+SETTINGS allow_experimental_parallel_reading_from_replicas = 0,
          ast_fuzzer_runs = 0,
          log_comment = 'rcte_pr_nested_ships';
 
@@ -193,8 +186,7 @@ SELECT * FROM
         SELECT l.span_id FROM rcte_pr AS l INNER JOIN d AS dd ON l.parent_span_id = dd.span_id
     )
     SELECT sum(span_id) AS s FROM d
-    SETTINGS enable_analyzer = 1,
-             allow_experimental_parallel_reading_from_replicas = 1,
+    SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
              max_parallel_replicas = 3,
              cluster_for_parallel_replicas = 'parallel_replicas',
              parallel_replicas_for_non_replicated_merge_tree = 1,
@@ -202,8 +194,7 @@ SELECT * FROM
              max_recursive_cte_evaluation_depth = 10,
              ast_fuzzer_runs = 0
 )
-SETTINGS enable_analyzer = 1,
-         allow_experimental_parallel_reading_from_replicas = 0,
+SETTINGS allow_experimental_parallel_reading_from_replicas = 0,
          ast_fuzzer_runs = 0,
          log_comment = 'rcte_pr_nested_stays_local';
 
@@ -220,8 +211,7 @@ WHERE current_database = currentDatabase()
                       'rcte_pr_nested_ships', 'rcte_pr_nested_stays_local')
 GROUP BY log_comment
 ORDER BY log_comment
-SETTINGS enable_analyzer = 1,
-         allow_experimental_parallel_reading_from_replicas = 0,
+SETTINGS allow_experimental_parallel_reading_from_replicas = 0,
          ast_fuzzer_runs = 0;
 
 DROP TABLE rcte_pr;
