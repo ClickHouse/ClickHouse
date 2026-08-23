@@ -12,8 +12,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # that setting, and the rows here pin the exemptions the rejection must not disturb.
 CLIENT="${CLICKHOUSE_CLIENT} --server_logs_file=/dev/null"
 
-ZK="/clickhouse/04853/${CLICKHOUSE_DATABASE}"
-
 # C1: converting a table with a path-safe name still works. Guards the check against rejecting the
 # ordinary case: the shipped {uuid} template resolves through the same code path.
 ${CLIENT} -q "CREATE TABLE c1 (c0 Int) ENGINE = MergeTree ORDER BY c0"
@@ -29,7 +27,7 @@ ${CLIENT} -q "DROP TABLE c1"
 
 # C3: the opposite direction strips the path arguments instead of minting one, so an unsafe name is
 # irrelevant to it. The path is given explicitly here, so the CREATE itself is legal.
-${CLIENT} -q "CREATE TABLE \`c3/unsafe\` (c0 Int) ENGINE = ReplicatedMergeTree('${ZK}/c3', 'r1') ORDER BY c0"
+${CLIENT} -q "CREATE TABLE \`c3/unsafe\` (c0 Int) ENGINE = ReplicatedMergeTree('/clickhouse/04853/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/c3', 'r1') ORDER BY c0"
 ${CLIENT} -q "DETACH TABLE \`c3/unsafe\`"
 ${CLIENT} -q "ATTACH TABLE \`c3/unsafe\` AS NOT REPLICATED"
 ${CLIENT} -q "SELECT 'C3', engine FROM system.tables WHERE database = currentDatabase() AND name = 'c3/unsafe'"

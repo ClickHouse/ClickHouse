@@ -144,16 +144,16 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
 
 void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
 {
-    /// A conversion mints a path the table never had, from the server's template and the table's own
-    /// name, so it is a fresh definition and is judged like a CREATE. Re-deriving the path of an
-    /// already replicated table is the opposite case and must keep loading whatever it expands to.
+    /// A conversion mints a path the table never had, so the substituted name is validated as strictly
+    /// as a CREATE validates it -- but one level below CREATE, because the requirement that a path start
+    /// with '/' applies to a genuinely new table, not to a template this server has long been expanding.
     const auto & server_settings = local_context->getServerSettings();
     TableZnodeInfo::resolve(
         server_settings[ServerSetting::default_replica_path],
         server_settings[ServerSetting::default_replica_name],
         StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid),
         create_query,
-        LoadingStrictnessLevel::CREATE,
+        LoadingStrictnessLevel::SECONDARY_CREATE,
         local_context,
         /*validate_substitutions=*/true);
 }
