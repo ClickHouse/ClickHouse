@@ -199,7 +199,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-有关 HTTP API、`promql` 方言及表函数支持的函数和聚合运算符列表，请参阅[支持的 PromQL 功能](/zh/sql-reference/table-functions/prometheusQueryRange#supported-promql-features)。
+有关 HTTP API、`promql` 方言及表函数支持的函数和聚合运算符列表，请参阅[支持的 PromQL 功能](/zh/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)。
 
 <div id="grafana">
   #### Grafana
@@ -233,7 +233,7 @@ Grafana 会将 `/api/v1/query` 或 `/api/v1/query_range` 追加到此基础 URL�
   #### SQL 入口
 </div>
 
-ClickHouse 的 HTTP API、`promql` 方言以及 [`prometheusQuery`](/zh/sql-reference/table-functions/prometheusQuery) 和 [`prometheusQueryRange`](/zh/sql-reference/table-functions/prometheusQueryRange) 表函数均使用同一个 PromQL 转换器。
+ClickHouse 的 HTTP API、`promql` 方言以及 [`prometheusQuery`](/zh/reference/functions/table-functions/prometheusQuery) 和 [`prometheusQueryRange`](/zh/reference/functions/table-functions/prometheusQueryRange) 表函数均使用同一个 PromQL 转换器。
 
 使用 `clickhouse-client` 直接执行 PromQL：
 

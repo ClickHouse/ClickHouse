@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "Primeiros passos",
       "pages": [
         "pt-BR/products/managed-postgres/overview",
         "pt-BR/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Features",
+      "group": "Funcionalidades",
       "pages": [
         "pt-BR/products/managed-postgres/connection",
         "pt-BR/products/managed-postgres/settings",
@@ -19,6 +19,7 @@
         "pt-BR/products/managed-postgres/high-availability",
         "pt-BR/products/managed-postgres/read-replicas",
         "pt-BR/products/managed-postgres/backup-and-restore",
+        "pt-BR/products/managed-postgres/branching",
         "pt-BR/products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
@@ -34,19 +35,19 @@
       ]
     },
     {
-      "group": "Pricing",
+      "group": "Preços",
       "pages": [
         "pt-BR/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "ClickHouse Integration",
+      "group": "Integração do ClickHouse",
       "pages": [
         "pt-BR/products/managed-postgres/clickhouse-integration"
       ]
     },
     {
-      "group": "Migrations",
+      "group": "Migrações",
       "pages": [
         "pt-BR/products/managed-postgres/migrations/overview",
         "pt-BR/products/managed-postgres/migrations/pg_dump-pg_restore",
@@ -58,7 +59,7 @@
       ]
     },
     {
-      "group": "Monitoring",
+      "group": "Monitoramento",
       "pages": [
         "pt-BR/products/managed-postgres/monitoring/overview",
         "pt-BR/products/managed-postgres/monitoring/dashboard",
