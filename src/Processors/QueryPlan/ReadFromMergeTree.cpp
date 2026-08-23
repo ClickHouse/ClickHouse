@@ -2851,18 +2851,18 @@ void ReadFromMergeTree::buildIndexes(
             /// (issue #103128). Computed once per query here because the factory is invoked
             /// per part for constant folding.
             const auto * minmax_index = typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get());
-            Names alternative_column_names;
+            AlternativeKeyExpressionPtr alternative_key;
             if (minmax_index && filter_dag.predicate)
-                alternative_column_names = getAlternativeIndexColumnNamesForAnalyzer(index, query_context);
+                alternative_key = getAlternativeIndexExpressionForAnalyzer(index, query_context);
 
-            if (!alternative_column_names.empty())
+            if (alternative_key)
             {
-                factory = [index_helper, minmax_index, query_context, alternative_names = std::move(alternative_column_names)](
+                factory = [index_helper, minmax_index, query_context, alternative_key](
                     const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
                 {
                     if (!predicate)
                         return nullptr;
-                    return minmax_index->createIndexConditionWithAlternativeNames(predicate, query_context, alternative_names);
+                    return minmax_index->createIndexConditionWithAlternativeKey(predicate, query_context, alternative_key);
                 };
             }
             else

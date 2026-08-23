@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -29,14 +30,14 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
 }
 
-Names getAlternativeIndexColumnNamesForAnalyzer(const IndexDescription & index, const ContextPtr & context)
+AlternativeKeyExpressionPtr getAlternativeIndexExpressionForAnalyzer(const IndexDescription & index, const ContextPtr & context)
 {
     /// The rewrites we reproduce here are applied by the analyzer's query tree passes only.
     if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        return {};
+        return nullptr;
 
     if (!index.expression_list_ast || !index.expression)
-        return {};
+        return nullptr;
 
     /// An index on plain columns cannot be named differently by the rewrites.
     bool all_columns_are_identifiers = true;
@@ -49,7 +50,7 @@ Names getAlternativeIndexColumnNamesForAnalyzer(const IndexDescription & index, 
         }
     }
     if (all_columns_are_identifiers)
-        return {};
+        return nullptr;
 
     /// The alternative names are a best-effort improvement of index analysis: on any failure
     /// fall back to matching by the original names only.
@@ -92,33 +93,40 @@ Names getAlternativeIndexColumnNamesForAnalyzer(const IndexDescription & index, 
 
         const auto & outputs = dag.getOutputs();
         if (outputs.size() != index.column_names.size())
-            return {};
+            return nullptr;
 
-        /// Compute for each rewritten expression the same name that index analysis (RPNBuilder)
-        /// computes for the query filter expressions, including the canonicalization done by
-        /// ActionsDAGWithInversionPushDown (e.g. of constant names).
-        Names result(outputs.size());
+        /// Re-clone the rewritten DAG with the same canonicalization index analysis (RPNBuilder over
+        /// `ActionsDAGWithInversionPushDown`) applies to the query filter expressions (e.g. of constant
+        /// names), so that every (sub)expression node is named the way the matching filter node is.
+        auto canonical_dag = cloneDAGForIndexAnalysisNames(outputs, context);
+        const auto & canonical_outputs = canonical_dag.getOutputs();
+
+        Names result(canonical_outputs.size());
         RPNBuilderTreeContext tree_context(context);
         bool has_difference = false;
-        for (size_t i = 0; i < outputs.size(); ++i)
+        for (size_t i = 0; i < canonical_outputs.size(); ++i)
         {
-            ActionsDAGWithInversionPushDown inverted_dag(outputs[i], context, /*boolean_context=*/ false);
-            result[i] = RPNBuilderTreeNode(inverted_dag.predicate, tree_context).getColumnName();
+            result[i] = RPNBuilderTreeNode(canonical_outputs[i], tree_context).getColumnName();
             has_difference |= (result[i] != index.column_names[i]);
         }
 
         if (!has_difference)
-            return {};
+            return nullptr;
 
-        return result;
+        auto alternative_key = std::make_shared<AlternativeKeyExpression>();
+        alternative_key->column_names = std::move(result);
+        /// The expression carries the rewritten form of the index expressions; it is only searched
+        /// by index analysis, never executed.
+        alternative_key->expression = std::make_shared<ExpressionActions>(std::move(canonical_dag), ExpressionActionsSettings(execution_context));
+        return alternative_key;
     }
     catch (...)
     {
         tryLogCurrentException(
             getLogger("MergeTreeIndexAnalyzerNames"),
-            fmt::format("Cannot compute alternative column names for index {}, matching by the original names only", index.name),
+            fmt::format("Cannot compute the alternative form of the expression of index {}, matching by the original names only", index.name),
             LogsLevel::debug);
-        return {};
+        return nullptr;
     }
 }
 
