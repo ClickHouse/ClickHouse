@@ -1,4 +1,4 @@
-#include <Processors/Formats/Impl/VortexBlockOutputFormat.h>
+#include <Processors/Formats/Impl/Vortex/VortexBlockOutputFormat.h>
 
 #if USE_VORTEX
 
@@ -20,8 +20,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_WRITE_TO_OSTREAM;
-    extern const int INCORRECT_DATA;
+extern const int CANNOT_WRITE_TO_OSTREAM;
+extern const int INCORRECT_DATA;
 }
 
 /// What the write callback needs. Writing runs entirely on the thread that called us, so there is
@@ -90,8 +90,7 @@ void VortexBlockOutputFormat::initWriter(const Chunk * chunk)
     /// The `Nothing` type (`SELECT NULL`) has a counterpart of its own: the Vortex `Null` type.
     arrow_settings.output_nothing_as_null = true;
 
-    ch_column_to_arrow_column
-        = std::make_unique<CHColumnToArrowColumn>(getPort(PortKind::Main).getHeader(), "Vortex", arrow_settings);
+    ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(getPort(PortKind::Main).getHeader(), "Vortex", arrow_settings);
     ch_column_to_arrow_column->initializeArrowSchema(chunk);
     auto arrow_schema = ch_column_to_arrow_column->getArrowSchema();
 
@@ -165,13 +164,9 @@ void registerOutputFormatVortex(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "Vortex",
-        [](WriteBuffer & buf,
-           const Block & sample,
-           const FormatSettings & format_settings,
-           FormatFilterInfoPtr /* format_filter_info */) -> OutputFormatPtr
-        {
-            return std::make_shared<VortexBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
-        });
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings, FormatFilterInfoPtr /* format_filter_info */)
+            -> OutputFormatPtr
+        { return std::make_shared<VortexBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings); });
     factory.markFormatHasNoAppendSupport("Vortex");
     factory.markOutputFormatNotTTYFriendly("Vortex");
     factory.setContentType("Vortex", "application/octet-stream");
@@ -185,7 +180,9 @@ namespace DB
 {
 class FormatFactory;
 void registerOutputFormatVortex(FormatFactory &);
-void registerOutputFormatVortex(FormatFactory &) {}
+void registerOutputFormatVortex(FormatFactory &)
+{
+}
 }
 
 #endif

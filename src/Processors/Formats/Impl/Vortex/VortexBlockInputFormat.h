@@ -11,6 +11,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <base/defines.h>
+#include <Common/Logger.h>
 
 #include <array>
 #include <condition_variable>
@@ -18,8 +19,14 @@
 #include <mutex>
 #include <optional>
 
-namespace arrow { class Schema; }
-namespace arrow::io { class RandomAccessFile; }
+namespace arrow
+{
+class Schema;
+}
+namespace arrow::io
+{
+class RandomAccessFile;
+}
 
 struct FFI_VortexRuntime;
 struct FFI_VortexReader;
@@ -28,12 +35,16 @@ enum class FFI_VortexTaskQueue : int32_t;
 
 struct ArrowArray;
 
+namespace DB::Vortex
+{
+struct VortexReadContext;
+}
+
 namespace DB
 {
 
 class ArrowColumnToCHColumn;
 class ShutdownHelper;
-struct VortexReadContext;
 
 /// Reads Vortex files (https://docs.vortex.dev/) through the Rust bindings in
 /// `rust/workspace/vortex`. The bindings own no threads: a scan is split into tasks that wait in
@@ -145,7 +156,7 @@ private:
     void returnConverter(std::unique_ptr<ArrowColumnToCHColumn> converter);
 
     std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
-    std::unique_ptr<VortexReadContext> read_context;
+    std::unique_ptr<Vortex::VortexReadContext> read_context;
     FFI_VortexRuntime * runtime = nullptr;
     FFI_VortexReader * reader = nullptr;
     std::shared_ptr<arrow::Schema> file_schema;
@@ -193,6 +204,7 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     const bool is_remote_fs;
+    const LoggerPtr log = getLogger("VortexBlockInputFormat");
 
     std::atomic<int> is_stopped{0};
 };
@@ -213,7 +225,7 @@ private:
     const FormatSettings format_settings;
 
     std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
-    std::unique_ptr<VortexReadContext> read_context;
+    std::unique_ptr<Vortex::VortexReadContext> read_context;
     /// Reading a footer takes a few small reads, so the calling thread runs this runtime itself.
     FFI_VortexRuntime * runtime = nullptr;
     FFI_VortexReader * reader = nullptr;
