@@ -60,6 +60,20 @@ SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 S
 SELECT (SELECT sum(cityHash64(a, s1, s2)) FROM (SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) AS s1, avg(b) OVER (PARTITION BY a ORDER BY b DESC) AS s2 FROM test_win_stacked) SETTINGS allow_window_partitions_independently = 0) = (SELECT sum(cityHash64(a, s1, s2)) FROM (SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) AS s1, avg(b) OVER (PARTITION BY a ORDER BY b DESC) AS s2 FROM test_win_stacked) SETTINGS allow_window_partitions_independently = 1);
 DROP TABLE test_win_stacked;
 
+-- A plain OVER () window merges the pipeline to a single stream, so the disjointness does not
+-- propagate above it: the sorting below it still skips its scatter, while the sorting above it keeps
+-- the scatter that makes the pipeline parallel again.
+DROP TABLE IF EXISTS test_win_global_between;
+CREATE TABLE test_win_global_between (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
+SYSTEM STOP MERGES test_win_global_between;
+INSERT INTO test_win_global_between SELECT number % 64, number FROM numbers_mt(400);
+INSERT INTO test_win_global_between SELECT number % 64, number + 400 FROM numbers_mt(400);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT s1, g, sum(b) OVER (PARTITION BY a ORDER BY b DESC) AS s2 FROM (SELECT a, b, sum(b) OVER (PARTITION BY a ORDER BY b) AS s1, sum(b) OVER () AS g FROM test_win_global_between) SETTINGS allow_window_partitions_independently = 1) WHERE explain LIKE '%Skip scatter by partition%' OR explain LIKE '%Read each partition through separate port%';
+-- the scatter above the single-stream window survives in the pipeline and re-widens it
+SELECT count() FROM (EXPLAIN PIPELINE SELECT s1, g, sum(b) OVER (PARTITION BY a ORDER BY b DESC) AS s2 FROM (SELECT a, b, sum(b) OVER (PARTITION BY a ORDER BY b) AS s1, sum(b) OVER () AS g FROM test_win_global_between) SETTINGS allow_window_partitions_independently = 1) WHERE explain ILIKE '%ScatterByPartitionTransform%';
+SELECT (SELECT sum(cityHash64(s1, g, s2)) FROM (SELECT s1, g, sum(b) OVER (PARTITION BY a ORDER BY b DESC) AS s2 FROM (SELECT a, b, sum(b) OVER (PARTITION BY a ORDER BY b) AS s1, sum(b) OVER () AS g FROM test_win_global_between)) SETTINGS allow_window_partitions_independently = 0) = (SELECT sum(cityHash64(s1, g, s2)) FROM (SELECT s1, g, sum(b) OVER (PARTITION BY a ORDER BY b DESC) AS s2 FROM (SELECT a, b, sum(b) OVER (PARTITION BY a ORDER BY b) AS s1, sum(b) OVER () AS g FROM test_win_global_between)) SETTINGS allow_window_partitions_independently = 1);
+DROP TABLE test_win_global_between;
+
 -- GROUP BY above the window skips merging when the property survives the window; the resize back to
 -- max_threads after the last window would mix the streams, so it is disabled for this query
 DROP TABLE IF EXISTS test_win_then_group_by;
