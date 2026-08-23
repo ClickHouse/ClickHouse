@@ -387,6 +387,7 @@ struct HashMethodSerialized
     /// `serialized_buffer` or a per-row buffer. An inserted key is then already where it will stay,
     /// and the bytes of a duplicate row are taken back by the row that follows it.
     bool can_use_key_region = false;
+    bool batch_serialized = false;
     bool use_key_region = false;
     /// Rows are done a chunk at a time: a whole block would need one large contiguous region, and a
     /// chunk this size is still written, hashed and probed while it is in cache.
@@ -480,31 +481,7 @@ struct HashMethodSerialized
             /// this stops paying once a row is much wider than a cache line - measured, it wins from
             /// -72% at 128 bytes per row down to -9% at 512, and nothing beyond that.
             can_use_key_region = total_size != 0 && !Base::has_mapped && avg_row_size <= 512;
-            use_batch_serialize = !can_use_key_region && shouldUseBatchSerialize();
-            if (use_batch_serialize)
-            {
-                serialized_buffer.resize(total_size);
-
-                const size_t rows = row_sizes.size();
-                char * memory = serialized_buffer.data();
-                VectorWithMemoryTracking<char *> memories(rows);
-                serialized_keys.resize(rows);
-                for (size_t i = 0; i < row_sizes.size(); ++i)
-                {
-                    memories[i] = memory;
-                    serialized_keys[i] = std::string_view(memory, row_sizes[i]);
-
-                    memory += row_sizes[i];
-                }
-
-                for (size_t i = 0; i < keys_size; ++i)
-                {
-                    if constexpr (nullable)
-                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i], &serialization_settings);
-                    else
-                        key_columns[i]->batchSerializeValueIntoMemory(memories, &serialization_settings);
-                }
-            }
+            use_batch_serialize = shouldUseBatchSerialize();
         }
 
         /// We can only precompute canonical per-row hashes when:
@@ -591,6 +568,7 @@ struct HashMethodSerialized
             return;
 
         use_key_region = true;
+        use_batch_serialize = false;
         /// With the keys materialised ahead of the loop their hashes can be too, which is what the
         /// prefetch needs. Until the region is turned on there is nothing to precompute them from.
         if (has_pre_computed_hashes && prefetch_enabled && !prefetching)
@@ -598,6 +576,36 @@ struct HashMethodSerialized
             can_precompute_hashes = true;
             precomputed_hashes_initialized = false;
             prefetching = std::make_unique<PrefetchingHelper>();
+        }
+    }
+
+    /// Serialize the whole block into `serialized_buffer`, one pass per key column. Done on the
+    /// first key asked for rather than in the constructor, so that a caller which opts into the key
+    /// region (`enableKeyRegion`) does not pay for a buffer it will not read - and one which does
+    /// not opt in still gets this instead of serializing row by row.
+    void NO_INLINE prepareBatchSerialize()
+    {
+        batch_serialized = true;
+
+        serialized_buffer.resize(total_size);
+
+        const size_t rows = row_sizes.size();
+        char * memory = serialized_buffer.data();
+        VectorWithMemoryTracking<char *> memories(rows);
+        serialized_keys.resize(rows);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            memories[i] = memory;
+            serialized_keys[i] = std::string_view(memory, row_sizes[i]);
+            memory += row_sizes[i];
+        }
+
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            if constexpr (nullable)
+                key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i], &serialization_settings);
+            else
+                key_columns[i]->batchSerializeValueIntoMemory(memories, &serialization_settings);
         }
     }
 
@@ -683,7 +691,11 @@ struct HashMethodSerialized
         }
 
         if (use_batch_serialize)
+        {
+            if (!batch_serialized) [[unlikely]]
+                prepareBatchSerialize();
             return ArenaKeyHolder{serialized_keys[row], pool};
+        }
 
         /// One buffer for the whole block instead of one allocation per row. The key stays valid
         /// only until the next call for this state, which is all its callers need: they persist it
