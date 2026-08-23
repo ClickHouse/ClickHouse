@@ -1,7 +1,6 @@
 #include <Interpreters/TopKAggregationHeap.h>
 
 #include <algorithm>
-#include <cstring>
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnTuple.h>
@@ -255,20 +254,6 @@ void TopKAggregationHeapBase::finishCompaction()
     for (auto & idx : heap_indices)
         idx = trim_old_to_new[idx];
     boundary_row = trim_old_to_new[boundary_row];
-}
-
-Arena & TopKAggregationHeapBase::keyArena()
-{
-    if (!key_arena)
-        key_arena = std::make_unique<Arena>();
-    return *key_arena;
-}
-
-const char * TopKAggregationHeapBase::copyKeyBytes(std::string_view bytes, Arena & arena)
-{
-    char * buf = arena.alloc(bytes.size() + 16);
-    memcpy(buf + 8, bytes.data(), bytes.size());
-    return buf + 8;
 }
 
 void TopKAggregationHeapBase::compactDictionaries()

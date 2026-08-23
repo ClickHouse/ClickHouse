@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include <memory>
 #include <string_view>
 #include <type_traits>
@@ -154,14 +155,26 @@ protected:
     /// must have compacted its own per-row key array first.
     void finishCompaction();
 
-    Arena & keyArena();
+    /// Both of these run once per admitted row on the pointer-bearing key paths, so they stay
+    /// inline; being key-independent they cost one instantiation per translation unit.
+    Arena & keyArena()
+    {
+        if (!key_arena)
+            key_arena = std::make_unique<Arena>();
+        return *key_arena;
+    }
 
     /// The string hash table dispatches on keys by reading whole 8-byte words, touching up to
     /// 7 bytes past either end of the key: for a 1..8-byte key it may read the word that ends
     /// at the key's last byte, i.e. before `data()`, where a plain `Arena::insert` at the head
     /// of a chunk has nothing readable. The leading pad keeps that read in bounds; the trailing
     /// pad covers the forward reads without relying on the arena chunk's tail padding.
-    static const char * copyKeyBytes(std::string_view bytes, Arena & arena);
+    static const char * copyKeyBytes(std::string_view bytes, Arena & arena)
+    {
+        char * buf = arena.alloc(bytes.size() + 16);
+        memcpy(buf + 8, bytes.data(), bytes.size());
+        return buf + 8;
+    }
 
 private:
     struct GenericComparator
