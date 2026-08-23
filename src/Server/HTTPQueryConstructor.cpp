@@ -414,19 +414,6 @@ bool hasHTTPPathFormatSuffix(const String & path)
     if (const auto query_start = path_only.find('?'); query_start != String::npos)
         path_only.resize(query_start);
 
-    /// Validate every path component before looking only at the final component. The routing filter runs
-    /// before the catch-all handler, so accepting a path with a malformed database component would route it
-    /// into parseHTTPPath and turn a client-side URL error into an internal server error.
-    try
-    {
-        String decoded_path;
-        Poco::URI::decode(path_only, decoded_path);
-    }
-    catch (const Poco::Exception &)
-    {
-        return false;
-    }
-
     const auto last_slash = path_only.rfind('/');
     const size_t component_start = last_slash == String::npos ? 0 : last_slash + 1;
     if (component_start >= path_only.size())

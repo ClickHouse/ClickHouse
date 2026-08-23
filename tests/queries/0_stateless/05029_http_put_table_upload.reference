@@ -50,8 +50,8 @@ Conflicting compression: 'gz' in URL path vs 'deflate' in `Content-Encoding`
 -- quoted table names with filter characters support upload suffixes
 -- quoted table names support compressed upload suffixes
 -- percent-encoded format suffixes are recognized
--- malformed percent encoding in an intermediate path component returns 404
-malformed-path-status: 404
+-- malformed percent encoding in an intermediate path component returns 400
+malformed-path-status: 400
 -- a compressed body that decodes to empty is rejected
 HTTP PUT table uploads require a non-empty request body
 -- mixed-case multipart PUT is not claimed

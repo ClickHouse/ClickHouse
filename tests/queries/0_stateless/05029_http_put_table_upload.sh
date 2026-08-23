@@ -149,7 +149,7 @@ printf '14,"encoded-dot"\n' \
         "${BASE_URL}/${DB}/${TABLE}%2ECSV" >/dev/null
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.${TABLE} WHERE a = 14" | grep -qx '1'
 
-echo "-- malformed percent encoding in an intermediate path component returns 404"
+echo "-- malformed percent encoding in an intermediate path component returns 400"
 python3 - <<PY
 import socket
 
@@ -167,8 +167,8 @@ finally:
     sock.close()
 
 status = response.split(b" ", 2)[1].decode()
-if status != "404":
-    raise RuntimeError(f"expected HTTP 404, got HTTP {status}: {response!r}")
+if status != "400":
+    raise RuntimeError(f"expected HTTP 400, got HTTP {status}: {response!r}")
 print("malformed-path-status:", status)
 PY
 
