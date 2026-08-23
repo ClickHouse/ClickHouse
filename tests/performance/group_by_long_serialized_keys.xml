@@ -1,54 +1,148 @@
 <test>
-    <!-- `GROUP BY` over several string keys goes through the serialized method. Without aggregate
-         functions its cells hold only the key, and a block's keys are then laid out in a region they
-         stay in, so an inserted key is never copied out of a buffer. Wider rows fall back to
-         serializing a row at a time, into a buffer reused across the block rather than one allocated
-         per row. -->
+    <!-- `GROUP BY` over several string keys goes through the serialized method, which lays a block's
+         keys out either one key column at a time - a chunk at a time, so that what is written is
+         still in cache when it is probed - or one row at a time. Which of the two pays depends on
+         how wide a row is, so the shapes below walk that width from 40 to 1024 bytes, with and
+         without an aggregate function: without one the cells hold only the key, and the chunk is
+         then also where those keys stay.
 
+         The narrow shapes are here because that is where the chunk stops paying, and the
+         single-thread copies because that is where the difference shows - with one thread per core
+         the aggregation is bound elsewhere. -->
+
+    <!-- 40 bytes per row -->
     <query short="1">
         SELECT k1, k2
-        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 64, '0') AS k1, leftPad(toString(number % 13), 64, '0') AS k2 FROM numbers_mt(20000000))
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 12, '0') AS k1, leftPad(toString(number % 13), 12, '0') AS k2, number AS v FROM numbers_mt(32000000))
         GROUP BY k1, k2
         FORMAT Null
     </query>
 
+    <query short="1">
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 12, '0') AS k1, leftPad(toString(number % 13), 12, '0') AS k2, number AS v FROM numbers_mt(32000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <!-- 56 bytes per row -->
     <query short="1">
         SELECT k1, k2
-        FROM (SELECT leftPad(toString(cityHash64(number) % 1000), 100, '0') AS k1, leftPad(toString(number % 13), 100, '0') AS k2 FROM numbers_mt(20000000))
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2, number AS v FROM numbers_mt(24000000))
         GROUP BY k1, k2
         FORMAT Null
     </query>
 
+    <query short="1">
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2, number AS v FROM numbers_mt(24000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <!-- 112 bytes per row -->
     <query short="1">
         SELECT k1, k2
-        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 100, '0') AS k1, leftPad(toString(number % 13), 100, '0') AS k2 FROM numbers_mt(20000000))
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 48, '0') AS k1, leftPad(toString(number % 13), 48, '0') AS k2, number AS v FROM numbers_mt(24000000))
         GROUP BY k1, k2
         FORMAT Null
     </query>
 
-    <!-- Rows too wide for the region: the keys are serialized one row at a time, into a buffer that
-         is reused instead of allocated per row. -->
     <query short="1">
-        SELECT k1, k2, count()
-        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 300, '0') AS k1, leftPad(toString(number % 13), 300, '0') AS k2 FROM numbers_mt(5000000))
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 48, '0') AS k1, leftPad(toString(number % 13), 48, '0') AS k2, number AS v FROM numbers_mt(24000000))
         GROUP BY k1, k2
         FORMAT Null
     </query>
 
-    <!-- Short keys in a large block, which the old size rule excluded from the one-pass form. -->
-    <query short="1">
-        SELECT k1, k2, count()
-        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2 FROM numbers_mt(20000000))
-        GROUP BY k1, k2
-        FORMAT Null
-        SETTINGS max_block_size = 1000000
-    </query>
-
+    <!-- 192 bytes per row -->
     <query short="1">
         SELECT k1, k2
-        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2 FROM numbers_mt(20000000))
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 88, '0') AS k1, leftPad(toString(number % 13), 88, '0') AS k2, number AS v FROM numbers_mt(16000000))
         GROUP BY k1, k2
         FORMAT Null
-        SETTINGS max_block_size = 1000000
     </query>
+
+    <query short="1">
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 88, '0') AS k1, leftPad(toString(number % 13), 88, '0') AS k2, number AS v FROM numbers_mt(16000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <!-- 512 bytes per row -->
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 248, '0') AS k1, leftPad(toString(number % 13), 248, '0') AS k2, number AS v FROM numbers_mt(5600000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query short="1">
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 248, '0') AS k1, leftPad(toString(number % 13), 248, '0') AS k2, number AS v FROM numbers_mt(5600000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <!-- 1024 bytes per row -->
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 504, '0') AS k1, leftPad(toString(number % 13), 504, '0') AS k2, number AS v FROM numbers_mt(2800000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query short="1">
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 504, '0') AS k1, leftPad(toString(number % 13), 504, '0') AS k2, number AS v FROM numbers_mt(2800000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <!-- 40 bytes per row, one thread -->
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 12, '0') AS k1, leftPad(toString(number % 13), 12, '0') AS k2, number AS v FROM numbers_mt(16000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <query short="1">
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 12, '0') AS k1, leftPad(toString(number % 13), 12, '0') AS k2, number AS v FROM numbers_mt(16000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <!-- 56 bytes per row, one thread -->
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2, number AS v FROM numbers_mt(6000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <query short="1">
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2, number AS v FROM numbers_mt(6000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <!-- 112 bytes per row, one thread -->
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 48, '0') AS k1, leftPad(toString(number % 13), 48, '0') AS k2, number AS v FROM numbers_mt(3000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <query short="1">
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 48, '0') AS k1, leftPad(toString(number % 13), 48, '0') AS k2, number AS v FROM numbers_mt(3000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
 </test>
