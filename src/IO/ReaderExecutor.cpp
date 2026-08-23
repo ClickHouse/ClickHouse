@@ -419,19 +419,28 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve)
     /// Serve one block from `pos`, capped by the window and by the run's contiguous extent.
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - pos}); };
 
-    /// `ensureResolved` retires the passed prefix (freeing the memory hold behind `pos`) and grows the
-    /// look-ahead. The plan then decides the run: memory hold (already fetched, no tier took it), a hit,
-    /// a committed writer, or a source fetch. `max_serve` bounds a FETCH extent to the window.
+    /// `ensureResolved` catches up the plan to `pos` (resets on a jump, else retires anything a forward
+    /// jump skipped) and grows the look-ahead. The plan then decides the run: memory hold (already
+    /// fetched, no tier took it), a hit, a committed writer, or a source fetch. `max_serve` bounds a
+    /// FETCH extent to the window.
     ensureResolved(pos);
 
     const ReadPlan::PlanRun run = read_plan.runAt(pos, max_serve);
+    ChainedBuffers out;
     if (run.from_memory)
-        return read_plan.readMemory(ByteRange{pos, serve_len(run.range.end())});
-    if (run.reader)
-        return run.reader->read(ByteRange{pos, serve_len(run.range.end())});
-    if (run.writer)
-        return run.writer->read(ByteRange{pos, serve_len(run.range.end())});
-    return fetchFillServe(pos, run.range, max_serve);
+        out = read_plan.readMemory(ByteRange{pos, serve_len(run.range.end())});
+    else if (run.reader)
+        out = run.reader->read(ByteRange{pos, serve_len(run.range.end())});
+    else if (run.writer)
+        out = run.writer->read(ByteRange{pos, serve_len(run.range.end())});
+    else
+        out = fetchFillServe(pos, run.range, max_serve);
+
+    /// Eagerly retire what we just served - its cache pins and memory hold are freed now, not one window
+    /// later. The served bytes are independently owned by `out`, so dropping the plan's refs is safe.
+    if (!out.empty())
+        read_plan.retireBefore(pos + out.totalBytes());
+    return out;
 }
 
 ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve)
