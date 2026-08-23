@@ -132,7 +132,7 @@ void registerTableFunctionYTsaurus(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionYTsaurus>(
     {.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge/>
 

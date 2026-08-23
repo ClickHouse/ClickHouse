@@ -20,19 +20,5 @@ already rejected before
 with alias right-hand side
 a	1
 explain syntax
-SELECT *
-FROM
-(
-    SELECT *
-    FROM default.`04648_t`
-    WHERE equals(name, \'a\')
-) AS `04648_pv`
-SETTINGS enable_analyzer = 1
-SELECT *
-FROM
-(
-    SELECT *
-    FROM default.`04648_t`
-    WHERE equals(name, \'a\')
-) AS `04648_pv`
-SETTINGS enable_analyzer = 1
+SELECT *\nFROM\n(\n    SELECT *\n    FROM default.`04648_t`\n    WHERE equals(name, \'a\')\n) AS `04648_pv`\nSETTINGS enable_analyzer = 1
+SELECT *\nFROM\n(\n    SELECT *\n    FROM default.`04648_t`\n    WHERE equals(name, \'a\')\n) AS `04648_pv`\nSETTINGS enable_analyzer = 1

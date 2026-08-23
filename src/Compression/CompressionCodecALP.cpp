@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
+#include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
@@ -1338,6 +1339,7 @@ uint8_t CompressionCodecALP::getMethodByte() const
 void CompressionCodecALP::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash, /* ignore_aliases */ true);
+    hash.update(float_width);
 }
 
 String CompressionCodecALP::getDescription() const
@@ -1517,4 +1519,10 @@ void registerCodecALP(CompressionCodecFactory & factory)
     };
     factory.registerCompressionCodecWithType("ALP", method_code, codec_builder);
 }
+
+CompressionCodecPtr getCompressionCodecALP(UInt8 float_width)
+{
+    return std::make_shared<CompressionCodecALP>(float_width, CompressionCodecALP::Variant::DEFAULT);
+}
+
 }
