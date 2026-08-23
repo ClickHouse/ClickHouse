@@ -274,6 +274,13 @@ public:
     /// `getModificationHash` contract.
     UInt64 getMetadataVersionForModificationHash() const { return metadata_version_for_modification_hash.load(std::memory_order_relaxed); }
 
+    void setInMemoryMetadataComment(const String & comment)
+    {
+        auto updated = std::make_unique<StorageInMemoryMetadata>(*metadata.get());
+        updated->setComment(comment);
+        metadata.set(std::move(updated));
+    }
+
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
