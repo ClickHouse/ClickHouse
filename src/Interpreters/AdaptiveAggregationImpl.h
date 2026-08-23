@@ -515,7 +515,6 @@ struct AdaptiveAggregationProducer
 
 struct StagedChunkPreparation
 {
-    Columns materialized_columns;
     Aggregator::AggregateColumns aggregate_columns;
     Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions instructions;

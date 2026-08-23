@@ -33,8 +33,21 @@ void Aggregator::prepareStagedChunk(StagedChunk & block) const
 
     auto prep = std::make_unique<StagedChunkPreparation>();
     prep->aggregate_columns.resize(params.aggregates_size);
-    prepareAggregateInstructions(
-        payload.argument_columns, prep->aggregate_columns, prep->materialized_columns, prep->instructions, prep->nested_columns_holder);
+    prep->instructions.resize(params.aggregates_size + 1);
+    prep->instructions[params.aggregates_size].that = nullptr;
+
+    /// The payload columns are already in the drain's form - the seal normalized them at the
+    /// gather - so the instructions wire the columns directly and only the combinator
+    /// unwrapping remains. Nothing dense is materialized here, and a staged payload is never
+    /// sparse.
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        prep->aggregate_columns[i].resize(params.aggregates[i].argument_names.size());
+        for (size_t j = 0; j < prep->aggregate_columns[i].size(); ++j)
+            prep->aggregate_columns[i][j] = payload.argument_columns[aggregates_positions[i][j]].get();
+        buildAggregateFunctionInstruction(
+            i, /*has_sparse_arguments=*/false, prep->aggregate_columns, prep->instructions, prep->nested_columns_holder);
+    }
 
     payload.prepared = std::move(prep);
 }

@@ -1793,33 +1793,43 @@ void Aggregator::prepareAggregateInstructions(
                 has_sparse_arguments = true;
         }
 
-        aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
-        aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
-        aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
-        aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
-
-        const auto * that = aggregate_functions[i];
-        /// Unnest consecutive trailing -State combinators
-        while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
-            that = func->getNestedFunction().get();
-        aggregate_functions_instructions[i].that = that;
-
-        if (const auto * func = typeid_cast<const AggregateFunctionArray *>(that))
-        {
-            /// Unnest consecutive -State combinators before -Array
-            that = func->getNestedFunction().get();
-            while (const auto * nested_func = typeid_cast<const AggregateFunctionState *>(that))
-                that = nested_func->getNestedFunction().get();
-            auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
-            nested_columns_holder.push_back(std::move(nested_columns));
-            aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
-            aggregate_functions_instructions[i].offsets = offsets;
-        }
-        else
-            aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
-
-        aggregate_functions_instructions[i].batch_that = that;
+        buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
     }
+}
+
+void Aggregator::buildAggregateFunctionInstruction(
+    size_t i,
+    bool has_sparse_arguments,
+    AggregateColumns & aggregate_columns,
+    AggregateFunctionInstructions & aggregate_functions_instructions,
+    NestedColumnsHolder & nested_columns_holder) const
+{
+    aggregate_functions_instructions[i].has_sparse_arguments = has_sparse_arguments;
+    aggregate_functions_instructions[i].can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
+    aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
+    aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
+
+    const auto * that = aggregate_functions[i];
+    /// Unnest consecutive trailing -State combinators
+    while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
+        that = func->getNestedFunction().get();
+    aggregate_functions_instructions[i].that = that;
+
+    if (const auto * func = typeid_cast<const AggregateFunctionArray *>(that))
+    {
+        /// Unnest consecutive -State combinators before -Array
+        that = func->getNestedFunction().get();
+        while (const auto * nested_func = typeid_cast<const AggregateFunctionState *>(that))
+            that = nested_func->getNestedFunction().get();
+        auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
+        nested_columns_holder.push_back(std::move(nested_columns));
+        aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
+        aggregate_functions_instructions[i].offsets = offsets;
+    }
+    else
+        aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
+
+    aggregate_functions_instructions[i].batch_that = that;
 }
 
 bool Aggregator::executeOnBlock(Columns columns,

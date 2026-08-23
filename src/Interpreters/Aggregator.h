@@ -1145,6 +1145,17 @@ private:
         AggregateFunctionInstructions & instructions,
         NestedColumnsHolder & nested_columns_holder) const;
 
+    /// The instruction-building tail of `prepareAggregateInstructions`: the combinator
+    /// unwrapping (-State, -Array) and the batch wiring for one aggregate whose argument
+    /// pointers are already in place. Called directly for staged chunks, whose payload
+    /// columns the seal already normalized to the drain's form.
+    void buildAggregateFunctionInstruction(
+        size_t i,
+        bool has_sparse_arguments,
+        AggregateColumns & aggregate_columns,
+        AggregateFunctionInstructions & instructions,
+        NestedColumnsHolder & nested_columns_holder) const;
+
     void addSingleKeyToAggregateColumns(
         AggregatedDataVariants & data_variants,
         MutableColumns & aggregate_columns) const;
