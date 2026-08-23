@@ -81,8 +81,6 @@ enum class ArenaKeyPlacement : UInt8
     /// Already in the arena, in the place it will stay - a whole block serialized there at once.
     /// Persisting keeps it as it is; a duplicate is dealt with by whoever laid the block out.
     InArena,
-    /// The arena's last allocation: persisting keeps it, discarding gives it straight back.
-    ArenaTail,
 };
 
 struct ArenaKeyHolder
@@ -127,12 +125,8 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
     holder.key = std::string_view{holder.pool.insert(holder.key.data(), holder.key.size()), holder.key.size()};
 }
 
-inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeyHolder & holder)
+inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeyHolder &)
 {
-    /// The key was serialized straight onto the arena's head and nothing has been allocated since,
-    /// so a duplicate row costs the arena nothing.
-    if (holder.placement == DB::ArenaKeyPlacement::ArenaTail)
-        holder.pool.rollback(holder.key.size());
 }
 
 namespace DB

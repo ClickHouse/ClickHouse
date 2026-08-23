@@ -1,7 +1,16 @@
 <test>
-    <!-- Two string keys long enough that the serialized method skips batch serialization. Without
-         aggregate functions the cells hold only the key, so the block's keys are serialized straight
-         into the arena instead of into one buffer per row. -->
+    <!-- `GROUP BY` over several string keys goes through the serialized method. Without aggregate
+         functions its cells hold only the key, and a block's keys are then laid out in a region they
+         stay in, so an inserted key is never copied out of a buffer. Wider rows fall back to
+         serializing a row at a time, into a buffer reused across the block rather than one allocated
+         per row. -->
+
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 64, '0') AS k1, leftPad(toString(number % 13), 64, '0') AS k2 FROM numbers_mt(20000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
 
     <query short="1">
         SELECT k1, k2
@@ -17,19 +26,29 @@
         FORMAT Null
     </query>
 
-    <!-- The same keys with an aggregate function: the cells hold a state pointer, so the keys are
-         serialized one row at a time, into a buffer reused across the block. -->
+    <!-- Rows too wide for the region: the keys are serialized one row at a time, into a buffer that
+         is reused instead of allocated per row. -->
     <query short="1">
         SELECT k1, k2, count()
-        FROM (SELECT leftPad(toString(cityHash64(number) % 1000), 100, '0') AS k1, leftPad(toString(number % 13), 100, '0') AS k2 FROM numbers_mt(20000000))
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 300, '0') AS k1, leftPad(toString(number % 13), 300, '0') AS k2 FROM numbers_mt(5000000))
         GROUP BY k1, k2
         FORMAT Null
     </query>
 
+    <!-- Short keys in a large block, which the old size rule excluded from the one-pass form. -->
     <query short="1">
         SELECT k1, k2, count()
-        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 100, '0') AS k1, leftPad(toString(number % 13), 100, '0') AS k2 FROM numbers_mt(20000000))
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2 FROM numbers_mt(20000000))
         GROUP BY k1, k2
         FORMAT Null
+        SETTINGS max_block_size = 1000000
+    </query>
+
+    <query short="1">
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2 FROM numbers_mt(20000000))
+        GROUP BY k1, k2
+        FORMAT Null
+        SETTINGS max_block_size = 1000000
     </query>
 </test>

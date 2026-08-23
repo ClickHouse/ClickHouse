@@ -342,7 +342,6 @@ public:
     {}
 
     HashMethodContextSettings settings;
-
 };
 
 /** Hash by concatenating serialized key values.
@@ -469,13 +468,19 @@ struct HashMethodSerialized
             for (auto row_size : row_sizes)
                 total_size += row_size;
 
-            /// Where the cells hold only the key, serializing the block into a region of its own
-            /// and letting the kept keys stay there saves the copy that batch serialization needs
-            /// for every inserted key. Where they also hold an aggregate state it does not pay:
-            /// batch serialization puts a new key in the arena right in front of its state, and
-            /// keeping the two together is worth more than the copy.
-            can_use_key_region = total_size != 0 && !Base::has_mapped;
-            use_batch_serialize = !can_use_key_region;
+            const size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
+
+            /// Where the cells hold only the key, serializing the block into a region of its own and
+            /// letting the kept keys stay there saves the copy that batch serialization needs for
+            /// every inserted key. Where they also hold an aggregate state it does not pay: batch
+            /// serialization puts a new key in the arena right in front of its state, and keeping the
+            /// two together is worth more than the copy.
+            ///
+            /// Laying the block out writes it with a row-sized stride, so like batch serialization
+            /// this stops paying once a row is much wider than a cache line - measured, it wins from
+            /// -72% at 128 bytes per row down to -9% at 512, and nothing beyond that.
+            can_use_key_region = total_size != 0 && !Base::has_mapped && avg_row_size <= 512;
+            use_batch_serialize = !can_use_key_region && shouldUseBatchSerialize();
             if (use_batch_serialize)
             {
                 serialized_buffer.resize(total_size);
@@ -546,13 +551,31 @@ struct HashMethodSerialized
 
         const size_t rows = serialized_keys.size();
         precomputed_hashes.resize(rows);
-        /// The arena batch materialises one chunk at a time, so only that chunk's keys are there.
+        /// The key region materialises one chunk at a time, so only that chunk's keys are there.
         const size_t begin = use_key_region ? chunk_begin : 0;
         const size_t end = use_key_region ? chunk_end : rows;
         for (size_t i = begin; i < end; ++i)
             precomputed_hashes[i] = data.hash(serialized_keys[i]);
     }
 
+    bool shouldUseBatchSerialize() const
+    {
+#if defined(__aarch64__)
+        // On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
+        return true;
+#endif
+
+        /// One pass per key column writes the block with a row-sized stride, and the hash table then
+        /// copies every inserted key out of that buffer, so it only pays while a row is a couple of
+        /// cache lines wide. Measured on `group_by_multiple_strings`: it wins up to ~256 bytes per row
+        /// with one thread and starts losing from ~128 upwards once threads compete for bandwidth.
+        ///
+        /// How large the block is does not belong in that decision: a large block of short rows is
+        /// exactly where the one pass wins most - a 1M-row block of 20-byte keys is 3.8x faster with
+        /// it - and the buffer is written and read back sequentially either way.
+        const size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
+        return avg_row_size < 128;
+    }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
@@ -578,7 +601,6 @@ struct HashMethodSerialized
     /// written over by the rows that follow.
     void NO_INLINE prepareKeyChunk(size_t first_row, Arena & pool)
     {
-
         const size_t rows = row_sizes.size();
         chunk_begin = first_row;
         chunk_end = first_row;
