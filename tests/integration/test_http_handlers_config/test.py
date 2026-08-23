@@ -209,8 +209,8 @@ def test_dynamic_handler_put_delete_still_readonly():
         assert b"connection: close" in response.lower(), response
         assert b"42424242" not in response, response
 
-        # The server-level path-request gate must run before decoding the final component. Otherwise a
-        # malformed percent escape is turned into a routing-time 500 even though path requests are disabled.
+        # A malformed percent escape in the final component is not a valid upload suffix, so the routing
+        # filter must leave the request unclaimed. Unclaimed PUT requests use the standard 501 response.
         with socket.create_connection((cluster.instance.ip_address, 8123), timeout=5) as sock:
             sock.sendall(
                 b"PUT /foo%ZZ.CSV HTTP/1.1\r\n"
@@ -226,7 +226,7 @@ def test_dynamic_handler_put_delete_still_readonly():
                 response += chunk
 
         status = response.split(b" ", 2)[1].decode()
-        assert "404" == status, (status, response)
+        assert "501" == status, (status, response)
 
         # The default query parameter name is also used by configured dynamic handlers. It must not
         # enable the built-in path-upload mutation exception for a handler-owned PUT route.
