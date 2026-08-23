@@ -19,7 +19,9 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
 
-INSERT INTO tab SELECT number, 'hit' FROM numbers(100000);
+-- 10000 rows at `index_granularity = 2` are 5000 marks: enough for the sampled read to leave
+-- zero-matching chunks behind, and cheap enough for the sanitizer and cloud test runs.
+INSERT INTO tab SELECT number, 'hit' FROM numbers(10000);
 
 SELECT '--- WHERE with a selective predicate';
 
