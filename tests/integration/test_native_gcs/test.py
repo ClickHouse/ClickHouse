@@ -360,3 +360,94 @@ def test_table_function_filesystem_cache(started_cluster):
             f"WHERE query_id = '{warm_query_id}' AND type = 'QueryFinish'"
         )
     )
+
+
+def test_profile_events(started_cluster):
+    """The native backend must account its requests, the way `S3GetObject` and friends do for the
+    S3-compatibility path. Without these the backend is unobservable: there is no way to see request
+    counts, bytes or latency for a GCS disk in production."""
+    node = started_cluster.instances["node"]
+    disk_endpoint = f"http://{cluster.gcs_host}:{cluster.gcs_port}/{cluster.gcs_bucket}/profile_events/"
+
+    node.query("DROP TABLE IF EXISTS gcs_events SYNC")
+    node.query(
+        "CREATE TABLE gcs_events (a UInt64, b String) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS disk = disk("
+        "  name = 'gcs_disk_events',"
+        "  type = object_storage,"
+        "  object_storage_type = gcs,"
+        "  metadata_type = local,"
+        f"  endpoint = '{disk_endpoint}',"
+        "  no_sign_request = true"
+        ")",
+        settings={"use_native_gcs": 1},
+    )
+
+    write_id = f"gcs_ev_write_{uuid.uuid4()}"
+    node.query(
+        "INSERT INTO gcs_events SELECT number, toString(number) FROM numbers(10000)",
+        query_id=write_id,
+    )
+
+    read_id = f"gcs_ev_read_{uuid.uuid4()}"
+    # `sum(a)` rather than `count()`: with `optimize_trivial_count_query` a count is answered from
+    # the part metadata and never reaches object storage.
+    assert sum(range(10000)) == int(
+        node.query(f"SELECT sum(a) FROM gcs_events", query_id=read_id)
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    def event(query_id, name):
+        return int(
+            node.query(
+                f"SELECT ProfileEvents['{name}'] FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+    # A disk write goes through the resumable upload and is counted for the disk as well.
+    assert event(write_id, "GCSWriteObject") > 0
+    assert event(write_id, "DiskGCSWriteObject") > 0
+    assert event(write_id, "WriteBufferFromGCSBytes") > 0
+
+    # A disk read issues ReadObject and reports the bytes it got back.
+    assert event(read_id, "GCSGetObject") > 0
+    assert event(read_id, "DiskGCSGetObject") > 0
+    assert event(read_id, "ReadBufferFromGCSBytes") > 0
+
+    node.query("DROP TABLE gcs_events SYNC")
+
+
+def test_profile_events_table_function_is_not_counted_as_disk(started_cluster):
+    """`DiskGCS*` must count only server-configured disks, so that disk traffic can be told apart
+    from `gcs()` traffic -- the same split the S3 backend makes with `DiskS3*`."""
+    node = started_cluster.instances["node"]
+    url = gcs_url("profile_events_tf/data.tsv")
+
+    node.query(
+        f"INSERT INTO FUNCTION gcs('{url}', NOSIGN, 'TSV', 'a UInt64') "
+        "SELECT number FROM numbers(1000) SETTINGS use_native_gcs = 1"
+    )
+
+    query_id = f"gcs_ev_tf_{uuid.uuid4()}"
+    assert 1000 == int(
+        node.query(
+            f"SELECT count() FROM gcs('{url}', NOSIGN, 'TSV', 'a UInt64')",
+            settings={"use_native_gcs": 1},
+            query_id=query_id,
+        )
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    def event(name):
+        return int(
+            node.query(
+                f"SELECT ProfileEvents['{name}'] FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+    assert event("GCSGetObject") > 0
+    assert event("DiskGCSGetObject") == 0

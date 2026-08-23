@@ -33,7 +33,8 @@ public:
         size_t buf_size_,
         const WriteSettings & write_settings_,
         BlobStorageLogWriterPtr blob_log_,
-        std::optional<ObjectAttributes> attributes_ = std::nullopt);
+        std::optional<ObjectAttributes> attributes_ = std::nullopt,
+        bool for_disk_ = false);
 
     ~WriteBufferFromGCS() override;
 
@@ -52,6 +53,8 @@ private:
     const WriteSettings write_settings;
     BlobStorageLogWriterPtr blob_log;
     const std::optional<ObjectAttributes> attributes;
+    /// Attributes request counters to `DiskGCS*` in addition to `GCS*`.
+    const bool for_disk;
 
     std::unique_ptr<google::cloud::storage::ObjectWriteStream> write_stream;
 

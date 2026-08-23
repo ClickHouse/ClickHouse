@@ -47,7 +47,8 @@ public:
         bool restricted_seek_ = false,
         std::optional<size_t> file_size_ = std::nullopt,
         std::optional<Int64> expected_generation_ = std::nullopt,
-        BlobStorageLogWriterPtr blob_storage_log_ = {});
+        BlobStorageLogWriterPtr blob_storage_log_ = {},
+        bool for_disk_ = false);
 
     ~ReadBufferFromGCS() override;
 
@@ -86,6 +87,8 @@ private:
 
     /// If set, pin every read request to this object generation (see the class comment).
     std::optional<Int64> expected_generation;
+    /// Attributes request counters to `DiskGCS*` in addition to `GCS*`.
+    bool for_disk;
 
     BlobStorageLogWriterPtr blob_storage_log;
     size_t total_bytes_read = 0;

@@ -11,6 +11,18 @@
 
 namespace gcs = ::google::cloud::storage;
 
+namespace ProfileEvents
+{
+    extern const Event GCSGetObject;
+    extern const Event DiskGCSGetObject;
+    extern const Event GCSGetObjectMetadata;
+    extern const Event DiskGCSGetObjectMetadata;
+    extern const Event ReadBufferFromGCSMicroseconds;
+    extern const Event ReadBufferFromGCSInitMicroseconds;
+    extern const Event ReadBufferFromGCSBytes;
+    extern const Event ReadBufferFromGCSRequestsErrors;
+}
+
 namespace DB
 {
 
@@ -80,7 +92,8 @@ ReadBufferFromGCS::ReadBufferFromGCS(
     bool restricted_seek_,
     std::optional<size_t> file_size_,
     std::optional<Int64> expected_generation_,
-    BlobStorageLogWriterPtr blob_storage_log_)
+    BlobStorageLogWriterPtr blob_storage_log_,
+    bool for_disk_)
     : ReadBufferFromFileBase()
     , client(std::move(client_))
     , bucket(bucket_)
@@ -91,6 +104,7 @@ ReadBufferFromGCS::ReadBufferFromGCS(
     , offset(offset_)
     , read_until_position(read_until_position_)
     , expected_generation(expected_generation_)
+    , for_disk(for_disk_)
     , blob_storage_log(std::move(blob_storage_log_))
     , tmp_buffer_size(read_settings_.remote_fs_settings.buffer_size)
 {
@@ -138,6 +152,10 @@ void ReadBufferFromGCS::initialize()
     if (expected_generation)
         generation_match = gcs::IfGenerationMatch(*expected_generation);
 
+    ProfileEvents::increment(ProfileEvents::GCSGetObject);
+    if (for_disk)
+        ProfileEvents::increment(ProfileEvents::DiskGCSGetObject);
+
     Stopwatch watch;
     ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, data_capacity);
     /// GCS ReadRange is right-open [begin, end), which matches read_until_position (exclusive).
@@ -156,10 +174,13 @@ void ReadBufferFromGCS::initialize()
             client->ReadObject(bucket, key, gcs::ReadFromOffset(offset), generation_match));
     }
     const size_t elapsed_microseconds = watch.elapsedMicroseconds();
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSInitMicroseconds, elapsed_microseconds);
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSMicroseconds, elapsed_microseconds);
 
     if (!read_stream->status().ok())
     {
         read_failed = true;
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSRequestsErrors);
         logGCSReadFailure(blob_storage_log, bucket, key, elapsed_microseconds, read_stream->status());
         throwReadFailure(read_stream->status(), bucket, key, expected_generation,
             fmt::format("while opening a read stream for '{}' in bucket '{}' at offset {}{}", key, bucket, offset,
@@ -206,12 +227,15 @@ bool ReadBufferFromGCS::nextImpl()
     const size_t elapsed_microseconds = watch.elapsedMicroseconds();
     const size_t bytes_read = static_cast<size_t>(read_stream->gcount());
 
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSMicroseconds, elapsed_microseconds);
+
     if (bytes_read == 0)
     {
         /// The read produced no bytes: either clean EOF (status stays ok) or a transport error.
         if (!read_stream->status().ok())
         {
             read_failed = true;
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSRequestsErrors);
             logGCSReadFailure(blob_storage_log, bucket, key, elapsed_microseconds, read_stream->status());
             throwReadFailure(
                 read_stream->status(),
@@ -223,6 +247,7 @@ bool ReadBufferFromGCS::nextImpl()
         return false;
     }
 
+    ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSBytes, bytes_read);
     BufferBase::set(data_ptr, bytes_read, 0);
     offset += bytes_read;
     total_bytes_read += bytes_read;
@@ -305,6 +330,10 @@ std::optional<size_t> ReadBufferFromGCS::tryGetFileSize()
 {
     if (file_size)
         return file_size;
+
+    ProfileEvents::increment(ProfileEvents::GCSGetObjectMetadata);
+    if (for_disk)
+        ProfileEvents::increment(ProfileEvents::DiskGCSGetObjectMetadata);
 
     auto metadata = client->GetObjectMetadata(bucket, key);
     if (!metadata)

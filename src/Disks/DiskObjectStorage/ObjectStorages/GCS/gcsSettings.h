@@ -80,6 +80,10 @@ struct GCSObjectStorageSettings
     std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
 
     /// Disk-only knobs.
+    /// Whether this object storage backs a server-configured disk rather than the SQL surface.
+    /// Only used to attribute request counters to the `DiskGCS*` profile events, mirroring how the
+    /// S3 client's `isClientForDisk` splits `S3*` from `DiskS3*`.
+    bool for_disk = false;
     bool read_only = false;
     /// Page size of the object listings (`maxResults`). 0 means "use the backend default".
     UInt64 list_object_keys_size = 1000;

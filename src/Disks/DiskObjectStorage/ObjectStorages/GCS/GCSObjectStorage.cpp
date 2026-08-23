@@ -10,6 +10,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <IO/ReadHelpers.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
@@ -18,6 +19,18 @@
 #include <google/cloud/storage/well_known_parameters.h>
 
 namespace gcs = ::google::cloud::storage;
+
+namespace ProfileEvents
+{
+    extern const Event GCSGetObjectMetadata;
+    extern const Event GCSListObjects;
+    extern const Event GCSDeleteObjects;
+    extern const Event GCSCopyObject;
+    extern const Event DiskGCSGetObjectMetadata;
+    extern const Event DiskGCSListObjects;
+    extern const Event DiskGCSDeleteObjects;
+    extern const Event DiskGCSCopyObject;
+}
 
 namespace CurrentMetrics
 {
@@ -37,6 +50,16 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Requests made on behalf of a server-configured disk are counted twice: once in the generic
+    /// `GCS*` event and once in the `DiskGCS*` one, so disk traffic can be told apart from traffic
+    /// of the `gcs()` table function. This mirrors the `S3*` / `DiskS3*` split.
+    void countRequest(ProfileEvents::Event event, ProfileEvents::Event disk_event, bool for_disk, size_t amount = 1)
+    {
+        ProfileEvents::increment(event, amount);
+        if (for_disk)
+            ProfileEvents::increment(disk_event, amount);
+    }
+
     time_t timePointToEpochSeconds(std::chrono::system_clock::time_point tp)
     {
         return static_cast<time_t>(std::chrono::duration_cast<std::chrono::seconds>(tp.time_since_epoch()).count());
@@ -81,7 +104,8 @@ namespace
             String path_prefix_,
             String disk_name_,
             const std::optional<std::string> & start_after_,
-            size_t max_list_size_)
+            size_t max_list_size_,
+            bool for_disk_)
             : IObjectStorageIteratorAsync(
                 CurrentMetrics::ObjectStorageGCSThreads,
                 CurrentMetrics::ObjectStorageGCSThreadsActive,
@@ -93,6 +117,7 @@ namespace
             , disk_name(std::move(disk_name_))
             , start_after(start_after_.has_value() ? *start_after_ : "")
             , batch_size(listPageSize(max_list_size_))
+            , for_disk(for_disk_)
         {
         }
 
@@ -112,6 +137,7 @@ namespace
                 /// `StartOffset` is inclusive while `start_after` is exclusive (matching the S3
                 /// backend's ListObjectsV2 semantics), so an object named exactly `start_after`
                 /// is skipped below.
+                countRequest(ProfileEvents::GCSListObjects, ProfileEvents::DiskGCSListObjects, for_disk);
                 if (start_after.empty())
                     reader.emplace(client->ListObjects(bucket, gcs::Prefix(path_prefix), gcs::MaxResults(batch_size)));
                 else
@@ -149,6 +175,7 @@ namespace
         const String disk_name;
         const String start_after;
         const size_t batch_size;
+        const bool for_disk;
 
         std::optional<gcs::ListObjectsReader> reader;
         std::optional<gcs::ListObjectsReader::iterator> reader_position;
@@ -157,7 +184,9 @@ namespace
 
 bool GCSObjectStorage::exists(const StoredObject & object) const
 {
-    auto metadata = getClient()->GetObjectMetadata(bucket, object.remote_path);
+    auto snapshot = getClientWithSettings();
+    countRequest(ProfileEvents::GCSGetObjectMetadata, ProfileEvents::DiskGCSGetObjectMetadata, snapshot->settings.for_disk);
+    auto metadata = snapshot->client->GetObjectMetadata(bucket, object.remote_path);
     if (metadata)
         return true;
     if (isGCSNotFoundError(metadata.status()))
@@ -199,8 +228,9 @@ std::unique_ptr<ReadBufferFromFileBase> GCSObjectStorage::readObject( /// NOLINT
             blob_storage_log->local_path = object.local_path;
     }
 
+    auto snapshot = getClientWithSettings();
     return std::make_unique<ReadBufferFromGCS>(
-        getClient(),
+        snapshot->client,
         bucket,
         object.remote_path,
         patchSettings(read_settings),
@@ -210,7 +240,8 @@ std::unique_ptr<ReadBufferFromFileBase> GCSObjectStorage::readObject( /// NOLINT
         restrict_seek,
         file_size,
         expected_generation,
-        std::move(blob_storage_log));
+        std::move(blob_storage_log),
+        snapshot->settings.for_disk);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject( /// NOLINT
@@ -230,14 +261,16 @@ std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject( /// NOLI
     /// Unlike S3 and Azure, no scheduler is passed to the writer: the google-cloud-cpp write stream
     /// is synchronous, and the SDK handles resumable-upload chunking internally, so there are no
     /// parts to upload in parallel.
+    auto snapshot = getClientWithSettings();
     return std::make_unique<WriteBufferFromGCS>(
-        getClient(),
+        snapshot->client,
         bucket,
         object.remote_path,
         buf_size,
         patchSettings(write_settings),
         std::move(blob_storage_log),
-        std::move(attributes));
+        std::move(attributes),
+        snapshot->settings.for_disk);
 }
 
 void GCSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -251,6 +284,7 @@ void GCSObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
         page_size = std::min(page_size, max_keys);
 
     size_t count = 0;
+    countRequest(ProfileEvents::GCSListObjects, ProfileEvents::DiskGCSListObjects, snapshot->settings.for_disk);
     for (auto && item : snapshot->client->ListObjects(bucket, gcs::Prefix(path), gcs::MaxResults(static_cast<Int64>(page_size))))
     {
         if (!item)
@@ -276,7 +310,8 @@ ObjectStorageIteratorPtr GCSObjectStorage::iterate(
     auto snapshot = getClientWithSettings();
     if (!max_keys)
         max_keys = snapshot->settings.list_object_keys_size;
-    return std::make_shared<GCSIteratorAsync>(snapshot->client, bucket, path_prefix, disk_name, start_after, max_keys);
+    return std::make_shared<GCSIteratorAsync>(
+        snapshot->client, bucket, path_prefix, disk_name, start_after, max_keys, snapshot->settings.for_disk);
 }
 
 void GCSObjectStorage::removeObjectImpl(
@@ -285,6 +320,7 @@ void GCSObjectStorage::removeObjectImpl(
     const BlobStorageLogWriterPtr & blob_storage_log)
 {
     Stopwatch watch;
+    countRequest(ProfileEvents::GCSDeleteObjects, ProfileEvents::DiskGCSDeleteObjects, getClientWithSettings()->settings.for_disk);
     auto status = client_ref.DeleteObject(bucket, object.remote_path);
     auto elapsed = watch.elapsedMicroseconds();
 
@@ -323,7 +359,9 @@ void GCSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 
 ObjectMetadata GCSObjectStorage::getObjectMetadata(const std::string & path, bool /*with_tags*/) const
 {
-    auto metadata = getClient()->GetObjectMetadata(bucket, path);
+    auto snapshot = getClientWithSettings();
+    countRequest(ProfileEvents::GCSGetObjectMetadata, ProfileEvents::DiskGCSGetObjectMetadata, snapshot->settings.for_disk);
+    auto metadata = snapshot->client->GetObjectMetadata(bucket, path);
     if (!metadata)
         throwFromGCSStatus(metadata.status(),
             fmt::format("while reading metadata of '{}' in bucket '{}' on disk '{}'", path, bucket, disk_name));
@@ -332,7 +370,9 @@ ObjectMetadata GCSObjectStorage::getObjectMetadata(const std::string & path, boo
 
 std::optional<ObjectMetadata> GCSObjectStorage::tryGetObjectMetadata(const std::string & path, bool /*with_tags*/) const
 {
-    auto metadata = getClient()->GetObjectMetadata(bucket, path);
+    auto snapshot = getClientWithSettings();
+    countRequest(ProfileEvents::GCSGetObjectMetadata, ProfileEvents::DiskGCSGetObjectMetadata, snapshot->settings.for_disk);
+    auto metadata = snapshot->client->GetObjectMetadata(bucket, path);
     if (metadata)
         return toObjectMetadata(*metadata);
     if (isGCSNotFoundError(metadata.status()))
@@ -348,7 +388,9 @@ void GCSObjectStorage::copyObject( /// NOLINT
     const WriteSettings &,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    auto client_ptr = getClient();
+    auto snapshot = getClientWithSettings();
+    auto client_ptr = snapshot->client;
+    countRequest(ProfileEvents::GCSCopyObject, ProfileEvents::DiskGCSCopyObject, snapshot->settings.for_disk);
 
     google::cloud::StatusOr<gcs::ObjectMetadata> result;
     if (object_to_attributes && !object_to_attributes->empty())
@@ -392,6 +434,7 @@ void GCSObjectStorage::copyObjectToAnotherObjectStorage( /// NOLINT
     auto source_snapshot = getClientWithSettings();
     if (dest_gcs != nullptr && source_snapshot->settings.describesSameClientAs(dest_gcs->getClientWithSettings()->settings))
     {
+        countRequest(ProfileEvents::GCSCopyObject, ProfileEvents::DiskGCSCopyObject, source_snapshot->settings.for_disk);
         google::cloud::StatusOr<gcs::ObjectMetadata> result;
         if (object_to_attributes && !object_to_attributes->empty())
         {

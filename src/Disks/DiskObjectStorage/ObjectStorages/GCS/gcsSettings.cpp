@@ -219,6 +219,7 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.proxy_resolver = ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         gcsProxyProtocol(result.endpoint_override), config_prefix, config);
 
+    result.for_disk = true;
     result.read_only = config.getBool(config_prefix + ".readonly", false);
     result.list_object_keys_size = config.getUInt64(config_prefix + ".list_object_keys_size", 1000);
 

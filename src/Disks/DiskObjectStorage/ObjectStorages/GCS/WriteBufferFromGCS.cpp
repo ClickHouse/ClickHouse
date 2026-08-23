@@ -5,12 +5,22 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSCommon.h>
 #include <Common/CurrentThread.h>
 #include <IO/ReadHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 #include <google/cloud/storage/object_metadata.h>
 
 namespace gcs = ::google::cloud::storage;
+
+namespace ProfileEvents
+{
+    extern const Event GCSWriteObject;
+    extern const Event DiskGCSWriteObject;
+    extern const Event WriteBufferFromGCSMicroseconds;
+    extern const Event WriteBufferFromGCSBytes;
+    extern const Event WriteBufferFromGCSRequestsErrors;
+}
 
 namespace DB
 {
@@ -67,7 +77,8 @@ WriteBufferFromGCS::WriteBufferFromGCS(
     size_t buf_size_,
     const WriteSettings & write_settings_,
     BlobStorageLogWriterPtr blob_log_,
-    std::optional<ObjectAttributes> attributes_)
+    std::optional<ObjectAttributes> attributes_,
+    bool for_disk_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , client(std::move(client_))
     , bucket(bucket_)
@@ -75,7 +86,12 @@ WriteBufferFromGCS::WriteBufferFromGCS(
     , write_settings(write_settings_)
     , blob_log(std::move(blob_log_))
     , attributes(std::move(attributes_))
+    , for_disk(for_disk_)
 {
+    ProfileEvents::increment(ProfileEvents::GCSWriteObject);
+    if (for_disk)
+        ProfileEvents::increment(ProfileEvents::DiskGCSWriteObject);
+
     auto precondition = makeWritePrecondition(write_settings, bucket, key);
 
     if (attributes && !attributes->empty())
@@ -124,16 +140,20 @@ void WriteBufferFromGCS::nextImpl()
     CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
     Stopwatch watch;
     write_stream->write(working_buffer.begin(), static_cast<std::streamsize>(bytes_to_write));
-    total_time_microseconds += watch.elapsedMicroseconds();
+    const size_t elapsed_microseconds = watch.elapsedMicroseconds();
+    total_time_microseconds += elapsed_microseconds;
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSMicroseconds, elapsed_microseconds);
 
     if (!write_stream->good())
     {
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSRequestsErrors);
         const auto & status = write_stream->last_status();
         logUploadResult(static_cast<Int32>(status.code()), status.message());
         throwFromGCSStatus(write_stream->last_status(),
             fmt::format("while writing '{}' in bucket '{}'", key, bucket));
     }
 
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSBytes, bytes_to_write);
     total_bytes_written += bytes_to_write;
 
     if (write_settings.remote_throttler)
@@ -148,7 +168,9 @@ void WriteBufferFromGCS::finalizeImpl()
     CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
     Stopwatch watch;
     write_stream->Close();
-    total_time_microseconds += watch.elapsedMicroseconds();
+    const size_t close_microseconds = watch.elapsedMicroseconds();
+    total_time_microseconds += close_microseconds;
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSMicroseconds, close_microseconds);
 
     const auto & result = write_stream->metadata();
 
@@ -158,8 +180,11 @@ void WriteBufferFromGCS::finalizeImpl()
     logUploadResult(result ? 0 : static_cast<Int32>(result.status().code()), result ? "" : result.status().message());
 
     if (!result)
+    {
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSRequestsErrors);
         throwFromGCSStatus(result.status(),
             fmt::format("while finalizing the upload of '{}' in bucket '{}'", key, bucket));
+    }
 }
 
 void WriteBufferFromGCS::cancelImpl() noexcept
