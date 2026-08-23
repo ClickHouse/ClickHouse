@@ -142,6 +142,10 @@ bash -ex /packages/server_test.sh
 /etc/init.d/clickhouse-server start
 /etc/init.d/clickhouse-server status
 systemctl stop clickhouse-server
+# A stale pid file distinguishes systemctl status from the legacy status command,
+# which exits successfully after reading a stale pid.
+mkdir -p /run/clickhouse-server
+echo "$(( $(cat /proc/sys/kernel/pid_max) + 1 ))" > /run/clickhouse-server/clickhouse-server.pid
 ! /etc/init.d/clickhouse-server status""",
         "Install keeper rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-keeper*rpm
