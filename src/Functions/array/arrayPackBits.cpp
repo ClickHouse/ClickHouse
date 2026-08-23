@@ -31,6 +31,9 @@ namespace ErrorCodes
   *  arrayPackBitGroupsToString(f, g, arr)           groups are packed contiguously, one after another.
   *  arrayPackBitGroupsToFixedString(f, n, g, arr)
   *
+  * Like the other higher-order array functions, several arrays of equal size can be passed, in which case the lambda
+  * takes one argument per array.
+  *
   * Groups follow the order of the array elements and the bit stream is laid out across bytes most-significant-bit
   * first (like `bin`/`unbin`); a trailing partial byte keeps its bits in the most significant positions. The `UInt64`
   * variants interpret that byte stream in little-endian byte order (as requested by issue #48830), so
@@ -42,7 +45,9 @@ struct ArrayPackBitsImpl
 {
     static bool needBoolean() { return false; }
     static bool needExpression() { return true; }
-    static bool needOneArray() { return true; }
+    /// Like the other higher-order array functions, several arrays of equal size can be passed to the lambda; the
+    /// packing consumes the lambda result and the offsets of the first array.
+    static bool needOneArray() { return false; }
 
     /// The result is a FixedString whose size is taken from a constant argument.
     static constexpr bool return_fixed_string = std::is_same_v<ResultType, ColumnFixedString>;
@@ -288,7 +293,7 @@ using FunctionArrayPackBitGroupsToFixedString
 
 REGISTER_FUNCTION(ArrayPackBits)
 {
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
 
     FunctionDocumentation::Description description_to_uint64 = R"(
@@ -299,10 +304,10 @@ and the bytes are interpreted in little-endian order, so
 `arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`.
 Only the first 64 elements are used; the remaining bits are assumed to be zero.
     )";
-    FunctionDocumentation::Syntax syntax_to_uint64 = "arrayPackBitsToUInt64(f, arr)";
+    FunctionDocumentation::Syntax syntax_to_uint64 = "arrayPackBitsToUInt64(f, arr1[, arr2, ...])";
     FunctionDocumentation::Arguments arguments_to_uint64 = {
         {"f", "Lambda function producing the bit for each element.", {"Lambda function"}},
-        {"arr", "The array to pack.", {"Array(T)"}},
+        {"arr1[, arr2, ...]", "One or more arrays of equal size to pack. The lambda takes one argument per array.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_to_uint64 = {"Returns the packed bits.", {"UInt64"}};
     FunctionDocumentation::Examples examples_to_uint64 = {
@@ -316,10 +321,10 @@ Applies a lambda function to each element of the array and packs the resulting b
 For each element the lambda returns an integer that is treated as a single bit (zero or non-zero).
 Bits are written most-significant-bit first; the length of the result is `ceil(size_of_array / 8)` bytes.
     )";
-    FunctionDocumentation::Syntax syntax_to_string = "arrayPackBitsToString(f, arr)";
+    FunctionDocumentation::Syntax syntax_to_string = "arrayPackBitsToString(f, arr1[, arr2, ...])";
     FunctionDocumentation::Arguments arguments_to_string = {
         {"f", "Lambda function producing the bit for each element.", {"Lambda function"}},
-        {"arr", "The array to pack.", {"Array(T)"}},
+        {"arr1[, arr2, ...]", "One or more arrays of equal size to pack. The lambda takes one argument per array.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_to_string = {"Returns the packed bits.", {"String"}};
     FunctionDocumentation::Examples examples_to_string = {
@@ -334,11 +339,11 @@ For each element the lambda returns an integer that is treated as a single bit (
 Bits are written most-significant-bit first. If the array has more than `n * 8` elements the rest are ignored;
 if it has fewer, the result is zero-padded to `n` bytes. The size `n` must be a positive constant.
     )";
-    FunctionDocumentation::Syntax syntax_to_fixed_string = "arrayPackBitsToFixedString(f, n, arr)";
+    FunctionDocumentation::Syntax syntax_to_fixed_string = "arrayPackBitsToFixedString(f, n, arr1[, arr2, ...])";
     FunctionDocumentation::Arguments arguments_to_fixed_string = {
         {"f", "Lambda function producing the bit for each element.", {"Lambda function"}},
         {"n", "The size of the resulting `FixedString` in bytes.", {"(U)Int8/16/32/64"}},
-        {"arr", "The array to pack.", {"Array(T)"}},
+        {"arr1[, arr2, ...]", "One or more arrays of equal size to pack. The lambda takes one argument per array.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_to_fixed_string = {"Returns the packed bits.", {"FixedString(n)"}};
     FunctionDocumentation::Examples examples_to_fixed_string = {
@@ -354,11 +359,11 @@ are packed contiguously (most-significant-bit first within each byte, bytes inte
 result is a `UInt64`, only the leading whole groups that fit into 64 bits are kept. The group size `g` must be a
 constant between 1 and 64.
     )";
-    FunctionDocumentation::Syntax syntax_groups_to_uint64 = "arrayPackBitGroupsToUInt64(f, g, arr)";
+    FunctionDocumentation::Syntax syntax_groups_to_uint64 = "arrayPackBitGroupsToUInt64(f, g, arr1[, arr2, ...])";
     FunctionDocumentation::Arguments arguments_groups_to_uint64 = {
         {"f", "Lambda function producing the group value for each element.", {"Lambda function"}},
         {"g", "The number of bits per group.", {"(U)Int8/16/32/64"}},
-        {"arr", "The array to pack.", {"Array(T)"}},
+        {"arr1[, arr2, ...]", "One or more arrays of equal size to pack. The lambda takes one argument per array.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_groups_to_uint64 = {"Returns the packed bits.", {"UInt64"}};
     FunctionDocumentation::Examples examples_groups_to_uint64 = {
@@ -372,11 +377,11 @@ The same as `arrayPackBitsToString`, but the lambda returns an integer whose low
 are packed contiguously (most-significant-bit first). The length of the result is `ceil(size_of_array * g / 8)` bytes.
 The group size `g` must be a constant between 1 and 64.
     )";
-    FunctionDocumentation::Syntax syntax_groups_to_string = "arrayPackBitGroupsToString(f, g, arr)";
+    FunctionDocumentation::Syntax syntax_groups_to_string = "arrayPackBitGroupsToString(f, g, arr1[, arr2, ...])";
     FunctionDocumentation::Arguments arguments_groups_to_string = {
         {"f", "Lambda function producing the group value for each element.", {"Lambda function"}},
         {"g", "The number of bits per group.", {"(U)Int8/16/32/64"}},
-        {"arr", "The array to pack.", {"Array(T)"}},
+        {"arr1[, arr2, ...]", "One or more arrays of equal size to pack. The lambda takes one argument per array.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_groups_to_string = {"Returns the packed bits.", {"String"}};
     FunctionDocumentation::Examples examples_groups_to_string = {
@@ -391,12 +396,12 @@ are packed contiguously (most-significant-bit first) into a `FixedString(n)`. On
 `n` bytes are kept, and the result is zero-padded to `n` bytes. Both the size `n` and the group size `g` must be positive
 constants, and `g` must not exceed 64.
     )";
-    FunctionDocumentation::Syntax syntax_groups_to_fixed_string = "arrayPackBitGroupsToFixedString(f, n, g, arr)";
+    FunctionDocumentation::Syntax syntax_groups_to_fixed_string = "arrayPackBitGroupsToFixedString(f, n, g, arr1[, arr2, ...])";
     FunctionDocumentation::Arguments arguments_groups_to_fixed_string = {
         {"f", "Lambda function producing the group value for each element.", {"Lambda function"}},
         {"n", "The size of the resulting `FixedString` in bytes.", {"(U)Int8/16/32/64"}},
         {"g", "The number of bits per group.", {"(U)Int8/16/32/64"}},
-        {"arr", "The array to pack.", {"Array(T)"}},
+        {"arr1[, arr2, ...]", "One or more arrays of equal size to pack. The lambda takes one argument per array.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_groups_to_fixed_string = {"Returns the packed bits.", {"FixedString(n)"}};
     FunctionDocumentation::Examples examples_groups_to_fixed_string = {

@@ -59,3 +59,15 @@ SELECT arrayPackBitGroupsToFixedString(x -> x, toUInt256('18446744073709551617')
 -- the lambda must return an integer; Decimal/Float results are rejected during analysis.
 SELECT arrayPackBitsToUInt64(x -> toFloat64(x), [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayPackBitGroupsToUInt64(x -> toDecimal64(x, 0), 4, [15]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Like the other higher-order array functions, several arrays of equal size can be passed to the lambda.
+SELECT arrayPackBitsToUInt64((x, y) -> x > y, [1, 0, 1, 0, 0, 0], [0, 1, 0, 1, 1, 1]);
+SELECT hex(arrayPackBitsToString((x, y) -> x > y, [1, 0, 1, 0, 0, 0, 0, 0, 1], [0, 1, 0, 1, 1, 1, 1, 1, 0]));
+SELECT hex(arrayPackBitsToFixedString((x, y) -> x > y, 2, [1, 0, 1, 0, 0, 0, 0, 0, 1], [0, 1, 0, 1, 1, 1, 1, 1, 0]));
+SELECT arrayPackBitGroupsToUInt64((x, y) -> x + y, 4, [1, 2, 3], [0, 0, 0]);
+SELECT hex(arrayPackBitGroupsToString((x, y) -> x + y, 4, [1, 2, 3], [0, 0, 0]));
+SELECT hex(arrayPackBitGroupsToFixedString((x, y) -> x + y, 4, 4, [1, 2, 3], [0, 0, 0]));
+SELECT arrayPackBitsToUInt64((x, y, z) -> x + y + z, [1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0]);
+
+-- arrays of different sizes are rejected, as for the other higher-order array functions.
+SELECT arrayPackBitsToUInt64((x, y) -> x > y, [1, 0], [0]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
