@@ -51,7 +51,7 @@ bool wireCarriesSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 
     WriteBufferFromOwnString out;
     written.writeChangedBinary(out);
 
-    return out.str().find("serialize_string_in_memory_with_zero_byte") != std::string::npos;
+    return out.str().contains("serialize_string_in_memory_with_zero_byte");
 }
 
 SharedHeader makeHeader()

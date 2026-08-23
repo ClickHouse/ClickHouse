@@ -6,6 +6,9 @@ set serialize_query_plan=0;
 set enable_analyzer=1;
 set max_threads=2;
 
+-- This test inspects the distributed pipeline shape, so pin the unrelated virtual row optimization off.
+set read_in_order_use_virtual_row=0;
+
 -- Basic distributed pipeline explain
 explain pipeline distributed=1 select sum(number) from remote('127.0.0.{1,2,3}', numbers(5)) group by bitAnd(number, 3);
 
