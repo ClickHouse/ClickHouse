@@ -776,11 +776,12 @@ StochasticSimple merge selectors.
 
 This setting only waives the size-ratio requirement that normally keeps an
 unbalanced merge from being assigned; it does not turn any other heuristic off.
-`window_size` still bounds which parts are examined,
-`min_parts_to_merge_at_once` still sets the floor on how many parts a merge must
-cover, and `enable_heuristic_to_remove_small_parts_at_right` still trims a
-trailing small part from a selected range of three parts or more. Any of those
-that a workload needs off must be turned off explicitly through its own setting.
+`merge_selector_window_size` still bounds which parts are examined,
+`min_parts_to_merge_at_once` still sets the floor on how many parts a merge
+must cover, and `merge_selector_enable_heuristic_to_remove_small_parts_at_right`
+still trims a trailing small part from a selected range of three parts or more.
+Any of those that a workload needs off must be turned off explicitly through
+its own setting.
 
 Cannot be combined with `min_age_to_force_merge_seconds` together with
 `min_age_to_force_merge_on_partition_only`. That pair merges a whole partition
