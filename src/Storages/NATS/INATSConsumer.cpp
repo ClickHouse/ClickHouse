@@ -110,6 +110,18 @@ void INATSConsumer::unsubscribe()
 
 void INATSConsumer::finishAndReturnUnprocessed()
 {
+    /// Handing a message back needs the subscription it arrived on: `natsMsg_Nak` follows a plain
+    /// pointer from the message to that subscription, and on to the JetStream context and the
+    /// connection. An unsubscribed consumer holds only leftovers of a subscription that is already
+    /// gone - a direct `SELECT` that ended leaves them behind - so there is nothing to hand them
+    /// back through, and nothing more can arrive either.
+    if (!isSubscribed())
+    {
+        loadReceived()->finish();
+        dropBuffered();
+        return;
+    }
+
     /// Handles of messages this consumer has read but not acknowledged: nothing inserted them, so
     /// the broker has to deliver them again.
     for (auto & msg : consumed_messages)

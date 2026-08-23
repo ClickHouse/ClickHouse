@@ -58,6 +58,10 @@ public:
     /// ACK deadline. Must run before the subscription those messages arrived on is destroyed: a
     /// `natsMsg` keeps a plain pointer to it, and `natsMsg_Nak` follows that pointer to reach the
     /// JetStream context and the connection.
+    /// A consumer that is not subscribed holds only leftovers of a subscription that is already
+    /// gone, which it can only destroy. That tells the two apart because nothing re-subscribes
+    /// without clearing the queue first, so a subscribed consumer never holds a message that
+    /// arrived on an older subscription.
     void finishAndReturnUnprocessed();
 
     void ackConsumed();
