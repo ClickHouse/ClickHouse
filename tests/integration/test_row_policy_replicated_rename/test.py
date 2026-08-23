@@ -7,6 +7,10 @@ from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 
+# Every instance below needs a distinct (shard, replica) pair: the database-disk endpoint in
+# helpers/remote_database_disk.xml is keyed only by those two macros, so instances sharing a pair
+# share one plain_rewritable metadata prefix and corrupt each other's metadata on startup.
+
 # Node-local access storage: each node keeps its own copy of an access entity, so every replica
 # re-keys its own policy while executing the rename. This is the configuration the fix serves.
 node1 = cluster.add_instance(
@@ -37,7 +41,7 @@ shared1 = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    macros={"shard": 1, "replica": 1},
+    macros={"shard": 1, "replica": 6},
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 shared2 = cluster.add_instance(
@@ -46,7 +50,7 @@ shared2 = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    macros={"shard": 1, "replica": 2},
+    macros={"shard": 1, "replica": 7},
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 # Mounts the same access path as shared1/shared2 but owns an independent Atomic database, so it
