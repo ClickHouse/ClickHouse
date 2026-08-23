@@ -20,7 +20,10 @@ main_configs = [
     "configs/shutdown_cancel_backups.xml",
 ]
 
-user_configs = ["configs/user_config.xml"]
+user_configs = [
+    "configs/user_config.xml",
+    "configs/finite_backup_error_timeout.xml",
+]
 
 new_node = cluster.add_instance(
     "new_node",
