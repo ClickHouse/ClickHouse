@@ -1223,15 +1223,15 @@ BlockIO InterpreterInsertQuery::execute()
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
-        /// Allow inserts into external table engines (object storage, message queues, external databases)
-        /// as they don't create merge tasks on the server replica
-        bool is_external_storage =
-            table->isObjectStorage() ||     /// S3, Azure, GCS, HDFS, etc.
-            table->isDataLake() ||           /// Iceberg, DeltaLake, Hudi
-            table->isMessageQueue() ||       /// Kafka, RabbitMQ, NATS
-            table->isExternalDatabase();     /// MySQL, PostgreSQL, MongoDB, Hive, YTsaurus
+        /// Allow inserts that write out to external storage (object storage, message queues,
+        /// external databases): they create no merge tasks on this replica.
+        /// Background streaming pushes (`no_destination`) skip the external table and feed attached
+        /// materialized views instead, producing `MergeTree` parts, so they are not exempt.
+        bool writes_out_to_external_storage = !no_destination
+            && (table->isObjectStorage() || table->isDataLake()
+                || table->isMessageQueue() || table->isExternalDatabase());
 
-        if (!is_external_storage)
+        if (!writes_out_to_external_storage)
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
     }
 

@@ -2,7 +2,6 @@
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/Sources/NullSource.h>
@@ -18,7 +17,6 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -257,192 +255,37 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
 
 std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
 {
-    /// Columns that the PREWHERE / row-level filter needs as inputs must stay in the main read
-    /// because filtering happens there.
-    NameSet columns_to_keep = required_names;
-    if (info.row_level_filter)
-        for (const auto & column : info.row_level_filter->actions.getRequiredColumns())
-            columns_to_keep.insert(column.name);
-    if (info.prewhere_info)
-        for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
-            columns_to_keep.insert(column.name);
+    /// `StorageObjectStorage::read` propagates a bare row policy (no PREWHERE) into
+    /// `info.row_level_filter`, which the split pins to the main pass; keep this guard in case a
+    /// caller constructs the step without that propagation, since the source would still evaluate
+    /// the filter in the main pass via `FormatFilterInfo`.
+    NameSet names_to_keep = required_names;
+    if (!info.row_level_filter && query_info.row_level_filter)
+        for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
+            names_to_keep.insert(column.name);
 
-    /// Hive partition columns are parsed from the file path, reading them is cheap; keep them.
-    for (const auto & column : info.hive_partition_columns_to_read_from_file_path)
-        columns_to_keep.insert(column.name);
-
-    /// Virtual columns are cheap as well.
-    for (const auto & column : info.requested_virtual_columns)
-        columns_to_keep.insert(column.name);
-
-    NameSet requested_from_format;
-    for (const auto & column : info.requested_columns)
-        requested_from_format.insert(column.name);
-
-    NameSet source_header_names;
-    for (const auto & column : info.source_header)
-        source_header_names.insert(column.name);
-
-    /// `AddingDefaultsTransform` runs independently inside every branch (see
-    /// `StorageObjectStorageSource::createReader`): for a column that a file does not contain it
-    /// evaluates the column's `DEFAULT` expression over the columns of that branch alone. An input
-    /// of the expression that the branch does not read is not an error - it is substituted with the
-    /// type's default value (see `defaultRequiredExpressions`), so splitting a defaulted column
-    /// away from the inputs of its expression would silently compute it from zeros instead of the
-    /// row's real values, and with the defaulted column in the sort key the `LIMIT` would then pick
-    /// the wrong rows. A defaulted column and the transitive inputs of its expression must
-    /// therefore always land on the same branch.
-    ///
-    /// That does not have to be the main branch: a defaulted column that nothing needs before the
-    /// `LIMIT` moves to the lazy branch whenever every input of its expression is deferred with it,
-    /// and its expression is then evaluated there over just the surviving rows. Only a defaulted
-    /// column that stays on the main branch - one something needs before the `LIMIT`, or one whose
-    /// expression consumes an input the lazy branch would not see (an input pinned to the main
-    /// branch, or one the format does not read at all) - pins the inputs of its expression to the
-    /// main branch. The last rule feeds itself (pinning an input can strand another default's
-    /// expression), so iterate to a fixpoint.
-    ///
-    /// A hive partition column is such a format-unread input: it is parsed from the file path and
-    /// appended to the chunk only after the per-file reader pipeline, where `AddingDefaultsTransform`
-    /// runs, so no branch ever sees its real value and a default over one cannot be evaluated at
-    /// all - the single-pass plan fails with `UNKNOWN_IDENTIFIER` just the same (a pre-existing
-    /// limitation of hive partitioning, shared by e.g. the `File` engine). Keeping such a defaulted
-    /// column on the main branch preserves the single-pass behavior exactly.
-    ///
-    /// Only the defaults that this query can actually evaluate matter: `AddingDefaultsTransform`
-    /// applies a default expression solely for a column present in the block of its own branch
-    /// (`res.has(col_name)`), so a defaulted column that the query does not read at all imposes no
-    /// dependency and must not pin its inputs to the main branch - otherwise a schema with unused
-    /// `DEFAULT` / `ALIAS` columns would lose the I/O savings for no reason.
-    const auto & column_defaults = info.columns_description.getDefaults();
-    NameSet names_in_default_expressions;
-    std::vector<String> names_to_visit;
-    auto seed_defaulted_column = [&](const String & name)
-    {
-        if (column_defaults.contains(name) && names_in_default_expressions.insert(name).second)
-            names_to_visit.push_back(name);
-    };
-    auto default_expression_inputs = [&](const String & name)
-    {
-        RequiredSourceColumnsVisitor::Data columns_context;
-        auto expression = column_defaults.at(name).expression->clone();
-        RequiredSourceColumnsVisitor(columns_context).visit(expression);
-        return columns_context.requiredColumns();
-    };
-    for (const auto & column : info.source_header)
-        if (columns_to_keep.contains(column.name))
-            seed_defaulted_column(column.name);
-    /// A defaulted column consumed only by the PREWHERE / row-level filter is stripped from
-    /// `info.source_header` by `updateFormatPrewhereInfo`, but the main branch still reads it and
-    /// `AddingDefaultsTransform` evaluates its expression there before the filter runs - so it
-    /// pins the inputs of its expression to the main branch just like a visible column.
-    if (info.row_level_filter)
-        for (const auto & column : info.row_level_filter->actions.getRequiredColumns())
-            seed_defaulted_column(column.name);
-    if (info.prewhere_info)
-        for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
-            seed_defaulted_column(column.name);
-    bool pinned_more = true;
-    while (pinned_more)
-    {
-        while (!names_to_visit.empty())
-        {
-            const String name = names_to_visit.back();
-            names_to_visit.pop_back();
-
-            if (!column_defaults.contains(name))
-                continue;
-
-            for (const auto & required_name : default_expression_inputs(name))
-                if (names_in_default_expressions.insert(required_name).second)
-                    names_to_visit.push_back(required_name);
-        }
-        columns_to_keep.insert(names_in_default_expressions.begin(), names_in_default_expressions.end());
-
-        /// Pin every still-deferred defaulted column whose expression has an input the lazy
-        /// branch would not read the real value of.
-        pinned_more = false;
-        for (const auto & column : info.source_header)
-        {
-            if (columns_to_keep.contains(column.name) || !column_defaults.contains(column.name))
-                continue;
-
-            for (const auto & input : default_expression_inputs(column.name))
-            {
-                const bool input_is_deferred_too = source_header_names.contains(input)
-                    && requested_from_format.contains(input)
-                    && !columns_to_keep.contains(input);
-                if (!input_is_deferred_too)
-                {
-                    seed_defaulted_column(column.name);
-                    pinned_more = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    /// Defer the physical columns that the format reads and nothing needs before the LIMIT.
-    NameSet lazy_names;
-    Block lazy_source_header;
-    for (const auto & column : info.source_header)
-    {
-        if (!columns_to_keep.contains(column.name) && requested_from_format.contains(column.name))
-        {
-            lazy_names.insert(column.name);
-            lazy_source_header.insert(column);
-        }
-    }
-
-    if (!lazy_source_header.columns())
+    auto lazy_info = splitLazilyReadColumnsFromFormatInfo(info, names_to_keep);
+    if (!lazy_info)
         return {};
 
-    /// The info for the lazy read: only the deferred columns, no virtual columns, no filters.
-    ReadFromFormatInfo lazy_info;
-    lazy_info.source_header = lazy_source_header;
-    lazy_info.columns_description = info.columns_description;
-    lazy_info.serialization_hints = info.serialization_hints;
-    for (const auto & column : info.format_header)
-        if (lazy_names.contains(column.name))
-            lazy_info.format_header.insert(column);
-    for (const auto & column : info.requested_columns)
-        if (lazy_names.contains(column.name))
-            lazy_info.requested_columns.push_back(column);
-
-    /// Remove the deferred columns from the main read and make it produce the global row index.
-    Block main_source_header;
-    for (const auto & column : info.source_header)
-        if (!lazy_names.contains(column.name))
-            main_source_header.insert(column);
-    main_source_header.insert({std::make_shared<DataTypeUInt64>(), "__global_row_index"});
-
-    Block main_format_header;
-    for (const auto & column : info.format_header)
-        if (!lazy_names.contains(column.name))
-            main_format_header.insert(column);
-
-    NamesAndTypesList main_requested_columns;
-    for (const auto & column : info.requested_columns)
-        if (!lazy_names.contains(column.name))
-            main_requested_columns.push_back(column);
-
-    info.source_header = std::move(main_source_header);
-    info.format_header = std::move(main_format_header);
-    info.requested_columns = std::move(main_requested_columns);
     output_header = std::make_shared<const Block>(info.source_header);
 
+    NameSet lazy_names;
+    for (const auto & column : lazy_info->source_header)
+        lazy_names.insert(column.name);
     std::erase_if(required_source_columns, [&](const String & name) { return lazy_names.contains(name); });
 
     lazy_row_index_registry = std::make_shared<LazyObjectStorageFileRegistry>();
 
+    auto lazy_source_header = std::make_shared<const Block>(lazy_info->source_header);
     auto lazy_step = std::make_unique<LazilyReadFromObjectStorage>(
-        std::make_shared<const Block>(std::move(lazy_source_header)),
+        std::move(lazy_source_header),
         storage_id,
         object_storage,
         configuration,
         storage_snapshot,
         format_settings,
-        std::move(lazy_info),
+        std::move(*lazy_info),
         getContext(),
         max_block_size);
 
