@@ -1666,6 +1666,28 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             });
         }
 
+        /// The mutation version of a patch part is the maximum data version its index covers, not a
+        /// position in the mutation queue, so it cannot carry this. Patch parts store the updated
+        /// values of a single `UPDATE` and are never rewritten by a metadata mutation anyway.
+        if (!future_part->isResultPatch())
+        {
+            /// `lock` is `currently_processing_in_background_mutex`, the same one `alter` publishes
+            /// the new metadata and registers the rename mutation under, so the mutations read here
+            /// match the `metadata_snapshot` this merge writes its result with.
+            auto mutation_version = getMutationVersionForMergedPart(future_part->part_info.getDataVersion(), lock);
+
+            if (!mutation_version)
+                return std::unexpected(SelectMergeFailure{
+                    .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                    .explanation = PreformattedMessage::create(
+                        "Merging {} would materialize a pending RENAME COLUMN that the result part cannot record, "
+                        "because an earlier pending mutation is not materialized by the merge", future_part->name),
+                });
+
+            if (*mutation_version > future_part->part_info.getDataVersion())
+                future_part->raiseMutationVersion(*mutation_version);
+        }
+
         if ((*getSettings())[MergeTreeSetting::assign_part_uuids])
             future_part->uuid = UUIDHelpers::generateV4();
 
@@ -2238,6 +2260,55 @@ UInt64 StorageMergeTree::getCurrentMutationVersion(UInt64 data_version, std::uni
         return 0;
     --it;
     return it->first;
+}
+
+/// True if every command of the entry is a metadata mutation that a merge materializes on its own.
+/// Anything else (`UPDATE`, `DELETE`, `MATERIALIZE INDEX`, ...) needs a mutation to run, so a merge
+/// leaves it pending.
+static bool isMaterializedByMerge(const MutationCommands & commands)
+{
+    if (commands.empty())
+        return false;
+
+    return std::all_of(commands.begin(), commands.end(), [](const auto & command)
+    {
+        return AlterConversions::isSupportedMetadataMutation(command.type);
+    });
+}
+
+std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
+    Int64 sources_data_version,
+    std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
+{
+    Int64 version = sources_data_version;
+
+    auto it = current_mutations_by_version.upper_bound(sources_data_version);
+    for (; it != current_mutations_by_version.end(); ++it)
+    {
+        if (!isMaterializedByMerge(*it->second.commands))
+            break;
+
+        version = it->first;
+    }
+
+    /// A part carries a single data version, so it can only express a contiguous prefix of the
+    /// pending mutations as applied. Past the first mutation a merge does not materialize, a pending
+    /// `RENAME COLUMN` would be materialized without being recorded: the mutation would then resolve
+    /// the new name back to the physical name the merge already replaced, read the column as missing
+    /// and fill defaults, losing the values of a column with no default expression. Refuse the merge
+    /// instead. This is unreachable in practice, because `RENAME COLUMN` is a barrier command and
+    /// `alter` waits out every earlier mutation before registering it; `DROP COLUMN` is the other
+    /// metadata mutation and re-applying it to a part that no longer has the column is a no-op.
+    for (; it != current_mutations_by_version.end(); ++it)
+    {
+        for (const auto & command : *it->second.commands)
+        {
+            if (command.type == MutationCommand::RENAME_COLUMN)
+                return {};
+        }
+    }
+
+    return version;
 }
 
 UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
