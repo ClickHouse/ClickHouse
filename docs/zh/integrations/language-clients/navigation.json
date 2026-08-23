@@ -3,8 +3,9 @@
     {
       "group": "首页",
       "icon": "house",
-      "pages": [],
-      "root": "zh/integrations/language-clients/index"
+      "pages": [
+        "zh/integrations/language-clients/index"
+      ]
     },
     {
       "$ref": "js/navigation.json"
@@ -34,7 +35,6 @@
       "group": "第三方客户端",
       "icon": "users",
       "pages": [
-        "zh/integrations/language-clients/third-party/moose-olap",
         "zh/integrations/language-clients/third-party/client-libraries"
       ]
     }

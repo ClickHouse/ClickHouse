@@ -6,21 +6,90 @@ title: 'CREATE ROW POLICY'
 doc_type: 'reference'
 ---
 
-Crea una [política de fila](/es/concepts/features/security/access-rights#row-policy-management), es decir, un filtro que se utiliza para determinar qué filas puede leer un usuario de una tabla.
+Crea una [ROW POLICY](/es/concepts/features/security/access-rights#row-policy-management), es decir, un filtro que se utiliza para determinar qué filas puede leer un usuario de una tabla.
 
 <Tip>
-  Las políticas de fila solo tienen sentido para usuarios con acceso de solo lectura. Si un usuario puede modificar una tabla o copiar particiones entre tablas, las restricciones de las políticas de fila dejan de ser efectivas.
+  Las ROW POLICY solo tienen sentido para usuarios con acceso de solo lectura. Si un usuario puede modificar una tabla o copiar particiones entre tablas, las restricciones de las ROW POLICY dejan de ser efectivas.
 </Tip>
 
 Sintaxis:
 
 ```sql
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
-        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
+-- Multiple names on one table target
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
+    [ON CLUSTER cluster_name]
+    ON { [db.]table | db.* }
     [IN access_storage_type]
     [FOR SELECT] USING condition
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+
+-- One name on multiple table targets
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
+    [ON CLUSTER cluster_name]
+    ON { [db.]table | db.* } [, ...]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+
+-- Mixed packing: each name paired with its own table target
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
+    policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
+    [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+```
+
+`ParserRowPolicyNames` acepta **tres** formas de empaquetado (no un producto cartesiano completo):
+
+1. **Varios nombres, un destino** — `pol1, pol2 ON table1` crea cada uno de los nombres indicados en esa única tabla (o `db.*`).
+2. **Un nombre, varios destinos** — `pol1 ON table1, table2` crea el mismo nombre corto en cada destino indicado.
+3. **Pares mixtos** — `p1 ON t1, p2 ON t2` crea cada nombre únicamente en el destino con el que está emparejado.
+
+Una lista de varios nombres **no puede** combinarse con una lista `ON` de varias tablas en un mismo grupo: se rechaza `p1, p2 ON t1, t2`. Después de un grupo de varios nombres, tampoco se puede añadir otro grupo `name ON target` separado por comas en la misma sentencia.
+
+El `ON CLUSTER` opcional se aplica a toda la sentencia (un nombre de clúster). ClickHouse **no** acepta un `ON CLUSTER` distinto para cada nombre de política empaquetado en una sola creación; ejecute sentencias `CREATE ROW POLICY` independientes cuando las ROW POLICY deban crearse en clústeres distintos.
+
+<div id="multiple-names-and-tables">
+  ## Varios nombres y tablas
+</div>
+
+Válido:
+
+```sql
+-- Several policy names, one table
+CREATE ROW POLICY pol1, pol2, pol3 ON table1
+    FOR SELECT USING id = 1
+    TO accountant;
+
+-- One policy name, several tables
+CREATE ROW POLICY IF NOT EXISTS pol1 ON table1, table2, table3
+    FOR SELECT USING id = 1
+    TO accountant;
+
+-- Mixed packing: different name per table
+CREATE ROW POLICY p4 ON db.table, p5 ON db2.table2
+    USING a = b;
+
+-- Same policy on several tables, on a cluster
+CREATE ROW POLICY IF NOT EXISTS pol1 ON CLUSTER replicated_cluster ON table1, table2
+    FOR SELECT USING id = 1
+    TO accountant;
+```
+
+No válido:
+
+```sql
+-- Multi-name × multi-table in one ON-group (not a Cartesian product)
+CREATE ROW POLICY p1, p2 ON t1, t2
+    FOR SELECT USING id = 1
+    TO accountant;
+
+-- Different clusters per name in one statement
+CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
 <div id="using-clause">
@@ -84,11 +153,28 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 permiten que el usuario `peter` vea las filas de table1 solo si se cumplen tanto `b=1` COMO `c=2`, aunque
 cualquier otra tabla de mydb tendría aplicada únicamente la política `b=1` para el usuario.
 
+<div id="distributed-and-remote-backed-tables">
+  ## Tablas Distributed y con respaldo remoto
+</div>
+
+Una ROW POLICY filtra las filas en el lugar donde se leen realmente los datos de la tabla. Una tabla que delega la lectura en servidores remotos, como una tabla [Distributed](/es/reference/engines/table-engines/special/distributed) o un envoltorio de una de ellas (por ejemplo, una vista materializada con un destino `Distributed`), solo envía el texto de la consulta a los servidores remotos y no puede aplicar el filtro de la ROW POLICY a la lectura remota. Para evitar que el filtro se omita silenciosamente, las consultas a este tipo de tabla realizadas por usuarios a los que se aplica la ROW POLICY se rechazan con el error `ILLEGAL_PREWHERE`.
+
+En su lugar, defina la ROW POLICY en las tablas locales subyacentes de cada servidor remoto; se aplicará allí cuando la consulta enviada las lea:
+
+```sql
+-- Filters reads of local_table on this server, including reads shipped by a Distributed table over it.
+CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
+```
+
+<Warning>
+  Esto funciona cuando la consulta se envía como texto, que es el comportamiento predeterminado. Con [`serialize_query_plan = 1`](/es/reference/settings/session-settings/serialize#serialize_query_plan), el iniciador envía en su lugar un plan de lectura ya generado, y un servidor remoto que ejecuta ese plan no aplica sus propias ROW POLICY, por lo que la lectura de una tabla `Distributed` sobre `local_table` devuelve filas sin filtrar. Mantenga `serialize_query_plan = 0` para los usuarios cuyas ROW POLICY deban aplicarse. Consulte el [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
+</Warning>
+
 <div id="on-cluster-clause">
   ## Cláusula ON CLUSTER
 </div>
 
-Permite crear políticas de fila en un clúster; consulta [DDL distribuido](/es/reference/statements/distributed-ddl).
+Permite crear políticas de fila en un clúster; consulta [DDL distribuido](/es/reference/statements/distributed-ddl). También es una forma práctica de crear la política en las tablas locales de cada servidor del clúster.
 
 <div id="examples">
   ## Ejemplos

@@ -280,7 +280,7 @@ ORDER BY s;
 **Exemplo 5:** Usando os resultados de uma subconsulta escalar
 
 ```sql
-/* este exemplo retornaria o TOP 10 das tabelas que mais ocupam espaço */
+/* this example would return TOP 10 of most huge tables */
 WITH
     (
         SELECT sum(bytes)
@@ -296,11 +296,26 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-**Exemplo 6:** Reutilização de expressão em uma subconsulta
+**Exemplo 6:** Reutilizando uma expressão escalar comum definida por lambda em uma subconsulta
+
+Defina a expressão escalar comum como uma lambda para que seu argumento seja explicitamente associado:
 
 ```sql
-WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
-SELECT * FROM test1;
+WITH (value) -> value + 1 AS increment
+SELECT increment(first_result) AS second_increment
+FROM
+(
+    SELECT increment(number) AS first_result
+    FROM numbers(3)
+);
+```
+
+```response
+┌─second_increment─┐
+│                2 │
+│                3 │
+│                4 │
+└──────────────────┘
 ```
 
 <div id="recursive-queries">

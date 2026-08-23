@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'JavaScript'
+sidebarTitle: '概览'
 keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'web', 'browser', 'Cloudflare', 'workers', 'client', 'connect', 'integrate']
 slug: /integrations/javascript
 description: '用于连接到 ClickHouse 的官方 JavaScript 客户端。'
@@ -33,7 +33,7 @@ import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
   JavaScript 客户端附带了 AI 智能体技能，可帮助编程智能体使用该客户端。安装方式如下：
 
   ```sh
-  npm skills add ClickHouse/clickhouse-js
+  npx skills add ClickHouse/clickhouse-js
   ```
 </Info>
 
@@ -1011,7 +1011,7 @@ await client.query({
 因为这些类型的最大值大于 `Number.MAX_SAFE_INTEGER`。
 
 不过，可以通过
-[`output_format_json_quote_64bit_integers` 设置](/zh/reference/settings/formats#output_format_json_quote_64bit_integers)
+[`output_format_json_quote_64bit_integers` 设置](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 修改这一行为。
 
 **示例：**调整 64 位数值的 JSON 输出格式。
