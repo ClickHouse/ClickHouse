@@ -5,6 +5,55 @@
 
 SET enable_analyzer = 1;
 
+-- The query from the issue, keeping its exact shape: `subquery2` is a plain CTE over the
+-- recursive `subquery1`, and the recursive part of `subquery3` has two branches, one of
+-- them joining `subquery3` with `subquery2`. The original query is valid but does not
+-- terminate, so a `depth` column bounds the recursion, which makes the result checkable.
+
+WITH RECURSIVE
+    subquery1 AS
+    (
+        SELECT 1 AS x
+        UNION ALL
+        SELECT x + 1
+        FROM subquery1
+        WHERE x < 5
+    ),
+    subquery2 AS
+    (
+        SELECT 1 AS id
+        FROM subquery1
+    ),
+    subquery3 AS
+    (
+        SELECT
+            id,
+            0 AS depth
+        FROM subquery2
+        UNION ALL
+        SELECT
+            cc.id,
+            cc.depth + 1
+        FROM subquery3 AS cc
+        INNER JOIN subquery2 AS oe ON cc.id = oe.id
+        WHERE cc.depth < 2
+        UNION ALL
+        SELECT
+            cc.id,
+            cc.depth + 1
+        FROM subquery3 AS cc
+        WHERE cc.depth < 2
+    )
+SELECT
+    depth,
+    count()
+FROM subquery3
+GROUP BY depth
+ORDER BY depth;
+
+-- The same shape, but the sibling CTE propagates distinct values, so the join branch of
+-- the recursive part is also constrained by the data and not only by the depth column.
+
 WITH RECURSIVE
     t1 AS
     (
@@ -37,38 +86,3 @@ SELECT
     sum(id),
     count()
 FROM t3;
-
--- The exact query from the issue. It is a valid, but non-terminating query,
--- so the recursion depth is limited to keep the test fast.
-
-SET max_recursive_cte_evaluation_depth = 5;
-
-WITH RECURSIVE
-    subquery1 AS
-    (
-        SELECT 1 AS x
-        UNION ALL
-        SELECT x + 1 AS level
-        FROM subquery1
-        WHERE x < 5
-    ),
-    subquery2 AS
-    (
-        SELECT 1 AS id
-        FROM subquery1
-    ),
-    subquery3 AS
-    (
-        SELECT id
-        FROM subquery2
-        UNION ALL
-        SELECT cc.id
-        FROM subquery3 AS cc
-        INNER JOIN subquery2 AS oe ON cc.id = oe.id
-        UNION ALL
-        SELECT cc.id
-        FROM subquery3 AS cc
-    )
-SELECT *
-FROM subquery3
-FORMAT Null; -- { serverError TOO_DEEP_RECURSION }
