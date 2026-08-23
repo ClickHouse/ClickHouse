@@ -510,14 +510,12 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
-            /// Every dictionary key mapped to the same value, so every row has that value: return a
-            /// constant instead of one index per row. Never on an empty block or a dry run - headers
-            /// and plan time constants are evaluated that way, and a constant there is taken for a
-            /// real one (`FilterTransform` reads `ConstantFilterDescription` off its header, so a
-            /// fabricated one makes the whole `WHERE` always-false). A LowCardinality(Nullable)
-            /// dictionary also holds NULL, so it needs the function to map NULL and the default alike.
+            /// All keys mapped to the same value, so all rows do: return a constant instead of one
+            /// index per row. Only above one row: planning evaluates on zero or one row and would
+            /// take the constant for a real one (`FilterTransform` reads `ConstantFilterDescription`
+            /// off its header). Nested calls can reset `dry_run`, so the row count is the guard.
             bool res_is_same_for_all_rows = res_is_constant
-                || (indexes && !dry_run && input_rows_count != 0 && indexesHaveSingleValue(*res_indexes));
+                || (indexes && !dry_run && input_rows_count > 1 && indexesHaveSingleValue(*res_indexes));
 
             if (res_is_same_for_all_rows)
                 result = ColumnLowCardinality::create(res_dictionary, res_indexes->cut(0, 1), /*is_shared=*/false);

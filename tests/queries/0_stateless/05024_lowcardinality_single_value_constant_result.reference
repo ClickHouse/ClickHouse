@@ -17,10 +17,13 @@ non bool filter
 0
 0
 1000
-zero rows
+zero or one row
+1
+0
 1
 correlated subquery
 1
+0
 several keys with the same result
 1
 several keys with different results

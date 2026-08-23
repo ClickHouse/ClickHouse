@@ -51,10 +51,14 @@ SELECT sum(*) FROM t_lc_not_bool PREWHERE toLowCardinality(toNullable(max2(0, va
 SELECT sum(*) FROM t_lc_not_bool WHERE toLowCardinality(toNullable(max2(0, value::Int64 - 10)));
 SELECT count() FROM t_lc_single_value PREWHERE toNullable(toInt64(lc = ''));
 
-SELECT 'zero rows';
+SELECT 'zero or one row';
 -- Headers are built by running the actions on zero rows, over a dictionary that holds only the default
 -- value. A constant there would be read as a compile time constant and drop every row of the WHERE.
 SELECT count() FROM (SELECT toLowCardinality(if(number = 3, 'x', '')) AS lc FROM numbers(1000)) WHERE lc = 'x';
+-- Plan time constants are evaluated on one row, so one row must not produce a constant either. It is
+-- also worth nothing there, unlike two rows.
+SELECT isConstant(toLowCardinality(materialize('')) != '') FROM numbers(1);
+SELECT DISTINCT isConstant(toLowCardinality(materialize('')) != '') FROM numbers(2);
 
 SELECT 'correlated subquery';
 -- Decorrelation evaluates the condition on one row at plan time, which must not be folded either.
@@ -63,6 +67,10 @@ DROP TABLE IF EXISTS t_lc_correlated;
 CREATE TABLE t_lc_correlated (id UInt64, lc LowCardinality(String)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_lc_correlated VALUES (0, ''), (1, 'a');
 SELECT id FROM t_lc_correlated WHERE EXISTS (SELECT 1 FROM numbers(3) WHERE t_lc_correlated.lc != '')
+ORDER BY id SETTINGS enable_analyzer = 1;
+-- Composite functions such as nullIf run their nested calls with a dry run flag of their own, so the
+-- guard cannot rest on that flag.
+SELECT id FROM t_lc_correlated WHERE EXISTS (SELECT 1 FROM numbers(3) WHERE nullIf(t_lc_correlated.lc, '') IS NULL)
 ORDER BY id SETTINGS enable_analyzer = 1;
 
 SELECT 'several keys with the same result';
