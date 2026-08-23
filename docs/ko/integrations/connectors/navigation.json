@@ -3,6 +3,7 @@
     {
       "group": "데이터 소스",
       "pages": [
+        "ko/integrations/connectors/data-sources/index",
         {
           "expanded": false,
           "group": "AWS S3",
@@ -17,6 +18,7 @@
           "expanded": false,
           "group": "Kafka",
           "pages": [
+            "ko/integrations/connectors/data-ingestion/kafka/index",
             "ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink",
             "ko/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud",
             "ko/integrations/connectors/data-ingestion/kafka/confluent/custom-connector",
@@ -27,32 +29,32 @@
             "ko/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http",
             "ko/integrations/connectors/data-ingestion/kafka/kafka-connect-jdbc",
             "ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine-named-collections"
-          ],
-          "root": "ko/integrations/connectors/data-ingestion/kafka/index"
+          ]
         },
         "ko/integrations/connectors/data-sources/mysql",
         "ko/integrations/connectors/data-sources/cassandra",
         "ko/integrations/connectors/data-sources/gcs",
         "ko/integrations/connectors/data-ingestion/s3-minio",
+        "ko/integrations/connectors/data-ingestion/s3-tigris",
+        "ko/integrations/connectors/data-ingestion/s3-seaweedfs",
         "ko/integrations/connectors/data-ingestion/emqx/index",
         "ko/integrations/connectors/data-ingestion/insert-local-files",
-        "ko/integrations/connectors/data-ingestion/jdbc-with-clickhouse",
-        "ko/integrations/connectors/data-ingestion/odbc-with-clickhouse"
-      ],
-      "root": "ko/integrations/connectors/data-sources/index"
+        "ko/integrations/connectors/data-ingestion/jdbc-with-clickhouse"
+      ]
     },
     {
       "expanded": true,
       "group": "데이터 시각화",
       "pages": [
+        "ko/integrations/connectors/data-visualization/index",
         {
           "expanded": false,
           "group": "Grafana",
           "pages": [
+            "ko/integrations/connectors/data-visualization/grafana/index",
             "ko/integrations/connectors/data-visualization/grafana/query-builder",
             "ko/integrations/connectors/data-visualization/grafana/config"
-          ],
-          "root": "ko/integrations/connectors/data-visualization/grafana/index"
+          ]
         },
         "ko/integrations/connectors/data-visualization/lightdash-and-clickhouse",
         "ko/integrations/connectors/data-visualization/looker-and-clickhouse",
@@ -94,13 +96,13 @@
             "ko/integrations/connectors/data-visualization/community-integrations/holistics-and-clickhouse"
           ]
         }
-      ],
-      "root": "ko/integrations/connectors/data-visualization/index"
+      ]
     },
     {
       "expanded": true,
       "group": "데이터 수집",
       "pages": [
+        "ko/integrations/connectors/data-ingestion/index",
         "ko/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         "ko/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "ko/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
@@ -108,11 +110,11 @@
           "expanded": false,
           "group": "Apache Spark",
           "pages": [
+            "ko/integrations/connectors/data-ingestion/apache-spark/index",
             "ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector",
             "ko/integrations/connectors/data-ingestion/apache-spark/databricks",
             "ko/integrations/connectors/data-ingestion/apache-spark/spark-jdbc"
-          ],
-          "root": "ko/integrations/connectors/data-ingestion/apache-spark/index"
+          ]
         },
         "ko/integrations/connectors/data-ingestion/apache-flink",
         "ko/integrations/connectors/data-ingestion/AWS/glue",
@@ -120,11 +122,11 @@
           "expanded": false,
           "group": "Azure Data Factory",
           "pages": [
+            "ko/integrations/connectors/data-ingestion/azure/azure-data-factory/index",
             "ko/integrations/connectors/data-ingestion/azure/azure-data-factory/overview",
             "ko/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage",
             "ko/integrations/connectors/data-ingestion/azure/azure-data-factory/using-http-interface"
-          ],
-          "root": "ko/integrations/connectors/data-ingestion/azure/azure-data-factory/index"
+          ]
         },
         "ko/integrations/connectors/data-ingestion/azure/azure-synapse",
         "ko/integrations/connectors/data-ingestion/etl-tools/apache-beam",
@@ -137,7 +139,7 @@
             "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow Template",
+              "group": "Dataflow 템플릿",
               "pages": [
                 "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -150,21 +152,21 @@
           "expanded": false,
           "group": "dbt",
           "pages": [
+            "ko/integrations/connectors/data-ingestion/etl-tools/dbt/index",
             "ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
             "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
             "ko/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
             "ko/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ],
-          "root": "ko/integrations/connectors/data-ingestion/etl-tools/dbt/index"
+          ]
         },
         "ko/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
           "group": "Fivetran",
           "pages": [
+            "ko/integrations/connectors/data-ingestion/etl-tools/fivetran/index",
             "ko/integrations/connectors/data-ingestion/etl-tools/fivetran/reference",
             "ko/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting"
-          ],
-          "root": "ko/integrations/connectors/data-ingestion/etl-tools/fivetran/index"
+          ]
         },
         "ko/integrations/connectors/data-ingestion/etl-tools/nifi-and-clickhouse",
         "ko/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse",
@@ -181,49 +183,57 @@
           "group": "커뮤니티 통합",
           "pages": [
             "ko/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
-            "ko/integrations/connectors/data-ingestion/community-integrations/estuary"
+            "ko/integrations/connectors/data-ingestion/community-integrations/erathos",
+            {
+              "group": "Estuary",
+              "pages": [
+                "ko/integrations/connectors/data-ingestion/community-integrations/estuary",
+                "ko/integrations/connectors/data-ingestion/community-integrations/estuary-native",
+                "ko/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes"
+              ]
+            }
           ]
         }
-      ],
-      "root": "ko/integrations/connectors/data-ingestion/index"
+      ]
     },
     {
       "expanded": true,
       "group": "데이터 통합",
       "pages": [
+        "ko/integrations/connectors/tools/data-integration-index",
         "ko/integrations/connectors/data-integrations/integrations/retool",
         "ko/integrations/connectors/data-integrations/integrations/easypanel",
         "ko/integrations/connectors/data-integrations/integrations/middleware",
         "ko/integrations/connectors/data-integrations/integrations/notion",
         "ko/integrations/connectors/data-integrations/integrations/splunk"
-      ],
-      "root": "ko/integrations/connectors/tools/data-integration-index"
+      ]
     },
     {
       "expanded": true,
       "group": "SQL 클라이언트",
       "pages": [
+        "ko/integrations/connectors/sql-clients/index",
         "ko/integrations/connectors/sql-clients/sql-console",
         "ko/integrations/connectors/sql-clients/datagrip",
         "ko/integrations/connectors/sql-clients/dbeaver",
         "ko/integrations/connectors/sql-clients/dbvisualizer",
         "ko/integrations/connectors/sql-clients/jupysql",
+        "ko/integrations/connectors/sql-clients/probedeck",
         "ko/integrations/connectors/sql-clients/qstudio",
         "ko/integrations/connectors/sql-clients/tablum",
-        "ko/integrations/connectors/sql-clients/marimo",
-        "ko/integrations/connectors/sql-clients/cli"
-      ],
-      "root": "ko/integrations/connectors/sql-clients/index"
+        "ko/integrations/connectors/sql-clients/marimo"
+      ]
     },
     {
       "expanded": true,
       "group": "도구",
       "pages": [
+        "ko/integrations/connectors/tools/index",
+        "ko/integrations/connectors/tools/misc-index",
         "ko/integrations/connectors/tools/gui",
         "ko/integrations/connectors/tools/proxy",
         "ko/integrations/connectors/tools/third-party-libraries"
-      ],
-      "root": "ko/integrations/connectors/tools/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-connectors.svg",

@@ -41,7 +41,11 @@ _workflow_config_job = Job.Config(
         else None
     ),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.CI_CONFIG_JOB_NAME}'",
-    timeout=600,
+    # On a submodule-cache miss this job does a full shallow clone of all
+    # submodules (see _prepare_submodule_cache), which can take well over 10
+    # minutes. Keep a generous timeout so the config job doesn't get killed
+    # mid-clone.
+    timeout=1800,
 )
 
 _docker_build_manifest_job = Job.Config(
@@ -272,9 +276,27 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
                 verbose=True,
                 strict=True,
             )
-            S3.copy_file_to_s3(s3_path=s3_path, local_path=archive_path, with_rename=True)
+            # Write-once conditional create (If-None-Match: *) instead of an
+            # unconditional overwrite. The object is content-addressed by the
+            # submodule SHAs, so it never legitimately changes; making it
+            # immutable closes a race where two concurrent writers (both saw a
+            # cache miss above) overwrite the same key while a third job is
+            # downloading it, causing the reader's multipart download to abort
+            # with an ETag mismatch. On a lost race S3.put returns False
+            # (PreconditionFailed) — the other writer already populated the
+            # object, so this is a success, not an error.
+            created = S3.put(
+                s3_path=s3_path,
+                local_path=archive_path,
+                if_none_matched=True,
+                no_strict=True,
+            )
             Shell.check(f"rm -f {archive_path}")
-            info = f"cache miss, created: {cache_hash}"
+            info = (
+                f"cache miss, created: {cache_hash}"
+                if created
+                else f"cache miss, created concurrently: {cache_hash}"
+            )
 
         workflow_config.submodule_cache_hash = cache_hash
         workflow_config.dump()
@@ -744,7 +766,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             status = Result.Status.ERROR
             print(f"ERROR: Exception in workflow config hook: {e}")
             traceback.print_exc()
-            info = f"{traceback.print_exc()}"
+            info = traceback.format_exc()
         results.append(
             Result.create_from(
                 name="Filter Hooks", status=status, stopwatch=sw_, info=info
@@ -1091,6 +1113,7 @@ def _finish_workflow(workflow, job_name):
                     f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
                 )
                 result.status = Result.Status.ERROR
+                result.add_error(ResultInfo.NOT_FINALIZED)
                 # dump workflow result after update - to have an updated result in post
                 workflow_result.dump()
                 # Attribute the error to the failed job (not Finish Workflow)
@@ -1171,7 +1194,7 @@ if __name__ == "__main__":
             result = _finish_workflow(workflow, job_name)
         else:
             assert False, f"BUG, job name [{job_name}]"
-    except Exception:
+    except Exception as e:
         error_traceback = traceback.format_exc()
         print("Failed with Exception:")
         print(error_traceback)
@@ -1179,8 +1202,13 @@ if __name__ == "__main__":
             name=job_name,
             status=Result.Status.ERROR,
             stopwatch=sw,
-            # try out .info generated in runner._run() which works for all jobs automatically
-            # info=f"Failed with Exception [{e}]\n{error_traceback}",
+            info=f"Failed with Exception:\n{error_traceback}",
+        )
+        # An exception message can embed command output of any size, so the traceback is
+        # truncated from the top, which discards the leading lines that name the exception.
+        first_message_line = (str(e).splitlines() or [""])[0][:500]
+        result.info = f"Failed with {type(e).__name__}: {first_message_line}\n" + (
+            result.get_info_truncated(max_info_lines_cnt=100, max_line_length=1000)
         )
 
     result.dump().complete_job(with_job_summary_in_info=False)

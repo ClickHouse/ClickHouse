@@ -10,7 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/MemorySpillScheduler.h>
 #include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
@@ -70,18 +69,28 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
+class MemorySpillScheduler;
+using MemorySpillSchedulerPtr = std::shared_ptr<MemorySpillScheduler>;
+
 class ThreadGroup
 {
+    /// Stores parent ThreadGroup for e.g. async INSERTs/MVs/EXPLAIN ANALYZE (those creates nested ThreadGroup's):
+    /// - createForScope()
+    /// - createForMaterializedView()
+    /// - createForFlushAsyncInsertQuery()
+    /// - createForExplainAnalyze()
+    /// Required for raw pointers to memory_tracker/performance_counters
+    ThreadGroupPtr parent;
+
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
-    explicit ThreadGroup(ThreadGroupPtr parent);
-    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
+    explicit ThreadGroup(ThreadGroupPtr parent_thread_group);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
     ~ThreadGroup();
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
-    ThreadGroupPtr parent;
 
     /// Set up at creation, no race when reading
     const ContextWeakPtr query_context;
@@ -91,7 +100,7 @@ public:
 
     const Int32 os_threads_nice_value;
 
-    MemorySpillScheduler::Ptr memory_spill_scheduler;
+    MemorySpillSchedulerPtr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -158,6 +167,9 @@ public:
     /// That method creates a new thread group linked to flush_query_thread_group which has to exist, and is used for flushing async insert query
     /// Current threads are not linked to the flush_query_thread_group, that is why createForBackgroundOps is not used here
     static ThreadGroupPtr createForFlushAsyncInsertQuery(ContextPtr query_context, ThreadGroupPtr flush_query_thread_group);
+
+    /// That method creates a new thread group linked to the given parent group, used by EXPLAIN ANALYZE
+    static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;

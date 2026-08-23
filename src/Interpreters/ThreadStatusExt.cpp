@@ -29,6 +29,7 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
+#include <Common/MemorySpillScheduler.h>
 #include <base/defines.h>
 
 #if defined(OS_LINUX)
@@ -131,10 +132,10 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for method createForScope
-ThreadGroup::ThreadGroup(ThreadGroupPtr parent_)
-    : master_thread_id(CurrentThread::get().thread_id)
-    , parent(parent_)
+// c-tor for methods createForScope, createForMaterializedView and createForExplainAnalyze
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
+    : parent(std::move(parent_thread_group))
+    , master_thread_id(CurrentThread::get().thread_id)
     , query_context(parent->query_context)
     , global_context(parent->global_context)
     , fatal_error_callback(parent->fatal_error_callback)
@@ -148,9 +149,9 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_)
 }
 
 // c-tor for method createForFlushAsyncInsertQuery
-ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_)
-    : master_thread_id(CurrentThread::get().thread_id)
-    , parent(parent_)
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
+    : parent(std::move(parent_thread_group))
+    , master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(parent->fatal_error_callback)
@@ -429,6 +430,14 @@ ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQuery(ContextPtr query_cont
     return res_group;
 }
 
+ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group)
+{
+    LOG_TEST(getLogger("ThreadGroup"), "Creating new thread group for EXPLAIN ANALYZE, inheriting from thread group with master_thread_id {}", parent_thread_group->master_thread_id);
+    auto res_group = std::make_shared<ThreadGroup>(std::move(parent_thread_group));
+    res_group->memory_tracker.setDescription("ExplainAnalyze");
+    return res_group;
+}
+
 void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_hash)
 {
     auto hash = normalized_hash ? normalized_hash : normalizedQueryHash(query_, false);
@@ -697,6 +706,8 @@ void ThreadStatus::initPerformanceCounters()
     performance_counters.resetCounters();
     memory_tracker.resetCounters();
     memory_tracker.setDescription("Thread");
+    progress_in.reset();
+    progress_out.reset();
 
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
