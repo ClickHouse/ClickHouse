@@ -97,6 +97,13 @@ def test_persisted_function_fails_close_without_an_engine(start_cluster):
         "FROM 'is_prime_module' :: 'is_prime' ARGUMENTS (num UInt32) RETURNS UInt32"
     )
     assert node.query("SELECT wasm_is_prime(7 :: UInt32)").strip() == "1"
+    assert (
+        node.query(
+            "SELECT arrayMap(wasm_is_prime, [7 :: UInt32])",
+            settings={"enable_analyzer": 1},
+        ).strip()
+        == "[1]"
+    )
 
     # The definition stays in SQL object storage, so after the restart the name is still known
     # while nothing can run it. Both analyzers have their own resolution path for it.
@@ -121,6 +128,15 @@ def test_persisted_function_fails_close_without_an_engine(start_cluster):
                 settings={"enable_analyzer": enable_analyzer},
             )
             assert "SUPPORT_IS_DISABLED" in error, error
+
+        # A bare name passed to a higher-order function is rewritten to a lambda from the
+        # stored definition, so it reports the same reason as a direct call rather than
+        # degrading into an unknown identifier. The rewrite exists only in the analyzer.
+        error = node.query_and_get_error(
+            "SELECT arrayMap(wasm_is_prime, [7 :: UInt32])",
+            settings={"enable_analyzer": 1},
+        )
+        assert "SUPPORT_IS_DISABLED" in error, error
 
         # Failing close must not lock the definition in: dropping it is what removes the
         # leftover from a server that can no longer run it.
