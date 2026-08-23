@@ -529,6 +529,11 @@ ReadFromMergeTree::ReadFromMergeTree(
     /// `max_streams_to_max_threads_ratio`, so bound the effective value here too.
     requested_num_streams = std::min<size_t>(requested_num_streams, 256 * getNumberOfCPUCoresToUse());
 
+    /// The readers below divide by this value, and so do two of the three branches that
+    /// `initializePipeline` dispatches on. A caller that derives a child stream count of its own can
+    /// reach here with zero even though every top-level read is floored before the step is created.
+    requested_num_streams = std::max<size_t>(1, requested_num_streams);
+
     /// Add explicit description.
     std::string description = data.getStorageID().getFullNameNotQuoted();
     setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
