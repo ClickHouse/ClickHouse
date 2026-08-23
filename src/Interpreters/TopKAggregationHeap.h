@@ -15,6 +15,7 @@
 #include <Core/CompareHelper.h>
 #include <Core/TypeId.h>
 
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 
@@ -63,7 +64,16 @@ struct TopKAggregationHeapBase
 
     bool shouldFreeze() const;
 
-    bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const;
+    /// Per-row on the paths the typed fast path does not cover (`String`, composite, and
+    /// anything the numeric dispatch rejects), hence inline.
+    bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
+    {
+        chassert(!frozen);
+        chassert(boundary_row != invalid_row);
+        if (is_composite)
+            return sourceAboveHeapComposite(source_columns, source_row, boundary_row);
+        return sourceAboveHeap(*source_columns[0], source_row, boundary_row);
+    }
 
     /// The innermost check of the aggregation loop, hence inline.
     bool shouldSkipTyped(const void * source_typed_data, const ColumnRawPtrs & source_columns, size_t source_row) const
@@ -133,7 +143,34 @@ protected:
 
     /// Appends the row to `heap_column` and admits it to the set. The derived class must
     /// append the matching hash-table key first, so that the two arrays stay index-aligned.
-    void pushHeapRow(const ColumnRawPtrs & source_columns, size_t source_row);
+    /// Runs once per admitted row, hence inline; the one-shot boundary search it triggers when
+    /// the set first fills is not, which keeps the comparators out of the including unit.
+    void pushHeapRow(const ColumnRawPtrs & source_columns, size_t source_row)
+    {
+        size_t new_idx = 0;
+
+        if (is_composite)
+        {
+            auto & tuple = assert_cast<ColumnTuple &>(*heap_column);
+            chassert(source_columns.size() == tuple.tupleSize());
+            new_idx = tuple.size();
+
+            for (size_t i = 0; i < source_columns.size(); ++i)
+                tuple.getColumn(i).insertFrom(*source_columns[i], source_row);
+
+            tuple.addSize(1);
+        }
+        else
+        {
+            new_idx = heap_column->size();
+            heap_column->insertFrom(*source_columns[0], source_row);
+        }
+
+        heap_indices.push_back(new_idx);
+
+        if (boundary_row == invalid_row && heap_indices.size() >= k)
+            initBoundary();
+    }
 
     /// Ranks the set, moves the boundary to the k-th best key and drops everything below it.
     /// The dropped rows are left in `evictedRows`; they stay addressable in `heap_column` and
@@ -260,9 +297,26 @@ private:
 
     void compactDictionaries();
 
-    bool sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const;
+    /// Sets `boundary_row` to the worst key once the set first reaches `k`; runs once per heap.
+    void initBoundary();
 
-    bool sourceAboveHeapComposite(const ColumnRawPtrs & source_columns, size_t source_row, size_t heap_row) const;
+    bool sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const
+    {
+        const int cmp = compareColumns(source_column, source_row, *heap_column, heap_row, 0);
+        return directions[0] * cmp > 0;
+    }
+
+    bool sourceAboveHeapComposite(const ColumnRawPtrs & source_columns, size_t source_row, size_t heap_row) const
+    {
+        const auto & tuple = assert_cast<const ColumnTuple &>(*heap_column);
+        for (size_t i = 0; i < source_columns.size(); ++i)
+        {
+            const int cmp = compareColumns(*source_columns[i], source_row, tuple.getColumn(i), heap_row, i);
+            if (cmp != 0)
+                return directions[i] * cmp > 0;
+        }
+        return false;
+    }
 
     int compareHeapRowsComposite(size_t a, size_t b) const;
 

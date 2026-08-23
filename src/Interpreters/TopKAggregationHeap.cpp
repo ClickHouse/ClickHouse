@@ -133,15 +133,6 @@ void TopKAggregationHeapBase::freezeBase()
     trim_old_to_new = {};
 }
 
-bool TopKAggregationHeapBase::shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
-{
-    chassert(!frozen);
-    chassert(boundary_row != invalid_row);
-    if (is_composite)
-        return sourceAboveHeapComposite(source_columns, source_row, boundary_row);
-    return sourceAboveHeap(*source_columns[0], source_row, boundary_row);
-}
-
 const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end)
 {
     chassert(!frozen);
@@ -164,31 +155,9 @@ const UInt8 * TopKAggregationHeapBase::fillSkipBitmap(const void * source_typed_
     return result;
 }
 
-void TopKAggregationHeapBase::pushHeapRow(const ColumnRawPtrs & source_columns, size_t source_row)
+void TopKAggregationHeapBase::initBoundary()
 {
-    size_t new_idx = 0;
-
-    if (is_composite)
-    {
-        auto & tuple = assert_cast<ColumnTuple &>(*heap_column);
-        chassert(source_columns.size() == tuple.tupleSize());
-        new_idx = tuple.size();
-
-        for (size_t i = 0; i < source_columns.size(); ++i)
-            tuple.getColumn(i).insertFrom(*source_columns[i], source_row);
-
-        tuple.addSize(1);
-    }
-    else
-    {
-        new_idx = heap_column->size();
-        heap_column->insertFrom(*source_columns[0], source_row);
-    }
-
-    heap_indices.push_back(new_idx);
-
-    if (boundary_row == invalid_row && heap_indices.size() >= k)
-        withComparator([&](auto cmp) { boundary_row = *std::max_element(heap_indices.begin(), heap_indices.end(), cmp); });
+    withComparator([&](auto cmp) { boundary_row = *std::max_element(heap_indices.begin(), heap_indices.end(), cmp); });
 }
 
 void TopKAggregationHeapBase::trimToK()
@@ -284,24 +253,6 @@ void TopKAggregationHeapBase::findLowCardinalityColumns()
     }
     else if (typeid_cast<const ColumnLowCardinality *>(heap_column.get()))
         low_cardinality_columns.push_back(0);
-}
-
-bool TopKAggregationHeapBase::sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const
-{
-    const int cmp = compareColumns(source_column, source_row, *heap_column, heap_row, 0);
-    return directions[0] * cmp > 0;
-}
-
-bool TopKAggregationHeapBase::sourceAboveHeapComposite(const ColumnRawPtrs & source_columns, size_t source_row, size_t heap_row) const
-{
-    const auto & tuple = assert_cast<const ColumnTuple &>(*heap_column);
-    for (size_t i = 0; i < source_columns.size(); ++i)
-    {
-        const int cmp = compareColumns(*source_columns[i], source_row, tuple.getColumn(i), heap_row, i);
-        if (cmp != 0)
-            return directions[i] * cmp > 0;
-    }
-    return false;
 }
 
 int TopKAggregationHeapBase::compareHeapRowsComposite(size_t a, size_t b) const
