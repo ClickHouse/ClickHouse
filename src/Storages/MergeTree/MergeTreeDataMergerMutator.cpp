@@ -496,11 +496,15 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     /// query context's interactive-cancel callback, so without one it blocks server shutdown and
     /// `KILL MUTATION` until the subquery finishes (issue #51586). `context` is this mutation's query context
     /// (`makeQueryContextForMutate`), which the reading context resolves via `getQueryContext`.
+    /// A nested pipeline that is only stopped returns without an exception, so its caller cannot
+    /// distinguish a cancelled build from a completed one.
     const String partition_id = future_part->part_info.getPartitionId();
     context->setInteractiveCancelCallback(
         [&blocker = merges_blocker, merge_entry, partition_id]()
         {
-            return blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled;
+            if (blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled)
+                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+            return false;
         });
 
     return std::make_shared<MutateTask>(
