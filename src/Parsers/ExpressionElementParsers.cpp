@@ -67,16 +67,20 @@ namespace
 /// Helper to record literal token positions in the map stored in Expected.
 /// The char* pointers reference the original query string buffer.
 ///
+/// The only place `has_token_info` is set, which is what lets a consumer tell a recorded
+/// literal from a synthesized one sitting at a recorded literal's freed address.
+///
 /// Why insert_or_assign: When parsing nested literals like tuples `(1, 2)`,
 /// the parser may reuse memory addresses due to make_shared's small object optimization.
 /// The final composite literal may get the same address as an earlier element.
 /// We want the token info for the final literal, so insert_or_assign overwrites earlier entries.
-inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, IParser::Pos end, Expected & expected)
+inline void recordLiteralTokens(ASTLiteral * literal, IParser::Pos begin, IParser::Pos end, Expected & expected)
 {
     if (expected.literal_token_map)
     {
         --end;
         expected.literal_token_map->insert_or_assign(literal, LiteralTokenInfo{begin->begin, end->end});
+        literal->setHasTokenInfo(true);
     }
 }
 
@@ -1428,7 +1432,9 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()), expected);
+    /// The buffer is sized for the worst case; a binary literal whose length is not a multiple of
+    /// eight can write fewer bytes than that, and the unwritten tail is uninitialized memory.
+    return makeStringLiteral(pos, node, String(res_begin, res_pos - res_begin), expected);
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)

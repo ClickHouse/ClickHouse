@@ -18,18 +18,18 @@ doc_type: 'reference'
   ## extractKeyValuePairs
 </div>
 
-Добавленный в: v23.4.0
+Добавлено в: v23.4.0
 
-Извлекает пары ключ-значение из любой строки. Строка не обязана быть полностью структурирована в формате ключ-значение;
+Извлекает пары «ключ‑значение» из любой строки. Строка не обязательно должна быть полностью структурирована в формате пары ключ-значение;
 
 Он может содержать шум (например, файлы журналов). Формат пар ключ-значение для интерпретации задаётся через аргументы функции.
 
-Пара ключ-значение состоит из ключа, за которым следует `key_value_delimiter`, и значения. Ключи и значения в кавычках также поддерживаются. Пары ключ-значение должны разделяться разделителями пар.
+Пара ключ-значение состоит из ключа, за которым следует `key_value_delimiter`, и значения. Поддерживаются ключи и значения в кавычках. Пары ключ-значение должны разделяться разделителями пар.
 
 **Синтаксис**
 
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Аргументы**
@@ -38,7 +38,7 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 * `key_value_delimiter` - Символ, используемый в качестве разделителя между ключом и значением. По умолчанию `:`. [String](/ru/reference/data-types/string) или [FixedString](/ru/reference/data-types/fixedstring).
 * `pair_delimiters` - Набор символов, используемых в качестве разделителей между парами. По умолчанию `\space`, `,` и `;`. [String](/ru/reference/data-types/string) или [FixedString](/ru/reference/data-types/fixedstring).
 * `quoting_character` - Символ, используемый в качестве символа кавычек. По умолчанию `"`. [String](/ru/reference/data-types/string) или [FixedString](/ru/reference/data-types/fixedstring).
-* `unexpected_quoting_character_strategy` - Стратегия обработки символов кавычек в неожиданных местах на этапе `read_key` и `read_value`. Возможные значения: `invalid`, `accept` и `promote`. `invalid` отбрасывает ключ/значение и возвращает в состояние `WAITING_KEY`. `accept` рассматривает его как обычный символ. `promote` переводит в состояние `READ_QUOTED_{KEY/VALUE}` и начинает со следующего символа. Значение по умолчанию — `INVALID`
+* `unexpected_quoting_character_strategy` - Стратегия обработки символов кавычек в неожиданных местах на этапе `read_key` и `read_value`. Возможные значения: `invalid`, `accept` и `promote`. `invalid` отбрасывает ключ/значение и возвращает в состояние `WAITING_KEY`. `accept` рассматривает его как обычный символ. `promote` переводит в состояние `READ_QUOTED_{KEY/VALUE}` и начинает со следующего символа. Значение по умолчанию — `PROMOTE`
 
 **Возвращаемые значения**
 
@@ -62,7 +62,7 @@ Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Одинарная кавычка в качестве символа кавычки**
+**Одинарная кавычка как символ кавычек**
 
 ```sql
 arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
@@ -144,7 +144,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 └──────────────┘
 ```
 
-**Управляющие последовательности без их поддержки**
+**Экранирующие последовательности без их поддержки**
 
 ```sql
 arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
@@ -161,7 +161,7 @@ Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 **Синтаксис**
 
 ```sql
-extractKeyValuePairs(input)
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Псевдонимы**: `str_to_map`, `mapFromString`
@@ -211,7 +211,7 @@ Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 **Синтаксис**
 
 ```sql
-extractKeyValuePairsWithEscaping(input)
+extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Аргументы**
@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 Добавленный в: v21.2.0
 
 Возвращает ключи заданного Map.
-Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Когда настройка включена, функция считывает только подстолбец `keys`, а не весь Map.
 Запрос `SELECT mapKeys(m) FROM table` преобразуется в `SELECT m.keys FROM table`.
 
@@ -801,7 +801,7 @@ mapKeys(map)
 
 **Возвращаемое значение**
 
-Возвращает массив, содержащий все ключи карты. [`Array(T)`](/ru/reference/data-types/array)
+Возвращает массив, содержащий все ключи Map. [`Array(T)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 Добавленный в: v21.2.0
 
 Возвращает значения указанного Map.
-Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Если настройка включена, функция считывает только подстолбец `values`, а не весь Map.
 Запрос `SELECT mapValues(m) FROM table` преобразуется в `SELECT m.values FROM table`.
 

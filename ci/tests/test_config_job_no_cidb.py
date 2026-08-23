@@ -344,5 +344,17 @@ def test_get_changed_tests_issues_no_cidb_query(monkeypatch):
     assert calls == [], f"config-time CIDB requests: {calls}"
 
 
+def test_ci_script_change_keeps_sequential_selected_tests_job(monkeypatch):
+    _use_fake_info(monkeypatch, changed_files=("ci/jobs/functional_tests.py",))
+
+    assert fj.should_skip_job(
+        "Stateless tests (amd_tsan, sequential, selected tests)"
+    ) == (False, "")
+    assert fj.should_skip_job("Stateless tests (amd_tsan, sequential)") == (
+        True,
+        "Skipped: only CI scripts changed; running stateless batch 1 only",
+    )
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
