@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1057301",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1066254",
       "email": "support@clickhouse.com"
     }
   },
@@ -372,7 +372,7 @@
     "/v1/organizations/{organizationId}/prometheus": {
       "get": {
         "summary": "Get organization metrics",
-        "description": "Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted.",
+        "description": "Deprecated. Use the Prometheus service discovery endpoint (/v1/organizations/{organizationId}/prometheus/discovery) instead. This endpoint is not available for new organizations; contact ClickHouse support to request access. Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted.",
         "operationId": "organizationPrometheusGet",
         "parameters": [
           {
@@ -459,12 +459,115 @@
             }
           }
         },
+        "deprecated": true,
+        "tags": [
+          "Prometheus"
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/prometheus/discovery": {
+      "get": {
+        "summary": "List Prometheus scrape targets",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.",
+        "operationId": "organizationPrometheusDiscoveryGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filtered_metrics",
+            "description": "Whether discovered targets scrape a filtered list of metrics. Sets the filtered_metrics parameter on each discovered target. Defaults to true.",
+            "schema": {
+              "type": "string",
+              "format": "boolean"
+            },
+            "example": "true"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PrometheusDiscoveryTargetGroup"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "tags": [
           "Prometheus"
         ],
-        "x-mint": {
-          "content": "Returns Prometheus metrics for the services in an organization that the caller is authorized to view. Services the caller lacks view access to are omitted."
-        }
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/roles": {
@@ -2294,7 +2397,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/state": {
       "patch": {
         "summary": "Update service state",
-        "description": "Starts or stop service",
+        "description": "Starts, stops, or wakes a service. The `start` and `stop` commands require the `control-plane:service:manage` permission on the service. The `awake` command requires only `control-plane:service:view` and applies to an idle service; it does not start a stopped service.",
         "operationId": "instanceStateUpdate",
         "parameters": [
           {
@@ -2410,7 +2513,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Starts or stop service"
+          "content": "Starts, stops, or wakes a service. The `start` and `stop` commands require the `control-plane:service:manage` permission on the service. The `awake` command requires only `control-plane:service:view` and applies to an idle service; it does not start a stopped service."
         }
       }
     },
@@ -8097,7 +8200,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes/schemaDiscovery": {
       "post": {
         "summary": "Discover ClickPipe source schema",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Infers the schema (field names and ClickHouse data types) of a streaming ClickPipe source without creating a pipe. Supported for Kafka, Kinesis sources.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Infers the schema (field names and ClickHouse data types) of a ClickPipe source without creating a pipe. Supported for Kafka, Kinesis, Pub/Sub, and object storage sources. Object storage inference runs on the destination service, which must be running.",
         "operationId": "clickPipeSchemaDiscovery",
         "parameters": [
           {
@@ -19992,6 +20095,51 @@
           }
         }
       },
+      "PrometheusDiscoveryLabels": {
+        "properties": {
+          "__scheme__": {
+            "description": "URL scheme Prometheus must scrape the target with.",
+            "type": "string"
+          },
+          "__metrics_path__": {
+            "description": "Path of the per-service Prometheus metrics endpoint.",
+            "type": "string"
+          },
+          "__param_filtered_metrics": {
+            "description": "Value passed as the filtered_metrics query parameter on each scrape.",
+            "type": "string",
+            "format": "boolean"
+          },
+          "clickhouse_org_id": {
+            "description": "Organization ID the service belongs to.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "clickhouse_service_id": {
+            "description": "Service ID.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "clickhouse_discovery_service_name": {
+            "description": "Service name.",
+            "type": "string"
+          }
+        }
+      },
+      "PrometheusDiscoveryTargetGroup": {
+        "properties": {
+          "targets": {
+            "type": "array",
+            "description": "Host (and port) of the ClickHouse Cloud API.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "$ref": "#/components/schemas/PrometheusDiscoveryLabels"
+          }
+        }
+      },
       "OrganizationPatchPrivateEndpoint": {
         "properties": {
           "id": {
@@ -23828,7 +23976,7 @@
           },
           "roles": {
             "type": "array",
-            "description": "Optional. Roles to grant to the ClickHouse user that ClickPipe creates. If omitted, the user is granted the default role (`default_role`). Add your custom roles here if required.",
+            "description": "Optional. Roles to grant to the ClickHouse user that ClickPipe creates. If omitted, the user is granted the default role (`default_role`). Add your custom roles here if required. The role names `clickpipes` and `clickpipes_system` are reserved for internal use and cannot be assigned.",
             "items": {
               "type": "string"
             }
@@ -24007,6 +24155,26 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/ClickPipePostKinesisSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pubsub": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipePostPubSubSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "objectStorage": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickPipePostObjectStorageSource"
               },
               {
                 "type": "null"
@@ -31737,7 +31905,68 @@
           "r8gd.12xlarge",
           "r8gd.16xlarge",
           "r8gd.24xlarge",
-          "r8gd.48xlarge"
+          "r8gd.48xlarge",
+          "c4a-highmem-4",
+          "c4a-highmem-8",
+          "c4a-highmem-16",
+          "c4a-highmem-32",
+          "c4a-highmem-48",
+          "c4a-highmem-64",
+          "c4a-highmem-72",
+          "c4a-standard-4",
+          "c4a-standard-8",
+          "c4a-standard-16",
+          "c4a-standard-32",
+          "c4a-standard-48",
+          "c4a-standard-64",
+          "c4a-standard-72",
+          "c4-highmem-4",
+          "c4-highmem-8",
+          "c4-highmem-16",
+          "c4-highmem-24",
+          "c4-highmem-32",
+          "c4-highmem-48",
+          "c4-highmem-96",
+          "c4-highmem-144",
+          "c4-highmem-192",
+          "c4-highmem-288",
+          "c4-standard-4",
+          "c4-standard-8",
+          "c4-standard-16",
+          "c4-standard-24",
+          "c4-standard-32",
+          "c4-standard-48",
+          "c4-standard-96",
+          "c4-standard-144",
+          "c4-standard-192",
+          "c4-standard-288",
+          "c4d-highmem-8",
+          "c4d-highmem-16",
+          "c4d-highmem-32",
+          "c4d-highmem-48",
+          "c4d-highmem-64",
+          "c4d-highmem-96",
+          "c4d-highmem-192",
+          "c4d-highmem-384",
+          "c4d-standard-8",
+          "c4d-standard-16",
+          "c4d-standard-32",
+          "c4d-standard-48",
+          "c4d-standard-64",
+          "c4d-standard-96",
+          "c4d-standard-192",
+          "c4d-standard-384",
+          "z3-highlssd-8",
+          "z3-highlssd-16",
+          "z3-highlssd-22",
+          "z3-highlssd-32",
+          "z3-highlssd-44",
+          "z3-highlssd-88",
+          "z3-standardlssd-14",
+          "z3-standardlssd-22",
+          "z3-standardlssd-44",
+          "z3-standardlssd-88",
+          "z3-standardlssd-176"
         ]
       },
       "pgHaType": {
@@ -31752,7 +31981,8 @@
       "pgProvider": {
         "type": "string",
         "enum": [
-          "aws"
+          "aws",
+          "gcp"
         ],
         "title": "Cloud provider",
         "description": "The cloud provider for a Postgres service."
