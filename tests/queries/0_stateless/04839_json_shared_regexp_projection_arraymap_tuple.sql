@@ -149,7 +149,7 @@ CREATE TABLE mapapply_qualified_source_04839
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
 
-INSERT INTO mapapply_qualified_source_04839 VALUES (1, (map('left', ('{"tag_x":1}', 1))));
+INSERT INTO mapapply_qualified_source_04839 VALUES (1, tuple(map('left', ('{"tag_x":1}', 1))));
 
 ALTER TABLE mapapply_qualified_source_04839
     MODIFY COLUMN t Tuple(m Map(String, Tuple(doc JSON(max_dynamic_paths=5), n UInt8)));
