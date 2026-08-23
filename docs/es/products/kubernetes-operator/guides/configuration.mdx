@@ -598,7 +598,7 @@ El operador vuelve a encolar la reconciliación mientras el Secret no sea válid
   ## Puertos adicionales
 </div>
 
-El operador expone un conjunto fijo de puertos en cada pod de Kubernetes de ClickHouse y en su Service headless público: `8123` para HTTP, `9000` nativo, `9009` entre servidores, `9001`/`9002` de administración, `9363` para métricas de Prometheus, y las variantes TLS `8443`/`9440` cuando TLS está habilitado. Los puertos `interserver` y de administración también se exponen a través de los Services internos por réplica, de modo que las réplicas y el operador puedan comunicarse antes de que una réplica esté lista. Para que ClickHouse escuche en protocolos adicionales —MySQL, PostgreSQL, gRPC o cualquier puerto personalizado—, declárelos en `spec.additionalPorts`:
+El operador expone un conjunto fijo de puertos en cada pod de Kubernetes de ClickHouse y en su Service headless público: `8123` para HTTP, `9000` nativo, `9009` entre servidores, `9001`/`9002` de administración, `9363` para métricas de Prometheus, y las variantes TLS `8443`/`9440` cuando TLS está habilitado. Los puertos `interserver` y de administración también se exponen a través de los Services internos por réplica para que las réplicas y el operador puedan comunicarse antes de que una réplica esté lista. Para que ClickHouse escuche en protocolos adicionales —MySQL, PostgreSQL, gRPC o cualquier puerto personalizado—, declárelos en `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -638,7 +638,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -975,16 +975,16 @@ Habilite la sincronización automática de la base de datos para las nuevas rép
 ```yaml
 spec:
   settings:
-    enableDatabaseSync: true  # Predeterminado: true
+    enableDatabaseSync: true  # Default: true
 ```
 
 Cuando está activado, el operador sincroniza las tablas Replicated y de integración en las nuevas réplicas.
 
-Cada pod de réplica lleva la readiness gate `clickhouse.com/ReplicaInitialized`, de modo que una nueva réplica solo se publica a través del Service headless público una vez que el operador completa su inicialización: la base de datos `default` se convierte al motor Replicated y el esquema se sincroniza. Hasta entonces, el operador y las demás réplicas la alcanzan a través de su Service interno. Con `enableDatabaseSync: false`, el operador marca las réplicas como inicializadas de inmediato, por lo que la readiness depende únicamente de las probes del contenedor.
+Cada pod de Kubernetes de réplica incluye la puerta de readiness `clickhouse.com/ReplicaInitialized`, por lo que una nueva réplica se publica mediante el Service headless público solo después de que el operador complete su inicialización: la base de datos `default` se convierte al engine Replicated y se sincroniza el esquema. Hasta entonces, el operador y las demás réplicas acceden a ella mediante su Service interno. Con `enableDatabaseSync: false`, el operador marca las réplicas como inicializadas de inmediato, por lo que la readiness depende únicamente de los probes del contenedor.
 
-El operador nunca elimina una base de datos `default` poblada que no sea Replicated. Una réplica en esta situación aun así empieza a atender el tráfico de clientes tras la preparación del esquema, pero el clúster reporta `SchemaInSync=False` con motivo `DefaultDatabaseNotReplicated` hasta que resuelvas esa base de datos por tu cuenta.
+El operador nunca elimina una base de datos `default` no Replicated poblada. Dicha réplica sigue atendiendo tráfico de clientes después de la preparación del esquema, pero el clúster informa `SchemaInSync=False` con el motivo `DefaultDatabaseNotReplicated` hasta que resuelva esa base de datos por su cuenta.
 
-Antes de eliminar una réplica al reducir la escala, el operador primero descarga el tráfico de clientes de esa réplica, espera hasta que deje de publicarse, replica sus datos restantes en las réplicas supervivientes, y solo entonces la elimina.
+Antes de eliminar una réplica durante una reducción de escala, el operador primero retira de ella el tráfico de clientes, espera hasta que deje de publicarse, replica sus datos restantes en las réplicas supervivientes y solo entonces la elimina.
 
 <div id="server-logging">
   ### Registro del servidor
