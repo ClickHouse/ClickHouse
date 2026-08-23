@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
@@ -212,6 +213,21 @@ Cost ReplicatedReadStrategy::estimateOperatorCost(const CostInputs & inputs) con
     return fullReadCost(inputs);
 }
 
+/// Per-row window work, 1/N per node when the data is split across N nodes. A window
+/// emits one output row per input row and writes every row with the columns it appends.
+static Cost windowCost(const CostInputs & inputs)
+{
+    Cost cost;
+    cost.work = inputs.output_stats.estimated_row_count
+        * (1.0 + inputs.output_stats.estimated_bytes_per_row) / inputs.parallelism;
+    return cost;
+}
+
+Cost WindowStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    return windowCost(inputs);
+}
+
 static Cost mergingAggregatedCost(const CostInputs & inputs)
 {
     Cost cost;
@@ -315,6 +331,13 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
 
     if (typeid_cast<const MergingAggregatedStep *>(step))
         return mergingAggregatedCost(inputs);
+
+    if (typeid_cast<const WindowStep *>(step))
+    {
+        if (const auto * window_strategy = dynamic_cast<const IWindowStrategy *>(strategy))
+            return window_strategy->estimateOperatorCost(inputs);
+        return windowCost(inputs);
+    }
 
     if (dynamic_cast<const BroadcastExchangeStep *>(step))
         return broadcastExchangeCost(inputs);

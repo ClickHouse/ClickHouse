@@ -452,6 +452,10 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   `ANY`/`RightAny` joins are not replication-safe: with duplicate build-side keys the
   kept row depends on the parallel build order, so nodes could produce different rows
 - `TopNImplementation` — bounded sort at one node, or per node for the top-N partial
+- `WindowImplementation` — a window on a single node, or on each node for a `PARTITION BY`
+  window: the input is required hashed by the partition keys and sorted on each node, so
+  the enforcers add the keyed shuffle and the per-node sort, and each node holds its
+  partitions completely
 - `DefaultImplementation` — wraps otherwise-unhandled steps at `{1 node}`; operators
   with dedicated rules above are excluded
 - `DistributionPassthrough` — propagates distribution through stateless per-row steps
@@ -598,18 +602,15 @@ branch-and-bound pruning as the primary bound.
    `dphyp,greedy`, unsupported cases fall through to the next algorithm. Cascades still
    receives a single fixed order; feeding the top k orders into the memo (the hybrid TOP-K
    of Gretscher & Dittrich, PVLDB 2025) is future work.
-11. **Window function distribution**: `WindowStep` currently goes through
-   `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
-   that sets distribution by PARTITION BY key.
-12. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
+11. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
    map to existing groups instead of cloning.
-13. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
+12. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
-14. **Width through same-type value-changing functions**: a deterministic `String` ->
+13. **Width through same-type value-changing functions**: a deterministic `String` ->
    `String` function (`substring`, `hex`) keeps the source column's average width even
    though the bytes change; width preservation needs a value-pass-through rule separate
    from the NDV rule.
-15. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
+14. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
    `cluster` table functions) with genuinely remote shards is rejected up front
    (`checkStepSupportedByCascades`); localhost shards are inlined and planned normally.
    Supporting it as a coordinator-pinned single-task source is future work.

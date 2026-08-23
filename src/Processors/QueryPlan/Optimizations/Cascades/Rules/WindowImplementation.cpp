@@ -1,0 +1,136 @@
+#include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
+#include <Processors/QueryPlan/WindowStep.h>
+#include <DataTypes/IDataType.h>
+#include <Common/Exception.h>
+#include <Common/typeid_cast.h>
+#include <fmt/format.h>
+#include <memory>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace QueryPlanOptimizations
+{
+    bool keyTypeBreaksHashSharding(const IDataType & type);
+}
+
+/// Implements a window on a single node (always available) and, for a window with
+/// `PARTITION BY`, on each node: the input requirement asks for rows with equal partition
+/// keys on one node and for the window's sort order on each node; the enforcers add the
+/// keyed shuffle and the per-node sort, so each node computes its partitions on its own.
+class WindowImplementation : public IOptimizationRule
+{
+public:
+    String getName() const override { return "Window"; }
+
+    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    {
+        return typeid_cast<const WindowStep *>(expression->getQueryPlanStep()) != nullptr;
+    }
+
+    Promise getPromise() const override { return 5000; }
+    bool isTransformation() const override { return false; }
+
+protected:
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+};
+
+/// The partition keys as distribution columns, or empty when the window cannot run per
+/// node: without `PARTITION BY` all rows form one partition, and only a single node keeps
+/// them together (empty distribution columns mean "any distribution"); a partition key
+/// that is not a column of the input header cannot be hashed by name; and a key whose
+/// hash disagrees with `compareAt` (floats, `JSON`, `Dynamic`: `-0.` and `0.` compare as
+/// one partition but hash differently) would split one logical partition across nodes
+/// and produce wrong window values.
+static DistributionColumns partitionKeyColumns(const WindowStep & window_step)
+{
+    const auto & partition_by = window_step.getWindowDescription().partition_by;
+    if (partition_by.empty())
+        return {};
+
+    const auto & input_header = window_step.getInputHeaders().at(0);
+    DistributionColumns columns;
+    for (const auto & partition_column : partition_by)
+    {
+        if (!input_header->has(partition_column.column_name))
+            return {};
+        if (QueryPlanOptimizations::keyTypeBreaksHashSharding(*input_header->getByName(partition_column.column_name).type))
+            return {};
+        columns.push_back(NameSet{partition_column.column_name});
+    }
+    return columns;
+}
+
+std::vector<GroupExpressionPtr> WindowImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+{
+    const auto * window_step = typeid_cast<const WindowStep *>(expression->getQueryPlanStep());
+    if (!window_step)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "WindowImplementation::applyImpl called for non-WindowStep expression '{}'",
+            expression->getDescription());
+    if (expression->inputs.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "WindowImplementation::applyImpl: expected 1 input, got {} for expression '{}'",
+            expression->inputs.size(), expression->getDescription());
+
+    std::vector<GroupExpressionPtr> result;
+
+    /// Single-node implementation - always available, and the only one when the window
+    /// cannot be distributed.
+    {
+        auto single_node = std::make_shared<GroupExpression>(*expression);
+        single_node->strategy = strategySingleton<WindowStrategy>();
+        single_node->properties = ExpressionProperties{};    /// node_count=1 (default)
+        /// `WindowTransform` emits rows in input order, so the sorting required from the
+        /// input also holds for the output. With `streams_fan_out` the output is split into
+        /// several streams and only each stream keeps the order, so no sorting is promised.
+        if (!window_step->hasStreamsFanOut())
+            single_node->properties.sorting = single_node->inputs[0].required_properties.sorting;
+
+        addPhysicalToMemo(single_node, required_properties, memo, result);
+    }
+
+    const DistributionColumns partition_columns = partitionKeyColumns(*window_step);
+    if (partition_columns.empty())
+        return result;
+
+    for (size_t candidate_node_count : getCandidateNodeCounts(memo.getContext().cluster_node_count))
+    {
+        auto distributed = std::make_shared<GroupExpression>(*expression);
+        auto new_step = window_step->clone();
+        new_step->setStepDescription(fmt::format("Partitioned {}", window_step->getStepDescription()), 200);
+        distributed->plan_step = std::move(new_step);
+        distributed->strategy = strategySingleton<WindowStrategy>();
+
+        ExpressionProperties input_required;
+        input_required.distribution.node_count = candidate_node_count;
+        input_required.distribution.columns = partition_columns;
+        input_required.sorting = window_step->getWindowDescription().full_sort_description;
+        distributed->inputs[0].required_properties = input_required;
+
+        distributed->properties = ExpressionProperties{};
+        /// The window moves no rows, so the output keeps the input distribution.
+        distributed->properties.distribution = input_required.distribution;
+        if (!window_step->hasStreamsFanOut())
+            distributed->properties.sorting = input_required.sorting;
+
+        addPhysicalToMemo(distributed, required_properties, memo, result);
+    }
+
+    return result;
+}
+
+OptimizationRulePtr createWindowImplementation() { return std::make_shared<WindowImplementation>(); }
+
+}
