@@ -499,11 +499,13 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
     ChainedBuffers fetched = readSource(fetch_range.offset, fetch_range.size);
     const size_t fetched_end = fetched.empty() ? fetch_range.offset : fetched.range().end();
 
+    /// Populate the tiers we hold and record what each cache ACCEPTED - its committed prefix after the
+    /// write. `write` can reject bytes (no disk space, a reservation failure, a whole-segment cell not
+    /// fully covered) and `committed()` reflects exactly what landed, so the rest is what we must keep.
+    IntervalSet cached;
     for (auto & c : claimed)
     {
         /// Only a held claim authorizes a write; a tier led by a concurrent downloader is filled there.
-        /// A whole-segment tier only stores a write covering its entire cell; `fetch_range` was sized so
-        /// the head cell is covered, and `write` no-ops a cell it does not fully span.
         if (c.claim)
         {
             const size_t lo = std::max(c.writer->range().offset, fetch_range.offset);
@@ -518,23 +520,20 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
                 }
             }
         }
+        /// Committed now (by our write, or by a concurrent downloader): servable from the tier, not held.
+        const size_t committed = c.writer->committed();
+        if (committed > c.writer->range().offset)
+            cached.add(ByteRange{c.writer->range().offset, committed - c.writer->range().offset});
         c.claim.reset();
     }
 
-    /// Serve one block now. Retain only the un-served bytes that no writer cached (a read-only or
-    /// detached tier): the cached ranges are served from the cache on later windows, so we hold nothing
-    /// for them - a cold read (all writer-backed) holds nothing. The retained bytes are freed as the
-    /// cursor passes them (see `readThroughCaches`).
+    /// Serve one block now. Retain only the un-served bytes no tier accepted (a read-only or detached
+    /// tier, or a write the cache rejected): served from memory on later windows, freed as the cursor
+    /// passes. A cold read whose writes all land holds nothing.
     const size_t serve_bytes = serve_len(fetched_end);
-    IntervalSet uncached;
-    if (pos + serve_bytes < fetched_end)
-        uncached.add(ByteRange{pos + serve_bytes, fetched_end - pos - serve_bytes});
-    for (const auto & c : claimed)
-        if (c.claim)
-            uncached.remove(c.writer->range());
-
     held_fetch = {};
-    for (const auto & r : uncached.ranges())
+    const ByteRange unserved{pos + serve_bytes, fetched_end - pos - serve_bytes};
+    for (const auto & r : cached.subtract(unserved))   /// the un-served bytes minus what a tier accepted
         held_fetch.append(fetched.slice(r));
 
     return fetched.slice(ByteRange{pos, serve_bytes});

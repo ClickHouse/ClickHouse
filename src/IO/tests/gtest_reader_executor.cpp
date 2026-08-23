@@ -103,6 +103,9 @@ struct MockCacheState
     /// take a downloader) - like `DiskCacheProvider`'s `emit_uncacheable_miss`. Served from source,
     /// never populated, even though the tier populates in general.
     IntervalSet detached;
+    /// Blocks whose `write` the cache rejects (returns 0, `committed()` does not advance) - models no
+    /// disk space / a reservation failure. The executor must retain the rejected bytes in memory.
+    IntervalSet reject;
     VectorWithMemoryTracking<ByteRange> writes;
     /// Model a `waitAndRead` timeout: when set, a writer's `waitAndRead` serves nothing, so the driver
     /// must fall back to a source read.
@@ -221,6 +224,10 @@ private:
         size_t write(ChainedBuffers data, const Claim & claim) override
         {
             chassert(claim);
+            /// The cache rejects this block (no disk space / reservation failure): nothing lands, so
+            /// `committed()` does not advance and the caller must keep the bytes in memory.
+            if (state->reject.subtract(r).empty())
+                return 0;
             /// A block another thread is downloading is not ours to fill (no downloader role).
             size_t free_bytes = 0;
             for (const auto & fr : state->concurrent_download.subtract(r))
@@ -822,6 +829,37 @@ TEST_F(ReaderExecutorTest, DetachedSegmentServedFromSourceNotPopulated)
         EXPECT_NE(wr.offset, block) << "populated the detached block 1";
     EXPECT_FALSE(state->resident.subtract(ByteRange{block, block}).empty())
         << "the detached block must stay uncached";
+}
+
+TEST_F(ReaderExecutorTest, RejectedCacheWriteRetainedInMemoryNotReRead)
+{
+    /// A populating tier rejects block 1's write (no disk space). The coalesced fetch already pulled its
+    /// bytes, so they are retained in memory and served on block 1's window - not re-read from source -
+    /// and the block stays uncached. Guards against assuming a claimed writer cached its whole range.
+    const size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 4 * block)};
+
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
+    state->reject.add(ByteRange{block, block});   /// block 1's write is rejected
+
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 4 * block);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    /// One coalesced source read; the rejected block's bytes were held, not re-fetched.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block)
+        << "the rejected block was re-read from source instead of served from the retained fetch";
+    EXPECT_FALSE(state->resident.subtract(ByteRange{block, block}).empty())
+        << "a rejected write must not leave the block cached";
 }
 
 TEST_F(ReaderExecutorTest, WriterlessMissNotRefreshedWithinHeldSpan)
