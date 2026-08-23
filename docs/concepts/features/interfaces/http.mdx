@@ -356,7 +356,8 @@ printf '{"a":3,"b":"three"}\n' \
 The table must already exist. For a database-prefixed upload, `http_allow_database_as_path` enables the
 `/database/table.format` path. An unqualified `/table.format` upload still requires
 `http_allow_table_as_file`. The request body may use a compression suffix such as `.CSV.gz` or `.CSV.snappy`; the server
-decompresses it before inserting the rows. Path-table `PUT` uploads use normal `INSERT` semantics, so repeating
+decompresses it before inserting the rows. For `.snappy` path suffixes, the `snappy_mode` setting selects the
+Snappy wire format for both path reads and path uploads. Path-table `PUT` uploads use normal `INSERT` semantics, so repeating
 the same request can insert the rows again. Auto-creation, schema inference, and multipart uploads are not
 supported. Use the regular [`INSERT` over HTTP](#insert-queries) form when the query or upload behavior needs
 to be customized.

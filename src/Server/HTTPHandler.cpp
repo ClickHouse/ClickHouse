@@ -848,6 +848,7 @@ void HTTPHandler::processQuery(
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
+    auto request_snappy_mode = snappy_mode;
     if (is_path_table_upload && !path_info.compression.empty())
     {
         const CompressionMethod path_compression_method = chooseCompressionMethod({}, path_info.compression);
@@ -858,9 +859,15 @@ void HTTPHandler::processQuery(
                 path_info.compression, http_request_compression_method_str);
 
         /// The path compression suffix describes the upload payload, not the response. Avoid wrapping the
-        /// response above and reuse the normal HTTP request decompression path for the body.
+        /// response above and reuse the normal HTTP request decompression path for the body. Path uploads use
+        /// the same Snappy mode as path reads, while an explicit Content-Encoding header keeps the standard
+        /// framed HTTP Snappy mode above.
         if (http_request_compression_method_str.empty())
+        {
             http_request_compression_method_str = path_info.compression;
+            if (path_compression_method == CompressionMethod::Snappy)
+                request_snappy_mode = settings[Setting::snappy_mode];
+        }
     }
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
     /// TODO check
@@ -869,7 +876,7 @@ void HTTPHandler::processQuery(
         wrapReadBufferPointer(request.getStream()),
         chooseCompressionMethod({}, http_request_compression_method_str),
         zstd_window_log_max,
-        snappy_mode);
+        request_snappy_mode);
     LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
 
 
@@ -1636,19 +1643,20 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// Workaround. Poco does not detect 411 Length Required case.
         /// SQL-defined handlers (CREATE HANDLER) may run mutating queries over PUT and DELETE, in which case those
         /// methods carry a request body just like POST. The built-in path-table upload route is another body-consuming
-        /// PUT shape. Without Content-Length a non-chunked PUT body is read until EOF - so a dropped connection would
-        /// be accepted as a partial INSERT - and a non-chunked DELETE is treated as an empty body. Require the length
-        /// up front for these methods too, matching the POST contract.
+        /// PUT shape. Without Content-Length a non-chunked body is read until EOF - so a dropped connection would be
+        /// accepted as a partial request. Require the length up front when the body is actually consumed, matching
+        /// the POST contract.
         ///
         /// But require it only when the body is actually consumed - either by the handler's query
         /// (`consumes_request_body`), by the path-table upload route, by an unknown handler whose query may consume
-        /// a POST, PUT, or DELETE body, or by the form/multipart parsing that the handler layer itself performs.
+        /// a POST or PUT body, or by the form/multipart parsing that the handler layer itself performs.
         /// A handler such as `CREATE HANDLER h URL '/x' METHODS (DELETE) AS SELECT 1` never looks at the body, and
         /// demanding `Content-Length: 0` from every ordinary HTTP client would make that class of handlers unusable.
         /// The same applies to `POST`, `PUT`, and `DELETE` when the handler's body contract is known (a SQL-defined handler): a plain
         /// `curl -X POST` sends neither a body nor `Content-Length`, and a handler that never reads the body must
-        /// accept it. For the other handlers `POST`, `PUT`, and `DELETE` keep the historical unconditional requirement: their
-        /// body may be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
+        /// accept it. For unknown/config-defined handlers, `POST` and `PUT` keep the historical unconditional
+        /// requirement because their body may be the rest of the query text or the data of an `INSERT`. `DELETE` is
+        /// intentionally excluded from that fallback for compatibility with existing handlers that only use URL parameters.
         ///
         /// Accepting a lengthless non-chunked `POST`/`PUT` here is framing-safe even if the client does send
         /// bytes: the request stream stays unbounded (EOF-delimited), so `HTTPServerRequest::canKeepAlive`
@@ -1664,7 +1672,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             : (is_path_table_upload
                 || method == HTTPRequest::HTTP_POST
                 || method == HTTPRequest::HTTP_PUT
-                || method == HTTPRequest::HTTP_DELETE
                 || requestDeclaresFormBody(request));
         const bool method_requires_content_length = is_body_carrying_method && body_may_be_consumed;
         const bool request_is_unframed = !request.getChunkedTransferEncoding() && !request.hasContentLength();

@@ -1,3 +1,4 @@
 ===== PUT table upload with Snappy =====
 -- snappy compression suffix decompresses the request body
--- snappy compression suffix compresses a path-table read
+-- matching path-table reads and uploads use the same default Snappy mode
+-- snappy compression suffix supports the framed mode

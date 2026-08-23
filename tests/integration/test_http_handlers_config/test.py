@@ -142,7 +142,7 @@ def test_dynamic_handler_put_delete_still_readonly():
         modifying_query_body = "CREATE DATABASE IF NOT EXISTS test_default_query_put_db"
 
         for method in ("PUT", "DELETE"):
-            request_headers = {"Content-Length": "0"} if method == "DELETE" else {}
+            request_headers = {}
 
             # A read-only query is allowed over PUT/DELETE for a config handler (nothing to force).
             res_select = cluster.instance.http_request(
@@ -185,8 +185,8 @@ def test_dynamic_handler_put_delete_still_readonly():
             status = response.split(b" ", 2)[1].decode()
             assert "411" == status, (method, status, response)
 
-        # A configured DELETE handler may consume the request body. Reject an unframed request before the
-        # handler sees the bounded empty stream, and close the connection so pipelined bytes are not reused.
+        # Keep unframed DELETE requests compatible for configured handlers that only use URL parameters, and
+        # close the connection so any pipelined bytes are not reused as another request.
         with socket.create_connection((cluster.instance.ip_address, 8123), timeout=5) as sock:
             sock.sendall(
                 b"DELETE /test_dynamic_handler_put_delete?get_dynamic_handler_query=SELECT+1 HTTP/1.1\r\n"
@@ -205,7 +205,7 @@ def test_dynamic_handler_put_delete_still_readonly():
                 response += chunk
 
         assert 1 == response.count(b"HTTP/1.1 "), response
-        assert b"HTTP/1.1 411" in response, response
+        assert b"HTTP/1.1 200" in response, response
         assert b"connection: close" in response.lower(), response
         assert b"42424242" not in response, response
 
