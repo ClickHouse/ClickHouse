@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
@@ -40,16 +41,16 @@ namespace
 /// Read a required String literal argument as a value, without materializing a `Field`.
 String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, std::string_view arg_name)
 {
-    auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
+    const auto value = evaluateConstantExpressionAsColumn(arg, context);
     /// Accept `Nullable`/`LowCardinality` wrappers: the previous `Field`-based code read the value
     /// via `operator[]`, which flattens wrappers, so a non-NULL `Nullable(String)`/
     /// `LowCardinality(String)` constant passed the String check. Preserve that, and still reject a
     /// NULL value as before.
-    if (!isStringOrFixedString(removeLowCardinalityAndNullable(type)))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, type->getName());
-    if (column->isNullAt(0))
+    if (!isStringOrFixedString(removeLowCardinalityAndNullable(value.getType())))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, value.getType()->getName());
+    if (value.isNull())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
-    return String(column->getDataAt(0));
+    return String(value.getDataAt());
 }
 
 }
