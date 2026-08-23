@@ -1,8 +1,14 @@
 #include <Common/MemoryPressureMonitor.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <gtest/gtest.h>
+
+#include <optional>
 
 using namespace DB;
 
@@ -156,6 +162,35 @@ TEST(MemoryPressureMonitor, EscalatesThroughParentChain)
     user_tracker.adjustWithUntrackedMemory(920);
     EXPECT_EQ(query_monitor.currentLevel(), MemoryPressureLevel::High);
     user_tracker.adjustWithUntrackedMemory(-920);
+}
+
+/// `EscalatesThroughParentChain` wires the monitors by hand, so it proves the escalation rule but not
+/// that anything wires them that way in production. This goes through the real nested-`ThreadGroup`
+/// constructor and reads the level back through `CurrentThread::getMemoryPressureMonitor`, the accessor
+/// the executor uses. Dropping the `setParent` call in `ThreadGroup`'s constructor fails this test.
+TEST(MemoryPressureMonitor, NestedThreadGroupInheritsParentPressure)
+{
+    ScopedThresholds guard(75, 90, 95);
+
+    /// A ThreadStatus must exist before a group can be attached; the debug build already has one.
+    std::optional<ThreadStatus> thread_status_holder;
+    if (!current_thread)
+        thread_status_holder.emplace();
+
+    ThreadGroupPtr query_group = ThreadGroup::createForQuery(getContext().context);
+    query_group->memory_tracker.setHardLimit(1000);
+    query_group->memory_tracker.adjustWithUntrackedMemory(920);   /// 0.92 -> High for the outer query
+
+    /// `createForExplainAnalyze` is the public factory over the nested `ThreadGroup(parent)`
+    /// constructor. The nested group's own tracker has no limit, so on its own it is `Normal`; only
+    /// the parent link can lift it.
+    ThreadGroupPtr nested_group = ThreadGroup::createForExplainAnalyze(query_group);
+    {
+        ThreadGroupSwitcher switcher(nested_group, ThreadName::UNKNOWN, /*allow_existing_group=*/true);
+        EXPECT_EQ(CurrentThread::getMemoryPressureMonitor().currentLevel(), MemoryPressureLevel::High);
+    }
+
+    query_group->memory_tracker.adjustWithUntrackedMemory(-920);
 }
 
 TEST(MemoryPressureMonitor, CooldownAppliesToClassifiedLevels)
