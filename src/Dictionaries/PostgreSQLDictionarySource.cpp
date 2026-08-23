@@ -477,7 +477,7 @@ Setting fields:
 | `where` | The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional. |
 | `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](/reference/statements/create/dictionary/lifetime). |
 | `background_reconnect` | Reconnect to replica in background if connection fails. Optional. |
-| `query` | The custom query. Optional. |
+| `query` | The custom query. Optional. Its columns are taken by position, so it must return them in the [order the dictionary expects](/reference/statements/create/dictionary/sources/overview#custom-query-column-order). |
 | `sslmode` | TLS/SSL mode passed to `libpq`: `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`. When unset, the `libpq` default of `prefer` applies. Optional. |
 | `sslrootcert_pem` | Contents of the CA certificate that the PostgreSQL server certificate is verified against. Optional. |
 | `sslcert_pem` | Contents of the client certificate, for certificate-based authentication. Optional. |
