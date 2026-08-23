@@ -1490,6 +1490,8 @@ icebergLocal(path_to_table, [,format])
 icebergLocal(named_collection[, option=value [,..]])
 ```
 
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
+
 ## Arguments {#arguments}
 
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
@@ -2244,6 +2246,8 @@ paimonHDFS(path_to_table, [,format])
 paimonLocal(path_to_table, [,format])
 ```
 
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
+
 ## Arguments {#arguments}
 
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
@@ -2386,6 +2390,8 @@ deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, 
 deltaLakeLocal(path, [,format])
 ```
 
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
+
 ## Arguments {#arguments}
 
 The arguments for this table function are the same as for the `s3`, `azureBlobStorage`, `HDFS` and `file` table functions respectively.
@@ -2511,6 +2517,8 @@ Provides a read-only table-like interface to Apache [Hudi](https://hudi.apache.o
 ```sql
 hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,extra_credentials])
 ```
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 
