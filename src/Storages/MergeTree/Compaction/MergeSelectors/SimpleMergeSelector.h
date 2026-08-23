@@ -162,8 +162,9 @@ public:
           */
         size_t min_age_to_force_merge = 0;
 
-        /// If it's not 0, every range in a partition whose youngest part is at least this old is
-        /// considered for merging, including the ones the window below would otherwise skip.
+        /// If it's not 0, a range in a partition whose youngest part is at least this old passes
+        /// the base size-ratio check; every other heuristic still applies and is disabled only
+        /// through its own setting.
         size_t min_partition_age_to_force_merge = 0;
 
         /** Heuristic:
