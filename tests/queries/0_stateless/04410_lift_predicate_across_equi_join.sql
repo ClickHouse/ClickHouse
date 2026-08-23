@@ -100,13 +100,15 @@ FROM (
     LEFT JOIN (SELECT * FROM lift_lineitem WHERE orderkey = 1) AS l ON o.orderkey = l.orderkey
 );
 
--- Non-deterministic predicate, lift would produce a different filter on the target side
+-- Non-deterministic predicate, lift would produce a different filter on the target side.
+-- `randConstant` is not used here: it is folded to a literal before the optimization runs, so
+-- both sides would share the same constant and lifting it is correct.
 SELECT 'non-deterministic',
        countIf(explain LIKE '%ilter column:%orderkey =%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT count()
-    FROM (SELECT * FROM lift_orders WHERE orderkey = randConstant() % 100) AS o
+    FROM (SELECT * FROM lift_orders WHERE orderkey = rand() % 100) AS o
     INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
 );
 

@@ -118,14 +118,24 @@ bool atomSafelySubstitutable(const ActionsDAG::Node * node, const SubstitutionMa
     const bool is_null_check = name == "isNull" || name == "isNotNull";
     const bool is_comparison = name == "equals" || name == "notEquals"
         || name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals";
-    if ((!is_null_check && !is_comparison) || node->children.size() != (is_null_check ? 1 : 2))
+    /// `x IN <set>` is as safe as a comparison: the set is a prepared constant, so evaluating it
+    /// on the target-only rows cannot raise. It is also one of the most selective shapes for
+    /// target-side primary key pruning, because `KeyCondition` turns a constant set into ranges.
+    const bool is_set_check = name == "in";
+    if ((!is_null_check && !is_comparison && !is_set_check) || node->children.size() != (is_null_check ? 1 : 2))
         return false;
 
     for (const auto * child : node->children)
     {
         if (child->type == ActionsDAG::ActionType::INPUT)
         {
-            if (!sub.contains(child->result_name))
+            const auto it = sub.find(child->result_name);
+            if (it == sub.end())
+                return false;
+            /// The set carries the types it was built with, and `FunctionIn` rejects a left
+            /// argument of a different type, so an equi-key pair with differing types (the JOIN
+            /// casts them itself) must not be substituted into an `IN`
+            if (is_set_check && !it->second.type->equals(*child->result_type))
                 return false;
         }
         else if (child->type != ActionsDAG::ActionType::COLUMN)
