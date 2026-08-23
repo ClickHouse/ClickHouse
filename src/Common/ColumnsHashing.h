@@ -378,18 +378,15 @@ struct HashMethodSerialized
     /// Only used if prealloc is true.
     PaddedPODArray<UInt64> row_sizes;
     size_t total_size = 0;
-    bool use_batch_serialize = false;
+
     IColumn::SerializationSettings serialization_settings;
-    PaddedPODArray<char> serialized_buffer;
     std::vector<std::string_view> serialized_keys;
 
-    /// Whether the block's keys are serialized straight into the arena instead of into
-    /// `serialized_buffer` or a per-row buffer. An inserted key is then already where it will stay,
-    /// and the bytes of a duplicate row are taken back by the row that follows it.
+    /// Whether the block's keys are laid out a chunk at a time, one key column at a time, rather
+    /// than a row at a time. Only a caller that goes through the rows in order may turn it on.
     bool can_use_key_region = false;
-    bool batch_serialized = false;
-    /// LOCAL EXPERIMENT ONLY: same chunked one pass, but into a buffer reused across chunks, for the
-    /// methods whose cells carry an aggregate state (the hash table copies an inserted key out of it).
+    /// Set when the chunk goes into a buffer reused across chunks rather than into the arena: the
+    /// cells carry an aggregate state, and the hash table copies an inserted key out of it.
     bool use_chunk_scratch = false;
     PaddedPODArray<char> chunk_scratch;
     bool use_key_region = false;
@@ -475,22 +472,16 @@ struct HashMethodSerialized
 
             const size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
 
-            /// Where the cells hold only the key, serializing the block into a region of its own and
-            /// letting the kept keys stay there saves the copy that batch serialization needs for
-            /// every inserted key. Where they also hold an aggregate state it does not pay: batch
-            /// serialization puts a new key in the arena right in front of its state, and keeping the
-            /// two together is worth more than the copy.
+            /// A block's keys are laid out one key column at a time, which amortises the per-row
+            /// call over the whole column, or one row at a time into a buffer reused across the
+            /// block. The first stops paying once a row is a couple of cache lines wide - measured
+            /// on x86-64 and on aarch64 alike, the crossover is around 128 bytes per row and the
+            /// row-at-a-time form is up to 50% faster beyond it.
             ///
-            /// Laying the block out writes it with a row-sized stride, so like batch serialization
-            /// this stops paying once a row is much wider than a cache line - measured, it wins from
-            /// -72% at 128 bytes per row down to -9% at 512, and nothing beyond that.
-            can_use_key_region = total_size != 0 && !Base::has_mapped && avg_row_size <= 512;
-            use_batch_serialize = shouldUseBatchSerialize();
-
-            /// LOCAL EXPERIMENT ONLY
-            static const bool exp_chunk_mapped = std::getenv("CH_SER_CHUNK_MAPPED") != nullptr;
-            if (exp_chunk_mapped && Base::has_mapped && total_size != 0)
-                can_use_key_region = true;
+            /// Where the cells hold only the key it keeps paying further, up to about 512 bytes per
+            /// row, because there the layout doubles as the keys' final home: an inserted key stays
+            /// where it was written instead of being copied into the arena.
+            can_use_key_region = total_size != 0 && avg_row_size <= (Base::has_mapped ? 128 : 512);
         }
 
         /// We can only precompute canonical per-row hashes when:
@@ -504,12 +495,6 @@ struct HashMethodSerialized
         {
             prefetch_enabled = hash_serialized_context->settings.enable_prefetch;
             min_bytes_for_prefetch = hash_serialized_context->settings.min_bytes_for_prefetch;
-            if (use_batch_serialize && prefetch_enabled)
-            {
-                can_precompute_hashes = true;
-                precomputed_hashes_initialized = false;
-                prefetching = std::make_unique<PrefetchingHelper>();
-            }
         }
     }
 
@@ -544,39 +529,6 @@ struct HashMethodSerialized
             precomputed_hashes[i] = data.hash(serialized_keys[i]);
     }
 
-    bool shouldUseBatchSerialize() const
-    {
-        /// LOCAL EXPERIMENT ONLY: force either layout, to compare them at the same row size.
-        static const int exp_force = []
-        {
-            const char * v = std::getenv("CH_SER_FORCE_BATCH");
-            return v ? std::atoi(v) : -1;
-        }();
-        if (exp_force >= 0)
-            return exp_force != 0;
-
-#if defined(__aarch64__)
-        /// On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
-        /// Measured again on Graviton4 with this rule applied instead: every shape from 32 to 1024
-        /// bytes per row, one and 32 threads, stayed within +-3% (worst case +6.5%), so the stride
-        /// that costs x86 up to +85% at 32 threads costs nothing here and there is nothing to gain
-        /// by dropping the shortcut.
-        return true;
-#endif
-
-        /// One pass per key column writes the block with a row-sized stride, and the hash table then
-        /// copies every inserted key out of that buffer, so it only pays while a row is a couple of
-        /// cache lines wide. Measured on `group_by_multiple_strings`: it wins up to ~256 bytes per row
-        /// with one thread and starts losing from ~128 upwards once threads compete for bandwidth.
-        ///
-        /// How large the block is does not belong in that decision. A large block of short rows is
-        /// exactly where the one pass wins most: a 1M-row block of 20-byte keys is 4x faster with it.
-        /// And where a long row does lose, the loss is not the buffer's size either - shrinking such
-        /// a block 64 times, from 65536 rows to 1024, only takes it from +29% to +16%, while the row
-        /// size alone decides whether it wins or loses at all.
-        const size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
-        return avg_row_size < 128;
-    }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
@@ -586,7 +538,8 @@ struct HashMethodSerialized
             return;
 
         use_key_region = true;
-        use_batch_serialize = false;
+        /// A key in a cell that also holds an aggregate state is copied into the arena in front of
+        /// that state, so the layout goes into a buffer reused across chunks rather than the arena.
         if constexpr (Base::has_mapped)
             use_chunk_scratch = true;
         /// With the keys materialised ahead of the loop their hashes can be too, which is what the
@@ -596,36 +549,6 @@ struct HashMethodSerialized
             can_precompute_hashes = true;
             precomputed_hashes_initialized = false;
             prefetching = std::make_unique<PrefetchingHelper>();
-        }
-    }
-
-    /// Serialize the whole block into `serialized_buffer`, one pass per key column. Done on the
-    /// first key asked for rather than in the constructor, so that a caller which opts into the key
-    /// region (`enableKeyRegion`) does not pay for a buffer it will not read - and one which does
-    /// not opt in still gets this instead of serializing row by row.
-    void NO_INLINE prepareBatchSerialize()
-    {
-        batch_serialized = true;
-
-        serialized_buffer.resize(total_size);
-
-        const size_t rows = row_sizes.size();
-        char * memory = serialized_buffer.data();
-        VectorWithMemoryTracking<char *> memories(rows);
-        serialized_keys.resize(rows);
-        for (size_t i = 0; i < rows; ++i)
-        {
-            memories[i] = memory;
-            serialized_keys[i] = std::string_view(memory, row_sizes[i]);
-            memory += row_sizes[i];
-        }
-
-        for (size_t i = 0; i < keys_size; ++i)
-        {
-            if constexpr (nullable)
-                key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i], &serialization_settings);
-            else
-                key_columns[i]->batchSerializeValueIntoMemory(memories, &serialization_settings);
         }
     }
 
@@ -715,13 +638,6 @@ struct HashMethodSerialized
                 prepareKeyChunk(row, pool);
             return ArenaKeyHolder{
                 serialized_keys[row], pool, {}, use_chunk_scratch ? ArenaKeyPlacement::NeedsCopy : ArenaKeyPlacement::InArena};
-        }
-
-        if (use_batch_serialize)
-        {
-            if (!batch_serialized) [[unlikely]]
-                prepareBatchSerialize();
-            return ArenaKeyHolder{serialized_keys[row], pool};
         }
 
         /// One buffer for the whole block instead of one allocation per row. The key stays valid
