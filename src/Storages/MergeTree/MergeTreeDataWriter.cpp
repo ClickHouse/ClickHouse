@@ -1356,8 +1356,9 @@ struct ProjectionOutputProvenance
     bool is_map = false;
 };
 
-/// materialize(x)/CAST(x, T) don't change x's own AST structure; look through them so a wrapped
-/// tuple(...)/map(...)/arrayZip(...) still gets per-slot handling below (a reshaping CAST just fails the shape check at merge time and falls back safely).
+/// materialize(x)/CAST(x, T) and the nullability wrappers don't change x's own AST structure; look
+/// through them so a wrapped tuple(...)/map(...)/arrayZip(...) still gets per-slot handling below
+/// (a reshaping CAST just fails the shape check at merge time and falls back safely).
 static const IAST * unwrapTransparentProjectionExpression(const IAST & node)
 {
     const IAST * current = &node;
@@ -1368,7 +1369,8 @@ static const IAST * unwrapTransparentProjectionExpression(const IAST & node)
             break;
 
         const auto & args = function->arguments->children;
-        if ((function->name == "materialize" || function->name == "toNullable") && args.size() == 1)
+        if ((function->name == "materialize" || function->name == "toNullable" || function->name == "assumeNotNull")
+            && args.size() == 1)
             current = args[0].get();
         else if ((function->name == "CAST" || function->name == "_CAST") && args.size() == 2)
             current = args[0].get();
@@ -1786,12 +1788,17 @@ static void applyJSONSharedDataPathPoliciesForProjection(
         if (!handled_structurally)
         {
             Names candidate_names = {result_column.name};
-            /// An output with several JSON nodes cannot be attributed from flat candidates without
-            /// crossing slots; keep only the self candidate (the prior part's own projection column).
-            if (provenance && countJSONObjectTypes(*result_column.type) <= 1)
+            if (provenance)
+            {
+                Names non_self_candidates;
                 for (const auto & name : provenance->flat_candidates)
                     if (name != result_column.name)
-                        candidate_names.push_back(name);
+                        non_self_candidates.push_back(name);
+                /// Several flat candidates over an output with several JSON nodes cannot be attributed
+                /// without crossing slots; one aligned donor can - the merge still shape-checks it.
+                if (countJSONObjectTypes(*result_column.type) <= 1 || non_self_candidates.size() == 1)
+                    candidate_names.insert(candidate_names.end(), non_self_candidates.begin(), non_self_candidates.end());
+            }
 
             result_column.type = resolveJSONSharedDataPathPolicyForCandidates(
                 result_column.type, candidate_names, projection, source_parts, patch_parts, source_part_alter_conversions);

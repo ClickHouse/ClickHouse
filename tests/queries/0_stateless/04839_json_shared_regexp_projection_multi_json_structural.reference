@@ -1,3 +1,5 @@
 tuple(j1,j2) retains both elements\' own provenance	1
 map(j1,j2) type	Map(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\'), JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))
 arrayZip(arr1,arr2) retains both elements\' own provenance	1
+arrayZipUnaligned(arr1,arr2) type	Array(Tuple(Nullable(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_a\')), Nullable(JSON(max_dynamic_paths=5, SHARED REGEXP \'^tag_b\'))))
+single aligned donor keeps both slots\' rules	2

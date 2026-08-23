@@ -162,3 +162,22 @@ FROM wrappers_04839
 ORDER BY id;
 
 DROP TABLE wrappers_04839;
+
+-- `JSON` inside `Variant` is the documented unsupported boundary: a policy-only ALTER is rejected
+-- with CANNOT_CONVERT_TYPE rather than applied (see DataTypeObject.cpp), never silently rewritten.
+SET enable_variant_type = 1;
+
+DROP TABLE IF EXISTS variant_wrappers_04839;
+
+CREATE TABLE variant_wrappers_04839
+(
+    id UInt64,
+    var Variant(JSON(max_dynamic_paths=1, SHARED REGEXP '^force$'), UInt64)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0;
+
+ALTER TABLE variant_wrappers_04839 MODIFY COLUMN var Variant(JSON(max_dynamic_paths=1, SHARED REGEXP '^other$'), UInt64); -- { serverError CANNOT_CONVERT_TYPE }
+
+DROP TABLE variant_wrappers_04839;
