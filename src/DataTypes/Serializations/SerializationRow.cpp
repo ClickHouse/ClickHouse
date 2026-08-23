@@ -1,4 +1,6 @@
 #include <DataTypes/Serializations/SerializationRow.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
 #include <base/scope_guard.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
@@ -18,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 SerializationRow::SerializationRow(Serializations field_serializations_, Strings field_names_)
@@ -26,6 +27,15 @@ SerializationRow::SerializationRow(Serializations field_serializations_, Strings
 {
     if (field_serializations.size() != field_names.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Row serialization: field count mismatch");
+
+    SerializationTuple::ElementSerializations elements;
+    elements.reserve(field_serializations.size());
+    for (size_t i = 0; i < field_serializations.size(); ++i)
+        elements.push_back(std::static_pointer_cast<const SerializationNamed>(
+            SerializationNamed::create(field_serializations[i], field_names[i], SubstreamType::TupleElement)));
+
+    text_serialization = std::static_pointer_cast<const SerializationTuple>(
+        SerializationTuple::create(std::move(elements), /*has_explicit_names_=*/ true));
 }
 
 UInt128 SerializationRow::getHash(const Serializations & field_serializations_, const Strings & field_names_)
@@ -63,6 +73,7 @@ size_t SerializationRow::allocatedBytes() const
     bytes += field_names.capacity() * sizeof(String);
     for (const auto & field_name : field_names)
         bytes += field_name.capacity();
+    bytes += text_serialization->allocatedBytes();
     return bytes;
 }
 
@@ -175,27 +186,57 @@ void SerializationRow::deserializeBinary(IColumn & column, ReadBuffer & istr, co
 
 void SerializationRow::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    /// Tuple literal form, e.g. ('alpha', 10, 'x').
-    const auto & tuple = assert_cast<const ColumnTuple &>(column);
-    writeChar('(', ostr);
-    for (size_t i = 0; i < field_serializations.size(); ++i)
-    {
-        if (i != 0)
-            writeChar(',', ostr);
-        field_serializations[i]->serializeTextQuoted(tuple.getColumn(i), row_num, ostr, settings);
-    }
-    writeChar(')', ostr);
+    text_serialization->serializeText(column, row_num, ostr, settings);
 }
 
-void SerializationRow::deserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const
+void SerializationRow::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Text deserialization for Row data type is not supported; insert via the source columns instead");
+    text_serialization->deserializeText(column, istr, settings, whole);
 }
 
-bool SerializationRow::tryDeserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const
+bool SerializationRow::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
-    return false;
+    return text_serialization->tryDeserializeText(column, istr, settings, whole);
+}
+
+void SerializationRow::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    text_serialization->serializeTextJSON(column, row_num, ostr, settings);
+}
+
+void SerializationRow::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    text_serialization->deserializeTextJSON(column, istr, settings);
+}
+
+bool SerializationRow::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    return text_serialization->tryDeserializeTextJSON(column, istr, settings);
+}
+
+void SerializationRow::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+{
+    text_serialization->serializeTextJSONPretty(column, row_num, ostr, settings, indent);
+}
+
+void SerializationRow::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    text_serialization->serializeTextXML(column, row_num, ostr, settings);
+}
+
+void SerializationRow::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    text_serialization->serializeTextCSV(column, row_num, ostr, settings);
+}
+
+void SerializationRow::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    text_serialization->deserializeTextCSV(column, istr, settings);
+}
+
+bool SerializationRow::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    return text_serialization->tryDeserializeTextCSV(column, istr, settings);
 }
 
 void SerializationRow::serializeBinaryBulkStatePrefix(

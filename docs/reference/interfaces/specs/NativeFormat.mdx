@@ -1064,7 +1064,7 @@ In memory a `Row` column has the same representation as the equivalent named `Tu
 02 'y' 'y'                   b = "yy"
 ```
 
-`Row` has no [binary type encoding](/sql-reference/data-types/data-types-binary-encoding): writing a block whose header carries a `Row` type with `output_format_native_encode_types_in_binary_format = 1` throws an exception (`UNSUPPORTED_METHOD`).
+The [binary type encoding](/sql-reference/data-types/data-types-binary-encoding) of `Row` is tag `0x38` followed by the field count and, per field, the name and the encoded field type — the same shape `Nested` uses. A block header carrying a `Row` type is therefore writable with `output_format_native_encode_types_in_binary_format = 1`.
 
 ### Type aliases {#type-aliases}
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 
@@ -31,9 +32,20 @@ public:
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
+    /// In memory a `Row` is the equivalent named `Tuple`, so every text format delegates to a
+    /// `Tuple` serialization over the same fields: a `Row` reads and writes exactly like the
+    /// `Tuple` it mirrors, and only the binary/storage layout below is row-major.
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
     bool tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &, size_t indent) const override;
+    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,
@@ -70,6 +82,7 @@ public:
 private:
     Serializations field_serializations;
     Strings field_names;
+    std::shared_ptr<const SerializationTuple> text_serialization;
 };
 
 }

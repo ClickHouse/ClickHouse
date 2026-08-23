@@ -61,7 +61,12 @@ if and only if:
 3. The identifier list matches the `Row(...)` field list 1-for-1 in **order
    and name**.
 
-Any column not meeting all three conditions remains a normal `Row` column
+4. Every `Row` field type is identical to the type of the column it names,
+   including nullability and decimal scale. A wrapper mirrors its source
+   columns exactly, so `combined Row(a String) MATERIALIZED tuple(a)` against
+   `a UInt64` is not a wrapper.
+
+Any column not meeting all four conditions remains a normal `Row` column
 without the I/O optimization (it still works as a regular typed column).
 
 Each source column may be wrapped by at most one `Row` wrapper. Declaring
@@ -93,6 +98,7 @@ machinery is not wired up: a `Row` column exposes no subcolumns, so fields can
 only be reached by reading the whole wrapper. The optimizer rule does this on
 its own; there is no supported way to spell it in a query.
 
-`Row` has no binary type encoding, so a column of this type cannot be sent in
-the `Native` format with
-`output_format_native_encode_types_in_binary_format = 1`.
+In every text format a `Row` reads and writes exactly like the named `Tuple` it
+mirrors: a tuple literal such as `('alpha', 10, 'x')` in `TSV` and `Values`, and
+an object such as `{"a":"alpha","b":10,"c":"x"}` in `JSON`. Only the binary
+storage layout differs.

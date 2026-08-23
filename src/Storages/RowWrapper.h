@@ -20,7 +20,9 @@ struct RowWrapperInfo
 };
 
 /// Returns wrapper info if `column` is such a wrapper, otherwise std::nullopt.
-std::optional<RowWrapperInfo> tryDescribeRowWrapper(const ColumnDescription & column);
+/// A wrapper must mirror its source columns exactly, so every `Row` field type has to be
+/// identical to the type of the column it names in `all_columns`.
+std::optional<RowWrapperInfo> tryDescribeRowWrapper(const ColumnDescription & column, const ColumnsDescription & all_columns);
 
 /// All Row wrappers in `columns`. Throws if a source column is wrapped twice
 /// (the optimizer rule assumes wrappers are disjoint).

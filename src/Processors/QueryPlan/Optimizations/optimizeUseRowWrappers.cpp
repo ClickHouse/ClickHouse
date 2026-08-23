@@ -176,13 +176,23 @@ size_t tryOptimizeUseRowWrappers(
 
         /// PREWHERE and row-level filter DAGs are applied inside the reading step and are
         /// not rewritten here, so a column they consume must keep being read directly.
+        /// `FINAL` reads may move the very same DAGs into the deferred slots (see
+        /// `ReadFromMergeTree::deferFiltersAfterFinalIfNeeded`), where they still run inside this
+        /// step, so the deferred carriers are excluded too.
         std::unordered_set<String> filter_columns;
+        auto exclude_filter_columns = [&](const Names & names)
+        {
+            filter_columns.insert(names.begin(), names.end());
+        };
+
         if (const auto & prewhere_info = reading->getPrewhereInfo())
-            for (const auto & name : prewhere_info->prewhere_actions.getRequiredColumnsNames())
-                filter_columns.insert(name);
+            exclude_filter_columns(prewhere_info->prewhere_actions.getRequiredColumnsNames());
         if (const auto & row_level_filter = reading->getRowLevelFilter())
-            for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
-                filter_columns.insert(name);
+            exclude_filter_columns(row_level_filter->actions.getRequiredColumnsNames());
+        if (const auto & deferred_prewhere_info = reading->getDeferredPrewhereInfo())
+            exclude_filter_columns(deferred_prewhere_info->prewhere_actions.getRequiredColumnsNames());
+        if (const auto & deferred_row_level_filter = reading->getDeferredRowLevelFilter())
+            exclude_filter_columns(deferred_row_level_filter->actions.getRequiredColumnsNames());
 
         auto picks = pickWrappers(reading->getAllColumnNames(), wrappers, filter_columns);
         if (picks.empty())

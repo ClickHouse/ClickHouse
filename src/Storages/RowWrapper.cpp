@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::optional<RowWrapperInfo> tryDescribeRowWrapper(const ColumnDescription & column)
+std::optional<RowWrapperInfo> tryDescribeRowWrapper(const ColumnDescription & column, const ColumnsDescription & all_columns)
 {
     if (column.default_desc.kind != ColumnDefaultKind::Materialized)
         return std::nullopt;
@@ -33,6 +33,7 @@ std::optional<RowWrapperInfo> tryDescribeRowWrapper(const ColumnDescription & co
 
     const auto & args = fn->arguments->children;
     const auto & field_names = row_type->getElementNames();
+    const auto & field_types = row_type->getElements();
     if (args.size() != field_names.size())
         return std::nullopt;
 
@@ -43,6 +44,16 @@ std::optional<RowWrapperInfo> tryDescribeRowWrapper(const ColumnDescription & co
         const auto * id = args[i]->as<ASTIdentifier>();
         if (!id || id->name() != field_names[i])
             return std::nullopt;
+
+        /// A wrapper must mirror its source columns exactly: the optimizer replaces a read of
+        /// the source column with `__rowElement(wrapper, i)` under the original name, so anything
+        /// but type identity (including nullability and decimal scale) would silently change the
+        /// type of that column. A `Row` whose field type merely differs is a valid ordinary
+        /// materialized column, it is just not a wrapper.
+        const auto * source = all_columns.tryGet(id->name());
+        if (!source || !source->type->equals(*field_types[i]))
+            return std::nullopt;
+
         wrapped.push_back(id->name());
     }
 
@@ -56,16 +67,13 @@ std::vector<RowWrapperInfo> collectRowWrappers(const ColumnsDescription & column
 
     for (const auto & col : columns)
     {
-        auto desc = tryDescribeRowWrapper(col);
+        auto desc = tryDescribeRowWrapper(col, columns);
         if (!desc)
             continue;
 
         for (const auto & wrapped : desc->wrapped_columns)
         {
-            if (!columns.tryGet(wrapped))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Row wrapper column '{}' references unknown column '{}'", col.name, wrapped);
-
+            /// `tryDescribeRowWrapper` already guaranteed the source column exists.
             auto [it, inserted] = owned_by.try_emplace(wrapped, col.name);
             if (!inserted)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
