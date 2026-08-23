@@ -533,7 +533,15 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
+        case Type::STOP_LOGS:
+        case Type::START_LOGS:
         {
+            if (type == Type::STOP_LOGS && with_flush)
+            {
+                ostr << ' ';
+                print_keyword("WITH FLUSH");
+            }
+
             bool comma = false;
             for (const auto & cur_log : tables)
             {
@@ -716,6 +724,8 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("is_drop_whole_replica", true);
     if (with_tables)
         w.writeBool("with_tables", true);
+    if (with_flush)
+        w.writeBool("with_flush", true);
     if (!storage_policy.empty())
         w.writeString("storage_policy", storage_policy);
     if (!volume.empty())
@@ -896,6 +906,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             "'is_drop_whole_replica' cannot be combined with a database, table, or ZooKeeper-path target "
             "during AST JSON deserialization");
     with_tables = r.getBool("with_tables");
+    with_flush = r.getBool("with_flush");
     storage_policy = r.getString("storage_policy");
     volume = r.getString("volume");
     disk = r.getString("disk");

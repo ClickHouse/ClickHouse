@@ -117,7 +117,7 @@ void SystemLogQueue<LogElement>::push(LogElement && element)
     {
         std::unique_lock lock(mutex);
 
-        if (is_shutdown)
+        if (is_shutdown || is_stopped)
             return;
 
         if (queue.size() == settings.buffer_size_rows_flush_threshold)
@@ -298,6 +298,18 @@ void SystemLogQueue<LogElement>::shutdown()
 }
 
 template <typename LogElement>
+void SystemLogQueue<LogElement>::stop()
+{
+    is_stopped.store(true, std::memory_order_relaxed);
+}
+
+template <typename LogElement>
+void SystemLogQueue<LogElement>::start()
+{
+    is_stopped.store(false, std::memory_order_relaxed);
+}
+
+template <typename LogElement>
 SystemLogBase<LogElement>::SystemLogBase(
     const SystemLogQueueSettings & settings_,
     std::shared_ptr<SystemLogQueue<LogElement>> queue_)
@@ -327,6 +339,24 @@ template <typename LogElement>
 void SystemLogBase<LogElement>::handleCrash()
 {
     queue->handleCrash();
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::stop()
+{
+    queue->stop();
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::start()
+{
+    queue->start();
+}
+
+template <typename LogElement>
+bool SystemLogBase<LogElement>::isStopped() const
+{
+    return queue->isStopped();
 }
 
 template <typename LogElement>

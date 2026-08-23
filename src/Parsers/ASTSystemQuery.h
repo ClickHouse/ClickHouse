@@ -108,6 +108,8 @@ public:
         STOP_REPLICATED_DDL_QUERIES,
         START_REPLICATED_DDL_QUERIES,
         FLUSH_LOGS,
+        STOP_LOGS,
+        START_LOGS,
         FLUSH_DISTRIBUTED,
         FLUSH_ASYNC_INSERT_QUEUE,
         FLUSH_OBJECT_STORAGE_QUEUE,
@@ -192,6 +194,8 @@ public:
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
+    /// Used by SYSTEM STOP LOGS WITH FLUSH: stop enqueueing, then synchronously flush the queue.
+    bool with_flush{false};
     String storage_policy;
     String volume;
     String disk;

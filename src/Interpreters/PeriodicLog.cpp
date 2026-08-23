@@ -27,6 +27,11 @@ void PeriodicLog<LogElement>::stopCollect()
     bool old_val = false;
     if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
         return;
+    {
+        std::lock_guard lock(collect_mutex);
+        /// Wake the thread if it is waiting while STOP LOGS is in effect.
+    }
+    collect_cond.notify_all();
     if (collecting_thread)
         collecting_thread->join();
 }
@@ -36,6 +41,28 @@ void PeriodicLog<LogElement>::shutdown()
 {
     stopCollect();
     Base::shutdown();
+}
+
+template <typename LogElement>
+void PeriodicLog<LogElement>::stop()
+{
+    Base::stop();
+    {
+        std::lock_guard lock(collect_mutex);
+        is_stopped_collect = true;
+    }
+    collect_cond.notify_all();
+}
+
+template <typename LogElement>
+void PeriodicLog<LogElement>::start()
+{
+    {
+        std::lock_guard lock(collect_mutex);
+        is_stopped_collect = false;
+    }
+    collect_cond.notify_all();
+    Base::start();
 }
 
 template <typename LogElement>
@@ -53,6 +80,16 @@ void PeriodicLog<LogElement>::threadFunction()
     {
         try
         {
+            {
+                std::unique_lock lock(collect_mutex);
+                collect_cond.wait(lock, [this] TSA_REQUIRES(collect_mutex)
+                {
+                    return !is_stopped_collect || is_shutdown_metric_thread;
+                });
+                if (is_shutdown_metric_thread)
+                    break;
+            }
+
             const auto current_time = std::chrono::system_clock::now();
 
             stepFunctionSafe(current_time);
@@ -62,7 +99,11 @@ void PeriodicLog<LogElement>::threadFunction()
             while (desired_timepoint <= current_time)
                 desired_timepoint += std::chrono::milliseconds(collect_interval_milliseconds);
 
-            std::this_thread::sleep_until(desired_timepoint);
+            std::unique_lock lock(collect_mutex);
+            collect_cond.wait_until(lock, desired_timepoint, [this] TSA_REQUIRES(collect_mutex)
+            {
+                return is_stopped_collect || is_shutdown_metric_thread;
+            });
         }
         catch (...)
         {
@@ -74,6 +115,11 @@ void PeriodicLog<LogElement>::threadFunction()
 template <typename LogElement>
 void PeriodicLog<LogElement>::flushBufferToLog(TimePoint current_time)
 {
+    /// Do not produce new records while SYSTEM STOP LOGS is in effect; residual queue
+    /// entries are still flushed by the saving thread / SYSTEM FLUSH LOGS.
+    if (this->isStopped())
+        return;
+
     stepFunctionSafe(current_time);
 }
 

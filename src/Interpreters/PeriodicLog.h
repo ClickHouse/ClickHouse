@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 
 #define SYSTEM_PERIODIC_LOG_ELEMENTS(M) \
@@ -33,6 +34,11 @@ public:
 
     void flushBufferToLog(TimePoint current_time) final;
 
+    /// Pause/resume the collection thread (SYSTEM STOP/START LOGS). While stopped the
+    /// thread waits on a condition variable instead of sleeping through empty intervals.
+    void stop() override;
+    void start() override;
+
 protected:
     /// Stop background thread
     void stopCollect();
@@ -54,6 +60,10 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> collecting_thread;
     size_t collect_interval_milliseconds{};
     std::atomic<bool> is_shutdown_metric_thread{false};
+
+    std::mutex collect_mutex;
+    std::condition_variable collect_cond;
+    bool is_stopped_collect TSA_GUARDED_BY(collect_mutex) = false;
 };
 
 }
