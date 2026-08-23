@@ -199,7 +199,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-HTTP API, `promql` 방언 및 테이블 함수에서 지원하는 함수와 집계 연산자 목록은 [지원되는 PromQL 기능](/ko/sql-reference/table-functions/prometheusQueryRange#supported-promql-features)을 참조하십시오.
+HTTP API, `promql` 방언 및 테이블 함수에서 지원하는 함수와 집계 연산자 목록은 [지원되는 PromQL 기능](/ko/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)을 참조하십시오.
 
 <div id="grafana">
   #### Grafana
@@ -233,7 +233,7 @@ Grafana는 이 기준 URL 뒤에 `/api/v1/query` 또는 `/api/v1/query_range`를
   #### SQL 진입점
 </div>
 
-ClickHouse는 HTTP API, `promql` 방언, [`prometheusQuery`](/ko/sql-reference/table-functions/prometheusQuery) 및 [`prometheusQueryRange`](/ko/sql-reference/table-functions/prometheusQueryRange) 테이블 함수에서 동일한 PromQL 컨버터를 사용합니다.
+ClickHouse는 HTTP API, `promql` 방언, [`prometheusQuery`](/ko/reference/functions/table-functions/prometheusQuery) 및 [`prometheusQueryRange`](/ko/reference/functions/table-functions/prometheusQueryRange) 테이블 함수에서 동일한 PromQL 컨버터를 사용합니다.
 
 `clickhouse-client`에서 PromQL을 직접 실행합니다:
 
