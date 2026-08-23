@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -22,6 +23,7 @@
 #include <Common/QueryScope.h>
 #include <Common/SettingSource.h>
 #include <Common/SettingsChanges.h>
+#include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
@@ -604,9 +606,16 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
 /// Removing the qualifier at the token level maps such queries onto them.
 /// String literals are left intact - only a `pg_catalog` identifier that is not
 /// itself qualified and is followed by a dot and another identifier is removed.
+/// PostgreSQL folds unquoted identifiers to lower case, so a bare `PG_CATALOG` names
+/// the same schema and is matched case-insensitively; a quoted identifier keeps its
+/// case in PostgreSQL, so only the exact `"pg_catalog"` spelling is matched there.
 static String removePgCatalogQualifier(const String & query)
 {
-    if (!query.contains("pg_catalog"))
+    static constexpr std::string_view pg_catalog = "pg_catalog";
+
+    /// A fast path for the common case of a query that does not mention the schema at all.
+    if (std::search(query.begin(), query.end(), pg_catalog.begin(), pg_catalog.end(),
+            [](char a, char b) { return equalsCaseInsensitive(a, b); }) == query.end())
         return query;
 
     std::vector<Token> tokens;
@@ -617,7 +626,7 @@ static String removePgCatalogQualifier(const String & query)
     auto is_pg_catalog = [](const Token & token)
     {
         std::string_view text(token.begin, token.size());
-        return (token.type == TokenType::BareWord && text == "pg_catalog")
+        return (token.type == TokenType::BareWord && equalsCaseInsensitive(text, pg_catalog))
             || (token.type == TokenType::QuotedIdentifier && text == "\"pg_catalog\"");
     };
 
@@ -1306,10 +1315,15 @@ SELECT * FROM VALUES(
 
     /// Fixed rows are the namespaces PostgreSQL clients expect to always exist
     /// (their well-known oids are hardcoded in some drivers, e.g. 11 for `pg_catalog`).
-    /// The rest of the namespaces are the real databases; their oids are synthesized
-    /// by hashing the name, consistently with `relnamespace` in `pg_class` below.
-    /// The offset 16384 mirrors PostgreSQL, where oids below 16384 are reserved for
-    /// the system, so synthesized oids cannot collide with the well-known ones.
+    /// The rest of the namespaces are the real databases. Their oids are synthesized by
+    /// enumerating the visible databases in the stable order of their names, consistently
+    /// with `relnamespace` in `pg_class` below. Hashing the name would be simpler, but the
+    /// oids of an emulated catalog still have to be unique: clients join `pg_class` to
+    /// `pg_namespace` on them, and a single collision would make `\d` list a table under
+    /// an unrelated schema or twice. The offset 16384 mirrors PostgreSQL, where oids below
+    /// 16384 are reserved for the system, so synthesized oids cannot collide with the
+    /// well-known ones; namespaces take the even oids and the tables of `pg_class` the odd
+    /// ones, so the two enumerations cannot collide with each other either.
     /// `SQL SECURITY INVOKER` makes the view run with the privileges of the session
     /// user. `system.databases` is implicitly SELECTable by every user and hides
     /// the databases the user has no `SHOW` privilege for, so the view exposes
@@ -1325,7 +1339,9 @@ SELECT * FROM VALUES(
     (100,   'pg_toast_temp_1')
 )
 UNION ALL
-SELECT toUInt32(16384 + sipHash64(name) % 4294900000) AS oid, name AS nspname
+SELECT
+    toUInt32(16382 + 2 * indexOf((SELECT arraySort(groupArray(name)) FROM system.databases), name)) AS oid,
+    name AS nspname
 FROM system.databases)");
 
     /// Fixed rows (oid, relkind) are preserved for driver compatibility; they belong
@@ -1349,9 +1365,9 @@ SELECT * FROM VALUES(
 )
 UNION ALL
 SELECT
-    toUInt32(16384 + sipHash64(database, name) % 4294900000) AS oid,
+    toUInt32(16383 + 2 * indexOf((SELECT arraySort(groupArray(name)) FROM system.tables WHERE database = currentDatabase() AND NOT is_temporary), name)) AS oid,
     name AS relname,
-    toUInt32(16384 + sipHash64(database) % 4294900000) AS relnamespace,
+    toUInt32(16382 + 2 * indexOf((SELECT arraySort(groupArray(name)) FROM system.databases), currentDatabase())) AS relnamespace,
     toUInt32(10) AS relowner,
     toUInt32(if(endsWith(engine, 'View'), 0, 2)) AS relam,
     multiIf(engine = 'MaterializedView', 'm', endsWith(engine, 'View'), 'v', 'r') AS relkind

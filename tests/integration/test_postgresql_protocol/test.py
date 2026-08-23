@@ -760,3 +760,101 @@ def test_restricted_user_catalog_visibility(started_cluster):
     cur.execute("DROP DATABASE IF EXISTS pg_visible_db")
     cur.execute("DROP DATABASE IF EXISTS pg_hidden_db")
     ch.close()
+
+
+def test_catalog_qualifier_is_case_insensitive(started_cluster):
+    """PostgreSQL folds unquoted identifiers to lower case, so a bare `PG_CATALOG`
+    qualifier names the same schema as `pg_catalog` and must be stripped as well.
+    A quoted identifier keeps its case in PostgreSQL, so `"PG_CATALOG"` is a
+    different (and non-existent) schema and must not be rewritten."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+
+    for qualifier in ["pg_catalog", "PG_CATALOG", "Pg_Catalog", '"pg_catalog"']:
+        cur.execute(f"SELECT count() FROM {qualifier}.pg_namespace")
+        assert cur.fetchall()[0][0] > 0, qualifier
+
+        cur.execute(f"SELECT {qualifier}.pg_table_is_visible(1)")
+        assert cur.fetchall()[0][0] in (1, True, "1"), qualifier
+
+    # A quoted qualifier in a different case is a different schema in PostgreSQL,
+    # and there is no such database here.
+    with pytest.raises(psycopg.errors.Error):
+        cur.execute('SELECT count() FROM "PG_CATALOG".pg_namespace')
+
+    ch.close()
+
+
+def test_catalog_oids_are_unique(started_cluster):
+    """The synthesized oids of the emulated catalog are used as join keys by
+    PostgreSQL clients, so they have to be unique: `pg_class.relnamespace` must
+    resolve to exactly one `pg_namespace` row, and no two relations may share
+    an oid."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("CREATE DATABASE IF NOT EXISTS pg_oids_db")
+    for i in range(16):
+        cur.execute(f"CREATE DATABASE IF NOT EXISTS pg_oids_extra_{i}")
+        cur.execute(
+            f"CREATE TABLE IF NOT EXISTS pg_oids_db.t_{i} (id Int32) ENGINE = Memory"
+        )
+    ch.close()
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        dbname="pg_oids_db",
+    )
+    cur = ch.cursor()
+
+    cur.execute("SELECT oid, nspname FROM pg_namespace")
+    namespaces = cur.fetchall()
+    oids = [row[0] for row in namespaces]
+    assert len(oids) == len(set(oids))
+
+    cur.execute("SELECT oid, relname FROM pg_class WHERE relname != ''")
+    relations = cur.fetchall()
+    relation_oids = [row[0] for row in relations]
+    assert len(relation_oids) == len(set(relation_oids))
+    assert len(relations) == 16
+    # The oid spaces of namespaces and relations must not overlap either.
+    assert not (set(oids) & set(relation_oids))
+
+    # The join psql performs behind `\d` must match exactly one namespace per relation.
+    cur.execute(
+        "SELECT c.relname, n.nspname FROM pg_class AS c "
+        "JOIN pg_namespace AS n ON n.oid = c.relnamespace WHERE c.relname != ''"
+    )
+    joined = cur.fetchall()
+    assert len(joined) == 16
+    assert {row[1] for row in joined} == {"pg_oids_db"}
+
+    ch.close()
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP DATABASE IF EXISTS pg_oids_db")
+    for i in range(16):
+        cur.execute(f"DROP DATABASE IF EXISTS pg_oids_extra_{i}")
+    ch.close()
