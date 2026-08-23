@@ -927,3 +927,19 @@ MergeMemoryReservation MergeMemoryReservation::reserve(UInt64 requested)
 {
     return MergeMemoryReservation(reserveMergeMemory(clampMergeMemoryReservation(requested)));
 }
+
+MergeMemoryReservation MergeMemoryReservation::replace(MergeMemoryReservation && old, UInt64 requested)
+{
+    const Int64 bytes = clampMergeMemoryReservation(requested);
+
+    std::lock_guard lock(merge_memory_reservation_mutex);
+    if (old.active)
+    {
+        chassert(total_merge_memory_reserved >= static_cast<UInt64>(old.bytes));
+        total_merge_memory_reserved -= static_cast<UInt64>(old.bytes);
+        old.active = false;
+    }
+    total_merge_memory_reserved += static_cast<UInt64>(bytes);
+    publishReservedMergeMemory();
+    return MergeMemoryReservation(bytes);
+}

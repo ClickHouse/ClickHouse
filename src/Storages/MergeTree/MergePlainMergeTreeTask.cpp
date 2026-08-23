@@ -174,7 +174,11 @@ void MergePlainMergeTreeTask::prepare()
             .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
         };
         const auto mutations_snapshot = storage.getMutationsSnapshot(mutations_params);
-        merge_mutate_entry->tagger->memory_reservation = MergeMemoryReservation::reserve(
+        /// `replace` swaps the selection-time reservation for the refreshed one in a single critical
+        /// section; a fresh `reserve` moved over the old value would transiently expose `old + new`
+        /// to concurrent selectors and spuriously reject merges that fit.
+        merge_mutate_entry->tagger->memory_reservation = MergeMemoryReservation::replace(
+            std::move(merge_mutate_entry->tagger->memory_reservation),
             CompactionStatistics::estimateNeededMemoryForMerge(
                 *future_part,
                 metadata_snapshot,

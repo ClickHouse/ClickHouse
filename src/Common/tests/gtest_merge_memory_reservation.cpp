@@ -151,13 +151,67 @@ TEST_F(MergeMemoryReservationTest, ReplacingReservationReleasesTheOldOne)
     background_memory_tracker.setSoftLimit(0);
 
     {
-        /// The non-replicated path first reserves using a destination disk guessed from the source
-        /// parts, and redoes the reservation once the tagger has chosen the actual destination disk.
+        /// Move-assignment releases the overwritten reservation exactly once. This is the RAII
+        /// fallback; the production correction paths use `replace` (tested below), which never
+        /// exposes the transient `old + new` total this two-step sequence goes through.
         auto reservation = MergeMemoryReservation::reserve(100);
         ASSERT_EQ(getReservedMergeMemory(), 100);
 
         reservation = MergeMemoryReservation::reserve(5000);
         ASSERT_EQ(getReservedMergeMemory(), 5000);
+    }
+
+    ASSERT_EQ(getReservedMergeMemory(), 0);
+}
+
+TEST_F(MergeMemoryReservationTest, ReplaceCorrectsTheReservationInPlace)
+{
+    background_memory_tracker.setSoftLimit(0);
+
+    {
+        /// The non-replicated path first reserves using a destination disk guessed from the source
+        /// parts, and corrects the reservation once the tagger has chosen the actual destination disk
+        /// (and again at task start, when the disk's request settings are re-read).
+        auto reservation = MergeMemoryReservation::reserve(100);
+        ASSERT_EQ(getReservedMergeMemory(), 100);
+
+        /// Correct upward...
+        reservation = MergeMemoryReservation::replace(std::move(reservation), 5000);
+        ASSERT_EQ(getReservedMergeMemory(), 5000);
+
+        /// ... and downward.
+        reservation = MergeMemoryReservation::replace(std::move(reservation), 40);
+        ASSERT_EQ(getReservedMergeMemory(), 40);
+
+        /// Replacing an empty reservation is a plain unconditional reserve.
+        MergeMemoryReservation empty;
+        auto other = MergeMemoryReservation::replace(std::move(empty), 7);
+        ASSERT_EQ(getReservedMergeMemory(), 47);
+    }
+
+    ASSERT_EQ(getReservedMergeMemory(), 0);
+}
+
+TEST_F(MergeMemoryReservationTest, ReplaceKeepsSaturationSymmetric)
+{
+    background_memory_tracker.setSoftLimit(0);
+
+    constexpr UInt64 huge = std::numeric_limits<UInt64>::max();
+    constexpr Int64 int64_max = std::numeric_limits<Int64>::max();
+
+    {
+        auto huge_reservation = MergeMemoryReservation::reserve(huge);
+        auto small_reservation = MergeMemoryReservation::reserve(500);
+        ASSERT_EQ(getReservedMergeMemory(), int64_max);
+
+        /// Replacing a saturated reservation with another huge one keeps the published counter
+        /// saturated and the accumulator exact.
+        huge_reservation = MergeMemoryReservation::replace(std::move(huge_reservation), huge);
+        ASSERT_EQ(getReservedMergeMemory(), int64_max);
+
+        /// Correcting the huge reservation down uncovers exactly the small one.
+        huge_reservation = MergeMemoryReservation::replace(std::move(huge_reservation), 100);
+        ASSERT_EQ(getReservedMergeMemory(), 600);
     }
 
     ASSERT_EQ(getReservedMergeMemory(), 0);

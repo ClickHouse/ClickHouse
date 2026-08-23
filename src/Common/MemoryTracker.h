@@ -409,6 +409,15 @@ public:
     /// so that the reservation still contributes to the gate for other, not-yet-started merges).
     static MergeMemoryReservation reserve(UInt64 bytes);
 
+    /// Replace `old` with an unconditional reservation of `bytes`, releasing the old amount and
+    /// reserving the new one in a single critical section. The correction paths (the actual-disk
+    /// re-pricing in StorageMergeTree::selectPartsToMerge, the task-start re-pricing in
+    /// MergePlainMergeTreeTask::prepare) must use this instead of `reservation = reserve(bytes)`:
+    /// there the right-hand side increments the global counter before the move assignment releases
+    /// the old value, and another selector's tryReserve can observe the transient `old + new` total
+    /// and reject a merge that fits the corrected reservation.
+    static MergeMemoryReservation replace(MergeMemoryReservation && old, UInt64 bytes);
+
     Int64 getBytes() const { return bytes; }
 
 private:

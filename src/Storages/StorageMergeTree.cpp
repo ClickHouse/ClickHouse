@@ -2002,12 +2002,15 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// check already used the worst case over the disks this table can write to, this correction
             /// only keeps or lowers the reservation; the merge is already committed to run at this point,
             /// so reserve unconditionally (as the replicated path does) - the corrected reservation still
-            /// throttles selection of further merges.
+            /// throttles selection of further merges. The swap must be atomic (`replace`, not a fresh
+            /// `reserve` moved over the old value): concurrent selectors would otherwise observe the
+            /// transient `old + new` total and spuriously reject merges that fit.
             const DiskPtr actual_disk = tagger->reserved_space->getDisk();
             const bool actual_output_on_remote_disk = actual_disk->isRemote();
             if (actual_output_on_remote_disk || actual_output_on_remote_disk != output_may_be_on_remote_disk)
             {
-                memory_reservation = MergeMemoryReservation::reserve(
+                memory_reservation = MergeMemoryReservation::replace(
+                    std::move(*memory_reservation),
                     CompactionStatistics::estimateNeededMemoryForMerge(
                         *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
                         actual_output_on_remote_disk,
