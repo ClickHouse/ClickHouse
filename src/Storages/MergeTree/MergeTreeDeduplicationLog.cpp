@@ -1292,7 +1292,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     /// allocates, so it can fail on exactly the path that must not - and an already
     /// committed block id would stop deduplicating just because an unrelated insert
     /// failed to commit.
-    if (part_was_published)
+    if (part_was_published != nullptr)
         published_not_confirmed += block_ids.size();
     enforceDeduplicationWindow();
 
