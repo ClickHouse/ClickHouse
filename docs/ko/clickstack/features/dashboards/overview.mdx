@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'ClickStack을 사용한 시각화 및 대시보드'
-sidebarTitle: '대시보드'
+sidebarTitle: '개요'
 description: 'ClickStack을 사용한 시각화 및 대시보드'
 doc_type: 'guide'
 keywords: ['clickstack', '대시보드', '시각화', '모니터링', '관측성']
@@ -55,7 +55,7 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
 
     이벤트는 SQL `WHERE` 절 또는 Lucene 구문으로 필터링할 수 있으며, 이벤트를 시각화할 시간 범위도 설정할 수 있습니다. 여러 시리즈도 지원됩니다.
 
-    예를 들어, 필터 `ServiceName:"frontend"`를 추가해 `frontend` 서비스만 필터링할 수 있습니다. `Add Series`를 클릭해 별칭을 `Count`로 지정한 두 번째 시리즈를 추가하면 시간에 따른 이벤트 수도 함께 표시할 수 있습니다.
+    예를 들어, 필터 `ServiceName:\"frontend\"`를 추가해 `frontend` 서비스만 필터링할 수 있습니다. `Add Series`를 클릭해 별칭을 `Count`로 지정한 두 번째 시리즈를 추가하면 시간에 따른 이벤트 수도 함께 표시할 수 있습니다.
 
     <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="단순 시각화 2" size="lg" />
 
@@ -63,12 +63,8 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
 
     <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="차트 시리즈 행의 Duplicate series 복사 아이콘과 해당 툴팁" size="lg" />
 
-    기존 시리즈와 비슷한 시리즈를 만들려면 처음부터 새로 만드는 대신 복제할 수 있습니다. 시리즈 행의 복사 아이콘(`Duplicate series`)을 클릭하면 바로 아래에 복사본이 삽입됩니다. 복사본은 메트릭, 컬럼, 필터 등 원본 시리즈의 설정을 유지합니다. 이후 달라지는 필드만 변경하고(예: 집계) 복사본에 별도의 별칭을 지정하면 됩니다. 복제 기능은 여러 시리즈를 지원하는 모든 곳에서 사용할 수 있습니다. `Number`, `Pie`, `Heatmap`처럼 하나의 시리즈만 허용하는 시각화 유형에서는 이 기능이 표시되지 않습니다.
-
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="차트 시리즈 행의 Duplicate series 복사 아이콘과 해당 툴팁" size="lg" />
-
     <Note>
-      시각화는 메트릭, 트레이스, 로그 등 모든 데이터 소스에서 만들 수 있습니다. ClickStack은 이 모두를 wide 이벤트로 처리합니다. 모든 **numeric column**은 시간에 따라 차트로 표시할 수 있으며, **string**, **date**, **numeric** 컬럼은 그룹화에 사용할 수 있습니다.
+      시각화는 메트릭, 트레이스, 로그 등 모든 데이터 소스에서 만들 수 있습니다. ClickStack은 이 모두를 wide 이벤트로 처리합니다. 모든 **numeric 컬럼**은 시간에 따라 차트로 표시할 수 있으며, **string**, **date**, **numeric** 컬럼은 그룹화에 사용할 수 있습니다.
 
       이 통합된 접근 방식을 통해 텔레메트리 타입 전반에서 일관되고 유연한 모델로 대시보드를 구축할 수 있습니다.
     </Note>
@@ -212,6 +208,14 @@ Number 타일을 선택한 상태에서 **Display Settings**를 열고 **Backgro
 
 Background chart는 query-builder Number 타일에 적용됩니다. Raw SQL Number 타일은 버킷으로 나눌 시간 차원이 없는 단일 값만 반환하므로, 이 옵션은 표시되지만 비활성화됩니다.
 
+Table 타일에서는 **Alternate Row Background**를 사용해 행에 줄무늬를 적용할 수 있습니다. 한 행씩 번갈아 배경색을 넣어 컬럼 수가 많은 테이블도 더 쉽게 훑어볼 수 있습니다. 기본적으로는 꺼져 있습니다.
+
+Table 타일을 선택한 상태에서 **Display Settings**를 열고 **Alternate Row Background**를 켜십시오. 줄무늬는 순전히 시각적인 표시이므로 query-builder와 raw SQL Table 타일 모두에서 작동합니다.
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Table 타일의 Display Settings 드로어에서 Alternate Row Background가 켜진 상태" size="lg" />
+
+Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분선도 유지하므로 컬럼 헤더를 계속 뚜렷하게 구분할 수 있습니다.
+
 <div id="dashboard-listing-search">
   ## 대시보드 - 목록 및 검색
 </div>
@@ -306,7 +310,7 @@ HyperDX는 기본 제공 대시보드와 함께 배포됩니다.
 <Info>
   **필수 시스템 테이블 액세스**
 
-  이 대시보드는 주요 메트릭을 표시하기 위해 ClickHouse [시스템 테이블](/ko/reference/system-tables/index)을 조회합니다. 다음 권한이 필요합니다.
+  이 대시보드는 주요 메트릭을 표시하기 위해 ClickHouse [시스템 테이블](/ko/reference/system-tables/overview)을 조회합니다. 다음 권한이 필요합니다.
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 
