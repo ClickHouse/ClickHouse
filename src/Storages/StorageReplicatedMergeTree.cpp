@@ -8417,18 +8417,27 @@ void StorageReplicatedMergeTree::fetchPartition(
         if (active_replicas.empty())
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No active replicas for shard {}", from_);
 
+        /// The replicas that the best one is chosen among. Normally all active replicas, but with geo replication
+        /// control it is narrowed down to the replicas of the same region, if there are any.
+        std::span<const String> candidate_replicas{active_replicas};
+
         if (geo_replication_controller.isConfigured() && from_zookeeper_name == getZooKeeperName())
         {
             /// We're attach from same as zookeeper current table, can leverage the region information to reduce
             /// fetching cost if possible by favoring replicas in same region
             /// This logic belongs to an user query, so we can only do the best, cannot force fetching from leader
-            std::partition(active_replicas.begin(), active_replicas.end(), [&](const auto & replica)
+            auto same_region_end = std::partition(active_replicas.begin(), active_replicas.end(), [&](const auto & replica)
             {
                 String region;
                 /// `active_replicas` were enumerated from `from`, so read their region metadata from `from` as well.
                 zookeeper->tryGet(fs::path(from) / "replicas" / replica / "region", region);
                 return region == geo_replication_controller.getRegion();
             });
+
+            /// Only consider the out-of-region replicas when there is nothing to fetch from within the region:
+            /// otherwise the best replica could be chosen across the ocean just because it is slightly more up to date.
+            if (same_region_end != active_replicas.begin())
+                candidate_replicas = std::span<const String>{active_replicas.data(), static_cast<size_t>(same_region_end - active_replicas.begin())};
         }
 
         /** You must select the best (most relevant) replica.
@@ -8440,7 +8449,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         Int64 max_log_pointer = -1;
         UInt64 min_queue_size = std::numeric_limits<UInt64>::max();
 
-        for (const String & replica : active_replicas)
+        for (const String & replica : candidate_replicas)
         {
             String current_replica_path = fs::path(from) / "replicas" / replica;
 

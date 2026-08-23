@@ -555,3 +555,66 @@ def test_only_fetch_covered_part_from_same_region(start_cluster):
     finally:
         for node in [apac1, apac2, us3]:
             node.query("DROP TABLE IF EXISTS us_table SYNC")
+
+
+def test_fetch_partition_prefers_same_region(start_cluster):
+    src_path = "/clickhouse/tables/fetch_partition_src"
+    try:
+        for node, replica in [(apac2, "apac2"), (us3, "us3"), (us4, "us4")]:
+            node.query(
+                f"CREATE TABLE src_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('{src_path}', '{replica}') ORDER BY tuple() PARTITION BY key"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60"
+            )
+            time.sleep(1)
+
+        apac1.query(
+            "CREATE TABLE dst_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/fetch_partition_dst', 'apac1') ORDER BY tuple() PARTITION BY key"
+        )
+
+        us3.query("INSERT INTO src_table SELECT 1, '0'")
+        for node in [apac2, us3, us4]:
+            node.query("SYSTEM SYNC REPLICA src_table LIGHTWEIGHT")
+
+        # Make the out-of-region replicas strictly "better" by the log pointer / queue size criteria, so that
+        # the same-region replica is chosen only if the region preference is actually honored.
+        apac2.query("SYSTEM STOP PULLING REPLICATION LOG src_table")
+        for i in range(5):
+            us3.query(f"INSERT INTO src_table SELECT 2, toString({i})")
+        us4.query("SYSTEM SYNC REPLICA src_table LIGHTWEIGHT")
+
+        log_pointers = {
+            node.name: int(
+                node.query(
+                    "SELECT log_pointer FROM system.replicas WHERE table = 'src_table'"
+                )
+            )
+            for node in [apac2, us3, us4]
+        }
+        assert (
+            log_pointers["apac2"] < log_pointers["us3"]
+            and log_pointers["apac2"] < log_pointers["us4"]
+        ), "The same-region replica must lag behind for this test to be meaningful, got {}".format(
+            log_pointers
+        )
+
+        apac1.query(f"ALTER TABLE dst_table FETCH PARTITION 1 FROM '{src_path}'")
+
+        assert apac1.contains_in_log(
+            "Selected apac2 to fetch from"
+        ), "FETCH PARTITION did not choose the same-region replica"
+        for replica in ["us3", "us4"]:
+            assert not apac1.contains_in_log(
+                f"Selected {replica} to fetch from"
+            ), f"FETCH PARTITION chose the out-of-region replica {replica}"
+
+        detached = int(
+            apac1.query(
+                "SELECT count() FROM system.detached_parts WHERE table = 'dst_table'"
+            )
+        )
+        assert detached == 1, "Expected one detached part, got {}".format(detached)
+
+    finally:
+        for node in [apac2, us3, us4]:
+            node.query("DROP TABLE IF EXISTS src_table SYNC")
+        apac1.query("DROP TABLE IF EXISTS dst_table SYNC")
