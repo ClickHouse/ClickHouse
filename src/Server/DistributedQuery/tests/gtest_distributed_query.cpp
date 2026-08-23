@@ -561,7 +561,7 @@ try
     try
     {
         executor->start();
-        while (!executor->execute());
+        while (!executor->execute(/*poll_timeout_ms=*/ 100));
         executor->cleanup();
     }
     catch (...)

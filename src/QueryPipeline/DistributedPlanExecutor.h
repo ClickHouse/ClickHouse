@@ -118,7 +118,10 @@ public:
     virtual ~DistributedQueryPlanExecutor() = default;
 
     void start();
-    bool execute(); /// Returns true if the execution is finished, false if it is still in progress and should be called again later.
+    /// Returns true if the execution is finished, false if it is still in progress and should be called again later.
+    /// `poll_timeout_ms` is how long to wait for the current stage before giving up and returning; pass 0 to only
+    /// look at the current state, so the caller can wait somewhere it does not hold an execution thread.
+    bool execute(UInt64 poll_timeout_ms);
 
     virtual void cleanup() = 0;
 

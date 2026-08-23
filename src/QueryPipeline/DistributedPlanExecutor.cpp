@@ -1949,13 +1949,13 @@ void DistributedQueryPlanExecutor::start()
         running_stages.push_back(stage_name);
 }
 
-bool DistributedQueryPlanExecutor::execute()
+bool DistributedQueryPlanExecutor::execute(UInt64 poll_timeout_ms)
 {
     if (running_stages.empty())
         return true;
 
     auto & stage_name = running_stages.front();
-    bool stage_finished = waitForStage(stage_name, 100);
+    bool stage_finished = waitForStage(stage_name, poll_timeout_ms);
     if (stage_finished)
     {
         LOG_DEBUG(logger, "Stage '{}' finished", stage_name);

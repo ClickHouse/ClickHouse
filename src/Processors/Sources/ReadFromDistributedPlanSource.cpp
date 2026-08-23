@@ -6,6 +6,10 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+#include <Common/Epoll.h>
+#endif
+
 namespace DB
 {
 
@@ -43,7 +47,13 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
             distributed_query_executor->start();
         }
 
-        if (distributed_query_executor->execute())
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        /// `prepare` waits for the stages in the async queue, so do not block an execution thread here.
+        const UInt64 stage_poll_timeout_ms = 0;
+#else
+        const UInt64 stage_poll_timeout_ms = 100;
+#endif
+        if (distributed_query_executor->execute(stage_poll_timeout_ms))
         {
             cleanupLocked();
             return std::nullopt;
@@ -58,8 +68,40 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         throw;
     }
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    waiting_for_stages = true;
+#endif
+
     return Chunk();
 }
+
+IProcessor::Status ReadFromDistributedPlanSource::prepare()
+{
+    auto status = ISource::prepare();
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// `Ready` means `work` would be called next, but the stages are still running and there is
+    /// nothing for it to do until the poll interval elapses. Give the execution thread back.
+    if (status == Status::Ready && waiting_for_stages)
+        return Status::Async;
+#endif
+
+    return status;
+}
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+std::tuple<int, uint32_t, Int64> ReadFromDistributedPlanSource::scheduleForEvent()
+{
+    stage_poll_timer.setRelative(stage_poll_interval_us);
+    return {stage_poll_timer.getDescriptor(), EPOLLIN | EPOLLERR, -1};
+}
+
+void ReadFromDistributedPlanSource::onAsyncJobReady()
+{
+    stage_poll_timer.drain();
+    waiting_for_stages = false;
+}
+#endif
 
 void ReadFromDistributedPlanSource::onCancel() noexcept
 {

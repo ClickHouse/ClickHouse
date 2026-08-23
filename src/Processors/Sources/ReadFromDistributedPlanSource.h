@@ -7,6 +7,10 @@
 #include <Core/Types_fwd.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+#include <Common/TimerDescriptor.h>
+#endif
+
 namespace DB
 {
 
@@ -32,6 +36,13 @@ public:
 
     String getName() const override { return "ReadFromDistributedPlanSource"; }
 
+    Status prepare() override;
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    std::tuple<int, uint32_t, Int64> scheduleForEvent() override;
+    void onAsyncJobReady() override;
+#endif
+
 private:
     std::optional<Chunk> tryGenerate() override;
     void onCancel() noexcept override;
@@ -54,6 +65,20 @@ private:
     /// also records a failing task's exception here, so `tryGenerate` can tell a plain cancellation
     /// from a failure and report the latter.
     DistributedQueryCancellationPtr cancellation = std::make_shared<DistributedQueryCancellation>();
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// This source only dispatches the plan's stages and waits for them; the query result arrives
+    /// through a second source of the same pipeline. On a streaming exchange nothing runs until
+    /// that second source connects to the `main` task's sink, and a sink without a connection does
+    /// not ask its input for data, so the whole plan is blocked on it. Waiting inside `work` would
+    /// hold an execution thread, and a pipeline that has only one of them would never reach the
+    /// result source. So park in the executor's async queue instead and let it re-dispatch us.
+    static constexpr UInt64 stage_poll_interval_us = 100'000;
+    TimerDescriptor stage_poll_timer;
+    /// True while the last `tryGenerate` left the stages running, i.e. there is nothing to do until
+    /// the timer fires. Reset in `onAsyncJobReady`, right before the async re-dispatch calls `work`.
+    bool waiting_for_stages = false;
+#endif
 };
 
 }
