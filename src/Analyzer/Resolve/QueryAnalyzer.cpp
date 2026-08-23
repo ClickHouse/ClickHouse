@@ -1069,27 +1069,34 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
     /// Skip scope alias check if join-tree column name is preferred to the alias.
     const bool check_scope_aliases = !scope.context->getSettingsRef()[Setting::prefer_column_name_to_alias];
 
+    /// A self alias is skipped while its own body is resolved and cannot cause a collision.
+    auto is_self_alias = [](const QueryTreeNodePtr & alias_expression, const String & column_name)
+    {
+        const auto * identifier_node = alias_expression->as<IdentifierNode>();
+        return identifier_node && identifier_node->getIdentifier().getFullName() == column_name;
+    };
+
     auto scope_alias_shadows_column = [&](const String & column_name)
     {
+        /// A quoted alias can contain a dot in its own name (`WITH 1 AS \`n.x\``). Identifier resolution treats
+        /// such a name as a single part, so an exact alias match shadows the column before any dotted-path logic.
+        if (auto exact_it = scope.aliases.alias_name_to_expression_node.find(column_name);
+            exact_it != scope.aliases.alias_name_to_expression_node.end() && !is_self_alias(exact_it->second, column_name))
+            return true;
+
         const auto dot_pos = column_name.find('.');
-        const auto alias_name = column_name.substr(0, dot_pos);
-        auto it = scope.aliases.alias_name_to_expression_node.find(alias_name);
-        if (it == scope.aliases.alias_name_to_expression_node.end())
+        if (dot_pos == String::npos)
             return false;
+
         /// Compound alias lookup resolves the first identifier part first, but it shadows `n.x`
         /// only when the alias value can actually resolve the nested path.
-        if (dot_pos != String::npos)
-        {
-            /// Use the regular alias resolver: it resolves transitive aliases before checking the
-            /// nested path, and falls through to the join tree when that path is not bindable.
-            auto identifier_lookup = IdentifierLookup{Identifier(column_name), IdentifierLookupContext::EXPRESSION};
-            return tryResolveIdentifierFromAliases(identifier_lookup, scope, {}).resolved_identifier != nullptr;
-        }
+        if (!scope.aliases.alias_name_to_expression_node.contains(column_name.substr(0, dot_pos)))
+            return false;
 
-        /// A self alias is skipped while its own body is resolved and cannot cause a collision.
-        if (const auto * identifier_node = it->second->as<IdentifierNode>())
-            return identifier_node->getIdentifier().getFullName() != column_name;
-        return true;
+        /// Use the regular alias resolver: it resolves transitive aliases before checking the
+        /// nested path, and falls through to the join tree when that path is not bindable.
+        auto identifier_lookup = IdentifierLookup{Identifier(column_name), IdentifierLookupContext::EXPRESSION};
+        return tryResolveIdentifierFromAliases(identifier_lookup, scope, {}).resolved_identifier != nullptr;
     };
 
     /// If the columns of any table expression cannot be determined, keep the strict behavior and require an alias.

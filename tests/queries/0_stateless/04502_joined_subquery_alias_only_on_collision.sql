@@ -97,6 +97,16 @@ WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x); -- { serverError ALIAS_RE
 -- quoted name contains a dot.
 WITH 1 AS n SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`) FORMAT Null;
 
+-- A quoted alias name may itself contain a dot. Identifier resolution treats such a name as a single
+-- part and binds it before the join tree, so it shadows a joined column of exactly that name.
+WITH 1 AS `n.x` SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`); -- { serverError ALIAS_REQUIRED }
+
+-- With the subquery aliased, the shadowed dotted column becomes reachable again via qualification.
+WITH 1 AS `n.x` SELECT `n.x`, rhs.`n.x` FROM numbers(1), (SELECT 2 AS `n.x`) AS rhs;
+
+-- ... and the restriction can still be disabled entirely.
+WITH 1 AS `n.x` SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`) SETTINGS joined_subquery_requires_alias = 0;
+
 -- With the subquery aliased, the shadowed column becomes reachable again via qualification.
 WITH 1 AS x SELECT x, rhs.x FROM numbers(1), (SELECT 2 AS x) AS rhs;
 
