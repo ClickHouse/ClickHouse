@@ -13,6 +13,9 @@ INSERT INTO t_grouping_sets_force VALUES (1, 2), (3, 4), (1, 5);
 SET enable_analyzer = 1;
 SET force_aggregation_in_order = 1;
 SET enable_memory_bound_merging_of_aggregation_results = 1;
+-- Only the forced path may introduce the in-order transform, so keep the optimizer out of it
+-- (the setting is randomized in CI).
+SET optimize_aggregation_in_order = 0;
 -- Memory bound merging reads the sort description off the local shard plan, so without a local
 -- replica it never engages and the two positive assertions below would silently return 0. The
 -- setting is randomized in CI, hence the explicit value (same reason as in 02404_memory_bound_merging).

@@ -81,9 +81,11 @@ echo "-- enabled, only part of distinct columns form prefix of sorting key"
 
 $CLICKHOUSE_CLIENT --max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER | tail -n 1
 
-
 echo "=== enable analyzer ==="
 ENABLE_ANALYZER="set enable_analyzer=1"
+# Reading in order must be on for the ORDER BY + DISTINCT checks below, otherwise CI's setting
+# randomization decides `optimize_read_in_order` for them.
+ENABLE_READ_IN_ORDER="set optimize_read_in_order=1"
 
 echo "-- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct"
 $CLICKHOUSE_CLIENT -q "$ENABLE_ANALYZER;$ENABLE_OPTIMIZATION;explain plan sorting=1 select distinct b, a from distinct_in_order_explain where a > 0 settings optimize_move_to_prewhere=1" | eval $FIND_SORTING_PROPERTIES
