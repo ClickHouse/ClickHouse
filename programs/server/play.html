@@ -3655,6 +3655,12 @@ class QueryResultElement extends HTMLElement
             if (!this.appendRow(row, fragment))
                 break;
         this.flushFragment(fragment);
+        /// Colorization (bars, heatmaps, categorical colors) applies to previews like to the real
+        /// result. The pass is re-runnable and each preview frame is a complete small table; the
+        /// user-selected color modes (`_colorModes`, keyed by column name) survive the per-frame
+        /// table rebuild, so a mode toggled during previews sticks for the frames that follow and
+        /// for the real result.
+        this.applyColumnColors();
     }
 
     appendRow(row, fragment)
