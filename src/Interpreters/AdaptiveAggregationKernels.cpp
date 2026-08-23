@@ -947,8 +947,9 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     ///   `batch_bytes`. It counts the key bytes as the kernel staged them, the variable-width
     ///   aggregate arguments at their gathered sizes (the sealed chunk's columns hold exactly
     ///   the staged rows, so a wide tail behind a narrow frequent head is charged its real
-    ///   width rather than the block's average), and 16 bytes of per-record bookkeeping (the
-    ///   routing hash plus a row or offset). A column read by several aggregates is staged
+    ///   width rather than the block's average), and the per-record bookkeeping the chunk
+    ///   stores (the eight-byte routing hash, plus an eight-byte key offset only for
+    ///   byte-staged keys; fixed keys have no offsets). A column read by several aggregates is staged
     ///   once, so it is counted once; a count batch stages a four-byte run length instead of
     ///   arguments.
     ///   The estimate is taken before the count deduplication (which merges a batch's
@@ -1007,7 +1008,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         for (const auto & column : std::get<StagedChunk::AggregatePayload>(block->payload).argument_columns)
             if (column && !column->valuesHaveFixedSize())
                 batch_bytes += column->byteSize();
-    batch_bytes += total * 16;
+    batch_bytes += total * (sizeof(UInt64) + (adaptive_key_stages_bytes<SharedKey> ? sizeof(UInt64) : 0));
 
     if (!shared.thaw_all.load(std::memory_order_relaxed))
     {
