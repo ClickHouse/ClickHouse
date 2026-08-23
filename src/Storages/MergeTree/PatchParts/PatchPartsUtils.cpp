@@ -176,8 +176,12 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
             order_by_expression->arguments->children.push_back(child->clone());
     }
 
-    order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockNumberColumn::name));
-    order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockOffsetColumn::name));
+    /// `_block_number` and `_block_offset` are appended to the key by `getKeyFromAST` itself, from the
+    /// `additional_columns` passed below. Appending them here as well would put two key expressions into
+    /// the tuple that carry no sort direction, while each cloned child of a directional sorting key
+    /// contributes one `reverse_flags` entry -- and `getKeyFromAST` then skips both names in
+    /// `additional_columns`, because they are already among the key columns. The result is a key with two
+    /// more expressions than reverse flags, which `getKeyFromAST` rejects.
 
     addCodecsForPatchSystemColumns(patch_part_desc);
 
