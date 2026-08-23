@@ -1575,12 +1575,18 @@ UInt64 estimateNeededMemoryForMerge(
             + (counts.total - non_adaptive) * adaptive_eager_buffers_per_stream;
     };
 
-    /// Multipart upload buffers are in addition to the compressor and file buffers that every writer
-    /// stream creates eagerly. The multipart ceiling alone is therefore not a per-stream upper bound.
+    /// The multipart ceiling alone is not a per-stream upper bound: the compressor block lives in
+    /// addition to it. The stream's file buffer, however, is already inside the ceiling - the S3 / Azure
+    /// writer's working buffer IS the multipart buffer currently being filled (WriteBufferFromS3 /
+    /// WriteBufferFromAzureBlobStorage point their WriteBuffer at the multipart `memory`), and
+    /// getMultipartUploadMemoryCeilingForWrittenBytes counts that live buffer inside the window. Adding
+    /// the eager file-buffer term on top would double-count one remote buffer per stream - up to
+    /// min(max_compress_block_size, DBMS_DEFAULT_BUFFER_SIZE), on a wide remote merge enough to close
+    /// the admission gate on merges that fit.
     const auto worst_case_write_buffer_size = [&](UInt64 max_compress_block_size)
     {
         return remote_write_buffer_size != 0
-            ? remote_write_buffer_size + eager_stream_buffers(max_compress_block_size)
+            ? remote_write_buffer_size + max_compress_block_size
             : 2 * max_compress_block_size;
     };
     const UInt64 write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size);
