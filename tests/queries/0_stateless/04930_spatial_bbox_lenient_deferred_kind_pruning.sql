@@ -40,7 +40,7 @@ SET optimize_move_to_prewhere = 0;
 SELECT count() FROM test_spatial_bbox_lenient_geometry
 WHERE pointInPolygon((0., 0.), b) AND pointInPolygon((0., 0.), a); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT 'strict variant', trimLeft(explain)
+SELECT 'strict variant', extract(explain, '(Parts:.*|Granules:.*)')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_lenient_geometry
       WHERE pointInPolygon((0., 0.), b) AND pointInPolygon((0., 0.), a))
 WHERE explain LIKE '%Granules:%';
@@ -48,7 +48,7 @@ WHERE explain LIKE '%Granules:%';
 SET variant_throw_on_type_mismatch = 0;
 
 -- Lenient: the sibling resolves to NULL instead of raising, so the granule must be pruned.
-SELECT 'lenient variant', trimLeft(explain)
+SELECT 'lenient variant', extract(explain, '(Parts:.*|Granules:.*)')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_lenient_geometry
       WHERE pointInPolygon((0., 0.), b) AND pointInPolygon((0., 0.), a))
 WHERE explain LIKE '%Granules:%';
@@ -78,14 +78,14 @@ INSERT INTO test_spatial_bbox_lenient_dynamic
 SELECT [[(100., 100.), (110., 100.), (110., 110.), (100., 100.)]], CAST((100., 100.), 'Point')::Dynamic
 FROM numbers(4);
 
-SELECT 'strict dynamic', trimLeft(explain)
+SELECT 'strict dynamic', extract(explain, '(Parts:.*|Granules:.*)')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_lenient_dynamic
       WHERE pointInPolygon((0., 0.), b) AND pointInPolygon((0., 0.), a))
 WHERE explain LIKE '%Granules:%';
 
 SET dynamic_throw_on_type_mismatch = 0;
 
-SELECT 'lenient dynamic', trimLeft(explain)
+SELECT 'lenient dynamic', extract(explain, '(Parts:.*|Granules:.*)')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_spatial_bbox_lenient_dynamic
       WHERE pointInPolygon((0., 0.), b) AND pointInPolygon((0., 0.), a))
 WHERE explain LIKE '%Granules:%';
