@@ -79,7 +79,7 @@ NATSSource::~NATSSource()
     consumer->dropConsumed();
 
     if (unsubscribe_on_destroy)
-        consumer->unsubscribe(/*finish_queue=*/false);
+        consumer->unsubscribe();
 
     storage.pushConsumer(consumer);
 }
@@ -176,13 +176,14 @@ Chunk NATSSource::generateImpl()
         /// Nothing the consumer holds locally can outlive its subscription: a `natsMsg` keeps a
         /// plain pointer to the `natsSubscription` it arrived on, and `natsMsg_Ack` follows it to
         /// reach the JetStream context and the connection, so acknowledging a message whose
-        /// subscription has been destroyed reads freed memory. So recovery waits for a cycle that
+        /// subscription has been destroyed reads freed memory. So recovery prefers a cycle that
         /// starts holding nothing: no rows in the current output block, whose ACK handles
         /// `StorageNATS` needs until it has inserted them, and nothing left in the local queue,
         /// which the cycles before this one insert and acknowledge.
-        /// Finishing the queue is what makes the rest safe and loses nothing: a message the drain
-        /// still delivers cannot be appended to a finished queue, so `onMsg` sends it back with
-        /// `natsMsg_Nak` and the broker redelivers it at once rather than after the ACK deadline.
+        /// Those two checks are only a snapshot - `onMsg` runs on the NATS client thread and the
+        /// drain inside `unsubscribe` delivers whatever the subscription still has - so what the
+        /// consumer does turn out to hold is returned to the broker instead of being destroyed,
+        /// while the subscription it arrived on is still alive.
         /// `unsubscribe_on_destroy` keeps its previous value: a background streaming consumer must
         /// stay subscribed when this source is destroyed, so the next streaming cycle keeps
         /// consuming where this one left off. Only a consumer this source subscribed from an
@@ -190,8 +191,8 @@ Chunk NATSSource::generateImpl()
         if (total_rows == 0 && consumer->queueEmpty() && consumer->needsResubscribe())
         {
             LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing within a running query");
-            consumer->unsubscribe(/*finish_queue=*/true);
-            consumer->dropBuffered();
+            consumer->finishAndReturnUnprocessed();
+            consumer->unsubscribe();
             consumer->subscribe();
         }
 

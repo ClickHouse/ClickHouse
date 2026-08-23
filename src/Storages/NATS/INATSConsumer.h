@@ -47,14 +47,23 @@ public:
 
     /// True when the NATS client has closed a subscription we still hold: consuming has stopped
     /// and only a re-subscribe resumes it. Base implementation always returns false, because
-    /// recovery drops buffered messages and only JetStream redelivers them.
+    /// recovery parts with the buffered messages and only JetStream redelivers them.
     virtual bool needsResubscribe() const { return false; }
 
     void subscribe();
-    void unsubscribe(bool finish_queue);
+    void unsubscribe();
+
+    /// Stop buffering and hand back to the broker every message the client has delivered but
+    /// ClickHouse has not inserted yet, so JetStream redelivers it at once instead of after the
+    /// ACK deadline. Must run before the subscription those messages arrived on is destroyed: a
+    /// `natsMsg` keeps a plain pointer to it, and `natsMsg_Nak` follows that pointer to reach the
+    /// JetStream context and the connection.
+    void finishAndReturnUnprocessed();
 
     void ackConsumed();
     void dropConsumed();
+    /// Throw away leftovers of a subscription that is already gone, which is all that can be done
+    /// with them: acknowledging or returning a message needs the subscription it arrived on.
     void dropBuffered();
 
     size_t subjectsCount() { return subjects.size(); }

@@ -77,11 +77,8 @@ void INATSConsumer::subscribe()
     connection_reconnect_count = reconnect_count_before_subscribe;
 }
 
-void INATSConsumer::unsubscribe(bool finish_queue)
+void INATSConsumer::unsubscribe()
 {
-    if (finish_queue)
-        loadReceived()->finish();
-
     for (auto & subscription : subscriptions)
     {
         /// The client closes a subscription itself when its fetch is terminated, so draining an
@@ -109,6 +106,29 @@ void INATSConsumer::unsubscribe(bool finish_queue)
     subscriptions.clear();
 
     LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
+}
+
+void INATSConsumer::finishAndReturnUnprocessed()
+{
+    /// Handles of messages this consumer has read but not acknowledged: nothing inserted them, so
+    /// the broker has to deliver them again.
+    for (auto & msg : consumed_messages)
+        nackMessage(msg.get());
+    consumed_messages.clear();
+
+    /// Finishing the queue before draining it is what makes this complete rather than a snapshot:
+    /// the queue serializes `push` with `finish`, so a message the NATS client thread is delivering
+    /// right now either lands in the queue before it is finished, and the loop below returns it, or
+    /// fails to push and `onMsg` returns it itself. Nothing can be appended afterwards.
+    auto queue = loadReceived();
+    queue->finish();
+
+    MessageData buffered;
+    while (queue->tryPop(buffered))
+    {
+        if (buffered.msg)
+            nackMessage(buffered.msg.get());
+    }
 }
 
 void INATSConsumer::dropBuffered()

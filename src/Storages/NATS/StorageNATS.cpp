@@ -353,8 +353,13 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
-            consumer->dropBuffered();
-            consumer->subscribe();
+            /// A consumer that is still subscribed keeps what it has buffered: those messages
+            /// arrived on a live subscription and the streaming cycles will insert them.
+            if (!consumer->isSubscribed())
+            {
+                consumer->dropBuffered();
+                consumer->subscribe();
+            }
             ++num_initialized;
         }
         catch (...)
@@ -385,7 +390,7 @@ void StorageNATS::resubscribeStaleConsumers()
         /// Nothing the consumer holds locally can outlive its subscription: a `natsMsg` keeps a
         /// plain pointer to the `natsSubscription` it arrived on, and `natsMsg_Ack` follows it to
         /// reach the JetStream context and the connection, so acknowledging a message whose
-        /// subscription has been destroyed reads freed memory. Recovery therefore waits for a
+        /// subscription has been destroyed reads freed memory. Recovery therefore prefers a
         /// consumer that holds nothing: the streaming cycles insert and acknowledge what the
         /// broker delivered before it went stale, and a stale subscription delivers nothing more,
         /// so the queue does drain and the reconnect this keys on is still reported once it has.
@@ -397,14 +402,13 @@ void StorageNATS::resubscribeStaleConsumers()
 
         LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing");
 
-        /// The check above cannot rule out a message arriving right here - `onMsg` runs on the
-        /// NATS client thread and appends to the queue without `consumers_mutex` - and neither can
-        /// draining the subscription below, which delivers whatever it still has. Finishing the
-        /// queue first is what keeps that safe and loses nothing: `onMsg` cannot append to a
-        /// finished queue, so it sends the message back with `natsMsg_Nak` instead, and the broker
-        /// redelivers it at once rather than after the ACK deadline.
-        consumer->unsubscribe(/*finish_queue=*/true);
-        consumer->dropBuffered();
+        /// The check above is only a snapshot: `onMsg` runs on the NATS client thread and appends
+        /// to the queue without `consumers_mutex`, and the drain inside `unsubscribe` delivers
+        /// whatever the subscription still has. So the messages are returned to the broker rather
+        /// than destroyed, while the subscription they arrived on is still alive, and the queue is
+        /// finished first so that nothing can be appended behind that.
+        consumer->finishAndReturnUnprocessed();
+        consumer->unsubscribe();
 
         try
         {
@@ -427,8 +431,8 @@ void StorageNATS::unsubscribeConsumers()
     std::lock_guard lock(consumers_mutex);
     for (auto & consumer : consumers)
     {
-        consumer->unsubscribe(/*finish_queue=*/true);
-        consumer->dropBuffered();
+        consumer->finishAndReturnUnprocessed();
+        consumer->unsubscribe();
     }
 
     consumers_ready.store(false);
