@@ -1882,7 +1882,8 @@ void TCPHandler::sendProfileEvents(QueryState & state)
         writeStringBinary("", *out);
 
         state.profile_events_block_out->write(block);
-        if (state.maybe_compressed_out != out)
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS
+            && state.maybe_compressed_out != out)
             state.profile_events_block_out->flush();
         out->finishChunk();
 
@@ -3230,7 +3231,8 @@ void TCPHandler::sendLogData(
     writeStringBinary("", *out);
 
     state.logs_block_out->write(block);
-    if (state.maybe_compressed_out != out)
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS
+        && state.maybe_compressed_out != out)
         state.logs_block_out->flush();
     out->finishChunk();
 }
