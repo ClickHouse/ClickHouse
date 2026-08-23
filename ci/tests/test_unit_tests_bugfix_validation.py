@@ -1165,18 +1165,64 @@ def test_failed_compile_edge_sources_keeps_paths_outside_the_worktree(tmp_path):
 
 def test_failed_compile_edge_sources_handles_a_truncated_log(tmp_path):
     """A log cut off right after a `FAILED:` line (the runner was killed) has no command
-    to read, so the edge is unreadable rather than an IndexError. With no diagnostic
-    anywhere the failure is still refused, on the missing diagnostic."""
+    to read and no diagnostic of its own, so the edge is silent rather than an IndexError,
+    and the failure is refused on that silence."""
     result = _compile_log(tmp_path, "FAILED: src/CMakeFiles/x.dir/gtest_wb.cpp.o \n")
     assert failed_compile_edge_sources(result) == (
         [],
         [],
-        ["src/CMakeFiles/x.dir/gtest_wb.cpp.o"],
         [],
+        ["src/CMakeFiles/x.dir/gtest_wb.cpp.o"],
     )
     reason, _, refusal = compile_failure_attribution(result, [_TEST_FILE])
     assert reason == ""
-    assert refusal == "the build produced no parsable compiler diagnostic"
+    assert refusal == (
+        "failed build steps with no compiler diagnostic of their own: "
+        "src/CMakeFiles/x.dir/gtest_wb.cpp.o"
+    )
+
+
+def test_a_silent_abridged_edge_beside_an_overlaid_error_fails_close(tmp_path):
+    """An overlaid test carries the only `error:`, and a second `FAILED:` edge is abridged
+    and says nothing at all. That second step may be the linker or a fix source, so the
+    error-path basis must not accept the log: silence is refused whether or not the command
+    line was read."""
+    log = (
+        _abridged_failed_edge("src/CMakeFiles/x.dir/gtest_wb.cpp.o")
+        + f"{_BEFORE}/{_TEST_FILE}:42:5: error: no matching constructor\n"
+        + _abridged_failed_edge("src/unit_tests_dbms")
+        + "ninja: build stopped: subcommand failed.\n"
+    )
+    result = _compile_log(tmp_path, log)
+    assert failed_compile_edge_sources(result) == (
+        [],
+        [],
+        ["src/CMakeFiles/x.dir/gtest_wb.cpp.o"],
+        ["src/unit_tests_dbms"],
+    )
+    reason, _, refusal = compile_failure_attribution(result, [_TEST_FILE])
+    assert reason == ""
+    assert refusal == (
+        "failed build steps with no compiler diagnostic of their own: src/unit_tests_dbms"
+    )
+
+
+def test_abridged_edges_each_with_their_own_error_stay_attributable(tmp_path):
+    """The negative control for the test above: two abridged edges, but each one raises an
+    `error:` inside an overlaid test, so no edge is silent and the error-path basis holds.
+    Refusing here would fail close on every abridged log, including the one master reports
+    as an expected failure."""
+    log = (
+        _abridged_failed_edge("src/CMakeFiles/x.dir/gtest_wb.cpp.o")
+        + f"{_BEFORE}/{_TEST_FILE}:42:5: error: no matching constructor\n"
+        + _abridged_failed_edge("src/CMakeFiles/z.dir/gtest_wb.cpp.o")
+        + f"{_BEFORE}/{_TEST_FILE}:99:5: error: too few arguments to function call\n"
+    )
+    result = _compile_log(tmp_path, log)
+    assert failed_compile_edge_sources(result)[3] == []
+    reason, _, refusal = compile_failure_attribution(result, [_TEST_FILE])
+    assert _TEST_FILE in reason
+    assert refusal == ""
 
 
 def test_failed_compile_edge_sources_splits_three_ways(tmp_path):

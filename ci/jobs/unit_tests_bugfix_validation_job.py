@@ -514,8 +514,9 @@ def failed_compile_edge_sources(compile_result):
     read as a command and carries no `-c <source>`, such as a link step, an archive step
     or a custom command; the outputs of the edges whose command line is absent or is not
     recognisable as a command, because the log ends there or something else stands in its
-    place; and the translation units of the compile edges that raised no parsable
-    compiler error of their own.
+    place, and which do carry a diagnostic of their own; and the edges that raised no
+    parsable compiler error of their own, named by translation unit where the command
+    line gave one and by output otherwise.
 
     A non-empty `unattributable` or `diagnostic_free` is evidence that something failed
     which either is not a translation unit or never said why. A non-empty `unreadable` is
@@ -541,8 +542,14 @@ def failed_compile_edge_sources(compile_result):
         for n, i in enumerate(edges):
             outputs = lines[i][len("FAILED:") :].strip() or "unnamed edge"
             command = lines[i + 1] if i + 1 < len(lines) else ""
+            end = edges[n + 1] if n + 1 < len(edges) else len(lines)
+            silent = not any(
+                _COMPILE_ERROR_LINE_RE.match(line) for line in lines[i + 1 : end]
+            )
             if not command.strip() or not _NINJA_COMMAND_LINE_RE.match(command):
-                unreadable.add(outputs)
+                # An unreadable edge that also said nothing is a failure with no account
+                # of itself, whichever step it was, so it belongs with the silent edges.
+                (diagnostic_free if silent else unreadable).add(outputs)
                 continue
             m = _COMPILE_SOURCE_RE.search(command)
             if not m:
@@ -552,10 +559,7 @@ def failed_compile_edge_sources(compile_result):
             idx = path.find(marker)
             rel = path[idx + len(marker) :] if idx != -1 else path
             sources.add(rel)
-            end = edges[n + 1] if n + 1 < len(edges) else len(lines)
-            if not any(
-                _COMPILE_ERROR_LINE_RE.match(line) for line in lines[i + 1 : end]
-            ):
+            if silent:
                 diagnostic_free.add(rel)
     return (
         sorted(sources),
@@ -593,14 +597,15 @@ def compile_failure_attribution(compile_result, test_files):
     file, defeats both bases whatever the diagnostics say: something outside the overlaid
     tests demonstrably failed.
 
-    An edge whose command line could not be read defeats only the second basis, which
-    claims every failed translation unit is an overlaid test and therefore needs all of
-    them enumerated. The first basis reasons about the diagnostics that are present, so an
-    edge this log does not describe cannot contradict it.
+    An edge whose command line could not be read, but which did raise a diagnostic of its
+    own, defeats only the second basis, which claims every failed translation unit is an
+    overlaid test and therefore needs all of them enumerated. The first basis reasons about
+    the diagnostics that are present, and this edge contributed one.
 
-    A compile edge that raised no parsable error of its own is not attributable either: a
-    killed compiler says nothing about why that translation unit failed, and a diagnostic
-    belonging to a different edge cannot answer for it.
+    An edge that raised no parsable error of its own is not attributable either, whether or
+    not its command line was read: a killed compiler, or a step this log stops describing,
+    says nothing about why it failed, and a diagnostic belonging to a different edge cannot
+    answer for it.
     """
     overlaid_errors, other_errors = attribute_compile_errors(compile_result, test_files)
     sources, unattributable, unreadable, diagnostic_free = failed_compile_edge_sources(
