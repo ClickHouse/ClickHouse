@@ -2,6 +2,7 @@
 #include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPoolTaskTracker.h>
+#include <Core/UUID.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
@@ -81,28 +82,35 @@ bool isDestinationAlreadyExistsError(const Exception & e)
 }
 
 /// Provenance stamped onto the destination as object metadata: which source key (and which content
-/// version of it, by ETag) this copy was made from. Lowercase to survive the S3 round-trip verbatim.
+/// version of it, by ETag) this copy was made from, along with a per-move-attempt token. Lowercase to survive the S3 round-trip verbatim.
 constexpr auto move_source_path_attribute = "clickhouse_move_source_path";
 constexpr auto move_source_etag_attribute = "clickhouse_move_source_etag";
+constexpr auto move_token_attribute = "clickhouse_move_token";
 
 /// The copy replaces the destination's metadata wholesale, so the source's own user metadata is
 /// carried along with the provenance keys rather than being dropped by the move.
-std::optional<ObjectAttributes> makeMoveProvenance(ObjectAttributes source_attributes, const String & source_path, const String & source_etag)
+std::optional<ObjectAttributes> makeMoveProvenance(
+    ObjectAttributes source_attributes,
+    const String & source_path,
+    const String & source_etag,
+    const String & move_token)
 {
     if (source_etag.empty())
         return std::nullopt;
     source_attributes[move_source_path_attribute] = source_path;
     source_attributes[move_source_etag_attribute] = source_etag;
+    source_attributes[move_token_attribute] = move_token;
     return source_attributes;
 }
 
-/// True when the "already existing" destination records this exact source object (key + content ETag) as its
-/// origin: our own earlier copy committed and only a post-copy step failed, so removing the source loses nothing.
+/// True when the "already existing" destination records this exact move attempt (move token, source key,
+/// and content ETag) as its origin: our own earlier copy committed and only a post-copy step failed, so
+/// removing the source loses nothing.
 bool destinationIsOwnCommittedCopy(const std::optional<ObjectAttributes> & provenance, const ObjectAttributes & destination_attributes)
 {
     if (!provenance)
         return false;
-    for (const auto * key : {move_source_path_attribute, move_source_etag_attribute})
+    for (const auto * key : {move_source_path_attribute, move_source_etag_attribute, move_token_attribute})
     {
         auto expected = provenance->find(key);
         auto actual = destination_attributes.find(key);
@@ -336,6 +344,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                     /// `copied` makes the retry idempotent: once the destination is written, a failure
                     /// of the removal below must not re-run the copy, which would then be rejected by
                     /// its own precondition and be mistaken for a collision.
+                    const String move_token = toString(UUIDHelpers::generateV4());
                     bool copied = false;
                     bool destination_exists = false;
                     doWithRetries([&]{
@@ -348,7 +357,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                             std::optional<ObjectAttributes> provenance;
                             if (!preserve_path)
                                 if (auto source_metadata = object_storage->tryGetObjectMetadata(object_from.remote_path, /*with_tags=*/ false))
-                                    provenance = makeMoveProvenance(source_metadata->attributes, object_from.remote_path, source_metadata->etag);
+                                    provenance = makeMoveProvenance(source_metadata->attributes, object_from.remote_path, source_metadata->etag, move_token);
                             try
                             {
                                 object_storage->copyObject(
@@ -507,6 +516,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
 
                     /// See moveWithinBucket(): the copy has to refuse an existing destination itself,
                     /// and the retry must not re-run it once it has succeeded.
+                    const String move_token = toString(UUIDHelpers::generateV4());
                     bool copied = false;
                     bool destination_exists = false;
                     doWithRetries([&]{
@@ -523,7 +533,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             /// copy; an unguarded copy keeps the native header/metadata preservation instead.
                             const auto provenance = move_if_none_match.empty()
                                 ? std::optional<ObjectAttributes>{}
-                                : makeMoveProvenance(source_info.metadata, object_from.remote_path, source_info.etag);
+                                : makeMoveProvenance(source_info.metadata, object_from.remote_path, source_info.etag, move_token);
 
                             LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, source_info.size, dst_uri.bucket);
                             try
@@ -671,6 +681,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
 
                     /// See moveWithinBucket(): the copy has to refuse an existing destination itself,
                     /// and the retry must not re-run it once it has succeeded.
+                    const String move_token = toString(UUIDHelpers::generateV4());
                     bool copied = false;
                     bool destination_exists = false;
                     doWithRetries([&]{
@@ -686,7 +697,8 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                 : makeMoveProvenance(
                                     ObjectAttributes{properties.Metadata.begin(), properties.Metadata.end()},
                                     object_from.remote_path,
-                                    properties.ETag.ToString());
+                                    properties.ETag.ToString(),
+                                    move_token);
                             auto request_settings = azure_storage->getSettings();
                             auto read_settings = getReadSettings();
                             const auto read_settings_to_use = azure_storage->patchSettings(read_settings);

@@ -695,6 +695,111 @@ def test_move_after_processing_preserves_source_headers(started_cluster, move_to
     assert moved.content_type == content_type
 
 
+def test_move_after_processing_reprocessed_same_file_collision(started_cluster):
+    """Reprocessing the same key with identical bytes after Keeper eviction must not mistake the
+    prior destination for its own retry.
+
+    When `tracked_file_ttl_sec` or `tracked_files_limit` evicts the file's Keeper state, a subsequent
+    upload of the identical file is processed again. The destination already exists from the first
+    move, so the second guarded move must recognize that the existing object has a different move token,
+    report a collision, and leave the second source object in place.
+    """
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_reprocess_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "part.csv"
+    file_key = f"{files_path}/a/{file_name}"
+    processed_prefix = f"{token}_move_to_prefix"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    bucket = started_cluster.minio_bucket
+    file_data = b"1,2,3\n"
+
+    def move_collisions():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events "
+                "WHERE name = 'ObjectStorageQueueMoveCollisions' "
+                "SETTINGS system_events_show_zero_values = 1"
+            )
+        )
+
+    collisions_before = move_collisions()
+
+    put_s3_file_content(started_cluster, file_key, file_data)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_file_ttl_sec": 1,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 200,
+        },
+        engine_name="S3Queue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        hive_partitioning_path="*/",
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    # Ingest the first upload and verify it moved to destination.
+    for _ in range(100):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+            break
+        time.sleep(0.1)
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+    for _ in range(50):
+        if (
+            count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+            and count_minio_objects(started_cluster, bucket, files_path) == 0
+        ):
+            break
+        time.sleep(0.1)
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+    assert count_minio_objects(started_cluster, bucket, files_path) == 0
+
+    # Wait for the file's Keeper record to expire via tracked_file_ttl_sec.
+    zk = started_cluster.get_kazoo_client("zoo1")
+    for _ in range(100):
+        try:
+            if not zk.get_children(f"{keeper_path}/processed"):
+                break
+        except Exception:
+            break
+        time.sleep(0.1)
+
+    # Upload the same key with identical bytes again.
+    put_s3_file_content(started_cluster, file_key, file_data)
+
+    # Ingest the second upload.
+    for _ in range(100):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 2:
+            break
+        time.sleep(0.1)
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 2
+
+    # The second move must be refused as a collision and leave the new source intact.
+    for _ in range(100):
+        if (
+            count_minio_objects(started_cluster, bucket, files_path) == 1
+            and move_collisions() > collisions_before
+        ):
+            break
+        time.sleep(0.1)
+
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+    assert count_minio_objects(started_cluster, bucket, files_path) == 1
+    assert move_collisions() == collisions_before + 1
+
+
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 @pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
 @pytest.mark.parametrize("preserve_move_path", [True, False])
