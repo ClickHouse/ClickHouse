@@ -27,7 +27,7 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
-#include <Core/Streaming/StreamingCursorResult.h>
+#include <Core/Streaming/CursorTree.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Exception.h>
@@ -419,15 +419,18 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfigur
 
 void MergeTreeCommitOrderSequentialSource::surfaceFinalCursor()
 {
-    auto streaming_cursor_result = context->getStreamingCursorResult();
-    if (!streaming_cursor_result)
+    if (!context->getStreamingCursor())
         return;
 
-    StreamingCursorResult::PartitionCursors cursors;
+    auto cursors = std::make_shared<CursorTreeNode>();
     for (const auto & [partition_id, position] : last_emitted_positions)
-        cursors[partition_id] = {{"block_number", position.block_number}, {"block_offset", position.block_offset}};
+    {
+        auto & subtree = cursors->getSubtreeOrCreate(partition_id);
+        subtree->setValue("block_number", position.block_number);
+        subtree->setValue("block_offset", position.block_offset);
+    }
 
-    streaming_cursor_result->merge(cursors);
+    context->mergeStreamingCursor(cursors);
 }
 
 void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()

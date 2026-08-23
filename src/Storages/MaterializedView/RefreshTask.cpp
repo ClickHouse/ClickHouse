@@ -9,7 +9,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
-#include <Core/Streaming/StreamingCursorResult.h>
+#include <Core/Streaming/CursorTree.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -1327,8 +1328,11 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
 
             if (!execution.znode.cursor.empty())
-                stream_cursor = streamingCursorToTree(deserializeStreamingCursor(execution.znode.cursor));
-            refresh_context->setStreamingCursorResult(std::make_shared<StreamingCursorResult>());
+            {
+                ReadBufferFromString cursor_buf(execution.znode.cursor);
+                stream_cursor = buildCursorTree(readFieldBinary(cursor_buf).safeGet<Map>());
+            }
+            refresh_context->enableStreamingCursor();
         }
 
         syncDependenciesForRefresh(deps, refresh_context);
@@ -1508,8 +1512,12 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
 
     /// Incremental refresh: read the cursor the streaming source advanced to and persist it (Part C).
-    if (auto streaming_cursor_result = refresh_context->getStreamingCursorResult())
-        out_cursor = serializeStreamingCursor(streaming_cursor_result->get());
+    if (auto streaming_cursor = refresh_context->getStreamingCursor())
+    {
+        WriteBufferFromOwnString cursor_buf;
+        writeFieldBinary(Field(cursorTreeToMap(streaming_cursor)), cursor_buf);
+        out_cursor = cursor_buf.str();
+    }
 
     return new_table_id.uuid;
 }

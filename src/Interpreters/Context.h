@@ -314,7 +314,8 @@ class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
 
 class QueryMetadataCache;
-class StreamingCursorResult;
+class CursorTreeNode;
+using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
@@ -733,8 +734,11 @@ protected:
 
     std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
-    /// Final per-partition streaming cursor produced by a `STREAM [BOUNDED]` read; shared with the reading sources.
-    std::shared_ptr<StreamingCursorResult> streaming_cursor_result;
+    /// Final streaming cursor produced by a `STREAM [BOUNDED]` read; merged into by every reading source.
+    /// The mutex is a shared_ptr so it stays shared across `Context::createCopy` (each source runs on a
+    /// copied context) and can serialize concurrent merges from parallel streams into the one tree.
+    CursorTreeNodePtr streaming_cursor;
+    std::shared_ptr<std::mutex> streaming_cursor_mutex;
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -1276,9 +1280,11 @@ public:
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
 
-    /// Attach a holder that reading sources fill with the final `STREAM [BOUNDED]` cursor (see StreamingCursorResult).
-    void setStreamingCursorResult(std::shared_ptr<StreamingCursorResult> result);
-    std::shared_ptr<StreamingCursorResult> getStreamingCursorResult() const;
+    /// Enable collection of the final `STREAM [BOUNDED]` cursor; reading sources merge into it, the outer
+    /// query reads it back. `mergeStreamingCursor` is thread-safe so parallel streams can merge concurrently.
+    void enableStreamingCursor();
+    void mergeStreamingCursor(const CursorTreeNodePtr & from);
+    CursorTreeNodePtr getStreamingCursor() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(
