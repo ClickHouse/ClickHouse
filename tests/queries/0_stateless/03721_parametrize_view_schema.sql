@@ -186,6 +186,14 @@ FROM 03271_parametrized_v_reload(upper_bound = 3);
 SELECT *
 FROM 03271_parametrized_v_reload_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
 
+-- A declared schema is exposed through every schema-introspection path, so `DESCRIBE TABLE` of a
+-- parameterized view whose stored definition declares a column list returns that schema instead of
+-- rejecting the object...
+DESCRIBE TABLE 03271_parametrized_v_reload;
+-- ...while a parameterized view without a declared schema still cannot be described without
+-- parameters, because its columns are only known after substitution.
+DESCRIBE TABLE 03271_parametrized_v; -- { serverError UNSUPPORTED_METHOD }
+
 -- { echoOff }
 
 DROP VIEW 03271_parametrized_v;
