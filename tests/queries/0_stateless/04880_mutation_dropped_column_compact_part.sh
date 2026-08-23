@@ -99,6 +99,54 @@ echo 'wide'
 run_dropped_column_case t_dropped_column_wide \
     'min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0'
 
+# MATERIALIZE TTL with ttl_only_drop_parts = 1 reaches the same state through a different
+# command. The TTL must not expire here, so the rows survive and the mutation is the only
+# thing that can move the assertions below.
+echo 'materialize ttl only drop parts'
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_ttl_dropped_column SYNC"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_dropped_column (a UInt8, b Int16, h String, ts DateTime)
+    ENGINE = MergeTree ORDER BY a PARTITION BY a % 2
+    TTL ts + INTERVAL 30 YEAR
+    SETTINGS ttl_only_drop_parts = 1,
+             min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000"
+${CLICKHOUSE_CLIENT} -q "
+    INSERT INTO t_ttl_dropped_column
+    SELECT number, number, toString(number), now() FROM numbers(100)"
+
+${CLICKHOUSE_CLIENT} -q "
+    SELECT 'ttl_part_type', arrayStringConcat(arraySort(groupUniqArray(part_type)), ',')
+    FROM system.parts WHERE database = currentDatabase() AND table = 't_ttl_dropped_column' AND active"
+${CLICKHOUSE_CLIENT} -q "SELECT 'ttl_rows_survive', count() FROM t_ttl_dropped_column"
+
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ttl_dropped_column DETACH PARTITION 0"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ttl_dropped_column DROP COLUMN h"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ttl_dropped_column ATTACH PARTITION 0"
+
+${CLICKHOUSE_CLIENT} -q "
+    SELECT 'ttl_h_in_part_not_in_metadata',
+           (SELECT count() FROM system.parts_columns
+            WHERE database = currentDatabase() AND table = 't_ttl_dropped_column' AND active AND column = 'h') > 0
+       AND (SELECT count() FROM system.columns
+            WHERE database = currentDatabase() AND table = 't_ttl_dropped_column' AND name = 'h') = 0"
+
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ttl_dropped_column MATERIALIZE TTL SETTINGS alter_sync = 0"
+wait_for_mutations t_ttl_dropped_column
+
+${CLICKHOUSE_CLIENT} -q "
+    SELECT 'ttl_unfinished_mutations', count() FROM system.mutations
+    WHERE database = currentDatabase() AND table = 't_ttl_dropped_column' AND NOT is_done"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT 'ttl_unknown_identifier_failures', count() FROM system.mutations
+    WHERE database = currentDatabase() AND table = 't_ttl_dropped_column'
+      AND latest_fail_error_code_name = 'UNKNOWN_IDENTIFIER'"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT 'ttl_rows_digest', count(), sum(cityHash64(a, b)) FROM t_ttl_dropped_column"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT 'ttl_h_has_files_after', count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_ttl_dropped_column' AND active AND column = 'h'"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_dropped_column SYNC"
+
 # A column still present in the table metadata must keep being rewritten. This fails if
 # the skip is over-broad and silently turns legitimate reads into no-ops.
 echo 'column still in metadata'
