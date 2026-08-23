@@ -18,6 +18,7 @@
 #include <Analyzer/Utils.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
+#include <Interpreters/misc.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
@@ -347,15 +348,23 @@ public:
             }
 
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
-            if (sets.findSubquery(set_key))
+            const bool external_table_expected = isNameOfGlobalInFunction(function_node->getFunctionName());
+
+            if (auto subquery_set = sets.findSubquery(set_key))
+            {
+                if (external_table_expected)
+                    subquery_set->markExternalTableExpected();
                 return;
+            }
 
             auto subquery_to_execute = in_second_argument;
             if (in_second_argument->as<TableNode>())
                 subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(static_pointer_cast<TableNode>(subquery_to_execute), planner_context.getQueryContext());
 
             auto ast = in_second_argument->toAST({ .set_subquery_cte_name = false });
-            sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
+            auto subquery_set = sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
+            if (external_table_expected)
+                subquery_set->markExternalTableExpected();
         }
         else
         {

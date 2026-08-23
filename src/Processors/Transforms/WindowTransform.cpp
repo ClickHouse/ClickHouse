@@ -3615,7 +3615,7 @@ Returns a value evaluated at the row that is at a specified physical offset row 
 
 <Warning>
 `lagInFrame` behavior differs from the standard SQL `lag` window function.
-Clickhouse window function `lagInFrame` respects the window frame.
+ClickHouse window function `lagInFrame` respects the window frame.
 To get behavior identical to the `lag`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 </Warning>
 
@@ -3774,7 +3774,7 @@ Returns a value evaluated at the row that is offset rows after the current row w
 
 <Warning>
 `leadInFrame` behavior differs from the standard SQL `lead` window function.
-Clickhouse window function `leadInFrame` respects the window frame.
+ClickHouse window function `leadInFrame` respects the window frame.
 To get behavior identical to the `lead`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 </Warning>
 
