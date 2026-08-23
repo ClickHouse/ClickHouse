@@ -71,10 +71,26 @@ function reserved_for_merge()
     rm -rf "$data_dir"
 }
 
+# A merge that is selected parks on the failpoint until the final SYSTEM DISABLE FAILPOINT, so a zero
+# measurement means the background selector did not pick the merge within the observation window at all
+# (on a loaded CI machine selection can lag behind min_age_to_force_merge_seconds) - retry the whole
+# measurement on fresh data instead of stretching every run's window.
+function reserved_for_merge_with_retries()
+{
+    local result=0
+    for _ in 1 2 3
+    do
+        result=$(reserved_for_merge "$1")
+        result=${result:-0}
+        if [ "$result" -gt 0 ]; then break; fi
+    done
+    echo "$result"
+}
+
 # 10 MiB: below the whole rebuilt volume, above every temporary chunk - the read-back part is Wide.
-wide_read_back=$(reserved_for_merge 10485760)
+wide_read_back=$(reserved_for_merge_with_retries 10485760)
 # 1 GB: the read-back part stays Compact, like the temporary parts.
-compact_read_back=$(reserved_for_merge 1000000000)
+compact_read_back=$(reserved_for_merge_with_retries 1000000000)
 
 # The merge was selected and its estimate reserved before it parked on the failpoint.
 echo "$((compact_read_back > 0))"

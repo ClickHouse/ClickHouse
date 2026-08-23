@@ -66,10 +66,26 @@ function reserved_for_merge()
     rm -rf "$data_dir"
 }
 
+# A merge that is selected parks on the failpoint until the final SYSTEM DISABLE FAILPOINT, so a zero
+# measurement means the background selector did not pick the merge within the observation window at all
+# (on a loaded CI machine selection can lag behind min_age_to_force_merge_seconds) - retry the whole
+# measurement on fresh data instead of stretching every run's window.
+function reserved_for_merge_with_retries()
+{
+    local result=0
+    for _ in 1 2 3
+    do
+        result=$(reserved_for_merge "$1")
+        result=${result:-0}
+        if [ "$result" -gt 0 ]; then break; fi
+    done
+    echo "$result"
+}
+
 # max_compress_block_size is clamped by the writer at MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE
 # (256 MiB), which is what this override effectively asks for - far above the table's 1 MiB.
-with_override=$(reserved_for_merge "WITH SETTINGS (max_compress_block_size = 1073741824)")
-without_override=$(reserved_for_merge "")
+with_override=$(reserved_for_merge_with_retries "WITH SETTINGS (max_compress_block_size = 1073741824)")
+without_override=$(reserved_for_merge_with_retries "")
 
 # The merge was selected and its estimate reserved before it parked on the failpoint.
 echo "$((without_override > 0))"
