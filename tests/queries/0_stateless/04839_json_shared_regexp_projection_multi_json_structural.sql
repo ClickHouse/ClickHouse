@@ -88,3 +88,62 @@ FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='arrayzip_two_json_04839' AND column='arrayZip(arr1, arr2)' AND active;
 
 DROP TABLE arrayzip_two_json_04839;
+
+DROP TABLE IF EXISTS arrayzipunaligned_two_json_04839;
+CREATE TABLE arrayzipunaligned_two_json_04839
+(
+    id UInt64,
+    arr1 Array(JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_a')),
+    arr2 Array(JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_b'))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO arrayzipunaligned_two_json_04839 VALUES (1, ['{"tag_a1":1}'], ['{"tag_b1":2}']);
+
+ALTER TABLE arrayzipunaligned_two_json_04839 MODIFY COLUMN arr1 Array(JSON(max_dynamic_paths=5));
+ALTER TABLE arrayzipunaligned_two_json_04839 MODIFY COLUMN arr2 Array(JSON(max_dynamic_paths=5));
+
+ALTER TABLE arrayzipunaligned_two_json_04839 ADD PROJECTION p (SELECT id, arrayZipUnaligned(arr1, arr2) WHERE id > 0 ORDER BY id);
+ALTER TABLE arrayzipunaligned_two_json_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+-- arrayZipUnaligned nullable-wraps each slot; print the type so a crossed or dropped rule is visible.
+SELECT
+    'arrayZipUnaligned(arr1,arr2) type',
+    type
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='arrayzipunaligned_two_json_04839' AND column='arrayZipUnaligned(arr1, arr2)' AND active;
+
+DROP TABLE arrayzipunaligned_two_json_04839;
+
+-- A single aligned donor must still resolve a multi-JSON output: arrayElement(arr, 1) and a
+-- nullability wrapper over a whole tuple are one-source shapes the ambiguity guard used to drop.
+DROP TABLE IF EXISTS single_donor_two_json_04839;
+CREATE TABLE single_donor_two_json_04839
+(
+    id UInt64,
+    arr Array(Tuple(a JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_a'), b JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_b'))),
+    t Tuple(a JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_a'), b JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_b'))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO single_donor_two_json_04839 VALUES (1, [('{"tag_a1":1}', '{"tag_b1":2}')], ('{"tag_a1":1}', '{"tag_b1":2}'));
+
+ALTER TABLE single_donor_two_json_04839
+    MODIFY COLUMN arr Array(Tuple(a JSON(max_dynamic_paths=5), b JSON(max_dynamic_paths=5))),
+    MODIFY COLUMN t Tuple(a JSON(max_dynamic_paths=5), b JSON(max_dynamic_paths=5));
+
+ALTER TABLE single_donor_two_json_04839 ADD PROJECTION p (SELECT id, arrayElement(arr, 1), assumeNotNull(t) WHERE id > 0 ORDER BY id);
+ALTER TABLE single_donor_two_json_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+SELECT
+    'single aligned donor keeps both slots'' rules',
+    countIf(position(type, '^tag_a') > 0 AND position(type, '^tag_b') > 0 AND position(type, '^tag_a') < position(type, '^tag_b'))
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='single_donor_two_json_04839' AND active
+    AND column IN ('arrayElement(arr, 1)', 'assumeNotNull(t)');
+
+DROP TABLE single_donor_two_json_04839;
