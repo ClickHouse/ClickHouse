@@ -20,6 +20,9 @@ public:
     bool supportsColumnSchema() const override { return true; }
     std::optional<uint64_t> precomputeSerializedSize(const Block & block, size_t rows) const override;
 
+    /// Enforce the exact column count the reader requires; see consume().
+    void checkNumCols(size_t num_cols) const;
+
 protected:
     void consume(Chunk chunk) override;
     void writePrefix() override {}

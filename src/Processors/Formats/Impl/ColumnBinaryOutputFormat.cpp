@@ -28,6 +28,14 @@ namespace ErrorCodes
 //     CH's normal heap-allocation path (eliminates the conservative-size scan entirely;
 //     useful to measure the overhead of the two-phase layout vs. a plain WriteBuffer).
 
+void ColumnBinaryOutputFormat::checkNumCols(size_t num_cols) const
+{
+    if (num_cols != header_->columns())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnBinary: block has {} columns, expected {}",
+            num_cols, header_->columns());
+}
+
 std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const Block & block, size_t rows) const
 {
     if (disable_preallocation_)
@@ -35,6 +43,11 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
 
     if (rows == 0 || block.columns() == 0)
         return std::nullopt;
+
+    // Mirror consume()'s exact-match requirement: otherwise the size probe and the write
+    // could model a different number of columns, and the buffered WASM path would reserve a
+    // guest buffer that consume() does not fill.
+    checkNumCols(block.columns());
 
     // The frame header's num_rows field is a uint32_t, and buildColDescriptor's row-count
     // arithmetic (e.g. (num_rows + 1) for String/Array offsets) is only overflow-safe up to
@@ -98,8 +111,16 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
             "ColumnBinary: chunk has {} rows, exceeding the maximum representable row count ({})",
             chunk.getNumRows(), std::numeric_limits<uint32_t>::max());
 
+    // `ColumnBinary` is schema-driven: `ColumnBinaryInputFormat::checkNumCols` rejects any
+    // frame whose `num_cols` differs from the schema. Clamping to the smaller of the two here
+    // would fail open on the public `IOutputFormat::write` path - extra columns silently
+    // dropped, missing columns emitting a frame that disagrees with the advertised sample
+    // header (and that the matching reader then refuses) - so require the exact match the
+    // reader does.
+    checkNumCols(chunk.getNumColumns());
+
     uint32_t num_rows = static_cast<uint32_t>(chunk.getNumRows());
-    uint32_t num_cols = static_cast<uint32_t>(std::min<size_t>(chunk.getNumColumns(), header_->columns()));
+    uint32_t num_cols = static_cast<uint32_t>(chunk.getNumColumns());
 
     // Layout pass: build descriptors (compute offsets and total size).
     const uint64_t hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + num_cols * ColumnarV1::COLUMNAR_DESC_BYTES;

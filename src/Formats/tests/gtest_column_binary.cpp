@@ -1681,3 +1681,54 @@ TEST(ColumnBinary, PrecomputeStripsSparseAndMatchesConsume)
     output.write(block);
     EXPECT_EQ(obuf.str().size(), *precomputed);
 }
+
+// ── the writer must enforce the same exact column count the reader requires ──
+//
+// ColumnBinaryInputFormat::checkNumCols rejects anything but an exact match
+// against the schema, so the writer clamping to min(chunk columns, header
+// columns) would fail open: extra columns silently dropped, missing columns
+// producing a frame whose num_cols disagrees with the advertised header (and,
+// on the preallocated buffered-WASM path, a precomputed size that consume does
+// not fill).
+
+TEST(ColumnBinary, WriterRejectsColumnCountMismatch)
+{
+    auto type = std::make_shared<DataTypeUInt64>();
+
+    Block header;
+    header.insert(ColumnWithTypeAndName{type->createColumn(), type, "col0"});
+    header.insert(ColumnWithTypeAndName{type->createColumn(), type, "col1"});
+
+    auto make_col = [&](UInt64 v)
+    {
+        auto c = ColumnUInt64::create();
+        c->getData().push_back(v);
+        return c;
+    };
+
+    // Too few columns.
+    {
+        Block block;
+        block.insert(ColumnWithTypeAndName{make_col(1), type, "col0"});
+
+        WriteBufferFromOwnString obuf;
+        ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
+                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+        EXPECT_THROW(output.precomputeSerializedSize(block, 1), DB::Exception);
+        EXPECT_THROW(output.write(block), DB::Exception);
+    }
+
+    // Too many columns.
+    {
+        Block block;
+        block.insert(ColumnWithTypeAndName{make_col(1), type, "col0"});
+        block.insert(ColumnWithTypeAndName{make_col(2), type, "col1"});
+        block.insert(ColumnWithTypeAndName{make_col(3), type, "col2"});
+
+        WriteBufferFromOwnString obuf;
+        ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
+                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+        EXPECT_THROW(output.precomputeSerializedSize(block, 1), DB::Exception);
+        EXPECT_THROW(output.write(block), DB::Exception);
+    }
+}
