@@ -6445,7 +6445,9 @@ Connect timeout in seconds. Now supported only for MySQL
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
     DECLARE(Bool, external_storage_push_down_limit, true, R"(
-Allow to push the query's `LIMIT` clause down into the query sent to an external database (such as MySQL, PostgreSQL, SQLite or via ODBC/JDBC).
+Allow to push the query's `LIMIT` clause down into the query sent to an external database (such as MySQL, PostgreSQL or SQLite).
+
+The push-down is not performed for the generic ODBC/JDBC bridges, because they do not expose the remote `LIMIT` syntax, and some of the supported databases do not accept a `LIMIT` clause at all.
 
 The `LIMIT` is pushed down only when it is guaranteed to be safe, i.e. when every clause that logically applies before it is copied to the external query without changes. Precisely, the query must be a plain single-table `SELECT`:
 
