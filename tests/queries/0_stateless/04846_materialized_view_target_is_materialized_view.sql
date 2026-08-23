@@ -28,6 +28,9 @@ SELECT 'insert into the source table still succeeds', count() FROM src ORDER BY 
 INSERT INTO v_table_target VALUES (4);
 SELECT 'table target still works', count() FROM tgt;
 
+-- The population insert throws after the view is created on the database engines that populate
+-- non-atomically, so `v_populate` survives there and not on the others.
+DROP VIEW IF EXISTS v_populate;
 DROP VIEW v_refreshable_target;
 DROP VIEW v_refreshable;
 DROP VIEW v_view_target;
