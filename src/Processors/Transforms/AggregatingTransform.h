@@ -6,6 +6,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -90,6 +91,23 @@ struct ManyAggregatedData
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 
+/// Shared state of the query result previews of one aggregation (see `QueryResultPreview.h`).
+struct AggregationQueryResultPreviews
+{
+    QueryResultPreviewsControl control;
+
+    /// A dedicated merge-only aggregator that merges the per-thread snapshots into one preview
+    /// chunk; created lazily under `control.emit_mutex` by the first emission.
+    std::unique_ptr<Aggregator> merge_aggregator;
+
+    AggregationQueryResultPreviews(const QueryResultPreviewsSettings & settings_, size_t num_participants)
+        : control(settings_, num_participants)
+    {
+    }
+};
+
+using AggregationQueryResultPreviewsPtr = std::shared_ptr<AggregationQueryResultPreviews>;
+
 /** Aggregates the stream of blocks using the specified key columns and aggregate functions.
   * Columns with aggregate functions adds to the end of the block.
   * If final = false, the aggregate functions are not finalized, that is, they are not replaced by their value, but contain an intermediate state of calculations.
@@ -105,10 +123,14 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
   * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
   */
-class AggregatingTransform final : public IProcessor
+class AggregatingTransform final : public IProcessor, public IQueryResultPreviewEmitter
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+    AggregatingTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        AggregationQueryResultPreviewsPtr query_result_previews_ = nullptr);
 
     /// For Parallel aggregating.
     AggregatingTransform(
@@ -120,7 +142,8 @@ public:
         size_t temporary_data_merge_threads,
         bool should_produce_results_in_order_of_bucket_number_ = true,
         bool skip_merging_ = false,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr,
+        AggregationQueryResultPreviewsPtr query_result_previews_ = nullptr);
 
     ~AggregatingTransform() override;
 
@@ -130,6 +153,8 @@ public:
     PipelineUpdate updatePipeline() override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
     void onCancel() noexcept override;
+
+    void activateQueryResultPreviews() override;
 
 protected:
     void consume(Chunk chunk);
@@ -155,6 +180,12 @@ private:
 
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
+    size_t current_variant = 0;
+
+    /// Query result previews (see `QueryResultPreview.h`); nullptr when they cannot be emitted
+    /// by this aggregation. Emission additionally requires activation by `QueryPipeline::complete`.
+    AggregationQueryResultPreviewsPtr query_result_previews;
+    Chunk pending_query_result_preview;
 
     /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
     /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
@@ -189,6 +220,7 @@ private:
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     void initGenerate();
+    void tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num_bytes);
 };
 
 Chunk convertToChunk(const Block & block);

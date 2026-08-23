@@ -467,6 +467,7 @@ ClientBase::ClientBase(
     , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
     , progress_indication(output_stream_, in_fd_, err_fd_)
     , progress_table(in_fd_, err_fd_)
+    , query_result_preview_display(in_fd_, err_fd_)
     , input_stream(input_stream_)
     , output_stream(output_stream_)
     , error_stream(error_stream_)
@@ -827,6 +828,25 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 }
 
 
+void ClientBase::onPreviewData(Block & block)
+{
+    /// Real-time previews of the query result (the `query_result_previews` setting) are rendered
+    /// below the progress bar and fully replace one another; the region is cleared before any real
+    /// output. Non-interactive runs ignore them. The progress table occupies the same band of the
+    /// terminal, so previews stay hidden while it is toggled on.
+    if (!is_interactive || !tty_buf || block.rows() == 0)
+        return;
+
+    if (need_render_progress_table && progress_table_toggle_on.load())
+        return;
+
+    query_result_preview_display.setPreview(block, client_context);
+
+    std::unique_lock lock(tty_mutex);
+    query_result_preview_display.writePreview(*tty_buf, lock);
+}
+
+
 void ClientBase::onLogData(Block & block)
 {
     initLogsOutputStream();
@@ -839,6 +859,11 @@ void ClientBase::onLogData(Block & block)
     {
         std::unique_lock lock(tty_mutex);
         progress_table.clearTableOutput(*tty_buf, lock);
+    }
+    if (tty_buf)
+    {
+        std::unique_lock lock(tty_mutex);
+        query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
     }
     /// Logs can be unsorted, i.e. if they were combined from multiple servers (in case of distributed queries)
     {
@@ -966,6 +991,11 @@ try
                 {
                     std::unique_lock lock(tty_mutex);
                     progress_table.clearTableOutput(*tty_buf, lock);
+                }
+                if (tty_buf && (!select_into_file || select_into_file_and_stdout))
+                {
+                    std::unique_lock lock(tty_mutex);
+                    query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
                 }
             }
         );
@@ -1951,6 +1981,11 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
                 onData(packet.block, parsed_query);
             return true;
 
+        case Protocol::Server::PreviewData:
+            if (!cancelled_)
+                onPreviewData(packet.block);
+            return true;
+
         case Protocol::Server::Progress:
             onProgress(packet.progress);
             return true;
@@ -2052,6 +2087,11 @@ void ClientBase::onEndOfStream()
         std::unique_lock lock(tty_mutex);
         progress_table.clearTableOutput(*tty_buf, lock);
     }
+    if (tty_buf)
+    {
+        std::unique_lock lock(tty_mutex);
+        query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
+    }
 
     if (output_format)
     {
@@ -2146,6 +2186,13 @@ void ClientBase::onProfileEvents(Block & block)
             std::unique_lock lock(tty_mutex);
             progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), toggle_enabled, false);
         }
+        /// The query result preview shares the terminal band below the progress bar with the
+        /// progress table and its toggle hint; repaint it on top unless the table is toggled on.
+        if (tty_buf && !cancelled && !(need_render_progress_table && progress_table_toggle_on.load()))
+        {
+            std::unique_lock lock(tty_mutex);
+            query_result_preview_display.writePreview(*tty_buf, lock);
+        }
 
         /// Read at the use site: the client config file is loaded after the command line
         /// options are processed, so an early read would miss the value from the file.
@@ -2170,6 +2217,11 @@ void ClientBase::onProfileEvents(Block & block)
                     std::unique_lock lock(tty_mutex);
                     progress_table.clearTableOutput(*tty_buf, lock);
                 }
+                if (tty_buf)
+                {
+                    std::unique_lock lock(tty_mutex);
+                    query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
+                }
                 logs_out_stream->writeProfileEvents(block);
                 logs_out_stream->flush();
 
@@ -2191,6 +2243,11 @@ void ClientBase::resetOutput()
     {
         std::unique_lock lock(tty_mutex);
         progress_table.clearTableOutput(*tty_buf, lock);
+    }
+    if (tty_buf)
+    {
+        std::unique_lock lock(tty_mutex);
+        query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
     }
 
     /// Order is important: format, compression, file
@@ -2824,6 +2881,11 @@ void ClientBase::cancelQuery()
         std::unique_lock lock(tty_mutex);
         progress_table.clearTableOutput(*tty_buf, lock);
     }
+    if (tty_buf)
+    {
+        std::unique_lock lock(tty_mutex);
+        query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
+    }
 
     if (is_interactive)
         output_stream << "Cancelling query." << std::endl;
@@ -2882,6 +2944,7 @@ void ClientBase::processParsedSingleQuery(
     written_first_block = false;
     progress_indication.resetProgress();
     progress_table.resetTable();
+    query_result_preview_display.resetPreview();
     profile_events.watch.restart();
 
     {
@@ -3069,6 +3132,11 @@ void ClientBase::processParsedSingleQuery(
         {
             std::unique_lock lock(tty_mutex);
             progress_table.clearTableOutput(*tty_buf, lock);
+        }
+        if (tty_buf)
+        {
+            std::unique_lock lock(tty_mutex);
+            query_result_preview_display.clearPreviewOutput(*tty_buf, lock);
         }
         logs_out_stream->writeProfileEvents(profile_events.last_block);
         logs_out_stream->flush();
@@ -4120,6 +4188,7 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
             case Protocol::Server::Extremes:
             case Protocol::Server::Log:
             case Protocol::Server::TimezoneUpdate:
+            case Protocol::Server::PreviewData:
             case Protocol::Server::PartUUIDs: continue;
 
             default:

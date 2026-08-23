@@ -1,5 +1,7 @@
 #include <Processors/LimitTransform.h>
 
+#include <Processors/QueryResultPreview.h>
+
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 
@@ -198,6 +200,41 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     data.current_chunk = input.pull(true);
 
     auto rows = data.current_chunk.getNumRows();
+
+    /// A query result preview is a self-contained chunk (see `QueryResultPreview.h`): apply the
+    /// offset and the limit to it alone, without advancing `rows_read` or the counters (WITH TIES
+    /// is ignored for previews - the tie boundary belongs to the real result).
+    if (isQueryResultPreview(data.current_chunk))
+    {
+        if (is_limit_reached || output_finished)
+        {
+            data.current_chunk.clear();
+            input.setNeeded();
+            return Status::NeedData;
+        }
+
+        UInt64 preview_length = 0;
+        if (offset < rows)
+            preview_length = limit_is_unreachable ? (rows - offset) : std::min<UInt64>(limit, rows - offset);
+
+        if (preview_length == 0)
+        {
+            data.current_chunk.clear();
+            input.setNeeded();
+            return Status::NeedData;
+        }
+
+        if (preview_length < rows)
+        {
+            auto columns = data.current_chunk.detachColumns();
+            for (auto & column : columns)
+                column = column->cut(offset, preview_length);
+            data.current_chunk.setColumns(std::move(columns), preview_length);
+        }
+
+        output.push(std::move(data.current_chunk));
+        return Status::PortFull;
+    }
 
     if (rows_before_limit_at_least && !data.input_port_has_counter)
         rows_before_limit_at_least->add(rows);

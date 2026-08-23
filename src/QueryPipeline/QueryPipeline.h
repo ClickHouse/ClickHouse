@@ -167,6 +167,9 @@ public:
     void cancel() noexcept;
 
 private:
+    /// See `QueryResultPreview.h`; called by `complete(std::shared_ptr<IOutputFormat>)`.
+    void activateQueryResultPreviews();
+
     QueryPlanResourceHolder resources;
 
     ProgressCallback progress_callback;

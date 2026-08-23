@@ -31,6 +31,9 @@ public:
 
     String getName() const override { return "LimitsCheckingTransform"; }
 
+    /// Preview chunks pass through without counting towards the result limits and quotas.
+    bool supportsQueryResultPreviews() const override { return true; }
+
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) { quota = quota_; }
     void setNormalizedQueryHash(UInt64 normalized_query_hash_) { normalized_query_hash = normalized_query_hash_; }
 

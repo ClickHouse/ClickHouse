@@ -43,8 +43,17 @@ public:
     bool expectMaterializedColumns() const override { return false; }
     bool supportsSpecialSerializationKinds() const override { return true; }
 
+    /// Preview chunks are queued like data (keeping their annotation) and delivered to the client
+    /// by the native protocol as `PreviewData` packets (see `TCPHandler`).
+    bool canWriteQueryResultPreviews() const override { return true; }
+
 protected:
     void consume(Chunk chunk) override
+    {
+        (void)(queue.emplace(std::move(chunk)));
+    }
+
+    void consumeQueryResultPreview(Chunk chunk) override
     {
         (void)(queue.emplace(std::move(chunk)));
     }

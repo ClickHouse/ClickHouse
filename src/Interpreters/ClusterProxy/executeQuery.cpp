@@ -117,6 +117,7 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool query_result_previews;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -333,6 +334,11 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     ClientInfo new_client_info = context->getClientInfo();
     Settings new_settings {settings};
     new_settings[Setting::queue_max_wait_ms] = Cluster::saturate(new_settings[Setting::queue_max_wait_ms], settings[Setting::max_execution_time]);
+
+    /// Query result previews of remote queries are not supported yet: the initiator would have to
+    /// merge the per-shard previews (see `RemoteQueryExecutor::processPacket`).
+    new_settings[Setting::query_result_previews] = false;
+    new_settings[Setting::query_result_previews].changed = false;
 
     /// In case of interserver mode we should reset initial_user for remote() function to use passed user from the query.
     if (is_remote_function)

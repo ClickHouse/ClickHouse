@@ -31,6 +31,10 @@ public:
 
     String getName() const override { return "FilterTransform"; }
 
+    /// The filter (e.g. HAVING) applies to a preview chunk like to ordinary data; a fully
+    /// filtered-out preview is dropped (see `QueryResultPreview.h`).
+    bool supportsQueryResultPreviews() const override { return true; }
+
     Status prepare() override;
 
     void transform(Chunk & chunk) override;

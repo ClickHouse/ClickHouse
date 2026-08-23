@@ -1,0 +1,14 @@
+--- previews are emitted and every preview payload is a complete document
+has previews
+previews are well-formed
+--- no preview packet follows the first data packet
+ok
+--- the data payloads are identical with and without previews
+identical
+--- the final counters do not include preview rows
+"result_rows":"4"
+--- previews of a sorting with a limit
+has previews
+previews are cut to the limit
+--- without framing, previews are not emitted into the plain output
+identical

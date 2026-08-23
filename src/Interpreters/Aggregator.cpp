@@ -23,6 +23,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
@@ -3421,6 +3423,178 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
     if (rows_in_current_block)
         res_chunks.emplace_back(finalizeChunk(params, std::move(out_cols).value(), final));
     return res_chunks;
+}
+
+template <typename Method, typename Table>
+requires MapAggregationMethod<Method>
+Chunk Aggregator::snapshotToChunkForQueryResultPreviewImpl(Method & method, Table & data) const
+{
+    /// The columns share the ownership of the snapshot arena, and the states copied into it are
+    /// destroyed by the ColumnAggregateFunction destructors - as in the regular non-final conversion,
+    /// except that here the live hash table keeps the original states and continues to aggregate.
+    Arenas snapshot_arenas;
+    snapshot_arenas.emplace_back(std::make_shared<Arena>());
+    Arena * snapshot_arena = snapshot_arenas.back().get();
+
+    /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
+    const size_t rows = data.size() + 1;
+    auto out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, snapshot_arenas, /*final=*/false, rows);
+    auto shuffled_key_sizes = method.shuffleKeyColumns(out_cols.raw_key_columns, key_sizes);
+    const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+    IColumn::SerializationSettings serialization_settings{
+        .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+
+    /// The state of a lone `count()` is the inline counter itself, so it is materialized
+    /// as an `AggregateFunctionCountData`, like in the regular conversion.
+    auto copy_simple_count = [&](UInt64 count)
+    {
+        auto * state = reinterpret_cast<AggregateFunctionCountData *>(
+            snapshot_arena->alignedAlloc(sizeof(AggregateFunctionCountData), alignof(AggregateFunctionCountData)));
+        state->count = count;
+        out_cols.aggregate_columns_data[0]->push_back(reinterpret_cast<AggregateDataPtr>(state));
+    };
+
+    auto copy_states = [&](AggregateDataPtr src_place)
+    {
+        AggregateDataPtr copied = snapshot_arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+        createAggregateStates(copied);
+        try
+        {
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+            {
+                WriteBufferFromOwnString serialized;
+                aggregate_functions[i]->serialize(src_place + offsets_of_aggregate_states[i], serialized);
+                ReadBufferFromString to_deserialize(serialized.str());
+                aggregate_functions[i]->deserialize(copied + offsets_of_aggregate_states[i], to_deserialize, std::nullopt, snapshot_arena);
+            }
+        }
+        catch (...)
+        {
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                aggregate_functions[i]->destroy(copied + offsets_of_aggregate_states[i]);
+            throw;
+        }
+        /// The columns are pre-reserved, push_back does not throw, so a partially copied row is impossible.
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            out_cols.aggregate_columns_data[i]->push_back(copied + offsets_of_aggregate_states[i]);
+    };
+
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+    {
+        if (data.hasNullKeyData() && data.getNullKeyData())
+        {
+            out_cols.raw_key_columns[0]->insertDefault();
+            if (is_simple_count)
+                copy_simple_count(getInlineCountState(data.getNullKeyData()));
+            else
+                copy_states(data.getNullKeyData());
+        }
+    }
+
+    data.forEachValue(
+        [&](const auto & key, auto & mapped)
+        {
+            /// A state can be null if its creation once failed mid-way (see `destroyImpl`),
+            /// and the inline count of a lone `count()` cannot be zero for an existing key.
+            if (!mapped)
+                return;
+            method.insertKeyIntoColumns(key, out_cols.raw_key_columns, key_sizes_ref, &serialization_settings);
+            if (is_simple_count)
+                copy_simple_count(getInlineCountState(mapped));
+            else
+                copy_states(mapped);
+        });
+
+    return finalizeChunk(params, std::move(out_cols), /*final=*/false);
+}
+
+template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+Chunk Aggregator::snapshotToChunkForQueryResultPreviewImpl(Method & method, Table & data) const
+{
+    Arenas snapshot_arenas;
+    snapshot_arenas.emplace_back(std::make_shared<Arena>());
+
+    /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
+    const size_t rows = data.size() + 1;
+    auto out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, snapshot_arenas, /*final=*/false, rows);
+    auto shuffled_key_sizes = method.shuffleKeyColumns(out_cols.raw_key_columns, key_sizes);
+    const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+    IColumn::SerializationSettings serialization_settings{
+        .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+
+    /// The NULL group lives outside the cells; a set method has no state to copy alongside its key.
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+    {
+        if (data.hasNullKeyData())
+            out_cols.raw_key_columns[0]->insertDefault();
+    }
+
+    data.forEachValue(
+        [&](const auto & key)
+        {
+            method.insertKeyIntoColumns(key, out_cols.raw_key_columns, key_sizes_ref, &serialization_settings);
+        });
+
+    return finalizeChunk(params, std::move(out_cols), /*final=*/false);
+}
+
+Chunk Aggregator::snapshotWithoutKeyToChunkForQueryResultPreview(AggregatedDataVariants & data_variants) const
+{
+    AggregatedDataWithoutKey & data = data_variants.without_key;
+    if (!data)
+        return {};
+
+    Arenas snapshot_arenas;
+    snapshot_arenas.emplace_back(std::make_shared<Arena>());
+    Arena * snapshot_arena = snapshot_arenas.back().get();
+
+    auto out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, snapshot_arenas, /*final=*/false, /*rows=*/1);
+
+    /// Unlike the keyed case, the state of a lone `count()` without keys is a regular allocated
+    /// place, so the generic serialize + deserialize round trip covers it as well.
+    AggregateDataPtr copied = snapshot_arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+    createAggregateStates(copied);
+    try
+    {
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+        {
+            WriteBufferFromOwnString serialized;
+            aggregate_functions[i]->serialize(data + offsets_of_aggregate_states[i], serialized);
+            ReadBufferFromString to_deserialize(serialized.str());
+            aggregate_functions[i]->deserialize(copied + offsets_of_aggregate_states[i], to_deserialize, std::nullopt, snapshot_arena);
+        }
+    }
+    catch (...)
+    {
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            aggregate_functions[i]->destroy(copied + offsets_of_aggregate_states[i]);
+        throw;
+    }
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+        out_cols.aggregate_columns_data[i]->push_back(copied + offsets_of_aggregate_states[i]);
+
+    return finalizeChunk(params, std::move(out_cols), /*final=*/false);
+}
+
+Chunk Aggregator::snapshotToChunkForQueryResultPreview(AggregatedDataVariants & data_variants) const
+{
+    /// The overflow row (`without_key` of a keyed variant) is not snapshotted: previews are
+    /// disabled for queries with an overflow row.
+    chassert(!params.overflow_row);
+
+    if (data_variants.type == AggregatedDataVariants::Type::without_key)
+        return snapshotWithoutKeyToChunkForQueryResultPreview(data_variants);
+
+    if (false) {} // NOLINT
+#define M(NAME) \
+    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+        return snapshotToChunkForQueryResultPreviewImpl(*data_variants.NAME, data_variants.NAME->data);
+
+    APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
+    else
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant for a query result preview.");
 }
 
 void Aggregator::addSingleKeyToAggregateColumns(

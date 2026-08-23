@@ -385,6 +385,15 @@ public:
       */
     AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final) const;
 
+    /// Non-destructive snapshot of the current aggregation state as one not-finalized chunk
+    /// (with `ColumnAggregateFunction` state columns), for query result previews (the
+    /// `query_result_previews` setting). Aggregate function states are deep-copied through a
+    /// serialize + deserialize round trip into a dedicated snapshot arena owned by the resulting
+    /// columns, so the live state continues to aggregate unaffected. Only single-level variants
+    /// and `without_key` are supported; the caller must ensure exclusive access to `data_variants`
+    /// for the duration of the call and keep the state small (the copy is linear in its size).
+    Chunk snapshotToChunkForQueryResultPreview(AggregatedDataVariants & data_variants) const;
+
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) feeds the
     /// thaw verdict into the hash-table statistics next to the observed sizes.
     /// Records the thaw verdict in the hash-table statistics when the session measured one.
@@ -969,6 +978,17 @@ private:
     template <typename Method, typename Table>
     Chunks
     convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block) const;
+
+    /// See `snapshotToChunkForQueryResultPreview`.
+    template <typename Method, typename Table>
+    requires MapAggregationMethod<Method>
+    Chunk snapshotToChunkForQueryResultPreviewImpl(Method & method, Table & data) const;
+
+    template <typename Method, typename Table>
+    requires SetAggregationMethod<Method>
+    Chunk snapshotToChunkForQueryResultPreviewImpl(Method & method, Table & data) const;
+
+    Chunk snapshotWithoutKeyToChunkForQueryResultPreview(AggregatedDataVariants & data_variants) const;
 
     /// `topk_full_key_bytes`, when non-null and the bucket goes through the Top-K conversion,
     /// receives the byte size all of the bucket's keys would occupy materialized: the runtime

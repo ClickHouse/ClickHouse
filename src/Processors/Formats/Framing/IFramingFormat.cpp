@@ -52,6 +52,8 @@ std::string_view IFramingFormat::getPacketKindName(FramedPacketKind kind)
             return "totals";
         case FramedPacketKind::Extremes:
             return "extremes";
+        case FramedPacketKind::Preview:
+            return "preview";
     }
 }
 

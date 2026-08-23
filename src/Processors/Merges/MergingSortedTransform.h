@@ -30,6 +30,9 @@ public:
 
     String getName() const override { return "MergingSortedTransform"; }
 
+    /// Preview chunks bypass the merging algorithm (see `IMergingTransformBase::prepare`).
+    bool supportsQueryResultPreviews() const override { return true; }
+
 protected:
     void onNewInput() override;
     void onFinish() override;
