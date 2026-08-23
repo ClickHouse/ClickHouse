@@ -44,6 +44,19 @@ def victim_total_replicas():
     ).strip()
 
 
+def active_part_paths(table):
+    """Absolute in-container paths of the table's active parts, each with a trailing '/'.
+
+    `system.parts` rather than a directory listing: a MergeTree table's data directory always holds
+    a top-level `detached` directory too, and Outdated parts keep their own, so enumerating
+    directories counts more than the parts.
+    """
+    return q(
+        "SELECT path FROM system.parts"
+        f" WHERE database = '{database_name}' AND table = '{table}' AND active"
+    ).split()
+
+
 def count_txn_version_files(table):
     path = get_table_path(ch1, table, database_name)
     return int(
@@ -54,7 +67,7 @@ def count_txn_version_files(table):
 
 
 def plant_txn_version_files(table):
-    """Write a valid non-transactional `txn_version.txt` onto every part of `table`.
+    """Write a valid non-transactional `txn_version.txt` onto every active part of `table`.
 
     Transactions are off by default, so parts carry no such file and a bare count of them cannot
     tell whether the conversion removed anything. The content is the form `VersionInfo` itself
@@ -69,15 +82,10 @@ def plant_txn_version_files(table):
         f"removal_tid: (0, 0, {nil})\\n"
         "removal_csn: 0"
     )
-    path = get_table_path(ch1, table, database_name)
-    ch1.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"for d in $(find {path} -mindepth 1 -maxdepth 1 -type d); do "
-            f'printf "{content}" > "$d/txn_version.txt"; done',
-        ]
-    )
+    for part_path in active_part_paths(table):
+        ch1.exec_in_container(
+            ["bash", "-c", f'printf "{content}" > "{part_path}txn_version.txt"']
+        )
 
 
 def test_attach_as_replicated_rejects_unsafe_name(started_cluster):
@@ -96,11 +104,20 @@ def test_attach_as_replicated_rejects_unsafe_name(started_cluster):
     )
     assert victim_total_replicas() == "1"
 
-    q(f"CREATE TABLE `{GHOST}` ( A Int64 ) ENGINE = MergeTree ORDER BY A")
+    # Merges are pinned off so the set of active parts, and therefore the planted file count, is the
+    # same before the conversion and after the re-attach below.
+    q(
+        f"CREATE TABLE `{GHOST}` ( A Int64 ) ENGINE = MergeTree ORDER BY A"
+        " SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1"
+    )
     q(f"INSERT INTO `{GHOST}` VALUES (7)")
     q(f"INSERT INTO `{GHOST}` VALUES (8)")
+    planted = len(active_part_paths(GHOST))
+    # Arming assertion: with no part to plant onto, the file count reads 0 in every arm and T1c
+    # discriminates nothing.
+    assert planted > 0
     plant_txn_version_files(GHOST)
-    assert count_txn_version_files(GHOST) == 2
+    assert count_txn_version_files(GHOST) == planted
     q(f"DETACH TABLE `{GHOST}`")
 
     # T1: the conversion must be refused. Without the check it succeeds and the table takes a path
@@ -119,10 +136,10 @@ def test_attach_as_replicated_rejects_unsafe_name(started_cluster):
         == "MergeTree"
     )
 
-    # T1c: it also ran before the transaction metadata was removed. A part whose `txn_version.txt`
-    # is gone is misread as a rolled-back transaction and discarded, so losing these files loses
-    # rows. This is the row that pins the rejection ahead of `clearTransactionMetadata`.
-    assert count_txn_version_files(GHOST) == 2
+    # T1c: it also ran before the table's transaction metadata was removed. That removal is
+    # irreversible, so the file count is what pins the check ahead of `clearTransactionMetadata`; the
+    # row count below is a plain no-regression line.
+    assert count_txn_version_files(GHOST) == planted
     assert q(f"SELECT count() FROM `{GHOST}`").strip() == "2"
 
     # T1d: the victim is untouched, and still accepts a metadata ALTER. A planted ghost replica
@@ -150,6 +167,24 @@ def test_attach_as_replicated_rejects_unsafe_name(started_cluster):
     )
     assert q("SELECT count() FROM safe_name").strip() == "2"
 
+    # T4 (control): the reverse direction mints no Keeper path, so an unsafe name must not block it.
+    # The table has to be replicated already AND unsafely named, which conversion cannot produce, so
+    # it is created directly with an explicit path outside the victim's subtree.
+    q(
+        f"CREATE TABLE `{GHOST}2` ( A Int64 )"
+        f" ENGINE = ReplicatedMergeTree('/clickhouse/unrelated/{database_name}', 'node1') ORDER BY A"
+    )
+    q(f"INSERT INTO `{GHOST}2` VALUES (1), (2)")
+    q(f"DETACH TABLE `{GHOST}2`")
+    q(f"ATTACH TABLE `{GHOST}2` AS NOT REPLICATED")
+    assert (
+        q(
+            f"SELECT engine FROM system.tables WHERE database = '{database_name}' AND name = '{GHOST}2'"
+        ).strip()
+        == "MergeTree"
+    )
+    assert q(f"SELECT count() FROM `{GHOST}2`").strip() == "2"
+
     ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
 
 
@@ -160,6 +195,9 @@ def test_convert_flag_rejects_unsafe_name(started_cluster):
     q(f"CREATE TABLE `{GHOST}` ( A Int64 ) ENGINE = MergeTree ORDER BY A")
     q(f"INSERT INTO `{GHOST}` VALUES (1), (2)")
     set_convert_flags(ch1, database_name, [GHOST])
+    # Read while the server is up: every helper here answers from a query, and between the stop and
+    # the recovery start below there is provably no server to answer one.
+    table_data_path = get_table_path(ch1, GHOST, database_name)
 
     # T2: the flag-file route refuses the same conversion, and because it runs during startup the
     # server does not come up. That is the behaviour the sibling `checkReplicaPathExists` already
@@ -168,11 +206,7 @@ def test_convert_flag_rejects_unsafe_name(started_cluster):
     ch1.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
 
     ch1.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"rm {get_table_path(ch1, GHOST, database_name)}convert_to_replicated",
-        ]
+        ["bash", "-c", f"rm {table_data_path}convert_to_replicated"]
     )
     ch1.start_clickhouse()
 
