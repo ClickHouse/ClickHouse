@@ -145,12 +145,12 @@ BI などのサードパーティーツールによってクエリが生成さ�
 ODBC ドライバ には、追加の設定パラメーター `SqlCompatibilitySettings` が用意されており、これを使用すると特定のクエリ設定を有効にして、ClickHouse の動作を標準 SQL により近づけることができます。
 
 <div id="sql-compatibility-settings-list">
-  ### SqlCompatibilitySettings 構成パラメータによって有効になる ClickHouse の設定
+  ### SqlCompatibilitySettings 設定パラメーターによって有効になる ClickHouse の設定
 </div>
 
 このセクションでは、ODBC ドライバがどの設定を変更するのかと、その理由を説明します。
 
-**[cast&#95;keep&#95;nullable](/ja/reference/settings/session-settings#cast_keep_nullable)**
+**[cast&#95;keep&#95;nullable](/ja/reference/settings/session-settings/cast#cast_keep_nullable)**
 
 デフォルトでは、ClickHouse は Nullable 型から非 Nullable 型への変換を許可していません。しかし、多くの BI ツールは型変換時に Nullable 型と非 Nullable 型を区別しません。そのため、BI ツールによって次のようなクエリが生成されることは珍しくありません。
 
@@ -169,7 +169,7 @@ DB::Exception: Cannot convert NULL value to non-Nullable type: while executing '
 `cast_keep_nullable` を有効にすると、`CAST` の動作が変わり、引数の Nullable 属性が保持されるようになります。これにより、
 この種の変換における ClickHouse の動作は、他のデータベースや SQL 標準により近くなります。
 
-**[prefer&#95;column&#95;name&#95;to&#95;alias](/ja/reference/settings/session-settings#prefer_column_name_to_alias)**
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/ja/reference/settings/session-settings/prefer#prefer_column_name_to_alias)**
 
 ClickHouse では、同じ `SELECT` リスト内の式をその別名で参照できます。たとえば、次のクエリは重複を避けられるため、
 より簡潔に記述できます。

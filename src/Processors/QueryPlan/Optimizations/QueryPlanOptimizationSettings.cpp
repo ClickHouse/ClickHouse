@@ -24,7 +24,9 @@ namespace Setting
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
+    extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
+    extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
@@ -61,12 +63,15 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_lazy_materialization_for_object_storage;
+    extern const SettingsBool query_plan_optimize_lazy_materialization_for_file;
     extern const SettingsBool query_plan_optimize_prewhere;
+    extern const SettingsBool query_plan_push_down_volume_reducing_functions;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
+    extern const SettingsBool query_plan_read_in_order_through_spilling_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
@@ -160,11 +165,15 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     lift_up_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_up_array_join];
     push_down_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_limit];
+    /// Always on under the master toggle: the result is bit-exact, so there is no behavior to preserve.
+    aggregation_bucket_top_k = from[Setting::query_plan_enable_optimizations];
     split_filter = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_split_filter];
     merge_expressions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expressions];
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
+    push_down_volume_reducing_functions
+        = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_volume_reducing_functions];
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
     short_circuit_constant_false_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_short_circuit_constant_false_join];
     execute_functions_after_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_execute_functions_after_sorting];
@@ -224,8 +233,13 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         && from[Setting::optimize_trivial_count_query];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
+    read_in_order_through_spilling_join = from[Setting::query_plan_read_in_order_through_spilling_join];
+    /// In-memory buffer for correlated subqueries uses a non-serializable ChunkBuffer,
+    /// incompatible with distributed execution. When make_distributed_plan is enabled,
+    /// always use the materialization path (materializeQueryPlanReferences) instead.
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
-        && from[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
+        && from[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT
+        && !from[Setting::make_distributed_plan];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
@@ -244,11 +258,16 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
             "make_distributed_plan does not support parallel replicas, "
             "disable the `enable_parallel_replicas` and `automatic_parallel_replicas_mode` settings");
 
-    /// The implicit count/minmax projection counts a whole part from metadata; a distributed read
-    /// buckets the part, so the projection would be counted once per bucket and multiply the result.
-    /// Disable it for distributed plans (also forced off when a worker re-optimizes a fragment).
+    /// A distributed read buckets the part, and `ReadFromMergeTree::serialize` rejects a bucketed read
+    /// served from a projection; the implicit count/minmax projection would also be counted once per
+    /// bucket and multiply the result. Turn projection rewrites off so such a read is never built.
     if (make_distributed_plan)
+    {
+        optimize_projection = false;
         optimize_use_implicit_projections = false;
+        force_use_projection = false;
+        force_projection_name = {};
+    }
 
     distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
@@ -271,9 +290,13 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
+    exact_rows_before_limit = from[Setting::exact_rows_before_limit];
+
+    enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];
+    optimize_lazy_materialization_for_file = from[Setting::query_plan_optimize_lazy_materialization_for_file];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final] && from[Setting::allow_experimental_analyzer];
