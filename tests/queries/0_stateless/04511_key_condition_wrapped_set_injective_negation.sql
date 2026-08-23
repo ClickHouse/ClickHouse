@@ -14,6 +14,10 @@ SET explain_query_plan_default = 'legacy';
 -- multi-atom group under `NOT`, so such atoms are dropped from the negated groups that have an
 -- exact atom, and negation prunes through the exact atom alone.
 
+-- Note: `NOT has(const_array, key)` is folded into the `notHas` complement leaf, so the cases
+-- above no longer reach the RPN as a `NOT` over a multi-atom group. `IS NOT DISTINCT FROM` has
+-- no complement function, so the negated-group cleanup is exercised through it below.
+
 -- `toString` declares itself injective.
 DROP TABLE IF EXISTS test_injective;
 CREATE TABLE test_injective (x UInt64) ENGINE = MergeTree
@@ -53,6 +57,12 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_conc
 SELECT count() FROM test_concat WHERE NOT has(['b'], s);
 SELECT count() FROM test_concat WHERE NOT has(['b'], s) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
+-- The same leaf under a real `NOT`: the relaxed `concat` atom is dropped and the exact atom on
+-- `s` prunes.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_concat WHERE NOT (s IS NOT DISTINCT FROM 'b')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_concat WHERE NOT (s IS NOT DISTINCT FROM 'b');
+SELECT count() FROM test_concat WHERE NOT (s IS NOT DISTINCT FROM 'b') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
 DROP TABLE test_concat;
 
 -- A genuinely non-injective transform: the wrapped atom stays relaxed, so it is dropped from
@@ -67,6 +77,11 @@ INSERT INTO test_noninjective SELECT char(97 + intDiv(number, 4)) FROM numbers(2
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_noninjective WHERE NOT has(['b'], s)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
 SELECT count() FROM test_noninjective WHERE NOT has(['b'], s);
 SELECT count() FROM test_noninjective WHERE NOT has(['b'], s) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- The same leaf under a real `NOT`.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_noninjective WHERE NOT (s IS NOT DISTINCT FROM 'b')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_noninjective WHERE NOT (s IS NOT DISTINCT FROM 'b');
+SELECT count() FROM test_noninjective WHERE NOT (s IS NOT DISTINCT FROM 'b') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
 DROP TABLE test_noninjective;
 
@@ -102,5 +117,11 @@ INSERT INTO test_only_relaxed SELECT char(97 + intDiv(number, 4)) FROM numbers(2
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_only_relaxed WHERE NOT has(['b'], s)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
 SELECT count() FROM test_only_relaxed WHERE NOT has(['b'], s);
 SELECT count() FROM test_only_relaxed WHERE NOT has(['b'], s) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
+
+-- The same leaf under a real `NOT`: with no exact atom in the group, the relaxed atom is kept
+-- and cannot prune.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_only_relaxed WHERE NOT (s IS NOT DISTINCT FROM 'b')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_only_relaxed WHERE NOT (s IS NOT DISTINCT FROM 'b');
+SELECT count() FROM test_only_relaxed WHERE NOT (s IS NOT DISTINCT FROM 'b') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
 DROP TABLE test_only_relaxed;

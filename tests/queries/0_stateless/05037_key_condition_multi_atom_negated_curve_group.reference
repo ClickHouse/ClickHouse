@@ -1,0 +1,71 @@
+8
+8
+48
+-- { echo }
+EXPLAIN indexes = 1 SELECT count() FROM t_negated_curve_group WHERE NOT x;
+Output: count()
+
+Aggregating
+│  Keys:
+│  Aggregates: count()
+│  Skip merging: 0
+└──Filter ((WHERE + Change column names to column identifiers))
+   │  Filter column: NOT x
+   └──ReadFromMergeTree (default.t_negated_curve_group)
+         Read type: Default
+         Parts: 1 | Granules: 16
+         Output: x
+         Indexes:
+           PrimaryKey
+             Keys:
+               mortonEncode(x, y)
+             Condition: not((argument 0 of mortonEncode(x, y) not in [0, 0]))
+             Parts: 1/1
+             Granules: 16/16
+             Search Algorithm: generic exclusion search
+           Ranges: 1
+EXPLAIN indexes = 1 SELECT count() FROM t_negated_curve_group WHERE x = 0;
+Output: count()
+
+Aggregating
+│  Keys:
+│  Aggregates: count()
+│  Skip merging: 0
+└──Filter ((WHERE + Change column names to column identifiers))
+   │  Filter column: x = 0
+   └──ReadFromMergeTree (default.t_negated_curve_group)
+         Read type: Default
+         Parts: 1 | Granules: 7
+         Output: x
+         Indexes:
+           PrimaryKey
+             Keys:
+               mortonEncode(x, y)
+               plus(x, 1)
+             Condition: and((plus(x, 1) in [1, 1]), (mortonEncode(x, y) has args in [0, 0] × (-Inf, +Inf)))
+             Parts: 1/1
+             Granules: 7/16
+             Search Algorithm: generic exclusion search
+           Ranges: 2
+EXPLAIN indexes = 1 SELECT count() FROM t_negated_curve_group WHERE NOT has([3, 5], x) SETTINGS optimize_rewrite_has_to_in = 0;
+Output: count()
+
+Aggregating
+│  Keys:
+│  Aggregates: count()
+│  Skip merging: 0
+└──Filter ((WHERE + Change column names to column identifiers))
+   │  Filter column: NOT has([3, 5], x)
+   └──ReadFromMergeTree (default.t_negated_curve_group)
+         Read type: Default
+         Parts: 1 | Granules: 16
+         Output: x
+         Indexes:
+           PrimaryKey
+             Keys:
+               plus(x, 1)
+             Condition: (plus(x, 1) notIn 2-element set)
+             Parts: 1/1
+             Granules: 16/16
+             Search Algorithm: generic exclusion search
+           Ranges: 1
