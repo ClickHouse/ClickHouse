@@ -5,18 +5,25 @@
 SET allow_introspection_functions = 1;
 SET trace_profile_events = 0; -- This can inhibit profiler from working, because it prevents sending samples from different profilers concurrently.
 
--- Each sub-test below switches the profiler off again as soon as the query under test has finished,
--- so that the following `SYSTEM FLUSH LOGS` and `system.trace_log` verification queries run
--- unprofiled. Profiling them feeds a runaway loop: `TraceLogElement::appendToBlock` symbolizes every
--- frame of every sample through DWARF while the flush thread holds up the queue (about 1 ms per row
--- in CI), so each sample these queries take of themselves is another row the next flush has to
--- symbolize, which makes the flush slower, which lets it collect even more samples of itself. It
--- ends in `Timeout exceeded (180 s) while flushing system log
--- 'DB::SystemLogQueue<DB::TraceLogElement>'` once the flaky check runs this test many times in
--- parallel: in the report below a single verification query ran for 81 seconds and collected 243778
--- samples of itself, one `SYSTEM FLUSH LOGS` collected 96283, and those two queries alone accounted
--- for 81% of all the query-attributed samples in the job - while the queries actually under test
--- contributed about 27000 each.
+-- The `trace_log` pipeline is a shared, bounded resource: every sample from every query goes over
+-- one pipe into one `SystemLogQueue`, and one flush thread drains it - on non-sanitizer builds while
+-- symbolizing every row through DWARF at about a millisecond per row (`symbolize` in the trace_log
+-- server config, which the stateless harness leaves on there). The flaky check runs dozens of copies
+-- of this test at once, so the test has to budget the samples it produces: when an earlier revision
+-- produced about 3800 rows per run and forced three `trace_log` flushes per run, the flush thread
+-- fell behind by more than the 180 second `waitFlush` timeout on `amd_binary` (`Timeout exceeded
+-- (180 s) while flushing system log 'DB::SystemLogQueue<DB::TraceLogElement>'`), and on
+-- `amd_asan_ubsan` the overloaded queue dropped all of one sub-test's samples, failing the
+-- `trace_log` oracles. Hence below: the profiler periods and durations are chosen to keep the whole
+-- run under about 1500 rows, and there is a single `SYSTEM FLUSH LOGS` at the end instead of one
+-- per sub-test.
+--
+-- Each sub-test also switches the profiler off again as soon as the query under test has finished,
+-- so that the `SYSTEM FLUSH LOGS` and the `system.trace_log` verification queries run unprofiled.
+-- Profiling them feeds a runaway loop: each sample they take of themselves is another row the next
+-- flush has to symbolize, which makes the flush slower, which lets it collect even more samples of
+-- itself. In one flaky-check report a single verification query ran for 81 seconds and collected
+-- 243778 samples of itself.
 
 SET query_profiler_cpu_time_period_ns = 0;
 -- Use a short period: a 100ms period gives only ~5 signals over sleep(0.5), and under a loaded
@@ -24,11 +31,51 @@ SET query_profiler_cpu_time_period_ns = 0;
 -- samples can all be lost, leaving 0 rows in `system.trace_log`. 10ms gives ~50 chances.
 SET query_profiler_real_time_period_ns = 1e7;
 SET log_queries = 1;
--- Sleep in 16 threads at once (one single-row block per thread), not in one, so the sub-test
--- survives a single thread failing to create its profiler timer.
-SELECT sum(sleep(0.5)), ignore('test real time query profiler') FROM numbers_mt(16) SETTINGS max_block_size = 1, max_threads = 16;
+-- Sleep in 8 threads at once (one single-row block per thread), not in one, so the sub-test
+-- survives a single thread failing to create its profiler timer. This oracle is counter-based (see
+-- below), so its samples do not need to survive - 8 threads give about 400 delivered signals
+-- against a serverwide bound of about 100 while keeping the `trace_log` byproduct bounded.
+SELECT sum(sleep(0.5)), ignore('test real time query profiler') FROM numbers_mt(8) SETTINGS max_block_size = 1, max_threads = 8;
 SET log_queries = 0;
 SET query_profiler_real_time_period_ns = 0;
+
+-- Use one CPU-bound thread for the two sub-tests below, and bound the duration of the query instead
+-- of the amount of work it does: `numbers_mt(1e10)` is more than any supported runner can scan
+-- within `max_execution_time`, so with `timeout_overflow_mode = 'break'` the query runs for about
+-- two seconds on a fast release build and on a slow sanitizer build alike. That keeps both the
+-- number of samples and the oracles below independent of the speed of the machine - a fixed row
+-- count made this query last from a fraction of a second to minutes, which is what made earlier
+-- fixed thresholds either unreachable on fast runners or reachable by the serverwide profilers
+-- alone on slow ones. The result of the query is not printed for the same reason: how many rows it
+-- manages to scan is machine-dependent. The two settings are attached to the query rather than to
+-- the session, so that the verification queries below are not cut short by the same timeout.
+SET max_threads = 1;
+
+-- A 10ms real time period gives about 200 signals per thread over the two seconds of this query -
+-- delivered on wall-clock time, so independent of CPU contention - which is several times the
+-- counter oracle's threshold while adding only a couple of hundred rows to `trace_log`.
+SET query_profiler_real_time_period_ns = 1e7;
+SET max_rows_to_read = 0;
+SET log_queries = 1;
+SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(1e10) SETTINGS max_execution_time = 2, timeout_overflow_mode = 'break' FORMAT Null;
+SET log_queries = 0;
+SET query_profiler_real_time_period_ns = 0;
+
+-- The CPU timer fires on CPU time, not wall-clock time, so under a loaded runner the query's single
+-- worker thread may get only a fraction of a core and proportionally fewer signals. Use a shorter
+-- period (2ms) than for the real time timer above so the counter oracle keeps a wide margin even at
+-- a small CPU share; the `trace_log` byproduct is bounded by the same contention that makes the
+-- margin necessary.
+SET query_profiler_cpu_time_period_ns = 2e6;
+SET log_queries = 1;
+SET max_rows_to_read = 0;
+SELECT count(), ignore('test cpu time query profiler') FROM numbers_mt(1e10) SETTINGS max_execution_time = 2, timeout_overflow_mode = 'break' FORMAT Null;
+SET log_queries = 0;
+SET query_profiler_cpu_time_period_ns = 0;
+
+-- A single forced flush for all three sub-tests - forced flushes serialize on the shared flush
+-- thread across the dozens of concurrent copies of this test in the flaky check, so they are
+-- budgeted like the samples themselves.
 SYSTEM FLUSH LOGS trace_log, query_log;
 
 -- Do not check `system.trace_log` for the sleeping query: samples travel over a lossy channel (the
@@ -53,35 +100,11 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler%' AND query NOT LIKE '%system%' AND type = 'QueryFinish'
 ORDER BY event_time DESC LIMIT 1;
 
--- Use one CPU-bound thread here, and bound the duration of the query instead of the amount of work
--- it does: `numbers_mt(1e10)` is more than any supported runner can scan within `max_execution_time`,
--- so with `timeout_overflow_mode = 'break'` the query runs for about three seconds on a fast release
--- build and on a slow sanitizer build alike. That keeps both the number of samples and the oracles
--- below independent of the speed of the machine - a fixed row count made this query last from a
--- fraction of a second to minutes, which is what made the previous thresholds either unreachable on
--- fast runners or reachable by the serverwide profilers alone on slow ones. The result of the query
--- is not printed for the same reason: how many rows it manages to scan is machine-dependent. The two
--- settings are attached to the query rather than to the session, so that the verification queries
--- below are not cut short by the same timeout.
-SET max_threads = 1;
-
--- `Timer::set` accepts periods no shorter than 1ms. A 2ms period gives about 1500 samples per thread
--- over the three seconds of this query, which is plenty for the oracles below and keeps the
--- `trace_log` load bounded when the flaky check runs many copies of this test at once.
-SET query_profiler_real_time_period_ns = 2e6;
-SET max_rows_to_read = 0;
-SET log_queries = 1;
-SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(1e10) SETTINGS max_execution_time = 3, timeout_overflow_mode = 'break' FORMAT Null;
-SET log_queries = 0;
-SET query_profiler_real_time_period_ns = 0;
-SYSTEM FLUSH LOGS trace_log, query_log;
-
--- The serverwide profilers (1 second period in the test harness) also produce `trace_log` rows and
--- `QueryProfiler*` counters for this query, so the `trace_log` check below alone cannot prove that
--- the per-query profiler ran. Use the same oracle as for the sleeping query above: require four
--- times the most the two 1 second serverwide timers can contribute for a query of this duration in
--- this many threads. The 2ms per-query profiler produces 500 signals per second in every thread,
--- 250 times the serverwide rate.
+-- The serverwide profilers also produce `trace_log` rows and `QueryProfiler*` counters for the
+-- numbers_mt queries, so the `trace_log` checks below alone cannot prove that the per-query
+-- profiler ran. Use the same oracle as for the sleeping query above: require four times the most
+-- the two 1 second serverwide timers can contribute for a query of this duration in this many
+-- threads.
 SELECT ProfileEvents['QueryProfilerRuns'] + ProfileEvents['QueryProfilerSignalOverruns'] + ProfileEvents['QueryProfilerConcurrencyOverruns']
      > 8 * length(thread_ids) * (intDiv(query_duration_ms, 1000) + 1)
 FROM system.query_log
@@ -112,7 +135,7 @@ FROM
 
 -- Prove that these samples come from the per-query profiler rather than from the serverwide one: a
 -- serverwide timer fires at most once per second in a thread, so two consecutive samples of the same
--- thread less than 100ms apart can only come from the per-query 2ms profiler. Unlike a threshold on
+-- thread less than 100ms apart can only come from the per-query 10ms profiler. Unlike a threshold on
 -- the number of rows, this needs just two surviving samples of one thread, so it holds even when the
 -- lossy trace channel (concurrency cap, timer overruns, full trace pipe) discards most of them.
 SELECT countIf(gap < 100000000) > 0
@@ -126,16 +149,7 @@ FROM
     GROUP BY thread_id
 );
 
--- The CPU time profiler is checked the same way, on a query bounded the same way.
-SET query_profiler_cpu_time_period_ns = 2e6;
-SET log_queries = 1;
-SET max_rows_to_read = 0;
-SELECT count(), ignore('test cpu time query profiler') FROM numbers_mt(1e10) SETTINGS max_execution_time = 3, timeout_overflow_mode = 'break' FORMAT Null;
-SET log_queries = 0;
-SET query_profiler_cpu_time_period_ns = 0;
-SYSTEM FLUSH LOGS trace_log, query_log;
-
--- Guarded by the same oracle as the sub-test above. The CPU timer fires on CPU time, so it delivers
+-- The CPU time profiler is checked the same way. The CPU timer fires on CPU time, so it delivers
 -- fewer signals than the real time one when the runner is loaded, but the serverwide bound is
 -- computed from the wall-clock duration and is an upper bound for the CPU timer as well.
 SELECT ProfileEvents['QueryProfilerRuns'] + ProfileEvents['QueryProfilerSignalOverruns'] + ProfileEvents['QueryProfilerConcurrencyOverruns']
@@ -157,11 +171,9 @@ FROM
     LIMIT 1000
 );
 
--- Prove that these samples come from the per-query profiler rather than from the serverwide one: a
--- serverwide timer fires at most once per second in a thread, so two consecutive samples of the same
--- thread less than 100ms apart can only come from the per-query 2ms profiler. Unlike a threshold on
--- the number of rows, this needs just two surviving samples of one thread, so it holds even when the
--- lossy trace channel (concurrency cap, timer overruns, full trace pipe) discards most of them.
+-- Prove that these samples come from the per-query profiler rather than from the serverwide one, as
+-- above: two consecutive samples of the same thread less than 100ms apart can only come from the
+-- per-query 2ms profiler.
 SELECT countIf(gap < 100000000) > 0
 FROM
 (
