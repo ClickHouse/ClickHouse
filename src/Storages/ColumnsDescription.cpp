@@ -249,7 +249,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (auto col_codec = col_ast->getCodec())
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, false, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, CodecValidationSettings::trusted());
 
             if (auto col_ttl = col_ast->getTTL())
                 ttl = col_ttl;
@@ -458,6 +458,12 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
     invalidateGetCache();
+}
+
+void ColumnsDescription::addIfNotExists(ColumnDescription column)
+{
+    if (!has(column.name))
+        add(std::move(column));
 }
 
 void ColumnsDescription::remove(const String & column_name)
