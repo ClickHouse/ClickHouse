@@ -12,6 +12,8 @@ config so that the server starts even on such builds (a static `gcs` disk would 
 fail startup with UNKNOWN_ELEMENT_IN_CONFIG).
 """
 
+import uuid
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -28,6 +30,7 @@ def started_cluster():
                 "configs/forbid_headers.xml",
                 "configs/dynamic_gcs_disk_include.xml",
                 "configs/dynamic_gcs_disk_include_source.xml",
+                "configs/filesystem_caches.xml",
             ],
             with_gcs=True,
             env_variables={"NATIVE_GCS_DYNAMIC_DISK_TYPE": "gcs"},
@@ -42,7 +45,9 @@ def started_cluster():
             == "1"
         )
         if not built_with_sdk:
-            pytest.skip("ClickHouse was built without the google-cloud-cpp SDK (USE_GOOGLE_CLOUD=0)")
+            pytest.skip(
+                "ClickHouse was built without the google-cloud-cpp SDK (USE_GOOGLE_CLOUD=0)"
+            )
 
         yield cluster
     finally:
@@ -90,7 +95,9 @@ def test_table_function_glob(started_cluster):
 
 def test_mergetree_on_gcs_disk(started_cluster):
     node = started_cluster.instances["node"]
-    disk_endpoint = f"http://{cluster.gcs_host}:{cluster.gcs_port}/{cluster.gcs_bucket}/mergetree/"
+    disk_endpoint = (
+        f"http://{cluster.gcs_host}:{cluster.gcs_port}/{cluster.gcs_bucket}/mergetree/"
+    )
 
     node.query("DROP TABLE IF EXISTS gcs_mt SYNC")
     node.query(
@@ -107,7 +114,9 @@ def test_mergetree_on_gcs_disk(started_cluster):
     )
 
     node.query("INSERT INTO gcs_mt SELECT number, toString(number) FROM numbers(1000)")
-    node.query("INSERT INTO gcs_mt SELECT number, toString(number) FROM numbers(1000, 1000)")
+    node.query(
+        "INSERT INTO gcs_mt SELECT number, toString(number) FROM numbers(1000, 1000)"
+    )
     assert node.query("SELECT count() FROM gcs_mt").strip() == "2000"
 
     # Merge parts (writes new part blobs, deletes old ones) and re-read.
@@ -118,7 +127,9 @@ def test_mergetree_on_gcs_disk(started_cluster):
     node.query("DROP TABLE gcs_mt SYNC")
 
 
-def test_dynamic_gcs_disk_allows_indirect_backend_type_with_no_sign_request(started_cluster):
+def test_dynamic_gcs_disk_allows_indirect_backend_type_with_no_sign_request(
+    started_cluster,
+):
     """An indirect backend that resolves to GCS must not take the S3 credentials-only path."""
     node = started_cluster.instances["node"]
     node.query("DROP TABLE IF EXISTS gcs_indirect_type SYNC")
@@ -137,7 +148,9 @@ def test_dynamic_gcs_disk_allows_indirect_backend_type_with_no_sign_request(star
     node.query("DROP TABLE gcs_indirect_type SYNC")
 
 
-def test_dynamic_gcs_disk_rejects_header_from_include_even_with_credential_opt_in(started_cluster):
+def test_dynamic_gcs_disk_rejects_header_from_include_even_with_credential_opt_in(
+    started_cluster,
+):
     """An included request header has no durable opt-in marker in table metadata.
 
     Reject it during creation even when the session permits server credentials; otherwise the table can be
@@ -165,7 +178,9 @@ def test_dynamic_gcs_disk_rejects_header_from_include_even_with_credential_opt_i
     assert "ACCESS_DENIED" in error and "header" in error, error
 
 
-def test_dynamic_gcs_disk_rejects_service_account_key_shadowed_by_include(started_cluster):
+def test_dynamic_gcs_disk_rejects_service_account_key_shadowed_by_include(
+    started_cluster,
+):
     """An `include` written before a literal credential shadows it.
 
     `ConfigProcessor` inserts the included children before the `<include>` node and duplicate siblings
@@ -226,7 +241,9 @@ def test_schema_inference_cache(started_cluster):
     )
 
     # Reading without an explicit structure infers the schema and caches it.
-    node.query(f"SELECT count() FROM gcs('{url}', NOSIGN, 'TSV') SETTINGS use_native_gcs = 1")
+    node.query(
+        f"SELECT count() FROM gcs('{url}', NOSIGN, 'TSV') SETTINGS use_native_gcs = 1"
+    )
 
     assert (
         node.query(
@@ -292,3 +309,54 @@ def test_forbidden_header_rejected(started_cluster):
         f"SETTINGS use_native_gcs = 1"
     )
     assert res.strip() == "5"
+
+
+def test_table_function_filesystem_cache(started_cluster):
+    """A native GCS read can be served from the filesystem cache. Its cache key is
+    `hash(path, etag)`, and the etag of this backend is the object generation, which changes on
+    every overwrite - so it is a strong content identifier and safe to key a cache with.
+    """
+    node = started_cluster.instances["node"]
+    url = gcs_url("fs_cache/data.tsv")
+
+    node.query(
+        f"INSERT INTO FUNCTION gcs('{url}', NOSIGN, 'TSV', 'a UInt64') "
+        "SELECT number FROM numbers(100) SETTINGS use_native_gcs = 1"
+    )
+
+    read_settings = "SETTINGS use_native_gcs = 1, filesystem_cache_name = 'cache1', enable_filesystem_cache = 1"
+    select = (
+        f"SELECT count() FROM gcs('{url}', NOSIGN, 'TSV', 'a UInt64') {read_settings}"
+    )
+
+    # Cold read: the data is fetched from GCS and written into the cache.
+    cold_query_id = f"gcs_fs_cache_cold_{uuid.uuid4()}"
+    assert node.query(select, query_id=cold_query_id).strip() == "100"
+    node.query("SYSTEM FLUSH LOGS")
+
+    written = int(
+        node.query(
+            "SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log "
+            f"WHERE query_id = '{cold_query_id}' AND type = 'QueryFinish'"
+        )
+    )
+    assert written > 0
+
+    # Warm read: served from the cache, with nothing new written to it.
+    node.query("SYSTEM CLEAR SCHEMA CACHE")
+    warm_query_id = f"gcs_fs_cache_warm_{uuid.uuid4()}"
+    assert node.query(select, query_id=warm_query_id).strip() == "100"
+    node.query("SYSTEM FLUSH LOGS")
+
+    assert 0 < int(
+        node.query(
+            "SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log "
+            f"WHERE query_id = '{warm_query_id}' AND type = 'QueryFinish'"
+        )
+    )
+    assert 0 == int(
+        node.query(
+            "SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log "
+            f"WHERE query_id = '{warm_query_id}' AND type = 'QueryFinish'"
+        )
+    )
