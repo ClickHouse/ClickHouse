@@ -56,7 +56,7 @@ ORDER BY (town, street);
   ## دمج الأجزاء
 </div>
 
-لإدارة عدد الأجزاء في كل جدول، تجمع مهمة [دمج في الخلفية](/ar/concepts/core-concepts/merges) الأجزاء الأصغر دوريًا في أجزاء أكبر حتى تصل إلى [حجم مضغوط](/ar/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) (عادةً نحو 150 جيجابايت). وتُعلَّم الأجزاء المدمجة على أنها غير نشطة، ثم تُحذف بعد [فاصل زمني](/ar/reference/settings/merge-tree-settings#old_parts_lifetime) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings#old_parts_lifetime). ومع مرور الوقت، تُنشئ هذه العملية بنية هرمية من الأجزاء المدمجة، ولهذا سُمّي جدول MergeTree بهذا الاسم:
+لإدارة عدد الأجزاء في كل جدول، تجمع مهمة [دمج في الخلفية](/ar/concepts/core-concepts/merges) الأجزاء الأصغر دوريًا في أجزاء أكبر حتى تصل إلى [حجم مضغوط](/ar/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) (عادةً نحو 150 جيجابايت). وتُعلَّم الأجزاء المدمجة على أنها غير نشطة، ثم تُحذف بعد [فاصل زمني](/ar/reference/settings/merge-tree-settings/other#old_parts_lifetime) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings/other#old_parts_lifetime). ومع مرور الوقت، تُنشئ هذه العملية بنية هرمية من الأجزاء المدمجة، ولهذا سُمّي جدول MergeTree بهذا الاسم:
 
 <Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 

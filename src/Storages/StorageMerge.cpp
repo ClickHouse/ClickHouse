@@ -7,11 +7,13 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -52,6 +54,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
@@ -371,6 +374,11 @@ bool StorageMerge::supportsPrewhere() const
 bool StorageMerge::supportsOptimizationToSubcolumns() const
 {
     return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToSubcolumns(); }) == nullptr;
+}
+
+bool StorageMerge::supportsOptimizationToTupleElementSubcolumns() const
+{
+    return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToTupleElementSubcolumns(); }) == nullptr;
 }
 
 bool StorageMerge::canMoveConditionsToPrewhere() const
@@ -806,12 +814,51 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
         selected_tables.resize(child_plans->size());
 }
 
+/// Every materialized CTE reachable from `node`. Pointer identity is what matters:
+/// all references to one CTE - including the ones a child plan resolves by name to
+/// the CTE's temporary `StorageMemory` - share the same `MaterializedCTE` object.
+static MaterializedCTESet collectMaterializedCTEsFromQueryTree(const QueryTreeNodePtr & node)
+{
+    MaterializedCTESet result;
+    if (!node)
+        return result;
+
+    traverseQueryTree(node, Everything{},
+        [&](const QueryTreeNodePtr & current_node)
+        {
+            if (const auto * table_node = current_node->as<TableNode>())
+            {
+                if (auto cte = table_node->getMaterializedCTE())
+                    result.insert(std::move(cte));
+            }
+        });
+
+    return result;
+}
+
 std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQueryInfo & query_info_) const
 {
     if (selected_tables.empty())
         return {};
 
     std::vector<ChildPlan> res;
+
+    /// Materialized CTEs the outer query references. Each child plan below is optimized
+    /// on its own, and `resolveMaterializingCTEs` claims a CTE globally
+    /// (`MaterializedCTE::is_materialization_planned`): the first child plan to be
+    /// optimized would move the CTE's plan into *its* tree and leave every other
+    /// `DelayedMaterializingCTEsStep` for that CTE - in the sibling children and in the
+    /// outer plan - degenerate. The writer would then sit in one child's pipeline while
+    /// the readers sit in another, with no `DelayedPortsProcessor` between them, and
+    /// `ReadFromMemoryStorageStep` would (rightly) report a missing gate.
+    ///
+    /// So the children must not claim these: strip their steps and let the outer plan,
+    /// whose `MaterializingCTEsStep` sits above the whole merge, own the materialization
+    /// and gate every child. This mirrors what `DelayedCreatingSetsStep::makePlansForSets`
+    /// does with pre-built IN-subquery plans. A CTE defined *inside* one child (a `View`
+    /// with its own `WITH ... AS MATERIALIZED`) is not in this set, so that child keeps
+    /// owning it - it is the only reader.
+    const auto outer_materialized_ctes = collectMaterializedCTEsFromQueryTree(query_info.query_tree);
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier = std::min(
@@ -1135,6 +1182,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     child.plan.addStep(std::move(filter_step));
                 }
 
+                removeDelayedMaterializingCTEsStepFor(child.plan, outer_materialized_ctes);
+
                 child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info));
             }
 
@@ -1241,25 +1290,52 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // Select only required columns from the table, because projection list may contain:
     // 1. aggregate functions
     // 2. expressions referencing other tables of JOIN
-    for (auto const & column_name : required_column_names)
+    //
+    // All the identifiers are resolved by a single `QueryAnalysisPass` run. Running the pass once per
+    // identifier would rebuild `AnalysisTableExpressionData` for the whole `Merge` table every time,
+    // which is quadratic in the number of columns. As this function is called once per source table,
+    // the total cost becomes cubic, and a query joining `merge` over many wide tables (for example,
+    // `merge('system', '')`) spends minutes in query planning.
+    if (!required_column_names.empty())
     {
-        QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column_name});
+        auto identifiers_list = std::make_shared<ListNode>();
+        identifiers_list->getNodes().reserve(required_column_names.size());
+        for (const auto & column_name : required_column_names)
+            identifiers_list->getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{column_name}));
+
+        QueryTreeNodePtr resolved_identifiers = std::move(identifiers_list);
 
         QueryAnalysisPass query_analysis_pass(original_table_expression);
-        query_analysis_pass.run(fake_node, context);
+        query_analysis_pass.run(resolved_identifiers, context);
 
-        auto * resolved_column = fake_node->as<ColumnNode>();
-        if (!resolved_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", column_name);
-        auto fake_column = resolved_column->getColumn();
+        auto & resolved_nodes = resolved_identifiers->as<ListNode &>().getNodes();
+        if (resolved_nodes.size() != required_column_names.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected {} resolved columns, got {}",
+                required_column_names.size(),
+                resolved_nodes.size());
 
-        // Identifier is resolved to ColumnNode, but we need to get rid of ALIAS columns
-        // and also fix references to source expression (now column is referencing original table expression).
-        ApplyAliasColumnExpressionsVisitor visitor(replacement_table_expression);
-        visitor.visit(fake_node);
+        projection.reserve(required_column_names.size());
+        projection_columns.reserve(required_column_names.size());
 
-        projection.push_back(fake_node);
-        projection_columns.push_back(fake_column);
+        for (size_t i = 0; i < required_column_names.size(); ++i)
+        {
+            auto & fake_node = resolved_nodes[i];
+
+            auto * resolved_column = fake_node->as<ColumnNode>();
+            if (!resolved_column)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", required_column_names[i]);
+            auto fake_column = resolved_column->getColumn();
+
+            // Identifier is resolved to ColumnNode, but we need to get rid of ALIAS columns
+            // and also fix references to source expression (now column is referencing original table expression).
+            ApplyAliasColumnExpressionsVisitor visitor(replacement_table_expression);
+            visitor.visit(fake_node);
+
+            projection.push_back(fake_node);
+            projection_columns.push_back(fake_column);
+        }
     }
 
     query_node->resolveProjectionColumns(std::move(projection_columns));

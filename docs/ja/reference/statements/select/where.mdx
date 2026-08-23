@@ -12,7 +12,7 @@ keywords: ['WHERE']
 `WHERE` 句がある場合は、その後に `UInt8` 型の式が続く必要があります。
 この式が `0` と評価される行は、それ以降の変換処理や結果から除外されます。
 
-`WHERE` 句に続く式では、多くの場合、[比較](/ja/reference/operators/index#comparison-operators) や [論理演算子](/ja/reference/operators/index#operators-for-working-with-data-sets)、あるいは多数の[通常の関数](/ja/reference/functions/regular-functions/regular-functions-index)のいずれかが使用されます。
+`WHERE` 句に続く式では、多くの場合、[比較](/ja/reference/operators/index#comparison-operators) や [論理演算子](/ja/reference/operators/index#operators-for-working-with-data-sets)、あるいは多数の[通常の関数](/ja/reference/functions/regular-functions/overview)のいずれかが使用されます。
 
 基盤となるテーブルエンジンが対応している場合、`WHERE` 式は索引やパーティションプルーニングを利用できるように評価されます。
 
