@@ -1,11 +1,14 @@
 -- Tags: no-fasttest
 -- no-fasttest: needs the SZ3 library
 
--- The lossy-codec guard of `ALTER TABLE ... RECOMPRESS COLUMN` also covers dependents that are not
--- rebuilt by the recompression and cannot be dropped: the partition key (the partition value and the
--- part minmax index prune whole parts), the sorting key (the primary index and the physical order of
--- the rows prune granules), and stored MATERIALIZED columns (their values are copied from the source
--- part unchanged).
+-- The lossy-codec guard of `ALTER TABLE ... RECOMPRESS COLUMN` also covers stored MATERIALIZED
+-- columns: they are dependents that are not rebuilt by the recompression (their values are copied
+-- from the source part unchanged).
+--
+-- The partition key and the sorting key cases cannot be constructed anymore: a lossy codec on a
+-- column backing either key is rejected at CREATE and ALTER time (see
+-- 04791_lossy_codec_key_column), so the corresponding `RECOMPRESS COLUMN` guards only protect
+-- tables attached from metadata written by earlier versions and are not testable here.
 
 -- `CHECK TABLE` is used only on the lossless control: a part holding data inserted through a lossy
 -- codec fails the `uncompressed_hash` check by construction (the stored hash describes the original
@@ -14,48 +17,6 @@
 SET allow_experimental_codecs = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
-
--- The partition key uses the lossy column: rejected.
--- Full part storage is pinned (`min_bytes_for_full_part_storage` may be randomized in tests): a packed
--- part does not support in-place recompression, so `RECOMPRESS COLUMN key` would rewrite the part as a
--- whole, re-serialize `val` with its lossy codec, and be rejected because the partition key uses `val`.
--- The in-place path this test exercises requires a wide part with full storage.
-DROP TABLE IF EXISTS t_recompress_lossy_partition_key;
-CREATE TABLE t_recompress_lossy_partition_key
-(
-    key UInt64,
-    val Float64 CODEC(SZ3('ALGO_INTERP', 'ABS', 0.01))
-)
-ENGINE = MergeTree PARTITION BY toUInt64(val / 25) ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0;
-
-INSERT INTO t_recompress_lossy_partition_key SELECT number, number / 10. FROM numbers(1000);
-
-ALTER TABLE t_recompress_lossy_partition_key RECOMPRESS COLUMN val; -- { serverError SUPPORT_IS_DISABLED }
-
--- The other column is not used by the partition key, so it can be recompressed.
-ALTER TABLE t_recompress_lossy_partition_key MODIFY COLUMN key UInt64 CODEC(ZSTD(3));
-ALTER TABLE t_recompress_lossy_partition_key RECOMPRESS COLUMN key;
-SELECT 'partition key control', count(), sum(key), uniqExact(_partition_id) FROM t_recompress_lossy_partition_key;
-
-DROP TABLE t_recompress_lossy_partition_key;
-
--- The sorting key uses the lossy column: rejected.
-DROP TABLE IF EXISTS t_recompress_lossy_sorting_key;
-CREATE TABLE t_recompress_lossy_sorting_key
-(
-    key UInt64,
-    val Float64 CODEC(SZ3('ALGO_INTERP', 'ABS', 0.01))
-)
-ENGINE = MergeTree ORDER BY (key, val)
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-
-INSERT INTO t_recompress_lossy_sorting_key SELECT number, sin(number / 1000.) * 100 FROM numbers(1000);
-
-ALTER TABLE t_recompress_lossy_sorting_key RECOMPRESS COLUMN val; -- { serverError SUPPORT_IS_DISABLED }
-
-DROP TABLE t_recompress_lossy_sorting_key;
 
 -- A stored MATERIALIZED column is computed from the lossy column: rejected.
 DROP TABLE IF EXISTS t_recompress_lossy_materialized;

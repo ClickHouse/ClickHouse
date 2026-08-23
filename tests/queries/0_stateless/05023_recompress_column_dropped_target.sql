@@ -1,5 +1,10 @@
 -- A queued recompression whose target is dropped must not force a whole-part rewrite of
 -- surviving columns with their newly changed codecs.
+
+-- Full part storage is pinned (`min_bytes_for_full_part_storage` may be randomized in tests):
+-- a packed part does not support in-place recompression, so the queued `RECOMPRESS COLUMN b`
+-- would rewrite the part as a whole, touching every column, and `DROP COLUMN b` would be
+-- rejected while that mutation is pending. This test exercises the in-place path.
 DROP TABLE IF EXISTS t_recompress_dropped_target;
 
 CREATE TABLE t_recompress_dropped_target
@@ -12,6 +17,7 @@ CREATE TABLE t_recompress_dropped_target
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
     number_of_free_entries_in_pool_to_execute_mutation = 0;
 
 INSERT INTO t_recompress_dropped_target
