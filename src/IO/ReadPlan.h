@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ICacheProvider.h>
+#include <IO/ChainedBuffers.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
@@ -34,17 +35,18 @@ struct PlanTier
 class ReadPlan
 {
 public:
-    /// The merged, fastest-tier-wins run covering `offset` - the "universal plan" query. A CACHE run
-    /// (`reader` xor `writer` set) is served from that tier for `[offset, range.end())`: a hit, or a
-    /// miss segment already committed (served from its writer). A FETCH run (both null) is the
-    /// contiguous extent no tier serves, coalesced across cells and tiers up to the nearest offset a
-    /// tier holds - so one source read fills several segments and never overruns a resident block.
+    /// The merged, fastest-tier-wins run covering `offset` - the "universal plan" query. Served for
+    /// `[offset, range.end())` by exactly one of: `from_memory` (executor-local held bytes - see
+    /// `readMemory`), a hit `reader`, a committed miss `writer`, or - a FETCH run (all unset) - a source
+    /// read of the contiguous extent no tier serves, coalesced across cells and tiers up to the nearest
+    /// offset a tier holds so one read fills several segments and never overruns a resident block.
     struct PlanRun
     {
         ByteRange range{};
         CacheReader * reader = nullptr;
         CacheWriter * writer = nullptr;
-        bool isFetch() const { return reader == nullptr && writer == nullptr; }
+        bool from_memory = false;
+        bool isFetch() const { return reader == nullptr && writer == nullptr && !from_memory; }
     };
 
     bool empty() const { return span_end <= span_start; }
@@ -66,6 +68,13 @@ public:
     /// fastest-first, matching the existing tier order (and set on the first call).
     void extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolved);
 
+    /// The executor-local memory hold: bytes a fetch pulled that no tier accepted (a read-only or
+    /// detached segment, or a rejected write). `hold` keeps them (served by a `from_memory` run);
+    /// `readMemory` serves a sub-range; the hold is freed as `retireBefore` passes it. Out of the tier
+    /// hierarchy - a fallback so already-fetched bytes are never re-read.
+    void hold(ChainedBuffers bytes);
+    ChainedBuffers readMemory(ByteRange range) const;
+
     /// Drop cells that end at or before `offset` (release their pins) and advance `spanStart` to it.
     void retireBefore(size_t offset);
 
@@ -77,6 +86,7 @@ private:
     size_t span_start = 0;
     size_t span_end = 0;   /// `[span_start, span_end)` is resolved
     VectorWithMemoryTracking<PlanTier> tiers;   /// fastest-first, 1:1 with the cache chain
+    ChainedBuffers memory;   /// fetched bytes no tier accepted; served first, freed on retire
 };
 
 }

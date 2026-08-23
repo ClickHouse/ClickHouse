@@ -419,33 +419,14 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve)
     /// Serve one block from `pos`, capped by the window and by the run's contiguous extent.
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - pos}); };
 
-    /// Serve from the retained fetch first: bytes a prior coalesced fetch pulled but no tier cached (a
-    /// read-only or detached segment). Drop the prefix already passed - freeing that memory - then serve
-    /// the contiguous run at `pos`; a gap means the next bytes are cached, so fall through to the plan
-    /// (later retained ranges stay held).
-    if (!held_fetch.empty())
-    {
-        const size_t held_end = held_fetch.range().end();
-        if (pos >= held_end)
-            held_fetch = {};
-        else
-        {
-            held_fetch = held_fetch.slice(ByteRange{pos, held_end - pos});
-            if (held_fetch.covers(ByteRange{pos, 1}))
-            {
-                size_t contig_end = held_end;
-                if (auto g = held_fetch.gaps(ByteRange{pos, held_end - pos}); !g.empty())
-                    contig_end = g.front().offset;
-                return held_fetch.slice(ByteRange{pos, std::min({block_size, max_serve, contig_end - pos})});
-            }
-        }
-    }
-
+    /// `ensureResolved` retires the passed prefix (freeing the memory hold behind `pos`) and grows the
+    /// look-ahead. The plan then decides the run: memory hold (already fetched, no tier took it), a hit,
+    /// a committed writer, or a source fetch. `max_serve` bounds a FETCH extent to the window.
     ensureResolved(pos);
 
-    /// `max_serve` bounds the FETCH extent to the window; the run then carries the full source-read
-    /// range (coalesced right, extended left to the covering segments' fill frontiers).
     const ReadPlan::PlanRun run = read_plan.runAt(pos, max_serve);
+    if (run.from_memory)
+        return read_plan.readMemory(ByteRange{pos, serve_len(run.range.end())});
     if (run.reader)
         return run.reader->read(ByteRange{pos, serve_len(run.range.end())});
     if (run.writer)
@@ -527,14 +508,16 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
         c.claim.reset();
     }
 
-    /// Serve one block now. Retain only the un-served bytes no tier accepted (a read-only or detached
-    /// tier, or a write the cache rejected): served from memory on later windows, freed as the cursor
+    /// Serve one block now, and hand the un-served bytes no tier accepted (a read-only or detached tier,
+    /// or a rejected write) to the plan's memory hold - served on later windows, freed as the cursor
     /// passes. A cold read whose writes all land holds nothing.
     const size_t serve_bytes = serve_len(fetched_end);
-    held_fetch = {};
     const ByteRange unserved{pos + serve_bytes, fetched_end - pos - serve_bytes};
+    ChainedBuffers rejected;
     for (const auto & r : cached.subtract(unserved))   /// the un-served bytes minus what a tier accepted
-        held_fetch.append(fetched.slice(r));
+        rejected.append(fetched.slice(r));
+    if (!rejected.empty())
+        read_plan.hold(std::move(rejected));
 
     return fetched.slice(ByteRange{pos, serve_bytes});
 }
@@ -746,7 +729,8 @@ void ReaderExecutor::seek(size_t new_position)
     fetch_tracker.recordSeek(toPhysical(new_position));
     position = new_position;
     reached_eof = false;
-    held_fetch = {};   /// a jump: retained forward-read bytes no longer apply
+    /// The plan's memory hold is offset-keyed, so it stays correct; `ensureResolved` on the next read
+    /// frees or resets it (a discontinuity `reset`s the plan, a forward move `retireBefore`s it).
 }
 
 }

@@ -53,6 +53,18 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
     if (offset < span_start || offset >= span_end)
         return run;
 
+    /// The executor-local memory hold (already-fetched bytes no tier accepted) is the fastest source:
+    /// serve it before any tier, up to its first gap (a gap means the next bytes are cached).
+    if (!memory.empty() && memory.covers(ByteRange{offset, 1}))
+    {
+        size_t end = memory.range().end();
+        if (auto g = memory.gaps(ByteRange{offset, end - offset}); !g.empty())
+            end = g.front().offset;
+        run.from_memory = true;
+        run.range = ByteRange{offset, end - offset};
+        return run;
+    }
+
     /// Fastest tier that serves `offset`: a hit reader, or a miss segment already committed here.
     for (const auto & tier : tiers)
     {
@@ -130,6 +142,16 @@ VectorWithMemoryTracking<CacheWriter *> ReadPlan::writersFor(ByteRange range) co
     return writers;
 }
 
+void ReadPlan::hold(ChainedBuffers bytes)
+{
+    memory.append(std::move(bytes));
+}
+
+ChainedBuffers ReadPlan::readMemory(ByteRange range) const
+{
+    return memory.slice(range);
+}
+
 void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolved)
 {
     if (tiers.empty())
@@ -170,12 +192,19 @@ void ReadPlan::retireBefore(size_t offset)
         if (keep > 0)
             cells.erase(cells.begin(), cells.begin() + keep);   /// releases the pinned readers/writers
     }
+    /// Free the memory hold the cursor has passed; keep what is still ahead.
+    if (!memory.empty())
+    {
+        const size_t mend = memory.range().end();
+        memory = offset < mend ? memory.slice(ByteRange{offset, mend - offset}) : ChainedBuffers{};
+    }
     span_start = std::min(offset, span_end);
 }
 
 void ReadPlan::reset(size_t start_offset)
 {
     tiers.clear();
+    memory = {};
     span_start = start_offset;
     span_end = start_offset;
 }

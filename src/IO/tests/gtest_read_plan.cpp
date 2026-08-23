@@ -277,3 +277,31 @@ TEST(ReadPlan, ResetDiscardsAndReanchors)
     EXPECT_EQ(plan.spanStart(), 10u);
     EXPECT_EQ(plan.resolvedEnd(), 10u);
 }
+
+TEST(ReadPlan, MemoryHoldServedFirstAndFreedOnRetire)
+{
+    /// Bytes a fetch pulled that no tier accepted are held in the plan, served before any tier, and
+    /// freed as the cursor passes.
+    std::vector<CacheResolution> c;
+    c.push_back(miss({0, 4}));
+    ReadPlan plan;
+    plan.reset(0);
+    plan.extend(4, tiers(tier(CacheTier::FilesystemCache, true, std::move(c))));
+
+    auto buf = std::make_shared<OwnedChainedBuffer>(2);
+    ChainedBuffers held;
+    held.append(ChainedBufferNode{buf, 0, 2, 1});   /// holds [1, 3)
+    plan.hold(std::move(held));
+
+    /// A miss offset not held → FETCH; a held offset → memory, up to the hold's end.
+    EXPECT_TRUE(plan.runAt(0).isFetch());
+    auto r = plan.runAt(1);
+    EXPECT_TRUE(r.from_memory);
+    EXPECT_EQ(r.range.offset, 1u);
+    EXPECT_EQ(r.range.end(), 3u);
+    EXPECT_EQ(plan.readMemory(ByteRange{1, 2}).totalBytes(), 2u);
+
+    /// Retire past the hold frees it; the offset is then a plain miss again.
+    plan.retireBefore(3);
+    EXPECT_FALSE(plan.runAt(3).from_memory);
+}
