@@ -72,6 +72,11 @@ bool RabbitMQHandler::startBlockingLoopWithTimeout(uint64_t timeout_ms)
 
     bool timed_out = false;
 
+    /// uv_timer_start() derives the deadline from the loop's cached time, which is only refreshed
+    /// while the loop runs. Between two blocking waits the loop is idle, so the cached value can be
+    /// arbitrarily far in the past and the timer would then already be overdue when it is armed.
+    uv_update_time(loop);
+
     uv_timer_t timer;
     uv_timer_init(loop, &timer);
     timer.data = &timed_out;

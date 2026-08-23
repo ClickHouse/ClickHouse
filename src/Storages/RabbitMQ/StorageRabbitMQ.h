@@ -196,6 +196,7 @@ private:
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
+    void waitForConsumerChannelsToClose(const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const;
 
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);

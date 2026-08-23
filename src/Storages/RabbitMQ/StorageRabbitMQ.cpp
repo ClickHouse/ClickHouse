@@ -34,6 +34,7 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 
@@ -1063,7 +1064,10 @@ void StorageRabbitMQ::shutdown(bool)
         }
 
         if (drop_table)
+        {
+            waitForConsumerChannelsToClose(consumers_snapshot);
             cleanupRabbitMQ();
+        }
 
         /// It is important to close connection here - before removing consumers, because
         /// it will finish and clean callbacks, which might use those consumers data.
@@ -1091,6 +1095,51 @@ void StorageRabbitMQ::renameInMemory(const StorageID & new_table_id)
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
     StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
+}
+
+
+/// AMQP orders method completion per channel only, so a queue.delete issued on a fresh channel can
+/// be evaluated by the broker while the consumer is still registered on its own channel, and a
+/// classic queue then refuses AMQP::ifunused with PRECONDITION_FAILED. The broker deregisters a
+/// channel's consumers while handling its channel.close, before answering it, so waiting for that
+/// answer establishes the ordering the delete needs.
+void StorageRabbitMQ::waitForConsumerChannelsToClose(
+    const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const
+{
+    if (use_user_setup || consumers_snapshot.empty() || !connection->isConnected())
+        return;
+
+    auto outstanding = [&consumers_snapshot]
+    {
+        for (const auto & consumer_weak : consumers_snapshot)
+            if (auto consumer = consumer_weak.lock(); consumer && !consumer->isChannelCloseCompleted())
+                return true;
+        return false;
+    };
+
+    /// Each close that completes stops the loop, so re-enter it while any consumer is outstanding.
+    /// The remaining time is read once per iteration, because computing it from a second reading
+    /// of the clock could underflow past the bound into an effectively unbounded wait.
+    Stopwatch watch;
+    while (outstanding())
+    {
+        const auto elapsed = watch.elapsedMilliseconds();
+        if (elapsed >= CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS)
+            break;
+        if (!connection->getHandler().startBlockingLoopWithTimeout(CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS - elapsed))
+            break;
+    }
+
+    if (outstanding())
+    {
+        for (const auto & consumer_weak : consumers_snapshot)
+            if (auto consumer = consumer_weak.lock())
+                consumer->abandonChannelClose();
+
+        LOG_WARNING(log, "Timed out waiting for consumer channels to close after {} ms. "
+                         "Queue deletion may be refused while the consumers are still registered",
+                    watch.elapsedMilliseconds());
+    }
 }
 
 
