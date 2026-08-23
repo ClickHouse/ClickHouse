@@ -27,7 +27,10 @@
 ///    run in a different context, in place, so the objects the tab shares with its result element(s)
 ///    stay the same objects;
 ///  - `snapshotShapeContext` re-binds a shape restored from a stored snapshot to the context the
-///    snapshot recorded as producing its rows, so the first rerun after a context change drops it.
+///    snapshot recorded as producing its rows, so the first rerun after a context change drops it;
+///  - `duplicateColumnNames` names the columns a header carries more than once, whose sort and filter
+///    controls are not offered at all - the name-keyed `order` / `filter` settings could not tell the
+///    namesakes apart.
 ///
 /// Driven by `test.py` inside the `clickhouse/mysql-js-client` container (node:22-alpine),
 /// against the `/play` page served by a real ClickHouse server. Can also be run standalone
@@ -56,7 +59,7 @@ const HELPERS = [
     'sortOrderExpression', 'filterExpression', 'shapeQueryKey',
     'applySortToggle', 'resetPagination', 'clearResultShape',
     'shapeUrlParams', 'resolveShapeForRun', 'shapeContextKey',
-    'snapshotShapeContext',
+    'snapshotShapeContext', 'duplicateColumnNames',
 ];
 
 function extractShapeHelpers(js) {
@@ -419,6 +422,21 @@ async function main() {
         check('snapshot-context', 'a snapshot without a producing query stays unbound',
             H.snapshotShapeContext({ data: '1' }), null);
         check('snapshot-context', 'a missing snapshot stays unbound', H.snapshotShapeContext(null), null);
+    }
+
+    /// Contract 14: a result can legitimately carry one column name twice (`SELECT 1 AS x, 2 AS x`, a
+    /// join of tables sharing column names, a `SELECT *` expansion), and the name-keyed `order` /
+    /// `filter` settings could not tell the namesakes apart, so their sort and filter controls are not
+    /// offered at all - fail closed - while the uniquely named columns keep theirs.
+    {
+        const dup = H.duplicateColumnNames([{ name: 'x' }, { name: 'y' }, { name: 'x' }]);
+        check('duplicate-columns', 'a repeated name is recognized', [...dup], ['x']);
+        check('duplicate-columns', 'a unique name among duplicates is not', dup.has('y'), false);
+        check('duplicate-columns', 'a header of unique names has no duplicates',
+            [...H.duplicateColumnNames([{ name: 'x' }, { name: 'y' }])], []);
+        check('duplicate-columns', 'a missing header has none', [...H.duplicateColumnNames(undefined)], []);
+        check('duplicate-columns', 'a name repeated more than twice is recorded once',
+            [...H.duplicateColumnNames([{ name: 'x' }, { name: 'x' }, { name: 'x' }])], ['x']);
     }
 
     console.log(failures ? `${failures} check(s) failed` : 'All scenarios passed');

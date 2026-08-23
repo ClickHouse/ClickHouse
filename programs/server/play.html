@@ -2672,6 +2672,22 @@ function snapshotShapeContext(result) {
     return shapeContextKey(result.database ?? null, result.url ?? null, result.user ?? null, result.params || {});
 }
 
+/// The names a result header carries more than once. A result can legitimately repeat a name -
+/// `SELECT 1 AS x, 2 AS x`, a join of tables sharing column names, a `SELECT *` expansion - but
+/// sorting and filtering identify a column by its output NAME (the `order` / `filter` settings name
+/// the columns of the wrapped result), so two columns sharing a name cannot be told apart by the
+/// request: a click on either header could only shape "the" column of that name, which either acts
+/// on an ambiguous key or on the wrong column. The sort and filter controls are therefore not
+/// offered on such columns at all (fail closed), while the uniquely named columns keep theirs.
+function duplicateColumnNames(header) {
+    const seen = new Set();
+    const duplicates = new Set();
+    for (const elem of header || []) {
+        if (seen.has(elem.name)) { duplicates.add(elem.name); } else { seen.add(elem.name); }
+    }
+    return duplicates;
+}
+
 /// Commit a result-shape change made in `el`'s result view - a sort, a filter, a page - by persisting
 /// it and re-running the query so the server returns the newly shaped result.
 ///
@@ -4090,6 +4106,10 @@ class QueryResultElement extends HTMLElement
         /// so the value alone cannot say which it is - but that glyph in a non-nullable column always
         /// is data. See `_cellIsNull`.
         this._column_is_nullable = {};
+        /// The column names the current header carries more than once. Such columns cannot be told
+        /// apart by the name-keyed `order` / `filter` settings, so they get no sort or filter
+        /// controls (see `duplicateColumnNames`).
+        this._duplicate_columns = new Set();
         this._extremes = {};
         this._totals = null;
         this._header = {};
@@ -4474,6 +4494,7 @@ class QueryResultElement extends HTMLElement
     {
         if (meta.length == 0) { return; }
         this._header = meta;
+        this._duplicate_columns = duplicateColumnNames(meta);
 
         let thead = document.createElement('thead');
 
@@ -4507,8 +4528,16 @@ class QueryResultElement extends HTMLElement
             this._column_is_nullable[elem.name] = !!elem.type.match(/^(?:LowCardinality\()?Nullable\(/);
             this._appendPinToggle(th, elem.name);
             this._appendColorizeToggle(th, elem.name);
-            this._appendSortToggles(th, elem.name);
-            this._appendFilterControls(th, elem.name);
+            /// A column whose name the header carries more than once gets no sort or filter
+            /// controls: the request could not tell it from its namesakes (see
+            /// `duplicateColumnNames`). Pinning and color coding stay: they are display state,
+            /// where the name collapse can at worst paint the namesakes alike, while a shape
+            /// would act on the data of the wrong column.
+            if (!this._duplicate_columns.has(elem.name))
+            {
+                this._appendSortToggles(th, elem.name);
+                this._appendFilterControls(th, elem.name);
+            }
 
             this._appendHeaderResizer(th);
             /// Base header z-index: left columns are highest so a column's type-hint tooltip
@@ -4903,6 +4932,9 @@ class QueryResultElement extends HTMLElement
     /// screen reader, which cannot see the highlighting.
     _updateSortToggles(th, name)
     {
+        /// A duplicate-named column has no arrows to paint (see `appendHeader`), and must not
+        /// advertise a sort state (`aria-sort`, the always-shown arrows) it offers no control over.
+        if (this._duplicate_columns.has(name)) { return; }
         const index = this._sortColumns.findIndex(entry => entry.name === name);
         const entry = index < 0 ? null : this._sortColumns[index];
         const rank = (index >= 0 && this._sortColumns.length > 1) ? QueryResultElement._superscript(index + 1) : '';
@@ -4956,8 +4988,8 @@ class QueryResultElement extends HTMLElement
     {
         /// The arrows are hidden (and out of the tab order) unless shaping applies, but guard anyway:
         /// a stale header from the previous, shapeable result can still be on screen while the current
-        /// query text is not.
-        if (!this._shapeable) { return; }
+        /// query text is not. A duplicate-named column has no arrows at all, but guard it here too.
+        if (!this._shapeable || this._duplicate_columns.has(name)) { return; }
         /// `this._sortColumns` IS the owning tab's array (see the constructor), and `applySortToggle`
         /// mutates it in place, so every element of the tab sees the new sort.
         applySortToggle(this._sortColumns, name, desc, shift);
@@ -5110,6 +5142,9 @@ class QueryResultElement extends HTMLElement
     /// Paint one column header's filter controls for the filter currently in effect on it.
     _updateFilterControls(th, name)
     {
+        /// A duplicate-named column has no filter controls to paint (see `appendHeader`), and must
+        /// not advertise a filter state it offers no control over.
+        if (this._duplicate_columns.has(name)) { return; }
         const suffix = this._filters[name] || '';
         th.classList.toggle('filtered-column', suffix !== '');
         const text = th.querySelector('.filter-text');
@@ -5198,7 +5233,9 @@ class QueryResultElement extends HTMLElement
     /// are the same thing - and one replaces the other on that column.
     setColumnFilter(name, suffix)
     {
-        if (!this._shapeable) { return; }
+        /// No filtering on a duplicate-named column (see `appendHeader`): the filter is keyed by
+        /// the name and could not tell it from its namesakes.
+        if (!this._shapeable || this._duplicate_columns.has(name)) { return; }
         const value = String(suffix === undefined || suffix === null ? '' : suffix).trim();
         this._closeFilterInput();
         /// In place: `_filters` is the owning tab's object, aliased by every element of the tab.
@@ -5282,6 +5319,9 @@ class QueryResultElement extends HTMLElement
         /// The leading row-number cell is at index 0, so data column `j` is at cell index `j + 1`.
         const column = this._header[td.cellIndex - 1];
         if (!column) { return; }
+        /// No cell filters on a duplicate-named column either (see `appendHeader`) - and its
+        /// per-type maps are unreliable anyway, each namesake having overwritten the other's.
+        if (this._duplicate_columns.has(column.name)) { return; }
         const text = td._filterText || '';
         const options = this._cellFilterOptions(column.name, this._cellIsNull(td, column.name, text), text);
         if (options.length === 0) { return; }

@@ -105,5 +105,6 @@ Like the [color coding modes](/concepts/features/interfaces/web-ui-color-coding)
 ## Limitations {#limitations}
 
 - A shape the server cannot apply fails the query, and the error is shown as for any other failing query. The shape is then dropped, since a failed run renders neither the headers nor the pager that would clear it.
+- Sorting and filtering identify a column by its name in the result. A result can carry the same name twice (`SELECT 1 AS x, 2 AS x`, a join of tables sharing column names), and such columns cannot be told apart by name, so they get no sort or filter controls; the uniquely named columns of the same result keep theirs.
 - Multi-column sorting needs a <kbd>Shift</kbd> key and so is not available on a touch device; a single-column sort is.
 - The vertical (transposed) layout of a single-row result has no column headers and therefore no controls; a result the user has already shaped keeps its horizontal layout for that reason.
