@@ -837,8 +837,9 @@ void StorageTimeSeriesSelector::readImpl(
 
     /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
     auto samples_table_kind = ViewTarget::Samples;
+    bool range_fits_recent_window = false;
     const auto recent_samples_ttl_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_ttl_seconds].value;
-    if (recent_samples_ttl_seconds && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
+    if (recent_samples_ttl_seconds)
     {
         /// `ttl_only_drop_parts` keeps samples >= now() - TTL present; the margin covers TTL asynchrony and its whole-second precision.
         static constexpr Int64 safety_margin_seconds = 60;
@@ -846,13 +847,14 @@ void StorageTimeSeriesSelector::readImpl(
         Int64 now_seconds = std::time(nullptr);
         Int64 min_guaranteed_time = (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds)
             * DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
-        if ((config.min_time.value >= min_guaranteed_time)
-            && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
-        {
-            samples_table_kind = ViewTarget::RecentSamples;
-            LOG_DEBUG(log, "Selector {} time range [{}, {}] fits in the recent samples TTL window: reading from the recent samples table",
-                      quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
-        }
+        range_fits_recent_window = config.min_time.value >= min_guaranteed_time;
+    }
+    if (range_fits_recent_window && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table]
+        && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
+    {
+        samples_table_kind = ViewTarget::RecentSamples;
+        LOG_DEBUG(log, "Selector {} time range [{}, {}] fits in the recent samples TTL window: reading from the recent samples table",
+                  quoteString(config.selector.toString()), config.min_time.value, config.max_time.value);
     }
 
     auto samples_table_id = time_series_storage->getTargetTableID(samples_table_kind, context);
@@ -884,14 +886,13 @@ void StorageTimeSeriesSelector::readImpl(
     /// ordinary non-stale sample - so an upgrade does not break existing tables.
     const bool read_table_has_stale_marker_column = samples_table_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
     bool has_stale_marker_column = read_table_has_stale_marker_column;
-    /// The flag is honored only when every samples-carrying target has the column: in a mixed pair
-    /// the two read paths would otherwise answer differently about the same series depending on
-    /// which table the query happens to read, and `TimeSeriesSink` already degrades such a pair as
-    /// a whole on the write side - reads must follow the same table-wide rule for existing rows too.
+    /// A mixed pair is degraded (as `TimeSeriesSink` does on write) only when the sibling could also serve
+    /// this range - only there can the read paths diverge; an older range reads `samples` either way.
     if (has_stale_marker_column)
     {
         const auto sibling_kind = (samples_table_kind == ViewTarget::Samples) ? ViewTarget::RecentSamples : ViewTarget::Samples;
-        if (time_series_storage->hasTarget(sibling_kind))
+        const bool sibling_can_serve_range = (sibling_kind == ViewTarget::Samples) || range_fits_recent_window;
+        if (sibling_can_serve_range && time_series_storage->hasTarget(sibling_kind))
         {
             auto sibling_metadata = time_series_storage->getTargetTable(sibling_kind, context)->getInMemoryMetadataPtr(context, false);
             if (!sibling_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker))

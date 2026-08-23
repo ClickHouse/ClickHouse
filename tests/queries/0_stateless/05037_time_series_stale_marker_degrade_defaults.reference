@@ -7,3 +7,6 @@
 -- pre-existing rows in a mixed pair read the same through both paths
 2	0
 2	0
+-- a range older than the recent TTL window reads only samples and honors its real flags
+2	1
+2	1

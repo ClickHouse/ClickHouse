@@ -132,3 +132,48 @@ DROP TABLE ts;
 DROP TABLE ts_tags;
 DROP TABLE ts_samples;
 DROP TABLE ts_recent;
+
+SELECT '-- a range older than the recent TTL window reads only samples and honors its real flags';
+
+-- Only a range the recent table could also serve can diverge between the read paths; a historical
+-- query reads `samples` under either preference, so a legacy sibling must not hide its flags.
+CREATE TABLE ts_tags
+(
+    id UInt64,
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time DateTime64(3),
+    max_time DateTime64(3)
+) ENGINE = MergeTree() ORDER BY id;
+
+CREATE TABLE ts_samples
+(
+    id UInt64,
+    timestamp DateTime64(3),
+    value Float64,
+    is_stale_marker UInt8
+) ENGINE = MergeTree() ORDER BY (id, timestamp);
+
+CREATE TABLE ts_recent
+(
+    id UInt64,
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = MergeTree() ORDER BY (id, timestamp);
+
+INSERT INTO ts_tags (id, metric_name, tags, min_time, max_time) VALUES
+    (201, 'm', map(), now64(3) - INTERVAL 3 HOUR, now64(3) - INTERVAL 1 HOUR);
+INSERT INTO ts_samples (id, timestamp, value, is_stale_marker) VALUES
+    (201, now64(3) - INTERVAL 2 HOUR, 1., 0),
+    (201, now64(3) - INTERVAL 119 MINUTE, nan, 1);
+
+CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 600 SAMPLES ts_samples TAGS ts_tags RECENT SAMPLES ts_recent;
+
+SELECT count(), sum(is_stale_marker) FROM timeSeriesSelector(ts, 'm', now() - INTERVAL 3 HOUR, now() - INTERVAL 1 HOUR);
+SELECT count(), sum(is_stale_marker) FROM timeSeriesSelector(ts, 'm', now() - INTERVAL 3 HOUR, now() - INTERVAL 1 HOUR)
+SETTINGS time_series_prefer_recent_samples_table = 0;
+
+DROP TABLE ts;
+DROP TABLE ts_tags;
+DROP TABLE ts_samples;
+DROP TABLE ts_recent;
