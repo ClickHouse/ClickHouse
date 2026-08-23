@@ -134,6 +134,7 @@ def test_install_rpm(image: DockerImage) -> List[Result]:
     tests = {
         "Install server rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-{server,client,common}*rpm
+systemctl is-enabled clickhouse-server
 echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
 bash -ex /packages/server_test.sh
 # RPM installs the unit under /usr/lib/systemd/system. The init script must
