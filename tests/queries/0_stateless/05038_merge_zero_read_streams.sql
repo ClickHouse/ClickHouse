@@ -1,6 +1,14 @@
+-- Tags: no-fasttest
+
 -- A stream count that is an exact multiple of 2^32 used to arrive at the reader as zero and reach a
 -- division by it. If a `Merge` stream-count limit lands upstream first these become
 -- PARAMETER_OUT_OF_BOUND, and the expectations below have to be updated then.
+
+-- Keep effective `max_threads` as set below: under memory pressure
+-- `getMaxThreadsForAvailableMemory` clamps it to 1, the `max_streams > 1` guard then skips
+-- `max_streams_to_max_threads_ratio` entirely, and the truncating product is never formed.
+SET max_threads_min_free_memory_per_thread = 0;
+
 DROP TABLE IF EXISTS t_05038;
 CREATE TABLE t_05038 (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_05038 SELECT number FROM numbers(100000);
@@ -22,4 +30,17 @@ SELECT sum(a) FROM merge(currentDatabase(), '^t_final_05038$') FINAL
 SETTINGS max_threads = 2, max_streams_to_max_threads_ratio = 2147483648;
 
 DROP TABLE t_final_05038;
+
+-- The remote-disk read pool divides by the same count in `calculateMinMarksPerTask`; that is the
+-- site the reported stack came from, and a local part never reaches it.
+DROP TABLE IF EXISTS t_obj_05038;
+CREATE TABLE t_obj_05038 (a UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS disk = disk(name = '05038_disk', type = object_storage,
+                    object_storage_type = local_blob_storage, path = './05038_obj/');
+INSERT INTO t_obj_05038 SELECT number FROM numbers(100000);
+
+SELECT sum(a) FROM merge(currentDatabase(), '^t_obj_05038$')
+SETTINGS max_threads = 2, max_streams_to_max_threads_ratio = 2147483648;
+
+DROP TABLE t_obj_05038;
 DROP TABLE t_05038;
