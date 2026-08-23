@@ -379,6 +379,9 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         case ASTAlterCommand::MATERIALIZE_COLUMN:
             require(column, "column");
             break;
+        case ASTAlterCommand::RECOMPRESS_COLUMN:
+            require(column, "column");
+            break;
         case ASTAlterCommand::COMMENT_COLUMN:
             require(column, "column");
             require(comment, "comment");
