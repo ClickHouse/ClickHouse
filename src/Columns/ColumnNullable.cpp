@@ -1056,13 +1056,13 @@ bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const
     return nested_column->dynamicStructureEquals(rhs_nested_column);
 }
 
-void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation)
 {
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
-    nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
+    nested_column->takeOrCalculateStatisticsFrom(nested_source_columns, check_cancellation);
 }
 
 /// A NULL row emits only the flag byte and never touches the nested column, so an

@@ -29,7 +29,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_sz3_cancel_src"
 # keep the SZ3 quantizer on the slow unpredictable path, so the write phase lasts several seconds
 # even on a fast release build.
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_sz3_cancel_src (a Array(Float32)) ENGINE = MergeTree ORDER BY tuple()"
-${CLICKHOUSE_CLIENT} --max_block_size $ROWS --max_insert_block_size $ROWS \
+# Materialize the source with the default block size: the generating expression builds `Array(Float64)`
+# intermediates, so squashing all rows into a single block here would need several gigabytes and hit
+# `max_memory_usage`. Only the measured INSERT below needs one squashed block.
+${CLICKHOUSE_CLIENT} \
     -q "INSERT INTO t_sz3_cancel_src SELECT arrayMap(i -> randCanonical(i + number * 64)::Float32 * 1e6, range(64)) FROM numbers($ROWS)"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_sz3_cancel"

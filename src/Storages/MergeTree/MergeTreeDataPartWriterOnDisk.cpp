@@ -648,11 +648,19 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 
 void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
 {
+    /// This setup runs before the granule loop and can do whole-column work: calculating statistics
+    /// walks every row that ended up in the shared variant / shared data of a `Dynamic` / `Object`
+    /// column, and matching the dynamic structure of a block re-inserts the whole column. Poll
+    /// cancellation per column here and hand the same check to the statistics calculation, so a
+    /// `KILL QUERY` that arrives while the writer is still preparing the first block is observed.
+    auto check_cancellation = [this] { checkWriteCancellation(); };
+
     /// If block sample is empty, initialize it using current block (it will be the first block to write).
     if (block_sample.empty())
     {
         for (size_t i = 0; i != block.columns(); ++i)
         {
+            check_cancellation();
             auto & column = block.getByPosition(i);
             ColumnWithTypeAndName sample_column;
             sample_column.name = column.name;
@@ -664,7 +672,7 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             if (column.column->hasDynamicStructure())
                 mutable_column->takeExactDynamicStructureFrom(*column.column);
             if (column.column->hasStatistics())
-                mutable_column->takeOrCalculateStatisticsFrom({column.column});
+                mutable_column->takeOrCalculateStatisticsFrom({column.column}, check_cancellation);
             sample_column.column = std::move(mutable_column);
             block_sample.insert(std::move(sample_column));
         }
@@ -675,6 +683,7 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
         size_t size = block.columns();
         for (size_t i = 0; i != size; ++i)
         {
+            check_cancellation();
             auto & column = block.getByPosition(i);
             const auto & sample_column = block_sample.getByPosition(i);
 
@@ -695,7 +704,7 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
             if (column.column->hasStatistics())
             {
                 auto mutable_column = IColumn::mutate(std::move(column.column));
-                mutable_column->takeOrCalculateStatisticsFrom({sample_column.column});
+                mutable_column->takeOrCalculateStatisticsFrom({sample_column.column}, check_cancellation);
                 column.column = std::move(mutable_column);
             }
         }

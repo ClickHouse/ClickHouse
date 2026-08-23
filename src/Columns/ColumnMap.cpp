@@ -486,7 +486,7 @@ ColumnMap::StatisticsPtr ColumnMap::getOrCalculateStatistics() const
     return std::make_shared<Statistics>(calculateStatisticsForRange(0, size()));
 }
 
-void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation)
 {
     auto new_statistics = std::make_shared<Statistics>();
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
@@ -512,7 +512,7 @@ void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Col
     if (!nested)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested column is not initialized");
 
-    nested->takeOrCalculateStatisticsFrom(nested_source_columns);
+    nested->takeOrCalculateStatisticsFrom(nested_source_columns, check_cancellation);
 }
 
 
