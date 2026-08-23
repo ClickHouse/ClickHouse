@@ -71,6 +71,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 DEFAULT_KNOWN_FAILURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "known_failures.txt")
 
+# The opening fence of a structured example query, as `FunctionDocumentation::examplesAsString`
+# renders it. Also the only fenced block allowed to follow an example that documents no response.
+QUERY_FENCE = "```sql title=Query"
+
 # The examples are read back from the Markdown that `system.documentation` renders, where
 # `FunctionDocumentation::examplesAsString` wraps every example into a pair of fenced code blocks
 # with these exact info strings. Hand-written Markdown in a description spells the title with quotes
@@ -327,22 +331,28 @@ def load_examples(client):
 
 
 def reject_unrecognized_response_fence(row, index, match):
-    """Fail closed on a response fence that follows a query but was not recognized as its response.
+    """Fail closed on a fenced block that follows a query but was not recognized as its response.
 
     `EXAMPLE_RE` makes the response block optional, because an example is allowed to document no
     response. Left alone, that fails open: if `FunctionDocumentation::examplesAsString` changes how
-    it spells the response fence, every query still matches on its own, and the run silently
-    degrades from comparing the output to merely checking that the query runs. A response fence
-    right after the query can only be the rendered response of that query, so an unrecognized one
-    is renderer drift and stops the run.
+    it renders responses, every query still matches on its own, and the run silently degrades from
+    comparing the output to merely checking that the query runs. The rendering puts nothing between
+    a query and its response, so the only fenced block that may follow a query directly is the query
+    of the next example; anything else - a differently spelled ```` ```response ```` fence, or a
+    response rendered as ```` ```text ````, ```` ```json ````, ... - is renderer drift and stops the
+    run.
     """
     following = row["description"][match.end():].lstrip()
-    if following.startswith("```response"):
-        fence = following.splitlines()[0]
-        raise RuntimeError(
-            f"{row['type']}/{row['name']}: example {index} is followed by a response fence the parser does not recognize: {fence!r}."
-            f"\nThe way the documentation renders responses has probably changed; update EXAMPLE_RE in {__file__}."
-        )
+    if not following.startswith("```"):
+        return
+    fence = following.splitlines()[0]
+    if fence.strip() == QUERY_FENCE:
+        return
+    raise RuntimeError(
+        f"{row['type']}/{row['name']}: example {index} documents no response and is followed by a fenced block"
+        f" the parser does not recognize as its response: {fence!r}."
+        f"\nThe way the documentation renders responses has probably changed; update EXAMPLE_RE in {__file__}."
+    )
 
 
 def normalize(text):

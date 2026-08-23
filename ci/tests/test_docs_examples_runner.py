@@ -65,12 +65,25 @@ def test_load_examples_accepts_an_example_that_documents_no_response():
     assert examples[0].result == ""
 
 
-def test_load_examples_rejects_an_unrecognized_response_fence():
-    # If the renderer changes the spelling of the response fence, the run must stop instead of
-    # silently downgrading every example from output comparison to "the query runs".
-    description = "```sql title=Query\nSELECT 1\n```\n\n```response title=Unexpected\n1\n```\n"
-    with pytest.raises(RuntimeError, match="response fence"):
+@pytest.mark.parametrize("fence", ["```response title=Unexpected", "```text", "```json", "```sql"])
+def test_load_examples_rejects_an_unrecognized_response_fence(fence):
+    # If the renderer changes how it emits a response - the spelling of the fence, or the fence type
+    # altogether - the run must stop instead of silently downgrading every example from output
+    # comparison to "the query runs".
+    description = f"```sql title=Query\nSELECT 1\n```\n\n{fence}\n1\n```\n"
+    with pytest.raises(RuntimeError, match="does not recognize as its response"):
         runner.load_examples(FakeDocumentationClient(description))
+
+
+def test_load_examples_accepts_the_query_of_the_next_example_after_a_response_less_one():
+    # An example that documents no response is followed by the query of the next example, which is
+    # the one fenced block that is not renderer drift.
+    description = (
+        "```sql title=Query\nSELECT 1\n```\n\n"
+        "```sql title=Query\nSELECT 2\n```\n\n```response title=Response\n2\n```\n"
+    )
+    examples = runner.load_examples(FakeDocumentationClient(description))
+    assert [(e.query, e.result) for e in examples] == [("SELECT 1", ""), ("SELECT 2", "2")]
 
 
 def test_normalize_preserves_tsv_empty_fields_and_blank_rows():
