@@ -74,6 +74,7 @@ namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
     extern const char rest_catalog_create_namespace_http_error[];
+    extern const char rest_catalog_skip_namespace_existence_check[];
 }
 
 namespace ProfileEvents
@@ -1699,6 +1700,18 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
         = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
     try
     {
+        /// Lets a test reach the "create" request below for a namespace that is already there,
+        /// which is otherwise only possible by losing a race against a concurrent creator.
+        fiu_do_on(DB::FailPoints::rest_catalog_skip_namespace_existence_check,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                check_endpoint,
+                Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
+                "Injecting fault when checking namespace existence",
+                "");
+        });
+
         sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true, {});
         return;
     }

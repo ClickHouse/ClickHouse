@@ -1157,6 +1157,78 @@ def test_create_tables_under_same_namespace(started_cluster):
     )
 
 
+def test_create_namespace_conflict_is_not_retried(started_cluster):
+    """The `409 Conflict` answer to "create namespace" must be consumed after a single attempt.
+
+    `createNamespaceIfNotExists` looks the namespace up first and returns early when it is
+    there, so on a spec-compliant catalog the conflicting "create" request only happens when
+    a concurrent creator wins the race. The failpoint below skips that lookup, which is a
+    deterministic stand-in for losing the race, and makes every `CREATE TABLE` after the
+    first one hit the real `409`.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_namespace_conflict_is_not_retried_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    def create_table(table_name, query_id):
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', "
+            f"'{minio_access_key}', '{minio_secret_key}')",
+            settings={
+                "allow_experimental_database_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+            query_id=query_id,
+        )
+
+    # Creates the namespace, then a control table whose namespace lookup succeeds.
+    create_table(f"{test_ref}_table_0", f"{test_ref}_create_0")
+    create_table(f"{test_ref}_table_1", f"{test_ref}_control")
+
+    node.query("SYSTEM ENABLE FAILPOINT rest_catalog_skip_namespace_existence_check")
+    try:
+        # The namespace lookup is skipped, so this goes straight to `POST /namespaces` for a
+        # namespace that already exists. The CREATE only succeeds if the `409` is consumed.
+        create_table(f"{test_ref}_table_2", f"{test_ref}_conflict")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT rest_catalog_skip_namespace_existence_check")
+
+    catalog = load_catalog_impl(started_cluster)
+    listed_table_names = sorted([t[1] for t in catalog.list_tables(root_namespace)])
+    assert listed_table_names == [f"{test_ref}_table_{i}" for i in range(3)], listed_table_names
+
+    node.query("SYSTEM FLUSH LOGS")
+    max_tries = int(
+        node.query("SELECT value FROM system.settings WHERE name = 'http_max_tries'")
+    )
+
+    def requests_sent(query_id):
+        return int(
+            node.query(
+                f"SELECT ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] "
+                f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+    control_requests = requests_sent(f"{test_ref}_control")
+    conflict_requests = requests_sent(f"{test_ref}_conflict")
+    assert control_requests > 0, (
+        "expected the HTTP requests to the REST catalog to be attributed to the CREATE query"
+    )
+    # Both CREATEs send exactly one namespace request: the control one a `GET` that answers
+    # `200`, the other a `POST` that answers `409`. Retrying the `409` would add
+    # `http_max_tries - 1` requests on top.
+    assert conflict_requests - control_requests < max_tries - 1, (
+        f"the 409 'namespace already exists' response is being retried instead of being treated "
+        f"as non-retriable: {conflict_requests} requests with the conflicting namespace creation "
+        f"against {control_requests} without it, http_max_tries={max_tries}"
+    )
+
+
 def test_create_table_namespace_creation_error(started_cluster):
     """An unexpected failure of the "create namespace" request must abort CREATE TABLE.
 
