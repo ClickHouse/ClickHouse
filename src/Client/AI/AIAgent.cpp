@@ -255,6 +255,10 @@ void AIAgent::chat(const String & user_text)
                 result_parts.emplace_back(call.id, ai::JsonValue{{"error", result.error_message()}}, true);
         }
         messages.push_back(ai::Message::tool_results(result_parts));
+        /// The history is trimmed whenever it grows, not once per turn: every step of one turn
+        /// appends the tool calls of the model and their results, so a single long turn would
+        /// otherwise grow the prompt of the next step without a bound.
+        trimHistory();
     }
 
     display.showNotice(fmt::format(
@@ -346,6 +350,49 @@ void AIAgent::trimHistory()
     }
 
     messages.erase(messages.begin(), messages.begin() + drop);
+
+    elideOldestToolResults(total_bytes);
+}
+
+void AIAgent::elideOldestToolResults(size_t total_bytes)
+{
+    /// Dropping whole turns cannot bound a single long turn: its steps keep appending tool calls
+    /// and their results after the question of the turn, which must stay. Give up the payload of
+    /// the oldest tool results instead. They are elided in place rather than removed, so that
+    /// every tool call keeps the result that answers it - providers reject an unanswered call.
+
+    /// The newest tool results are what the model is about to reason over, so they are kept:
+    /// stop before the last tool-results message of the history.
+    size_t last = messages.size();
+    while (last > 0 && !messages[last - 1].has_tool_results())
+        --last;
+    if (last > 0)
+        --last;
+
+    const ai::JsonValue elided{
+        {"elided",
+         "This result was dropped from the conversation to fit its size budget. "
+         "Re-run the tool with a stricter filter or a smaller limit if you still need it."}};
+    const size_t elided_bytes = elided.dump().size();
+
+    for (size_t i = 0; i < last && total_bytes > max_history_bytes; ++i)
+    {
+        for (auto & part : messages[i].content)
+        {
+            auto * result = std::get_if<ai::ToolResultContentPart>(&part);
+            if (!result)
+                continue;
+
+            /// Nothing to gain from an already elided or a small result, and the accounting below
+            /// must not go backwards.
+            const size_t result_bytes = result->result.dump().size();
+            if (result_bytes <= elided_bytes)
+                continue;
+
+            result->result = elided;
+            total_bytes -= result_bytes - elided_bytes;
+        }
+    }
 }
 
 void AIAgent::reset()

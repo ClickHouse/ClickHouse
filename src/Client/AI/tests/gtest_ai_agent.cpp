@@ -80,15 +80,30 @@ struct AgentWithMock
     /// By default the hooks are empty: the tools fail with an error result when called, which is
     /// fine for the tests that do not care - the agent loop treats it as an application-level
     /// tool failure.
-    explicit AgentWithMock(std::vector<AIAgentStep> steps, const AIAgentHooks & hooks = {})
+    explicit AgentWithMock(std::vector<AIAgentStep> steps, const AIAgentHooks & hooks = {}, size_t max_steps = 4)
     {
         auto owned = std::make_unique<MockTransport>(std::move(steps));
         transport = owned.get();
         AIConfiguration config;
-        config.max_steps = 4;
+        config.max_steps = max_steps;
         agent = std::make_unique<AIAgent>(config, std::move(owned), hooks, buffer, output, /*use_colors=*/ false);
     }
 };
+
+/// The same approximation of the prompt size the agent budgets against.
+size_t conversationBytes(const ai::Messages & messages)
+{
+    size_t total = 0;
+    for (const auto & message : messages)
+    {
+        total += message.get_text().size();
+        for (const auto & call : message.get_tool_calls())
+            total += call.tool_name.size() + call.arguments.dump().size();
+        for (const auto & result : message.get_tool_results())
+            total += result.result.dump().size();
+    }
+    return total;
+}
 
 String firstUserText(const ai::Messages & messages)
 {
@@ -345,6 +360,59 @@ TEST(AIAgent, HistoryIsTrimmedToTheByteBudget)
     /// The earliest turns are gone, the current one is present.
     EXPECT_EQ(firstUserText(messages).find("turn 0 "), String::npos);
     EXPECT_NE(messages.back().get_text().find("turn 9 "), String::npos);
+}
+
+TEST(AIAgent, HistoryIsTrimmedWithinOneTurn)
+{
+    /// A single question can outgrow the byte budget on its own: every step of the turn appends
+    /// the tool calls of the model and their results, and dropping whole turns cannot touch them
+    /// (the question of the turn must stay). The budget therefore holds before every model call,
+    /// not only before the first one.
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &)
+    {
+        AIQueryRunDecision decision;
+        decision.needs_confirmation = false;
+        return decision;
+    };
+    hooks.run_visible = [](const String &, bool, bool) { return String(32 * 1024, 'x'); };
+
+    /// The mock repeats its last step, so the model asks for another query at every step until
+    /// the step limit of the turn is reached.
+    AgentWithMock harness({toolCallStep("run_query", ai::JsonValue{{"query", "SELECT 1"}})}, hooks, /*max_steps=*/ 20);
+    harness.agent->chat("read a lot");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 20u);
+    /// Without the trim inside the turn, this grows past 600 KiB.
+    for (const auto & messages : harness.transport->conversations)
+        EXPECT_LE(conversationBytes(messages), 256 * 1024);
+
+    /// Trimming keeps the conversation well-formed: it starts at the question of the turn, and
+    /// every tool call is still answered (the results are elided in place, not removed).
+    const auto & last = harness.transport->conversations.back();
+    ASSERT_FALSE(last.empty());
+    EXPECT_EQ(last.front().role, ai::kMessageRoleUser);
+    EXPECT_FALSE(last.front().has_tool_results());
+    EXPECT_NE(last.front().get_text().find("read a lot"), String::npos);
+
+    size_t calls = 0;
+    size_t results = 0;
+    size_t elided = 0;
+    for (const auto & message : last)
+    {
+        calls += message.get_tool_calls().size();
+        for (const auto & result : message.get_tool_results())
+        {
+            ++results;
+            if (result.result.is_object() && result.result.contains("elided"))
+                ++elided;
+        }
+    }
+    EXPECT_EQ(calls, results);
+    EXPECT_GT(elided, 0u);
+    /// The newest result is the one the model is about to reason over: it survives.
+    ASSERT_TRUE(last.back().has_tool_results());
+    EXPECT_FALSE(last.back().get_tool_results().at(0).result.contains("elided"));
 }
 
 TEST(AIAgent, DisplaySanitizesControlCharacters)

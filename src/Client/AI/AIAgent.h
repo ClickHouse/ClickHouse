@@ -54,10 +54,11 @@ private:
     /// the session state stops or starts allowing it.
     bool query_log_access_enabled = true;
 
-    /// The history must not grow without a bound: old turns are dropped from the front.
-    /// Both caps matter: the message count bounds the number of turns, and the byte budget
-    /// bounds the prompt itself - a few large tool results (a query log read, a documentation
-    /// article) would outgrow the context window of the provider long before the count cap.
+    /// The history must not grow without a bound: old turns are dropped from the front, and the
+    /// tool results of a turn that is over the budget on its own are elided. Both caps matter:
+    /// the message count bounds the number of turns, and the byte budget bounds the prompt
+    /// itself - a few large tool results (a query log read, a documentation article) would
+    /// outgrow the context window of the provider long before the count cap.
     static constexpr size_t max_history_messages = 80;
     static constexpr size_t max_history_bytes = 256 * 1024;
 
@@ -69,6 +70,9 @@ private:
     void refreshToolSet();
     void pushUserMessage(const String & text);
     void trimHistory();
+    /// Replace the payload of the oldest tool results of the history, keeping the newest, until
+    /// `total_bytes` (the size of the history at the call) is within the byte budget.
+    void elideOldestToolResults(size_t total_bytes);
     static ai::JsonValue truncateOversizedToolResult(ai::JsonValue value);
     ai::ToolResult executeToolCall(const ai::ToolCall & call);
 };
