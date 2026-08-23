@@ -56,20 +56,19 @@ public:
         ByteRange block_range);
 
     ByteRange range() const override { return range_member; }
-    IntervalSet committed() const override
+    size_t committed() const override
     {
         std::lock_guard lock(committed_mutex);
-        IntervalSet c;
-        if (cell)
-            c.add(range_member);
-        return c;
+        /// Whole-segment: the block is either empty or fully committed.
+        return cell ? range_member.end() : range_member.offset;
     }
+    bool fillsWholeSegment() const override { return true; }
     size_t write(ChainedBuffers data, const Claim & claim) override;
     ChainedBuffers read(ByteRange sub) override;
     /// Re-probe the cache: the block may have been populated by a concurrent query since `resolve`. If
     /// so, adopt its cell and report the whole block as `available` (already committed, served from
     /// cache) with no claim; otherwise hold the claim to fill it.
-    Lead claimLeadRole(ByteRange range) override;
+    Claim claimLeadRole(ByteRange range) override;
 
 private:
     PageCachePtr cache;

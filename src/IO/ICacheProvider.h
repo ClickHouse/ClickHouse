@@ -52,12 +52,18 @@ public:
     /// The cache-aligned range. It may extend beyond the requested miss range.
     virtual ByteRange range() const = 0;
 
-    /// The bytes inside `range()` already committed, in any order. Returned by value: a snapshot taken
-    /// under the writer's lock, because a background prefetch and the foreground read may write the
-    /// same writer at the same time.
-    virtual IntervalSet committed() const = 0;
+    /// The end of the committed prefix `[range().offset, committed())` (a segment fills append-only, so
+    /// what is committed is always one contiguous prefix). Equals `range().offset` when nothing is
+    /// committed. A snapshot: a background prefetch and the foreground read may grow it concurrently.
+    virtual size_t committed() const = 0;
 
-    bool complete() const { return committed().subtract(range()).empty(); }
+    bool complete() const { return committed() >= range().end(); }
+
+    /// Whether this tier stores each segment WHOLE (first-writer-wins, never completed later) or
+    /// appends it incrementally. Mirrors `ICacheProvider::fillsWholeSegment`. A whole-segment writer is
+    /// populated only by one write covering its entire `range()`, so a fetch that fills it must span
+    /// those bounds; an incremental writer stores whatever prefix it is given from its write frontier.
+    virtual bool fillsWholeSegment() const { return false; }
 
     /// A held downloader role over one write range. Move-only RAII: the destructor completes and
     /// releases the role (never throws). `bool(claim)` is true iff this thread may write the range -
@@ -104,15 +110,6 @@ public:
         std::function<void()> release;
     };
 
-    /// The result of `claimLeadRole`. The caller derives the uncommitted tail
-    /// `[available.end(), range.end())`: ours to fetch if `bool(claim)`, else a concurrent
-    /// downloader's to wait on. `available` is one contiguous prefix (a segment fills append-only).
-    struct Lead
-    {
-        ByteRange available;   /// committed prefix within the asked range (size 0 == nothing committed)
-        Claim claim;           /// held iff there is an uncommitted tail this thread must fill
-    };
-
 protected:
     /// Mint a `Claim`. Only a `CacheWriter` subclass may authorize a write.
     static Claim makeClaim(bool held, std::function<void()> release) { return Claim(held, std::move(release)); }
@@ -127,13 +124,14 @@ public:
     /// Serve an already-committed sub-range from this writer's own held segments. Do not go to the source.
     virtual ChainedBuffers read(ByteRange subrange) = 0;
 
-    /// Acquire the downloader role for the segment overlapping `range` (clamped) and report the
-    /// committed prefix. The only place that acquires a role; `write` never takes one. Hold the role
-    /// only while there is a tail to fill: if the committed prefix already covers `range`, release it
-    /// at once and return an empty `Claim`. Do not wait. Default: nothing committed, role trivially held.
-    virtual Lead claimLeadRole(ByteRange range)
+    /// Acquire the downloader role for the segment overlapping `range` (clamped). The only place that
+    /// acquires a role; `write` never takes one. Return a held `Claim` iff there is an uncommitted tail
+    /// this thread must fill; an empty `Claim` means either the range is already committed (read it via
+    /// `committed()`) or a concurrent downloader leads the tail (`waitAndRead` it). Do not wait.
+    /// Default: a non-coordinating tier, role trivially held.
+    virtual Claim claimLeadRole(ByteRange /*range*/)
     {
-        return Lead{ByteRange{range.offset, 0}, makeClaim(/*held=*/true, /*release=*/nullptr)};
+        return makeClaim(/*held=*/true, /*release=*/nullptr);
     }
 
     /// Wait (bounded by `wait_for_concurrent_download_timeout_milliseconds`) until the concurrent

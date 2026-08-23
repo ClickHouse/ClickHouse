@@ -10,7 +10,6 @@
 #include <Common/CacheBase.h>
 #include <IO/ReadBufferFromFileBase.h>
 
-#include <mutex>
 
 namespace DB
 {
@@ -65,14 +64,10 @@ public:
         ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return aligned_range; }
-    IntervalSet committed() const override
-    {
-        std::lock_guard lock(committed_mutex);
-        return committed_ranges;
-    }
+    size_t committed() const override;
     size_t write(ChainedBuffers data, const Claim & claim) override;
     ChainedBuffers read(ByteRange subrange) override;
-    Lead claimLeadRole(ByteRange range) override;
+    Claim claimLeadRole(ByteRange range) override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
 
 private:
@@ -86,11 +81,6 @@ private:
     size_t object_file_offset;
     FilesystemCacheSettings cache_settings;
     FileSegmentsHolderSharedPtr segment_holder;
-    IntervalSet committed_ranges;
-    /// Guards `committed_ranges` only. The FileCache downloader gives per-segment write exclusion. A
-    /// background prefetch and the foreground read may append disjoint parts of the segment at the
-    /// same time, so both update this set.
-    mutable std::mutex committed_mutex;
     ByteRange aligned_range;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };

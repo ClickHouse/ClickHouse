@@ -96,8 +96,8 @@ struct MockCacheState
     IntervalSet resident;
     IntervalSet concurrent_download;
     /// Ranges that became committed AFTER `resolve` but are still reported as a miss by `resolve`
-    /// (they are not in `resident`). `claimLeadRole` reports them as `available` - models a block a
-    /// concurrent query populated in the window between our read-only probe and the claim.
+    /// (they are not in `resident`). `committed()` reports them - models a block a concurrent query
+    /// populated in the window between our read-only probe and the claim.
     IntervalSet late_committed;
     VectorWithMemoryTracking<ByteRange> writes;
     /// Model a `waitAndRead` timeout: when set, a writer's `waitAndRead` serves nothing, so the driver
@@ -180,12 +180,11 @@ private:
     public:
         Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
         ByteRange range() const override { return r; }
-        IntervalSet committed() const override
+        size_t committed() const override
         {
-            IntervalSet c;
-            if (state->resident.subtract(r).empty())  // whole block resident
-                c.add(r);
-            return c;
+            /// Committed at resolve time (`resident`) or filled since (`late_committed`): whole block.
+            const bool done = state->resident.subtract(r).empty() || state->late_committed.subtract(r).empty();
+            return done ? r.end() : r.offset;
         }
         ChainedBuffers read(ByteRange sub) override { return Reader{r, state}.read(sub); }
         /// Models waiting on a concurrent downloader: it commits (returns the bytes) unless the test
@@ -196,27 +195,20 @@ private:
                 return {};
             return read(sub);
         }
-        Lead claimLeadRole(ByteRange range) override
+        Claim claimLeadRole(ByteRange range) override
         {
-            Lead lead;
             const size_t lo = std::max(range.offset, r.offset);
             const size_t hi = std::min(range.end(), r.end());
-            lead.available = ByteRange{lo, 0};
             if (lo >= hi)
-                return lead;
+                return {};
             const ByteRange overlap{lo, hi - lo};
-            /// A block populated since `resolve` is reported as an available committed prefix; the
-            /// caller serves it from cache and there is nothing left to fill (no claim).
+            /// A block populated since `resolve` (`committed()` now reports it): nothing to fill, no claim.
             if (state->late_committed.subtract(overlap).empty())
-            {
-                lead.available = overlap;
-                return lead;
-            }
+                return {};
             /// We hold the role over the free part (not led by a concurrent downloader); if the whole
             /// overlap is being downloaded elsewhere we hold nothing, matching the real provider.
             const bool held = !state->concurrent_download.subtract(overlap).empty();
-            lead.claim = makeClaim(held, /*release=*/nullptr);
-            return lead;
+            return makeClaim(held, /*release=*/nullptr);
         }
         size_t write(ChainedBuffers data, const Claim & claim) override
         {
@@ -651,7 +643,7 @@ TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
 
     auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
     /// Block [0, block) is NOT resident (so `resolve` misses it), but it became committed since - the
-    /// bytes are in the store and the claim reports it available.
+    /// bytes are in the store and `committed()` reports it.
     state->late_committed.add(ByteRange{0, block});
     for (size_t i = 0; i < block; ++i)
         state->store[i] = static_cast<char>(patternByte(i));

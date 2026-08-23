@@ -107,22 +107,19 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
     return loaded ? range_member.size : 0;
 }
 
-CacheWriter::Lead PageCacheWriter::claimLeadRole(ByteRange range)
+CacheWriter::Claim PageCacheWriter::claimLeadRole(ByteRange /*range*/)
 {
     /// Re-probe read-only: if the block was cached by a concurrent query since `resolve`, adopt its cell
-    /// and report the whole block as `available`; otherwise hold the claim to fill it.
-    Lead lead;
-    lead.available = ByteRange{range.offset, 0};
-
+    /// (`committed()` then reports the whole block) and hold no claim; otherwise hold the claim to fill it.
+    bool resident = false;
     if (auto got = cache->get(PageCacheByteRange{range_member.offset, range_member.size}.hash(file.baseHash()), inject_eviction))
     {
         std::lock_guard lock(committed_mutex);
         cell = std::move(got);
-        lead.available = range_member;
+        resident = true;
     }
 
-    lead.claim = makeClaim(/*held=*/lead.available.size == 0, /*release=*/nullptr);
-    return lead;
+    return makeClaim(/*held=*/!resident, /*release=*/nullptr);
 }
 
 ChainedBuffers PageCacheWriter::read(ByteRange sub)

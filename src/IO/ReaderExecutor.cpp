@@ -419,64 +419,69 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve)
     /// Serve one block from `pos`, capped by the window and by the run's contiguous extent.
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - pos}); };
 
-    const ReadPlan::PlanRun run = read_plan.runAt(pos);
+    /// `max_serve` bounds the FETCH extent to the window; the run then carries the full source-read
+    /// range (coalesced right, extended left to the covering segments' fill frontiers).
+    const ReadPlan::PlanRun run = read_plan.runAt(pos, max_serve);
     if (run.reader)
         return run.reader->read(ByteRange{pos, serve_len(run.range.end())});
     if (run.writer)
         return run.writer->read(ByteRange{pos, serve_len(run.range.end())});
-    return fetchAndServe(pos, run.range, max_serve);
+    return fetchFillServe(pos, run.range, max_serve);
 }
 
-ChainedBuffers ReaderExecutor::fetchAndServe(size_t pos, ByteRange miss_run, size_t max_serve)
+ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve)
 {
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - pos}); };
 
-    /// Coarse fetch: the whole coalesced miss run, capped at the window. `miss_run` already stops at the
-    /// nearest offset a tier holds (`ReadPlan::runAt`), so this never re-reads a resident block.
-    const size_t fetch_end = std::min(miss_run.end(), pos + max_serve);
-    if (fetch_end <= pos)
+    /// `fetch_range` is the whole source-read extent `ReadPlan::runAt` decided: coalesced right (capped
+    /// at the window) and extended left to the covering segments' fill frontiers. We read it once, fill
+    /// the tiers it spans, and serve one block from `pos`.
+    if (fetch_range.size == 0)
         return {};
 
-    const auto writers = read_plan.writersFor(ByteRange{pos, fetch_end - pos});
+    const auto writers = read_plan.writersFor(fetch_range);
 
-    /// No populating tier over the run (all bypass): read it whole from source and serve it - nothing
+    /// No populating tier over the extent (all bypass): read it whole from source and serve it - nothing
     /// is cached inside, so there is no waste.
     if (writers.empty())
-        return readSource(pos, fetch_end - pos);
+        return readSource(fetch_range.offset, fetch_range.size);
 
-    /// One pass over the tiers (fastest-first), handling the head (`pos`) inline: a committed prefix is
-    /// served from cache; a segment a concurrent downloader leads is waited on once and served from
-    /// cache if it lands; otherwise we take the download role (a held claim) to fill it. Later blocks in
-    /// the coalesced run only contribute their claims. Only after the pass, if nobody served, do we fetch.
+    /// One pass over the tiers (fastest-first), resolving the head (`pos`) inline before any source read.
+    /// For the tier covering `pos`: if its committed prefix already reaches `pos` (filled since resolve),
+    /// serve from it; else if a concurrent downloader leads it (no claim), wait once and serve from cache
+    /// if it lands. Every populating tier contributes its download claim. Only after the pass, if nobody
+    /// served the head, do we fetch from source. One iteration - a wait that misses just falls through.
     struct Claimed { CacheWriter * writer; CacheWriter::Claim claim; };
     VectorWithMemoryTracking<Claimed> claimed;
     for (auto * writer : writers)
     {
         const bool covers_head = writer->range().offset <= pos && pos < writer->range().end();
-        auto lead = writer->claimLeadRole(writer->range());
-        const ByteRange avail = lead.available;
-        if (covers_head && avail.size && avail.offset <= pos && pos < avail.end())
-            return writer->read(ByteRange{pos, serve_len(std::min(avail.end(), writer->range().end()))});
-        if (covers_head && !lead.claim)
+        CacheWriter::Claim claim = writer->claimLeadRole(writer->range());
+        if (covers_head && pos < writer->committed())   /// committed prefix `[range.offset, committed)` covers `pos`
+            return writer->read(ByteRange{pos, serve_len(writer->committed())});
+        if (covers_head && !claim)
         {
-            /// Locked by a concurrent downloader: wait once and serve from cache if it commits;
-            /// otherwise fall through and let the source read below serve the bytes.
-            ChainedBuffers waited = writer->waitAndRead(ByteRange{pos, serve_len(fetch_end)});
+            ChainedBuffers waited = writer->waitAndRead(ByteRange{pos, serve_len(fetch_range.end())});
             if (!waited.empty())
                 return waited;
         }
-        claimed.push_back({writer, std::move(lead.claim)});
+        claimed.push_back({writer, std::move(claim)});
     }
 
-    ChainedBuffers fetched = readSource(pos, fetch_end - pos);
-    const size_t fetched_end = fetched.empty() ? pos : fetched.range().end();
+    /// One source read of the whole extent. A later step can shrink this: where `runAt` widened the
+    /// extent to complete an upper whole-segment cell, a slower tier may already hold the middle/tail,
+    /// so those sub-ranges could be read from that tier and only the true gaps from source.
+    ChainedBuffers fetched = readSource(fetch_range.offset, fetch_range.size);
+    const size_t fetched_end = fetched.empty() ? fetch_range.offset : fetched.range().end();
 
     for (auto & c : claimed)
     {
         /// Only a held claim authorizes a write; a tier led by a concurrent downloader is filled there.
+        /// A whole-segment tier only stores a write covering its entire cell; `fetch_range` was sized so
+        /// the head cell is covered, and `write` no-ops a cell it does not fully span.
         if (c.claim)
         {
-            const size_t lo = std::max(c.writer->range().offset, pos);
+            const size_t lo = std::max(c.writer->range().offset, fetch_range.offset);
             const size_t hi = std::min(c.writer->range().end(), fetched_end);
             if (lo < hi)
             {

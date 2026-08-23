@@ -19,19 +19,21 @@ private:
     ByteRange r;
 };
 
-/// Minimal cache writer with a settable committed set, so a test can model a miss segment filling.
+/// Minimal cache writer with a settable committed prefix, so a test can model a miss segment filling.
 class MockWriter : public CacheWriter
 {
 public:
-    explicit MockWriter(ByteRange r_) : r(r_) {}
-    void commit(ByteRange c) { committed_ranges.add(c); }
+    explicit MockWriter(ByteRange r_, bool whole_ = false) : r(r_), frontier(r_.offset), whole(whole_) {}
+    void commit(ByteRange c) { frontier = c.end(); }   /// a prefix `[r.offset, c.end())`
     ByteRange range() const override { return r; }
-    IntervalSet committed() const override { return committed_ranges; }
+    size_t committed() const override { return frontier; }
+    bool fillsWholeSegment() const override { return whole; }
     size_t write(ChainedBuffers, const Claim &) override { return 0; }
     ChainedBuffers read(ByteRange) override { return {}; }
 private:
     ByteRange r;
-    IntervalSet committed_ranges;
+    size_t frontier;
+    bool whole;
 };
 
 CacheResolution hit(ByteRange range)
@@ -43,13 +45,13 @@ CacheResolution hit(ByteRange range)
     return c;
 }
 
-CacheResolution miss(ByteRange range, bool with_writer = true)
+CacheResolution miss(ByteRange range, bool with_writer = true, bool whole_segment = false)
 {
     CacheResolution c;
     c.kind = CacheResolution::Kind::Miss;
     c.range = range;
     if (with_writer)
-        c.writer = std::make_unique<MockWriter>(range);
+        c.writer = std::make_unique<MockWriter>(range, whole_segment);
     return c;
 }
 
@@ -209,6 +211,55 @@ TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
     EXPECT_EQ(r.range.end(), 3u);
     EXPECT_EQ(plan.writersFor({1, 3}).size(), 1u);   /// one writer, not two
     EXPECT_NE(plan.runAt(3).reader, nullptr);
+}
+
+TEST(ReadPlan, FetchExtendsLeftToFillFrontier)
+{
+    /// One incremental miss segment [0,4). A read that opens mid-segment must fetch from the segment's
+    /// write frontier so the append-only fill is contiguous - below `offset` when nothing is committed.
+    auto missed = miss({0, 4});
+    auto * writer = static_cast<MockWriter *>(missed.writer.get());
+    std::vector<CacheResolution> c;
+    c.push_back(std::move(missed));
+
+    ReadPlan plan;
+    plan.reset(0);
+    plan.extend(4, tiers(tier(CacheTier::FilesystemCache, true, std::move(c))));
+
+    /// Virgin: the fetch extends left to the segment start (0), not `offset` (2).
+    auto r = plan.runAt(2);
+    EXPECT_TRUE(r.isFetch());
+    EXPECT_EQ(r.range.offset, 0u);
+    EXPECT_EQ(r.range.end(), 4u);
+
+    /// The window caps the right end; the left extension is independent of it.
+    EXPECT_EQ(plan.runAt(2, 1).range.offset, 0u);
+    EXPECT_EQ(plan.runAt(2, 1).range.end(), 3u);
+
+    /// After committing [0,2), a read at 3 fetches from the frontier 2, not the segment start.
+    writer->commit({0, 2});
+    auto r2 = plan.runAt(3);
+    EXPECT_TRUE(r2.isFetch());
+    EXPECT_EQ(r2.range.offset, 2u);
+    EXPECT_EQ(r2.range.end(), 4u);
+}
+
+TEST(ReadPlan, WholeSegmentHeadFetchedEntireEvenPastSpanEnd)
+{
+    /// A whole-segment cell [0,4) that overhangs the resolved span (span_end = 2). The head fetch must
+    /// still cover the ENTIRE cell - it is populated only by an all-or-nothing write - so the extent
+    /// reaches the true segment end past span_end, and neither the window caps it below the cell.
+    std::vector<CacheResolution> c;
+    c.push_back(miss({0, 4}, /*with_writer=*/true, /*whole_segment=*/true));
+
+    ReadPlan plan;
+    plan.reset(0);
+    plan.extend(2, tiers(tier(CacheTier::PageCache, true, std::move(c))));   /// span_end = 2, cell to 4
+
+    auto r = plan.runAt(0, /*max_fetch_ahead=*/1);
+    EXPECT_TRUE(r.isFetch());
+    EXPECT_EQ(r.range.offset, 0u);
+    EXPECT_EQ(r.range.end(), 4u);
 }
 
 TEST(ReadPlan, ResetDiscardsAndReanchors)

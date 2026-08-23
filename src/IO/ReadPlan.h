@@ -4,6 +4,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -50,10 +52,14 @@ public:
     size_t resolvedEnd() const { return span_end; }
     bool coversForward(size_t offset) const { return offset >= span_start && offset < span_end; }
 
-    PlanRun runAt(size_t offset) const;
+    /// The merged run at `offset`. A FETCH run's range is the full source-read extent: coalesced right
+    /// (capped at `max_fetch_ahead`) and extended left to the covering segments' committed frontiers
+    /// (below `offset` when a segment must be filled from before it). CACHE runs ignore the cap.
+    PlanRun runAt(size_t offset, size_t max_fetch_ahead = std::numeric_limits<size_t>::max()) const;
 
     /// The populating tiers' writers overlapping `range` - the write-up targets for one source read
-    /// of a FETCH run (several cells across tiers filled from one read).
+    /// of a FETCH run (several cells across tiers filled from one read). Each writer reports its own
+    /// segment discipline via `CacheWriter::fillsWholeSegment`.
     VectorWithMemoryTracking<CacheWriter *> writersFor(ByteRange range) const;
 
     /// Append the resolution of `[resolvedEnd(), new_end)`. `resolved` is one `PlanTier` per provider,

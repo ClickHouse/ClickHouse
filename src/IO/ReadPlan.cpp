@@ -1,8 +1,6 @@
 #include <IO/ReadPlan.h>
 
 #include <algorithm>
-#include <limits>
-#include <optional>
 
 namespace DB
 {
@@ -11,8 +9,6 @@ using CacheResolution = ICacheProvider::CacheResolution;
 
 namespace
 {
-
-constexpr size_t NPOS = std::numeric_limits<size_t>::max();
 
 bool overlaps(ByteRange a, ByteRange b)
 {
@@ -28,16 +24,7 @@ const CacheResolution * cellCovering(const PlanTier & tier, size_t off)
     return nullptr;
 }
 
-/// End of the committed run containing `off` (0-length-safe), or nullopt when `off` is not committed.
-std::optional<size_t> committedRunEnd(const IntervalSet & committed, size_t off)
-{
-    for (const auto & iv : committed.ranges())
-        if (iv.offset <= off && off < iv.end())
-            return iv.end();
-    return std::nullopt;
-}
-
-/// The smallest offset >= `from` this tier can serve (a hit run, or a committed sub-range of a miss
+/// The smallest offset >= `from` this tier can serve (a hit run, or the committed prefix of a miss
 /// segment), or `span_end` when nothing at or after `from` is served - the point a FETCH run must stop
 /// so it never overruns bytes a tier already holds.
 size_t firstServableAtOrAfter(const PlanTier & tier, size_t from, size_t span_end)
@@ -49,22 +36,17 @@ size_t firstServableAtOrAfter(const PlanTier & tier, size_t from, size_t span_en
         const size_t base = std::max(cell.range.offset, from);
         if (cell.kind == CacheResolution::Kind::Hit && cell.reader)
             return base;
-        if (cell.kind == CacheResolution::Kind::Miss && cell.writer)
-        {
-            size_t best = NPOS;
-            for (const auto & iv : cell.writer->committed().ranges())
-                if (iv.end() > base)
-                    best = std::min(best, std::max(iv.offset, base));
-            if (best != NPOS)
-                return best;
-        }
+        /// A miss segment's committed prefix is `[cell.range.offset, committed())`; `base` falls in it
+        /// (and is servable from the writer) when the frontier is past `base`.
+        if (cell.kind == CacheResolution::Kind::Miss && cell.writer && cell.writer->committed() > base)
+            return base;
     }
     return span_end;
 }
 
 }
 
-ReadPlan::PlanRun ReadPlan::runAt(size_t offset) const
+ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
 {
     PlanRun run;
     run.range = ByteRange{offset, 0};
@@ -85,21 +67,49 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset) const
         }
         if (cell->kind == CacheResolution::Kind::Miss && cell->writer)
         {
-            if (auto end = committedRunEnd(cell->writer->committed(), offset))
+            /// `offset` is inside the committed prefix `[cell.range.offset, committed())` (its start is
+            /// covered by `cellCovering`), so the writer can serve `[offset, committed())` from cache.
+            const size_t committed = cell->writer->committed();
+            if (offset < committed)
             {
                 run.writer = cell->writer.get();
-                run.range = ByteRange{offset, std::min(*end, cell->range.end()) - offset};
+                run.range = ByteRange{offset, std::min(committed, cell->range.end()) - offset};
                 return run;
             }
         }
     }
 
-    /// FETCH: no tier serves `offset`. Coalesce forward to the nearest offset any tier serves, so one
-    /// source read fills the whole run across cells and tiers without re-reading a resident block.
+    /// FETCH: no tier serves `offset`. The extent covers what one source read must pull to serve
+    /// `offset` and fill the segment(s) covering it:
+    ///  - right: coalesce forward to the nearest offset any tier already holds (so one read fills
+    ///    several cells and never re-reads a resident block), capped at `max_fetch_ahead` (the window).
+    ///  - left: down to the committed frontier of each populating segment covering `offset` - an
+    ///    incremental segment fills append-only from its frontier (its start when virgin), below
+    ///    `offset` when the read opens mid-segment; a whole-segment tier's frontier is its cell start.
+    ///  - the head whole-segment cell must be fetched WHOLE (populated only by a full-cell write), so
+    ///    its end overrides both the coalesce and the window cap.
     size_t fetch_end = span_end;
     for (const auto & tier : tiers)
         fetch_end = std::min(fetch_end, firstServableAtOrAfter(tier, offset, span_end));
-    run.range = ByteRange{offset, fetch_end - offset};
+    if (max_fetch_ahead < span_end - offset)
+        fetch_end = std::min(fetch_end, offset + max_fetch_ahead);
+
+    size_t fetch_start = offset;
+    for (const auto & tier : tiers)
+    {
+        if (!tier.populates)
+            continue;
+        const CacheResolution * cell = cellCovering(tier, offset);
+        if (!cell || cell->kind != CacheResolution::Kind::Miss || !cell->writer)
+            continue;
+        fetch_start = std::min(fetch_start, cell->writer->committed());
+        if (cell->writer->fillsWholeSegment())
+            /// The head whole-segment cell is populated only by a full-cell write, so it must be fetched
+            /// entire - to its true segment end even past `span_end` (source has it; the writer covers it).
+            fetch_end = std::max(fetch_end, cell->range.end());
+    }
+
+    run.range = ByteRange{fetch_start, fetch_end - fetch_start};
     return run;
 }
 

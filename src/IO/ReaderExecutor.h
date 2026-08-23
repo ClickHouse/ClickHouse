@@ -195,11 +195,12 @@ private:
     /// Grow `read_plan` forward to cover `[pos, pos + plan_look_ahead)` (clamped to the file end),
     /// resolving each provider one object-piece at a time. Rebuilds from `pos` on a seek or gap.
     void ensureResolved(size_t pos);
-    /// Serve one block of the miss run `[pos, ...)`. If a concurrent downloader already committed `pos`,
-    /// serve from that tier; if one leads every populating tier, wait for it and serve from its cache.
-    /// Otherwise fetch the run from source (one read, capped at `max_serve`), populate the tiers we hold
-    /// the role for, and serve. A run with no populating tier is served straight from source.
-    ChainedBuffers fetchAndServe(size_t pos, ByteRange miss_run, size_t max_serve);
+    /// Serve one block from `pos` out of a FETCH run. `fetch_range` is the full source-read extent
+    /// `ReadPlan::runAt` decided (coalesced right, extended left to the covering segments' fill
+    /// frontiers). If a concurrent downloader already committed `pos`, serve from that tier; if one leads
+    /// the head, wait for it and serve from its cache. Otherwise read `fetch_range` from source once,
+    /// populate the tiers we hold the role for, and serve. No populating tier means serve from source.
+    ChainedBuffers fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve);
     void dropLongConnection();
 
     /// The only logical<->physical converters: physical = header-inclusive file coords; logical =
