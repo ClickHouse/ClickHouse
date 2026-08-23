@@ -28,6 +28,11 @@ class WasmModuleManager
 public:
     WasmModuleManager(DiskPtr user_scripts_disk_, std::filesystem::path user_scripts_path_, std::string_view engine_name);
 
+    /// Throws `UNKNOWN_ELEMENT_IN_CONFIG` when `engine_name` is not a supported engine.
+    /// Exposed separately from the constructor so that a build without a WebAssembly engine
+    /// still rejects a stale `webassembly_udf_engine` value instead of ignoring it.
+    static void validateEngineName(std::string_view engine_name);
+
     void saveModule(std::string_view module_name, std::string_view wasm_code, UInt256 expected_hash = {});
 
     using ModulePtr = std::shared_ptr<WebAssembly::WasmModule>;

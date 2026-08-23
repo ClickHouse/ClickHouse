@@ -130,13 +130,19 @@ static std::expected<String, PreformattedMessage> validateModuleFile(const DiskP
     return module_name;
 }
 
-static std::unique_ptr<WebAssembly::IWasmEngine> createEngine(std::string_view engine_name)
+void WasmModuleManager::validateEngineName(std::string_view engine_name)
 {
     if (engine_name == "wasmtime")
-        return std::make_unique<WasmTimeRuntime>();
+        return;
     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
         "Unknown WebAssembly engine '{}', available engines: 'wasmtime'",
         engine_name);
+}
+
+static std::unique_ptr<WebAssembly::IWasmEngine> createEngine(std::string_view engine_name)
+{
+    WasmModuleManager::validateEngineName(engine_name);
+    return std::make_unique<WasmTimeRuntime>();
 }
 
 WasmModuleManager::WasmModuleManager(DiskPtr user_scripts_disk_, std::filesystem::path user_scripts_path_, std::string_view engine_name)

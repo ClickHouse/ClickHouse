@@ -4248,6 +4248,11 @@ WasmModuleManager * Context::initWasmModuleManager()
     if (!shared->server_settings[ServerSetting::allow_experimental_webassembly_udf])
         return nullptr;
 
+    String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
+    /// Validated on every build, including the ones that cannot run WebAssembly at all, so that a stale
+    /// engine name in the configuration is reported the same way everywhere instead of being ignored.
+    WasmModuleManager::validateEngineName(engine_name);
+
 #if !USE_WASMTIME
     /// This build has no WebAssembly engine, so fail close: do not expose any WebAssembly UDF surface at all.
     /// In particular, `system.webassembly_modules` is not attached and persisted `LANGUAGE WASM` functions are
@@ -4258,7 +4263,6 @@ WasmModuleManager * Context::initWasmModuleManager()
         "a WebAssembly engine, so WebAssembly UDFs remain unavailable");
     return nullptr;
 #else
-    String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
