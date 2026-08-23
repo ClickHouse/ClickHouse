@@ -2,8 +2,8 @@
 -- tables, so the number of tables reading at the same time is capped the way it is capped for a `UNION ALL`:
 -- by `max_streams_for_union_step` and `max_streams_for_union_step_to_max_threads_ratio`, which insert
 -- `Concat` processors above the reads. Without that cap a `Merge` over many tables would read all of them
--- simultaneously, which is what the `narrow` call in `ReadFromMerge::initializePipeline` prevents on the
--- path where the children are united at pipeline level.
+-- simultaneously, which the reading from a `Merge` table has always avoided on the path where the children
+-- are united at pipeline level.
 
 DROP TABLE IF EXISTS m_pbmn;
 
@@ -48,8 +48,8 @@ SET parallel_replicas_local_plan = 1;
 SET automatic_parallel_replicas_mode = 0;
 SET max_threads = 1;
 
--- The number of reads is counted instead of matching the plan: `narrowPipe` shuffles which reads share a
--- `Concat`, so the grouping the pipeline is printed with is not stable.
+-- The number of reads is counted instead of matching the plan: which reads end up sharing a `Concat` is
+-- decided by a shuffle, so the grouping the pipeline is printed with is not stable.
 SELECT '-- narrowing enabled';
 SELECT countIf(explain LIKE '%Concat%') > 0 AS has_concat
 FROM (EXPLAIN PIPELINE SELECT count() FROM m_pbmn SETTINGS max_streams_for_union_step_to_max_threads_ratio = 1);
@@ -62,7 +62,7 @@ FROM (EXPLAIN PIPELINE SELECT count() FROM m_pbmn
 -- Narrowing concatenates the reads in an arbitrary order, so it is only allowed while nothing above the
 -- union relies on each of its streams being sorted on its own. An `ORDER BY` with a `LIMIT` is exactly such
 -- a consumer: the sort is shipped with the fragment (a per-replica sort and a local top-N, merged on the
--- initiator - see the `SortingStep` case of `ApplyParallelReplicasVisitor`), and reading in order reaches
+-- initiator), and reading in order reaches
 -- the underlying tables through the expanded `Merge`, so every branch of the union delivers a sorted stream
 -- that a merge above it consumes. Narrowing is therefore switched off for that union, and the plan and the
 -- pipeline below say so positively instead of just reporting the absence of a `Concat`.

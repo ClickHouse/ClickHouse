@@ -74,8 +74,8 @@ FROM (EXPLAIN pretty = 0, description = 0 SELECT count(), sum(k), sum(v) FROM m_
 SELECT '-- plain SELECT without aggregation';
 SELECT k, v FROM m_pbm WHERE k IN (1, 999, 1000, 1999) ORDER BY k;
 
--- Reading in order with a limit materializes the child plans of the `Merge` table through
--- `requestReadingInOrder`; the expansion materializes the very same plans, the two must not clash.
+-- Reading in order with a limit makes the `Merge` table materialize the plans of its underlying tables,
+-- and so does the expansion; the two must not clash over the same plans.
 SELECT '-- ORDER BY with LIMIT';
 SELECT k, v FROM m_pbm ORDER BY k LIMIT 5;
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
