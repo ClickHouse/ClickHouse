@@ -201,16 +201,43 @@ struct HiddenExpressionArguments
     std::vector<std::pair<IdentifierResolveScope *, std::string>> hidden_arguments;
 };
 
-/// Returns true if `name` can be resolved in `scope` itself, without looking into parent scopes.
+/// Returns true if `name` binds to something other than a lambda argument in `scope` itself.
 bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope)
 {
     IdentifierLookup lookup{Identifier{name}, IdentifierLookupContext::EXPRESSION};
 
-    return scope.expression_argument_name_to_node.contains(name)
-        || IdentifierResolver::tryBindIdentifierToAliases(lookup, scope)
+    return IdentifierResolver::tryBindIdentifierToAliases(lookup, scope)
         || IdentifierResolver::tryBindIdentifierToTableExpressions(lookup, {} /*table_expression_node_to_ignore*/, scope)
         || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(lookup, scope)
         || IdentifierResolver::tryBindIdentifierToJoinUsingColumn(lookup, scope);
+}
+
+/** Returns true if the argument named `name` has to be hidden in the lambdas of `lambda_scopes_to_hide`
+  * while an expression bound to an alias is resolved starting from `referencing_scope`.
+  *
+  * The walk repeats the one of `tryResolveIdentifier`: every scope from the referencing one up to the
+  * root is asked for `name`, and the arguments of the lambdas that are about to be hidden are skipped.
+  * If nothing else provides the name, the argument is the only thing it can refer to, so it stays visible.
+  */
+bool hasToHideLambdaArgument(
+    const std::string & name,
+    IdentifierResolveScope & referencing_scope,
+    const std::unordered_set<IdentifierResolveScope *> & lambda_scopes_to_hide)
+{
+    for (auto * current_scope = &referencing_scope; current_scope != nullptr; current_scope = current_scope->parent_scope)
+    {
+        /** An argument of a lambda that stays visible - the one owning the alias, or one above it. Hiding the
+          * inner argument would bind the aliased expression to this one, and the planner cannot tell the two
+          * apart, because both are named after `name`. Keep the inner argument visible instead.
+          */
+        if (current_scope->expression_argument_name_to_node.contains(name) && !lambda_scopes_to_hide.contains(current_scope))
+            return false;
+
+        if (canBindNameInScope(name, *current_scope))
+            return true;
+    }
+
+    return false;
 }
 
 /** An expression bound to an alias is written in the scope that owns the alias, so it cannot reference
@@ -229,41 +256,29 @@ bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope
   * the only way to write a predicate outside of the lambda it belongs to:
   *
   * WITH t LIKE '%_1%' AS issue SELECT arrayFilter((t, t2) -> NOT issue, col_1, col_2) FROM test;
+  *
+  * The lambda that owns the alias, if there is one, keeps its own arguments: the aliased expression is
+  * written inside of it and does reference them.
   */
 void hideLambdaArgumentsShadowingAliasExpression(
     IdentifierResolveScope & referencing_scope,
     IdentifierResolveScope & alias_scope,
     HiddenExpressionArguments & hidden_arguments)
 {
-    /** An alias owned by a lambda scope is left alone: resolving it outside of a nested lambda with the
-      * same argument name would make the inner lambda capture the argument of the outer one, and the
-      * planner cannot tell the two apart, because both are named after the argument.
-      */
-    if (alias_scope.scope_node->getNodeType() == QueryTreeNodeType::LAMBDA)
-        return;
-
-    std::vector<IdentifierResolveScope *> lambda_scopes;
+    std::unordered_set<IdentifierResolveScope *> lambda_scopes;
     for (auto * current_scope = &referencing_scope;
          current_scope != nullptr && current_scope != &alias_scope;
          current_scope = current_scope->parent_scope)
     {
         if (current_scope->scope_node->getNodeType() == QueryTreeNodeType::LAMBDA)
-            lambda_scopes.push_back(current_scope);
+            lambda_scopes.insert(current_scope);
     }
-
-    if (lambda_scopes.empty())
-        return;
-
-    /// The scope the aliased expression sees once all the lambdas in between are stepped over.
-    auto * outer_scope = lambda_scopes.back()->parent_scope;
-    if (!outer_scope)
-        return;
 
     for (auto * lambda_scope : lambda_scopes)
     {
         for (const auto & [argument_name, _] : lambda_scope->expression_argument_name_to_node)
         {
-            if (canBindNameInScope(argument_name, *outer_scope))
+            if (hasToHideLambdaArgument(argument_name, referencing_scope, lambda_scopes))
                 hidden_arguments.hide(*lambda_scope, argument_name);
         }
     }

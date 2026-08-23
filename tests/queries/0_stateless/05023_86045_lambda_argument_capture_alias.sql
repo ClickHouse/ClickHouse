@@ -45,3 +45,19 @@ WITH t = 'a' AS issue SELECT arrayFilter((t, t2) -> NOT issue, ['a', 'b'], [1, 2
 
 -- As soon as the name does exist outside of the lambda, the alias refers to it.
 WITH t = 'a' AS issue SELECT arrayFilter((t, t2) -> NOT issue, ['a', 'b'], [1, 2]) FROM (SELECT 'a' AS t);
+
+-- An alias owned by a lambda still hides the arguments of the lambdas nested inside of it:
+-- `id` in `d` is the column of the query, not the argument of the lambda that references `d`.
+SELECT 5 AS id, arrayMap(x -> (x + id AS d) + arrayMap(id -> id + d, [1])[1], [1, 2]);
+
+-- Except for the arguments of the lambda that owns the alias: `x` in `d` is the argument of the
+-- outer lambda, so hiding the argument of the inner one would make the planner mix the two up,
+-- because they are both named `x`. The inner argument wins - a known limitation of the planner.
+SELECT arrayMap(x -> (x * 2 AS d) + arrayMap(x -> x + d, [10])[1], [1, 2]);
+
+-- The aliased expression can bind above the scope the lambdas are nested in.
+SELECT id, (WITH id + 1 AS d SELECT arrayMap(id -> id + d, [1, 2])) FROM (SELECT 5 AS id)
+SETTINGS allow_experimental_correlated_subqueries = 1;
+
+SELECT number + 1 AS n, (SELECT arrayMap(number -> number + n, [1, 2])) FROM numbers(2)
+SETTINGS allow_experimental_correlated_subqueries = 1;
