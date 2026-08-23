@@ -15,6 +15,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 إذا كنت بحاجة إلى استرجاع قائمة عناوين IP الثابتة، فيمكنك استخدام نقطة نهاية واجهة برمجة تطبيقات ClickHouse Cloud التالية: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). توفّر واجهة برمجة تطبيقات هذه نقاط النهاية لخدمات ClickHouse Cloud، مثل عناوين IP الواردة/الصادرة ونقاط نهاية S3 بحسب كل Region وCloud.
 
+بالنسبة إلى المناطق التي يتوفر فيها [ClickPipes](/ar/integrations/clickpipes/home)، يتضمن كل إدخال أيضًا الحقل `clickpipes_egress_ips` الذي يسرد عناوين NAT IP الثابتة التي يستخدمها ClickPipes للاتصال بمصادر بياناتك. أضف هذه العناوين إلى قائمة السماح الخاصة بمصدرك عند استيعاب البيانات عبر ClickPipes. راجع [قائمة ClickPipes لعناوين IP الثابتة](/ar/integrations/clickpipes/networking/static-ips) للحصول على التفاصيل.
+
 إذا كنت تستخدم تكاملًا مثل MySQL أو PostgreSQL Engine، فقد تحتاج إلى تفويض ClickHouse Cloud للوصول إلى المثيلات الخاصة بك. يمكنك استخدام واجهة برمجة تطبيقات هذه لاسترجاع عناوين IP العامة وتهيئتها في `firewalls` أو `Authorized networks` في GCP أو `Security Groups` في Azure أو AWS، أو في أي نظام آخر تستخدمه لإدارة حركة egress ضمن البنية التحتية.
 
 على سبيل المثال، للسماح بالوصول من خدمة ClickHouse Cloud مستضافة على AWS في Region ‏`ap-south-1`، يمكنك إضافة عناوين `egress_ips` الخاصة بتلك المنطقة:
@@ -24,6 +26,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 {
   "aws": [
     {
+      "clickpipes_egress_ips": [
+        "13.203.140.189",
+        "13.232.213.12",
+        "13.235.145.208",
+        "35.154.167.40",
+        "65.0.39.245",
+        "65.1.225.89"
+      ],
       "egress_ips": [
         "3.110.39.68",
         "15.206.7.77",

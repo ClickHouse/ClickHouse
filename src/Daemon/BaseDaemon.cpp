@@ -139,10 +139,7 @@ BaseDaemon::~BaseDaemon()
 {
     try
     {
-#if defined(OS_HAS_SIGNAL_HANDLERS)
-        writeSignalIDtoSignalPipe(SignalListener::StopThread);
-        signal_listener_thread.join();
-#endif
+        stopSignalListener();
         HandledSignals::instance().reset();
     }
     catch (...)
@@ -492,15 +489,46 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
 
-#if defined(OS_HAS_SIGNAL_HANDLERS)
-    signal_listener_thread.start(*signal_listener);
-#endif
+    startSignalListener();
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
     if (!executable_path.empty())
         stored_binary_hash = Elf(executable_path).getStoredBinaryHash();
+#endif
+}
+
+void BaseDaemon::startSignalListener()
+{
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    /// The signal listener thread only drains the signal pipe; it must never run a signal handler itself.
+    /// Poco already blocks `SIGQUIT`, `SIGTERM` and `SIGPIPE` in every thread it starts, but not the rest
+    /// of the asynchronously delivered handled signals. Block them here, so that the thread inherits the
+    /// mask at creation (doing it inside `SignalListener::run` would leave a window right after the start),
+    /// and restore the mask of this thread afterwards.
+    ///
+    /// This is what makes it possible to keep every thread out of the signal handling path for a while:
+    /// see `remapExecutable` in `Server::main`, which unmaps the code of the handlers themselves.
+    BlockSignalsScope block_signals(asynchronousHandledSignals());
+    signal_listener_thread.start(*signal_listener);
+    signal_listener_thread_started = true;
+#endif
+}
+
+void BaseDaemon::stopSignalListener()
+{
+#if defined(OS_HAS_SIGNAL_HANDLERS)
+    if (!signal_listener_thread_started)
+        return;
+
+    /// `isRunning` only reports that Poco still has a runnable target. A listener which has already
+    /// returned still has a joinable native thread, so always join a started listener. Only send the
+    /// stop request while it can still consume it.
+    if (signal_listener_thread.isRunning())
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    signal_listener_thread_started = false;
 #endif
 }
 
@@ -595,7 +623,7 @@ void BaseDaemon::setupWatchdog()
         /// Temporarily close the logging thread and open it in each process later
         auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
         if (async_channel)
-            async_channel->close();
+            async_channel->closeAndJoinThreads();
         pid = fork();
 
 #if USE_JEMALLOC

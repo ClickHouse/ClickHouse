@@ -999,6 +999,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::vector<IndexStat> useful_indices_stat(stat_size);
 
+    /// per_part_index_orders can be shorter than the parts being read when index analysis was cached
+    /// for a smaller part set; fall back to the natural order (the order only picks which index to try first).
+    auto index_order_at = [&skip_indexes](size_t part_index, size_t idx) -> size_t
+    {
+        return part_index < skip_indexes.per_part_index_orders.size()
+            ? skip_indexes.per_part_index_orders[part_index][idx]
+            : idx;
+    };
+
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
     std::atomic<size_t> top_k_elapsed_us = 0;
@@ -1139,7 +1148,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-                    const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
+                    const auto index_idx = index_order_at(part_index, idx);
                     const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
 
                     auto index_stat_idx = idx;
@@ -1341,7 +1350,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
         {
             const auto & stat = useful_indices_stat[part_index * num_indices + idx];
-            const auto & index_and_condition = skip_indexes.useful_indices[skip_indexes.per_part_index_orders[part_index][idx]];
+            const auto & index_and_condition = skip_indexes.useful_indices[index_order_at(part_index, idx)];
             const auto & index_name = index_and_condition.index->index.name;
             LOG_DEBUG(
                 log,
