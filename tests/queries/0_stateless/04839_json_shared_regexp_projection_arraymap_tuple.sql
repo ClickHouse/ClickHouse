@@ -137,3 +137,30 @@ FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='arraymap_qualified_source_04839' AND name = 'p' AND column LIKE 'arrayMap%' AND active;
 
 DROP TABLE arraymap_qualified_source_04839;
+
+-- mapApply has its own member-qualified source binding: `tupleElement(t, 'm')` must contribute
+-- `t.m.keys` / `t.m.values`, not fail the bare-identifier check and drop the value slot's rule.
+DROP TABLE IF EXISTS mapapply_qualified_source_04839;
+CREATE TABLE mapapply_qualified_source_04839
+(
+    id UInt64,
+    t Tuple(m Map(String, Tuple(doc JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_'), n UInt8)))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO mapapply_qualified_source_04839 VALUES (1, (map('left', ('{"tag_x":1}', 1))));
+
+ALTER TABLE mapapply_qualified_source_04839
+    MODIFY COLUMN t Tuple(m Map(String, Tuple(doc JSON(max_dynamic_paths=5), n UInt8)));
+
+ALTER TABLE mapapply_qualified_source_04839
+    ADD PROJECTION p (SELECT id, mapApply((k, v) -> tuple(k, tupleElement(v, 'doc')), tupleElement(t, 'm')) WHERE id > 0 ORDER BY id);
+ALTER TABLE mapapply_qualified_source_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
+
+SELECT 'member-qualified mapApply source keeps the doc rule',
+       countIf(position(type, '^tag_') > 0)
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='mapapply_qualified_source_04839' AND name = 'p' AND column LIKE 'mapApply%' AND active;
+
+DROP TABLE mapapply_qualified_source_04839;

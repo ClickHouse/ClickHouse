@@ -3,3 +3,4 @@ assumeNotNull-wrapped source keeps the doc rule	1
 wrapped member base keeps the values rule	1
 scalar lambda output keeps only its own member rule	1
 member-qualified lambda source keeps the doc rule	1
+member-qualified mapApply source keeps the doc rule	1
