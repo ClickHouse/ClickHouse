@@ -542,7 +542,7 @@ void HTTPClientSession::proxyAuthenticateImpl(HTTPRequest& request)
 }
 
 
-StreamSocket HTTPClientSession::proxyConnect()
+StreamSocket HTTPClientSession::proxyConnect(const SocketAddress * resolvedProxyAddress)
 {
 	URI proxyUri;
 	proxyUri.setScheme(getProxyProtocol());
@@ -550,6 +550,11 @@ StreamSocket HTTPClientSession::proxyConnect()
 	proxyUri.setPort(getProxyPort());
 
 	SharedPtr<HTTPClientSession> proxySession (_proxySessionFactory.createClientSession(proxyUri));
+
+	/// Dial the address the caller already resolved: with several A/AAAA records behind the proxy
+	/// name, resolving again here could reach (and report) a different endpoint than the caller's.
+	if (resolvedProxyAddress)
+		proxySession->setResolvedHost(resolvedProxyAddress->host().toString());
 
 	proxySession->setTimeout(getTimeout());
 	std::string targetAddress(_host);

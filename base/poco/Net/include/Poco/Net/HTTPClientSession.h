@@ -348,9 +348,11 @@ namespace Net
         /// Sets the proxy credentials (Proxy-Authorization header), if
         /// proxy username and password have been set.
 
-        StreamSocket proxyConnect();
+        StreamSocket proxyConnect(const SocketAddress * resolvedProxyAddress = nullptr);
         /// Sends a CONNECT request to the proxy server and returns
-        /// a StreamSocket for the resulting connection.
+        /// a StreamSocket for the resulting connection. When the caller
+        /// has already resolved the proxy host, passing that address makes
+        /// the tunnel dial it instead of resolving the hostname again.
 
         void proxyTunnel();
         /// Calls proxyConnect() and attaches the resulting StreamSocket
