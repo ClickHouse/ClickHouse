@@ -155,6 +155,11 @@ SET allow_experimental_bernoulli_sample = 1;
 - Composes with `PREWHERE`, skip indexes, multi-part tables, the `Merge`
   engine, and parallel replicas in the default `read_tasks` mode.
 - Non-`MergeTree` engines (for example `Memory`) still reject `SAMPLE`.
+- Engines that only wrap a `MergeTree` table, such as `Merge`, `MaterializedView`
+  and an alias table, pass the clause through to the underlying table.
+  `Buffer` is an exception: it rejects `SAMPLE` when its destination table has no
+  `SAMPLE BY` key, because the rows that are still resident in the in-memory
+  buffers are read on a separate path and would be returned unsampled.
 
 ### Settings {#bernoulli-settings}
 
