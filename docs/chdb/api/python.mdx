@@ -29,7 +29,7 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 |-----------------|-------|------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `sql`           | str   | *required* | SQL query string to execute                                                                                                                                                                                                                                                                                     |
 | `output_format` | str   | `"CSV"`    | Output format for results. Supported formats:<br/>• `"CSV"` - Comma-separated values<br/>• `"JSON"` - JSON format<br/>• `"Arrow"` - Apache Arrow format<br/>• `"Parquet"` - Parquet format<br/>• `"DataFrame"` - Pandas DataFrame<br/>• `"ArrowTable"` - PyArrow Table<br/>• `"Debug"` - Enable verbose logging |
-| `path`          | str   | `""`       | Database file path. Defaults to in-memory database.<br/>Can be a file path or `":memory:"` for in-memory database                                                                                                                                                                                               |
+| `path`          | str   | `""`       | Database file path. Defaults to a temporary, non-persistent database.<br/>Can be a file path, or `":memory:"` for a temporary database                                                                                                                                                                                               |
 | `udf_path`      | str   | `""`       | Path to legacy subprocess-based UDF directory. Not needed for native Python UDFs ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                                                                                                                        |
 
 **Returns**
@@ -94,7 +94,7 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 |-----------------|-------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `sql`           | str   | *required* | SQL query string to execute                                                                                                                                                                                                                                                                              |
 | `output_format` | str   | `"CSV"`    | Output format for results. Supported formats:<br/>• `"CSV"` - Comma-separated values<br/>• `"JSON"` - JSON format<br/>• `"Arrow"` - Apache Arrow format<br/>• `"Parquet"` - Parquet format<br/>• `"DataFrame"` - Pandas DataFrame<br/>• `"ArrowTable"` - PyArrow Table<br/>• `"Debug"` - Enable verbose logging |
-| `path`          | str   | `""`       | Database file path. Defaults to in-memory database.<br/>Can be a file path or `":memory:"` for in-memory database                                                                                                                                                                                         |
+| `path`          | str   | `""`       | Database file path. Defaults to a temporary, non-persistent database.<br/>Can be a file path, or `":memory:"` for a temporary database                                                                                                                                                                                         |
 | `udf_path`      | str   | `""`       | Path to legacy subprocess-based UDF directory. Not needed for native Python UDFs ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                                                                                                                 |
 
 **Returns**
@@ -288,10 +288,9 @@ For a complete parameter list, see `clickhouse local --help --verbose`
 |----------------|---------------------------------|
 | `RuntimeError` | If connection to database fails |
 
-<Warning>
-Only one connection per process is supported.
-Creating a new connection will close any existing connection.
-</Warning>
+<Note>
+A process runs one embedded engine bound to one database path. Multiple connections to the same path can coexist and run queries concurrently; opening a *different* path while any connection is open raises — close the open ones first.
+</Note>
 
 **Examples**
 
@@ -373,12 +372,13 @@ Some special args handling:
 - “mode=ro” would be “–readonly=1” for clickhouse (read-only mode)
 </Info>
 
-<Warning>
+<Note>
 **Important**
 
-- There can be only one session at a time. If you want to create a new session, you need to close the existing one.
-- Creating a new session will close the existing one.
-</Warning>
+- Multiple sessions can coexist, each with its own connection and database context, as long as they share the same database path.
+- Sessions are thread-safe; for best performance, use a separate session per thread.
+- To use a different database path, close the open session(s) first.
+</Note>
 
 ---
 
@@ -763,12 +763,9 @@ For a complete parameter list, see `clickhouse local --help --verbose`
 |----------------|---------------------------------|
 | `RuntimeError` | If connection to database fails |
 
-<Warning>
-**Warning**
-
-Only one connection per process is supported.
-Creating a new connection will close any existing connection.
-</Warning>
+<Note>
+A process runs one embedded engine bound to one database path. Multiple connections to the same path can coexist and run queries concurrently; opening a *different* path while any connection is open raises — close the open ones first.
+</Note>
 
 **Examples**
 
@@ -1747,7 +1744,7 @@ chdb.dbapi.connect(*args, **kwargs)
 
 | Parameter  | Type  | Default  | Description                                     |
 |------------|-------|----------|-------------------------------------------------|
-| `path`     | str   | `None`   | Database file path. None for in-memory database |
+| `path`     | str   | `None`   | Database file path. None for a temporary, non-persistent database |
 
 **Raises**
 
@@ -1828,7 +1825,7 @@ class chdb.dbapi.connections.Connection(path=None)
 
 | Parameter  | Type  | Default  | Description                                                                                                        |
 |------------|-------|----------|--------------------------------------------------------------------------------------------------------------------|
-| `path`     | str   | `None`   | Database file path. If None, uses in-memory database. Can be a file path like 'database.db' or None for ':memory:' |
+| `path`     | str   | `None`   | Database file path. If None, uses a temporary, non-persistent database. Can be a file path like 'database.db' or None for ':memory:' |
 
 **Variables**
 
