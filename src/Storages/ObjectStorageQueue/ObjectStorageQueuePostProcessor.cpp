@@ -679,11 +679,14 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
                             auto properties = blobClient.GetProperties().Value;
                             auto blob_size = properties.BlobSize;
-                            /// See moveWithinBucket(): lets a later attempt recognize its own committed copy.
-                            const auto provenance = makeMoveProvenance(
-                                ObjectAttributes{properties.Metadata.begin(), properties.Metadata.end()},
-                                object_from.remote_path,
-                                properties.ETag.ToString());
+                            /// See moveWithinBucket(): lets a later attempt recognize its own committed
+                            /// copy; an unguarded copy leaves the destination's user metadata untouched.
+                            const auto provenance = move_if_none_match.empty()
+                                ? std::optional<ObjectAttributes>{}
+                                : makeMoveProvenance(
+                                    ObjectAttributes{properties.Metadata.begin(), properties.Metadata.end()},
+                                    object_from.remote_path,
+                                    properties.ETag.ToString());
                             auto request_settings = azure_storage->getSettings();
                             auto read_settings = getReadSettings();
                             const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
@@ -722,18 +725,13 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                         || e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed))
                                 {
                                     /// See moveWithinBucket(): a destination recording this source as its
-                                    /// origin means an earlier attempt committed the copy.
-                                    bool own_committed_copy = false;
-                                    try
-                                    {
-                                        auto destination_properties = dst_client->GetBlobClient(object_to.remote_path).GetProperties().Value;
-                                        own_committed_copy = destinationIsOwnCommittedCopy(
-                                            provenance,
-                                            ObjectAttributes{destination_properties.Metadata.begin(), destination_properties.Metadata.end()});
-                                    }
-                                    catch (...) /// NOLINT(bugprone-empty-catch) Ok: an unreadable destination is treated as a foreign object.
-                                    {
-                                    }
+                                    /// origin means an earlier attempt committed the copy. A failing lookup
+                                    /// escapes into the retry loop: swallowed as a collision it would strand
+                                    /// a source whose copy may well have committed.
+                                    auto destination_properties = dst_client->GetBlobClient(object_to.remote_path).GetProperties().Value;
+                                    bool own_committed_copy = destinationIsOwnCommittedCopy(
+                                        provenance,
+                                        ObjectAttributes{destination_properties.Metadata.begin(), destination_properties.Metadata.end()});
                                     if (!own_committed_copy)
                                     {
                                         destination_exists = true;
