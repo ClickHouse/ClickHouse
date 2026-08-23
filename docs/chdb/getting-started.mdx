@@ -215,8 +215,8 @@ sess = chs.Session("gettingStarted.chdb")
 chDB runs a single embedded engine per process, so the database directory (its path) follows a few rules:
 
 - **One process per path**: a chDB data directory can be opened by only one operating system process at a time. A second process that opens the same path fails until the first one closes.
-- **One path per process**: while any connection is open you cannot open another connection for a *different* path — close the existing connection(s) first. Any number of connections to the *same* path may be open at the same time.
-- **Concurrency**: connections to the same path can run queries concurrently.
+- **One path per process**: while a session or connection is open, opening another one for a *different* path fails — close the open one(s) first. Multiple sessions or connections on the *same* path can coexist.
+- **Concurrency**: sessions or connections on the same path can run queries concurrently.
 </Note>
 
 Next, we'll create a database:
