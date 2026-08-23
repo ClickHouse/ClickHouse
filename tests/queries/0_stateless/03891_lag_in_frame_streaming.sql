@@ -24,7 +24,9 @@ SELECT
     map('k1', toString(number % 5)) AS Attributes
 FROM numbers(0, 100000);
 
--- This optimization currently uses the legacy read-in-order path.
+-- This test pins the obsolete planner to keep covering the legacy `optimize_read_in_order`
+-- helper (`tryReuseStorageOrderingForWindowFunctions`).  The default planner path is covered by
+-- `05037_lag_in_frame_streaming_default_planner`.
 SET max_threads = 4, optimize_read_in_order = 1, query_plan_read_in_order = 0, allow_experimental_analyzer = 0;
 
 -- Without the optimization, no StreamingLag in the pipeline.

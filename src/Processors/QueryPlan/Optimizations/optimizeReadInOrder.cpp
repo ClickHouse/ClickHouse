@@ -2215,50 +2215,48 @@ static void tryStreamWindowFunctions(QueryPlan::Node & node)
     if (prefix_description.size() + window_order_by.size() > full_key_size)
         return;
 
-    /// Each window ORDER BY column must be fully compatible with the corresponding storage key column:
-    /// name, direction (accounting for the global read direction), nulls ordering, and collation.
-    const auto & sorting_key = read_from_merge_tree->getStorageMetadata()->getSortingKey();
-    for (size_t i = 0; i < window_order_by.size(); ++i)
-    {
-        const size_t j = prefix_description.size() + i;
-        const auto & win_col = window_order_by[i];
-
-        /// Storage keys cannot have collations; a collated window column is incompatible.
-        if (win_col.collator)
-            return;
-
-        /// The sort description contains resolved column names, but does not retain whether a
-        /// leading component was a table qualifier.  In particular, `__table1.ts` can be a
-        /// user-visible subcolumn rather than an internal planner qualifier.  Do not rewrite
-        /// names here: missing an optimization is safe, whereas accepting an ambiguous name can
-        /// make `StreamingLagTransform` process rows in a different order from `WindowTransform`.
-        if (win_col.column_name != sorting_key.column_names[j])
-            return;
-
-        /// The storage delivers column j in direction: input_order->direction * storage_raw_direction.
-        /// storage_raw_direction is +1 (ASC) unless reverse_flags marks it as DESC.
-        const int storage_raw_direction = (!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[j]) ? -1 : 1;
-        if (win_col.direction != input_order->direction * storage_raw_direction)
-            return;
-
-        /// Storage always sorts with nulls_direction = +1 (NULLS LAST for ASC, NULLS FIRST for DESC).
-        /// A window column requesting nulls_direction == -1 on a nullable/float column is incompatible.
-        const bool column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[j])
-            || isFloat(*sorting_key.data_types[j]);
-        if (column_is_nullable && win_col.nulls_direction == -1)
-            return;
-    }
-
-    const size_t merge_prefix_size = prefix_description.size() + window_order_by.size();
-
-    /// Expand the read-in-order prefix so per-layer internal merges also use the extended key.
-    if (!read_from_merge_tree->requestReadingInOrder(merge_prefix_size, input_order->direction, /*read_limit=*/0))
-        return;
-
     /// Build merge sort description: prefix columns + window ORDER BY columns.
     SortDescription merge_sort_description = prefix_description;
     for (const auto & col : window_order_by)
         merge_sort_description.push_back(col);
+
+    /// The storage order must extend the already-established prefix with the window `ORDER BY`
+    /// columns.  Reuse the read-in-order matcher instead of comparing column names against the
+    /// sorting key by hand: the sort description holds plan column names, which the analyzer
+    /// qualifies (`__table1.ts`) and which may be aliases or monotonic expressions of key
+    /// columns, so a plain name comparison rejects every query on the default (analyzer +
+    /// `query_plan_read_in_order`) path.  The matcher resolves those names through the
+    /// expression DAG below the sort and also handles reverse storage keys, collations, nulls
+    /// ordering and fixed (constant) key columns.
+    std::optional<ActionsDAG> sorting_dag;
+    FixedColumns fixed_columns;
+    size_t dag_limit = 0;
+    buildSortingDAG(*sorting_node->children.front(), sorting_dag, fixed_columns, dag_limit);
+    if (sorting_dag && !fixed_columns.empty())
+        enrichFixedColumns(*sorting_dag, fixed_columns);
+
+    auto extended_order
+        = buildInputOrderFromSortDescription(read_from_merge_tree, fixed_columns, sorting_dag, merge_sort_description, /*limit=*/0);
+
+    /// Every column of `prefix + window ORDER BY` must be matched, and widening the prefix must
+    /// not change the direction the read was already set up with.
+    if (!extended_order.input_order
+        || extended_order.input_order->sort_description_for_merging.size() != merge_sort_description.size()
+        || extended_order.input_order->direction != input_order->direction)
+        return;
+
+    const size_t merge_prefix_size = extended_order.input_order->used_prefix_of_sorting_key_size;
+    if (merge_prefix_size < input_order->used_prefix_of_sorting_key_size)
+        return;
+
+    /// Expand the read-in-order prefix so per-layer internal merges also use the extended key.
+    /// Keep the read limit that the earlier `requestReadingInOrder` installed: `ReadFromMergeTree`
+    /// uses `input_order_info->limit` to stop in-order scans early (e.g. for
+    /// `SELECT lagInFrame(...) OVER (...) FROM t LIMIT 10`), and re-requesting with `0` here makes
+    /// it read more granules than the limit needs.  The limit stays valid because the widened
+    /// prefix only refines an order the read already delivers.
+    if (!read_from_merge_tree->requestReadingInOrder(merge_prefix_size, input_order->direction, input_order->limit))
+        return;
 
     /// Apply the transformation.
     sorting->convertToMergeOnly(std::move(merge_sort_description));
