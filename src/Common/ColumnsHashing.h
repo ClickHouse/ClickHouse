@@ -388,6 +388,10 @@ struct HashMethodSerialized
     /// and the bytes of a duplicate row are taken back by the row that follows it.
     bool can_use_key_region = false;
     bool batch_serialized = false;
+    /// LOCAL EXPERIMENT ONLY: same chunked one pass, but into a buffer reused across chunks, for the
+    /// methods whose cells carry an aggregate state (the hash table copies an inserted key out of it).
+    bool use_chunk_scratch = false;
+    PaddedPODArray<char> chunk_scratch;
     bool use_key_region = false;
     /// Rows are done a chunk at a time: a whole block would need one large contiguous region, and a
     /// chunk this size is still written, hashed and probed while it is in cache.
@@ -482,6 +486,11 @@ struct HashMethodSerialized
             /// -72% at 128 bytes per row down to -9% at 512, and nothing beyond that.
             can_use_key_region = total_size != 0 && !Base::has_mapped && avg_row_size <= 512;
             use_batch_serialize = shouldUseBatchSerialize();
+
+            /// LOCAL EXPERIMENT ONLY
+            static const bool exp_chunk_mapped = std::getenv("CH_SER_CHUNK_MAPPED") != nullptr;
+            if (exp_chunk_mapped && Base::has_mapped && total_size != 0)
+                can_use_key_region = true;
         }
 
         /// We can only precompute canonical per-row hashes when:
@@ -569,6 +578,8 @@ struct HashMethodSerialized
 
         use_key_region = true;
         use_batch_serialize = false;
+        if constexpr (Base::has_mapped)
+            use_chunk_scratch = true;
         /// With the keys materialised ahead of the loop their hashes can be too, which is what the
         /// prefetch needs. Until the region is turned on there is nothing to precompute them from.
         if (has_pre_computed_hashes && prefetch_enabled && !prefetching)
@@ -626,7 +637,13 @@ struct HashMethodSerialized
             ++chunk_end;
         }
 
-        if (static_cast<size_t>(region_end - region_free) < bytes)
+        if (use_chunk_scratch)
+        {
+            chunk_scratch.resize(bytes);
+            region_free = chunk_scratch.data();
+            region_end = region_free + bytes;
+        }
+        else if (static_cast<size_t>(region_end - region_free) < bytes)
         {
             const size_t size = std::max(region_bytes, bytes);
             region_free = pool.alloc(size);
@@ -665,7 +682,7 @@ struct HashMethodSerialized
     template <typename Data, typename LookupResult>
     void ALWAYS_INLINE onEmplaced(size_t row, Data &, LookupResult cell, bool inserted)
     {
-        if (!use_key_region || !inserted)
+        if (!use_key_region || use_chunk_scratch || !inserted)
             return;
 
         if constexpr (std::is_pointer_v<LookupResult>)
@@ -687,7 +704,8 @@ struct HashMethodSerialized
         {
             if (row < chunk_begin || row >= chunk_end) [[unlikely]]
                 prepareKeyChunk(row, pool);
-            return ArenaKeyHolder{serialized_keys[row], pool, {}, ArenaKeyPlacement::InArena};
+            return ArenaKeyHolder{
+                serialized_keys[row], pool, {}, use_chunk_scratch ? ArenaKeyPlacement::NeedsCopy : ArenaKeyPlacement::InArena};
         }
 
         if (use_batch_serialize)
