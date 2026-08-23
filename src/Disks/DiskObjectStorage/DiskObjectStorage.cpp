@@ -105,8 +105,6 @@ DiskObjectStorage::DiskObjectStorage(const DiskObjectStorage & base, MetadataSto
     data_source_description.metadata_type = metadata_storage->getType();
 
     std::lock_guard lock(base.resource_mutex);
-    read_resource_name_from_config = base.read_resource_name_from_config;
-    write_resource_name_from_config = base.write_resource_name_from_config;
     read_resource_name_from_sql = base.read_resource_name_from_sql;
     write_resource_name_from_sql = base.write_resource_name_from_sql;
     read_resource_name_from_sql_any = base.read_resource_name_from_sql_any;
