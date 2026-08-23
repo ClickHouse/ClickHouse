@@ -46,11 +46,28 @@ namespace
 /// parsing it as a date and time. Otherwise a value such as `2024 April 4` is silently truncated to the
 /// unix timestamp `2024` with the rest of the string thrown away.
 ///
-/// The only tolerated leftover is the UTC offset that PostgreSQL renders for `timestamp with time zone`
-/// (`2025-01-02 03:04:05.6789+00`, also `+03:30` or `-08`). The offset is not applied - the value is
-/// interpreted in the time zone of the ClickHouse column, as before - but it must not be treated as garbage.
+/// The tolerated leftovers are the fractional seconds and the UTC offset that PostgreSQL renders for
+/// `timestamp` and `timestamp with time zone` (`2025-01-02 03:04:05.6789+00`, also `+03:30` or `-08`).
+/// A plain `DateTime` has no place for subsecond precision, so `readDateTimeText` stops in front of the
+/// dot and the fraction is dropped here; the offset is not applied either - the value is interpreted in
+/// the time zone of the ClickHouse column, as before - but neither may be treated as garbage.
 void assertPostgreSQLDateTimeFullyParsed(ReadBuffer & in)
 {
+    if (!in.eof() && *in.position() == '.')
+    {
+        ++in.position();
+
+        bool has_digits = false;
+        while (!in.eof() && isNumericASCII(*in.position()))
+        {
+            has_digits = true;
+            ++in.position();
+        }
+
+        if (!has_digits)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse the fractional seconds of a date and time value");
+    }
+
     if (!in.eof() && (*in.position() == '+' || *in.position() == '-'))
     {
         ++in.position();

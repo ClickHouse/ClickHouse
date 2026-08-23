@@ -898,6 +898,31 @@ def test_postgres_datetime(started_cluster):
     assert result == "2025-01-02 03:04:05.678900\n"
 
 
+def test_postgres_datetime_fractional_seconds(started_cluster):
+    """PostgreSQL renders fractional seconds for `timestamp` and `timestamp with time zone`. A plain
+    ClickHouse `DateTime` cannot hold them, so they are dropped, but the value must still be accepted."""
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_datetime_fraction")
+    cursor.execute(
+        "CREATE TABLE test_datetime_fraction AS (SELECT "
+        "'2025-01-02 03:04:05.678900'::timestamptz AS ts_z, "
+        "'2025-01-02 03:04:05.678900'::timestamp AS ts, "
+        "ARRAY['2025-01-02 03:04:05.678900'::timestamptz] AS ts_z_array)"
+    )
+
+    node1.query("DROP TABLE IF EXISTS test_datetime_fraction")
+    node1.query(
+        f"CREATE TABLE test_datetime_fraction (ts_z DateTime('UTC'), ts DateTime('UTC'), ts_z_array Array(DateTime('UTC'))) "
+        f"ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'test_datetime_fraction', 'postgres', '{pg_pass}')"
+    )
+
+    result = node1.query("SELECT ts_z, ts, ts_z_array FROM test_datetime_fraction")
+    assert result == "2025-01-02 03:04:05\t2025-01-02 03:04:05\t['2025-01-02 03:04:05']\n"
+
+    node1.query("DROP TABLE test_datetime_fraction")
+    cursor.execute("DROP TABLE test_datetime_fraction")
+
+
 def test_postgres_datetime_trailing_garbage(started_cluster):
     """A value that is not a date and time must be rejected instead of being silently truncated to
     the leading four digits interpreted as a unix timestamp (`2024 April 4` -> `2024`)."""
