@@ -227,6 +227,10 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         if (window->hasStreamsFanOut())
             return {};
 
+        /// A window without a full sort description (`OVER ()`) merges the pipeline to a single stream.
+        if (window->getWindowDescription().full_sort_description.empty())
+            return {};
+
         if (property.isDisjoint())
             appendExpression(property.column_actions, ActionsDAG(window->getOutputHeader()->getColumnsWithTypeAndName()));
         return property;
