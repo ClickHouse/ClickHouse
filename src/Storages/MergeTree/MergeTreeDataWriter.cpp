@@ -1172,11 +1172,15 @@ static std::pair<const ASTFunction *, const IAST *> extractLambdaParamsAndBody(c
 /// source type tells them apart, so name the step here and resolve it during the type descent.
 static constexpr std::string_view SUBSCRIPT_MEMBER = "[]";
 
+static const IAST * unwrapTransparentProjectionExpression(const IAST & node);
+
 /// "t.doc" / "t.1" for tupleElement(t, 'doc' | 1) chains, "m.keys"/"m.values" for mapKeys/mapValues(m),
 /// "x.[]" for a constant subscript, over a plain column base; nullopt when the base is not a plain
-/// (possibly nested) column reference.
-static std::optional<String> tryGetMemberQualifiedName(const IAST & node)
+/// (possibly nested) column reference. Transparent wrappers are peeled at every step, so
+/// `tupleElement(assumeNotNull(t), 'doc')` still names `t.doc` instead of falling back to `t`.
+static std::optional<String> tryGetMemberQualifiedName(const IAST & wrapped_node)
 {
+    const IAST & node = *unwrapTransparentProjectionExpression(wrapped_node);
     if (const auto * identifier = node.as<ASTIdentifier>())
         return identifier->name();
 
@@ -1217,6 +1221,35 @@ static std::optional<String> tryGetMemberQualifiedName(const IAST & node)
     }
 
     return std::nullopt;
+}
+
+/// `x -> tupleElement(x, 'doc')` bound to `arr` reads one member of the array's elements, so the
+/// donor is `arr.doc` (the member descent looks through the Array) rather than the whole `arr`.
+/// False when the body also reads the formal bare, or the bound source has no qualified name:
+/// then the caller's whole-source fallback is the only safe answer.
+static bool tryAddMemberQualifiedLambdaSource(
+    const String & param_name,
+    const IdentifierNameSet & body_names,
+    const IAST & source,
+    IdentifierNameSet & names,
+    const std::unordered_set<String> & masked_names)
+{
+    if (body_names.contains(param_name))
+        return false;
+    auto source_name = tryGetMemberQualifiedName(source);
+    if (!source_name)
+        return false;
+    if (masked_names.contains(source_name->substr(0, source_name->find('.'))))
+        return false;
+
+    const String prefix = param_name + ".";
+    bool added = false;
+    for (auto it = body_names.lower_bound(prefix); it != body_names.end() && it->starts_with(prefix); ++it)
+    {
+        names.insert(*source_name + it->substr(param_name.size()));
+        added = true;
+    }
+    return added;
 }
 
 static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNameSet & names, std::unordered_set<String> & masked_names)
@@ -1331,7 +1364,9 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
                 for (size_t i = 0; i != params.size(); ++i)
                 {
                     const auto * param_identifier = params[i]->as<ASTIdentifier>();
-                    if (param_identifier && lambdaParamIsUsedInBody(param_identifier->name(), body_names))
+                    if (!param_identifier || !lambdaParamIsUsedInBody(param_identifier->name(), body_names))
+                        continue;
+                    if (!tryAddMemberQualifiedLambdaSource(param_identifier->name(), body_names, *args[1 + i], names, masked_names))
                         collectValueCarryingIdentifierNames(*args[1 + i], names, masked_names);
                 }
                 return;
@@ -1434,9 +1469,10 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                 const auto * body_tuple = params_tuple
                     ? unwrapTransparentProjectionExpression(*lambda_arg->arguments->children[1])->as<ASTFunction>()
                     : nullptr;
-                const auto * map_identifier = unwrapTransparentProjectionExpression(*args[1])->as<ASTIdentifier>();
+                /// The map may be named through members too: mapApply((k, v) -> ..., tupleElement(t, 'm')).
+                auto map_name = tryGetMemberQualifiedName(*args[1]);
                 if (params_tuple && params_tuple->name == "tuple" && params_tuple->arguments
-                    && params_tuple->arguments->children.size() == 2 && map_identifier
+                    && params_tuple->arguments->children.size() == 2 && map_name
                     && body_tuple && body_tuple->name == "tuple" && body_tuple->arguments
                     && body_tuple->arguments->children.size() == 2)
                 {
@@ -1444,7 +1480,7 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                     for (size_t i = 0; i != 2; ++i)
                         if (const auto * param_identifier = params_tuple->arguments->children[i]->as<ASTIdentifier>())
                             param_to_member.emplace(
-                                param_identifier->name(), map_identifier->name() + (i == 0 ? ".keys" : ".values"));
+                                param_identifier->name(), *map_name + (i == 0 ? ".keys" : ".values"));
 
                     provenance.is_map = true;
                     for (size_t i = 0; i != 2; ++i)
@@ -1498,13 +1534,12 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                                 IdentifierNameSet source_names = collectValueCarryingIdentifierNames(*source_it->second);
                                 slot_candidates.insert(slot_candidates.end(), source_names.begin(), source_names.end());
                             }
-                            else if (const auto * source_identifier
-                                     = unwrapTransparentProjectionExpression(*source_it->second)->as<ASTIdentifier>())
+                            else if (auto source_name = tryGetMemberQualifiedName(*source_it->second))
                             {
-                                /// `x.doc` with x bound to `arr` (possibly through materialize()/CAST):
-                                /// name it `arr.doc` and let the member descent in
-                                /// resolveMemberQualifiedPolicySource do the rest.
-                                slot_candidates.push_back(source_identifier->name() + name.substr(dot));
+                                /// `x.doc` with x bound to `arr` or to a member-qualified source such
+                                /// as `tupleElement(t, 'arr')`: name it `arr.doc` / `t.arr.doc` and let
+                                /// the member descent in resolveMemberQualifiedPolicySource do the rest.
+                                slot_candidates.push_back(*source_name + name.substr(dot));
                             }
                         }
                         provenance.tuple_element_candidates.push_back(std::move(slot_candidates));

@@ -293,55 +293,37 @@ TEST(DataTypeObjectSharedRegexp, MergeLooksThroughArrayMismatchOnSourceSide)
     EXPECT_EQ(asJSON(merged).getSharedDataPathRules().size(), 1);
 }
 
-TEST(DataTypeObjectSharedRegexp, MergeLooksThroughSingleElementTupleMismatchOnSourceSide)
+TEST(DataTypeObjectSharedRegexp, MergeLeavesSourceSideTupleUntouched)
 {
-    /// Source-side mirror: `tupleElement(t, 1)` over a single-element `t`.
+    /// A source-side Tuple is never unwrapped by shape, not even a single-element one: the
+    /// projection may have read any element, so the member actually read has to arrive qualified
+    /// from the AST (`t.1`, resolved by descendJSONPolicySourceIntoMember in MergeTreeDataWriter).
     const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
-
-    const auto merged = mergeJSONSharedDataPathRules(
-        makeJSONType({}), std::make_shared<DataTypeTuple>(DataTypes{rule_bearing}));
-    EXPECT_EQ(asJSON(merged).getSharedDataPathRules().size(), 1);
-
-    /// A multi-element tuple source is equally ambiguous in reverse; leave the target untouched.
     const auto bare_target = makeJSONType({});
+
+    const auto single_element_source = std::make_shared<DataTypeTuple>(DataTypes{rule_bearing});
+    EXPECT_EQ(mergeJSONSharedDataPathRules(bare_target, single_element_source).get(), bare_target.get());
+
     const auto multi_element_source = std::make_shared<DataTypeTuple>(DataTypes{rule_bearing, makeJSONType({})});
     EXPECT_EQ(mergeJSONSharedDataPathRules(bare_target, multi_element_source).get(), bare_target.get());
 }
 
-TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapValueMismatchOnSourceSide)
+TEST(DataTypeObjectSharedRegexp, MergeLeavesSourceSideMapUntouched)
 {
-    /// Source-side mirror: the JSON value came from the map's value type here.
+    /// Same for a source-side Map: which side the expression read (`mapKeys` vs `mapValues`/`m[k]`)
+    /// is not recoverable from the target's own bare type, so the qualified name must say so.
     const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+    const auto bare_target = makeJSONType({});
 
-    const auto merged = mergeJSONSharedDataPathRules(
-        makeJSONType({}), std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), rule_bearing));
-    EXPECT_EQ(asJSON(merged).getSharedDataPathRules().size(), 1);
-}
+    const auto value_source = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), rule_bearing);
+    EXPECT_EQ(mergeJSONSharedDataPathRules(bare_target, value_source).get(), bare_target.get());
 
-TEST(DataTypeObjectSharedRegexp, MergeLooksThroughMapKeyMismatchOnSourceSide)
-{
-    /// Source-side mirror of the key case: `mapKeys(m)[1]` over `m Map(JSON(...), UInt8)` resolves
-    /// its own bare type against a source column whose JSON lives in the map's key type.
-    const auto rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
+    const auto key_source = std::make_shared<DataTypeMap>(rule_bearing, std::make_shared<DataTypeString>());
+    EXPECT_EQ(mergeJSONSharedDataPathRules(bare_target, key_source).get(), bare_target.get());
 
-    const auto merged = mergeJSONSharedDataPathRules(
-        makeJSONType({}), std::make_shared<DataTypeMap>(rule_bearing, std::make_shared<DataTypeString>()));
-    EXPECT_EQ(asJSON(merged).getSharedDataPathRules().size(), 1);
-}
-
-TEST(DataTypeObjectSharedRegexp, MergeMergesAmbiguousMapSidesOnSourceSide)
-{
-    /// Extracting from a historical Map(JSON(...), JSON(...)) (e.g. mapKeys(m)[1] vs
-    /// mapValues(m)[1]/m[k]): the expression's own bare output type can't say which side it came
-    /// from when both are JSON-shaped. With different rules on each side, conservatively take the
-    /// union of both rather than guessing and silently dropping whichever side wasn't picked.
-    const auto key_rule_bearing = makeJSONType({{"^tag_", MatchMode::Partial}});
-    const auto value_rule_bearing = makeJSONType({{"^flag_", MatchMode::Partial}});
-
-    const auto merged = mergeJSONSharedDataPathRules(
-        makeJSONType({}), std::make_shared<DataTypeMap>(key_rule_bearing, value_rule_bearing));
-    const auto & merged_object = asJSON(merged);
-    ASSERT_EQ(merged_object.getSharedDataPathRules().size(), 2);
+    /// Both sides JSON-shaped is the ambiguous case the qualified-name rule exists for.
+    const auto both_sides_source = std::make_shared<DataTypeMap>(rule_bearing, makeJSONType({{"^flag_", MatchMode::Partial}}));
+    EXPECT_EQ(mergeJSONSharedDataPathRules(bare_target, both_sides_source).get(), bare_target.get());
 }
 
 TEST(DataTypeObjectSharedRegexp, GetTypeOfNestedObjectsPropagatesRulesAndExtendsPrefix)
