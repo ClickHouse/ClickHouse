@@ -546,6 +546,15 @@ struct HashMethodSerialized
 
     bool shouldUseBatchSerialize() const
     {
+        /// LOCAL EXPERIMENT ONLY: force either layout, to compare them at the same row size.
+        static const int exp_force = []
+        {
+            const char * v = std::getenv("CH_SER_FORCE_BATCH");
+            return v ? std::atoi(v) : -1;
+        }();
+        if (exp_force >= 0)
+            return exp_force != 0;
+
 #if defined(__aarch64__)
         /// On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
         /// Measured again on Graviton4 with this rule applied instead: every shape from 32 to 1024
