@@ -880,7 +880,15 @@ async function chQuery(query, conn) {
     /// `conn` binds the request to a connection captured by `connectionSnapshot` so a whole
     /// load batch targets one server even if the fields change mid-load; without it we read
     /// the live fields, as the single-shot credential probe does.
-    const host = (conn ? conn.url : $('url').value).replace(/\/+$/, '');
+    const address = conn ? conn.url : $('url').value;
+    /// The configured address can already carry a query string - `?database=db`, or a proxy route
+    /// selecting a cluster or a namespace - both when it comes from `?url=` or the server URL field,
+    /// and when a host page hands it over. Extend it with `&` in that case instead of appending a
+    /// second `?`, exactly like `play.html` and `docs.html`: a second `?` is not a separator, so
+    /// `default_format` would be folded into the value of the last existing parameter and the
+    /// response would not be JSON. Without a query string the address is a bare endpoint, so it
+    /// gets the root path and a `?`.
+    const endpoint = address.indexOf('?') >= 0 ? address + '&' : address.replace(/\/+$/, '') + '/?';
     const user = conn ? conn.user : $('user').value;
     const password = conn ? conn.password : $('password').value;
     const params = new URLSearchParams();
@@ -893,7 +901,7 @@ async function chQuery(query, conn) {
     if (user) params.set('user', user);
     if (password) params.set('password', password);
 
-    const resp = await fetch(host + '/?' + params.toString(), {
+    const resp = await fetch(endpoint + params.toString(), {
         method: 'POST',
         body: query,
         headers: { 'Authorization': 'never' },

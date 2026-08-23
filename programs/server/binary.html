@@ -71,7 +71,14 @@
         }
 
         function buildURL() {
-            let result = `${host}?allow_introspection_functions=1`;
+            /// The configured address can already carry a query string - `?database=db`, or a proxy
+            /// route selecting a cluster or a namespace - both when it comes from `?host=` and when a
+            /// host page hands it over. Start the parameters below with `&` in that case instead of a
+            /// second `?`, exactly like `play.html` and `docs.html`: a second `?` is not a separator,
+            /// so `allow_introspection_functions` would be folded into the value of the last existing
+            /// parameter and the request would go to a different endpoint than the one configured.
+            const separator = host.indexOf('?') >= 0 ? '&' : '?';
+            let result = `${host}${separator}allow_introspection_functions=1`;
 
             if (add_http_cors_header) {
                 result += '&add_http_cors_header=1';

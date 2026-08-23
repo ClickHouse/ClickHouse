@@ -357,7 +357,7 @@
     }
 
     // Listen for messages from the parent (credentials, refit requests).
-    // Accepted origins: same-origin, *.clickhouse.com, *.clickhouse.cloud (https only).
+    // Accepted origins: same-origin and the exact `TRUSTED_PARENT_ORIGINS` list.
     // A 'webterminal-hello' handshake lets the parent register its origin so the iframe
     // can post back even when the parent is cross-origin.
     window.addEventListener('message', function(e) {

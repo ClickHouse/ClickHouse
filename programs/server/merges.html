@@ -326,7 +326,13 @@ async function load() {
     const user = document.getElementById('user').value;
     const password = document.getElementById('password').value;
 
-    let url = `${host}?default_format=JSONEachRow&enable_http_compression=1`
+    // The configured address can already carry a query string - `?database=db`, or a proxy route
+    // selecting a cluster or a namespace - both when the user types it into the server URL field and
+    // when a host page hands it over. Start the parameters below with `&` in that case instead of a
+    // second `?`, exactly like `play.html` and `docs.html`: a second `?` is not a separator, so
+    // `default_format` would be folded into the value of the last existing parameter and the
+    // response would not be JSON.
+    let url = `${host}${host.indexOf('?') >= 0 ? '&' : '?'}default_format=JSONEachRow&enable_http_compression=1`
 
     if (add_http_cors_header) {
         // For debug purposes, you may set add_http_cors_header from the browser console

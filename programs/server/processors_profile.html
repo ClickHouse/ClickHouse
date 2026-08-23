@@ -409,7 +409,14 @@
         /// Build a URL carrying only credential and format params. The SQL itself is sent in the POST body
         /// so it can't be mangled by URL encoding, intermediate proxies, or URL length limits.
         function buildBaseUrl(format) {
-            let url = `${host}?default_format=${format}&enable_http_compression=1`;
+            /// The configured address can already carry a query string - `?database=db`, or a proxy
+            /// route selecting a cluster or a namespace - both when the user types it into the server
+            /// URL field and when a host page hands it over. Start the parameters below with `&` in
+            /// that case instead of a second `?`, exactly like `play.html` and `docs.html`: a second
+            /// `?` is not a separator, so `default_format` would be folded into the value of the last
+            /// existing parameter and the response would not be in the requested format.
+            const separator = host.indexOf('?') >= 0 ? '&' : '?';
+            let url = `${host}${separator}default_format=${format}&enable_http_compression=1`;
             if (add_http_cors_header) url += '&add_http_cors_header=1';
             if (user) url += `&user=${encodeURIComponent(user)}`;
             if (password) url += `&password=${encodeURIComponent(password)}`;

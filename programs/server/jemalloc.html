@@ -564,7 +564,14 @@
 
         /// Build a query URL with authentication and CORS parameters
         function buildUrl(query, format = 'TabSeparated') {
-            let url = `${host}?default_format=${format}&enable_http_compression=1&query=${encodeURIComponent(query)}`;
+            /// The configured address can already carry a query string - `?database=db`, or a proxy
+            /// route selecting a cluster or a namespace - both when the user types it into the server
+            /// URL field and when a host page hands it over. Start the parameters below with `&` in
+            /// that case instead of a second `?`, exactly like `play.html` and `docs.html`: a second
+            /// `?` is not a separator, so `default_format` would be folded into the value of the last
+            /// existing parameter and the response would not be in the requested format.
+            const separator = host.indexOf('?') >= 0 ? '&' : '?';
+            let url = `${host}${separator}default_format=${format}&enable_http_compression=1&query=${encodeURIComponent(query)}`;
             if (add_http_cors_header) {
                 url += '&add_http_cors_header=1';
             }

@@ -27,6 +27,8 @@ The host answers with the connection:
 
 `url` is optional and defaults to the server the page already points at, so a host that embeds a page served by the very server it wants queried can send the credentials alone. The credentials, in contrast, are always applied in full: a `user` or `password` the message omits is cleared, so credentials never outlive the connection they belong to and cannot be attached to a different server named by a later message.
 
+A `url` may carry a query string of its own — a default `database`, or a proxy route selecting a cluster or a namespace — and it is preserved: the page appends its own request parameters to it, rather than starting a second query string that would fold the first of them into the value of the last parameter of the endpoint.
+
 The page has to speak first because a host that opened it with `window.open` cannot tell when its document became ready — cross-origin `load` events are not observable. The announcement is broadcast with the `'*'` target origin, because the page cannot read its host's location either; it carries no secrets, only the fact that the page exists, which the host knows already.
 
 ## Embedding example {#embedding-example}
