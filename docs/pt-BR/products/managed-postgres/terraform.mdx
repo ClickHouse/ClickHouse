@@ -14,16 +14,8 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 Os serviços do ClickHouse Managed Postgres podem ser criados e gerenciados usando o recurso `clickhouse_postgres_service` no [provider Terraform do ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service). Esta página aborda a configuração do provider e traz exemplos de configuração para o recurso e suas fontes de dados correspondentes.
 
 <Note>
-  Este recurso está em alpha, e seu comportamento pode mudar em versões futuras do provider. Ele é distribuído na compilação regular do provider. Esta página documenta a versão **v3.21.0** do provider e posteriores, que alteraram a forma como as credenciais são gerenciadas; versões anteriores se comportam de forma diferente e, desde 31 de julho de 2026, não funcionam mais corretamente. Consulte os [lançamentos do provider](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) para mais detalhes.
+  Este recurso está em alpha, e seu comportamento pode mudar em versões futuras do provider. Ele é distribuído na compilação regular do provider. Esta página documenta a versão **v3.21.0** do provider e posteriores. Consulte os [lançamentos do provider](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) para mais detalhes.
 </Note>
-
-<Warning>
-  **Faça upgrade para o provider v3.21.0 antes de 31 de julho de 2026**
-
-  Desde **31 de julho de 2026**, a API do Managed Postgres deixou de retornar a senha do superusuário e a string de conexão em suas respostas; as credenciais são retornadas apenas quando um serviço é criado ou sua senha é redefinida. As versões **v3.21.0 e posteriores** do provider funcionam de forma idêntica antes e depois dessa alteração. Versões mais antigas do provider dependem de a API repetir as credenciais: desde 31 de julho de 2026, elas não preenchem mais `connection_string`, e um serviço criado sem uma `password` declarada é criado com sucesso, enquanto a senha gerada nunca é capturada em nenhum lugar.
-
-  Faça upgrade antes de 31 de julho de 2026. Seu estado é migrado automaticamente no primeiro plan ou apply com a v3.21.0. Se algum dos seus serviços depender de uma senha gerada pelo servidor (sem `password` na configuração), recupere-a primeiro com `terraform state pull` e declare-a, pois a v3.21.0 exige `password` ou `password_wo` para um serviço padrão.
-</Warning>
 
 <div id="provider-setup">
   ## Configuração do provider
@@ -73,7 +65,7 @@ O recurso `clickhouse_postgres_service` tem os seguintes argumentos:
 | `read_replica_of`          | Não                                                                | ID de um serviço primário a ser replicado. Consulte [Réplicas de leitura](#read-replicas). Mutuamente exclusivo com `restore_to_point_in_time`.                                                                                                        |
 | `restore_to_point_in_time` | Não                                                                | Cria o serviço restaurando outro serviço para um ponto no tempo. Consulte [Restauração para um ponto no tempo](#point-in-time-restore). Mutuamente exclusivo com `read_replica_of`.                                                                    |
 
-Os seguintes atributos são somente leitura e são preenchidos pelo ClickHouse Cloud após a criação: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port` e `username`. Não há atributo `connection_string` (removido na v3.21.0): monte URIs de conexão a partir de `hostname`, `port`, `username` e da senha que você declarar, por exemplo `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
+Os seguintes atributos são somente leitura e são preenchidos pelo ClickHouse Cloud após a criação: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port` e `username`. Não há atributo `connection_string`: monte URIs de conexão a partir de `hostname`, `port`, `username` e da senha que você declarar, por exemplo `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
 
 <Warning>
   A `password` é armazenada em texto simples no seu estado do Terraform. Proteja seu arquivo de estado adequadamente, por exemplo com um backend remoto usando criptografia em repouso, ou use `password_wo` para manter a senha totalmente fora do estado.
@@ -167,7 +159,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All Managed Postgres services in the organization.
+# All ClickHouse Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -180,7 +172,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## Importando serviços existentes
 </div>
 
-Os serviços Managed Postgres existentes podem ser importados para o estado do Terraform usando o ID do serviço:
+Os serviços ClickHouse Managed Postgres existentes podem ser importados para o estado do Terraform usando o ID do serviço:
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

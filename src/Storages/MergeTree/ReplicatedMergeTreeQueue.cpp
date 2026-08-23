@@ -85,6 +85,7 @@ void ReplicatedMergeTreeQueue::clear()
     mutations_by_znode.clear();
     mutations_by_partition.clear();
     mutation_pointer.clear();
+    mutation_pointer_mtime = 0;
     mutation_counters = {};
 }
 
@@ -220,7 +221,9 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         {  /// Mutation pointer is a part of "state" and must be updated with state mutex
             std::lock_guard lock(state_mutex);
-            zookeeper->tryGet(fs::path(replica_path) / "mutation_pointer", mutation_pointer);
+            Coordination::Stat mutation_pointer_stat;
+            if (zookeeper->tryGet(fs::path(replica_path) / "mutation_pointer", mutation_pointer, &mutation_pointer_stat))
+                mutation_pointer_mtime = mutation_pointer_stat.mtime / 1000;
         }
     }
 
@@ -999,7 +1002,14 @@ namespace
 /// We use this representation to understand which parts mutation actually have to mutate.
 struct QueueEntryRepresentation
 {
-    std::vector<MergeTreePartInfo> produced_parts;
+    /// The name is stored rather than derived on demand: that is impossible in the V0 name format.
+    struct NamedPartInfo
+    {
+        MergeTreePartInfo info;
+        String name;
+    };
+
+    std::vector<NamedPartInfo> produced_parts;
     std::vector<MergeTreePartInfo> dropped_parts;
 };
 
@@ -1023,7 +1033,8 @@ PartitionQueueRepresentation getQueueRepresentation(const std::list<ReplicatedMe
             case LogEntryType::MERGE_PARTS:
             case LogEntryType::MUTATE_PART:
             {
-                representations_by_znode[znode_name].produced_parts.push_back(MergeTreePartInfo::fromPartName(entry->new_part_name, format_version));
+                representations_by_znode[znode_name].produced_parts.push_back(
+                    {MergeTreePartInfo::fromPartName(entry->new_part_name, format_version), entry->new_part_name});
                 break;
             }
             case LogEntryType::REPLACE_RANGE:
@@ -1035,7 +1046,7 @@ PartitionQueueRepresentation getQueueRepresentation(const std::list<ReplicatedMe
                 produced_parts.reserve(produced_parts.size() + new_parts.size());
                 for (const auto & new_part : new_parts)
                 {
-                    produced_parts.push_back(MergeTreePartInfo::fromPartName(new_part, format_version));
+                    produced_parts.push_back({MergeTreePartInfo::fromPartName(new_part, format_version), new_part});
                 }
 
                 if (auto drop_range = entry->getDropRange(format_version))
@@ -1073,10 +1084,10 @@ PartitionQueueRepresentation getQueueRepresentation(const std::list<ReplicatedMe
             representations_by_partition[partiton_id].dropped_parts.push_back(std::move(part_to_drop_info));
         }
 
-        for (auto & part_to_add_info : entry_representation.produced_parts)
+        for (auto & part_to_add : entry_representation.produced_parts)
         {
-            const auto partiton_id = part_to_add_info.getPartitionId();
-            representations_by_partition[partiton_id].produced_parts.push_back(std::move(part_to_add_info));
+            const auto partiton_id = part_to_add.info.getPartitionId();
+            representations_by_partition[partiton_id].produced_parts.push_back(std::move(part_to_add));
         }
     }
     return representations_by_partition;
@@ -1129,11 +1140,11 @@ ActiveDataPartSet getPartNamesToMutate(
         }
 
         /// After we have to add parts if entry adds them
-        for (const auto & part_to_add_info : queue_representation.at(partition_id).produced_parts)
+        for (const auto & part_to_add : queue_representation.at(partition_id).produced_parts)
         {
-            if (part_to_add_info.getDataVersion() < block_num)
+            if (part_to_add.info.getDataVersion() < block_num)
             {
-                result.add(part_to_add_info);
+                result.add(part_to_add.info, part_to_add.name);
             }
         }
     }
@@ -2562,6 +2573,11 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Marking mutation {} done because it is <= mutation_pointer ({})", znode, mutation_pointer);
                 mutation.is_done = true;
+                /// The pointer mtime is the time the mutation it points at was finalized.
+                /// For older mutations the pointer has already been overwritten, so their
+                /// completion time is unknown and `finish_time` is left zero.
+                if (znode == mutation_pointer)
+                    mutation.finish_time = mutation_pointer_mtime;
                 mutation.latest_fail_reason.clear();
                 mutation.latest_fail_error_code_name.clear();
                 alter_sequence.finishDataAlter(mutation.entry->alter_version, lock);
@@ -2610,11 +2626,17 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     if (!finished.empty())
     {
-        zookeeper->set(fs::path(replica_path) / "mutation_pointer", finished.back()->znode_name);
+        Coordination::Stat mutation_pointer_stat;
+        zookeeper->set(fs::path(replica_path) / "mutation_pointer", finished.back()->znode_name, -1, &mutation_pointer_stat);
 
         std::lock_guard lock(state_mutex);
 
         mutation_pointer = finished.back()->znode_name;
+        mutation_pointer_mtime = mutation_pointer_stat.mtime / 1000;
+
+        /// The modification time of the `mutation_pointer` znode is the finish time of all
+        /// mutations finalized by this update (they are marked done by the same pointer advance).
+        time_t finish_time = mutation_pointer_mtime;
 
         for (const ReplicatedMergeTreeMutationEntry * entry : finished)
         {
@@ -2623,6 +2645,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Mutation {} is done", entry->znode_name);
                 it->second.is_done = true;
+                it->second.finish_time = finish_time;
                 it->second.latest_fail_reason.clear();
                 it->second.latest_fail_error_code_name.clear();
                 if (entry->isAlterMutation())
@@ -2805,6 +2828,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 entry.znode_name,
                 command.ast_text,
                 entry.create_time,
+                status.finish_time,
                 entry.block_numbers,
                 parts_in_progress,
                 parts_to_mutate,
