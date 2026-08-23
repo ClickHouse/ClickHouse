@@ -390,9 +390,13 @@ struct HashMethodSerialized
     bool use_chunk_scratch = false;
     PaddedPODArray<char> chunk_scratch;
     bool use_key_region = false;
-    /// Rows are done a chunk at a time: a whole block would need one large contiguous region, and a
-    /// chunk this size is still written, hashed and probed while it is in cache.
+    /// Rows are done a chunk at a time, so that what is written, hashed and probed stays in cache -
+    /// a block laid out in one piece is read back from memory, and that costs from 7% of the
+    /// aggregation at 128 KiB to 27% at 32 MiB. A block that is small enough to stay in cache anyway
+    /// is done in one chunk, which is what `chunk_min_bytes` is for: chunking it instead only adds
+    /// the per-chunk work.
     static constexpr size_t region_chunk_bytes = 128 * 1024;
+    static constexpr size_t chunk_whole_block_below = 4 * 1024 * 1024;
     /// A region is carved from the arena and managed here, so nothing has to be given back to the
     /// arena - which would not be possible anyway once the aggregate states of the new keys are
     /// allocated from it between one chunk and the next.
@@ -562,8 +566,10 @@ struct HashMethodSerialized
         chunk_begin = first_row;
         chunk_end = first_row;
 
+        const size_t chunk_bytes = total_size <= chunk_whole_block_below ? total_size : region_chunk_bytes;
+
         size_t bytes = 0;
-        while (chunk_end < rows && (bytes == 0 || bytes + row_sizes[chunk_end] <= region_chunk_bytes))
+        while (chunk_end < rows && (bytes == 0 || bytes + row_sizes[chunk_end] <= chunk_bytes))
         {
             bytes += row_sizes[chunk_end];
             ++chunk_end;
