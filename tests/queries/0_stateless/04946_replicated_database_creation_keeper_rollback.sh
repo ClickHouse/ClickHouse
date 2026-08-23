@@ -119,7 +119,7 @@ ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT database_atomic_fail_after_committing_metadata_transaction"
 
 ${CLICKHOUSE_CLIENT} --database_replicated_allow_replicated_engine_arguments=3 --distributed_ddl_output_mode=none \
-    -q "CREATE TABLE ${DB}_txn.t (k UInt64) ENGINE=ReplicatedMergeTree('${TBL_ZK}/{shard}', '{replica}') ORDER BY k" 2>&1 | grep -cm1 "Fault injected (after committing metadata"
+    -q "CREATE TABLE ${DB}_txn.t (k UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/txn_commit/{shard}', '{replica}') ORDER BY k" 2>&1 | grep -cm1 "Fault injected (after committing metadata"
 
 # Keeper keeps what the committed entry published: the entry itself, and the table subtree with this
 # replica's registration, which the other replicas are about to use
@@ -169,7 +169,7 @@ NOPUB_ZK="/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/nopub_table"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT database_on_disk_fail_before_commit_create_table"
 
 ${CLICKHOUSE_CLIENT} --database_replicated_allow_replicated_engine_arguments=3 --distributed_ddl_output_mode=none \
-    -q "CREATE TABLE ${DB}_nopub.t (k UInt64) ENGINE=ReplicatedMergeTree('${NOPUB_ZK}/{shard}', '{replica}') ORDER BY k" 2>&1 | grep -cm1 "Fault injected (before"
+    -q "CREATE TABLE ${DB}_nopub.t (k UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nopub_table/{shard}', '{replica}') ORDER BY k" 2>&1 | grep -cm1 "Fault injected (before"
 
 # Nothing was published, which is the premise of the arm, and the registration is gone
 ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
@@ -179,7 +179,7 @@ ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
 
 # So a plain retry, which regenerates the UUID, completes and the table is usable
 ${CLICKHOUSE_CLIENT} --database_replicated_allow_replicated_engine_arguments=3 --distributed_ddl_output_mode=none \
-    -q "CREATE TABLE ${DB}_nopub.t (k UInt64) ENGINE=ReplicatedMergeTree('${NOPUB_ZK}/{shard}', '{replica}') ORDER BY k"
+    -q "CREATE TABLE ${DB}_nopub.t (k UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/nopub_table/{shard}', '{replica}') ORDER BY k"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}_nopub.t SELECT 1"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}_nopub.t"
 
@@ -203,7 +203,7 @@ ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
     -q "SELECT count() FROM system.zookeeper WHERE path='${ZK}/reject/metadata' AND name='t'"
 
 ${CLICKHOUSE_CLIENT} --database_replicated_allow_replicated_engine_arguments=3 --distributed_ddl_output_mode=none \
-    -q "CREATE TABLE ${DB}_reject.t (k UInt64) ENGINE=ReplicatedMergeTree('${REJECT_ZK}/{shard}', '{replica}') ORDER BY k" 2>&1 | grep -cm1 "Transaction failed (Node exists)"
+    -q "CREATE TABLE ${DB}_reject.t (k UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/reject_table/{shard}', '{replica}') ORDER BY k" 2>&1 | grep -cm1 "Transaction failed (Node exists)"
 
 # Premise: the entry is unpublished, so no other replica will ever execute it
 REJECT_ENTRY=$(${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
@@ -219,7 +219,7 @@ ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 \
 # Which is what the removal buys: the same table Keeper path is reusable, whereas a leftover
 # registration of an implicit UUID matches no later statement and could never be reused
 ${CLICKHOUSE_CLIENT} --database_replicated_allow_replicated_engine_arguments=3 --distributed_ddl_output_mode=none \
-    -q "CREATE TABLE ${DB}_reject.t2 (k UInt64) ENGINE=ReplicatedMergeTree('${REJECT_ZK}/{shard}', '{replica}') ORDER BY k"
+    -q "CREATE TABLE ${DB}_reject.t2 (k UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/reject_table/{shard}', '{replica}') ORDER BY k"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}_reject.t2 SELECT 1"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}_reject.t2"
 
