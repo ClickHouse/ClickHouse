@@ -37,6 +37,7 @@ PRIMARY KEY(primary_key_name);
 
   `PRIMARY KEY` 仅支持一列。主键会以二进制形式序列化为 Redis key。
   除主键外的列会按对应顺序以二进制形式序列化为 Redis 值。
+  如果所选 Redis 数据库包含并非由 ClickHouse 写入的键或值，使用 `SELECT * FROM redis_table` 进行全表扫描可能会因二进制反序列化错误而失败。
 </Info>
 
 参数也可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)传递。在这种情况下，`host` 和 `port` 应分别指定。生产环境中建议采用这种方式。目前，通过命名集合传递给 Redis 的所有参数都必须提供。
