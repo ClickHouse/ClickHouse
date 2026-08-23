@@ -607,28 +607,44 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
 
     /// The recent samples table receives a copy of every samples block, so the flag column can be
     /// written only when both targets carry it; a legacy target degrades the pair to the raw-NaN behavior.
-    if (is_stale_marker_type && time_series_storage.hasTarget(ViewTarget::RecentSamples))
+    if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
     {
         auto recent_samples_metadata
             = time_series_storage.getTargetTable(ViewTarget::RecentSamples, getContext())->getInMemoryMetadataPtr(getContext(), false);
-        if (!recent_samples_metadata->columns.has(TimeSeriesColumnNames::IsStaleMarker))
+        DataTypePtr recent_stale_marker_type;
+        if (recent_samples_metadata->columns.has(TimeSeriesColumnNames::IsStaleMarker))
+            recent_stale_marker_type = recent_samples_metadata->columns.get(TimeSeriesColumnNames::IsStaleMarker).type;
+
+        /// A degraded target still carrying the column keeps it in its insert with explicit zeros:
+        /// omitting it would materialize the external table's DEFAULT, which needs not be 0.
+        if (is_stale_marker_type && !recent_stale_marker_type)
         {
+            degraded_samples_stale_marker_type = is_stale_marker_type;
             is_stale_marker_type = nullptr;
             stale_marker_missing_table = "recent samples";
         }
+        else if (!is_stale_marker_type && recent_stale_marker_type)
+            degraded_recent_stale_marker_type = recent_stale_marker_type;
     }
 
     Block samples_header;
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
     samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
-    if (is_stale_marker_type)
-        samples_header.insert(ColumnWithTypeAndName{is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
+    Block recent_samples_header = samples_header;
+    if (is_stale_marker_type || degraded_samples_stale_marker_type)
+        samples_header.insert(ColumnWithTypeAndName{
+            is_stale_marker_type ? is_stale_marker_type : degraded_samples_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
 
     /// The recent samples table (if any) receives a copy of every samples block.
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
-        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
+    {
+        if (is_stale_marker_type || degraded_recent_stale_marker_type)
+            recent_samples_header.insert(ColumnWithTypeAndName{
+                is_stale_marker_type ? is_stale_marker_type : degraded_recent_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
+        recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, recent_samples_header);
+    }
 }
 
 
@@ -857,12 +873,31 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
-        if (is_stale_marker_column)
-            samples_block.insert(ColumnWithTypeAndName{std::move(is_stale_marker_column), is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
 
         /// The copy is cheap: a Block copy only copies column pointers.
+        Block recent_samples_block = samples_block;
+
+        if (is_stale_marker_column)
+        {
+            ColumnWithTypeAndName flag_column{std::move(is_stale_marker_column), is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker};
+            recent_samples_block.insert(flag_column);
+            samples_block.insert(std::move(flag_column));
+        }
+        else
+        {
+            /// A degraded target still carrying the column gets explicit zeros, never its own DEFAULT.
+            if (degraded_samples_stale_marker_type)
+                samples_block.insert(ColumnWithTypeAndName{
+                    degraded_samples_stale_marker_type->createColumnConstWithDefaultValue(total_samples)->convertToFullColumnIfConst(),
+                    degraded_samples_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
+            if (degraded_recent_stale_marker_type)
+                recent_samples_block.insert(ColumnWithTypeAndName{
+                    degraded_recent_stale_marker_type->createColumnConstWithDefaultValue(total_samples)->convertToFullColumnIfConst(),
+                    degraded_recent_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
+        }
+
         if (recent_samples_pipeline)
-            recent_samples_pipeline->push(samples_block);
+            recent_samples_pipeline->push(recent_samples_block);
 
         samples_pipeline->push(std::move(samples_block));
     }

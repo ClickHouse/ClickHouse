@@ -1,0 +1,6 @@
+-- a legacy recent table degrades the pair; the samples table gets explicit zeros, not its DEFAULT 1
+2	0
+2
+-- mirrored: a legacy samples table with a flag-carrying recent table, explicit zeros again
+1
+1	0

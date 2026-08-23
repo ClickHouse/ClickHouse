@@ -99,6 +99,11 @@ private:
     DataTypePtr is_stale_marker_type;
     const char * stale_marker_missing_table = "samples";
 
+    /// Set when the pair degraded but that target still carries the column physically: its insert
+    /// then gets explicit zeros, so an external DEFAULT expression can never materialize instead.
+    DataTypePtr degraded_samples_stale_marker_type;
+    DataTypePtr degraded_recent_stale_marker_type;
+
     /// True when the resolved id-generator references the `all_tags` identifier.
     bool id_generator_uses_all_tags = false;
 
