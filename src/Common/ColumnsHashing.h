@@ -555,8 +555,12 @@ struct HashMethodSerialized
     bool shouldUseBatchSerialize() const
     {
 #if defined(__aarch64__)
-        // On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
-        return true;
+        /// LOCAL EXPERIMENT ONLY: does the aarch64 shortcut still pay once the keys can be written
+        /// into a region instead of a per-row buffer?
+        static const bool exp_arm_heuristic = std::getenv("CH_SER_ARM_HEURISTIC") != nullptr;
+        if (!exp_arm_heuristic)
+            // On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
+            return true;
 #endif
 
         size_t l2_size = getL2CacheSize();
