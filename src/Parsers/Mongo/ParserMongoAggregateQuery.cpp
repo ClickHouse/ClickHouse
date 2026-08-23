@@ -373,6 +373,39 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
             select_list->children.push_back(withAlias(field.expression, field.name));
     }
 
+    /// A projection carries a sort key into the documents it builds when it keeps that field as
+    /// itself: an exclusion projection keeps everything it does not name, and an inclusion
+    /// projection keeps the fields it names, but only where the name is the field rather than an
+    /// expression computed under it.
+    chain.select_list_preserves_order_keys = true;
+    for (const auto & [key, _] : chain.order.keys)
+    {
+        const auto * identifier = key->as<ASTIdentifier>();
+        if (!identifier)
+        {
+            chain.select_list_preserves_order_keys = false;
+            break;
+        }
+
+        const auto & name = identifier->name();
+        const bool preserved = fields.empty()
+            ? std::find(excluded.begin(), excluded.end(), name) == excluded.end()
+            : std::any_of(
+                  fields.begin(),
+                  fields.end(),
+                  [&](const MongoProjectedField & field)
+                  {
+                      const auto * expression = field.expression->as<ASTIdentifier>();
+                      return field.name == name && expression && expression->name() == name;
+                  });
+
+        if (!preserved)
+        {
+            chain.select_list_preserves_order_keys = false;
+            break;
+        }
+    }
+
     chain.select_list = std::move(select_list);
 }
 
