@@ -2,6 +2,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/IProcessor.h>
+#include <Processors/ISpillable.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -70,8 +71,8 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
 {
     try
     {
-        if (processor.isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(&processor);
+        if (auto * spillable = processor.getSpillable(); spillable && CurrentThread::getGroup())
+            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(spillable);
 
         processor.work();
 
