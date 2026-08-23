@@ -141,6 +141,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     addRule(createReplicatedSubplanImplementation());
     addRule(createTopNImplementation());
     addRule(createTwoStageTopN());
+    addRule(createWindowImplementation());
     addEnforcerRule(createDistributionEnforcer());
     addEnforcerRule(createSortingEnforcer());
 }

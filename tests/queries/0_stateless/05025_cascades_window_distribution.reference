@@ -1,0 +1,31 @@
+-- 1. PARTITION BY window runs per node: shuffle by the partition key, sort and window on each node
+GatherExchange
+  Expression ((Project names + Projection))
+    Window (Partitioned Window step for window \'PARTITION BY __table1.k ORDER BY __table1.v ASC\')
+      Sorting
+        Expression ((Before WINDOW + Change column names to column identifiers))
+          ShuffleExchange
+            ReadFromMergeTree (ParallelRead default.t_win)
+-- 2. results match the single-node plan
+100000	4999950000	169172475000
+100000	4999950000	169172475000
+-- 3. a window without PARTITION BY stays on a single node
+GatherExchange
+  Expression ((Project names + Projection))
+    ScatterExchange
+      Window (Window step for window \'\')
+        GatherExchange
+          Expression ((Before WINDOW + Change column names to column identifiers))
+            ReadFromMergeTree (ParallelRead default.t_win)
+-- 4. a float partition key keeps the window on a single node
+GatherExchange
+  Expression ((Project names + Projection))
+    ScatterExchange
+      Window (Window step for window \'PARTITION BY __table1.k\')
+        GatherExchange
+          Expression ((Before WINDOW + Change column names to column identifiers))
+            Sorting
+              ReadFromMergeTree (ParallelRead default.t_wfloat)
+-- 5. negative and positive zero form one partition, as in the single-node plan
+100000
+100000
