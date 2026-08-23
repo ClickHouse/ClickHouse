@@ -603,7 +603,13 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     {
         auto text = parseMongoAggregateExpression(requireMember(argument, "dateString", name));
         if (auto format_it = argument.FindMember("format"); format_it != argument.MemberEnd())
-            return makeASTFunction("parseDateTime", text, parseMongoAggregateExpression(format_it->value));
+            /// Without the time zone `parseDateTime` reads the text in the session's one, while
+            /// every other date of this dialect - `$date`, `$toDate` and the branch below - is UTC.
+            return makeASTFunction(
+                "parseDateTime",
+                text,
+                parseMongoAggregateExpression(format_it->value),
+                makeLiteral(Field(String("UTC"))));
         return makeASTFunction("parseDateTime64BestEffort", text, makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC"))));
     }
 
