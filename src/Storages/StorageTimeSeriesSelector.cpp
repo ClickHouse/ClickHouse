@@ -882,11 +882,26 @@ void StorageTimeSeriesSelector::readImpl(
     /// external table using the old 3-column schema, which `normalizeTimeSeriesDefinition.cpp` still accepts)
     /// cannot represent that flag; such tables keep their pre-column behavior - every row reads as an
     /// ordinary non-stale sample - so an upgrade does not break existing tables.
-    const bool has_stale_marker_column = samples_table_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
+    const bool read_table_has_stale_marker_column = samples_table_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
+    bool has_stale_marker_column = read_table_has_stale_marker_column;
+    /// The flag is honored only when every samples-carrying target has the column: in a mixed pair
+    /// the two read paths would otherwise answer differently about the same series depending on
+    /// which table the query happens to read, and `TimeSeriesSink` already degrades such a pair as
+    /// a whole on the write side - reads must follow the same table-wide rule for existing rows too.
+    if (has_stale_marker_column)
+    {
+        const auto sibling_kind = (samples_table_kind == ViewTarget::Samples) ? ViewTarget::RecentSamples : ViewTarget::Samples;
+        if (time_series_storage->hasTarget(sibling_kind))
+        {
+            auto sibling_metadata = time_series_storage->getTargetTable(sibling_kind, context)->getInMemoryMetadataPtr(context, false);
+            if (!sibling_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker))
+                has_stale_marker_column = false;
+        }
+    }
     /// Informational, not a warning: a samples table without the column is a supported configuration
     /// that keeps its previous behavior. It would otherwise be reported on *every* query against such a
     /// table, which also puts it on the client's stderr at the default send_logs_level.
-    if (!has_stale_marker_column)
+    if (!read_table_has_stale_marker_column)
         LOG_INFO(LogFrequencyLimiter(log, 300),
             "{}: the \"samples\" table {} has no column {}, so Prometheus stale markers stored in it (as raw NaN "
             "samples) are treated as ordinary samples. Run ALTER TABLE {} ADD COLUMN {} UInt8 to enable "

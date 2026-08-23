@@ -4,3 +4,6 @@
 -- mirrored: a legacy samples table with a flag-carrying recent table, explicit zeros again
 1
 1	0
+-- pre-existing rows in a mixed pair read the same through both paths
+2	0
+2	0

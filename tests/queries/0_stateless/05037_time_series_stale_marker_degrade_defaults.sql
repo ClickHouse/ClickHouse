@@ -78,6 +78,56 @@ SELECT count() FROM ts_samples;
 SELECT count(), sum(is_stale_marker) FROM ts_recent;
 
 DROP TABLE ts;
+DROP TABLE ts_samples;
+DROP TABLE ts_recent;
+
+SELECT '-- pre-existing rows in a mixed pair read the same through both paths';
+
+-- The write-side degrade cannot fix rows that were in the tables before the pair was attached; the
+-- read side must degrade table-wide too, or the same query flips between "stale marker" and
+-- "ordinary NaN sample" depending only on which table the recent-samples preference picks.
+DROP TABLE ts_tags;
+
+CREATE TABLE ts_tags
+(
+    id UInt64,
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time DateTime64(3),
+    max_time DateTime64(3)
+) ENGINE = MergeTree() ORDER BY id;
+
+CREATE TABLE ts_samples
+(
+    id UInt64,
+    timestamp DateTime64(3),
+    value Float64,
+    is_stale_marker UInt8
+) ENGINE = MergeTree() ORDER BY (id, timestamp);
+
+CREATE TABLE ts_recent
+(
+    id UInt64,
+    timestamp DateTime64(3),
+    value Float64
+) ENGINE = MergeTree() ORDER BY (id, timestamp);
+
+INSERT INTO ts_tags (id, metric_name, tags, min_time, max_time) VALUES
+    (101, 'm', map(), now64(3) - INTERVAL 10 MINUTE, now64(3));
+INSERT INTO ts_samples (id, timestamp, value, is_stale_marker) VALUES
+    (101, now64(3) - INTERVAL 3 MINUTE, 1., 0),
+    (101, now64(3) - INTERVAL 2 MINUTE, nan, 1);
+INSERT INTO ts_recent (id, timestamp, value) VALUES
+    (101, now64(3) - INTERVAL 3 MINUTE, 1.),
+    (101, now64(3) - INTERVAL 2 MINUTE, nan);
+
+CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000 SAMPLES ts_samples TAGS ts_tags RECENT SAMPLES ts_recent;
+
+SELECT count(), sum(is_stale_marker) FROM timeSeriesSelector(ts, 'm', now() - INTERVAL 10 MINUTE, now());
+SELECT count(), sum(is_stale_marker) FROM timeSeriesSelector(ts, 'm', now() - INTERVAL 10 MINUTE, now())
+SETTINGS time_series_prefer_recent_samples_table = 0;
+
+DROP TABLE ts;
 DROP TABLE ts_tags;
 DROP TABLE ts_samples;
 DROP TABLE ts_recent;
