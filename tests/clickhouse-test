@@ -2201,8 +2201,6 @@ class TestCase:
         name = removesuffix(name, ".gen")
 
         file_extentions = [".reference", ".gen.reference"]
-        if is_old_analyzer_used(args):
-            file_extentions = [".oldanalyzer.reference", *file_extentions]
 
         for ext in file_extentions:
             reference_file = os.path.join(suite_dir, name) + ext
@@ -3463,12 +3461,9 @@ class TestCase:
                 import shutil
                 # Use the same logic as get_reference_file to determine the correct path
                 name = removesuffix(self.name, ".gen")
-                # Determine the appropriate extension based on analyzer mode
-                if is_old_analyzer_used(self.testcase_args):
-                    ext = ".oldanalyzer.reference"
-                else:
-                    ext = ".reference"
-                self.reference_file = os.path.join(self.suite.suite_path, name) + ext
+                self.reference_file = (
+                    os.path.join(self.suite.suite_path, name) + ".reference"
+                )
                 shutil.copy2(self.stdout_file, self.reference_file)
                 description += "\tReference file created\n"
                 return TestResult(
