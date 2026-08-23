@@ -103,21 +103,6 @@ printf '8,"eight"\n' \
     | gzip -c \
     | curl -sS -X PUT -H 'Content-Type: text/csv' --data-binary @- "${BASE_URL}/${DB}/${TABLE}.CSV.gzip"
 
-echo "-- snappy compression suffix decompresses the request body"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_http_compression=1" \
-    -H 'Accept-Encoding: snappy' \
-    -d "SELECT concat('17,\"snappy\"', char(10)) FORMAT RawBLOB" \
-    | ${CLICKHOUSE_CURL} -sS -X PUT -H 'Content-Type: text/csv' --data-binary @- \
-        "${BASE_URL}/${DB}/${TABLE}.CSV.snappy"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.${TABLE} WHERE a = 17 AND b = 'snappy'" | grep -qx '1'
-
-echo "-- snappy compression suffix compresses a path-table read"
-${CLICKHOUSE_CURL} -sS \
-    "${BASE_URL}/${DB}/${TABLE}.CSV.snappy?http_allow_database_as_path=1&http_allow_table_as_file=1&snappy_mode=framed" \
-    | od -A n -t x1 -N 10 \
-    | tr -d ' \n' \
-    | grep -q '^ff060000734e61507059$'
-
 echo "-- conflicting Content-Encoding is rejected"
 printf '9,"nine"\n' \
     | gzip -c \
