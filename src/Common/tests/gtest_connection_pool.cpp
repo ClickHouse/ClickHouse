@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
@@ -13,8 +15,14 @@
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
+
+#if USE_SSL
+#include <Common/tests/gtest_ephemeral_certificate.h>
+#include <Poco/Net/HTTPSClientSession.h>
+#endif
 
 #include <atomic>
 
@@ -1116,3 +1124,51 @@ TEST_F(ConnectionPoolTest, ServerOverwriteMaxRequests)
     ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
 }
+
+#if USE_SSL
+TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
+{
+    /// The HTTPS tunnel must dial the proxy address the caller already resolved instead of
+    /// resolving the proxy hostname again. Two same-process resolutions of one name always agree,
+    /// so DNS alone cannot tell the two apart; instead the pinned address and the hostname
+    /// deliberately disagree: `localhost` resolves to a live listener bound to 127.0.0.1 only,
+    /// while the address passed to connect() is 127.0.0.99, where nothing listens. Honoring the
+    /// pinned address gets the TCP connect refused; a regression to re-resolution reaches the
+    /// listener instead and fails later, in the CONNECT exchange or the TLS handshake.
+    Poco::Net::ServerSocket proxy_socket(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
+    const auto proxy_port = proxy_socket.address().port();
+    Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new HTTPRequestHandlerFactory(options);
+    auto proxy_server = std::make_unique<Poco::Net::HTTPServer>(factory, proxy_socket, new Poco::Net::HTTPServerParams);
+    proxy_server->start();
+    SCOPE_EXIT({ proxy_server->stop(); });
+
+    struct ExposedSession : public Poco::Net::HTTPSClientSession
+    {
+        using Poco::Net::HTTPSClientSession::HTTPSClientSession;
+        using Poco::Net::HTTPSClientSession::connect;
+    };
+
+    EphemeralCert cert;
+    ExposedSession session("tunnel-target.invalid", 9999, cert.makeContext(Poco::Net::Context::CLIENT_USE));
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
+    proxy_config.host = "localhost";
+    proxy_config.port = proxy_port;
+    session.setProxyConfig(proxy_config);
+
+    bool refused = false;
+    try
+    {
+        session.connect(Poco::Net::SocketAddress("127.0.0.99", proxy_port));
+        FAIL() << "Expected the tunnel connect to be refused";
+    }
+    catch (const Poco::Net::ConnectionRefusedException &)
+    {
+        refused = true;
+    }
+    catch (const Poco::Exception & e)
+    {
+        FAIL() << "The tunnel did not dial the caller-resolved address: " << e.displayText();
+    }
+    ASSERT_TRUE(refused);
+}
+#endif
