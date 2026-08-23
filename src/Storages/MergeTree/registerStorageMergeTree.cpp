@@ -884,12 +884,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// A fresh definition validates its `RECOMPRESS` codec against the session settings:
         /// `allow_suspicious_ttl_expressions` is an escape hatch for suspicious TTL *expressions* and must not
         /// double as a way to use an experimental codec in `TTL ... RECOMPRESS`.
-        bool trusted_ttl_codecs = !is_fresh_definition;
+        /// The validation settings must come from the *local* (session) context: `context` is the global one.
+        const CodecValidationSettings ttl_codec_validation_settings
+            = is_fresh_definition ? CodecValidationSettings(local_settings) : CodecValidationSettings::trusted();
 
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode, trusted_ttl_codecs);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode, ttl_codec_validation_settings);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -1133,7 +1135,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, ttl_validation_mode, trusted_ttl_codecs);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, ttl_validation_mode, ttl_codec_validation_settings);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 

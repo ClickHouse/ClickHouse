@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Compression/CompressionFactory.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/ColumnsDescription.h>
@@ -139,16 +140,17 @@ struct TTLDescription
     ASTPtr recompression_codec;
 
     /// Parse TTL structure from definition. Able to parse both column and table TTLs.
-    /// `trusted_codecs` skips every codec check for a `RECOMPRESS` codec that was already accepted when it
-    /// was introduced (a genuine metadata load or replicated metadata); a fresh definition is validated
-    /// against the session settings instead.
+    /// `codec_validation_settings` gates a `RECOMPRESS` codec. It must come from the caller's *local*
+    /// (session) context: `context` here can be the global context, whose settings are not the session's.
+    /// A codec that was already accepted when it was introduced (a genuine metadata load or replicated
+    /// metadata) is passed `CodecValidationSettings::trusted()` so it is never re-judged.
     static TTLDescription getTTLFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
         ContextPtr context,
         const KeyDescription & primary_key,
         TTLValidationMode validation_mode,
-        bool trusted_codecs);
+        const CodecValidationSettings & codec_validation_settings);
 
     TTLDescription() = default;
     TTLDescription(const TTLDescription & other);
@@ -190,7 +192,7 @@ struct TTLTableDescription
         ContextPtr context,
         const KeyDescription & primary_key,
         TTLValidationMode validation_mode,
-        bool trusted_codecs);
+        const CodecValidationSettings & codec_validation_settings);
 
     /// Parse description from string
     static TTLTableDescription parse(
@@ -199,7 +201,7 @@ struct TTLTableDescription
         ContextPtr context,
         const KeyDescription & primary_key,
         TTLValidationMode validation_mode,
-        bool trusted_codecs);
+        const CodecValidationSettings & codec_validation_settings);
 };
 
 }

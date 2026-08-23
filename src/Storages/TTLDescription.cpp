@@ -1209,7 +1209,7 @@ TTLDescription TTLDescription::getTTLFromAST(
     ContextPtr context,
     const KeyDescription & primary_key,
     TTLValidationMode validation_mode,
-    bool trusted_codecs)
+    const CodecValidationSettings & codec_validation_settings)
 {
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
@@ -1219,8 +1219,8 @@ TTLDescription TTLDescription::getTTLFromAST(
     /// when the user opts in with `allow_suspicious_ttl_expressions` (`SkipValidation`). Only `Attach`
     /// additionally triggers the recompression-codec normalization below; `allow_suspicious_ttl_expressions`
     /// must not, so that a `CREATE` / `ALTER ... MODIFY TTL` keeps the user-specified codec instead of having
-    /// it silently rewritten. `trusted_codecs` skips every codec check for a `RECOMPRESS` codec that was
-    /// already accepted when it was introduced; a fresh definition is validated against the session settings.
+    /// it silently rewritten. `codec_validation_settings` gates a `RECOMPRESS` codec; it is
+    /// `CodecValidationSettings::trusted()` for a codec that was already accepted when it was introduced.
 
     /// First child is expression: `TTL expr TO DISK`
     if (ttl_element != nullptr)
@@ -1380,13 +1380,12 @@ TTLDescription TTLDescription::getTTLFromAST(
             {
                 /// `allow_suspicious_ttl_expressions` (`skip_validation`) only relaxes the sanity checks; it must
                 /// not enable an experimental codec, which stays gated by its own setting.
-                const CodecValidationSettings codec_validation_settings = trusted_codecs
-                    ? CodecValidationSettings::trusted()
-                    : (skip_validation ? CodecValidationSettings::withoutSanityCheck(context->getSettingsRef())
-                                       : CodecValidationSettings(context->getSettingsRef()));
+                CodecValidationSettings validation_settings_for_codec = codec_validation_settings;
+                if (skip_validation)
+                    validation_settings_for_codec.skip_sanity_check = true;
 
                 result.recompression_codec = factory.validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, codec_validation_settings);
+                    ttl_element->recompression_codec, {}, validation_settings_for_codec);
             }
         }
     }
@@ -1435,7 +1434,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     ContextPtr context,
     const KeyDescription & primary_key,
     TTLValidationMode validation_mode,
-    bool trusted_codecs)
+    const CodecValidationSettings & codec_validation_settings)
 {
     TTLTableDescription result;
     if (!definition_ast)
@@ -1449,7 +1448,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     for (size_t i = 0; i < ttl_elements.size(); ++i)
     {
         const auto & ttl_element_ptr = ttl_elements[i];
-        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, validation_mode, trusted_codecs);
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, validation_mode, codec_validation_settings);
 
         /// If a recompression codec was normalized on the metadata-load path (see `getTTLFromAST`), rewrite the
         /// stored TTL AST as well, so `SHOW CREATE`, replicated metadata and later re-parses (e.g. from
@@ -1503,7 +1502,7 @@ TTLTableDescription TTLTableDescription::parse(
     ContextPtr context,
     const KeyDescription & primary_key,
     TTLValidationMode validation_mode,
-    bool trusted_codecs)
+    const CodecValidationSettings & codec_validation_settings)
 {
     TTLTableDescription result;
     if (str.empty())
@@ -1513,7 +1512,7 @@ TTLTableDescription TTLTableDescription::parse(
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key, validation_mode, trusted_codecs);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, validation_mode, codec_validation_settings);
 }
 
 }
