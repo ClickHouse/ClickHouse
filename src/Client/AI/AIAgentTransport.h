@@ -71,8 +71,9 @@ class AIServerFunctionTransport : public IAIAgentTransport
 public:
     AIServerFunctionTransport(ScalarQueryExecutor executor_, const AIConfiguration & config_);
 
-    /// Whether the connected server has the `aiGenerate` function together with default
-    /// credentials for it (a non-empty `ai_function_text_default_credentials` setting).
+    /// Whether the connected server has the `aiGenerate` function enabled (the
+    /// `allow_experimental_ai_functions` setting) together with default credentials for it
+    /// (a non-empty `ai_function_text_default_credentials` setting).
     static bool isAvailable(const ScalarQueryExecutor & executor);
 
     AIAgentStep step(const String & system_prompt, const ai::Messages & messages, const ai::ToolSet & tools) override;

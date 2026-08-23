@@ -4086,14 +4086,16 @@ bool ClientBase::processAIChat(const String & text_)
         if (isEmbeeddedClient())
             error_stream << "The AI agent is not available: no AI provider is configured.\n"
                             "The embedded client does not use client-side AI providers (they would read the API keys\n"
-                            "from the environment of the server process); configure default credentials for the\n"
-                            "`aiGenerate` function on the server (the `ai_function_text_default_credentials` setting)."
+                            "from the environment of the server process); enable the `aiGenerate` function on the\n"
+                            "server (the `allow_experimental_ai_functions` setting) and configure default credentials\n"
+                            "for it (the `ai_function_text_default_credentials` setting)."
                          << std::endl << std::endl;
         else
             error_stream << "The AI agent is not available: no AI provider is configured.\n"
                             "Set the OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, configure the `ai` section\n"
-                            "of the client configuration, or configure default credentials for the `aiGenerate` function\n"
-                            "on the server (the `ai_function_text_default_credentials` setting)." << std::endl << std::endl;
+                            "of the client configuration, or enable the `aiGenerate` function on the server (the\n"
+                            "`allow_experimental_ai_functions` setting) with default credentials configured for it\n"
+                            "(the `ai_function_text_default_credentials` setting)." << std::endl << std::endl;
         return true;
     }
 
