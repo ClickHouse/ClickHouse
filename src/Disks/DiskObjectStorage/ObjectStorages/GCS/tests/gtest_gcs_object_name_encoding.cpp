@@ -73,7 +73,7 @@ public:
 
         /// A media download asks for `alt=media` and gets the object bytes; every other request in
         /// this test is a JSON API request and gets the object's metadata resource.
-        const bool media = request.getURI().find("alt=media") != std::string::npos;
+        const bool media = request.getURI().contains("alt=media");
         const std::string body = media
             ? std::string("test")
             : std::string(R"({"kind":"storage#object","bucket":"test-bucket",)"
