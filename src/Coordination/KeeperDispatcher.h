@@ -262,9 +262,10 @@ public:
         keeper_stats.incrementPacketsReceived();
     }
 
-    void resetConnectionStats()
+    void resetServerStats()
     {
         keeper_stats.reset();
+        server->resetLeaderMetrics();
     }
 
     /// Create snapshot manually, return the last committed log index in the snapshot

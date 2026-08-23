@@ -839,6 +839,28 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
             from_type_untyped->getName(), to_type->getName());
 }
 
+namespace
+{
+
+/// `Map(K, V)` is physically an `Array(Tuple(K, V))`, and `CAST` converts between the two shapes at
+/// the top level. It is also how a `Map` constant is written down when the analyzer serializes a
+/// query for a remote server: `ConstantNode::toASTImpl` renders the field as an array of tuples and
+/// wraps it into `_CAST(..., 'Array(Map(K, V))')`. Counting a `Map` as the array it stands for puts
+/// both shapes at the same depth, so the nesting check below does not reject a cast the element
+/// wrappers can perform. A genuine depth mismatch, such as `Array(String)` to `Array(Array(String))`,
+/// is still rejected. A `Tuple` adds no depth, hence a `Map` counts as one dimension regardless of
+/// its value type.
+size_t getNumberOfDimensionsWithMapAsArray(const IDataType & type)
+{
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(&type))
+        return 1 + getNumberOfDimensionsWithMapAsArray(*type_array->getNestedType());
+    if (typeid_cast<const DataTypeMap *>(&type))
+        return 1;
+    return 0;
+}
+
+}
+
 FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const
 {
     /// Conversion from String through parsing.
@@ -892,7 +914,7 @@ FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & f
     /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
     bool from_empty_array = isNothing(from_nested_type);
 
-    if (from_type->getNumberOfDimensions() != to_type.getNumberOfDimensions() && !from_empty_array)
+    if (getNumberOfDimensionsWithMapAsArray(*from_type) != getNumberOfDimensionsWithMapAsArray(to_type) && !from_empty_array)
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "CAST AS Array can only be performed between same-dimensional array types");
 
@@ -3205,14 +3227,20 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
 }
 
+FunctionConvertSettingsPtr createFunctionConvertSettings(
+    const ContextPtr & context,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+{
+    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior);
+}
+
 FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context,
+    const FunctionConvertSettingsPtr & settings,
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+    CastType cast_type)
 {
     DataTypes data_types(arguments.size());
 
@@ -3258,7 +3286,7 @@ FunctionBasePtr createFunctionBaseCast(
     }
 
     return std::make_unique<detail::FunctionCast>(
-        context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, date_time_overflow_behavior);
+        *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
 }
 
 
