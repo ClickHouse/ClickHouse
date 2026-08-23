@@ -2977,6 +2977,9 @@ Try using an index if there is a subquery or a table expression on the right sid
     DECLARE(UInt64, use_index_for_in_with_subqueries_max_values, 0, R"(
 The maximum size of the set in the right-hand side of the IN operator to use table index for filtering. It allows to avoid performance degradation and higher memory usage due to the preparation of additional data structures for large queries. Zero means no limit.
 )", 0) \
+    DECLARE(UInt64, statistics_max_set_size_for_exact_selectivity_estimation, 10000, R"(
+The maximum size of the set in the right-hand side of the `IN` operator for which the selectivity estimator derives the exact ranges covered by the set. Deriving them costs a `Field` per element, a sort, and one statistics probe per element, which for a large set dominates query planning. Above this limit the estimator instead derives the selectivity from the size of the set and its bounding range, which is a single linear pass over the set without the sort or the per-element statistics probes. Zero means no limit.
+)", 0) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 )", 0) \
@@ -6633,6 +6636,19 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
+Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
+down in the execution plan, below `Sorting` and `Filter` steps. The fixed-size result replaces the
+wide `String` / `FixedString` argument, so the argument is no longer carried through those steps.
+The rewrite is only applied when the argument column is not needed above the step it is pushed below.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
 )", 0) \
@@ -6782,6 +6798,9 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
 Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+)", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_materialization_for_file, true, R"(
+Use lazy materialization optimization for reading local Parquet files with the `file` table function and the `File` table engine: for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
@@ -8500,6 +8519,10 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Bool, enable_function_early_short_circuit, false, R"(
+Enable early short-circuit constant folding for `and` and `or` during query analysis.
+When enabled, eligible dead scalar-subquery branches are analyzed to preserve their types and validate query semantics, but they are not executed. The optimization falls back to normal analysis when scalar cardinality or runtime values are required.
+)", 0) \
     DECLARE(Bool, query_plan_remove_unused_columns, true, R"(
 Toggles a query-plan-level optimization which tries to remove unused columns (both input and output columns) from query plan steps.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -8638,6 +8661,9 @@ Enable experimental hash functions
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
+Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", EXPERIMENTAL) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
