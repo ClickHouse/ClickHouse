@@ -516,3 +516,65 @@ OPTIMIZE TABLE t_nested_filtered_default FINAL;
 SELECT id, `n.a`, `n.b` FROM t_nested_filtered_default ORDER BY id;
 
 DROP TABLE t_nested_filtered_default;
+
+-- A merge that expires a column whose `DEFAULT` reads another expired column must be able to fill
+-- both. `min_bytes_for_full_part_storage` forces packed part storage, hence a horizontal merge,
+-- which is the algorithm that hands the expired columns to the TTL step.
+DROP TABLE IF EXISTS t_nested_expired_default_chain;
+
+CREATE TABLE t_nested_expired_default_chain (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    min_bytes_for_full_part_storage = 1000000000;
+
+SYSTEM STOP MERGES t_nested_expired_default_chain;
+
+INSERT INTO t_nested_expired_default_chain VALUES (1, [10,20]);
+INSERT INTO t_nested_expired_default_chain VALUES (2, [30]);
+
+ALTER TABLE t_nested_expired_default_chain ADD COLUMN `n.urls` Array(Array(String));
+ALTER TABLE t_nested_expired_default_chain ADD COLUMN `n.domains` Array(Array(String))
+    DEFAULT arrayMap(x -> arrayMap(y -> domain(y), CAST(x AS Array(String))), `n.urls`);
+
+SYSTEM START MERGES t_nested_expired_default_chain;
+OPTIMIZE TABLE t_nested_expired_default_chain FINAL;
+
+SELECT id, `n.a`, `n.urls`, `n.domains` FROM t_nested_expired_default_chain ORDER BY id;
+
+-- Both added columns stay unmaterialized in the merged part and are recomputed on read.
+SELECT count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_nested_expired_default_chain' AND active
+    AND column IN ('n.urls', 'n.domains');
+
+DROP TABLE t_nested_expired_default_chain;
+
+-- The same reconciliation for a multidimensional array: only the outermost level is shared through
+-- the `Nested` offsets, so a constant default with a different number of outer elements degrades to
+-- offset-shaped type defaults while the inner levels come from the default itself.
+DROP TABLE IF EXISTS t_nested_filtered_default_2d;
+
+CREATE TABLE t_nested_filtered_default_2d (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_nested_filtered_default_2d VALUES (1, [10]);
+INSERT INTO t_nested_filtered_default_2d VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_filtered_default_2d ADD COLUMN `n.b` Array(Array(String)) DEFAULT [['x']];
+
+DELETE FROM t_nested_filtered_default_2d WHERE id = 1;
+OPTIMIZE TABLE t_nested_filtered_default_2d FINAL;
+
+SELECT id, `n.a`, `n.b` FROM t_nested_filtered_default_2d ORDER BY id;
+
+DROP TABLE t_nested_filtered_default_2d;

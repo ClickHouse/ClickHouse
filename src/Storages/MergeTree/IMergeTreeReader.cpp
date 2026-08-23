@@ -442,7 +442,7 @@ void IMergeTreeReader::filterSharedOffsetsOfMissingDefaults(const ColumnPtr & fi
         const auto & innermost_offsets = assert_cast<const ColumnUInt64 &>(*offsets.back()).getData();
         size_t data_size = innermost_offsets.empty() ? 0 : innermost_offsets.back();
 
-        ColumnPtr shape = ColumnUInt8::create(data_size, 0);
+        ColumnPtr shape = ColumnUInt8::create(data_size, UInt8(0));
         for (auto it = offsets.rbegin(); it != offsets.rend(); ++it)
             shape = ColumnArray::create(shape, *it);
 
