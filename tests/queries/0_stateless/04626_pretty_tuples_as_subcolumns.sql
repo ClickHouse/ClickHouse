@@ -18,6 +18,20 @@ SELECT number AS n, (number, toString(number))::Tuple(a UInt64, b String) AS t F
 SELECT sleep(0.01) AS s, number AS n, (number, toString(number))::Tuple(a UInt64, b String) AS t
 FROM numbers(4) SETTINGS max_block_size = 1, output_format_pretty_glue_chunks = 1, output_format_pretty_squash_consecutive_ms = 0 FORMAT PrettyCompact;
 
+-- The footer of a chunk with tuple subcolumns is several lines tall; gluing has to rewind all of them,
+-- otherwise a stale footer stays above the rows of the next chunk.
+SELECT sleep(0.01) AS s, number AS n, (number, toString(number))::Tuple(a UInt64, b String) AS t
+FROM numbers(4) SETTINGS max_block_size = 1, output_format_pretty_glue_chunks = 1, output_format_pretty_squash_consecutive_ms = 0,
+    output_format_pretty_display_footer_column_names = 1, output_format_pretty_display_footer_column_names_min_rows = 1 FORMAT PrettyCompact;
+
+SELECT sleep(0.01) AS s, number AS n, (number, toString(number))::Tuple(a UInt64, b String) AS t
+FROM numbers(4) SETTINGS max_block_size = 1, output_format_pretty_glue_chunks = 1, output_format_pretty_squash_consecutive_ms = 0,
+    output_format_pretty_display_footer_column_names = 1, output_format_pretty_display_footer_column_names_min_rows = 1 FORMAT Pretty;
+
+SELECT sleep(0.01) AS s, number AS n, (number, toString(number))::Tuple(a UInt64, b String) AS t
+FROM numbers(4) SETTINGS max_block_size = 1, output_format_pretty_glue_chunks = 1, output_format_pretty_squash_consecutive_ms = 0,
+    output_format_pretty_display_footer_column_names = 1, output_format_pretty_display_footer_column_names_min_rows = 1 FORMAT PrettySpace;
+
 -- Unnamed tuple: the subcolumns are named by position.
 SELECT (1, 'a', 2.5) AS t FORMAT PrettyCompact;
 

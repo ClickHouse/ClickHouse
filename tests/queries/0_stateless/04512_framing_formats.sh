@@ -971,6 +971,21 @@ data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPack
     -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT Pretty' | grep -c '"packet":"data"')
 [ "$data_packets" -ge 1 ] && echo 'Pretty (named tuples in the plain text form) accepted: OK'
 
+# `output_format_pretty_display_tuples_as_subcolumns` writes the element names of every top-level
+# tuple verbatim into the second header row (and the footer), independently of the JSON path above,
+# so a non-UTF-8 element name has to be rejected even with the JSON rendering turned off.
+echo '--- JSONEachPacketString is rejected for Pretty with a non-UTF-8 named Tuple element displayed as subcolumns'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_pretty_named_tuples_as_json=0&output_format_pretty_display_tuples_as_subcolumns=1" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT Pretty' \
+    | grep -o -m1 'is not compatible with the output format Pretty'
+
+# Only *top-level* tuples are displayed as subcolumns, so an element name nested inside an `Array`
+# never reaches the header and the query stays accepted (the checker mirrors that exactly).
+echo '--- JSONEachPacketString accepts Pretty with a non-UTF-8 named Tuple element nested in an Array when tuples are displayed as subcolumns'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_pretty_named_tuples_as_json=0&output_format_pretty_display_tuples_as_subcolumns=1" \
+    -d 'SELECT CAST([(1, 2)] AS Array(Tuple(`a\xFFb` UInt8, c UInt8))) AS t FORMAT Pretty' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'Pretty (non-UTF-8 element name below the top level) accepted: OK'
+
 # `Pretty` resets the JSON sub-settings to their defaults in its constructor, so
 # `output_format_json_named_tuples_as_objects = 0` does NOT turn the element names off there - the
 # query must still be rejected (the checker mirrors that reset).

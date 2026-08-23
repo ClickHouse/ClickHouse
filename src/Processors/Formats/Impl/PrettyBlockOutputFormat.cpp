@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 #include <Common/CurrentThread.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
 #include <Common/saturatedDuration.h>
@@ -29,6 +30,59 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// Returns the `Tuple` type whose elements should be displayed as subcolumns for a column of the
+/// given type (unwrapping `Nullable`), or `nullptr` if the column keeps the single-cell rendering.
+/// Used both by the rendering path and by the `may_produce_raw_bytes` checker, which has to know
+/// exactly which element names end up written verbatim into the header and footer rows.
+const DataTypeTuple * displayableTupleForSubcolumns(const DataTypePtr & type)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+
+    /// An empty tuple has no subcolumns to display (and the width math assumes at least one).
+    if (!tuple_type || tuple_type->getElements().empty())
+        return nullptr;
+
+    /// For `Nullable(Tuple(...))`, every extracted element subcolumn must be able to represent the
+    /// rows where the whole tuple is NULL (an element type that cannot be wrapped in `Nullable`,
+    /// such as a nested tuple, is extracted as-is and would show default values in NULL rows).
+    if (type->isNullable())
+    {
+        for (const auto & element_name : tuple_type->getElementNames())
+        {
+            auto subcolumn_type = type->tryGetSubcolumnType(element_name);
+            if (!subcolumn_type || !canContainNull(*subcolumn_type))
+                return nullptr;
+        }
+    }
+
+    return tuple_type;
+}
+
+/// Returns true if the tuple element names that `output_format_pretty_display_tuples_as_subcolumns`
+/// writes verbatim into the second header row (and the footer) are not guaranteed to be valid UTF-8.
+/// The predicate must mirror `displayableTupleForSubcolumns` exactly: only the elements of the tuples
+/// that are actually expanded reach the output, and nothing is expanded below the top level.
+bool subcolumnNamesMayProduceRawBytes(const Block & header)
+{
+    for (const auto & elem : header)
+    {
+        const auto * tuple_type = displayableTupleForSubcolumns(elem.type);
+        if (!tuple_type)
+            continue;
+
+        for (const auto & element_name : tuple_type->getElementNames())
+            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(element_name.data()), element_name.size()))
+                return true;
+    }
+
+    return false;
+}
+
+}
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_)
@@ -264,38 +318,12 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     std::vector<size_t> group_num_columns;
     std::vector<UInt8> group_is_tuple;
 
-    /// Returns the `Tuple` type whose elements should be displayed as subcolumns for a column of the
-    /// given type (unwrapping `Nullable`), or `nullptr` if the column keeps the single-cell rendering.
-    auto displayable_tuple = [](const DataTypePtr & type) -> const DataTypeTuple *
-    {
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
-
-        /// An empty tuple has no subcolumns to display (and the width math below assumes at least one).
-        if (!tuple_type || tuple_type->getElements().empty())
-            return nullptr;
-
-        /// For `Nullable(Tuple(...))`, every extracted element subcolumn must be able to represent the
-        /// rows where the whole tuple is NULL (an element type that cannot be wrapped in `Nullable`,
-        /// such as a nested tuple, is extracted as-is and would show default values in NULL rows).
-        if (type->isNullable())
-        {
-            for (const auto & element_name : tuple_type->getElementNames())
-            {
-                auto subcolumn_type = type->tryGetSubcolumnType(element_name);
-                if (!subcolumn_type || !canContainNull(*subcolumn_type))
-                    return nullptr;
-            }
-        }
-
-        return tuple_type;
-    };
-
     bool has_subcolumns = false;
     if (format_settings.pretty.display_tuples_as_subcolumns)
     {
         for (size_t i = 0; i < original_num_columns; ++i)
         {
-            if (displayable_tuple(original_header->getByPosition(i).type))
+            if (displayableTupleForSubcolumns(original_header->getByPosition(i).type))
             {
                 has_subcolumns = true;
                 break;
@@ -308,7 +336,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         for (size_t i = 0; i < original_num_columns; ++i)
         {
             const auto & elem = original_header->getByPosition(i);
-            const auto * tuple_type = displayable_tuple(elem.type);
+            const auto * tuple_type = displayableTupleForSubcolumns(elem.type);
 
             size_t first = expanded_columns.size();
             if (tuple_type)
@@ -839,15 +867,11 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         && has_subcolumns == prev_chunk_has_subcolumns
         && (!has_subcolumns || (column_to_group == prev_column_to_group && group_is_tuple == prev_group_is_tuple)))
     {
-        /// Move cursor up to overwrite the footer of the previous chunk:
-        if (!rows_end.empty())
+        /// Move the cursor up to overwrite everything the previous chunk wrote after its last row
+        /// (its bottom border, or its footer - which is two names rows and three borders tall when
+        /// tuple subcolumns are displayed):
+        for (size_t i = 0; i < prev_chunk_tail_lines; ++i)
             writeCString("\033[1A\033[2K\033[G", out);
-        if (had_footer)
-        {
-            size_t times = !footer_begin.empty() + !footer_end.empty() + rows_end.empty();
-            for (size_t i = 0; i < times; ++i)
-                writeCString("\033[1A\033[2K\033[G", out);
-        }
         if (!rows_separator.empty())
             writeString(rows_separator, out);
     }
@@ -984,13 +1008,15 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         else
             write_names(false);
         writeString(footer_end, out);
-        had_footer = true;
+        prev_chunk_tail_lines = !footer_begin.empty() + 1 + !footer_end.empty();
+        if (has_subcolumns)
+            prev_chunk_tail_lines += !footer_middle.empty() + 1;
     }
     else
     {
         ///    └──────┘
         writeString(rows_end, out);
-        had_footer = false;
+        prev_chunk_tail_lines = !rows_end.empty();
     }
     total_rows += num_rows;
     prev_chunk_max_widths = std::move(max_widths);
@@ -1230,6 +1256,10 @@ void registerOutputFormatPretty(FormatFactory & factory)
                 /// reset of the JSON sub-settings to their defaults: the user's JSON settings (such as
                 /// `output_format_json_named_tuples_as_objects = 0`) do not turn the element names off
                 /// here, only `output_format_pretty_named_tuples_as_json` does.
+                /// With `output_format_pretty_display_tuples_as_subcolumns`, the element names of the
+                /// expanded top-level tuples are written verbatim into the second header row and into the
+                /// footer, independently of the JSON path above, so they are checked as well (see
+                /// `subcolumnNamesMayProduceRawBytes`).
                 /// The text framings reject or base64-encode the output in these cases (see
                 /// `checkIfOutputFormatMayProduceRawBytes`). `Pretty` does not write the data type names.
                 factory.registerOutputFormatMayProduceRawBytesChecker(
@@ -1240,6 +1270,8 @@ void registerOutputFormatPretty(FormatFactory & factory)
                         tuple_settings.json = FormatSettings::JSON{};
                         return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
                             || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None)
+                            || (settings.pretty.display_tuples_as_subcolumns
+                                && subcolumnNamesMayProduceRawBytes(header))
                             || (settings.pretty.named_tuples_as_json
                                 && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, tuple_settings, /*validate_utf8=*/ false));
                     });
