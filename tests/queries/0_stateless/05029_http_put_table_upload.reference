@@ -28,6 +28,8 @@ HTTP PUT table uploads require a table path with a known format
 -- gzip compression suffix decompresses the request body
 -- matching Content-Encoding and path compression are accepted
 -- compression aliases are accepted
+-- snappy compression suffix decompresses the request body
+-- snappy compression suffix compresses a path-table read
 -- conflicting Content-Encoding is rejected
 Conflicting compression: 'gz' in URL path vs 'deflate' in `Content-Encoding`
 -- chunked PUT upload
@@ -47,9 +49,12 @@ Conflicting compression: 'gz' in URL path vs 'deflate' in `Content-Encoding`
 12	expect
 13	chunked
 16	deferred-expect
+17	snappy
 -- quoted table names with filter characters support upload suffixes
 -- quoted table names support compressed upload suffixes
 -- percent-encoded format suffixes are recognized
+-- malformed percent encoding in an intermediate path component returns 400
+malformed-path-status: 400
 -- a compressed body that decodes to empty is rejected
 HTTP PUT table uploads require a non-empty request body
 -- mixed-case multipart PUT is not claimed

@@ -103,6 +103,19 @@ printf '8,"eight"\n' \
     | gzip -c \
     | curl -sS -X PUT -H 'Content-Type: text/csv' --data-binary @- "${BASE_URL}/${DB}/${TABLE}.CSV.gzip"
 
+echo "-- snappy compression suffix decompresses the request body"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_http_compression=1" \
+    -H 'Accept-Encoding: snappy' \
+    -d "SELECT concat('17,\"snappy\"', char(10)) FORMAT RawBLOB" \
+    | ${CLICKHOUSE_CURL} -sS -X PUT -H 'Content-Type: text/csv' --data-binary @- \
+        "${BASE_URL}/${DB}/${TABLE}.CSV.snappy"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.${TABLE} WHERE a = 17 AND b = 'snappy'" | grep -qx '1'
+
+echo "-- snappy compression suffix compresses a path-table read"
+${CLICKHOUSE_CURL} -sS -D - -o /dev/null \
+    "${BASE_URL}/${DB}/${TABLE}.CSV.snappy?http_allow_database_as_path=1&http_allow_table_as_file=1" 2>&1 \
+    | grep -i --text -q '^Content-Encoding: snappy'
+
 echo "-- conflicting Content-Encoding is rejected"
 printf '9,"nine"\n' \
     | gzip -c \
@@ -148,6 +161,29 @@ printf '14,"encoded-dot"\n' \
     | curl --path-as-is -sS -X PUT -H 'Content-Type: text/csv' --data-binary @- \
         "${BASE_URL}/${DB}/${TABLE}%2ECSV" >/dev/null
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${DB}.${TABLE} WHERE a = 14" | grep -qx '1'
+
+echo "-- malformed percent encoding in an intermediate path component returns 400"
+python3 - <<PY
+import socket
+
+
+sock = socket.create_connection(("${CLICKHOUSE_HOST}", ${CLICKHOUSE_PORT_HTTP}), timeout=30)
+try:
+    sock.sendall(
+        b"PUT /%ZZ/${TABLE}.CSV?http_allow_database_as_path=1 HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Length: 0\r\n"
+        b"Connection: close\r\n\r\n"
+    )
+    response = sock.recv(4096)
+finally:
+    sock.close()
+
+status = response.split(b" ", 2)[1].decode()
+if status != "400":
+    raise RuntimeError(f"expected HTTP 400, got HTTP {status}: {response!r}")
+print("malformed-path-status:", status)
+PY
 
 echo "-- a compressed body that decodes to empty is rejected"
 gzip -c </dev/null \

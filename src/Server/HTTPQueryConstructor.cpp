@@ -51,7 +51,15 @@ Strings splitPathComponents(const String & path)
         if (!current.empty())
         {
             String decoded;
-            Poco::URI::decode(current, decoded);
+            try
+            {
+                Poco::URI::decode(current, decoded);
+            }
+            catch (const Poco::Exception &)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Malformed percent-encoded component in HTTP URL path");
+            }
             result.push_back(decoded);
             current.clear();
         }
@@ -539,10 +547,8 @@ String canonicalizeCompressionExtension(const String & ext)
         return "bz2";
     if (lower == "deflate")
         return "deflate";
-    /// NOTE: Snappy is intentionally not listed: it has only a read wrapper
-    /// (`HadoopSnappyReadBuffer`), and `wrapWriteBufferWithCompressionMethod` throws
-    /// `NOT_IMPLEMENTED` for it. Advertising `.snappy` as a response-compression extension would let
-    /// `/table.CSV.snappy` parse as valid and then fail only at response-buffer setup.
+    if (lower == "snappy")
+        return "snappy";
     return {};
 }
 

@@ -205,7 +205,7 @@ def test_dynamic_handler_put_delete_still_readonly():
                 response += chunk
 
         assert 1 == response.count(b"HTTP/1.1 "), response
-        assert b"HTTP/1.1 200" in response, response
+        assert b"HTTP/1.1 411" in response, response
         assert b"connection: close" in response.lower(), response
         assert b"42424242" not in response, response
 
@@ -226,7 +226,7 @@ def test_dynamic_handler_put_delete_still_readonly():
                 response += chunk
 
         status = response.split(b" ", 2)[1].decode()
-        assert "411" == status, (status, response)
+        assert "404" == status, (status, response)
 
         # The default query parameter name is also used by configured dynamic handlers. It must not
         # enable the built-in path-upload mutation exception for a handler-owned PUT route.
