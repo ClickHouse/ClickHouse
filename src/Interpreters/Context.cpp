@@ -696,6 +696,9 @@ struct ContextSharedPart : boost::noncopyable
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
+    /// Bumped every time the selector is invalidated, so a policy read outside the lock can be
+    /// detected as stale and re-read instead of being baked into a freshly built selector.
+    mutable UInt64 compression_codec_selector_generation TSA_GUARDED_BY(mutex) = 0;
     /// Storage disk chooser for MergeTree engines
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Storage policy chooser for MergeTree engines
@@ -948,6 +951,7 @@ struct ContextSharedPart : boost::noncopyable
         std::lock_guard lock(mutex);
         config = config_value;
         compression_codec_selector.reset();
+        ++compression_codec_selector_generation;
         access_control->setExternalAuthenticatorsConfig(*config_value);
     }
 
@@ -2125,6 +2129,7 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
     /// The selector uses the effective default-profile settings. Rebuild it after a users reload
     /// so changes to `allow_experimental_codecs` take effect without restarting the server.
     shared->compression_codec_selector.reset();
+    ++shared->compression_codec_selector_generation;
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -7094,25 +7099,47 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 {
     /// The selector is built once and shared, so the experimental-codec gate must come from the
     /// server-level policy (the default profile), not from the settings of whichever query happens
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->compression_codec_selector)
+    /// to trigger the lazy build.
+    ///
+    /// The policy is read *without* holding `shared->mutex`: reading it goes through `AccessControl`,
+    /// which takes that same non-recursive mutex (and may do IO), so reading it under the lock
+    /// deadlocks the very first `MergeTree` part write of the process. The generation counter detects
+    /// a config or users reload racing with that read, in which case the policy is re-read, so the
+    /// selector is never built from a policy older than the config it is built for.
+    while (true)
     {
-        /// Read the policy in the same locked epoch as the selector check. `setUsersConfig` updates
-        /// both under this mutex, so this cannot rebuild the selector after a users reload with a
-        /// stale default-profile policy.
+        UInt64 generation = 0;
+
+        {
+            SharedLockGuard lock(shared->mutex);
+            if (shared->compression_codec_selector)
+                return shared->compression_codec_selector->choose(part_size, part_size_ratio);
+            generation = shared->compression_codec_selector_generation;
+        }
+
         const bool allow_experimental_codecs = getGlobalContext()->getDefaultProfileAllowExperimentalCodecs();
-        constexpr auto config_name = "compression";
-        const auto & config = shared->getConfigRefWithLock(lock);
 
-        if (config.has(config_name))
-            shared->compression_codec_selector
-                = std::make_unique<CompressionCodecSelector>(config, "compression", allow_experimental_codecs);
-        else
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
+        {
+            std::lock_guard lock(shared->mutex);
+
+            if (!shared->compression_codec_selector)
+            {
+                if (shared->compression_codec_selector_generation != generation)
+                    continue;
+
+                constexpr auto config_name = "compression";
+                const auto & config = shared->getConfigRefWithLock(lock);
+
+                if (config.has(config_name))
+                    shared->compression_codec_selector
+                        = std::make_unique<CompressionCodecSelector>(config, "compression", allow_experimental_codecs);
+                else
+                    shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
+            }
+
+            return shared->compression_codec_selector->choose(part_size, part_size_ratio);
+        }
     }
-
-    return shared->compression_codec_selector->choose(part_size, part_size_ratio);
 }
 
 
