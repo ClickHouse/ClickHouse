@@ -375,8 +375,7 @@ Some special args handling:
 <Note>
 **Important**
 
-- Multiple sessions can coexist, each with its own connection and database context, as long as they share the same database path.
-- Sessions are thread-safe; for best performance, use a separate session per thread.
+- Multiple sessions can coexist, as long as they share the same database path.
 - To use a different database path, close the open session(s) first.
 </Note>
 
