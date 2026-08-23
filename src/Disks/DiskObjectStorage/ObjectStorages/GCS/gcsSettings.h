@@ -14,6 +14,7 @@
 
 #include <Poco/Net/HTTPClientSession.h>
 
+#include <google/cloud/credentials.h>
 #include <google/cloud/storage/client.h>
 
 namespace Poco::Util { class AbstractConfiguration; }
@@ -149,6 +150,12 @@ void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const Conte
 /// an empty function for a null resolver, which the transport reads as "no proxy".
 std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigProvider(
     const std::shared_ptr<ProxyConfigurationResolver> & resolver);
+
+/// Build the GCS credentials the settings authenticate with, following the priority order of
+/// `chooseGCSCredentialSource`. Exposed separately from `getGCSClient` so that a consumer which
+/// needs the credentials themselves — rather than a client built from them — cannot disagree with
+/// the client about which authentication mode the settings select.
+std::shared_ptr<google::cloud::Credentials> makeGCSCredentials(const GCSObjectStorageSettings & settings);
 
 /// Build a native GCS storage client from the parsed settings. The resolved network destination
 /// (the endpoint override, or the default GCS endpoint) is validated against the context's

@@ -332,6 +332,30 @@ static String readFileToString(const String & path)
     return contents;
 }
 
+std::shared_ptr<gc::Credentials> makeGCSCredentials(const GCSObjectStorageSettings & settings)
+{
+    switch (chooseGCSCredentialSource(settings))
+    {
+        case GCSCredentialSource::Anonymous:
+            return gc::MakeInsecureCredentials();
+        case GCSCredentialSource::ServiceAccountKey:
+            return gc::MakeServiceAccountCredentials(settings.service_account_key);
+        case GCSCredentialSource::ServiceAccountKeyFile:
+            return gc::MakeServiceAccountCredentials(readFileToString(settings.service_account_key_file));
+        case GCSCredentialSource::AccessToken:
+        {
+            const auto expiry = std::chrono::system_clock::now()
+                + std::chrono::seconds(std::max<Int64>(settings.access_token_expires_in_seconds, 1));
+            return gc::MakeAccessTokenCredentials(settings.access_token, expiry);
+        }
+        case GCSCredentialSource::ApplicationDefault:
+            /// Application Default Credentials: GOOGLE_APPLICATION_CREDENTIALS, the GCE/GKE metadata
+            /// server, or the gcloud SDK configuration.
+            return gc::MakeGoogleDefaultCredentials();
+    }
+    UNREACHABLE();
+}
+
 std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & settings, const ContextPtr & context)
 {
     /// Fail-closed validation of the actual network destination against `remote_url_allow_hosts`,
@@ -344,33 +368,7 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
 
     gc::Options options;
 
-    std::shared_ptr<gc::Credentials> credentials;
-    switch (chooseGCSCredentialSource(settings))
-    {
-        case GCSCredentialSource::Anonymous:
-            credentials = gc::MakeInsecureCredentials();
-            break;
-        case GCSCredentialSource::ServiceAccountKey:
-            credentials = gc::MakeServiceAccountCredentials(settings.service_account_key);
-            break;
-        case GCSCredentialSource::ServiceAccountKeyFile:
-            credentials = gc::MakeServiceAccountCredentials(readFileToString(settings.service_account_key_file));
-            break;
-        case GCSCredentialSource::AccessToken:
-        {
-            const auto expiry = std::chrono::system_clock::now()
-                + std::chrono::seconds(std::max<Int64>(settings.access_token_expires_in_seconds, 1));
-            credentials = gc::MakeAccessTokenCredentials(settings.access_token, expiry);
-            break;
-        }
-        case GCSCredentialSource::ApplicationDefault:
-            /// Application Default Credentials: GOOGLE_APPLICATION_CREDENTIALS, the GCE/GKE metadata
-            /// server, or the gcloud SDK configuration.
-            credentials = gc::MakeGoogleDefaultCredentials();
-            break;
-    }
-
-    options.set<gc::UnifiedCredentialsOption>(std::move(credentials));
+    options.set<gc::UnifiedCredentialsOption>(makeGCSCredentials(settings));
 
     if (!settings.endpoint_override.empty())
         options.set<gcs::RestEndpointOption>(settings.endpoint_override);

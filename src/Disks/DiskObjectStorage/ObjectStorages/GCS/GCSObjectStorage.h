@@ -108,6 +108,14 @@ public:
 
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
+    /// Aliases the immutable client/settings snapshot, so the returned pointer keeps the settings
+    /// it points into alive even if `applyNewSettings` swaps the snapshot concurrently.
+    std::shared_ptr<const GCSObjectStorageSettings> getGCSObjectStorageSettings() const override
+    {
+        auto snapshot = getClientWithSettings();
+        return {snapshot, &snapshot->settings};
+    }
+
 private:
     /// The client and the settings it was built from are published as one immutable snapshot: a
     /// consumer that validates something against the settings (e.g. `describesSameClientAs` in
