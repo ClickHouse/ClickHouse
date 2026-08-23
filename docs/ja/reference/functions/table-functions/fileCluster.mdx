@@ -27,19 +27,19 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
   ## 引数
 </div>
 
-| Argument             | Description                                                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_name`       | リモートサーバーおよびローカルサーバーへのアドレスのセットと接続パラメーターを構築する際に使用するクラスター名。                                                                                          |
-| `path`               | [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings#user_files_path) からのファイルへの相対パスです。ファイルパスでは [グロブ](#globs-in-path) もサポートされます。 |
-| `format`             | ファイルの [フォーマット](/ja/reference/formats/index)。型: [String](/ja/reference/data-types/string)。                                                               |
-| `structure`          | `'UserID UInt64, Name String'` 形式のテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。                                                |
-| `compression_method` | 圧縮方式。サポートされている圧縮タイプは `gz`、`br`、`xz`、`zst`、`lz4`、`bz2` です。                                                                                         |
+| Argument             | Description                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cluster_name`       | リモートサーバーおよびローカルサーバーへのアドレスのセットと接続パラメーターを構築する際に使用するクラスター名。                                                                                               |
+| `path`               | [user&#95;files&#95;path](/ja/reference/settings/server-settings/settings/user#user_files_path) からのファイルへの相対パスです。ファイルパスでは [グロブ](#globs-in-path) もサポートされます。 |
+| `format`             | ファイルの [フォーマット](/ja/reference/formats/index)。型: [String](/ja/reference/data-types/string)。                                                                    |
+| `structure`          | `'UserID UInt64, Name String'` 形式のテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。                                                     |
+| `compression_method` | 圧縮方式。サポートされている圧縮タイプは `gz`、`br`、`xz`、`zst`、`lz4`、`bz2` です。                                                                                              |
 
-<div id="returned_value">
+<div id="returned-value">
   ## 戻り値
 </div>
 
-指定されたフォーマットと構造を持ち、指定されたパスに一致するファイル内のデータを含むテーブル。
+指定されたフォーマットとテーブル構造を持ち、指定されたパスに一致するファイル内のデータを含むテーブル。
 
 **例**
 

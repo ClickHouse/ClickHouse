@@ -43,13 +43,13 @@ SET TIME ZONE 'UTC';
 SET TIME ZONE 'Europe/Amsterdam';
 SET TIME ZONE 'America/New_York';
 
--- Verificar o fuso horário da sessão atual
+-- Verify the current session time zone
 SELECT getSetting('session_timezone');
 ```
 
 O valor de timezone deve ser um nome válido no [IANA Time Zone Database](https://www.iana.org/time-zones). Um nome de timezone inválido resultará em erro.
 
-Para mais informações sobre a configuração `session_timezone`, consulte [session&#95;timezone](/pt-BR/reference/settings/session-settings#session_timezone).
+Para mais informações sobre a configuração `session_timezone`, consulte [session&#95;timezone](/pt-BR/reference/settings/session-settings/other#session_timezone).
 
 <div id="setting-query-parameters">
   ## Definindo parâmetros de consulta
