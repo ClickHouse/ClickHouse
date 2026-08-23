@@ -26,8 +26,31 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 
 `system.query_log` 表会记录两类查询：
 
-1. 由客户端直接运行的初始查询。
-2. 由其他查询发起的子查询 (用于分布式查询执行) 。对于这类查询，父查询的信息会显示在 `initial_*` 列中。
+1. 初始 (顶级) 查询。
+2. 由其他查询发起的子查询，包括用于分布式执行的查询以及诸如视图评估等内部子查询。对于这些查询，原始初始查询的信息会显示在 `initial_*` 列中。
+
+<Tip>
+  **默认过滤初始查询**
+
+  通常，每次查询 `system.query_log` 时都添加 `is_initial_query = 1`。这会排除子查询，从而不会将各个处理步骤与初始查询分开计数。此过滤器并不表示查询由客户端提交，因为服务器内部工作也可以是初始查询。
+
+  当您需要追踪初始查询及保留其 ID 的子查询时，请改用 `initial_query_id`。初始查询的 `initial_query_id` 和 `query_id` 值相同，而同一事件链中的子查询会保留初始查询的 `initial_query_id`，并拥有自己的 `query_id`。并非初始查询启动的所有工作都会以这种方式关联：服务器分派的工作可能会使用新的 `initial_query_id` 启动新的初始查询事件链，例如远程 [`QueryRunner`](/zh/reference/engines/table-engines/special/query-runner#cluster-mode) 分派。
+
+  ```sql
+  SELECT
+      hostname,
+      type,
+      query_id,
+      initial_query_id,
+      is_initial_query,
+      query
+  FROM system.query_log
+  WHERE initial_query_id = '<query_id_of_initial_query>'
+  ORDER BY event_time_microseconds;
+  ```
+
+  如果关联的子查询可以在其他节点上运行，请在每个节点上查询 `system.query_log`，例如使用 [`clusterAllReplicas`](/zh/reference/functions/table-functions/cluster)。
+</Tip>
 
 根据查询的状态 (参见 `type` 列) ，每个查询会在 `query_log` 表中创建一行或两行：
 
@@ -74,19 +97,19 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 * `exception_code` ([Int32](/zh/reference/data-types/int-uint)) — 异常代码。
 * `exception` ([String](/zh/reference/data-types/string)) — 异常信息。
 * `stack_trace` ([String](/zh/reference/data-types/string)) — 堆栈跟踪。如果查询成功完成，则为空字符串。
-* `is_initial_query` ([UInt8](/zh/reference/data-types/int-uint)) — 查询类型。可能的值：1 — 查询由客户端发起，0 — 查询由另一条查询在分布式查询执行过程中发起。
+* `is_initial_query` ([UInt8](/zh/reference/data-types/int-uint)) — 查询是否为初始查询。可能的值：1 — 初始 (顶层) 查询，0 — 由另一条查询发起的子查询，包括用于分布式执行的查询和内部子查询。
 * `connection_address` ([IPv6](/zh/reference/data-types/ipv6)) — 发起连接的客户端 IP 地址。通过代理连接时，此地址为代理的地址。
 * `connection_port` ([UInt16](/zh/reference/data-types/int-uint)) — 建立连接的客户端端口。通过代理连接时，该端口为代理端口。
 * `user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 发起当前查询的用户名。
 * `query_id` ([String](/zh/reference/data-types/string)) — 查询 ID。
 * `address` ([IPv6](/zh/reference/data-types/ipv6)) — 用于执行查询的 IP 地址。若通过代理连接且设置了 `auth_use_forwarded_address`，这里显示的将是客户端地址，而非代理地址。
 * `port` ([UInt16](/zh/reference/data-types/int-uint)) — 用于发起查询的客户端端口。若通过代理连接且设置了 `auth_use_forwarded_address`，则此处显示的是客户端端口，而非代理端口。
-* `initial_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 执行初始查询的用户名 (用于分布式查询执行) 。
-* `initial_query_id` ([String](/zh/reference/data-types/string)) — 初始查询 ID (用于分布式查询执行) 。
-* `initial_address` ([IPv6](/zh/reference/data-types/ipv6)) — 发起父查询时所使用的 IP 地址。
-* `initial_port` ([UInt16](/zh/reference/data-types/int-uint)) — 发起父查询时使用的客户端端口。
-* `initial_query_start_time` ([DateTime](/zh/reference/data-types/datetime)) — 初始查询的开始时间 (用于分布式查询执行) 。
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 初始查询开始时间，精确到微秒 (适用于分布式查询执行) 。
+* `initial_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 同一查询链中执行初始查询的用户名。
+* `initial_query_id` ([String](/zh/reference/data-types/string)) — 同一查询链中初始查询的 ID。
+* `initial_address` ([IPv6](/zh/reference/data-types/ipv6)) — 同一查询链中发起初始查询的 IP 地址。
+* `initial_port` ([UInt16](/zh/reference/data-types/int-uint)) — 同一查询链中发起初始查询的客户端端口。
+* `initial_query_start_time` ([DateTime](/zh/reference/data-types/datetime)) — 同一查询链中初始查询的开始时间。
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 同一查询链中初始查询的开始时间，精确到微秒。
 * `authenticated_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 该会话中已通过身份验证的用户名。
 * `interface` ([UInt8](/zh/reference/data-types/int-uint)) — 发起查询所使用的接口。可能的值：1 — TCP，2 — HTTP。
 * `is_secure` ([UInt8](/zh/reference/data-types/int-uint)) — 表示查询是否通过安全接口执行的标志
@@ -149,7 +172,13 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 **基本示例**
 
 ```sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT *
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+ORDER BY query_start_time DESC
+LIMIT 1
+FORMAT Vertical;
 ```
 
 ```text
