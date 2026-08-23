@@ -524,10 +524,11 @@ struct HashMethodSerialized
         /// cache lines wide. Measured on `group_by_multiple_strings`: it wins up to ~256 bytes per row
         /// with one thread and starts losing from ~128 upwards once threads compete for bandwidth.
         ///
-        /// How large the block is does not belong in that decision: a large block of short rows is
-        /// exactly where the one pass wins most - a 1M-row block of 20-byte keys is 3.8x faster with
-        /// it - and the buffer is written and read back sequentially either way. Shrinking the block
-        /// 64x moves a long-row case by a fraction of the difference the row size makes.
+        /// How large the block is does not belong in that decision. A large block of short rows is
+        /// exactly where the one pass wins most: a 1M-row block of 20-byte keys is 4x faster with it.
+        /// And where a long row does lose, the loss is not the buffer's size either - shrinking such
+        /// a block 64 times, from 65536 rows to 1024, only takes it from +29% to +16%, while the row
+        /// size alone decides whether it wins or loses at all.
         const size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
         return avg_row_size < 128;
     }
