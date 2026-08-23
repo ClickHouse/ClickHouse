@@ -8,6 +8,15 @@
 # passes in ~3s locally. Looks like a runner-specific hang in the scipy import. Needs further investigation.
 02294_anova_cmp
 
+# The local prefetched read pool requires the `pread_threadpool` read method, which needs
+# `preadv2` with `RWF_NOWAIT` to check the page cache. The system call does not exist on
+# macOS, so the default read method is switched to `pread` there and the pool never runs.
+# This test asserts a side effect of the pool (a failpoint inside it) without asking for the
+# read method itself, so it cannot pass on Darwin. This one is a platform gap, not a harness
+# issue. Tests that set `local_filesystem_read_method = 'pread_threadpool'` explicitly are not
+# affected: only the default is switched, so the pool still runs for them.
+02910_prefetch_unexpceted_exception
+
 # Marginal timeout on the macOS CI runner: the combined diagnostics test averaged ~47s there
 # with a 60s per-test limit (vs ~27s on the Linux fast test), so a few percent of runs crossed
 # the limit. The expensive driver-replay half was split into this test; the cheap
