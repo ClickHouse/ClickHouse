@@ -4,6 +4,7 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/91119
 
 SET group_by_use_nulls = 1;
+SET enable_analyzer = 1;
 
 SELECT (SELECT c0) FROM (SELECT 1::Bool) t0(c0) GROUP BY c0 WITH ROLLUP ORDER BY c0;
 SELECT (SELECT c0) FROM (SELECT 1::Bool) t0(c0) GROUP BY c0 WITH CUBE ORDER BY c0;
