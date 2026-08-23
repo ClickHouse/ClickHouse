@@ -1584,9 +1584,19 @@ void MergeTreeDeduplicationLog::rollbackPublishedPart(
                 }
 
                 rotateAndDropIfNeeded();
+
+                compensated = true;
             }
 
-            compensated = true;
+            /// With a zero window - deduplication was disabled by an ALTER between the
+            /// publication and this rollback - no rollback record can be written: the
+            /// log machinery is shut down and `rotate` creates no file. The ADD records
+            /// of the published block ids are durable nonetheless (they were written
+            /// while the window was still non-zero), so leaving them uncancelled would
+            /// make a later load with deduplication re-enabled replay them and silently
+            /// deduplicate the retry of this never-committed insert. Leave `compensated`
+            /// false, so the history is repaired from the live state or fenced off
+            /// below, the same way `unpublishFailedPart` handles a zero window.
         }
         catch (...)
         {

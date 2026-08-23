@@ -3245,6 +3245,51 @@ TEST(MergeTreeDeduplicationLog, UnpublishFailedPartAfterDisablingDeduplication)
     std::filesystem::remove_all(work_dir);
 }
 
+/// The same ALTER-disables-deduplication race, but through the ordinary sink rollback
+/// (`rollbackPublishedPart`, driven end to end by the
+/// `merge_tree_sink_fail_part_commit_after_dedup` failpoint): with a zero window no
+/// rollback record can be written, so the durable ADD of the never-committed part must
+/// be repaired away or fenced off instead of being left to replay once deduplication is
+/// enabled again. Otherwise a restart wrongly deduplicates - and silently drops - the
+/// retry of the failed insert.
+TEST(MergeTreeDeduplicationLog, RollbackPublishedPartAfterDisablingDeduplication)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_rollback_after_disable/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        bool part_was_published = false;
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0"), &part_was_published).empty());
+        ASSERT_TRUE(part_was_published);
+
+        /// The ALTER lands between the publication and the failing part commit.
+        log.setDeduplicationWindowSize(0);
+        const std::vector<std::string> published_block_ids{"block1"};
+        log.rollbackPublishedPart(part("all_1_1_0"), published_block_ids);
+        log.finishPartPublication(published_block_ids);
+        log.shutdown();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+        /// The retry of the failed insert is accepted once deduplication is re-enabled.
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_2_2_0")).empty());
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
 /// Regression test for the rollback of a part that never became active
 /// (MergeTreeSink::commitPart) while the deduplication window is full. Publishing the
 /// failed part's block id must not cost the oldest, unrelated block id its window slot,
