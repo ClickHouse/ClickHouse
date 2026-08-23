@@ -535,6 +535,20 @@ Si vous spécifiez explicitement les options `actions`, `compact` ou `pretty` da
 
 `EXPLAIN PLAN` avec `json = 1` ou `distributed = 1` conserve les valeurs par défaut legacy (antérieures à la version 26.7), indépendamment de ce paramètre, sauf si `actions`, `compact` ou `pretty` sont définis explicitement. La sortie pretty ne peut pas représenter des résultats JSON ni des plans distribués par shard ; ces modes ne sont donc correctement rendus qu’au format legacy.
 
+<div id="explain_syntax_single_record">
+  ## explain_syntax_single_record
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "À partir de la version 26.8, `EXPLAIN SYNTAX` renvoie la requête reformatée sous la forme d’un seul enregistrement (avec des retours à la ligne intégrés), au lieu d’un enregistrement par ligne. Définissez cette valeur sur `false` pour rétablir la sortie antérieure à la version 26.8, avec un enregistrement par ligne."}]}]} />
+
+Renvoie la sortie de `EXPLAIN SYNTAX` sous la forme d’un seul enregistrement (avec des retours à la ligne intégrés), au lieu d’un enregistrement par ligne, de sorte que le résultat ne comporte qu’une seule ligne récupérable (par exemple, `SELECT count() FROM (EXPLAIN SYNTAX ...)` renvoie `1`).
+
+La spécification explicite de l’option `single_record` dans l’instruction `EXPLAIN SYNTAX` (par exemple, `EXPLAIN SYNTAX single_record = 0 SELECT ...`) prévaut toujours sur ce paramètre.
+
+Définissez cette valeur sur `false` pour rétablir la sortie antérieure à la version 26.8, avec un enregistrement par ligne, ou définissez `compatibility` sur une version antérieure à `26.8`.
+
 <div id="extract_key_value_pairs_max_pairs_per_row">
   ## extract_key_value_pairs_max_pairs_per_row
 </div>
@@ -1496,6 +1510,21 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
+<div id="resumable_backup_from_snapshot">
+  ## resumable_backup_from_snapshot
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre expérimental permettant d'activer la reprise de `BACKUP FROM SNAPSHOT`."}]}]} />
+
+Active la reprise de `BACKUP FROM SNAPSHOT` : une tentative ayant échoué peut être relancée sans recopier les
+entrées des lots déjà terminés. Disponible uniquement dans ClickHouse Cloud, pour les destinations
+`S3` et `AzureBlobStorage` de type répertoire. L&#39;activer dans les builds open source de ClickHouse, où
+`BACKUP FROM SNAPSHOT` n&#39;est pas disponible, entraîne l&#39;échec de `BACKUP` avec `WRONG_BACKUP_SETTINGS`.
+
 <div id="rows_before_aggregation">
   ## rows_before_aggregation
 </div>
@@ -1505,6 +1534,24 @@ FORMAT Null;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Fournit la valeur exacte de la statistique rows_before_aggregation, qui correspond au nombre de lignes lues avant l’agrégation"}]}]} />
 
 Lorsqu’il est activé, ClickHouse fournit la valeur exacte de la statistique rows&#95;before&#95;aggregation, qui correspond au nombre de lignes lues avant l’agrégatio
+
+<div id="run_query_in_background">
+  ## run_query_in_background
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nouveau paramètre permettant d’exécuter une requête en arrière-plan, indépendamment de la connexion qui l’a soumise, et d’en ignorer le résultat."}]}]} />
+
+S’il est activé, le serveur planifie la requête en arrière-plan, renvoie immédiatement un résultat vide indiquant la réussite, puis exécute la requête jusqu’à son terme, indépendamment de ce qui arrive à la connexion.
+
+Une requête en arrière-plan ne survit pas à un redémarrage du serveur. Lors de l’arrêt, elle respecte les mêmes paramètres du serveur qu’une requête au premier plan : `shutdown_wait_unfinished_queries` détermine s’il faut l’annuler ou attendre qu’elle se termine (les entrées en file d’attente sont supprimées dans les deux cas, sans entrée dans `system.query_log`), et `shutdown_wait_unfinished` limite la durée pendant laquelle le serveur attend.
+
+Suivez la requête à l’aide de son `query_id` : dans `system.processes` pendant son exécution et dans `system.query_log` après sa fin et l’écriture de l’entrée dans le journal des requêtes.
+
+S’applique aux requêtes reçues via les protocoles TCP natif et HTTP. Via HTTP, transmettez le paramètre en tant que paramètre d’URL. Il ne peut pas être modifié avec `SET` ; activez-le par requête ou au niveau de l’utilisateur ou du profil.
+
+Le principal cas d’utilisation est un long `INSERT ... SELECT` qui ne doit pas être perdu lorsque la connexion client est interrompue.
 
 <div id="secondary_indices_enable_bulk_filtering">
   ## secondary_indices_enable_bulk_filtering

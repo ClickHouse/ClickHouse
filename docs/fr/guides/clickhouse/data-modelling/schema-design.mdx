@@ -37,7 +37,7 @@ Comme la table `posts` sera la cible de la plupart des requêtes d’analytique,
 ClickHouse offre une fonctionnalité d’inférence de schéma qui permet d’identifier automatiquement les types d’un jeu de données. Cette fonctionnalité est prise en charge pour tous les formats de données, y compris Parquet. Nous pouvons l’exploiter pour identifier les types ClickHouse des données à l’aide de la fonction de table S3 et de la commande [`DESCRIBE`](/fr/reference/statements/describe-table). Notez ci-dessous que nous utilisons le motif glob `*.parquet` pour lire tous les fichiers du dossier `stackoverflow/parquet/posts`.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -76,7 +76,7 @@ Cela nous donne un schéma initial non optimisé. Par défaut, ClickHouse les co
 CREATE TABLE posts
 ENGINE = MergeTree
 ORDER BY () EMPTY AS
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 Quelques points importants :
@@ -123,7 +123,7 @@ ORDER BY tuple()
 Une fois notre schéma initial défini, nous pouvons charger les données à l’aide d’un `INSERT INTO SELECT`, en les lisant avec la fonction de table S3. L’opération suivante charge les données `posts` en environ 2 min sur une instance ClickHouse Cloud à 8 cœurs.
 
 ```sql
-INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 ```response

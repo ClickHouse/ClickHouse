@@ -149,7 +149,8 @@
                 "ru/concepts/features/configuration/server-config/workload-scheduling",
                 "ru/concepts/features/configuration/server-config/quotas",
                 "ru/concepts/features/configuration/server-config/composable-protocols",
-                "ru/concepts/features/configuration/server-config/startup-scripts"
+                "ru/concepts/features/configuration/server-config/startup-scripts",
+                "ru/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
@@ -211,6 +212,7 @@
             "ru/concepts/features/interfaces/native-clients-interfaces-index",
             "ru/concepts/features/interfaces/cli",
             "ru/concepts/features/interfaces/client",
+            "ru/concepts/features/interfaces/mcp",
             {
               "group": "Драйверы и интерфейсы",
               "pages": [

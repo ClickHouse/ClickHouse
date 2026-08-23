@@ -485,14 +485,14 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **语法**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **别名**: `hasAllToken`
 
 **参数**
 
-* `input` — 输入列。[`String`](/zh/reference/data-types/string)、[`FixedString`](/zh/reference/data-types/fixedstring)、[`Array(String)`](/zh/reference/data-types/array) 或 [`Array(FixedString)`](/zh/reference/data-types/array)
+* `input` — 输入列。[`String`](/zh/reference/data-types/string)、[`FixedString`](/zh/reference/data-types/fixedstring)、[`Nullable(String)`](/zh/reference/data-types/nullable)、[`Nullable(FixedString)`](/zh/reference/data-types/nullable)、[`Array(String)`](/zh/reference/data-types/array)、[`Array(FixedString)`](/zh/reference/data-types/array)、[`Array(Nullable(String))`](/zh/reference/data-types/array) 或 [`Array(Nullable(FixedString))`](/zh/reference/data-types/array)
 * `needles` — 待搜索的标记。[`String`](/zh/reference/data-types/string) 或 [`Array(String)`](/zh/reference/data-types/array)
 * `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。可选；如果未显式设置，默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 
@@ -524,7 +524,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**指定要在数组中按原样搜索的 needle (不进行标记化)**
+**指定要在数组中按原样搜索的项 (不进行标记化)&#x20;**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -715,7 +715,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **语法**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **别名**: `hasAnyToken`

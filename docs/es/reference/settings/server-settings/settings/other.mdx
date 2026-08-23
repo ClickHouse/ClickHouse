@@ -170,6 +170,12 @@ Configuración de la compresión de datos para las tablas con motor [MergeTree](
 </compression>
 ```
 
+<div id="config-file">
+  ## config-file
+</div>
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Indica el archivo de configuración del servidor.
+
 <div id="config_reload_interval_ms">
   ## config_reload_interval_ms
 </div>
@@ -177,12 +183,6 @@ Configuración de la compresión de datos para las tablas con motor [MergeTree](
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Sí" />
 
 Con qué frecuencia ClickHouse recargará la configuración y comprobará si hay cambios nuevos
-
-<div id="config-file">
-  ## config-file
-</div>
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Indica el archivo de configuración del servidor.
 
 <div id="core_dump">
   ## core_dump

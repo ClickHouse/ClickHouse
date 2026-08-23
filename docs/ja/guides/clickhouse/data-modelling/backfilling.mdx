@@ -24,12 +24,12 @@ ClickHouse を初めて使う場合でも、既存のデプロイメントを担
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
 ┌────count()─┐
-│ 2039988137 │ -- 約20.4億
+│ 2039988137 │ -- 2.04 billion
 └────────────┘
 
 1 row in set. Elapsed: 32.726 sec. Processed 2.04 billion rows, 170.05 KB (62.34 million rows/s., 5.20 KB/s.)
@@ -41,7 +41,7 @@ Peak memory usage: 239.50 MiB.
 ユーザーは、この日付以降のデータを、たとえば Kafka やオブジェクトストレージからストリームとして取り込んでいるものとします。このデータのスキーマを以下に示します。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -87,10 +87,10 @@ SETTINGS describe_compact_output = 1
 履歴データはオブジェクトストレージからバックフィルすることを推奨します。可能であれば、最適な読み取り性能と圧縮 (ネットワーク転送量の削減) のため、データはParquetにエクスポートしてください。通常は約150MBのファイルサイズが推奨されますが、ClickHouseは[70を超えるファイルフォーマット](/ja/reference/formats/index)をサポートしており、あらゆるサイズのファイルを処理できます。
 
 <div id="using-duplicate-tables-and-views">
-  ## 重複テーブルとビューの使用
+  ## 複製テーブルとビューの使用
 </div>
 
-すべてのシナリオにおいて、「duplicate tables and views」という概念を活用します。これらのテーブルとビューは、ライブストリーミングデータに使用されるものの複製であり、障害発生時に容易にリカバリできる手段を確保しながら、バックフィルを独立して実行できるようにします。例として、以下のメインの `pypi` テーブルとmaterialized viewを示します。これはPythonプロジェクトごとのダウンロード数を計算するものです。
+すべてのシナリオにおいて、「複製テーブル and views」という概念を活用します。これらのテーブルとビューは、ライブストリーミングデータに使用されるものの複製であり、障害発生時に容易にリカバリできる手段を確保しながら、バックフィルを独立して実行できるようにします。例として、以下のメインの `pypi` テーブルとmaterialized viewを示します。これはPythonプロジェクトごとのダウンロード数を計算するものです。
 
 ```sql
 CREATE TABLE pypi
@@ -127,7 +127,7 @@ GROUP BY project
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -141,7 +141,7 @@ SELECT count() FROM pypi
 
 ```response
 ┌──count()─┐
-│ 20612750 │ -- 2061万
+│ 20612750 │ -- 20.61 million
 └──────────┘
 
 1 row in set. Elapsed: 0.004 sec.
@@ -154,16 +154,16 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   20612750 │ -- 2061万
+│   20612750 │ -- 20.61 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 96.15 thousand rows, 769.23 KB (16.53 million rows/s., 132.26 MB/s.)
 Peak memory usage: 682.38 KiB.
 ```
 
-別のサブセット `{101..200}` をロードする場合を考えます。`pypi` に直接insertすることもできますが、duplicate tableを作成することで、このバックフィルを他の処理から切り離して実行できます。
+別のサブセット `{101..200}` をロードする場合を考えます。`pypi` に直接insertすることもできますが、複製テーブルを作成することで、このバックフィルを他の処理から切り離して実行できます。
 
-バックフィルが失敗した場合でも、メインテーブルへの影響はなく、重複テーブルを[truncate](/ja/concepts/features/operations/delete/truncate)して処理をやり直すだけで済みます。
+バックフィルが失敗した場合でも、メインテーブルへの影響はなく、複製テーブルを[truncate](/ja/concepts/features/operations/delete/truncate)して処理をやり直すだけで済みます。
 
 これらのビューの新しいコピーを作成するには、接尾辞 `_v2` を付けた `CREATE TABLE AS` 句を使用します。
 
@@ -180,11 +180,11 @@ FROM pypi_v2
 GROUP BY project
 ```
 
-これに2番目のほぼ同じサイズのサブセットを投入し、正常にロードされたことを確認します。
+これに、ほぼ同じサイズの2番目のサブセットを投入し、正常にロードされたことを確認します。
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -199,7 +199,7 @@ FROM pypi_v2
 
 ```response
 ┌──count()─┐
-│ 20400020 │ -- 2040万
+│ 20400020 │ -- 20.40 million
 └──────────┘
 
 1 row in set. Elapsed: 0.004 sec.
@@ -212,7 +212,7 @@ FROM pypi_downloads_v2
 
 ```response
 ┌─sum(count)─┐
-│   20400020 │ -- 2,040万
+│   20400020 │ -- 20.40 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 95.49 thousand rows, 763.90 KB (14.81 million rows/s., 118.45 MB/s.)
@@ -236,7 +236,7 @@ ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
 ```
 
 ```response
-0 行が返されました。経過時間: 0.389 秒。
+0 rows in set. Elapsed: 0.389 sec.
 ```
 
 <Info>
@@ -254,10 +254,10 @@ FROM pypi
 
 ```response
 ┌──count()─┐
-│ 41012770 │ -- 4101万
+│ 41012770 │ -- 41.01 million
 └──────────┘
 
-1行セット。経過時間: 0.003秒。
+1 row in set. Elapsed: 0.003 sec.
 ```
 
 ```sql
@@ -267,7 +267,7 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   41012770 │ -- 4101万
+│   41012770 │ -- 41.01 million
 └────────────┘
 
 1 row in set. Elapsed: 0.007 sec. Processed 191.64 thousand rows, 1.53 MB (27.34 million rows/s., 218.74 MB/s.)
@@ -288,12 +288,12 @@ FROM pypi_v2
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
---すべてのファイルの読み込みが完了するか、MOVE PARTITION が実行されるまで繰り返す
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
+--continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
 <Note>
@@ -343,7 +343,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 

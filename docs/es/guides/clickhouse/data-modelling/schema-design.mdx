@@ -37,7 +37,7 @@ Dado que la tabla `posts` será el destino de la mayoría de las consultas anal�
 ClickHouse ofrece la capacidad de inferir esquemas para identificar automáticamente los tipos de un dataset. Esto es compatible con todos los formatos de datos, incluido Parquet. Podemos aprovechar esta funcionalidad para identificar los tipos de ClickHouse de estos datos mediante la función de tabla s3 y el comando [`DESCRIBE`](/es/reference/statements/describe-table). Tenga en cuenta que a continuación usamos el patrón glob `*.parquet` para leer todos los archivos de la carpeta `stackoverflow/parquet/posts`.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -76,7 +76,7 @@ Esto nos proporciona un esquema inicial no optimizado. De forma predeterminada, 
 CREATE TABLE posts
 ENGINE = MergeTree
 ORDER BY () EMPTY AS
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 Algunos puntos importantes:
@@ -123,7 +123,7 @@ ORDER BY tuple()
 Con el esquema inicial ya definido, podemos cargar los datos con un `INSERT INTO SELECT`, leyendo los datos mediante la función de tabla S3. A continuación se cargan los datos de `posts` en unos 2 min en una instancia de ClickHouse Cloud de 8 núcleos.
 
 ```sql
-INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 ```response

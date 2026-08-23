@@ -69,7 +69,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 -- Create table with inferred schema
 CREATE TABLE trips_small_inferred
 ORDER BY () EMPTY
-AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet', NOSIGN);
 
 -- Insert data into table with inferred schema
 INSERT INTO trips_small_inferred

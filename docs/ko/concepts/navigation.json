@@ -149,7 +149,8 @@
                 "ko/concepts/features/configuration/server-config/workload-scheduling",
                 "ko/concepts/features/configuration/server-config/quotas",
                 "ko/concepts/features/configuration/server-config/composable-protocols",
-                "ko/concepts/features/configuration/server-config/startup-scripts"
+                "ko/concepts/features/configuration/server-config/startup-scripts",
+                "ko/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
@@ -211,6 +212,7 @@
             "ko/concepts/features/interfaces/native-clients-interfaces-index",
             "ko/concepts/features/interfaces/cli",
             "ko/concepts/features/interfaces/client",
+            "ko/concepts/features/interfaces/mcp",
             {
               "group": "드라이버 및 인터페이스",
               "pages": [

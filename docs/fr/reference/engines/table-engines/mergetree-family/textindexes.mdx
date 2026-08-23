@@ -176,7 +176,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Si le paramètre `min_cutoff_length` est fourni, seuls les n-grammes dont la longueur est supérieure ou égale à `min_cutoff_length` sont renvoyés.
   Comparé à `ngrams(N)`, le tokenizer `sparseGrams` produit des N-grammes de longueur variable, ce qui permet une représentation plus souple du texte d&#39;origine.
   Par exemple, `tokenizer = sparseGrams(3, 5, 4)` génère en interne des 3-, 4- et 5-grammes à partir de la chaîne d&#39;entrée, mais seuls les 4- et 5-grammes sont renvoyés.
-* `array` ne réalise aucune tokenisation, c.-à-d. que chaque valeur de ligne constitue un token (voir la fonction [array](/fr/reference/functions/regular-functions/array-functions#array)).
+* `array` ne réalise aucune tokenisation, c.-à-d. que chaque valeur de ligne constitue un token (voir la fonction [array](/fr/reference/functions/regular-functions/array-functions#array)). Pour assurer la compatibilité avec d’autres systèmes, `keyword` est disponible comme alias de `array`.
 
 Tous les tokenizers disponibles sont répertoriés dans [system.tokenizers](/fr/reference/system-tables/tokenizers).
 
@@ -1557,6 +1557,14 @@ L’index de texte présente actuellement les limitations suivantes :
 * La matérialisation d’index de texte comportant un grand nombre de tokens (par ex. 10 milliards de tokens) peut consommer une quantité importante de mémoire. La
   matérialisation d’un index de texte peut se produire directement (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) ou indirectement lors des fusions de parts.
 * Il n’est pas possible de matérialiser des index de texte sur des parts de plus de 4.294.967.296 (= 2^32 = env. 4,2 milliards) lignes. Sans index de texte matérialisé, les requêtes reviennent à une recherche brute-force lente dans la part. Dans le pire des cas, supposons qu’une part contienne une seule colonne de type String et que le paramètre MergeTree `max_bytes_to_merge_at_max_space_in_pool` (par défaut : 150 GB) n’ait pas été modifié. Dans ce cas, cela se produit si la colonne contient en moyenne moins de 29,5 caractères par ligne. En pratique, les tables contiennent aussi d’autres colonnes et le seuil est alors plusieurs fois plus faible (selon le nombre, le type et la taille des autres colonnes).
+
+<div id="upgrade-notes">
+  ## Notes de mise à niveau
+</div>
+
+La version du format sur disque des index de texte est contrôlée par le paramètre de table [`text_index_serialization_version`](/fr/reference/settings/merge-tree-settings/text-index) (par défaut : `v2_with_positions`).
+Ce paramètre constitue une préférence plutôt qu&#39;une contrainte stricte : si la version configurée ne permet pas de représenter un index, une version plus récente qui le permet est automatiquement sélectionnée. Ainsi, l&#39;écriture d&#39;un index de texte n&#39;échoue jamais à cause de ce paramètre.
+Lors d&#39;une mise à niveau progressive, verrouillez le format à l&#39;aide du paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) sur les serveurs déjà mis à niveau : lorsqu&#39;il est défini sur une version antérieure à celle ayant introduit le format correspondant, `text_index_serialization_version` reprend automatiquement une valeur antérieure et les serveurs plus récents continuent d&#39;écrire dans un format que les serveurs plus anciens peuvent toujours lire.
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## Index de texte vs index basés sur des filtres de Bloom

@@ -265,18 +265,17 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 
 <EnterprisePlanFeatureBadge feature="通过自定义身份提供商进行 JWT 身份验证" support="true" />
 
-除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。这是一项 Beta 功能，适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 方案服务。要启用此功能，请创建[支持工单](https://clickhouse.com/support/program)，并提供以下配置信息：
+除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。这是一项 Beta 功能，适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 方案服务。您可以在 Cloud 控制台的 **设置 → 安全 → JWT 身份验证** 中自行配置；有关分步说明，请参阅 [JWT 身份验证设置](/zh/cloud/security/jwt-authentication-setup)。每个提供商由以下内容定义：
 
-| 参数       | 说明                                                                                                                                                                              |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 服务 ID    | 要启用 JWT 身份验证的 ClickHouse Cloud 服务的 UUID。打开该服务后，可在 Cloud 控制台的 URL 中找到该 ID。                                                                                                       |
-| 签发方      | 身份提供商签发的标记中 `iss` 声明的值，通常为提供商的 URL (例如 `https://your-tenant.okta.com`) 。ClickHouse 会拒绝签发方与此值不匹配的标记。                                                                             |
-| 受众       | 身份提供商在为此服务签发的标记中设置的 `aud` 声明值。ClickHouse 会拒绝面向其他受众签发的标记。                                                                                                                        |
-| JWKS URL | 身份提供商发布 JSON Web Key Set 的 HTTPS 端点 (例如 `https://idp.example.com/.well-known/jwks.json`) 。ClickHouse 会从此端点拉取公钥以验证标记签名。如[必需声明](#required-claims)所述，JWKS 验证仅支持 RSA 密钥 (`RS256`) 。 |
-| 角色声明     | 包含临时用户 ClickHouse roles 的标记声明名称 (默认为 `clickhouse:roles`) 。该声明必须包含角色名称的 JSON 数组，例如 `["analyst", "reader"]`。                                                                      |
-| 授权声明     | 包含临时用户 SQL `GRANT` 片段的标记声明名称 (默认为 `clickhouse:grants`) 。该声明必须包含授权片段的 JSON 数组，例如 `["SELECT ON analytics.*", "INSERT ON analytics.events"]`。                                      |
+| 参数        | 说明                                                                                                                                                                              |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 名称        | 服务中该提供商的唯一名称。                                                                                                                                                                   |
+| 签发方       | 身份提供商签发的标记中 `iss` 声明的值，通常为提供商的 URL (例如 `https://your-tenant.okta.com`) 。ClickHouse 会拒绝签发方与此值不匹配的标记。                                                                             |
+| 受众        | 身份提供商在为此服务签发的标记中设置的 `aud` 声明值。ClickHouse 会拒绝面向其他受众签发的标记。                                                                                                                        |
+| JWKS URL  | 身份提供商发布 JSON Web Key Set 的 HTTPS 端点 (例如 `https://idp.example.com/.well-known/jwks.json`) 。ClickHouse 会从此端点拉取公钥以验证标记签名。如[必需声明](#required-claims)所述，JWKS 验证仅支持 RSA 密钥 (`RS256`) 。 |
+| 角色声明 (可选) | 包含临时用户 ClickHouse 角色的标记声明名称。留空以使用默认声明名称 `clickhouse:roles`。该声明必须包含角色名称的 JSON 数组，例如 `["analyst", "reader"]`。                                                                 |
 
-角色声明中指定的角色必须已在服务中存在 (使用 `CREATE ROLE` 创建) 。如[访问权限](#access-rights)中所述，权限上限会对角色声明和授权声明产生的有效访问权限设定上限。
+角色会从上述角色声明中读取，默认情况下，SQL 授权会从标记的 `clickhouse:grants` 声明中读取。角色声明中指定的角色必须已在服务中存在 (使用 `CREATE ROLE` 创建) 。如[访问权限](#access-rights)中所述，权限上限会对角色声明和授权声明产生的有效访问权限设定上限。
 
 <div id="interserver-communication">
   ## 服务器间通信

@@ -69,7 +69,7 @@ Também consideramos apenas desnormalizar outras tabelas em `Posts`, pois esta �
 *Para cada um dos exemplos a seguir, assuma que existe uma consulta que exige o uso de ambas as tabelas em uma junção.*
 
 <div id="posts-and-votes">
-  ### Posts and Votes
+  ### Posts e Votos
 </div>
 
 Os votos em posts são representados em tabelas separadas. O esquema otimizado para isso é mostrado abaixo, assim como o comando insert para carregar os dados:
@@ -87,7 +87,7 @@ CREATE TABLE votes
 ENGINE = MergeTree
 ORDER BY (VoteTypeId, CreationDate, PostId)
 
-INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -188,7 +188,7 @@ CREATE TABLE badges
 ENGINE = MergeTree
 ORDER BY UserId
 
-INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
 ```
 
 ```response
@@ -196,14 +196,14 @@ INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.
 ```
 
 ```sql
-INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet', NOSIGN)
 ```
 
 ```response
 0 rows in set. Elapsed: 18.126 sec. Processed 51.29 million rows, 797.05 MB (2.83 million rows/s., 43.97 MB/s.)
 ```
 
-Embora os usuários possam receber insígnias com frequência, é improvável que esse seja um conjunto de dados que precisemos atualizar mais de uma vez por dia. A relação entre insígnias e usuários é de um para muitos. Talvez possamos simplesmente desnormalizar as insígnias nos usuários como uma lista de tuplas? Embora isso seja possível, uma verificação rápida para confirmar o maior número de insígnias por usuário sugere que essa não é a melhor opção:
+Embora os usuários possam receber insígnias com frequência, é improvável que esse seja um conjunto de dados que precisemos atualizar mais de uma vez por dia. O relacionamento entre insígnias e usuários é de um para muitos. Talvez possamos simplesmente desnormalizar as insígnias nos usuários como uma lista de tuplas? Embora isso seja possível, uma verificação rápida para confirmar o maior número de insígnias por usuário sugere que essa não é a melhor opção:
 
 ```sql
 SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
@@ -219,7 +219,7 @@ SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
 └────────┴───────┘
 ```
 
-Provavelmente não é realista desnormalizar 19 mil objetos em uma única linha. Talvez seja melhor manter essa relação em tabelas separadas ou acrescentar estatísticas.
+Provavelmente não é realista desnormalizar 19 mil objetos em uma única linha. Talvez seja melhor manter esse relacionamento em tabelas separadas ou acrescentar estatísticas.
 
 > Talvez queiramos desnormalizar estatísticas de insígnias para usuários, por exemplo, o número de insígnias. Consideramos esse exemplo ao usar dicionários para esse conjunto de dados no momento da inserção.
 
@@ -227,7 +227,7 @@ Provavelmente não é realista desnormalizar 19 mil objetos em uma única linha.
   ### Posts e PostLinks
 </div>
 
-`PostLinks` relaciona `Posts` que os usuários consideram relacionados ou duplicados. A consulta a seguir mostra a estrutura e o comando de carregamento:
+`PostLinks` relaciona `Posts` que os usuários consideram relacionados ou duplicados. A consulta a seguir mostra o esquema e o comando de carregamento:
 
 ```sql
 CREATE TABLE postlinks
@@ -241,7 +241,7 @@ CREATE TABLE postlinks
 ENGINE = MergeTree
 ORDER BY (PostId, RelatedPostId)
 
-INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet', NOSIGN)
 ```
 
 ```response
@@ -267,7 +267,7 @@ ORDER BY c DESC LIMIT 5
 └──────────┴─────┘
 ```
 
-Da mesma forma, esses links não são eventos que ocorram com frequência excessiva:
+Da mesma forma, esses links não representam eventos que ocorrem com frequência excessiva:
 
 ```sql
 SELECT

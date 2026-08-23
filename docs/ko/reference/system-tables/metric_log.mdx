@@ -251,7 +251,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_RemoteWriteThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39; 스로틀링 제한에 맞추기 위해 쿼리가 대기한 총 시간입니다.
 * `ProfileEvent_LocalReadThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;local&#95;read&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;read&#95;bandwidth&#39; 스로틀러를 통해 전달된 바이트 수입니다.
 * `ProfileEvent_LocalReadThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;local&#95;read&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;read&#95;bandwidth&#39; 스로틀링 제한에 맞추기 위해 쿼리가 대기한 총 시간입니다.
-* `ProfileEvent_LocalWriteThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;local&#95;write&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;write&#95;bandwidth&#95;for&#95;server&#39; 스로틀러를 통해 전달된 바이트 수입니다.
+* `ProfileEvent_LocalWriteThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;local&#95;write&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;write&#95;bandwidth&#39; 스로틀러를 통해 전달된 바이트 수입니다.
 * `ProfileEvent_LocalWriteThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;local&#95;write&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;write&#95;bandwidth&#39; 스로틀링 제한에 맞추기 위해 쿼리가 대기한 총 시간입니다.
 * `ProfileEvent_BackupThrottlerBytes` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;backup&#95;bandwidth&#95;for&#95;server&#39; 스로틀러를 통해 전달된 바이트 수입니다.
 * `ProfileEvent_BackupThrottlerSleepMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — &#39;max&#95;backup&#95;bandwidth&#95;for&#95;server&#39; 스로틀링 제한에 맞추기 위해 쿼리가 대기한 총 시간입니다.
@@ -1571,6 +1571,9 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `CurrentMetric_MergeTreeDataSelectExecutorThreads` ([Int64](/ko/reference/data-types/int-uint)) — MergeTreeDataSelectExecutor 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_MergeTreeDataSelectExecutorThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 작업을 실행 중인 MergeTreeDataSelectExecutor 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_MergeTreeDataSelectExecutorThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — MergeTreeDataSelectExecutor 스레드 풀에서 큐에 있거나 활성 상태인 job 수입니다.
+* `CurrentMetric_BackgroundQueryThreads` ([Int64](/ko/reference/data-types/int-uint)) — 백그라운드 쿼리 스레드 풀의 스레드 수입니다.
+* `CurrentMetric_BackgroundQueryThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 작업을 실행 중인 백그라운드 쿼리 스레드 풀의 스레드 수입니다.
+* `CurrentMetric_BackgroundQueryThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — 백그라운드 쿼리 스레드 풀에서 큐에 있거나 활성 상태인 작업 수입니다.
 * `CurrentMetric_BackupsThreads` ([Int64](/ko/reference/data-types/int-uint)) — BACKUP용 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_BackupsThreadsActive` ([Int64](/ko/reference/data-types/int-uint)) — 작업을 실행 중인 BACKUP용 스레드 풀의 스레드 수입니다.
 * `CurrentMetric_BackupsThreadsScheduled` ([Int64](/ko/reference/data-types/int-uint)) — BACKUP의 대기 중이거나 실행 중인 작업 수입니다.

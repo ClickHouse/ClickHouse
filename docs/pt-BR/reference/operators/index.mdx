@@ -116,6 +116,32 @@ Para subtração de tuplas: [tupleMinus](/pt-BR/reference/functions/regular-func
 
 `a ILIKE b` – a função `ilike(a, b)`.
 
+<div id="match-function">
+  ### função match
+</div>
+
+`a REGEXP b` – A função `match(a, b)`.
+
+`a ~ b` – A função `match(a, b)` (correspondência por expressão regular no estilo PostgreSQL).
+
+<div id="notmatch-function">
+  ### Função notMatch
+</div>
+
+`a !~ b` – A função `notMatch(a, b)` (verifica se `a` não corresponde à expressão regular `b`).
+
+<div id="matchcaseinsensitive-function">
+  ### Função matchCaseInsensitive
+</div>
+
+`a ~* b` – A função `matchCaseInsensitive(a, b)` (correspondência de expressão regular sem distinção entre maiúsculas e minúsculas).
+
+<div id="notmatchcaseinsensitive-function">
+  ### Função notMatchCaseInsensitive
+</div>
+
+`a !~* b` – A função `notMatchCaseInsensitive(a, b)` (verifica se `a` não corresponde à expressão regular `b`, sem diferenciar maiúsculas de minúsculas).
+
 <div id="between-function">
   ### Função BETWEEN
 </div>

@@ -535,6 +535,20 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 Для `EXPLAIN PLAN` с `json = 1` или `distributed = 1` сохраняются прежние значения по умолчанию (`legacy`, до 26.7) независимо от этой настройки, если только `actions`, `compact` или `pretty` не заданы явно. Формат `pretty` не может представлять результаты JSON или распределённые планы по сегментам, поэтому эти режимы корректно отображаются только в формате `legacy`.
 
+<div id="explain_syntax_single_record">
+  ## explain_syntax_single_record
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Начиная с версии 26.8, `EXPLAIN SYNTAX` возвращает переформатированный запрос в виде одной записи (со встроенными переводами строк), а не отдельной записи для каждой строки. Установите значение `false`, чтобы восстановить вывод в формате, использовавшемся до версии 26.8: одна запись на строку."}]}]} />
+
+Возвращает результат `EXPLAIN SYNTAX` в виде одной записи (со встроенными переводами строк), а не отдельной записи для каждой строки, благодаря чему результат представляет собой одну строку, которую можно извлечь (например, `SELECT count() FROM (EXPLAIN SYNTAX ...)` возвращает `1`).
+
+Явное указание параметра `single_record` в операторе `EXPLAIN SYNTAX` (например, `EXPLAIN SYNTAX single_record = 0 SELECT ...`) всегда переопределяет эту настройку.
+
+Установите значение `false`, чтобы восстановить вывод в формате, использовавшемся до версии 26.8: одна запись на строку, или задайте для `compatibility` любую версию ниже `26.8`.
+
 <div id="extract_key_value_pairs_max_pairs_per_row">
   ## extract_key_value_pairs_max_pairs_per_row
 </div>
@@ -1496,6 +1510,21 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
+<div id="resumable_backup_from_snapshot">
+  ## resumable_backup_from_snapshot
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая экспериментальная настройка, включающая возобновляемый `BACKUP FROM SNAPSHOT`."}]}]} />
+
+Включает возобновляемый `BACKUP FROM SNAPSHOT`: неудачную попытку можно повторить без повторного копирования
+элементов уже завершённых батчей. Доступно только в ClickHouse Cloud для пунктов назначения
+`S3` и `AzureBlobStorage` в виде каталогов. В сборках ClickHouse с открытым исходным кодом, где
+сам `BACKUP FROM SNAPSHOT` недоступен, включение этой настройки приводит к ошибке `BACKUP` с `WRONG_BACKUP_SETTINGS`.
+
 <div id="rows_before_aggregation">
   ## rows_before_aggregation
 </div>
@@ -1505,6 +1534,24 @@ FORMAT Null;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Возвращает точное значение статистики rows_before_aggregation; показывает количество строк, прочитанных до агрегации"}]}]} />
 
 Если включено, ClickHouse будет возвращать точное значение статистики rows&#95;before&#95;aggregation, которая показывает количество строк, прочитанных до агрегации
+
+<div id="run_query_in_background">
+  ## run_query_in_background
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для выполнения запроса в фоновом режиме, независимо от подключения, отправившего запрос, с отбрасыванием результата."}]}]} />
+
+Если включено, сервер планирует выполнение запроса в фоновом режиме, немедленно возвращает пустой успешный результат и выполняет запрос до завершения независимо от состояния подключения.
+
+Фоновый запрос не сохраняется после перезапуска сервера. При остановке сервера к нему применяются те же настройки сервера, что и к обычному запросу: `shutdown_wait_unfinished_queries` определяет, отменить запрос или дождаться его завершения (записи в очереди в любом случае отбрасываются без записи в `system.query_log`), а `shutdown_wait_unfinished` ограничивает время ожидания сервером.
+
+Отслеживайте запрос по его `query_id`: в `system.processes` во время выполнения и в `system.query_log` после завершения и сброса записи журнала запросов на диск.
+
+Применяется к запросам, полученным по нативным TCP- и HTTP-протоколам. При использовании HTTP передавайте настройку как URL-параметр. Её нельзя изменить с помощью `SET`; включайте её для каждого запроса либо на уровне пользователя или профиля.
+
+Основной сценарий использования — длительный `INSERT ... SELECT`, который не должен быть потерян при разрыве клиентского подключения.
 
 <div id="secondary_indices_enable_bulk_filtering">
   ## secondary_indices_enable_bulk_filtering

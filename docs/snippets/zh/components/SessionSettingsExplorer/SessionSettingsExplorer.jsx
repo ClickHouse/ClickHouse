@@ -1255,7 +1255,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       label: "join_*",
       count: 7,
       settings: [
-        { name: "join_algorithm", path: "/join#join_algorithm", default: "direct,parallel_hash,hash" },
+        { name: "join_algorithm", path: "/join#join_algorithm", default: "direct,parallel_hash,hash,ie_join" },
         { name: "join_any_take_last_row", path: "/join#join_any_take_last_row", default: "0" },
         { name: "join_default_strictness", path: "/join#join_default_strictness", default: "ALL" },
         { name: "join_on_disk_max_files_to_merge", path: "/join#join_on_disk_max_files_to_merge", default: "64" },
@@ -1469,154 +1469,154 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
-      标签: "max_bytes_*",
-      计数: 15,
-      设置: [
-        { 名称: "max_bytes_before_external_group_by", 路径: "/max-bytes#max_bytes_before_external_group_by", 默认: "0" },
-        { 名称: "max_bytes_before_external_join", 路径: "/max-bytes#max_bytes_before_external_join", 默认: "0" },
-        { 名称: "max_bytes_before_external_sort", 路径: "/max-bytes#max_bytes_before_external_sort", 默认: "0" },
-        { 名称: "max_bytes_before_remerge_sort", 路径: "/max-bytes#max_bytes_before_remerge_sort", 默认: "1000000000" },
-        { 名称: "max_bytes_for_lazy_final", 路径: "/max-bytes#max_bytes_for_lazy_final", 默认: "256000000" },
-        { 名称: "max_bytes_in_distinct", 路径: "/max-bytes#max_bytes_in_distinct", 默认: "0" },
-        { 名称: "max_bytes_in_join", 路径: "/max-bytes#max_bytes_in_join", 默认: "0" },
-        { 名称: "max_bytes_in_set", 路径: "/max-bytes#max_bytes_in_set", 默认: "0" },
-        { 名称: "max_bytes_ratio_before_external_group_by", 路径: "/max-bytes#max_bytes_ratio_before_external_group_by", 默认: "0.5" },
-        { 名称: "max_bytes_ratio_before_external_join", 路径: "/max-bytes#max_bytes_ratio_before_external_join", 默认: "0.5" },
-        { 名称: "max_bytes_ratio_before_external_sort", 路径: "/max-bytes#max_bytes_ratio_before_external_sort", 默认: "0.5" },
-        { 名称: "max_bytes_to_read", 路径: "/max-bytes#max_bytes_to_read", 默认: "0" },
-        { 名称: "max_bytes_to_read_leaf", 路径: "/max-bytes#max_bytes_to_read_leaf", 默认: "0" },
-        { 名称: "max_bytes_to_sort", 路径: "/max-bytes#max_bytes_to_sort", 默认: "0" },
-        { 名称: "max_bytes_to_transfer", 路径: "/max-bytes#max_bytes_to_transfer", 默认: "0" }
+      label: "max_bytes_*",
+      count: 15,
+      settings: [
+        { name: "max_bytes_before_external_group_by", path: "/max-bytes#max_bytes_before_external_group_by", default: "0" },
+        { name: "max_bytes_before_external_join", path: "/max-bytes#max_bytes_before_external_join", default: "0" },
+        { name: "max_bytes_before_external_sort", path: "/max-bytes#max_bytes_before_external_sort", default: "0" },
+        { name: "max_bytes_before_remerge_sort", path: "/max-bytes#max_bytes_before_remerge_sort", default: "1000000000" },
+        { name: "max_bytes_for_lazy_final", path: "/max-bytes#max_bytes_for_lazy_final", default: "256000000" },
+        { name: "max_bytes_in_distinct", path: "/max-bytes#max_bytes_in_distinct", default: "0" },
+        { name: "max_bytes_in_join", path: "/max-bytes#max_bytes_in_join", default: "0" },
+        { name: "max_bytes_in_set", path: "/max-bytes#max_bytes_in_set", default: "0" },
+        { name: "max_bytes_ratio_before_external_group_by", path: "/max-bytes#max_bytes_ratio_before_external_group_by", default: "0.5" },
+        { name: "max_bytes_ratio_before_external_join", path: "/max-bytes#max_bytes_ratio_before_external_join", default: "0.5" },
+        { name: "max_bytes_ratio_before_external_sort", path: "/max-bytes#max_bytes_ratio_before_external_sort", default: "0.5" },
+        { name: "max_bytes_to_read", path: "/max-bytes#max_bytes_to_read", default: "0" },
+        { name: "max_bytes_to_read_leaf", path: "/max-bytes#max_bytes_to_read_leaf", default: "0" },
+        { name: "max_bytes_to_sort", path: "/max-bytes#max_bytes_to_sort", default: "0" },
+        { name: "max_bytes_to_transfer", path: "/max-bytes#max_bytes_to_transfer", default: "0" }
       ],
       children: []
     },
     {
-      标签: "max_concurrent_*",
-      计数: 2,
-      设置: [
-        { 名称: "max_concurrent_queries_for_all_users", 路径: "/max-concurrent#max_concurrent_queries_for_all_users", 默认: "0" },
-        { 名称: "max_concurrent_queries_for_user", 路径: "/max-concurrent#max_concurrent_queries_for_user", 默认: "0" }
+      label: "max_concurrent_*",
+      count: 2,
+      settings: [
+        { name: "max_concurrent_queries_for_all_users", path: "/max-concurrent#max_concurrent_queries_for_all_users", default: "0" },
+        { name: "max_concurrent_queries_for_user", path: "/max-concurrent#max_concurrent_queries_for_user", default: "0" }
       ],
       children: []
     },
     {
-      标签: "max_distributed_*",
-      计数: 2,
-      设置: [
-        { 名称: "max_distributed_connections", 路径: "/max-distributed#max_distributed_connections", 默认: "1024" },
-        { 名称: "max_distributed_depth", 路径: "/max-distributed#max_distributed_depth", 默认: "5" }
+      label: "max_distributed_*",
+      count: 2,
+      settings: [
+        { name: "max_distributed_connections", path: "/max-distributed#max_distributed_connections", default: "1024" },
+        { name: "max_distributed_depth", path: "/max-distributed#max_distributed_depth", default: "5" }
       ],
       children: []
     },
     {
-      标签: "max_download_*",
-      计数: 2,
-      设置: [
-        { 名称: "max_download_buffer_size", 路径: "/max-download#max_download_buffer_size", 默认: "10485760" },
-        { 名称: "max_download_threads", 路径: "/max-download#max_download_threads", 默认: "4" }
+      label: "max_download_*",
+      count: 2,
+      settings: [
+        { name: "max_download_buffer_size", path: "/max-download#max_download_buffer_size", default: "10485760" },
+        { name: "max_download_threads", path: "/max-download#max_download_threads", default: "4" }
       ],
       children: []
     },
     {
-      标签: "max_execution_*",
-      计数: 4,
-      设置: [
-        { 名称: "max_execution_speed", 路径: "/max-execution#max_execution_speed", 默认: "0" },
-        { 名称: "max_execution_speed_bytes", 路径: "/max-execution#max_execution_speed_bytes", 默认: "0" },
-        { 名称: "max_execution_time", 路径: "/max-execution#max_execution_time", 默认: "0" },
-        { 名称: "max_execution_time_leaf", 路径: "/max-execution#max_execution_time_leaf", 默认: "0" }
+      label: "max_execution_*",
+      count: 4,
+      settings: [
+        { name: "max_execution_speed", path: "/max-execution#max_execution_speed", default: "0" },
+        { name: "max_execution_speed_bytes", path: "/max-execution#max_execution_speed_bytes", default: "0" },
+        { name: "max_execution_time", path: "/max-execution#max_execution_time", default: "0" },
+        { name: "max_execution_time_leaf", path: "/max-execution#max_execution_time_leaf", default: "0" }
       ],
       children: []
     },
     {
-      标签: "max_hyperscan_*",
-      计数: 2,
-      设置: [
-        { 名称: "max_hyperscan_regexp_length", 路径: "/max-hyperscan#max_hyperscan_regexp_length", 默认: "0" },
-        { 名称: "max_hyperscan_regexp_total_length", 路径: "/max-hyperscan#max_hyperscan_regexp_total_length", 默认: "0" }
+      label: "max_hyperscan_*",
+      count: 2,
+      settings: [
+        { name: "max_hyperscan_regexp_length", path: "/max-hyperscan#max_hyperscan_regexp_length", default: "0" },
+        { name: "max_hyperscan_regexp_total_length", path: "/max-hyperscan#max_hyperscan_regexp_total_length", default: "0" }
       ],
       children: []
     },
     {
-      标签: "max_insert_*",
-      计数: 5,
-      设置: [
-        { 名称: "max_insert_block_size", 路径: "/max-insert#max_insert_block_size", 默认: "1048449" },
-        { 名称: "max_insert_block_size_bytes", 路径: "/max-insert#max_insert_block_size_bytes", 默认: "0" },
-        { 名称: "max_insert_delayed_streams_for_parallel_write", 路径: "/max-insert#max_insert_delayed_streams_for_parallel_write", 默认: "0" },
-        { 名称: "max_insert_threads", 路径: "/max-insert#max_insert_threads", 默认: "auto(N)" },
-        { 名称: "max_insert_threads_min_free_memory_per_thread", 路径: "/max-insert#max_insert_threads_min_free_memory_per_thread", 默认: "4294967296" }
+      label: "max_insert_*",
+      count: 5,
+      settings: [
+        { name: "max_insert_block_size", path: "/max-insert#max_insert_block_size", default: "1048449" },
+        { name: "max_insert_block_size_bytes", path: "/max-insert#max_insert_block_size_bytes", default: "0" },
+        { name: "max_insert_delayed_streams_for_parallel_write", path: "/max-insert#max_insert_delayed_streams_for_parallel_write", default: "0" },
+        { name: "max_insert_threads", path: "/max-insert#max_insert_threads", default: "auto(N)" },
+        { name: "max_insert_threads_min_free_memory_per_thread", path: "/max-insert#max_insert_threads_min_free_memory_per_thread", default: "4294967296" }
       ],
       children: []
     },
     {
-      标签: "max_joined_*",
-      计数: 2,
-      设置: [
-        { 名称: "max_joined_block_size_bytes", 路径: "/max-joined#max_joined_block_size_bytes", 默认: "4194304" },
-        { 名称: "max_joined_block_size_rows", 路径: "/max-joined#max_joined_block_size_rows", 默认: "65409" }
+      label: "max_joined_*",
+      count: 2,
+      settings: [
+        { name: "max_joined_block_size_bytes", path: "/max-joined#max_joined_block_size_bytes", default: "4194304" },
+        { name: "max_joined_block_size_rows", path: "/max-joined#max_joined_block_size_rows", default: "65409" }
       ],
       children: []
     },
     {
-      标签: "max_local_*",
-      计数: 2,
-      设置: [
-        { 名称: "max_local_read_bandwidth", 路径: "/max-local#max_local_read_bandwidth", 默认: "0" },
-        { 名称: "max_local_write_bandwidth", 路径: "/max-local#max_local_write_bandwidth", 默认: "0" }
+      label: "max_local_*",
+      count: 2,
+      settings: [
+        { name: "max_local_read_bandwidth", path: "/max-local#max_local_read_bandwidth", default: "0" },
+        { name: "max_local_write_bandwidth", path: "/max-local#max_local_write_bandwidth", default: "0" }
       ],
       children: []
     },
     {
-      标签: "max_memory_usage_*",
-      计数: 2,
-      设置: [
-        { 名称: "max_memory_usage", 路径: "/max-memory-usage#max_memory_usage", 默认: "0" },
-        { 名称: "max_memory_usage_for_user", 路径: "/max-memory-usage#max_memory_usage_for_user", 默认: "0" }
+      label: "max_memory_usage_*",
+      count: 2,
+      settings: [
+        { name: "max_memory_usage", path: "/max-memory-usage#max_memory_usage", default: "0" },
+        { name: "max_memory_usage_for_user", path: "/max-memory-usage#max_memory_usage_for_user", default: "0" }
       ],
       children: []
     },
     {
-      标签: "max_network_*",
-      计数: 4,
-      设置: [
-        { 名称: "max_network_bandwidth", 路径: "/max-network#max_network_bandwidth", 默认: "0" },
-        { 名称: "max_network_bandwidth_for_all_users", 路径: "/max-network#max_network_bandwidth_for_all_users", 默认: "0" },
-        { 名称: "max_network_bandwidth_for_user", 路径: "/max-network#max_network_bandwidth_for_user", 默认: "0" },
-        { 名称: "max_network_bytes", 路径: "/max-network#max_network_bytes", 默认: "0" }
+      label: "max_network_*",
+      count: 4,
+      settings: [
+        { name: "max_network_bandwidth", path: "/max-network#max_network_bandwidth", default: "0" },
+        { name: "max_network_bandwidth_for_all_users", path: "/max-network#max_network_bandwidth_for_all_users", default: "0" },
+        { name: "max_network_bandwidth_for_user", path: "/max-network#max_network_bandwidth_for_user", default: "0" },
+        { name: "max_network_bytes", path: "/max-network#max_network_bytes", default: "0" }
       ],
       children: []
     },
     {
-      标签: "max_number_*",
-      计数: 2,
-      设置: [
-        { 名称: "max_number_of_partitions_for_independent_aggregation", 路径: "/max-number#max_number_of_partitions_for_independent_aggregation", 默认: "128" },
-        { 名称: "max_number_of_partitions_for_independent_distinct", 路径: "/max-number#max_number_of_partitions_for_independent_distinct", 默认: "128" }
+      label: "max_number_*",
+      count: 2,
+      settings: [
+        { name: "max_number_of_partitions_for_independent_aggregation", path: "/max-number#max_number_of_partitions_for_independent_aggregation", default: "128" },
+        { name: "max_number_of_partitions_for_independent_distinct", path: "/max-number#max_number_of_partitions_for_independent_distinct", default: "128" }
       ],
       children: []
     },
     {
-      标签: "max_parser_*",
-      计数: 2,
-      设置: [
-        { 名称: "max_parser_backtracks", 路径: "/max-parser#max_parser_backtracks", 默认: "1000000" },
-        { 名称: "max_parser_depth", 路径: "/max-parser#max_parser_depth", 默认: "1000" }
+      label: "max_parser_*",
+      count: 2,
+      settings: [
+        { name: "max_parser_backtracks", path: "/max-parser#max_parser_backtracks", default: "1000000" },
+        { name: "max_parser_depth", path: "/max-parser#max_parser_depth", default: "1000" }
       ],
       children: []
     },
     {
-      标签: "max_partitions_*",
-      计数: 2,
-      设置: [
-        { 名称: "max_partitions_per_insert_block", 路径: "/max-partitions#max_partitions_per_insert_block", 默认: "100" },
-        { 名称: "max_partitions_to_read", 路径: "/max-partitions#max_partitions_to_read", 默认: "-1" }
+      label: "max_partitions_*",
+      count: 2,
+      settings: [
+        { name: "max_partitions_per_insert_block", path: "/max-partitions#max_partitions_per_insert_block", default: "100" },
+        { name: "max_partitions_to_read", path: "/max-partitions#max_partitions_to_read", default: "-1" }
       ],
       children: []
     },
     {
-      标签: "max_rand_*",
-      计数: 2,
+      label: "max_rand_*",
+      count: 2,
       settings: [
         { name: "max_rand_distribution_parameter", path: "/max-rand#max_rand_distribution_parameter", default: "1000000" },
         { name: "max_rand_distribution_trials", path: "/max-rand#max_rand_distribution_trials", default: "1000000000" }
@@ -3010,7 +3010,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "其他",
-      count: 131,
+      count: 134,
       settings: [
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
         { name: "add_http_cors_header", path: "/other#add_http_cors_header", default: "0" },
@@ -3047,6 +3047,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "exclude_materialize_skip_indexes_on_insert", path: "/other#exclude_materialize_skip_indexes_on_insert", default: '""' },
         { name: "execute_exists_as_scalar_subquery", path: "/other#execute_exists_as_scalar_subquery", default: "1" },
         { name: "explain_query_plan_default", path: "/other#explain_query_plan_default", default: "pretty" },
+        { name: "explain_syntax_single_record", path: "/other#explain_syntax_single_record", default: "1" },
         { name: "extract_key_value_pairs_max_pairs_per_row", path: "/other#extract_key_value_pairs_max_pairs_per_row", default: "1000" },
         { name: "extremes", path: "/other#extremes", default: "0" },
         { name: "fallback_to_stale_replicas_for_distributed_queries", path: "/other#fallback_to_stale_replicas_for_distributed_queries", default: "1" },
@@ -3115,7 +3116,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "reserve_memory", path: "/other#reserve_memory", default: "0" },
         { name: "restore_replicated_merge_tree_to_shared_merge_tree", path: "/other#restore_replicated_merge_tree_to_shared_merge_tree", default: "0" },
         { name: "result_overflow_mode", path: "/other#result_overflow_mode", default: "throw" },
+        { name: "resumable_backup_from_snapshot", path: "/other#resumable_backup_from_snapshot", default: "0" },
         { name: "rows_before_aggregation", path: "/other#rows_before_aggregation", default: "0" },
+        { name: "run_query_in_background", path: "/other#run_query_in_background", default: "0" },
         { name: "secondary_indices_enable_bulk_filtering", path: "/other#secondary_indices_enable_bulk_filtering", default: "1" },
         { name: "select", path: "/other#select", default: '""' },
         { name: "select_sequential_consistency", path: "/other#select_sequential_consistency", default: "0" },
@@ -3237,7 +3240,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "设置" : "设置"}`
+    const countLabel = `${entry.count} 项设置`
 
     return (
       <div key={key} className="min-w-max">

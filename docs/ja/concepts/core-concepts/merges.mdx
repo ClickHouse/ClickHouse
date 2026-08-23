@@ -93,13 +93,19 @@ ClickHouse 24.10 では、新しい[マージダッシュボード](https://pres
 
 各マージスレッドは、次のループを実行します。
 
-① 次にマージするパーツを決定し、それらのパーツをメモリに読み込みます。
+<Steps>
+  <Step title="パーツをメモリに読み込む">
+    次にマージするパーツを決定し、それらのパーツをメモリに読み込みます。
+  </Step>
 
-② メモリ内でパーツをより大きなパーツにマージします。
+  <Step title="パーツをマージする">
+    メモリ内でパーツをより大きなパーツにマージします。
+  </Step>
 
-③ マージされたパーツをディスクに書き込みます。
-
-① に戻る
+  <Step title="ディスクに書き込む">
+    マージされたパーツをディスクに書き込み、ステップ 1 に戻ります。
+  </Step>
+</Steps>
 
 CPU コア数と RAM 容量を増やすことで、バックグラウンドマージのスループットを向上させることができます。
 
@@ -121,17 +127,27 @@ ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-mer
 
 パーツマージは、いくつかのステップで実行されます：
 
-**① 解凍と読み込み**：マージ対象のパーツに含まれる[圧縮済みバイナリカラムファイル](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)を解凍し、メモリに読み込みます。
+<Steps>
+  <Step title="解凍と読み込み">
+    マージ対象のパーツに含まれる[圧縮済みバイナリカラムファイル](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)を解凍し、メモリに読み込みます。
+  </Step>
 
-**② マージ**：データを、より大きなカラムファイルへマージします。
+  <Step title="マージ">
+    データを、より大きなカラムファイルへマージします。
+  </Step>
 
-**③ 索引作成**：マージ後のカラムファイルに対して、新しい[スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)が生成されます。
+  <Step title="索引作成">
+    マージ後のカラムファイルに対して、新しい[スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)が生成されます。
+  </Step>
 
-**④ 圧縮と保存**：新しいカラムファイルと索引は[圧縮](/ja/reference/statements/create/table/codec)され、マージ後のデータパーツを表す新しい[ディレクトリ](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)に保存されます。
+  <Step title="圧縮と保存">
+    新しいカラムファイルと索引は[圧縮](/ja/reference/statements/create/table/codec)され、マージ後のデータパーツを表す新しい[ディレクトリ](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)に保存されます。
+  </Step>
+</Steps>
 
-また、セカンダリのデータスキッピングインデックス、カラム STATISTICS、チェックサム、min-max 索引 などの[data parts 内の追加メタデータ](/ja/concepts/core-concepts/parts)も、マージ後のカラムファイルに基づいて再作成されます。ここでは簡略化のため、これらの詳細は省略しています。
+また、セカンダリのデータスキッピングインデックス、カラム STATISTICS、チェックサム、min-max 索引 などの[データパーツ内の追加メタデータ](/ja/concepts/core-concepts/parts)も、マージ後のカラムファイルに基づいて再作成されます。ここでは簡略化のため、これらの詳細は省略しています。
 
-ステップ②の仕組みは、使用する[MergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/index)によって異なります。これは、エンジンごとにマージの処理方法が異なるためです。たとえば、古くなった行が集計されたり、置き換えられたりすることがあります。前述のとおり、このアプローチでは**すべてのデータ処理をバックグラウンドマージにオフロード**するため、書き込み処理を軽量かつ効率的に保ち、**超高速な insert**を実現できます。
+マージステップの仕組みは、使用する[MergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/index)によって異なります。これは、エンジンごとにマージの処理方法が異なるためです。たとえば、古くなった行が集計されたり、置き換えられたりすることがあります。前述のとおり、このアプローチでは**すべてのデータ処理をバックグラウンドマージにオフロード**するため、書き込み処理を軽量かつ効率的に保ち、**超高速な insert**を実現できます。
 
 次に、MergeTree family に属する各エンジンのマージの仕組みを簡単に見ていきます。
 

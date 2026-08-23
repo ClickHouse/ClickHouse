@@ -1,0 +1,140 @@
+---
+title: '権限モデル'
+sidebarTitle: '権限モデル'
+description: 'ClickHouse Connector ができることとできないこと：アウトバウンド接続、ClickHouse の権限、Kubernetes RBAC、アクションの帰属、データ最小化'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'コネクタ', '権限', 'security']
+doc_type: 'reference'
+---
+
+このページでは、ClickHouse Connector が確立するすべての接続、保持する正確な権限、構造上実行できない操作、およびすべてのアクションの帰属について説明します。各要素の連携方法については、[architecture](/ja/products/bring-your-own-cloud/connector/architecture)を参照してください。
+
+<div id="what-the-connector-can-do">
+  ## コネクタでできること
+</div>
+
+<div id="outbound-connections">
+  ### アウトバウンド接続
+</div>
+
+コネクタが確立する接続の完全な一覧を以下に示します。いずれもお客様の環境内から発信されます。
+
+| 宛先                               | プロトコル                                  | 目的                                                                                                                                                                       |
+| -------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| お客様の組織のコネクタ API エンドポイント          | mTLS を使用する HTTPS (すべてのリクエストに HMAC 署名)  | `POST /v1/metrics`、`/v1/self-metrics`、`/v1/status`、`/v1/instance/sync`、`/v1/infra/sync`、`/v1/backup/sync`、`/v1/pcm/cert/renew`                                           |
+| お客様の組織のコネクタ API エンドポイント          | アウトバウンド WebSocket、`/v1/commands/ws`    | サポートセッションの状態に応じて有効化されるトラブルシューターのコマンドチャネル                                                                                                                          |
+| お客様の組織の登録エンドポイント                 | HTTPS (登録トークンまたは HMAC、mTLS なし)         | インストール時のトークン引き換えおよび証明書署名 (`/v1/pcm/cert/sign`)                                                                                                                           |
+| お客様の ClickHouse インスタンス           | ClickHouse ネイティブプロトコル                  | `pcm_scraper` および `pcm_troubleshooter` として実行する読み取り専用クエリと、スクレイパーのログフラッシュステートメント ([権限](#clickhouse-grants)を参照)                                                           |
+| Kubernetes API サーバー              | HTTPS                                  | ネームスペーススコープの読み取りと ServiceAccount トークンリクエスト (いずれのターゲットでも実行) 。更新された証明書を永続化するため、コネクタ自身の mTLS Secret を完全一致の名前で読み取り・更新 (Kubernetes インストールのみ。VM では更新内容をローカルの TLS ファイルに書き込みます)  |
+| お客様のアイデンティティプロバイダーの JWKS エンドポイント | HTTPS                                  | セッションゲートウェイが有効な場合に限り、オペレータートークンを検証                                                                                                                                       |
+
+インバウンド方向では、コネクタが公開するのはローカルのヘルスチェックポートとメトリクスポート、およびオプトインのセッションゲートウェイのみです。これ以外で待ち受けるものはなく、ClickHouse Cloud がお客様の環境に接続することもありません。ClickHouse Cloud ができるのは、トラブルシューターのアウトバウンド WebSocket に応答することだけです。
+
+<div id="clickhouse-grants">
+  ### ClickHouse 権限
+</div>
+
+プロビジョニングでは、コンポーネントごとに1つの読み取り専用ユーザーが作成されます。読み取り専用ではない唯一の例外は、以下に示すスクレイパーの `SYSTEM FLUSH LOGS` 権限です。これは何かを読み取ったり変更したりするものではなく、すでにバッファリングされているエントリをログテーブルに永続化するよう強制するだけです。ユーザーは `IDENTIFIED WITH bcrypt_hash` を使用して作成されるため、プロビジョニングSQLに含まれるのはソルト付きbcryptハッシュのみです。平文パスワードは、デーモンがランタイム時に読み取る認証情報ファイルにのみ保存されます。デフォルトのテーブルセットで付与される権限は、以下のとおりです。
+
+```sql
+CREATE USER IF NOT EXISTS `pcm_scraper` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+
+GRANT SELECT ON `system`.`asynchronous_metric_log` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`metric_log` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`server_settings` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`tables` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`warnings` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`user_directories` TO `pcm_scraper`;
+GRANT READ ON REMOTE TO `pcm_scraper`;
+GRANT SYSTEM FLUSH LOGS ON *.* TO `pcm_scraper`;
+```
+
+スクレイプクエリでは各システムテーブルが `clusterAllReplicas()` でラップされるため、`READ ON REMOTE` が必要です。ClickHouse ではこの権限に対してより限定的なスコープは許可されないため、`SYSTEM FLUSH LOGS` はグローバルスコープで付与する必要があります。ClickHouse がこの権限を有効にするのは `*_log` システムテーブルに対してのみであるため、付与範囲は実際に利用できる機能よりも広くなります。
+
+```sql
+CREATE USER IF NOT EXISTS `pcm_troubleshooter` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+
+GRANT SELECT ON `system`.`asynchronous_metrics` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`build_options` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`clusters` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`columns` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`databases` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`detached_parts` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`disks` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`events` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`formats` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`functions` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`grants` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`merges` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`metrics` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`mutations` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts_columns` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts_summary` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`processes` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`replicas` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`replication_queue` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`roles` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings_profile_elements` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings_profiles` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`storage_policies` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`table_engines` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`tables` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`users` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
+```
+
+両方のユーザーに対する `system.user_directories` 権限は、1 つの診断のために必要です。`clicklink clctl preflight` はコネクタ自身の認証情報で実行され、インスタンスが ClickHouse ユーザーをどのように保存しているか (レプリケートかローカルか) を確認します。このテーブルにはユーザーデータではなくユーザーストレージの設定メタデータが格納されており、スクレイプ対象セットにもセッションテーブルの許可リストにも含まれていないため、スクレイプまたはセッションの出力パスから読み取られることはありません。この権限がない場合、この 1 つの事前チェックはスキップとして報告されますが、その他の処理はすべて続行されます。
+
+テーブル単位の `SELECT` に加え、システムレベルで必要な権限はスクレイパー用の `SYSTEM FLUSH LOGS` のみです。これは `*_log` システムテーブル内のバッファリングされたエントリをディスクに永続化し、スクレイピング時に最新のデータを取得できるようにするだけで、他の処理は行いません。ClickHouse はこの権限をグローバルスコープでのみ受け付けますが、実際に適用するのはログテーブルに対してのみです。`INSERT`、DDL、ユーザー管理、設定、プロセス制御に関する権限はありません。2 つ目のコネクタデプロイメントが同じインスタンスを共有する場合、そのユーザー名には接尾辞 (`pcm_scraper_<suffix>`) が付き、権限セットは同じです。
+
+<div id="kubernetes-rbac">
+  ### Kubernetes RBAC
+</div>
+
+このチャートでは、ネームスペーススコープのロールのみが作成されます。クラスター ロールおよびClusterRoleBindingは作成されません。
+
+| リソース                                                                                            | 動詞                     | スコープ                                                                         |
+| ----------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------- |
+| `secrets`                                                                                       | `get`                  | 完全一致する名前のみ: mTLS Secret、HMAC Secret、各インスタンスのaccess-bundle Secret             |
+| `secrets`                                                                                       | `update`               | mTLS Secretのみ。デーモンが自動更新されたクライアント証明書を永続化できるよう、完全一致する名前で指定                     |
+| `serviceaccounts/token`                                                                         | `create`               | 完全一致する名前のみ: コンポーネント自身のServiceAccount、および各インスタンスのaccess-bundle ServiceAccount |
+| `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | トラブルシューターのみ                                                             |
+| `deployments`, `statefulsets`, `replicasets` (`apps`)                                           | `get`, `list`, `watch` | トラブルシューターのみ                                                             |
+
+<div id="what-the-connector-cannot-do">
+  ## コネクタで実行できないこと
+</div>
+
+* **ClickHouse のデータや状態への書き込みは不可。** 上記の権限には `INSERT`、DDL、ユーザー管理、設定、プロセス制御に関する権限は含まれません。唯一のシステムクラス権限であるスクレイパーの `SYSTEM FLUSH LOGS` は、ログテーブルですでにバッファリングされている内容を永続化するだけです。コネクタはデータ、スキーマ、ユーザー、設定を変更できません。
+* **exec は不可。** RBAC には `pods/exec` が含まれていないため、コネクタはポッド内でコマンドを実行できません。
+* **削除もパッチも不可。** RBAC で許可される変更は 2 つだけです。コネクタ自身の mTLS Secret に対する完全一致の名前を指定した `update` と、コネクタ自身の ServiceAccounts 用の短期間有効なトークンを発行し、保存済みオブジェクトを変更しない `serviceaccounts/token` に対する `create` です。
+* **クラスター スコープは不可。** すべてのロールはネームスペース内にバインドされます。コネクタは、許可されたネームスペース外のリソースを一覧表示したり読み取ったりできません。
+* **インバウンド接続は一切ありません。** ClickHouse Cloud からお客様の環境への接続が開始されることはありません。コマンド経路はトラブルシューターのアウトバウンド WebSocket のみであり、有効化したサポートセッションがアクティブでない限り、トラブルシューターはすべてのコマンドを拒否します。セッション中であっても、両側でスコープが制限されます。ClickHouse クエリはテーブルの許可リストに限定され、設定にかかわらず、バリデーターは `query_log` と `text_log` を拒否します。また、Kubernetes へのアクセスも、ネームスペーススコープのロールで付与された読み取り専用ビューとポッドログに個別に限定されます。
+
+<div id="what-requires-your-action">
+  ## 対応が必要な項目
+</div>
+
+* **サポートセッション。** 対話型のトラブルシューティングは、有効にしたセッション内でのみ実施されます。セッションの有効期間はデフォルトで4時間、最長24時間です。無効化は直ちに反映されます。[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
+* **オペレーターの許可リスト。** すべてのゲートウェイリクエストには、認証済みメールアドレスが許可リストに含まれるOIDCトークンが必要です。許可リストが空の場合はアクセスできません。リストはお客様が管理します。[設定ガイド](/ja/products/bring-your-own-cloud/connector/configuration)を参照してください。
+* **ゲートウェイの公開。** セッションゲートウェイは、有効にしない限り無効であり、イングレスを使用しない限りポートフォワード経由でのみアクセスできます。VM では、セッションコマンドから通信する前に、各オペレーターが自己署名証明書のフィンガープリントを固定する必要があります。
+* **ネットワークegress。** 強制適用CNI 環境では、chart の NetworkPolicy でエンドポイントCIDRを許可リストに追加するまで、コネクタからのegressは行われません。
+
+<div id="how-access-is-attributed">
+  ## アクセスの帰属方法
+</div>
+
+* **デプロイメントID。** mTLSクライアント証明書のコモンネームには組織IDが設定され、エンドポイントホストには単一のDNS名が紐付けられます。そのため、すべてのAPI接続を組織に帰属させることができます。証明書の更新はデーモン内で自動的に行われ、オペレーターが秘密鍵の鍵マテリアルを扱う必要はありません。
+* **リクエストの完全性。** 各APIリクエストには、登録時に発行された鍵ペアを使用し、メソッド、パス、タイムスタンプ、ボディハッシュに基づいて算出されたHMAC-SHA256署名 (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) も付加されます。
+* **オペレーターID。** ゲートウェイ呼び出しは、オペレーターのOIDC IDトークンで証明され、アイデンティティプロバイダーのJWKSで検証されたメールアドレスに帰属します。トークンを利用できる場合、自己申告の名前を信頼することはありません。
+* **監査証跡。** 許可・ブロックを問わず、すべてのゲートウェイ呼び出しとトラブルシューティングコマンドがNDJSON監査ログに追記されます。ゲートウェイエントリには証明済みのオペレーターのメールアドレス、VMのローカルセッション変更には実行元のホストユーザー、セッションコマンドには認証済みチャネルを通じて伝達される組織IDが記録されます。`clicklink clctl troubleshoot audit tail`で確認できます。詳細は[CLIリファレンス](/ja/products/bring-your-own-cloud/connector/reference/cli)を参照してください。
+
+<div id="data-minimization-defaults">
+  ## データ最小化のデフォルト
+</div>
+
+* **`query_log` はデフォルトでスクレイプ対象から除外されます。** カラムにはリテラル値を含む生の SQL が記録されており、個人データやシークレットが含まれる可能性があるため、意図的に追加しない限り境界外に出ることはありません。
+* **トラブルシューターは許可リストに含まれるテーブルのみを読み取り**、バリデーターは `query_log` と `text_log` を無条件で拒否するため、クエリ履歴を読み取ることはできません。デフォルトの許可リストには `system.processes` (実行中のクエリテキスト) が含まれます。セッション中もこれを非表示にする必要がある場合は、セッション用のテーブル許可リスト (Kubernetes では `troubleshooter.allowedTables`、VM では `troubleshooter.allowed_tables`) を絞り込んでください。
+* **トラブルシューターのすべての出力はマスキングされます。** IPv4 および IPv6 アドレス、Bearer token、AWS アクセスキー、メールアドレス、JWT、SSH 秘密鍵、接続文字列の認証情報向けの組み込みパターンに加え、定義した任意のパターンが適用されます。デーモンは、マスキングなしで実行するのではなく、パターンファイルが無効な場合は起動を拒否します。
+* **保存時の認証情報は最小限に抑えられます。** プロビジョニング SQL には bcrypt ハッシュが含まれ、平文のパスワードが含まれることはありません。登録トークンがコマンドライン、ディスク、ログに書き込まれることはなく、キーは Kubernetes Secrets またはモード 0600 のファイルに保存されます。

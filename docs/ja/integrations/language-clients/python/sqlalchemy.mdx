@@ -86,11 +86,15 @@ engine = create_engine(
 
 このモードでは、バインドされるすべての値に ClickHouse と互換性のある SQLAlchemy の型が必要です。サポートされている `IN` リストは、型付きの ClickHouse `Array` パラメータになります。コンパイラは、互換性のある型を導出できない場合や、バインドを安全に処理できない場合に `CompileError` を発生させます。
 
+バインド名は ClickHouse の ASCII BareWord 名である必要があります。先頭と末尾が `$` の名前は、コアドライバーが生バイナリクエリパラメータ用に予約しているため拒否されます。
+
 <div id="sqlalchemy-core-queries">
   ## Core クエリ
 </div>
 
-このダイアレクトは、JOIN、フィルター、並べ替え、LIMIT と OFFSET、`DISTINCT` を含む SQLAlchemy Core の `SELECT` クエリをサポートしています。
+このダイアレクトは、JOIN、フィルター、並べ替え、LIMIT と OFFSET、`DISTINCT`、複合 SELECT を含む SQLAlchemy Core の `SELECT` クエリをサポートしています。
+
+SQLAlchemy の `union()`、`intersect()`、`except_()` は、ClickHouse の `UNION DISTINCT`、`INTERSECT DISTINCT`、`EXCEPT DISTINCT` にコンパイルされます。これらに対応する `union_all()`、`intersect_all()`、`except_all()` は、それぞれ対応する `ALL` 演算子にコンパイルされます。この明示的なマッピングにより、ClickHouse の集合演算のデフォルト設定にかかわらず、SQLAlchemy の重複に関するセマンティクスが保持されます。
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -120,6 +124,12 @@ stmt = delete(users).where(users.c.name.like("%temporary%"))
 with engine.connect() as conn:
     conn.execute(stmt)
 ```
+
+<div id="sqlalchemy-literal-rendering">
+  ### リテラルのレンダリング
+</div>
+
+SQLAlchemy が `literal_binds` または `literal_execute` によってバインド値をインライン展開する場合、ダイアレクト は汎用 String 型および ClickHouse 型に ClickHouse のクォーティングを使用します。これは `TypeDecorator` ラッパーおよび `with_variant()` の選択にも適用されます。他のバインドパラメータが残っている場合でも、文字列値内のパーセント記号とバックスラッシュは保持されます。
 
 <div id="sqlalchemy-json-subcolumns">
   ### JSON サブカラム
@@ -199,6 +209,20 @@ ClickHouse の `Select` メソッドは次のとおりです。
 | `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                    |
 | `.ch_join(...)`                          | `strictness`、`distribution`、`using`、`cross` オプション付きの ClickHouse JOIN |
 | `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                    |
+
+SQLAlchemy の `Select.with_hint()` はテーブルヒント用の API です。ClickHouse ダイアレクトではテーブルヒントは生成されません。適用可能なワイルドカードまたは `clickhousedb` ヒントを指定すると、`SAWarning` が発行され、生成された SQL は変更されません。これらの ClickHouse 句には、`final()`、`sample()`、`prewhere()`、または `limit_by()` を使用してください。
+
+`Select.with_statement_hint()` は生の末尾ディレクティブ用 API です。ClickHouse 固有の検証を行わず、指定したテキストを `SELECT` の末尾に追加します。これは、`SETTINGS max_threads=1` のような信頼できる静的 SQL で引き続き使用できます。
+
+```python
+stmt = select(events.c.id).with_statement_hint("SETTINGS max_threads=1")
+```
+
+ClickHouse 設定では、ドライバーが SQL テキストとは別に設定を処理できるよう、実行オプションを使用してください。
+
+```python
+stmt = select(events.c.id).execution_options(settings={"max_threads": 1})
+```
 
 たとえば、ClickHouse の `GLOBAL ANY LEFT JOIN` は、カスタム `FromClause` をネストせずに連結できます。
 
@@ -309,7 +333,9 @@ with engine.connect() as conn:
     assert reflected.engine is not None
 ```
 
-リフレクションで取得されたカラムには、`DEFAULT` 式に対応する `server_default` に加え、存在する場合は `clickhouse_codec`、`clickhouse_ttl`、`clickhouse_materialized`、`clickhouse_alias` などの dialect 固有の属性も含まれます。
+リフレクションで取得されたカラムには、`DEFAULT` 式に対応する `server_default` に加え、存在する場合は `clickhouse_codec`、`clickhouse_ttl`、`clickhouse_materialized`、`clickhouse_alias` などのダイアレクト 固有の属性も含まれます。
+
+`DEFAULT`、`MATERIALIZED`、`ALIAS`、`TTL` 句内の文字列値では、ClickHouse の文字列エスケープを使用します。同じエスケープは、Alembic によって出力されるコメントを含む、テーブル、Dictionary、カラムのコメントにも適用されます。
 
 `order_by`、`partition_by`、`primary_key`、`sample_by`、`ttl` などの MergeTree のキー引数では、SQLAlchemy のカラムや SQL 式に加えて、プレーンな文字列も指定できます。
 

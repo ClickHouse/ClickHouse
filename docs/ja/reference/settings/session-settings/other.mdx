@@ -535,6 +535,20 @@ Cloud でのデフォルト値: `0`.
 
 `json = 1` または `distributed = 1` を指定した `EXPLAIN PLAN` では、`actions`、`compact`、または `pretty` が明示的に設定されていない限り、この設定に関係なく従来の (26.7 より前の) デフォルトが使われます。pretty 出力では JSON の結果や分片ごとの分散実行プランを表現できないため、これらのモードは `legacy` 形式でのみ正しくレンダリングされます。
 
+<div id="explain_syntax_single_record">
+  ## explain_syntax_single_record
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "26.8 以降、`EXPLAIN SYNTAX` は行ごとに 1 レコードを返すのではなく、整形されたクエリを 1 つのレコード（埋め込み改行を含む）として返します。26.8 より前の行ごとに 1 レコードを返す出力に戻すには、これを `false` に設定します。"}]}]} />
+
+`EXPLAIN SYNTAX` の出力を、行ごとに 1 レコードではなく 1 つのレコード (埋め込み改行を含む) として返します。これにより、結果は復元可能な単一の行になります (たとえば、`SELECT count() FROM (EXPLAIN SYNTAX ...)` は `1` を返します) 。
+
+`EXPLAIN SYNTAX` ステートメントで `single_record` オプションを明示的に指定した場合 (たとえば、`EXPLAIN SYNTAX single_record = 0 SELECT ...`) 、この設定より常に優先されます。
+
+26.8 より前の行ごとに 1 レコードを返す出力に戻すには、`false` に設定するか、`compatibility` を `26.8` より前の任意のバージョンに設定します。
+
 <div id="extract_key_value_pairs_max_pairs_per_row">
   ## extract_key_value_pairs_max_pairs_per_row
 </div>
@@ -1493,6 +1507,21 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
+<div id="resumable_backup_from_snapshot">
+  ## resumable_backup_from_snapshot
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "再開可能な `BACKUP FROM SNAPSHOT` を有効にする新しい実験的設定。"}]}]} />
+
+再開可能な `BACKUP FROM SNAPSHOT` を有効にします。失敗した場合でも、すでに完了したバッチの
+エントリを再コピーせずに再実行できます。ディレクトリ形式の
+`S3` および `AzureBlobStorage` 宛先では、ClickHouse Cloud でのみ利用できます。
+`BACKUP FROM SNAPSHOT` 自体を利用できない ClickHouse オープンソースビルドでこれを有効にすると、`BACKUP` は `WRONG_BACKUP_SETTINGS` で失敗します。
+
 <div id="rows_before_aggregation">
   ## rows_before_aggregation
 </div>
@@ -1502,6 +1531,24 @@ FORMAT Null;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "rows_before_aggregation 統計値の正確な値を返します。これは、集約前に読み取られた行数を表します"}]}]} />
 
 有効にすると、ClickHouse は rows&#95;before&#95;aggregation 統計値の正確な値を返します。これは、集約前に読み取られた行数を表します
+
+<div id="run_query_in_background">
+  ## run_query_in_background
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "クエリを送信した接続から切り離し、結果を破棄してバックグラウンドで実行するための新しい設定。"}]}]} />
+
+有効にすると、サーバーはクエリをバックグラウンドでスケジュールし、ただちに空の成功結果を返します。接続の状態にかかわらず、クエリは完了まで実行されます。
+
+バックグラウンドクエリはサーバーの再起動後には存続しません。シャットダウン時にはフォアグラウンドクエリと同じサーバー設定が適用されます。`shutdown_wait_unfinished_queries` は、クエリをキャンセルするか完了を待つかを選択します (キュー内のエントリは、いずれの場合も `system.query_log` にエントリを記録せず破棄されます) 。`shutdown_wait_unfinished` はサーバーの待機時間を制限します。
+
+クエリは `query_id` で追跡できます。実行中は `system.processes`、完了してクエリログのエントリがフラッシュされた後は `system.query_log` で確認できます。
+
+ネイティブ TCP および HTTP プロトコル経由で受信したクエリに適用されます。HTTP では、設定を URL パラメータとして渡します。`SET` では変更できません。クエリごと、またはユーザーやプロファイルのレベルで有効にしてください。
+
+主なユースケースは、クライアント接続が切断されても失われてはならない、長時間実行される `INSERT ... SELECT` です。
 
 <div id="secondary_indices_enable_bulk_filtering">
   ## secondary_indices_enable_bulk_filtering

@@ -107,7 +107,7 @@ Peak memory usage: 485.15 MiB.
   ### Iceberg 테이블 생성
 </div>
 
-Iceberg에 데이터를 쓰려면 [`IcebergS3` 테이블 엔진](/ko/reference/engines/table-engines/integrations/iceberg)을 사용해 테이블을 생성하십시오.
+기존 Iceberg 테이블에서 직접 읽기에는 [`icebergS3` 테이블 함수](/ko/reference/functions/table-functions/iceberg)를 사용하는 것이 좋습니다. 이 가이드에서는 독립형 Iceberg 테이블을 생성하고 데이터를 채우므로, 명시적 스키마와 함께 [`IcebergS3` 테이블 엔진](/ko/reference/engines/table-engines/integrations/iceberg)을 사용합니다. 예시 S3 위치에는 이미 완성된 테이블이 포함되어 있습니다. `CREATE` 및 `INSERT` SQL 문을 실행하려면 두 위치를 모두 비어 있고 쓰기 가능한 S3 프리픽스와 사용자가 제어하는 자격 증명으로 바꾸십시오.
 
 스키마는 MergeTree 소스보다 더 단순하게 구성해야 합니다. ClickHouse는 Iceberg와 기반이 되는 Parquet 파일보다 더 풍부한 타입 시스템을 지원하므로 `Enum`, `LowCardinality`, `UInt8` 같은 타입은 Iceberg에서 지원되지 않으며, 호환되는 타입으로 매핑해야 합니다.
 
@@ -138,8 +138,10 @@ ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats
 
 `INSERT INTO SELECT`를 사용하여 MergeTree 테이블의 데이터를 Iceberg 테이블에 삽입합니다. 이 예시에서는 London의 트랜잭션만 삽입합니다:
 
+이 예시에는 [`allow_insert_into_iceberg` 설정](/ko/reference/settings/session-settings/allow#allow_insert_into_iceberg)이 필요합니다. 현재 지원 수준 및 제한 사항은 [지원 매트릭스](/ko/guides/use-cases/data-warehousing/support-matrix)를 참조하십시오.
+
 ```sql
-SET allow_experimental_insert_into_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
 
 INSERT INTO uk.uk_iceberg SELECT *
 FROM uk.uk_price_paid

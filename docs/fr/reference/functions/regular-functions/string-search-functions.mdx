@@ -485,24 +485,24 @@ Par exemple, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité 
 **Syntaxe**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **Alias** : `hasAllToken`
 
 **Arguments**
 
-* `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array)
+* `input` — La colonne d’entrée. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Nullable(String)`](/fr/reference/data-types/nullable) ou [`Nullable(FixedString)`](/fr/reference/data-types/nullable) ou [`Array(String)`](/fr/reference/data-types/array) ou [`Array(FixedString)`](/fr/reference/data-types/array) ou [`Array(Nullable(String))`](/fr/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/fr/reference/data-types/array)
 * `needles` — Les tokens à rechercher. [`String`](/fr/reference/data-types/string) ou [`Array(String)`](/fr/reference/data-types/array)
 * `tokenizer` — Le tokenizer à utiliser. Les arguments valides sont `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` et `array`. Facultatif ; s’il n’est pas défini explicitement, la valeur par défaut est `splitByNonAlpha`. [`const String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie 1 si tous les `needles` correspondent. Sinon, renvoie 0. [`UInt8`](/fr/reference/data-types/int-uint)
+Renvoie 1 si toutes les aiguilles correspondent. 0 sinon. [`UInt8`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
-**Utilisation de base avec un `needle` de type chaîne**
+**Utilisation de base avec une aiguille (needle) de type chaîne**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -524,7 +524,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Spécifiez un tableau de needles à rechercher tels quels (sans tokenisation)**
+**Spécifiez des motifs (&quot;needles&quot;) à rechercher tels quels (sans tokenisation) dans un tableau**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -715,7 +715,7 @@ Par exemple, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] est traité de la mêm
 **Syntaxe**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **Alias** : `hasAnyToken`

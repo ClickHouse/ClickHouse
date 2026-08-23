@@ -16,7 +16,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 1. С помощью SQL
 2. С помощью интерфейса и собственного кода (публичная бета)
 3. С помощью [Cloud API](#manage-udfs-with-the-cloud-api) (бета)
-4. С помощью [Terraform](#manage-udfs-with-terraform) (альфа)
+4. С помощью [Terraform](#manage-udfs-with-terraform) (бета)
 
 <div id="sql-udfs">
   ## Пользовательские функции SQL
@@ -214,7 +214,7 @@ ClickHouse Cloud позволяет создавать пользователь�
 | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | [Создать URL для загрузки UDF](/ru/products/cloud/api-reference/udf/udf-upload-session-create) | Создаёт предварительно подписанный URL для загрузки `application/zip`, действующий в пределах организации |
 | [Создать UDF](/ru/products/cloud/api-reference/udf/udf-create)                                 | Создаёт новую UDF из загруженного архива                                                                  |
-| [Получить список UDF](/ru/products/cloud/api-reference/udf/udf-list)                           | Возвращает последнюю версию каждой UDF в организации                                                      |
+| [Получить список пользовательских функций (UDF)](/ru/products/cloud/api-reference/udf/udf-list) | Возвращает последнюю версию каждой UDF в организации                                                      |
 | [Получить UDF](/ru/products/cloud/api-reference/udf/udf-get)                                   | Возвращает последнюю версию UDF                                                                           |
 | [Удалить UDF](/ru/products/cloud/api-reference/udf/udf-delete)                                 | Удаляет все версии UDF и отключает её от всех сервисов                                                    |
 | [Создать версию UDF](/ru/products/cloud/api-reference/udf/udf-version-create)                  | Принимает исходный архив, назначает версию и запускает сборку UDF                                         |
@@ -228,16 +228,18 @@ ClickHouse Cloud позволяет создавать пользователь�
 См. [справочник API UDF](/ru/products/cloud/api-reference/udf/udf-create) со схемами запросов и ответов.
 
 <div id="manage-udfs-with-terraform">
-  ## Управление UDF с помощью Terraform
+  ## Управление пользовательскими функциями (UDF) с помощью Terraform
 </div>
 
-Официальный [Terraform-провайдер ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) включает два ресурса для управления UDF в рамках подхода «инфраструктура как код»:
+<BetaBadge />
+
+Официальный [Terraform-провайдер ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) включает два ресурса для управления пользовательскими функциями (UDF) в рамках подхода «инфраструктура как код»:
 
 * [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) управляет самой функцией. Он принимает ZIP-архив с исходным кодом функции и публикует новую версию при изменении хеша архива, дожидаясь завершения сборки.
 * [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) подключает версию UDF к сервису. К сервису можно одновременно подключить не более одной версии функции. Можно закрепить конкретный номер версии или сослаться на `clickhouse_udf.<name>.version`, чтобы автоматически обновлять сервисы до последней версии.
 
 <Note>
-  Эти ресурсы доступны начиная с версии провайдера 3.24.0. Они имеют статус альфа, и их поведение может измениться в будущих версиях провайдера.
+  Эти ресурсы доступны начиная с версии провайдера 3.24.0. Они имеют статус бета, и их поведение может измениться в будущих версиях провайдера.
 </Note>
 
 Например, чтобы развернуть с помощью Terraform UDF `isBusinessHours` из предыдущего примера:

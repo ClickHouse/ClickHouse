@@ -276,12 +276,12 @@
                     "fr/products/cloud/guides/security/cloud-access-management/manage-my-account",
                     "fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
                     "fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
-                    "fr/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
                     "fr/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
                     "fr/products/cloud/guides/security/cloud-access-management/manage-database-users",
                     "fr/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
                     "fr/products/cloud/guides/security/cloud-access-management/scim-setup",
                     "fr/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
+                    "fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
                     "fr/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
                     "fr/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
                     "fr/products/cloud/guides/security/saml-sso-removal"

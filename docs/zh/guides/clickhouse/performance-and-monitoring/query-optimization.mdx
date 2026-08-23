@@ -66,12 +66,12 @@ ClickHouse 提供了丰富的工具，帮助你了解查询是如何执行的，
 下面的命令用于创建表，并从 S3 存储桶插入数据。请注意，这里我们有意根据数据推断 schema，而这并不是优化后的做法。
 
 ```sql
--- 创建具有推断 schema 的表
+-- Create table with inferred schema
 CREATE TABLE trips_small_inferred
 ORDER BY () EMPTY
-AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet', NOSIGN);
 
--- 将数据插入具有推断 schema 的表
+-- Insert data into table with inferred schema
 INSERT INTO trips_small_inferred
 SELECT *
 FROM s3Cluster
@@ -81,7 +81,7 @@ FROM s3Cluster
 让我们来看一下根据数据自动推断出的表 schema。
 
 ```sql
---- 显示推断出的表 schema
+--- Display inferred table schema
 SHOW CREATE TABLE trips_small_inferred
 ```
 

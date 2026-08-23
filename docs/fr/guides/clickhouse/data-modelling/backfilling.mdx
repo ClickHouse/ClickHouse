@@ -24,7 +24,7 @@ Par exemple, le sous-ensemble couvre un seul jour - `2024-12-17` et est disponib
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -38,10 +38,10 @@ Peak memory usage: 239.50 MiB.
 
 Le jeu de données complet de ce bucket contient plus de 320 Go de fichiers Parquet. Dans les exemples ci-dessous, nous ciblons volontairement des sous-ensembles à l’aide de motifs glob.
 
-Nous supposons que l’utilisateur consomme un flux de ces données, par exemple depuis Kafka ou un stockage d’objets, à partir de cette date. Le schéma de ces données est présenté ci-dessous :
+Nous supposons que l’utilisateur consomme un flux de ces données, par exemple depuis Kafka ou un stockage objet, à partir de cette date. Le schéma de ces données est présenté ci-dessous :
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -127,7 +127,7 @@ Nous alimentons la table principale et la vue associée avec un sous-ensemble de
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -184,7 +184,7 @@ Nous remplissons cette table avec notre 2e sous-ensemble d&#39;environ la même 
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -288,11 +288,11 @@ Des insertions plus volumineuses, c’est-à-dire avec davantage de lignes, impl
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
 --continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
@@ -301,14 +301,14 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-
 </Note>
 
 <div id="scenario-1-backfilling-data-with-existing-data-ingestion">
-  ## Scénario 1 : réinjecter des données historiques alors que l’ingestion est déjà en place
+  ## Scénario 1 : backfill de données historiques alors que l’ingestion est déjà en place
 </div>
 
-Dans ce scénario, nous supposons que les données à réinjecter ne se trouvent pas dans un bucket isolé et qu’un filtrage est donc nécessaire. Des données sont déjà en cours d’ingestion, et il est possible d’identifier un `horodatage` ou une colonne à croissance monotone à partir duquel ou de laquelle les données historiques doivent être réinjectées.
+Dans ce scénario, nous supposons que les données à backfiller ne se trouvent pas dans un bucket isolé et qu’un filtrage est donc nécessaire. Des données sont déjà en cours d’ingestion, et il est possible d’identifier un `horodatage` ou une colonne à croissance monotone à partir duquel ou de laquelle les données historiques doivent être backfillées.
 
 Ce processus suit les étapes suivantes :
 
-1. Identifiez le point de reprise — soit un `horodatage`, soit une valeur de colonne à partir de laquelle les données historiques doivent être réinjectées.
+1. Identifiez le point de reprise — soit un `horodatage`, soit une valeur de colonne à partir de laquelle les données historiques doivent être backfillées.
 2. Créez des doublons de la table principale et des tables cibles des vues matérialisées.
 3. Créez des copies de toutes les vues matérialisées pointant vers les tables cibles créées à l’étape (2).
 4. Insérez les données dans la table principale dupliquée créée à l’étape (2).
@@ -343,7 +343,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 

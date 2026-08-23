@@ -1,6 +1,6 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
   // El renderizador de producción de Mintlify evalúa el componente exportado sin
-  // conservar los enlaces de ámbito de módulo. El estado perezoso mantiene los datos generados
+  // conservar los enlaces del ámbito del módulo. El estado diferido mantiene los datos generados
   // en ese ámbito de evaluación y los construye una sola vez por montaje.
   const [entries] = useState(() => [
     {
@@ -1255,7 +1255,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       label: "join_*",
       count: 7,
       settings: [
-        { name: "join_algorithm", path: "/join#join_algorithm", default: "direct,parallel_hash,hash" },
+        { name: "join_algorithm", path: "/join#join_algorithm", default: "direct,parallel_hash,hash,ie_join" },
         { name: "join_any_take_last_row", path: "/join#join_any_take_last_row", default: "0" },
         { name: "join_default_strictness", path: "/join#join_default_strictness", default: "ALL" },
         { name: "join_on_disk_max_files_to_merge", path: "/join#join_on_disk_max_files_to_merge", default: "64" },
@@ -3010,7 +3010,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Otros",
-      count: 131,
+      count: 134,
       settings: [
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
         { name: "add_http_cors_header", path: "/other#add_http_cors_header", default: "0" },
@@ -3047,6 +3047,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "exclude_materialize_skip_indexes_on_insert", path: "/other#exclude_materialize_skip_indexes_on_insert", default: '""' },
         { name: "execute_exists_as_scalar_subquery", path: "/other#execute_exists_as_scalar_subquery", default: "1" },
         { name: "explain_query_plan_default", path: "/other#explain_query_plan_default", default: "pretty" },
+        { name: "explain_syntax_single_record", path: "/other#explain_syntax_single_record", default: "1" },
         { name: "extract_key_value_pairs_max_pairs_per_row", path: "/other#extract_key_value_pairs_max_pairs_per_row", default: "1000" },
         { name: "extremes", path: "/other#extremes", default: "0" },
         { name: "fallback_to_stale_replicas_for_distributed_queries", path: "/other#fallback_to_stale_replicas_for_distributed_queries", default: "1" },
@@ -3115,7 +3116,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "reserve_memory", path: "/other#reserve_memory", default: "0" },
         { name: "restore_replicated_merge_tree_to_shared_merge_tree", path: "/other#restore_replicated_merge_tree_to_shared_merge_tree", default: "0" },
         { name: "result_overflow_mode", path: "/other#result_overflow_mode", default: "throw" },
+        { name: "resumable_backup_from_snapshot", path: "/other#resumable_backup_from_snapshot", default: "0" },
         { name: "rows_before_aggregation", path: "/other#rows_before_aggregation", default: "0" },
+        { name: "run_query_in_background", path: "/other#run_query_in_background", default: "0" },
         { name: "secondary_indices_enable_bulk_filtering", path: "/other#secondary_indices_enable_bulk_filtering", default: "1" },
         { name: "select", path: "/other#select", default: '""' },
         { name: "select_sequential_consistency", path: "/other#select_sequential_consistency", default: "0" },
