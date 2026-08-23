@@ -659,11 +659,24 @@ private:
             }
         }
 
+        /// `Session::reconnect` resolves the name it dials (the proxy, or the request host) into a
+        /// concrete address only inside `connect`, so stash the address the attempt actually used.
+        void connect(const Poco::Net::SocketAddress & address) override
+        {
+            dialled_address = address.toString();
+            Session::connect(address);
+        }
+
         /// The endpoint `Session::reconnect` actually dials, which is what a connect failure is about:
         /// the proxy when one is in use, otherwise the address the resolver picked for this connection.
         /// The logical request host would name neither, so it must not stand in for them here.
         String connectEndpoint() const
         {
+            /// For a DNS-backed proxy with several records only the stashed address can name the
+            /// one that actually refused; the fallbacks reconstruct the endpoint from the config.
+            if (!dialled_address.empty())
+                return dialled_address;
+
             const auto & proxy_config = Session::getProxyConfig();
             if (!proxy_config.host.empty() && !isProxyBypassedForHost(Session::getHost(), proxy_config))
                 return formatHostAndPort(proxy_config.host, proxy_config.port);
@@ -678,6 +691,8 @@ private:
         {
             try
             {
+                /// A failure before `connect` (DNS) must not report the previous attempt's address.
+                dialled_address.clear();
                 Session::reconnect(connect_time);
             }
             catch (const Poco::Net::ConnectionRefusedException & e)
@@ -745,6 +760,9 @@ private:
 
         std::ostream * request_stream = nullptr;
         std::istream * response_stream = nullptr;
+
+        /// The concrete address of the last `connect` attempt, see `connectEndpoint()`.
+        String dialled_address;
 
         bool request_stream_completed = true;
         bool response_stream_completed = true;
