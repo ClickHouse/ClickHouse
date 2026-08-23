@@ -198,9 +198,13 @@ ${CLICKHOUSE_CLIENT} --database_replicated_allow_replicated_engine_arguments=3 -
 # statement left behind its own to remove.
 REJECT_ZK="/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/reject_table"
 
+# The node planted below is not valid table metadata, and a replica that reads it during its
+# startup snapshot of `/metadata` cannot parse it and retries startup forever, so the sync is what
+# puts the replica past that read.
 # The last SELECT is the arming condition, asserted separately from the oracle below
 ${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 -q "
     CREATE DATABASE ${DB}_reject ENGINE=Replicated('${ZK}/reject', 's1', 'r1');
+    SYSTEM SYNC DATABASE REPLICA ${DB}_reject;
     INSERT INTO system.zookeeper (name, path, value) VALUES ('t', '${ZK}/reject/metadata', 'blocks the entry transaction');
     SELECT count() FROM system.zookeeper WHERE path='${ZK}/reject/metadata' AND name='t';
 "
