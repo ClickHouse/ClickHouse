@@ -41,3 +41,31 @@ SELECT 'exact', count(), sum(c), sum(k % 1000 = 0 ? c : 0) FROM (
     SETTINGS enable_adaptive_aggregator = 0
 );
 "
+
+# A warm run must freeze the same way a cold run does. This cell deliberately enables the
+# hash-table statistics: the second run of the query receives a size hint recorded by the first,
+# and the engaged initialization must not let that hint move the freeze point. The key threshold
+# is unreachable, and the 2 MiB byte bound takes tens of 4096-row blocks of genuine growth to
+# cross, so every legitimate freeze holds well over 32768 keys (the hash buffer alone must
+# outgrow the bound). A table pre-sized from the hint would instead freeze at its first
+# between-blocks check with about one block of keys, failing the size assertion; a table the
+# hint initialized two-level could never freeze at all, failing the count assertion. The
+# two-level threshold is pinned below the freeze size so the two-level initialization stays
+# reachable from the recorded sizes.
+warm_trace="$CLICKHOUSE_TMP/04910_warm_trace.log"
+$CLICKHOUSE_LOCAL --send_logs_level=trace --query "
+SET max_threads = 4;
+SET enable_adaptive_aggregator = 1;
+SET group_by_two_level_threshold = 30000;
+SET group_by_two_level_threshold_bytes = 500000000;
+SET max_block_size = 4096;
+SET collect_hash_table_stats_during_aggregation = 1;
+SET adaptive_aggregator_freeze_threshold = 1000000000;
+SET adaptive_aggregator_freeze_threshold_bytes = 2097152;
+SET max_rows_to_group_by = 0;
+
+SELECT intHash64(number) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k FORMAT Null;
+SELECT intHash64(number) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k FORMAT Null;
+SELECT 'warm and cold runs all froze', value FROM system.events WHERE event = 'AdaptiveAggregationLocalFreezes';
+" 2> "$warm_trace"
+grep -o 'frozen at [0-9]*' "$warm_trace" | awk '{ n++; if (n == 1 || $3 < min) min = $3 } END { print "warm freezes by growth\t" (n == 8 && min > 16384 ? 1 : 0) }'
