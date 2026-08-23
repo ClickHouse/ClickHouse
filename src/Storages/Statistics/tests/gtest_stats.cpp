@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -76,11 +77,38 @@ TEST(Statistics, TDigestLessThan)
     test_less_than(data, {-1, 1e9, 50000.0, 3000.0, 30.0}, {0, 100000, 50000, 3000, 30}, {0, 0, 0.001, 0.001, 0.001});
 }
 
+TEST(Statistics, TryConvertToFloat64)
+{
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+
+    auto converted_int = StatisticsUtils::tryConvertToFloat64(Field(Int64(-42)), data_type);
+    ASSERT_TRUE(converted_int.has_value());
+    EXPECT_DOUBLE_EQ(*converted_int, -42.0);
+
+    auto converted_string = StatisticsUtils::tryConvertToFloat64(Field(String("1.25")), data_type);
+    ASSERT_TRUE(converted_string.has_value());
+    EXPECT_DOUBLE_EQ(*converted_string, 1.25);
+
+    const auto decimal_type = std::make_shared<DataTypeDecimal64>(18, 2);
+    auto converted_decimal = StatisticsUtils::tryConvertToFloat64(
+        Field(DecimalField<Decimal64>(Decimal64(12345), 2)), decimal_type);
+    ASSERT_TRUE(converted_decimal.has_value());
+    EXPECT_DOUBLE_EQ(*converted_decimal, 123.45);
+
+    const auto ipv4_type = std::make_shared<DataTypeIPv4>();
+    auto converted_ipv4 = StatisticsUtils::tryConvertToFloat64(Field(IPv4(0x7f000001)), ipv4_type);
+    ASSERT_TRUE(converted_ipv4.has_value());
+    EXPECT_DOUBLE_EQ(*converted_ipv4, 2130706433.0);
+
+    EXPECT_FALSE(StatisticsUtils::tryConvertToFloat64(Field(String("1.25 trailing")), data_type).has_value());
+    EXPECT_FALSE(StatisticsUtils::tryConvertToFloat64(Field(Array{}), data_type).has_value());
+    EXPECT_FALSE(StatisticsUtils::tryConvertToFloat64(Field(Float64(1.0)), std::make_shared<DataTypeArray>(data_type)).has_value());
+}
+
 TEST(Statistics, Estimator)
 {
-    /// `StatisticsTDigest::estimateLess` converts field values via `toFloat64` from
-    /// `FunctionFactory`. Register scalar functions so this test is self-contained and
-    /// does not rely on earlier tests in the binary having registered them.
+    /// Register scalar functions used while interpreting estimator expressions so this
+    /// test does not depend on earlier tests in the binary having registered them.
     tryRegisterFunctions();
 
     DataTypePtr data_type = std::make_shared<DataTypeInt32>();
@@ -149,6 +177,7 @@ TEST(Statistics, Estimator)
     ///
     test_f("a in (1,2,3,4,5)", 5);
     test_f("a not in (1,2,3,4,5)", 10000-5);
+    test_f("a < '3'", 2); /// Quoted numeric literal reaches statistics as a String Field.
     test_f("b in (2, 500, 500)", 5000);
     test_f("a < 3 and b = 500", 1);
     test_f("a < 3 and b = 500 and a < b", 1); /// unknown condition 'a < b' assumes 100% selectivity

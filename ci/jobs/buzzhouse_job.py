@@ -296,6 +296,7 @@ def main():
             "map_buckets_strategy",
             "map_serialization_version",
             "merge_max_block_size",
+            "merge_use_batch_sorting_queue",
             "min_bytes_for_full_part_storage",
             "min_bytes_for_wide_part",
             "nullable_serialization_version",
