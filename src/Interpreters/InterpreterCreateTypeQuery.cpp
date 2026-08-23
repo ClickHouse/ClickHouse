@@ -21,6 +21,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Poco/String.h>
 #include <optional>
 #include <unordered_set>
 #include <Interpreters/DatabaseCatalog.h>
@@ -46,7 +47,7 @@ void validateBaseTypeRecursive(
     const std::unordered_set<String> & formal_param_names,
     const DataTypeFactory & factory_instance,
     ContextPtr validation_context,
-    const std::unordered_set<String> & known_families)
+    bool & references_user_defined_type)
 {
     if (!ast_node)
         return;
@@ -56,6 +57,12 @@ void validateBaseTypeRecursive(
         const String & name = identifier_node->name();
         if (formal_param_names.contains(name))
             return;
+
+        if (UserDefinedTypeFactory::instance().isTypeRegistered(name, validation_context))
+        {
+            references_user_defined_type = true;
+            return;
+        }
 
         if (factory_instance.tryGet(ast_node))
             return;
@@ -75,7 +82,10 @@ void validateBaseTypeRecursive(
                 return;
 
             if (UserDefinedTypeFactory::instance().isTypeRegistered(type_name_str, validation_context))
+            {
+                references_user_defined_type = true;
                 return;
+            }
 
             if (factory_instance.tryGet(ast_node))
                 return;
@@ -86,24 +96,15 @@ void validateBaseTypeRecursive(
         }
         else
         {
-            bool is_family_known = known_families.contains(type_name_str) ||
-                                   UserDefinedTypeFactory::instance().isTypeRegistered(type_name_str, validation_context);
+            /// Ask the registry itself instead of a hard-coded list, otherwise the accepted set of
+            /// families silently drifts from the families `DataTypeFactory` actually knows.
+            const bool is_user_defined_family = UserDefinedTypeFactory::instance().isTypeRegistered(type_name_str, validation_context);
+            if (is_user_defined_family)
+                references_user_defined_type = true;
 
-            if (!is_family_known)
-            {
-                try
-                {
-                    factory_instance.get(type_name_str, arguments);
-                    is_family_known = true;
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::UNKNOWN_TYPE)
-                        is_family_known = false;
-                    else
-                        is_family_known = true;
-                }
-            }
+            const bool is_family_known = is_user_defined_family
+                || factory_instance.hasNameOrAlias(type_name_str)
+                || factory_instance.hasNameOrAlias(Poco::toLower(type_name_str));
 
             if (!is_family_known)
                 throw Exception(ErrorCodes::UNKNOWN_TYPE,
@@ -114,7 +115,7 @@ void validateBaseTypeRecursive(
             {
                 for (const auto & arg_child : arguments->children)
                 {
-                    validateBaseTypeRecursive(arg_child, udt_name, formal_param_names, factory_instance, validation_context, known_families);
+                    validateBaseTypeRecursive(arg_child, udt_name, formal_param_names, factory_instance, validation_context, references_user_defined_type);
                 }
             }
         }
@@ -125,7 +126,7 @@ void validateBaseTypeRecursive(
         {
             for (const auto & child : func_node->arguments->children)
             {
-                validateBaseTypeRecursive(child, udt_name, formal_param_names, factory_instance, validation_context, known_families);
+                validateBaseTypeRecursive(child, udt_name, formal_param_names, factory_instance, validation_context, references_user_defined_type);
             }
         }
     }
@@ -133,7 +134,7 @@ void validateBaseTypeRecursive(
     {
         for (const auto & child : ast_node->children)
         {
-            validateBaseTypeRecursive(child, udt_name, formal_param_names, factory_instance, validation_context, known_families);
+            validateBaseTypeRecursive(child, udt_name, formal_param_names, factory_instance, validation_context, references_user_defined_type);
         }
     }
 }
@@ -152,6 +153,15 @@ BlockIO InterpreterCreateTypeQuery::execute()
     auto & udt_factory = UserDefinedTypeFactory::instance();
 
     String type_name = create.name;
+
+    /// `DataTypeFactory::getImpl` resolves user-defined types before the built-in creators, so a
+    /// user-defined type named after a built-in type, alias or family would hijack every later use
+    /// of that name: `CREATE TYPE UInt64 AS String` would change the meaning of `UInt64` everywhere.
+    const auto & data_type_factory = DataTypeFactory::instance();
+    if (data_type_factory.hasNameOrAlias(type_name) || data_type_factory.hasNameOrAlias(Poco::toLower(type_name)))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot create user-defined type {}: a built-in data type with this name already exists",
+                        backQuote(type_name));
 
     bool is_replace = create.or_replace;
     bool type_existed_before_replace = false;
@@ -201,13 +211,18 @@ BlockIO InterpreterCreateTypeQuery::execute()
             }
         }
 
-        static const std::unordered_set<String> known_type_families_set = {
-            "Array", "Tuple", "Map", "Nullable", "LowCardinality",
-            "AggregateFunction", "SimpleAggregateFunction", "FixedString",
-            "DateTime64", "Decimal", "Enum", "Enum8", "Enum16"
-        };
+        bool references_user_defined_type = false;
+        validateBaseTypeRecursive(
+            create.base_type, type_name, formal_param_names_set, DataTypeFactory::instance(), current_context, references_user_defined_type);
 
-        validateBaseTypeRecursive(create.base_type, type_name, formal_param_names_set, DataTypeFactory::instance(), current_context, known_type_families_set);
+        /// A definition with neither formal parameters nor references to other user-defined types is a
+        /// complete built-in data type expression, so it can be checked exactly by instantiating it.
+        /// This rejects definitions such as `Map(String)` that name a known family but are not a valid
+        /// type. Definitions referencing other user-defined types are left out because their resolution
+        /// in `DataTypeFactory` goes through the query context of the current thread, which is not
+        /// necessarily the context this DDL query is interpreted with.
+        if (formal_param_names_set.empty() && !references_user_defined_type)
+            DataTypeFactory::instance().get(create.base_type);
     }
     catch (const Exception & e)
     {

@@ -34,8 +34,13 @@ There are a few restrictions:
 
 - The `base_type` must resolve to a valid data type. Referencing an unknown type
   (including a recursive reference to the type being defined) raises the `UNKNOWN_TYPE`
-  exception.
-- All parameters used in `base_type` must be listed in the parameter list.
+  exception, and naming a known type family with a wrong number of arguments (for
+  example `Map(String)`) is rejected as well.
+- All parameters used in `base_type` must be listed in the parameter list, and a
+  parameter name may not be repeated.
+- The `name` must not be the name of a built-in data type, of one of its aliases, or of
+  a type family. User-defined types are resolved before the built-in types, so such a
+  name would change the meaning of that built-in type everywhere.
 
 **Example: a simple alias**
 

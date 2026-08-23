@@ -29,8 +29,6 @@
 #include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
-#include <Parsers/ParserShowTypesQuery.h>
-#include <Parsers/ParserShowTypeQuery.h>
 #include <Parsers/ParserCopyQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -130,8 +128,6 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDropIndexQuery drop_index_p;
     ParserHypotheticalIndexQuery hypothetical_index_p;
     ParserDropTypeQuery drop_type_p;
-    ParserShowTypesQuery show_types_p;
-    ParserShowTypeQuery show_type_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
     ParserUpdateQuery update_p;
@@ -161,8 +157,6 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || hypothetical_index_p.parse(pos, node, expected)
         || parseGrantOrDropAccessEntityQuery(pos, node, expected)
         || drop_type_p.parse(pos, node, expected)
-        || show_types_p.parse(pos, node, expected)
-        || show_type_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
         || update_p.parse(pos, node, expected)
