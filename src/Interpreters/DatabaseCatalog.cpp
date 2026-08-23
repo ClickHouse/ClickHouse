@@ -1836,17 +1836,19 @@ void DatabaseCatalog::addDependencies(
         for (const auto & new_view_dependency : new_view_dependencies)
             view_dependencies.addDependency(new_view_dependency, table_id);
     }
+    /// The plain-view graph is name-bound, so strip the UUIDs before touching it.
+    StorageID table_by_name{table_id.database_name, table_id.table_name};
     if (!new_plain_view_dependencies.empty())
     {
         /// table_id is the view; sources feed into it
         for (const auto & source_table_id : new_plain_view_dependencies)
-            plain_view_dependencies.addDependency(source_table_id, table_id);
+            plain_view_dependencies.addDependency(StorageID{source_table_id.database_name, source_table_id.table_name}, table_by_name);
     }
     if (!new_plain_view_dependents.empty())
     {
         /// table_id is the source; plain views read from it
         for (const auto & view_id : new_plain_view_dependents)
-            plain_view_dependencies.addDependency(table_id, view_id);
+            plain_view_dependencies.addDependency(table_by_name, StorageID{view_id.database_name, view_id.table_name});
     }
 }
 
@@ -1965,11 +1967,15 @@ void DatabaseCatalog::updateDependencies(
         view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
     }
     /// Remove stale plain_view_dependencies edges where this view is a dependent, then add the new ones.
-    auto old_plain_view_sources = plain_view_dependencies.getDependents(table_id);
+    /// The plain-view graph is name-bound: an entry must never be re-keyed by UUID here, otherwise a later
+    /// drop and recreate of the same view name makes `TablesDependencyGraph` treat it as a name conflict
+    /// and silently drop the edges of the views depending on it.
+    StorageID view_by_name{table_id.database_name, table_id.table_name};
+    auto old_plain_view_sources = plain_view_dependencies.getDependents(view_by_name);
     for (const auto & source_table_id : old_plain_view_sources)
-        plain_view_dependencies.removeDependency(source_table_id, table_id, /* remove_isolated_tables= */ true);
+        plain_view_dependencies.removeDependency(source_table_id, view_by_name, /* remove_isolated_tables= */ true);
     for (const auto & source_table : new_plain_view_dependencies)
-        plain_view_dependencies.addDependency(StorageID{source_table}, table_id);
+        plain_view_dependencies.addDependency(StorageID{source_table}, view_by_name);
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
