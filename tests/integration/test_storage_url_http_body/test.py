@@ -313,6 +313,24 @@ def test_body_format_constructor_failure_sends_no_request(started_cluster):
         assert get_request_count() == 0
 
 
+def test_header_dependent_body_format_is_not_rejected(started_cluster):
+    # The output-format preflight must use the real header of the body query. `Npy` writes exactly
+    # one column and its constructor throws on a header with a different number of columns, so a
+    # preflight with an artificial empty header would reject this legal body. Assert that the query
+    # reaches the endpoint and that the delivered payload is the `Npy` serialization of the body.
+    for analyzer in (1, 0):
+        reset_request_count()
+        server.query(
+            "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+            "body((SELECT 1 AS x), 'Npy')) "
+            f"SETTINGS enable_analyzer = {analyzer}"
+        )
+        assert get_request_count() == 1
+        # The magic byte of the `Npy` header is not valid UTF-8, and the test server decodes bodies
+        # with replacement, so match on the readable part of the magic string.
+        assert "NUMPY" in get_request_bodies()[0]
+
+
 def test_create_as_with_body_rejected_before_any_request(started_cluster):
     # `CREATE TABLE ... AS url(..., body(...))` is an insert-style use of the table function and is
     # rejected, because inserting into `url` sends the inserted rows as the request body. With the

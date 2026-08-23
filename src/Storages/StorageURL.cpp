@@ -187,16 +187,24 @@ std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const Co
     /// runs only after `ReadWriteBufferFromHTTP` has already sent the request to the remote server,
     /// and some formats pass the name-level checks done while parsing `body(...)` but throw in their
     /// constructor (for example, `AvroConfluent` without `output_format_avro_confluent_subject`).
-    /// Do not build the body query pipeline here: planning a subquery with a table function can
-    /// contact its remote source and must happen only when the request body is actually evaluated.
+    /// The preflight needs the real body header, because other formats reject an empty one (for
+    /// example, `Npy` requires exactly one column). Plan the body subquery once here and hand the
+    /// prepared pipeline over to the callback, so that planning a subquery reading from a table
+    /// function contacts its source no more often than evaluating the body alone would.
+    /// Redirects and retries invoke the callback again; a pipeline can be executed only once, so
+    /// those invocations rebuild it.
+    auto prepared_pipeline = std::make_shared<std::optional<QueryPipelineBuilder>>(buildBodyQueryPipeline(query, context));
     {
         NullWriteBuffer null_buf;
-        auto preflight_format = context->getOutputFormat(body_format, null_buf, {});
+        auto preflight_format
+            = context->getOutputFormat(body_format, null_buf, materializeBlock((*prepared_pipeline)->getHeader()));
     }
 
-    return [body_query = query, body_format, context](std::ostream & os)
+    return [body_query = query, body_format, context, prepared_pipeline](std::ostream & os)
     {
-        QueryPipelineBuilder builder = buildBodyQueryPipeline(body_query, context);
+        QueryPipelineBuilder builder
+            = prepared_pipeline->has_value() ? std::move(**prepared_pipeline) : buildBodyQueryPipeline(body_query, context);
+        prepared_pipeline->reset();
 
         WriteBufferFromOStream out_buf(os);
         auto out_format = context->getOutputFormat(body_format, out_buf, materializeBlock(builder.getHeader()));
