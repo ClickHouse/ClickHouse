@@ -1851,6 +1851,14 @@ def test_predict_linear_with_time_horizon_on_float32_table():
                 ]
             ],
         )
+
+        # A derived argument is computed on the lossy Float32 grid before the calendar component
+        # collapses it, so the exemption must not apply: minute(time() + 70) would silently be wrong.
+        error = node.query_and_get_error(
+            "SELECT * FROM prometheusQueryRange(prometheus_f32_epoch, "
+            "'predict_linear(m[120], scalar(minute(vector(time() + 70))))', 1770582640, 1770582700, 60)"
+        )
+        assert "the evaluation time would be rounded to that type" in error
     finally:
         node.query("DROP TABLE prometheus_f32_epoch SYNC")
 

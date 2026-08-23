@@ -171,7 +171,8 @@ const PrometheusQueryTree::Function * findTimeCallThroughScalarVectorWrappers(co
 namespace
 {
     /// Whether `node`'s subtree calls `time()` anywhere, i.e. whether its value can be of evaluation-time magnitude.
-    /// A date/time component function collapses the instant to a small exact integer, so its subtree doesn't count.
+    /// A date/time function collapses the instant exactly only in the shapes applyDateTimeFunction() rebuilds at
+    /// native precision; any other argument is computed on the lossy grid first, so recurse into it.
     bool containsTimeCall(const Node * node)
     {
         if (node->node_type == NodeType::Function)
@@ -180,7 +181,11 @@ namespace
             if (isFunctionTime(function->function_name) && function->getArguments().empty())
                 return true;
             if (isDateTimeFunction(function->function_name))
-                return false;
+            {
+                const auto & arguments = function->getArguments();
+                if (arguments.empty() || ((arguments.size() == 1) && findTimeCallThroughScalarVectorWrappers(arguments[0])))
+                    return false;
+            }
         }
 
         for (const auto * child : node->children)
