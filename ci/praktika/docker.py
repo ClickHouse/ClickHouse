@@ -175,17 +175,30 @@ class Docker:
         return dockers
 
     @classmethod
-    def pull_image(cls, image, *, strict=False, on_retry=None, verbose=True):
+    def pull_image(
+        cls,
+        image,
+        *,
+        strict=False,
+        on_retry=None,
+        verbose=True,
+        timeout_s=_IMAGE_PULL_TIMEOUT_S,
+        retries=_IMAGE_PULL_RETRIES,
+    ):
         """Pull `image`, retrying only transport-class failures.
 
         `strict` raises on a failed pull; `on_retry(matched, attempt, attempts)`
         is called once per actual retry, so a caller with a report surface can
         make the retry visible. Returns the pull's exit code.
+
+        `timeout_s` bounds one attempt and `retries` caps their number; a caller
+        that pays the retries out of its own job timeout passes a budget that
+        fits inside it.
         """
         return Shell.run(
-            f"timeout --verbose {_IMAGE_PULL_TIMEOUT_S} docker pull {image}",
+            f"timeout --verbose {timeout_s} docker pull {image}",
             strict=strict,
-            retries=_IMAGE_PULL_RETRIES,
+            retries=retries,
             retry_errors=_IMAGE_PULL_RETRY_ERRORS,
             verbose=verbose,
             on_retry=on_retry,

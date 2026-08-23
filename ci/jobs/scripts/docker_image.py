@@ -31,10 +31,19 @@ class DockerImage:
             f"({attempt}/{attempts}): {self}"
         )
 
-    def pull_image(self):
+    def pull_image(self, *, timeout_s=None, retries=None):
+        # An omitted knob must fall through to Docker.pull_image's own default,
+        # so it is left out of the call rather than passed as None.
+        budget = {}
+        if timeout_s is not None:
+            budget["timeout_s"] = timeout_s
+        if retries is not None:
+            budget["retries"] = retries
         try:
             print(f"Pulling image {self} - start")
-            Docker.pull_image(str(self), strict=True, on_retry=self._warn_pull_retried)
+            Docker.pull_image(
+                str(self), strict=True, on_retry=self._warn_pull_retried, **budget
+            )
             print(f"Pulling image {self} - done")
         except Exception as ex:
             print(f"Got exception pulling docker: {ex}")
