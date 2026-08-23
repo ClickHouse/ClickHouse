@@ -8,6 +8,7 @@ keywords: ['カスタムロール', 'セキュリティ', '権限']
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 このガイドは、ClickHouse Cloud で Admin ロールを持つユーザーを対象としています。
 
@@ -54,7 +55,7 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
     <Info>
       **Data Sources タブへのアクセス**
 
-      **Data Sources** タブにアクセスするには、現在このロールに `Manage and Delete Selected Services` 権限が必要です。
+      **Data Sources** タブにアクセスするには、現在このロールに `Manage selected services` 権限が必要です。
     </Info>
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
@@ -66,6 +67,60 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
   </Step>
 </Steps>
+
+<div id="manage-database-roles">
+  ## データベースロールを管理する (ベータ)
+</div>
+
+<BetaBadge />
+
+コンソールの権限に加え、カスタムロールには、選択したサービスのデータベースへのアクセスを制御するデータ権限を含めることができます。これにより、各データベースで個別にロールを管理する代わりに、コンソールとデータベースへのアクセスを一元管理できます。
+
+<Note>
+  この機能はベータ版であり、ClickHouse バージョン 26.4 以降を実行しているサービスで利用できます。
+</Note>
+
+カスタムロールにデータ権限を追加すると、ClickHouse Cloud は選択した各サービスに、`cloud:` をプレフィックスとする対応するロールを作成します。たとえば、`readonly` というカスタムロールは、データベースでは `cloud:readonly` として表示されます。カスタムロールのメンバーは、SQL コンソールのパスワードレス認証を使用してサービスに接続すると、これらのデータベース権限を取得します。
+
+<Info>
+  データベースで手動で割り当てられた、[`sql-console-role:<email>` 命名規則](/ja/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)を使用するロールは、コンソールを通じて割り当てられたロールよりも優先されます。
+</Info>
+
+<Steps>
+  <Step title="ロールにデータ権限を追加する" id="add-data-permissions">
+    [カスタムロールを作成](#create-custom-role)するか、既存のロールを編集します。ロールダイアログで、`Allow permissions` ボタンをクリックし、`Data` を選択します。
+  </Step>
+
+  <Step title="サービスを選択する" id="select-data-permissions-service">
+    権限を適用するサービスを選択します。複数のサービスに権限を適用するには、サービスを追加します。
+  </Step>
+
+  <Step title="アクセスレベルを選択する" id="choose-data-access-level">
+    `Read-only`、`Admin`、または `Custom` アクセスを選択します。`Custom` アクセスでは、ClickHouse の [`GRANT` ステートメント](/ja/reference/statements/grant)を使用して、特定のデータアクセス権限を定義します。
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="カスタムGRANTステートメントでデータ権限が定義された新しいロールの作成ダイアログ" size="md" />
+  </Step>
+
+  <Step title="ロールを作成する" id="create-role-with-data-permissions">
+    `Create role` をクリックします。選択したサービスにデータベースロールが作成されます。
+  </Step>
+</Steps>
+
+<div id="verify-database-roles">
+  ### データベースロールを確認する
+</div>
+
+コンソール で管理されるロールは、データベース内に `cloud:` プレフィックスと `cloud` ストレージタイプを使用して作成されます。これらを一覧表示するには、サービス の `system.roles` テーブルにクエリを実行します。
+
+```sql
+SELECT * FROM system.roles;
+```
+
+```response
+┌─name───────────┬─id───────────────────────────────────┬─storage─┐
+│ cloud:readonly │ 9a4910f4-abcf-4904-466a-717c8c75ac42 │ cloud   │
+└────────────────┴──────────────────────────────────────┴─────────┘
+```
 
 <div id="update-custom-role">
   ## カスタムロールを更新する

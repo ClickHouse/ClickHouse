@@ -476,6 +476,8 @@ add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
+add_object_library(clickhouse_processors_queryplan_optimizations_cascades Processors/QueryPlan/Optimizations/Cascades)
+add_object_library(clickhouse_processors_queryplan_optimizations_cascades_rules Processors/QueryPlan/Optimizations/Cascades/Rules)
 
 # Work around LLVM x86 backend bug https://github.com/llvm/llvm-project/issues/191800
 # At -Og with AVX2+ targets, the compiler miscompiles functions that combine
@@ -703,6 +705,10 @@ if (TARGET ch_contrib::pocketfft)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::pocketfft)
 endif ()
 
+if (TARGET ch_contrib::jieba)
+    target_link_libraries(dbms PUBLIC ch_contrib::jieba)
+endif()
+
 if (TARGET ch_contrib::icu)
     target_link_libraries(dbms PRIVATE ch_contrib::icu)
 endif ()
@@ -909,6 +915,8 @@ if (TARGET ch_contrib::arrow_flight)
     target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
 endif()
 
+
+
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
 endif()
@@ -955,7 +963,10 @@ if (ENABLE_TESTS)
         clickhouse_common_zookeeper
         # `ConnectionParameters` (exercised by a gtest) pulls in `readpassphrase` for the
         # interactive password prompt, so the unit test executable must link it too.
-        readpassphrase)
+        readpassphrase
+        # `gtest_lz4_decompress_branchless` includes `<lz4.h>` directly; the include path only
+        # propagates transitively in full-library builds, so declare the dependency explicitly.
+        ch_contrib::lz4)
 
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
