@@ -29,7 +29,6 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
     parallel_replicas_local_plan = 1,
     serialize_query_plan = 0; -- { serverError SUPPORT_IS_DISABLED }
 
-
 -- With `enable_parallel_replicas = 1` (best-effort) parallel replicas is silently
 -- disabled and the query runs locally with the filter applied.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
