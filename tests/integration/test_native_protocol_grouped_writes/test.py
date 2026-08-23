@@ -53,7 +53,9 @@ def skip_string(sock):
         remaining -= len(data)
 
 
-def send_old_revision_query(query):
+def send_old_revision_query(
+    query, settings=None, receive_end_of_stream_before_data=False
+):
     sock = socket.create_connection((node.ip_address, 9000), timeout=10)
     try:
         hello = bytearray()
@@ -95,11 +97,13 @@ def send_old_revision_query(query):
         packet += encode_varuint(0)  # distributed depth
         packet += encode_varuint(1)  # version patch
         packet += struct.pack("<B", 0)  # no `OpenTelemetry` trace context
-        for name, value in (
-            ("send_logs_level", "trace"),
-            ("send_profile_events", "1"),
-            ("interactive_delay", str(INTERACTIVE_DELAY_ONE_HOUR)),
-        ):
+        if settings is None:
+            settings = (
+                ("send_logs_level", "trace"),
+                ("send_profile_events", "1"),
+                ("interactive_delay", str(INTERACTIVE_DELAY_ONE_HOUR)),
+            )
+        for name, value in settings:
             packet += encode_string(name)
             packet += encode_varuint(1)  # `BaseSettingsHelpers::Flags::IMPORTANT`
             packet += encode_string(value)
@@ -109,6 +113,12 @@ def send_old_revision_query(query):
         packet += encode_varuint(0)  # uncompressed
         packet += encode_string(query)
         sock.sendall(packet)
+
+        if receive_end_of_stream_before_data:
+            # This is deliberately a protocol-order assertion, not a timing
+            # assertion: a detached query must respond before requiring the
+            # mandatory trailing empty block from the client.
+            assert decode_varuint(sock) == 5  # `Server::EndOfStream`
 
         empty_block = bytearray()
         empty_block += encode_varuint(2)  # `Client::Data`
@@ -179,6 +189,14 @@ def test_old_revision_groups_uncompressed_terminal_packets():
     # so both writers use raw `out` even when `maybe_compressed_out` has not been
     # initialized yet.
     assert native_send_count() - sends_before == 3
+
+
+def test_background_query_responds_before_trailing_data():
+    send_old_revision_query(
+        "SELECT 1",
+        settings=(("run_query_in_background", "1"),),
+        receive_end_of_stream_before_data=True,
+    )
 
 
 def test_nonempty_data_does_not_wait_for_interactive_delay():
