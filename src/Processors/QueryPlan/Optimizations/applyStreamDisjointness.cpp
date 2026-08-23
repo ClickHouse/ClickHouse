@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -130,6 +131,20 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         }
 
         /// Otherwise the LIMIT merges to a single stream and is a barrier.
+        return {};
+    }
+
+    if (auto * creating_set = typeid_cast<CreatingSetStep *>(step))
+    {
+        /// The set is keyed on all columns of its input header. With disjoint input streams, deduplicating
+        /// each stream independently is complete deduplication, so the single set-filling transform only
+        /// hashes unique rows.
+        if (settings.creating_set_partitions_independently && !creating_set->usesExternalTable()
+            && partitionDeterminedByKeys(property, step->getInputHeaders().front()->getNames()))
+        {
+            creating_set->enablePreliminaryDistinct();
+        }
+
         return {};
     }
 

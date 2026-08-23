@@ -239,6 +239,7 @@ namespace Setting
     extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
+    extern const SettingsBool force_creating_set_partitions_independently;
     extern const SettingsBool force_distinct_partitions_independently;
     extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool force_primary_key;
@@ -4018,6 +4019,58 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy(
     return output_each_partition_through_separate_port = true;
 }
 
+/// Like LIMIT BY, set building for `IN (subquery)` is lenient: the ordinary set fill merges all incoming
+/// streams into one and hashes every row in a single `CreatingSetsTransform`. With per-partition streams
+/// each partition is pre-deduplicated in parallel, so the single filling transform only sees unique rows;
+/// any parallelism at all in the reduction is a win over the fully serial baseline. The one layout that
+/// loses is heavy partition skew, checked below.
+bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForCreatingSet()
+{
+    if (isQueryWithFinal())
+        return false;
+
+    /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
+    /// With creating-set by partitions optimisation we might create a separate pool for each partition.
+    if (is_parallel_reading_from_replicas)
+        return false;
+
+    /// This becomes no different from the ordinary set fill which is single stream anyway.
+    if (countPartitions(getParts()) == 1)
+        return false;
+
+    if (!context->getSettingsRef()[Setting::force_creating_set_partitions_independently])
+    {
+        /// A dominant partition is deduplicated through a single stream and its single-threaded pass
+        /// dominates the whole build, while the ordinary fill at least reads in parallel. What matters is
+        /// skew, not the partition count: a balanced layout wins at any count (even two partitions halve
+        /// the serial reduction), so unlike the aggregation/DISTINCT heuristic there is no lower bound on
+        /// the number of partitions, and the threshold compares against the average partition rather than
+        /// a `max_threads`-based share (the baseline is a serial fill whose cost does not scale with
+        /// threads).
+        std::unordered_map<String, size_t> partition_rows;
+        for (const auto & part : getParts())
+            partition_rows[part.data_part->info.getPartitionId()] += part.data_part->rows_count;
+        size_t sum_rows = 0;
+        size_t max_rows = 0;
+        for (const auto & [_, rows] : partition_rows)
+        {
+            sum_rows += rows;
+            max_rows = std::max(max_rows, rows);
+        }
+
+        if (max_rows * partition_rows.size() > 2 * sum_rows)
+        {
+            LOG_TRACE(
+                log,
+                "Independent set creation by partitions won't be used because the largest partition holds more than twice "
+                "the rows of the average partition. You can set force_creating_set_partitions_independently to suppress this check");
+            return false;
+        }
+    }
+
+    return output_each_partition_through_separate_port = true;
+}
+
 /// DISTINCT uses the same cost heuristic as GROUP BY. Similar to GROUP BY, the ordinary DISTINCT plan has
 /// a parallel preliminary `DistinctTransform` per stream.
 void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct()
@@ -4617,9 +4670,39 @@ static std::vector<RangesInDataPartsDescription> sliceMarksAcrossBuckets(const R
     return result;
 }
 
+Pipe ReadFromMergeTree::createEmptyPipe(size_t num_streams) const
+{
+    Pipes pipes;
+    pipes.reserve(num_streams);
+    for (size_t i = 0; i < num_streams; ++i)
+        pipes.emplace_back(std::make_shared<NullSource>(getOutputHeader()));
+
+    return Pipe::unitePipes(std::move(pipes));
+}
+
+size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & result) const
+{
+    /// The layers are a static pre-split of the parts made by `optimizeJoinByShards`, and the number of
+    /// output ports is a part of that plan: the JOIN above consumes exactly one port per layer and pairs
+    /// the ports of its two sides positionally. The layers are built from the parts of all the sources at
+    /// once, so both sides always get the same number of them, even when a source contributes no parts to
+    /// a layer. That is why an empty layer still occupies its port instead of being dropped, and why a
+    /// source that reads nothing at all must produce one port per layer as well: collapsing it to a single
+    /// port makes the two sides disagree on the number of shards. The same reasoning does not apply to a
+    /// read coordinated across parallel replicas, which ignores the layers (see `spreadMarkRanges`).
+    if (result.split_parts.layers.empty() || is_parallel_reading_from_replicas)
+        return 1;
+
+    return result.split_parts.layers.size();
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
+
+    /// `spreadMarkRanges` consumes `result.split_parts`, so remember the number of ports the plan expects
+    /// before it is moved from.
+    const size_t num_streams_when_nothing_to_read = getNumStreamsWhenNothingToRead(result);
 
     logPredicateStatistics(result);
 
@@ -4817,7 +4900,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (result.parts_with_ranges.empty() && !query_info.isStream())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
+        pipeline.init(createEmptyPipe(num_streams_when_nothing_to_read));
         return;
     }
 
@@ -5054,7 +5137,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (pipe.empty())
     {
-        pipeline.init(Pipe(std::make_shared<NullSource>(getOutputHeader())));
+        pipeline.init(createEmptyPipe(num_streams_when_nothing_to_read));
         return;
     }
 

@@ -375,6 +375,7 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
     void requestOutputEachPartitionThroughSeparatePortForDistinct();
     void requestOutputEachPartitionThroughSeparatePortForWindow();
+    bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
@@ -631,6 +632,15 @@ private:
         const MergeTreeIndexBuildContextPtr & index_build_context,
         const Names & column_names,
         const InputOrderInfoPtr & input_order_info);
+
+    /// A pipe of `num_streams` `NullSource`s, used when there is nothing to read.
+    Pipe createEmptyPipe(size_t num_streams) const;
+
+    /// How many output ports this step must produce when there is nothing to read. Normally one, but
+    /// when the parts are pre-split into primary-key layers by `optimizeJoinByShards`, the number of
+    /// ports is a part of the plan: the JOIN above consumes exactly one port per layer and pairs the
+    /// ports of its two sides positionally (see `QueryPipelineBuilder::joinPipelinesYShapedByShards`).
+    size_t getNumStreamsWhenNothingToRead(const AnalysisResult & result) const;
 
     Pipe spreadMarkRangesAmongStreams(
         RangesInDataParts && parts_with_ranges,

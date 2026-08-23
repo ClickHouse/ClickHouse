@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -276,6 +277,40 @@ void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, cons
         && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names))
     {
         reading->requestOutputEachPartitionThroughSeparatePortForWindow();
+    }
+}
+
+void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
+{
+    if (node.children.size() != 1)
+        return;
+
+    auto * creating_set_step = typeid_cast<CreatingSetStep *>(node.step.get());
+    if (!creating_set_step)
+        return;
+
+    /// GLOBAL IN: the set-filling transform also copies every consumed row into an external temporary
+    /// table under the `max_{rows,bytes}_to_transfer` limits. Pre-deduplication would change the table
+    /// contents and what those limits count.
+    if (creating_set_step->usesExternalTable())
+        return;
+
+    auto & child = *node.children.front();
+    auto * reading = findReadingStep(child);
+    if (!reading)
+        return;
+
+    const Names key_names = child.step->getOutputHeader()->getNames();
+
+    std::optional<ActionsDAG> dag;
+    buildKeyDAG(child, dag);
+    if (!dag)
+        return;
+
+    if (!reading->willOutputEachPartitionThroughSeparatePort()
+        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, key_names))
+    {
+        reading->requestOutputEachPartitionThroughSeparatePortForCreatingSet();
     }
 }
 }
