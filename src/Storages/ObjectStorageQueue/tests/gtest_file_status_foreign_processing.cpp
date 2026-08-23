@@ -195,7 +195,7 @@ void expectStaleObservationIsNotReusedForALaterForeignHold()
         ASSERT_FALSE(file_status->shouldRetryProcessing(first_table_observers, 3600));
 
         /// The hold is over: the file was released and reset.
-        file_status->reset();
+        (*file_status).reset();
         ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
 
         /// The second table is the first to observe a new foreign hold of the same path.
