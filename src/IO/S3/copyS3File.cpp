@@ -88,7 +88,8 @@ namespace
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_,
-            const String & dest_if_none_match_ = {})
+            const String & dest_if_none_match_ = {},
+            const std::optional<S3::ObjectHeaders> & source_headers_ = {})
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -98,6 +99,7 @@ namespace
             , blob_storage_log(blob_storage_log_)
             , log(log_)
             , dest_if_none_match(dest_if_none_match_)
+            , source_headers(source_headers_)
             , num_parts(0)
             , normal_part_size(0)
         {
@@ -117,6 +119,9 @@ namespace
         /// Destination precondition for the request that makes the object visible. "*" means the copy
         /// must fail with PreconditionFailed instead of overwriting an object that already exists.
         const String dest_if_none_match;
+        /// Headers of the source object, when the caller wants a re-upload to look like the
+        /// server-side copy it replaced. Empty fields are left at the request's own defaults.
+        const std::optional<S3::ObjectHeaders> source_headers;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -136,6 +141,25 @@ namespace
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
+        /// A guarded copy re-uploads instead of asking S3 to copy server-side, which would have carried
+        /// these over on its own; restate them so the destination is not left as a bare octet stream.
+        template <typename RequestType>
+        void applySourceHeaders(RequestType & request) const
+        {
+            if (!source_headers.has_value())
+                return;
+            if (!source_headers->content_type.empty())
+                request.SetContentType(source_headers->content_type);
+            if (!source_headers->content_encoding.empty())
+                request.SetContentEncoding(source_headers->content_encoding);
+            if (!source_headers->content_language.empty())
+                request.SetContentLanguage(source_headers->content_language);
+            if (!source_headers->content_disposition.empty())
+                request.SetContentDisposition(source_headers->content_disposition);
+            if (!source_headers->cache_control.empty())
+                request.SetCacheControl(source_headers->cache_control);
+        }
+
         void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & request)
         {
             request.SetBucket(dest_bucket);
@@ -143,6 +167,7 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
+            applySourceHeaders(request);
 
             if (object_metadata.has_value())
                 request.SetMetadata(object_metadata.value());
@@ -440,8 +465,9 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            const String & dest_if_none_match_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"), dest_if_none_match_)
+            const String & dest_if_none_match_,
+            const std::optional<S3::ObjectHeaders> & source_headers_)
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"), dest_if_none_match_, source_headers_)
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -494,6 +520,7 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
+            applySourceHeaders(request);
 
             if (!dest_if_none_match.empty())
                 request.SetIfNoneMatch(dest_if_none_match);
@@ -639,7 +666,8 @@ namespace
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<void()> fallback_method_,
             bool is_ranged_copy_,
-            const String & dest_if_none_match_)
+            const String & dest_if_none_match_,
+            const std::optional<S3::ObjectHeaders> & source_headers_)
             : UploadHelper(
                 client_ptr_,
                 dest_bucket_,
@@ -649,7 +677,8 @@ namespace
                 schedule_,
                 blob_storage_log_,
                 getLogger("copyS3File"),
-                dest_if_none_match_)
+                dest_if_none_match_,
+                source_headers_)
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
@@ -899,7 +928,8 @@ void copyDataToS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const std::optional<ObjectAttributes> & object_metadata,
-    const String & dest_if_none_match)
+    const String & dest_if_none_match,
+    const std::optional<S3::ObjectHeaders> & source_headers)
 {
     CopyDataToFileHelper helper{
         create_read_buffer,
@@ -912,7 +942,8 @@ void copyDataToS3File(
         object_metadata,
         schedule,
         blob_storage_log,
-        dest_if_none_match};
+        dest_if_none_match,
+        source_headers};
     helper.performCopy();
 }
 
@@ -938,7 +969,8 @@ namespace
         const CreateReadBuffer & fallback_file_reader,
         const std::optional<ObjectAttributes> & object_metadata,
         bool is_ranged_copy,
-        const String & dest_if_none_match)
+        const String & dest_if_none_match,
+        const std::optional<S3::ObjectHeaders> & source_headers)
     {
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
@@ -956,7 +988,8 @@ namespace
                 blob_storage_log,
                 schedule,
                 object_metadata,
-                dest_if_none_match);
+                dest_if_none_match,
+                source_headers);
         };
 
         if (!settings[S3RequestSetting::allow_native_copy])
@@ -982,7 +1015,8 @@ namespace
             blob_storage_log,
             std::move(fallback_method),
             is_ranged_copy,
-            dest_if_none_match};
+            dest_if_none_match,
+            source_headers};
         helper.performCopy();
     }
 }
@@ -1001,7 +1035,8 @@ void copyS3File(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata,
-    const String & dest_if_none_match)
+    const String & dest_if_none_match,
+    const std::optional<S3::ObjectHeaders> & source_headers)
 {
     copyS3FileImpl(
         std::move(src_s3_client),
@@ -1020,7 +1055,8 @@ void copyS3File(
         fallback_file_reader,
         object_metadata,
         /* is_ranged_copy= */ false,
-        dest_if_none_match);
+        dest_if_none_match,
+        source_headers);
 }
 
 void copyS3FileRange(
@@ -1058,7 +1094,8 @@ void copyS3FileRange(
         fallback_file_reader,
         object_metadata,
         /* is_ranged_copy= */ true,
-        dest_if_none_match);
+        dest_if_none_match,
+        /* source_headers= */ {});
 }
 
 }

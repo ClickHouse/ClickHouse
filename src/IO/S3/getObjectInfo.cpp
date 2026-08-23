@@ -77,6 +77,12 @@ namespace
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
 
+        object_info.headers.content_type = result.GetContentType();
+        object_info.headers.content_encoding = result.GetContentEncoding();
+        object_info.headers.content_language = result.GetContentLanguage();
+        object_info.headers.content_disposition = result.GetContentDisposition();
+        object_info.headers.cache_control = result.GetCacheControl();
+
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
 

@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <IO/S3Settings.h>
+#include <IO/S3/getObjectInfo.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <base/types.h>
@@ -54,7 +55,10 @@ void copyS3File(
     const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
     /// Precondition on the destination for the request that makes the object visible. Pass "*" to
     /// make the copy fail with PreconditionFailed instead of overwriting an existing object.
-    const String & dest_if_none_match = {});
+    const String & dest_if_none_match = {},
+    /// Source headers to restate when the copy cannot go through CopyObject (which would have
+    /// preserved them itself), e.g. because `dest_if_none_match` forces the buffered upload.
+    const std::optional<S3::ObjectHeaders> & source_headers = std::nullopt);
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -99,7 +103,9 @@ void copyDataToS3File(
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
     /// See copyS3File().
-    const String & dest_if_none_match = {});
+    const String & dest_if_none_match = {},
+    /// See copyS3File().
+    const std::optional<S3::ObjectHeaders> & source_headers = std::nullopt);
 
 }
 

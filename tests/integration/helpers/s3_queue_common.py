@@ -74,10 +74,15 @@ def generate_random_files(
     return total_values
 
 
-def put_s3_file_content(started_cluster, filename, data, bucket=None):
+def put_s3_file_content(started_cluster, filename, data, bucket=None, content_type=None):
     bucket = started_cluster.minio_bucket if bucket is None else bucket
     buf = io.BytesIO(data)
-    started_cluster.minio_client.put_object(bucket, filename, buf, len(data))
+    if content_type is None:
+        started_cluster.minio_client.put_object(bucket, filename, buf, len(data))
+    else:
+        started_cluster.minio_client.put_object(
+            bucket, filename, buf, len(data), content_type=content_type
+        )
 
 
 def put_azure_file_content(started_cluster, filename, data, bucket=None):

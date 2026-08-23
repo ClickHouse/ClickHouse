@@ -650,7 +650,7 @@ void S3ObjectStorage::copyObject( // NOLINT
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
-    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
+    const auto source_info = S3::getObjectInfo(*current_client, uri.bucket, object_from.remote_path, {});
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
@@ -658,7 +658,7 @@ void S3ObjectStorage::copyObject( // NOLINT
         /*src_s3_client=*/current_client,
         /*src_bucket=*/uri.bucket,
         /*src_key=*/object_from.remote_path,
-        /*src_size=*/size,
+        /*src_size=*/source_info.size,
         /*dest_s3_client=*/current_client,
         /*dest_bucket=*/uri.bucket,
         /*dest_key=*/object_to.remote_path,
@@ -669,7 +669,11 @@ void S3ObjectStorage::copyObject( // NOLINT
         [&, this]{ return readObject(object_from, read_settings_to_use);},
         object_to_attributes,
         /// Lets a caller demand that the copy fail rather than overwrite an existing destination.
-        write_settings.object_storage_write_if_none_match);
+        write_settings.object_storage_write_if_none_match,
+        /// That demand keeps the copy off CopyObject, which would have carried these over itself.
+        write_settings.object_storage_write_if_none_match.empty()
+            ? std::optional<S3::ObjectHeaders>{}
+            : std::optional<S3::ObjectHeaders>{source_info.headers});
 }
 
 void S3ObjectStorage::shutdown()

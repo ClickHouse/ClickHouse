@@ -639,6 +639,62 @@ def test_move_after_processing_existing_destination(started_cluster, engine_name
     assert data == sentinel, f"pre-existing destination was overwritten: {data!r}"
 
 
+@pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
+def test_move_after_processing_preserves_source_headers(started_cluster, move_to):
+    """The collision guard keeps the move off CopyObject, which preserved headers on its own.
+
+    The buffered re-upload that replaces it must restate them, or an archived object silently
+    becomes `binary/octet-stream` for every downstream reader.
+    """
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_headers_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = "sink-headers"
+    processed_bucket = "sink-bucket-headers" if move_to == "another_bucket" else None
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    content_type = "text/csv"
+
+    put_s3_file_content(
+        started_cluster,
+        f"{files_path}/{file_name}",
+        b"1,2,3\n",
+        content_type=content_type,
+    )
+
+    if move_to == "another_bucket":
+        recreate_minio_bucket(started_cluster, processed_bucket)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name="S3Queue",
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        move_to_bucket=processed_bucket,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    for _ in range(1000):
+        if int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1:
+            break
+        time.sleep(0.1)
+
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == 1
+
+    dst_bucket = processed_bucket if move_to == "another_bucket" else started_cluster.minio_bucket
+    moved = started_cluster.minio_client.stat_object(
+        dst_bucket, f"{processed_prefix}/{file_name}"
+    )
+    assert moved.content_type == content_type
+
+
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 @pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
 @pytest.mark.parametrize("preserve_move_path", [True, False])

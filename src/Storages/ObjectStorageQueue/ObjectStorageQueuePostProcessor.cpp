@@ -544,7 +544,12 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                         return s3_storage->readObject(object_from, read_settings_to_use);
                                     },
                                     /*object_metadata=*/ provenance,
-                                    /*dest_if_none_match=*/ move_if_none_match);
+                                    /*dest_if_none_match=*/ move_if_none_match,
+                                    /// The guard keeps this copy off CopyObject, so the headers it
+                                    /// would have carried over have to be restated on the upload.
+                                    /*source_headers=*/ move_if_none_match.empty()
+                                        ? std::optional<S3::ObjectHeaders>{}
+                                        : std::optional<S3::ObjectHeaders>{source_info.headers});
                             }
                             catch (const Exception & e)
                             {

@@ -10,6 +10,18 @@
 namespace DB::S3
 {
 
+/// Headers a server-side CopyObject carries over on its own, but a read-write re-upload has to
+/// restate: without them PutObject/CreateMultipartUpload would leave the destination as plain
+/// `binary/octet-stream` with no encoding, language or caching directive.
+struct ObjectHeaders
+{
+    String content_type;
+    String content_encoding;
+    String content_language;
+    String content_disposition;
+    String cache_control;
+};
+
 struct ObjectInfo
 {
     size_t size = 0;
@@ -19,6 +31,7 @@ struct ObjectInfo
     String etag;
     ObjectAttributes tags; // Set only if getObjectInfo() is called with `with_tags = true`
     ObjectAttributes metadata = {}; /// Set only if getObjectInfo() is called with `with_metadata = true`.
+    ObjectHeaders headers; /// Always read from the HEAD response; empty for whatever the object does not set.
 };
 
 /// Ignore if object does not exist
