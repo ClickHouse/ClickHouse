@@ -107,7 +107,7 @@ void RemoveUnusedProjectionColumnsPass::run(QueryTreeNodePtr & query_tree_node, 
         /// Initialize map with query and union nodes in the FROM clause
         if (auto * query_node = node_to_visit->as<QueryNode>())
         {
-            for (const auto & table_expression : extractTableExpressions(query_node->getJoinTree()))
+            for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped()))
                 if (isQueryOrUnionNode(table_expression))
                     node_to_used_columns.emplace(table_expression, std::unordered_set<std::string>());
         }

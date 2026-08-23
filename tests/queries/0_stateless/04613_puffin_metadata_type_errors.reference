@@ -1,0 +1,38 @@
+--- invalid_property_number.puffin ---
+must be a string
+--- invalid_property_cardinality_number.puffin ---
+must be a string
+--- float_offset.puffin ---
+must be an integer
+--- float_fields_element.puffin ---
+must be an integer
+--- string_offset.puffin ---
+must be an integer
+--- bool_offset.puffin ---
+must be an integer
+--- bool_fields_element.puffin ---
+must be an integer
+--- fields_element_out_of_int32_range.puffin ---
+out of Int32 range
+--- offset_out_of_int64_range.puffin ---
+out of Int64 range
+--- fields_element_out_of_int64_range.puffin ---
+out of Int64 range
+--- type_number.puffin ---
+must be a string
+--- footer_root_array.puffin ---
+footer JSON must be an object
+--- malformed_footer_json.puffin ---
+Cannot parse Puffin footer JSON
+--- footer_integer_overflow.puffin ---
+Cannot parse Puffin footer JSON
+--- dv_with_compression_codec.puffin ---
+must omit 'compression-codec'
+--- invalid_cardinality_non_numeric.puffin ---
+property 'cardinality' must be an unsigned integer
+--- invalid_cardinality_negative.puffin ---
+property 'cardinality' must be an unsigned integer
+--- puffin_metadata_wrong_type ---
+Unexpected type
+--- puffin_metadata_unknown_column ---
+Unexpected column

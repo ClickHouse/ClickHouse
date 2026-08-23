@@ -8,9 +8,12 @@ doc_type: 'reference'
 
 Отменяет удаление таблицы.
 
-Начиная с версии ClickHouse 23.3 можно выполнить UNDROP таблицы в базе данных Atomic
-в течение времени, заданного параметром `database_atomic_delay_before_drop_table_sec` (по умолчанию 8 минут), после выполнения оператора DROP TABLE. Удаленные таблицы перечислены
-в системной таблице `system.dropped_tables`.
+Начиная с версии ClickHouse 23.3 можно выполнить UNDROP таблицы в базе данных `Atomic`
+в течение периода, заданного параметром [`database_atomic_delay_before_drop_table_sec`](/ru/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) (по умолчанию 8 минут), после выполнения `DROP TABLE`.
+Таблицы, удаленные из баз данных `Atomic`, перечислены в `system.dropped_tables`.
+
+Для базы данных `Shared` в ClickHouse Cloud этот период задается параметром [`database_shared_drop_table_delay_seconds`](/ru/reference/settings/session-settings/database#database_shared_drop_table_delay_seconds), который по умолчанию составляет 8 часов.
+Таблицы, удаленные из баз данных `Shared`, не перечислены в `system.dropped_tables`.
 
 Если с удаленной таблицей связано materialized view без условия `TO`, вам также потребуется выполнить UNDROP внутренней таблицы этого представления.
 

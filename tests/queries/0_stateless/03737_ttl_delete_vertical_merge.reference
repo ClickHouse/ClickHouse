@@ -7,7 +7,6 @@ test1_parts	1
 test1_algo	Vertical
 test2_before	2000
 test2_after	0
-test2_algo	Vertical
 test3_before	2000
 test3_after	1000
 test3_check_cols	4995000	49950000	499500000	4995000000

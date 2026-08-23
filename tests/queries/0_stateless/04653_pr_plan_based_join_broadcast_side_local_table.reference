@@ -1,0 +1,4 @@
+parallel_replicas_for_non_replicated_merge_tree=0 steps:	Aggregating Join Union ReadFromMergeTree ReadFromParallelReplicas ReadFromMergeTree
+1000	999000
+parallel_replicas_for_non_replicated_merge_tree=1 steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+1000	999000

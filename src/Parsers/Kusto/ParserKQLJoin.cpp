@@ -137,7 +137,7 @@ bool ParserKQLJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// In KQL "on col1, col2" means "on left.col1 = right.col1 AND left.col2 = right.col2"
     /// We add suffix "1" for the right table columns (ClickHouse join convention)
     String sql_on;
-    if (on_conditions.find("==") == String::npos && on_conditions.find('=') == String::npos)
+    if (!on_conditions.contains("==") && !on_conditions.contains('='))
     {
         /// Simple column name(s) - KQL convention: on col means left.col = right.col
         /// Handle comma-separated keys: on a, b -> a = a1 AND b = b1
