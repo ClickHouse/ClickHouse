@@ -262,6 +262,14 @@ protected:
     /// Used to check certain things that are considered unsafe for the embedded client
     virtual bool isEmbeeddedClient() const = 0;
 
+    /// The setting that the `--format` option and the `format` config key are mirrored into.
+    /// In `clickhouse-local`, `--format` has always set both the default input and the default output
+    /// format, so it maps to the bidirectional `format` setting. In `clickhouse-client` (including the
+    /// embedded client), `--format` is documented as output-only, so it maps to `output_format`:
+    /// mirroring it into `format` would make it override the `FORMAT` clause of `INSERT` queries
+    /// on the input side.
+    virtual std::string_view mappedFormatOptionSetting() const { return "output_format"; }
+
     static fs::path getHistoryFilePath();
 private:
     /// Runs a small service query against `system.documentation` (used by `processHelpCommand`),
