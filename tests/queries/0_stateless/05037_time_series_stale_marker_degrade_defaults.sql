@@ -1,4 +1,5 @@
--- Tags: no-replicated-database
+-- Tags: no-fasttest, no-replicated-database
+-- Tag no-fasttest: `timeSeriesSelector` parses its PromQL selector with ANTLR4, which is disabled in the fast-test build.
 -- Tag no-replicated-database: `DatabaseReplicated` does not drop `TimeSeries` inner tables synchronously; deferred DROPs are rejected.
 
 -- When the samples / recent samples pair degrades because one target lacks `is_stale_marker`, the
