@@ -336,8 +336,7 @@ provides error information from the underlying ClickHouse engine.
 Bases: `object`
 
 Session will keep the state of query.
-If path is None, it will create a temporary directory and use it as the database path
-and the temporary directory will be removed when the session is closed.
+If path is None, the session uses the shared in-memory (`:memory:`) database for the process, so all path-less sessions see each other's tables; its temporary directory is removed only when the last such session or connection closes.
 You can also pass in a path to create a database at that path where will keep your data.
 
 You can also use a connection string to pass in the path and other parameters.
