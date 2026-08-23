@@ -6552,13 +6552,23 @@ std::unordered_set<std::string> QueryAnalyzer::collectMatcherProducedColumnNames
 
 void QueryAnalyzer::applyReplaceTransformersToUnresolvedClauses(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
-    std::unordered_map<std::string, QueryTreeNodePtr> replace_transformer_mappings;
+    /// One mapping per projection matcher, kept in projection order. The non-deferred path applies
+    /// each matcher's REPLACE mappings to the sibling clauses inside its own `resolveMatcher` call,
+    /// so a later matcher still rewrites identifiers that an earlier matcher's replacement expression
+    /// introduced: for `SELECT * REPLACE (a + 1 AS b), * REPLACE (0 AS a) ... HAVING b > 0` it ends up
+    /// with `HAVING 0 + 1 > 0`. Flattening every matcher into a single map and substituting once cannot
+    /// reproduce that, because the traversal below stops as soon as it substitutes an identifier, so
+    /// the `a` produced by the first matcher would stay bound to the source column — making
+    /// group_by_use_nulls=1 change results (#91119). Replay the rewrites matcher by matcher instead.
+    std::vector<std::unordered_map<std::string, QueryTreeNodePtr>> per_matcher_replace_mappings;
 
     for (const auto & projection_node : query_node_typed.getProjection().getNodes())
     {
         auto * matcher_node = projection_node->as<MatcherNode>();
         if (!matcher_node)
             continue;
+
+        std::unordered_map<std::string, QueryTreeNodePtr> replace_transformer_mappings;
 
         /// The names this matcher actually produces (qualifier- and column-kind-aware). resolveMatcher
         /// registers a REPLACE mapping (line ~2597) only after `findReplacementExpression(column_name)`
@@ -6632,9 +6642,12 @@ void QueryAnalyzer::applyReplaceTransformersToUnresolvedClauses(QueryNode & quer
                     replace_transformer_mappings.emplace(name, replacement_nodes[i]);
             }
         }
+
+        if (!replace_transformer_mappings.empty())
+            per_matcher_replace_mappings.push_back(std::move(replace_transformer_mappings));
     }
 
-    if (replace_transformer_mappings.empty())
+    if (per_matcher_replace_mappings.empty())
         return;
 
     /// Type-selective traversal, identical to the matcher-side `replace_identifiers_in_node`
@@ -6648,6 +6661,8 @@ void QueryAnalyzer::applyReplaceTransformersToUnresolvedClauses(QueryNode & quer
     /// IDENTIFIER or COLUMN as lambda argument`; subquery-local -> changed subquery meaning),
     /// and (b) rewrites WITH FILL FROM/TO/STEP, which the non-deferred path leaves bound to the
     /// original key, making group_by_use_nulls observable outside nullability (#91119).
+    const std::unordered_map<std::string, QueryTreeNodePtr> * current_replace_mappings = nullptr;
+
     std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void
     {
         if (!current)
@@ -6655,8 +6670,8 @@ void QueryAnalyzer::applyReplaceTransformersToUnresolvedClauses(QueryNode & quer
 
         if (const auto * identifier = current->as<IdentifierNode>())
         {
-            auto it = replace_transformer_mappings.find(identifier->getIdentifier().getFullName());
-            if (it != replace_transformer_mappings.end())
+            auto it = current_replace_mappings->find(identifier->getIdentifier().getFullName());
+            if (it != current_replace_mappings->end())
             {
                 current = it->second->clone();
                 return;
@@ -6696,21 +6711,28 @@ void QueryAnalyzer::applyReplaceTransformersToUnresolvedClauses(QueryNode & quer
             replace_recursive(clause);
     };
 
-    rewrite_clause(query_node_typed.getPrewhere());
-    rewrite_clause(query_node_typed.getWhere());
-    if (query_node_typed.hasGroupBy())
-        rewrite_clause(query_node_typed.getGroupByNode());
-    rewrite_clause(query_node_typed.getHaving());
-    if (query_node_typed.hasOrderBy())
-        rewrite_clause(query_node_typed.getOrderByNode());
-    if (query_node_typed.hasLimitBy())
-        rewrite_clause(query_node_typed.getLimitByNode());
-    /// Named WINDOW definitions (e.g. `WINDOW w AS (ORDER BY col)`) are resolved by
-    /// resolveWindowNodeList after this helper runs, so their `col` references are still
-    /// unresolved identifiers here and must be rewritten too. Without this the deferred path
-    /// ranks by the original key while the non-deferred path ranks by the replacement (#91119).
-    if (query_node_typed.hasWindow())
-        rewrite_clause(query_node_typed.getWindowNode());
+    /// One full pass over the clauses per matcher, in projection order, exactly as the non-deferred
+    /// path does inside each `resolveMatcher` call.
+    for (const auto & replace_mappings : per_matcher_replace_mappings)
+    {
+        current_replace_mappings = &replace_mappings;
+
+        rewrite_clause(query_node_typed.getPrewhere());
+        rewrite_clause(query_node_typed.getWhere());
+        if (query_node_typed.hasGroupBy())
+            rewrite_clause(query_node_typed.getGroupByNode());
+        rewrite_clause(query_node_typed.getHaving());
+        if (query_node_typed.hasOrderBy())
+            rewrite_clause(query_node_typed.getOrderByNode());
+        if (query_node_typed.hasLimitBy())
+            rewrite_clause(query_node_typed.getLimitByNode());
+        /// Named WINDOW definitions (e.g. `WINDOW w AS (ORDER BY col)`) are resolved by
+        /// resolveWindowNodeList after this helper runs, so their `col` references are still
+        /// unresolved identifiers here and must be rewritten too. Without this the deferred path
+        /// ranks by the original key while the non-deferred path ranks by the replacement (#91119).
+        if (query_node_typed.hasWindow())
+            rewrite_clause(query_node_typed.getWindowNode());
+    }
 }
 
 void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope)
