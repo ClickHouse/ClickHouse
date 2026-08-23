@@ -12,6 +12,7 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/getObjectInfo.h>
+#include <IO/WriteHelpers.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
