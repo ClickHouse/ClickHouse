@@ -355,6 +355,15 @@ std::optional<RemoteFileMetadata> ReadBufferFromAzureBlobStorage::getRemoteFileM
         .last_modification_time = static_cast<time_t>(last_modification_time)};
 }
 
+size_t copyFromAzureBodyStream(Azure::Core::IO::BodyStream & body_stream, char * to, size_t n, const Azure::Core::Context & context)
+{
+    /// The length of the body is the `Content-Length` reported by the remote endpoint and can be
+    /// larger than the requested range, while the destination buffer only has room for `n` bytes.
+    const int64_t length = body_stream.Length();
+    const size_t bytes_to_copy = length >= 0 ? std::min(static_cast<size_t>(length), n) : n;
+    return body_stream.ReadToCount(reinterpret_cast<uint8_t *>(to), bytes_to_copy, context);
+}
+
 size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const
 {
     size_t initial_n = n;
@@ -391,10 +400,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
-            /// The length of the body comes from the remote endpoint and can be larger than the
-            /// requested range, while the destination buffer only has room for `n` bytes.
-            const size_t bytes_to_copy = std::min(static_cast<size_t>(body_stream->Length()), n);
-            bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), bytes_to_copy, azure_context);
+            bytes_copied = copyFromAzureBodyStream(*body_stream, to, n, azure_context);
 
             LOG_TEST(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);
 
@@ -455,7 +461,15 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
         n -= bytes_copied;
     }
 
-    return initial_n;
+    if (n > 0)
+    {
+        /// The endpoint kept returning short responses. Report how much was actually copied:
+        /// the caller must not treat the tail of its buffer as initialized.
+        LOG_DEBUG(log, "AzureBlobStorage readBigAt for file {} got only {} bytes out of {} requested after {} attempts",
+            path, initial_n - n, initial_n, max_single_download_retries);
+    }
+
+    return initial_n - n;
 }
 
 ObjectMetadata ReadBufferFromAzureBlobStorage::getObjectMetadataFromTheLastRequest() const

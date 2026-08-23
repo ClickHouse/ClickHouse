@@ -18,6 +18,12 @@ namespace DB
 class BlobStorageLogWriter;
 using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
 
+/// Copies at most `n` bytes from `body_stream` into `to` and returns the number of bytes copied.
+/// The length of the stream is the `Content-Length` reported by the remote endpoint: it is not
+/// trusted, because an endpoint that returns more data than the requested range would otherwise
+/// overflow the destination buffer.
+size_t copyFromAzureBodyStream(Azure::Core::IO::BodyStream & body_stream, char * to, size_t n, const Azure::Core::Context & context);
+
 class ReadBufferFromAzureBlobStorage : public ReadBufferFromFileBase
 {
 public:

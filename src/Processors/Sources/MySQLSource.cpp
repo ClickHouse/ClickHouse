@@ -219,6 +219,26 @@ void MySQLWithFailoverSource::onCancel() noexcept
         tryLogCurrentException(log, "Unexpected error in MySQLWithFailoverSource::onCancel");
     }
 }
+UInt64 parseMySQLBitValue(std::string_view value)
+{
+    /// The length comes from the MySQL wire protocol, while a `BIT` value holds at most 64 bits.
+    const size_t n = value.size();
+    if (n > sizeof(UInt64))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Value of a BIT field is {} bytes long, while at most {} bytes are expected",
+            n, sizeof(UInt64));
+
+    UInt64 val = 0UL;
+    char * to = reinterpret_cast<char *>(&val);
+    memcpy(to, value.data(), n);
+
+    /// The value is transferred in the big-endian order.
+    if constexpr (std::endian::native == std::endian::little)
+        std::reverse(to, to + n);
+
+    return val;
+}
+
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
@@ -324,24 +344,8 @@ namespace
             {
                 if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
                 {
-                    size_t n = value.size();
-                    /// The length comes from the remote server, while `BIT` holds at most 64 bits.
-                    if (n > sizeof(UInt64))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Value of a BIT field is {} bytes long, while at most {} bytes are expected",
-                            n, sizeof(UInt64));
-
-                    UInt64 val = 0UL;
-                    char * to = reinterpret_cast<char *>(&val);
-                    memcpy(to, const_cast<char *>(value.data()), n);
-
-                    if constexpr (std::endian::native == std::endian::little)
-                    {
-                        char * start = to;
-                        char * end = to + n;
-                        std::reverse(start, end);
-                    }
-                    assert_cast<ColumnUInt64 &>(column).insertValue(val);
+                    const size_t n = value.size();
+                    assert_cast<ColumnUInt64 &>(column).insertValue(parseMySQLBitValue({value.data(), n}));
                     read_bytes_size += n;
                 }
                 else
