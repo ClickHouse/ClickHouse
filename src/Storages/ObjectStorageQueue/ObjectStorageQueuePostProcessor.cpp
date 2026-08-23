@@ -529,7 +529,8 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                 src_bucket,
                                 object_from.remote_path,
                                 /*version_id=*/ {},
-                                /*with_metadata=*/ true);
+                                /*with_metadata=*/ true,
+                                /*with_tags=*/ !move_if_none_match.empty());
                             /// See moveWithinBucket(): lets a later attempt recognize its own committed
                             /// copy; an unguarded copy keeps the native header/metadata preservation instead.
                             const auto provenance = move_if_none_match.empty()
@@ -556,11 +557,14 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                     },
                                     /*object_metadata=*/ provenance,
                                     /*dest_if_none_match=*/ move_if_none_match,
-                                    /// The guard keeps this copy off CopyObject, so the headers it
-                                    /// would have carried over have to be restated on the upload.
+                                    /// The guard keeps this copy off CopyObject, so the headers and
+                                    /// tags it would have carried over have to be restated on the upload.
                                     /*source_headers=*/ move_if_none_match.empty()
                                         ? std::optional<S3::ObjectHeaders>{}
-                                        : std::optional<S3::ObjectHeaders>{source_info.headers});
+                                        : std::optional<S3::ObjectHeaders>{source_info.headers},
+                                    /*source_tags=*/ move_if_none_match.empty()
+                                        ? std::optional<ObjectAttributes>{}
+                                        : std::optional<ObjectAttributes>{source_info.tags});
                             }
                             catch (const Exception & e)
                             {

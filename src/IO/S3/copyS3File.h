@@ -58,7 +58,9 @@ void copyS3File(
     const String & dest_if_none_match = {},
     /// Source headers to restate when the copy cannot go through CopyObject (which would have
     /// preserved them itself), e.g. because `dest_if_none_match` forces the buffered upload.
-    const std::optional<S3::ObjectHeaders> & source_headers = std::nullopt);
+    const std::optional<S3::ObjectHeaders> & source_headers = std::nullopt,
+    /// The source tag set, restated for the same reason: CopyObject copies tags by default.
+    const std::optional<ObjectAttributes> & source_tags = std::nullopt);
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -105,7 +107,9 @@ void copyDataToS3File(
     /// See copyS3File().
     const String & dest_if_none_match = {},
     /// See copyS3File().
-    const std::optional<S3::ObjectHeaders> & source_headers = std::nullopt);
+    const std::optional<S3::ObjectHeaders> & source_headers = std::nullopt,
+    /// See copyS3File().
+    const std::optional<ObjectAttributes> & source_tags = std::nullopt);
 
 }
 

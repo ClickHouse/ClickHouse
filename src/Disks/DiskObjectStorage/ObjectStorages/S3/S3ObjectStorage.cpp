@@ -650,7 +650,9 @@ void S3ObjectStorage::copyObject( // NOLINT
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
-    const auto source_info = S3::getObjectInfo(*current_client, uri.bucket, object_from.remote_path, {});
+    const auto source_info = S3::getObjectInfo(
+        *current_client, uri.bucket, object_from.remote_path, /*version_id=*/ {}, /*with_metadata=*/ false,
+        /*with_tags=*/ !write_settings.object_storage_write_if_none_match.empty());
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
@@ -673,7 +675,10 @@ void S3ObjectStorage::copyObject( // NOLINT
         /// That demand keeps the copy off CopyObject, which would have carried these over itself.
         write_settings.object_storage_write_if_none_match.empty()
             ? std::optional<S3::ObjectHeaders>{}
-            : std::optional<S3::ObjectHeaders>{source_info.headers});
+            : std::optional<S3::ObjectHeaders>{source_info.headers},
+        write_settings.object_storage_write_if_none_match.empty()
+            ? std::optional<ObjectAttributes>{}
+            : std::optional<ObjectAttributes>{source_info.tags});
 }
 
 void S3ObjectStorage::shutdown()
