@@ -152,3 +152,11 @@ SELECT countSparkbar(5, 0, 4)(toFloat64(number)) FROM numbers(5); -- { serverErr
 SELECT countSparkbar(5, toDateTime64(1000000000000000000, 0), toDateTime64(2000000000000000000, 0))(
     toDateTime64('2024-01-01 00:00:00', 9)
 ) FROM numbers(1); -- { serverError DECIMAL_OVERFLOW }
+
+-- Error: signed x-axis bounds outside the range of the key type must be rejected instead of
+-- wrapping modulo `2^N`. `9223372036854775808` does not fit into `Int64`, and `2147483648`
+-- does not fit into the `Int32` domain of a `Date32` key.
+SELECT countSparkbar(2, 9223372036854775808, 9223372036854775809)(toInt64(-9223372036854775808)); -- { serverError BAD_ARGUMENTS }
+SELECT countSparkbar(2, 0, 9223372036854775808)(toInt64(number)) FROM numbers(4); -- { serverError BAD_ARGUMENTS }
+SELECT countSparkbar(2, -2147483649, 0)(toDate32('2000-01-01')); -- { serverError BAD_ARGUMENTS }
+SELECT countSparkbar(2, 0, 2147483648)(toDate32('2000-01-01')); -- { serverError BAD_ARGUMENTS }

@@ -4,6 +4,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionSparkbar.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Core/AccurateComparison.h>
 #include <base/arithmeticOverflow.h>
 
 namespace DB
@@ -11,6 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -18,6 +20,33 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Extract a signed x-axis bound from a parameter `Field`. A non-negative literal is stored as
+/// `UInt64` and a negative one as `Int64`, so both variants have to be accepted. The value is
+/// range-checked against the target type before narrowing: without the check an out-of-range
+/// literal would wrap modulo `2^N` and silently bucket a completely different range.
+template <typename T>
+T getSignedBound(const Field & param, std::string_view param_name, const IDataType & key_type, const String & combinator_name)
+{
+    T result = 0;
+
+    Int64 as_int = 0;
+    if (param.tryGet<Int64>(as_int))
+    {
+        if (accurate::convertNumeric<Int64, T, false>(as_int, result))
+            return result;
+    }
+    else
+    {
+        const UInt64 as_uint = param.safeGet<UInt64>();
+        if (accurate::convertNumeric<UInt64, T, false>(as_uint, result))
+            return result;
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Parameter {} of aggregate function with {} suffix is out of range of the x-axis type {}",
+        param_name, combinator_name, key_type.getName());
+}
 
 class AggregateFunctionCombinatorSparkbar final : public IAggregateFunctionCombinator
 {
@@ -142,9 +171,8 @@ public:
 
         if (which.isDate32())
         {
-            Int64 tmp = 0;
-            const Int32 begin_x = params[n - 2].tryGet<Int64>(tmp) ? static_cast<Int32>(tmp) : static_cast<Int32>(params[n - 2].safeGet<UInt64>());
-            const Int32 end_x   = params[n - 1].tryGet<Int64>(tmp) ? static_cast<Int32>(tmp) : static_cast<Int32>(params[n - 1].safeGet<UInt64>());
+            const Int32 begin_x = getSignedBound<Int32>(params[n - 2], "begin_x", *arguments[0], getName());
+            const Int32 end_x   = getSignedBound<Int32>(params[n - 1], "end_x", *arguments[0], getName());
 
             return std::make_shared<AggregateFunctionSparkbar<Int32>>(
                 nested_function, width, begin_x, end_x, /*key_multiplier=*/1, arguments, params);
@@ -157,9 +185,8 @@ public:
         /// x-axis must be converted to a number explicitly by the query.
         if (which.isNativeInt() || which.isEnum())
         {
-            Int64 tmp = 0;
-            const Int64 begin_x = params[n - 2].tryGet<Int64>(tmp) ? tmp : static_cast<Int64>(params[n - 2].safeGet<UInt64>());
-            const Int64 end_x   = params[n - 1].tryGet<Int64>(tmp) ? tmp : static_cast<Int64>(params[n - 1].safeGet<UInt64>());
+            const Int64 begin_x = getSignedBound<Int64>(params[n - 2], "begin_x", *arguments[0], getName());
+            const Int64 end_x   = getSignedBound<Int64>(params[n - 1], "end_x", *arguments[0], getName());
 
             return std::make_shared<AggregateFunctionSparkbar<Int64>>(
                 nested_function, width, begin_x, end_x, /*key_multiplier=*/1, arguments, params);
