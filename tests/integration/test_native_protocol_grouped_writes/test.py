@@ -11,6 +11,9 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node")
 
 OLD_CLIENT_REVISION = 54452
+# Keep exact send-count assertions independent of sanitizer load by preventing
+# time-based interactive updates during these short queries.
+INTERACTIVE_DELAY_ONE_HOUR = 3_600_000_000
 
 
 def encode_varuint(value):
@@ -95,6 +98,7 @@ def send_old_revision_query(query):
         for name, value in (
             ("send_logs_level", "trace"),
             ("send_profile_events", "1"),
+            ("interactive_delay", str(INTERACTIVE_DELAY_ONE_HOUR)),
         ):
             packet += encode_string(name)
             packet += encode_varuint(1)  # `BaseSettingsHelpers::Flags::IMPORTANT`
@@ -146,7 +150,11 @@ def test_select_groups_terminal_packets(compression):
     sends_before = native_send_count()
     answer, logs = node.query_and_get_answer_with_error(
         "SELECT 1",
-        settings={"compression": compression, "send_logs_level": "trace"},
+        settings={
+            "compression": compression,
+            "interactive_delay": INTERACTIVE_DELAY_ONE_HOUR,
+            "send_logs_level": "trace",
+        },
     )
     assert answer == "1\n"
     assert "Trace" in logs
@@ -179,7 +187,7 @@ def test_nonempty_data_does_not_wait_for_interactive_delay():
             settings={
                 "compression": 1,
                 "max_block_size": 1,
-                "interactive_delay": 10_000_000,
+                "interactive_delay": INTERACTIVE_DELAY_ONE_HOUR,
             },
         )
         == "0\t0\n1\t0\n"
@@ -187,7 +195,7 @@ def test_nonempty_data_does_not_wait_for_interactive_delay():
 
     # Server hello, header block, two separately flushed data blocks, and the
     # grouped terminal write. Without the per-iteration `sync`, both rows remain
-    # buffered until the terminal write because `interactive_delay` is ten seconds.
+    # buffered until the terminal write because `interactive_delay` is one hour.
     assert native_send_count() - sends_before == 5
 
 
