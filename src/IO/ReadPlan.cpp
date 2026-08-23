@@ -98,8 +98,9 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
     ///  - left: down to the committed frontier of each populating segment covering `offset` - an
     ///    incremental segment fills append-only from its frontier (its start when virgin), below
     ///    `offset` when the read opens mid-segment; a whole-segment tier's frontier is its cell start.
-    ///  - the head whole-segment cell must be fetched WHOLE (populated only by a full-cell write), so
-    ///    its end overrides both the coalesce and the window cap.
+    ///  - whole cells: a whole-segment cell is populated only by a full-cell write, so the fetch must
+    ///    fully cover EVERY whole-segment miss cell it enters, not just the head - else a cell the fetch
+    ///    stops inside gets a partial (rejected) write and is never cached (re-read on the next window).
     size_t fetch_end = span_end;
     for (const auto & tier : tiers)
         fetch_end = std::min(fetch_end, firstServableAtOrAfter(tier, offset, span_end));
@@ -112,16 +113,28 @@ ReadPlan::PlanRun ReadPlan::runAt(size_t offset, size_t max_fetch_ahead) const
         if (!tier.populates)
             continue;
         const CacheResolution * cell = cellCovering(tier, offset);
-        if (!cell || cell->kind != CacheResolution::Kind::Miss || !cell->writer)
-            continue;
-        fetch_start = std::min(fetch_start, cell->writer->committed());
-        if (cell->writer->fillsWholeSegment())
-            /// The head whole-segment cell is populated only by a full-cell write, so it must be fetched
-            /// entire - to its true segment end even past `span_end` (source always has it; cells never
-            /// straddle an object boundary). When a slower tier already holds part of the cell this
-            /// re-reads it from source: with two populating layers (page + filesystem cache) we aim for
-            /// correctness, not for the fewest source bytes.
-            fetch_end = std::max(fetch_end, cell->range.end());
+        if (cell && cell->kind == CacheResolution::Kind::Miss && cell->writer)
+            fetch_start = std::min(fetch_start, cell->writer->committed());
+    }
+
+    /// Extend to the end of any whole-segment miss cell the fetch straddles (its end even past
+    /// `span_end` - source always has it; cells never cross an object boundary). Each step lands on a
+    /// cell boundary, so the fixpoint converges (in practice one whole-segment tier, one step).
+    for (bool grew = true; grew;)
+    {
+        grew = false;
+        for (const auto & tier : tiers)
+        {
+            if (!tier.populates)
+                continue;
+            for (const auto & cell : tier.cells)
+                if (cell.kind == CacheResolution::Kind::Miss && cell.writer && cell.writer->fillsWholeSegment()
+                    && cell.range.offset < fetch_end && cell.range.end() > fetch_end)
+                {
+                    fetch_end = cell.range.end();
+                    grew = true;
+                }
+        }
     }
 
     run.range = ByteRange{fetch_start, fetch_end - fetch_start};

@@ -191,6 +191,7 @@ private:
     public:
         Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
         ByteRange range() const override { return r; }
+        bool fillsWholeSegment() const override { return true; }   /// this mock is a whole-block cache
         size_t committed() const override
         {
             /// Committed at resolve time (`resident`) or filled since (`late_committed`): whole block.
@@ -860,6 +861,36 @@ TEST_F(ReaderExecutorTest, RejectedCacheWriteRetainedInMemoryNotReRead)
         << "the rejected block was re-read from source instead of served from the retained fetch";
     EXPECT_FALSE(state->resident.subtract(ByteRange{block, block}).empty())
         << "a rejected write must not leave the block cached";
+}
+
+TEST_F(ReaderExecutorTest, WholeSegmentCellEnteredByFetchIsCompleted)
+{
+    /// Two whole-segment (page-cache) blocks; the window stops inside the second. The fetch must widen to
+    /// complete that entered cell (a partial write is rejected), so both blocks land in ONE source read -
+    /// not a partial write held in memory with the block re-read on the next window.
+    const size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 2 * block)};
+
+    auto state = std::make_shared<MockCacheState>(2 * block);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));   /// whole-segment tier
+
+    TestThreadGroup tg;
+    /// window (384) stops mid the second block [256, 512); block_size 256.
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 384, .block_size = block, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 2 * block);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    /// One coalesced source read widened to the second block's end; both blocks cached, none re-read.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u)
+        << "the fetch did not widen to complete the entered whole-segment block";
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 2 * block);
+    EXPECT_TRUE(state->resident.subtract(ByteRange{0, 2 * block}).empty())
+        << "both whole-segment blocks must be populated";
 }
 
 TEST_F(ReaderExecutorTest, WriterlessMissNotRefreshedWithinHeldSpan)
