@@ -88,7 +88,14 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     size_t max_args = is_cluster_function ? 4 : 6;
     NamedCollectionPtr named_collection;
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> complex_args;
-    if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, context, false, &complex_args, dependent_table_id)))
+    /// A `key = value` second argument occurs only in the named-collection form: no positional
+    /// signature accepts one there. So a missing collection must be reported rather than let the
+    /// call fall through and be reparsed positionally, which can only misinterpret it.
+    const auto * second_arg_function = args.size() >= 2 ? args[1]->as<ASTFunction>() : nullptr;
+    const bool throw_unknown_collection = second_arg_function && second_arg_function->name == "equals";
+    if (!is_cluster_function
+        && (named_collection
+            = tryGetNamedCollectionWithOverrides(args, context, throw_unknown_collection, &complex_args, dependent_table_id)))
     {
         /// Simple literal overrides are already merged into `named_collection` by
         /// tryGetNamedCollectionWithOverrides; only the complex (non-literal) overrides arrive in

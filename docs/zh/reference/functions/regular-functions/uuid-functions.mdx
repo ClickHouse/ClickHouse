@@ -235,7 +235,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **参数**
 
 * `uuid` — UUID 第 7 版。[`String`](/zh/reference/data-types/string)
-* `timezone` — 可选。返回值使用的[时区名称](/zh/reference/settings/server-settings/settings#timezone)。[`String`](/zh/reference/data-types/string)
+* `timezone` — 可选。返回值使用的[时区名称](/zh/reference/settings/server-settings/settings/other#timezone)。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -343,13 +343,9 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
 
 引入版本：v25.8.0
 
-将 [DateTime](/zh/reference/data-types/datetime) 值转换为给定时间对应的 [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7)。
+将 [DateTime](/zh/reference/data-types/datetime) 值转换为给定时间对应的 [UUIDv7](https://www.rfc-editor.org/rfc/rfc9562)，如 [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562) 所定义。
 
 有关 UUID 结构、计数器管理以及并发保证的详细信息，请参见[&quot;UUIDv7 生成&quot;](#uuidv7-generation)一节。
-
-<Note>
-  截至 2025 年 9 月，第 7 版 UUID 仍处于草案阶段，其布局未来可能会发生变化。
-</Note>
 
 <Note>
   此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
@@ -533,13 +529,9 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
 
 引入版本：v24.5.0
 
-生成一个[第 7 版](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04)的 [UUID](/zh/reference/data-types/uuid)。
+生成由 [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562) 定义的[第 7 版](https://www.rfc-editor.org/rfc/rfc9562) [UUID](/zh/reference/data-types/uuid)。
 
 有关 UUID 结构、计数器管理和并发保证的详细信息，请参见[&quot;UUIDv7 生成&quot;](#uuidv7-generation)一节。
-
-<Note>
-  截至 2025 年 9 月，第 7 版 UUID 仍处于草案阶段，其布局今后可能会发生变化。
-</Note>
 
 <Note>
   此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
@@ -605,7 +597,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID。[`UInt64`](/zh/reference/data-types/int-uint)
 * `epoch` — 可选。Snowflake ID 的纪元，以自 1970-01-01 起经过的毫秒数表示。默认值为 0 (1970-01-01) 。如果使用 Twitter/X 纪元 (2015-01-01) ，请提供 1288834974657。[`UInt*`](/zh/reference/data-types/int-uint)
-* `time_zone` — 可选。[时区](/zh/reference/settings/server-settings/settings#timezone)。该函数会根据该时区解析 `time_string`。[`String`](/zh/reference/data-types/string)
+* `time_zone` — 可选。[时区](/zh/reference/settings/server-settings/settings/other#timezone)。该函数会根据该时区解析 `time_string`。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -643,7 +635,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID。[`UInt64`](/zh/reference/data-types/int-uint)
 * `epoch` — 可选。Snowflake ID 的纪元，以自 1970-01-01 起经过的毫秒数表示。默认为 0 (1970-01-01) 。对于 Twitter/X 纪元 (2015-01-01) ，请提供 1288834974657。[`UInt*`](/zh/reference/data-types/int-uint)
-* `time_zone` — 可选。[时区](/zh/reference/settings/server-settings/settings#timezone)。该函数会根据该时区解析 `time_string`。[`String`](/zh/reference/data-types/string)
+* `time_zone` — 可选。[时区](/zh/reference/settings/server-settings/settings/other#timezone)。该函数会根据该时区解析 `time_string`。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
