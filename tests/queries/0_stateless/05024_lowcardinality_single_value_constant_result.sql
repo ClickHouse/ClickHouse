@@ -58,10 +58,12 @@ SELECT count() FROM (SELECT toLowCardinality(if(number = 3, 'x', '')) AS lc FROM
 
 SELECT 'correlated subquery';
 -- Decorrelation evaluates the condition on one row at plan time, which must not be folded either.
+-- Correlated subqueries need the analyzer, so pin it for this query only.
 DROP TABLE IF EXISTS t_lc_correlated;
 CREATE TABLE t_lc_correlated (id UInt64, lc LowCardinality(String)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_lc_correlated VALUES (0, ''), (1, 'a');
-SELECT id FROM t_lc_correlated WHERE EXISTS (SELECT 1 FROM numbers(3) WHERE t_lc_correlated.lc != '') ORDER BY id;
+SELECT id FROM t_lc_correlated WHERE EXISTS (SELECT 1 FROM numbers(3) WHERE t_lc_correlated.lc != '')
+ORDER BY id SETTINGS enable_analyzer = 1;
 
 SELECT 'several keys with the same result';
 DROP TABLE IF EXISTS t_lc_two_values;
