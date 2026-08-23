@@ -205,11 +205,19 @@ from chdb import session as chs
 
 Next, we'll initialize a session.
 If we want the session to be persisted to disk, we need to provide a directory name.
-If we leave it blank, the database will be in-memory and lost as soon as we kill the Python process.
+If we leave it blank, the session is temporary: chDB stores its data in a temporary directory on disk that is removed when the session is closed, so it is lost as soon as we kill the Python process.
 
 ```python
 sess = chs.Session("gettingStarted.chdb")
 ```
+
+<Note>
+chDB runs a single embedded engine per process, so the database directory (its path) follows a few rules:
+
+- **One process per path**: a chDB data directory can be opened by only one operating system process at a time. A second process that opens the same path fails until the first one closes.
+- **One path per process**: while any connection is open you cannot open another connection for a *different* path — close the existing connection(s) first. Any number of connections to the *same* path may be open at the same time.
+- **Concurrency**: connections to the same path can run queries concurrently; for best performance, use a separate connection per thread.
+</Note>
 
 Next, we'll create a database:
 
