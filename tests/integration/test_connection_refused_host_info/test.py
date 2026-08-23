@@ -7,6 +7,9 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node")
 peer = cluster.add_instance("peer")
 proxy_node = cluster.add_instance("proxy_node", main_configs=["configs/proxy.xml"])
+proxy_multi_node = cluster.add_instance(
+    "proxy_multi_node", main_configs=["configs/proxy_multi.xml"]
+)
 
 
 @pytest.fixture(scope="module")
@@ -53,3 +56,27 @@ def test_connection_refused_through_proxy_names_the_resolved_proxy(started_clust
     )
     assert "Connection refused" in error
     assert f"{peer_ip}:1" in error, f"expected the resolved proxy address in: {error}"
+
+
+def test_connection_refused_through_multi_record_proxy_names_one_record(started_cluster):
+    # The single-record proxy case above cannot notice the tunnel re-resolving the proxy name (two
+    # resolutions in one process return the same record); with two A records behind the name, only
+    # naming a concrete record proves the error reports an address that was really dialled. The
+    # gtest ProxyTunnelDialsTheCallerResolvedAddress pins down deterministically which one that is.
+    peer_ip = cluster.get_instance_ip("peer")
+    node_ip = cluster.get_instance_ip("node")
+    proxy_multi_node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf '{peer_ip} proxymulti\\n{node_ip} proxymulti\\n' >> /etc/hosts",
+        ]
+    )
+    error = proxy_multi_node.query_and_get_error(
+        "SELECT * FROM url('https://peer:443/', 'CSV', 's String') SETTINGS http_max_tries = 1"
+    )
+    assert "Connection refused" in error
+    assert "proxymulti:1" not in error, f"the proxy must be named by address, not name: {error}"
+    assert (
+        f"{peer_ip}:1" in error or f"{node_ip}:1" in error
+    ), f"expected a concrete proxy record in: {error}"
