@@ -107,6 +107,10 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
         }
         EXPECT_EQ(CurrentThread::getQueryId(), "BgSchPool::test-query-id")
             << "The no-op destructor after a failed construction must not clear the restored query_id";
+
+        /// `~ThreadStatus` asserts that a thread without a query context carries no query id, so
+        /// the directly assigned one has to be dropped before the thread status goes away.
+        ts.clearQueryId();
     });
     t.join();
 }
