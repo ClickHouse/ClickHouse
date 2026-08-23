@@ -68,6 +68,23 @@ ASTPtr makeEqualityCondition(const std::string & field, ASTPtr constant)
     return makeASTFunction("has", std::move(field_elements), std::move(constant));
 }
 
+/** The condition of a regular expression on a field. Mongo applies it element wise on an array
+  * field, the same way `$eq` and `$in` are applied (see `makeEqualityCondition`): the field is
+  * normalized to the array of its elements and every one of them is tested. A scalar field
+  * becomes the one element array of itself, so it keeps the plain match. A field of nested
+  * arrays is flattened through every level rather than one.
+  */
+ASTPtr makeRegularExpressionCondition(const std::string & field, const String & pattern)
+{
+    const std::string element = "__mongo_regexp_element";
+    auto lambda = makeASTFunction(
+        "lambda",
+        makeASTFunction("tuple", make_intrusive<ASTIdentifier>(element)),
+        makeASTFunction("match", make_intrusive<ASTIdentifier>(element), make_intrusive<ASTLiteral>(Field(pattern))));
+    auto field_elements = makeASTFunction("flatten", makeASTFunction("array", make_intrusive<ASTIdentifier>(field)));
+    return makeASTFunction("arrayExists", std::move(lambda), std::move(field_elements));
+}
+
 /** One `<field>: {<operator>: <argument>}` condition of a filter.
   *
   * `document` is the whole operator document, which `$regex` needs because its `$options` are a
@@ -109,7 +126,7 @@ ASTPtr parseFieldOperator(
         auto pattern = tryParseMongoRegularExpression(document);
         if (!pattern)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read the regular expression of '{}'", name);
-        return makeASTFunction("match", identifier(), make_intrusive<ASTLiteral>(Field(*pattern)));
+        return makeRegularExpressionCondition(field, *pattern);
     }
 
     if (name == "$in" || name == "$nin")
@@ -275,7 +292,7 @@ bool MongoIdentityFunction::parseImpl(ASTPtr & node)
     {
         if (auto pattern = tryParseMongoRegularExpression(data))
         {
-            node = makeASTFunction("match", make_intrusive<ASTIdentifier>(edge_name), make_intrusive<ASTLiteral>(Field(*pattern)));
+            node = makeRegularExpressionCondition(edge_name, *pattern);
             return true;
         }
     }
