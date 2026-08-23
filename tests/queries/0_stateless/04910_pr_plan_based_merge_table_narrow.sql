@@ -60,13 +60,25 @@ FROM (EXPLAIN PIPELINE SELECT count() FROM m_pbmn
       SETTINGS max_streams_for_union_step = 0, max_streams_for_union_step_to_max_threads_ratio = 0);
 
 -- Narrowing concatenates the reads in an arbitrary order, so it is only allowed while nothing above the
--- union relies on each of its streams being sorted on its own. Reading in order does not reach through the
--- expanded `Merge`, because the read-in-order optimization does not descend a `UnionStep`, so the `ORDER BY`
--- is a full sort and narrowing stays allowed - and the result is still ordered. If the optimization is ever
--- taught to descend the union, `optimizeReadInOrder` and `applyOrder` disable narrowing for it, and the
--- first result below flips to 0 while the second one stays the same.
-SELECT '-- ORDER BY is a full sort above the union, narrowing stays allowed';
-SELECT countIf(explain LIKE '%Concat%') > 0 AS has_concat, countIf(explain LIKE '%MergeSortingTransform%') > 0 AS has_full_sort
+-- union relies on each of its streams being sorted on its own. An `ORDER BY` with a `LIMIT` is exactly such
+-- a consumer: the sort is shipped with the fragment (a per-replica sort and a local top-N, merged on the
+-- initiator - see the `SortingStep` case of `ApplyParallelReplicasVisitor`), and reading in order reaches
+-- the underlying tables through the expanded `Merge`, so every branch of the union delivers a sorted stream
+-- that a merge above it consumes. Narrowing is therefore switched off for that union, and the plan and the
+-- pipeline below say so positively instead of just reporting the absence of a `Concat`.
+SELECT '-- ORDER BY with LIMIT: the sort is shipped and the children are read in order';
+SELECT arrayStringConcat(arrayCompact(groupArray(step)), ' ')
+FROM (
+    SELECT trimLeft(explain) AS step
+    FROM (EXPLAIN actions = 0, pretty = 0, optimize = 1, description = 0, header = 0
+          SELECT k FROM m_pbmn ORDER BY k LIMIT 5
+          SETTINGS optimize_read_in_order = 1, max_streams_for_union_step = 1,
+                   max_streams_for_union_step_to_max_threads_ratio = 0)
+    WHERE step IN ('Limit', 'Sorting', 'Union', 'ReadFromMerge', 'ReadFromMergeTree', 'ReadFromParallelReplicas')
+);
+SELECT
+    countIf(explain LIKE '%ReadPoolParallelReplicasInOrder%') > 0 AS children_read_in_order,
+    countIf(explain LIKE '%Concat%') > 0 AS has_concat
 FROM (EXPLAIN PIPELINE SELECT k FROM m_pbmn ORDER BY k LIMIT 5
       SETTINGS optimize_read_in_order = 1, max_streams_for_union_step = 1,
                max_streams_for_union_step_to_max_threads_ratio = 0);
