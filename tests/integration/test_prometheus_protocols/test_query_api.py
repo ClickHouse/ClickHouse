@@ -168,6 +168,15 @@ def test_format_query_get():
     assert data == {"status": "success", "data": "foo / bar"}
 
 
+def test_format_query_preserves_explicit_parentheses():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/format_query",
+        params={"query": "foo + (bar * baz)"},
+    )
+    assert response.status_code == requests.codes.ok, response.text
+    assert response.json() == {"status": "success", "data": "foo + (bar * baz)"}
+
+
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
@@ -317,7 +326,6 @@ def test_format_query_rejects_invalid_query(query):
         "topk(foo, bar)",
         '{job=~"["}',
         '{job=~".*"}',
-        '{__name__="foo",__name__="bar"}',
         "foo + on(job) group_left(job) bar",
         "foo + on(job) group_right(job) bar",
     ],
@@ -345,6 +353,7 @@ def test_format_query_rejects_semantically_invalid_query(query):
         "1 + ignoring() 2",
         "1 + on() 2",
         '{job=~".+"}',
+        '{__name__="foo",__name__="bar"}',
         'label_replace(foo, "label", "value", "source", "regex")',
     ],
 )

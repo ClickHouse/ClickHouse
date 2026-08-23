@@ -59,6 +59,7 @@ public:
     public:
         NodeType node_type{};
         ResultType result_type{};          /// The data type this node with its children evaluates to.
+        UInt32 explicit_parentheses = 0;   /// Number of pairs of parentheses written around this node in the input.
         std::vector<const Node *> children;  /// E.g. arguments for a function, matchers for selectors.
         const Node * parent = nullptr;
         Node() = default;

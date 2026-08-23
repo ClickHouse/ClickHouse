@@ -981,6 +981,19 @@ namespace
             }
         }
 
+        std::any visitParens(antlr4_grammars::PromQLParser::ParensContext * ctx) override
+        {
+            auto * node = makeNode(ctx->vectorOperation());
+            if (!node)
+            {
+                chassert(error_listener.hasError());
+                return {};
+            }
+
+            ++node->explicit_parentheses;
+            return node;
+        }
+
         std::any visitFunction_(antlr4_grammars::PromQLParser::Function_Context * ctx) override
         {
             std::vector<Node *> arguments;

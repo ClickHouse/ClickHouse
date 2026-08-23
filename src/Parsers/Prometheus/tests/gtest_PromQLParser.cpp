@@ -80,6 +80,8 @@ namespace
             return lhs == rhs;
         if (lhs->result_type != rhs->result_type)
             return false;
+        if (lhs->explicit_parentheses != rhs->explicit_parentheses)
+            return false;
 
         if (lhs->node_type != rhs->node_type)
         {
@@ -261,6 +263,16 @@ TEST(PromQLParser, TrailingComment)
 }
 
 
+TEST(PromQLParser, ParenthesesAreSourceMetadata)
+{
+    PrometheusQueryTree query_tree{R"((foo + bar))"};
+    const auto * binary = typeid_cast<const PrometheusQueryTree::BinaryOperator *>(query_tree.getRoot());
+    ASSERT_NE(binary, nullptr);
+    EXPECT_EQ(binary->explicit_parentheses, 1);
+    EXPECT_EQ(query_tree.toString(), "foo + bar");
+}
+
+
 TEST(PromQLParser, PrometheusFormatting)
 {
     expectPrometheusFormatting(
@@ -306,7 +318,10 @@ TEST(PromQLParser, PrometheusFormatting)
     expectPrometheusFormatting(R"(-Inf)", R"(-Inf)");
     expectPrometheusFormatting(R"(NaN)", R"(NaN)");
     expectPrometheusFormatting(R"(foo + on(job) group_left(instance) bar)", R"(foo + on (job) group_left (instance) bar)");
-    expectPrometheusFormatting(R"(foo + on(inf) group_left(nan) bar)", R"(foo + on ("inf") group_left ("nan") bar)");
+    expectPrometheusFormatting(R"(foo + on(inf) group_left(nan) bar)", R"(foo + on (inf) group_left (nan) bar)");
+    expectPrometheusFormatting(R"((foo))", R"((foo))");
+    expectPrometheusFormatting(R"(((foo + bar)))", R"(((foo + bar)))");
+    expectPrometheusFormatting(R"(foo + (bar * baz))", R"(foo + (bar * baz))");
     expectPrometheusFormatting(R"(foo + ignoring() bar)", R"(foo + bar)");
     expectPrometheusFormatting(R"(foo + on() group_left() bar)", R"(foo + on () group_left () bar)");
     expectPrometheusFormatting(R"(1 + ignoring() 2)", R"(1 + 2)");
@@ -349,7 +364,6 @@ TEST(PromQLParser, StaticValidation)
              "topk(foo, bar)",
              R"({job=~"["})",
              R"({job=~".*"})",
-             R"({__name__="foo",__name__="bar"})",
              "foo + on(job) group_left(job) bar",
              "foo + on(job) group_right(job) bar",
          })
@@ -377,6 +391,8 @@ TEST(PromQLParser, PrometheusFormattingPreservesPrecedenceWhenSplitting)
 {
     String long_metric = "metric_";
     long_metric.append(100, 'x');
+    String boundary_metric = "metric_";
+    boundary_metric.append(93, 'x');
 
     expectPrometheusFormatting(
         fmt::format("(foo + bar) * {}", long_metric),
@@ -390,6 +406,9 @@ TEST(PromQLParser, PrometheusFormattingPreservesPrecedenceWhenSplitting)
     expectPrometheusFormatting(
         fmt::format("(foo + {})[5m:]", long_metric),
         fmt::format("(\n    foo\n  +\n    {}\n)[5m:]", long_metric));
+    expectPrometheusFormatting(
+        fmt::format("foo + ({})", boundary_metric),
+        fmt::format("  foo\n+\n  (\n    {}\n  )", boundary_metric));
 }
 
 
@@ -501,6 +520,9 @@ TEST(PromQLParser, MultipleMetricNameMatchers)
     expectRoundTrip(R"({"bar",__name__=~"ba.*"})", R"({"bar",__name__=~"ba.*"})");
     expectRoundTrip(R"({"foo","bar"})", R"({"foo","bar"})");
     expectRoundTrip(R"({__name__="foo",__name__="bar"})", R"({"foo","bar"})");
+
+    PrometheusQueryTree query_tree{R"({__name__="foo",__name__="bar"})"};
+    EXPECT_NO_THROW(query_tree.validate());
 }
 
 
