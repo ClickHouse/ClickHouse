@@ -10,7 +10,7 @@
 namespace DB
 {
 
-static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree & storage)
+static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree & storage, const MergeTreeTransactionPtr & tx)
 {
     auto patches_vector = storage.getPatchPartsVectorForInternalUsage();
 
@@ -18,7 +18,15 @@ static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree &
     patch_infos.reserve(patches_vector.size());
 
     for (const auto & patch : patches_vector)
+    {
+        /// A patch part of a transaction that has not committed yet is already active. Applying it
+        /// on a merge would put an update that can still roll back into the merged part, so require
+        /// the same visibility that 'MergeTreePartsCollector' requires of the parts being merged.
+        if (tx && !patch->version->isVisible(tx->getSnapshot(), Tx::EmptyTID))
+            continue;
+
         patch_infos.push_back(patch->info);
+    }
 
     return patch_infos;
 }
@@ -89,8 +97,8 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
         data_versions_by_partition = getDataVersionsByPartition(parts_visible_for_merge);
 
     /// The patch parts that a merge applies must be visible to that merge itself, and nothing here
-    /// checks their visibility later, so they are taken from the active parts only.
-    patches_by_partition = getPatchPartsByPartition(getPatchPartInfos(storage), min_update_block.value_or(std::numeric_limits<Int64>::max()));
+    /// checks their visibility later, so they are taken from the active parts that the transaction sees.
+    patches_by_partition = getPatchPartsByPartition(getPatchPartInfos(storage, tx_), min_update_block.value_or(std::numeric_limits<Int64>::max()));
 }
 
 std::expected<void, PreformattedMessage>
