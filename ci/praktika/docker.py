@@ -5,6 +5,24 @@ from typing import Dict, List
 from .settings import Settings
 from .utils import Shell, Utils
 
+# Matched against the pull's stderr. Transport-class phrases only: must never match a
+# permanent failure (`manifest unknown`, `pull access denied`, `no matching manifest`).
+_IMAGE_PULL_RETRY_ERRORS = [
+    "connection reset by peer",
+    "connection refused",
+    "TLS handshake timeout",
+    "i/o timeout",
+    "unexpected EOF",
+    # A nameserver answered badly (SERVFAIL), so the name can resolve next attempt.
+    # Its NXDOMAIN sibling `no such host` is permanent and is deliberately absent.
+    "server misbehaving",
+    # What `timeout --verbose` writes when it kills a stalled attempt. Plain `timeout`
+    # writes nothing, so without this entry a stall is not retried.
+    "sending signal TERM to command",
+]
+_IMAGE_PULL_TIMEOUT_S = 300  # per attempt, matching prefetch-integration-test-images
+_IMAGE_PULL_RETRIES = 3
+
 
 class Docker:
     class Platforms:
@@ -155,6 +173,23 @@ class Docker:
             else:
                 dockers.append(dockers.pop(i))
         return dockers
+
+    @classmethod
+    def pull_image(cls, image, *, strict=False, on_retry=None, verbose=True):
+        """Pull `image`, retrying only transport-class failures.
+
+        `strict` raises on a failed pull; `on_retry(matched, attempt, attempts)`
+        is called once per actual retry, so a caller with a report surface can
+        make the retry visible. Returns the pull's exit code.
+        """
+        return Shell.run(
+            f"timeout --verbose {_IMAGE_PULL_TIMEOUT_S} docker pull {image}",
+            strict=strict,
+            retries=_IMAGE_PULL_RETRIES,
+            retry_errors=_IMAGE_PULL_RETRY_ERRORS,
+            verbose=verbose,
+            on_retry=on_retry,
+        )
 
     @classmethod
     def login(cls, user_name, user_password):

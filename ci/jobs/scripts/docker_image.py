@@ -2,7 +2,9 @@ import json
 import os
 from typing import Optional
 
-from ci.praktika.utils import Shell, Utils
+from ci.praktika.docker import Docker
+from ci.praktika.info import Info
+from ci.praktika.utils import Utils
 
 DOCKER_TAG = os.getenv("DOCKER_TAG", "latest")
 
@@ -21,10 +23,18 @@ class DockerImage:
     def __repr__(self):
         return f"DockerImage({self.name}:{self.version})"
 
+    def _warn_pull_retried(self, matched, attempt, attempts):
+        # A job script holds no frame-local env, so Info() is the route here (as in
+        # scripts/server_cleanup.py); _add_report_message dumps immediately.
+        Info().add_workflow_warning(
+            f"Job image pull failed with [{matched}] and was retried "
+            f"({attempt}/{attempts}): {self}"
+        )
+
     def pull_image(self):
         try:
             print(f"Pulling image {self} - start")
-            Shell.check(f"docker pull {self}", strict=True)
+            Docker.pull_image(str(self), strict=True, on_retry=self._warn_pull_retried)
             print(f"Pulling image {self} - done")
         except Exception as ex:
             print(f"Got exception pulling docker: {ex}")
