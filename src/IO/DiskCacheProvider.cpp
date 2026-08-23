@@ -326,27 +326,18 @@ size_t DiskCacheWriter::committed() const
     return std::clamp(frontier, aligned_range.offset, aligned_range.end());
 }
 
-CacheWriter::Claim DiskCacheWriter::claimLeadRole(ByteRange range)
+CacheWriter::Claim DiskCacheWriter::claimLeadRole()
 {
-    /// `range` is FILE-space, within our one segment. For the uncommitted tail we either win the role
-    /// (hold the returned claim, fetch+write it) or a concurrent downloader leads it (hold nothing; the
-    /// caller reads `committed()` and waits). The committed prefix itself is read via `committed()`.
+    /// Our one segment. If it has an uncommitted tail we either win the role (hold the claim, fetch+write
+    /// it) or a concurrent downloader leads it (hold nothing; the caller reads `committed()` and waits).
     FileSegment & seg = segment();
-    const auto & seg_range = seg.range();
-    const size_t seg_file_lo = seg_range.left + object_file_offset;
-    const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
-
-    const size_t lo = std::max(range.offset, seg_file_lo);
-    const size_t hi = std::min(range.end(), seg_file_hi);
-    if (lo >= hi)
-        return {};
+    const size_t seg_file_hi = seg.range().right + 1 + object_file_offset;
 
     if (seg.state() == FileSegmentState::DOWNLOADED)
-        return {};   // fully cached: readable via committed(), no role
+        return {};   /// fully cached: readable via committed(), no role
 
-    /// The write offset is monotonic and readable without the role. If it already covers the overlap,
-    /// nothing is left to fill - take NO role, skipping a needless acquire+release.
-    if (seg.getCurrentWriteOffset() + object_file_offset >= hi)
+    /// The write offset is readable without the role; if it already covers the segment, nothing to fill.
+    if (seg.getCurrentWriteOffset() + object_file_offset >= seg_file_hi)
         return {};
 
     /// Acquire the role for the tail. Never nested (one claim per write), so we do not already hold it.
@@ -374,10 +365,8 @@ CacheWriter::Claim DiskCacheWriter::claimLeadRole(ByteRange range)
     if (!won)
         return {};   /// a concurrent downloader leads the tail: hold nothing, the caller waits on it
 
-    /// `cwo` is exact now that we hold the role. Shift to file space.
-    const size_t fetch_lo = std::max(lo, seg.getCurrentWriteOffset() + object_file_offset);
-    if (fetch_lo >= hi)
-        return {};   /// committed prefix already covers the range: nothing to fill (the guard releases)
+    if (seg.getCurrentWriteOffset() + object_file_offset >= seg_file_hi)
+        return {};   /// filled since the pre-check: nothing left (the guard releases the role)
 
     /// Hand the role to the Claim (disarming the guard). The release captures the segment (a shared
     /// ref), not the writer.

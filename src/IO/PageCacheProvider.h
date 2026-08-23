@@ -65,10 +65,9 @@ public:
     bool fillsWholeSegment() const override { return true; }
     size_t write(ChainedBuffers data, const Claim & claim) override;
     ChainedBuffers read(ByteRange sub) override;
-    /// Re-probe the cache: the block may have been populated by a concurrent query since `resolve`. If
-    /// so, adopt its cell and report the whole block as `available` (already committed, served from
-    /// cache) with no claim; otherwise hold the claim to fill it.
-    Claim claimLeadRole(ByteRange range) override;
+    /// Re-probe the cache: if the block was cached by a concurrent query since `resolve`, adopt its cell
+    /// (`committed()` then reports it) and hold no claim; otherwise hold the claim to fill it.
+    Claim claimLeadRole() override;
 
 private:
     PageCachePtr cache;

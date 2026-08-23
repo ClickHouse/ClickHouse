@@ -97,7 +97,7 @@ ChainedBuffers makeChain(size_t offset, size_t size, char fill)
 /// claim always authorizes; mirrors how the executor drives a write under a held claim.
 size_t claimedWrite(CacheWriter & writer, ChainedBuffers chain)
 {
-    auto claim = writer.claimLeadRole(writer.range());
+    auto claim = writer.claimLeadRole();
     if (!claim)
         return 0;
     return writer.write(std::move(chain), claim);
@@ -502,7 +502,7 @@ TEST(PageCacheBuffers, ClaimLeadRoleAdoptsBlockCachedSinceResolve)
     /// The late writer's claimLeadRole re-probes: the block is now resident, so it holds no claim and
     /// `committed()` reports the whole block.
     auto & late_writer = *late[0].writer;
-    auto claim = late_writer.claimLeadRole(late_writer.range());
+    auto claim = late_writer.claimLeadRole();
     EXPECT_FALSE(static_cast<bool>(claim)) << "nothing left to fill: the block is already committed";
     EXPECT_EQ(late_writer.committed(), block_size);
 

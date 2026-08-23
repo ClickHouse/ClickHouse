@@ -107,7 +107,7 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
     return loaded ? range_member.size : 0;
 }
 
-CacheWriter::Claim PageCacheWriter::claimLeadRole(ByteRange /*range*/)
+CacheWriter::Claim PageCacheWriter::claimLeadRole()
 {
     /// Re-probe read-only: if the block was cached by a concurrent query since `resolve`, adopt its cell
     /// (`committed()` then reports the whole block) and hold no claim; otherwise hold the claim to fill it.

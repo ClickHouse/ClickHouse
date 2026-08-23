@@ -124,12 +124,12 @@ public:
     /// Serve an already-committed sub-range from this writer's own held segments. Do not go to the source.
     virtual ChainedBuffers read(ByteRange subrange) = 0;
 
-    /// Acquire the downloader role for the segment overlapping `range` (clamped). The only place that
-    /// acquires a role; `write` never takes one. Return a held `Claim` iff there is an uncommitted tail
-    /// this thread must fill; an empty `Claim` means either the range is already committed (read it via
-    /// `committed()`) or a concurrent downloader leads the tail (`waitAndRead` it). Do not wait.
-    /// Default: a non-coordinating tier, role trivially held.
-    virtual Claim claimLeadRole(ByteRange /*range*/)
+    /// Acquire the downloader role for this writer's segment. The only place that acquires a role;
+    /// `write` never takes one. Return a held `Claim` iff there is an uncommitted tail this thread must
+    /// fill; an empty `Claim` means either the segment is already committed (read it via `committed()`)
+    /// or a concurrent downloader leads the tail (`waitAndRead` it). Do not wait. Default: a
+    /// non-coordinating tier, role trivially held.
+    virtual Claim claimLeadRole()
     {
         return makeClaim(/*held=*/true, /*release=*/nullptr);
     }

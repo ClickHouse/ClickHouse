@@ -462,7 +462,7 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
     for (auto * writer : writers)
     {
         const bool covers_head = writer->range().offset <= pos && pos < writer->range().end();
-        CacheWriter::Claim claim = writer->claimLeadRole(writer->range());
+        CacheWriter::Claim claim = writer->claimLeadRole();
         if (covers_head && pos < writer->committed())   /// committed prefix `[range.offset, committed)` covers `pos`
             return writer->read(ByteRange{pos, serve_len(writer->committed())});
         if (covers_head && !claim)

@@ -207,19 +207,13 @@ private:
                 return {};
             return read(sub);
         }
-        Claim claimLeadRole(ByteRange range) override
+        Claim claimLeadRole() override
         {
-            const size_t lo = std::max(range.offset, r.offset);
-            const size_t hi = std::min(range.end(), r.end());
-            if (lo >= hi)
-                return {};
-            const ByteRange overlap{lo, hi - lo};
             /// A block populated since `resolve` (`committed()` now reports it): nothing to fill, no claim.
-            if (state->late_committed.subtract(overlap).empty())
+            if (state->late_committed.subtract(r).empty())
                 return {};
-            /// We hold the role over the free part (not led by a concurrent downloader); if the whole
-            /// overlap is being downloaded elsewhere we hold nothing, matching the real provider.
-            const bool held = !state->concurrent_download.subtract(overlap).empty();
+            /// We hold the role unless the whole segment is being downloaded elsewhere (then hold nothing).
+            const bool held = !state->concurrent_download.subtract(r).empty();
             return makeClaim(held, /*release=*/nullptr);
         }
         size_t write(ChainedBuffers data, const Claim & claim) override

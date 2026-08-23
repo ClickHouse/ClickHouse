@@ -67,7 +67,7 @@ public:
     size_t committed() const override;
     size_t write(ChainedBuffers data, const Claim & claim) override;
     ChainedBuffers read(ByteRange subrange) override;
-    Claim claimLeadRole(ByteRange range) override;
+    Claim claimLeadRole() override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
 
 private:
