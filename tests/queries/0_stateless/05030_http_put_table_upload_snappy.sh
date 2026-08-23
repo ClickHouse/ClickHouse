@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-# Tags: no-fasttest no-replicated-database
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
