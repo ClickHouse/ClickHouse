@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/memcpySmall.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <base/arithmeticOverflow.h>
 #include <base/memcmpSmall.h>
 #include <base/unaligned.h>
@@ -890,15 +891,20 @@ void NO_INLINE Aggregator::buildBucketGroupedAggregateChunk(
         {
             if (payload.argument_columns[position])
                 continue;
-            /// A constant argument stays constant: resizing it to the record count is
-            /// exact and avoids materializing the whole block just to gather from it.
-            /// A sparse argument is materialized before the gather: the staged rows are
-            /// an arbitrary subset of the block, and the drain applies plain dense
-            /// batches to them, so nothing downstream wants the sparse representation.
-            if (isColumnConst(*columns[position]))
-                payload.argument_columns[position] = columns[position]->cloneResized(total);
-            else
-                payload.argument_columns[position] = recursiveRemoveSparse(columns[position]->getPtr())->index(*gather_indexes, 0);
+            /// The gather stays on the cheap representation: a constant is resized and a
+            /// sparse column is gathered in its sparse form, instead of materializing the
+            /// whole block just to gather the staged subset from it. The gathered column is
+            /// then normalized to the dense form the drain consumes (the representation
+            /// wrappers stripped recursively, then `LowCardinality`), so the chunk stores
+            /// exactly what will be drained: the thaw estimate and the pinned memory
+            /// accounting measure the real payload, the publish-time preparation wires the
+            /// columns directly instead of pinning a second, dense copy next to the wrapper,
+            /// and a gathered `LowCardinality` no longer holds the source block's dictionary
+            /// alive until the merge.
+            ColumnPtr gathered = isColumnConst(*columns[position])
+                ? columns[position]->cloneResized(total)
+                : columns[position]->index(*gather_indexes, 0);
+            payload.argument_columns[position] = recursiveRemoveLowCardinality(gathered->convertToFullIfWrapped());
         }
 }
 
