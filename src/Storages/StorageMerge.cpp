@@ -736,7 +736,7 @@ static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<Quer
     /// first sibling's header, and a later sibling may hold a Const exactly where the first holds a
     /// full column.
     auto target = std::make_shared<const Block>(std::move(common));
-    for (auto & cur_pipeline : pipelines)
+    for (const auto & cur_pipeline : pipelines)
     {
         if (blocksHaveEqualStructure(cur_pipeline->getHeader(), *target))
             continue;
