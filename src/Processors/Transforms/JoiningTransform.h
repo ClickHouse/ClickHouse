@@ -5,6 +5,7 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <Processors/ISpillable.h>
 #include <Processors/ISource.h>
 #include <Interpreters/IJoin.h>
 
@@ -115,7 +116,7 @@ private:
 /// Fills Join with block from right table.
 /// Has single input and single output port.
 /// Output port has empty header. It is closed when all data is inserted in join.
-class FillingRightJoinSideTransform final : public IProcessor
+class FillingRightJoinSideTransform final : public IProcessor, public ISpillable
 {
 public:
     FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
@@ -126,6 +127,7 @@ public:
     Status prepare() override;
     void work() override;
 
+    ISpillable * getSpillable() override { return spillable ? this : nullptr; }
     ProcessorMemoryStats getMemoryStats() override;
     bool spillOnSize(size_t bytes) override;
 
@@ -133,6 +135,7 @@ private:
     JoinPtr join;
     FinishCounterPtr finish_counter;
     Chunk chunk;
+    bool spillable = false;
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;

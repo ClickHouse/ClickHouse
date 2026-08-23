@@ -1,5 +1,6 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/ExecutionThreadContext.h>
+#include <Processors/ISpillable.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -52,8 +53,8 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 {
     try
     {
-        if (node->processor()->isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor());
+        if (auto * spillable = node->processor()->getSpillable(); spillable && CurrentThread::getGroup())
+            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(spillable);
 
         node->processor()->work();
 
