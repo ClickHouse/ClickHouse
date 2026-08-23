@@ -5,6 +5,7 @@
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/QueueWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -672,8 +673,8 @@ void QueryPipeline::activateQueryResultPreviews()
             continue;
 
         bool downstream_path_is_safe = true;
-        std::unordered_set<const IProcessor *> visited;
-        std::vector<const IProcessor *> to_visit{processor.get()};
+        UnorderedSetWithMemoryTracking<const IProcessor *> visited;
+        VectorWithMemoryTracking<const IProcessor *> to_visit{processor.get()};
         visited.insert(processor.get());
 
         while (downstream_path_is_safe && !to_visit.empty())
