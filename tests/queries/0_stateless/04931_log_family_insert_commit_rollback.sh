@@ -18,36 +18,36 @@ for engine in Log TinyLog StripeLog; do
         echo "--- $engine / $failpoint"
         tbl="t_${engine}_${failpoint}"
 
-        $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $tbl"
-        $CLICKHOUSE_CLIENT -q "CREATE TABLE $tbl (a UInt64, arr Array(Array(Int64))) ENGINE = $engine"
-        $CLICKHOUSE_CLIENT -q "INSERT INTO $tbl SELECT number, [[number, number + 1], [number + 2]] FROM numbers(100)"
+        $CLICKHOUSE_CLIENT -q "
+            DROP TABLE IF EXISTS $tbl;
+            DROP TABLE IF EXISTS ${tbl}_before;
+            CREATE TABLE $tbl (a UInt64, arr Array(Array(Int64))) ENGINE = $engine;
+            INSERT INTO $tbl SELECT number, [[number, number + 1], [number + 2]] FROM numbers(100);
+            SYSTEM ENABLE FAILPOINT $failpoint"
 
         # Rows in [500, 560) belong to the insert that is made to fail, so they must never appear.
-        $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $failpoint"
+        # It stays on its own connection: a statement that throws ends the whole request, so
+        # anything batched after it here would silently not run.
         $CLICKHOUSE_CLIENT -q "INSERT INTO $tbl SELECT number, [[number]] FROM numbers(500, 60)" 2>&1 \
             | grep -q -F "FAULT_INJECTED" && echo "failed insert was rejected: 1" || echo "failed insert was rejected: 0"
-        $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $failpoint"
 
-        # This insert reuses the metadata the rolled back one left behind. It must succeed, and only
-        # its own rows may be added.
-        $CLICKHOUSE_CLIENT -q "INSERT INTO $tbl SELECT number, [[number]] FROM numbers(9000, 40)"
-
-        echo "rows of the failed insert: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM $tbl WHERE a >= 500 AND a < 560")"
-        echo "rows: $($CLICKHOUSE_CLIENT -q "SELECT count(), sum(a) FROM $tbl")"
-        echo "arrays readable: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM (SELECT a, arr FROM $tbl ORDER BY a DESC LIMIT 10) WHERE length(arr) > 0" 2>&1 | tail -1)"
-
-        before=$($CLICKHOUSE_CLIENT -q "SELECT count(), sum(a) FROM $tbl")
-        $CLICKHOUSE_CLIENT -q "DETACH TABLE $tbl"
-        $CLICKHOUSE_CLIENT -q "ATTACH TABLE $tbl"
-        after=$($CLICKHOUSE_CLIENT -q "SELECT count(), sum(a) FROM $tbl")
-        if [ "$before" = "$after" ]; then
-            echo "reload keeps the same data: 1"
-        else
-            echo "reload keeps the same data: 0 ($before vs $after)"
-        fi
-
-        echo "rows of the failed insert after reload: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM $tbl WHERE a >= 500 AND a < 560")"
-
-        $CLICKHOUSE_CLIENT -q "DROP TABLE $tbl"
+        # The second insert reuses the metadata the rolled back one left behind. It must succeed, and
+        # only its own rows may be added. ${tbl}_before carries the pre-reload counts across the
+        # DETACH, which drops every scalar the session holds.
+        $CLICKHOUSE_CLIENT -q "
+            SYSTEM DISABLE FAILPOINT $failpoint;
+            INSERT INTO $tbl SELECT number, [[number]] FROM numbers(9000, 40);
+            SELECT 'rows of the failed insert: ' || toString(count()) FROM $tbl WHERE a >= 500 AND a < 560;
+            SELECT 'rows: ' || toString(count()), sum(a) FROM $tbl;
+            SELECT 'arrays readable: ' || toString(count()) FROM (SELECT a, arr FROM $tbl ORDER BY a DESC LIMIT 10) WHERE length(arr) > 0;
+            CREATE TABLE ${tbl}_before ENGINE = Log AS SELECT count() AS c, sum(a) AS s FROM $tbl;
+            DETACH TABLE $tbl;
+            ATTACH TABLE $tbl;
+            SELECT 'reload keeps the same data: ' || toString(toUInt8(
+                (SELECT c FROM ${tbl}_before) = (SELECT count() FROM $tbl)
+                AND (SELECT s FROM ${tbl}_before) = (SELECT sum(a) FROM $tbl)));
+            SELECT 'rows of the failed insert after reload: ' || toString(count()) FROM $tbl WHERE a >= 500 AND a < 560;
+            DROP TABLE $tbl;
+            DROP TABLE ${tbl}_before"
     done
 done
