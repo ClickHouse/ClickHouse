@@ -58,7 +58,7 @@ public:
     /// This method is called right before the query execution.
     virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
 
-    virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
+    virtual bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) = 0;
 
     /// Only the dynamic query handler interprets arbitrary request paths as query inputs. Configured
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
@@ -244,7 +244,7 @@ public:
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
+    bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
     bool parsesHTTPPath() const override { return true; }
 };
@@ -271,7 +271,7 @@ public:
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) override;
+    bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) override;
 };
 
 /// A handler defined from SQL via CREATE HANDLER. It executes a stored query, exactly like
