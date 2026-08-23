@@ -1,13 +1,13 @@
 -- Tags: no-random-merge-tree-settings
 -- Random settings limits: min_bytes_for_wide_part=(0, 0)
 
--- A pending `MODIFY COLUMN y String` makes the metadata snapshot report `String`, so `length(y)`
--- is rewritten to the `y.size` subcolumn, while the part on disk still holds
--- `LowCardinality(String)`, whose type has no `size` subcolumn. Reading it anyway resolves the
--- request to an unrelated stream of the parent and yields a column of the wrong class.
+-- A pending `MODIFY COLUMN y String` makes the metadata snapshot report `String`, so `y.size` is a
+-- valid request, while the part on disk still holds `LowCardinality(String)`, whose type has no
+-- `size` subcolumn. Reading it anyway resolves the request to an unrelated stream of the parent and
+-- yields a column of the wrong class.
 
--- The subcolumn request is what reaches the reader, so the rewrite must stay on.
-SET optimize_functions_to_subcolumns = 1;
+-- The subcolumn is requested explicitly: `length(y)` reaches the same request, but only through a
+-- rewrite the old analyzer does not perform.
 
 DROP TABLE IF EXISTS t_wide;
 
@@ -22,17 +22,17 @@ SYSTEM STOP MERGES t_wide;
 ALTER TABLE t_wide MODIFY COLUMN y String SETTINGS mutations_sync = 0, alter_sync = 0;
 
 -- The subcolumn request is what arms this: without it the parent is read directly.
-SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT x, length(y) FROM t_wide ORDER BY x) WHERE explain ILIKE '%y.size%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT x, y.size FROM t_wide ORDER BY x) WHERE explain ILIKE '%y.size%';
 
 -- On disk the column is still LowCardinality while the snapshot says String.
 SELECT
     (SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_wide' AND name = 'y'),
     (SELECT type FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_wide' AND active AND column = 'y');
 
-SELECT x, length(y) FROM t_wide ORDER BY x;
-SELECT sum(length(y)) FROM t_wide;
-SELECT count() FROM t_wide WHERE length(y) = 2;
-SELECT x, length(y), y FROM t_wide ORDER BY x;
+SELECT x, y.size FROM t_wide ORDER BY x;
+SELECT sum(y.size) FROM t_wide;
+SELECT count() FROM t_wide WHERE y.size = 2;
+SELECT x, y.size, y FROM t_wide ORDER BY x;
 
 -- Compact parts already refused the read; they must keep returning the same values.
 DROP TABLE IF EXISTS t_compact;
@@ -47,7 +47,7 @@ SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table 
 SYSTEM STOP MERGES t_compact;
 ALTER TABLE t_compact MODIFY COLUMN y String SETTINGS mutations_sync = 0, alter_sync = 0;
 
-SELECT x, length(y) FROM t_compact ORDER BY x;
+SELECT x, y.size FROM t_compact ORDER BY x;
 
 -- A subcolumn the part's type does have must still be read from its own stream, not derived from
 -- the parent: reading only the sizes of long strings must not pull in the data stream.
@@ -60,7 +60,7 @@ INSERT INTO t_sizes SELECT number, repeat('z', 2000) FROM numbers(3000);
 
 -- ast_fuzzer_runs = 0: a fuzzed re-execution inherits log_comment and is logged too, so the
 -- stress-test profile would otherwise add rows measuring a different query.
-SELECT sum(length(y)) FROM t_sizes SETTINGS log_comment = '05030_sizes_only', ast_fuzzer_runs = 0;
+SELECT sum(y.size) FROM t_sizes SETTINGS log_comment = '05030_sizes_only', ast_fuzzer_runs = 0;
 SELECT sum(cityHash64(y)) > 0 FROM t_sizes SETTINGS log_comment = '05030_full_data', ast_fuzzer_runs = 0;
 
 SYSTEM FLUSH LOGS query_log;
