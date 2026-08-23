@@ -115,6 +115,21 @@ INSERT INTO test_win_with_final SELECT number % 64, number, 1 FROM numbers_mt(40
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) FROM test_win_with_final FINAL SETTINGS allow_window_partitions_independently = 1) WHERE explain LIKE '%Skip scatter by partition%' OR explain LIKE '%Read each partition through separate port%';
 DROP TABLE test_win_with_final;
 
+-- NEGATIVE: max_rows_to_sort / max_bytes_to_sort are enforced per sort stream, so which rows land in
+-- which stream is user-visible; skipping the scatter would regroup the streams by table partition and
+-- could fail a query that passes with the scatter. The scatter is kept and per-partition reading is
+-- not requested. The propagated skip is declined the same way while the feature that produced the
+-- per-partition streams (here LIMIT BY) stays engaged.
+DROP TABLE IF EXISTS test_win_sort_limits;
+CREATE TABLE test_win_sort_limits (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
+SYSTEM STOP MERGES test_win_sort_limits;
+INSERT INTO test_win_sort_limits SELECT number % 64, number FROM numbers_mt(400);
+INSERT INTO test_win_sort_limits SELECT number % 64, number + 400 FROM numbers_mt(400);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) FROM test_win_sort_limits SETTINGS allow_window_partitions_independently = 1, force_window_partitions_independently = 1, max_rows_to_sort = 1000000) WHERE explain LIKE '%Skip scatter by partition%' OR explain LIKE '%Read each partition through separate port%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) FROM test_win_sort_limits SETTINGS allow_window_partitions_independently = 1, force_window_partitions_independently = 1, max_bytes_to_sort = 100000000) WHERE explain LIKE '%Skip scatter by partition%' OR explain LIKE '%Read each partition through separate port%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) FROM (SELECT a, b FROM test_win_sort_limits LIMIT 100 BY a) SETTINGS allow_limit_by_partitions_independently = 1, allow_window_partitions_independently = 1, force_window_partitions_independently = 1, max_rows_to_sort = 1000000) WHERE explain LIKE '%Skip scatter by partition%' OR explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+DROP TABLE test_win_sort_limits;
+
 -- NEGATIVE: reading in order for the window (the sorting becomes FinishSorting, which merges to a single
 -- stream; there is no scatter to skip and per-partition reading is not requested)
 DROP TABLE IF EXISTS test_win_read_in_order;
