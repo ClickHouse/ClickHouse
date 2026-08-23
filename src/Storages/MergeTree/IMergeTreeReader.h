@@ -71,6 +71,16 @@ public:
     /// missing defaults are evaluated.
     void filterSharedOffsetsOfMissingDefaults(const ColumnPtr & filter, size_t result_size) const;
 
+    /// Returns the shared `Nested` offsets to reconcile a missing default-bearing column against.
+    /// Prefers the offsets of a sibling subcolumn already materialized in @block over the ones
+    /// cached from the part, because patches and on-fly mutations may have changed them in between.
+    Columns refreshSharedOffsetsFromSibling(
+        const String & column_name,
+        const Columns & cached_offsets,
+        const Block & block,
+        const NameSet & materialized_columns,
+        size_t num_rows) const;
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;

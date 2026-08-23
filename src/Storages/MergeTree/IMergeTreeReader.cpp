@@ -13,6 +13,7 @@
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/getColumnFromBlock.h>
@@ -254,6 +255,13 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         NameSet full_requested_columns_set;
         NamesAndTypesList full_requested_columns;
 
+        /// Columns that are materialized rather than computed from a default expression: the ones
+        /// produced by earlier steps and the ones read from the part below. Only they can be used
+        /// as a source of the current shared `Nested` offsets.
+        NameSet materialized_columns;
+        for (const auto & elem : additional_columns)
+            materialized_columns.insert(elem.name);
+
         /// Convert columns list to block. And convert subcolumns to full columns.
         /// Defaults should be executed on full columns to get correct values for subcolumns.
         /// TODO: rewrite with columns interface. It will be possible after changes in ExpressionActions.
@@ -273,6 +281,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                     full_requested_columns.emplace_back(it->name, it->type);
 
                 additional_columns.insert({res_columns[pos], it->type, it->name});
+                materialized_columns.insert(it->name);
             }
             else
             {
@@ -318,10 +327,13 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                 if (settings.reconcile_missing_defaults_with_shared_offsets && was_missing[pos] && !it->isSubcolumn())
                 {
                     auto offsets_it = shared_offsets_of_missing_defaults.find(it->name);
-                    if (offsets_it != shared_offsets_of_missing_defaults.end()
-                        && !offsets_it->second.empty()
-                        && offsets_it->second.front()->size() == column->size())
-                        column = reconcileEvaluatedDefaultWithSharedOffsets(column, it->type, offsets_it->second);
+                    if (offsets_it != shared_offsets_of_missing_defaults.end() && !offsets_it->second.empty())
+                    {
+                        auto offsets = refreshSharedOffsetsFromSibling(
+                            it->name, offsets_it->second, additional_columns, materialized_columns, column->size());
+                        if (!offsets.empty() && offsets.front()->size() == column->size())
+                            column = reconcileEvaluatedDefaultWithSharedOffsets(column, it->type, offsets);
+                    }
                 }
 
                 res_columns[pos] = std::move(column);
@@ -355,6 +367,62 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     }
 }
 
+Columns IMergeTreeReader::refreshSharedOffsetsFromSibling(
+    const String & column_name,
+    const Columns & cached_offsets,
+    const Block & block,
+    const NameSet & materialized_columns,
+    size_t num_rows) const
+{
+    if (cached_offsets.empty() || !(*storage_settings)[MergeTreeSetting::share_nested_offsets])
+        return cached_offsets;
+
+    auto split = Nested::splitName(column_name);
+    if (split.second.empty())
+        return cached_offsets;
+
+    /// Only subcolumns of a `Nested` structure share their outermost offsets.
+    auto nested_column = storage_snapshot->metadata->getColumns().tryGetColumn(GetColumnsOptions::AllPhysical, split.first);
+    if (!nested_column || !isNested(nested_column->type))
+        return cached_offsets;
+
+    /// The cached offsets were taken from the part in `fillMissingColumns`. Patches and on-fly
+    /// mutations applied between that call and this one can change the array sizes of the whole
+    /// `Nested` structure, so a sibling subcolumn present in the block is the current truth for the
+    /// shared level.
+    ColumnPtr current_offsets;
+    for (const auto & elem : block)
+    {
+        if (elem.name == column_name || !elem.column || !materialized_columns.contains(elem.name))
+            continue;
+
+        auto sibling = Nested::splitName(elem.name);
+        if (sibling.second.empty() || sibling.first != split.first)
+            continue;
+
+        auto full_column = elem.column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+        const auto * array = typeid_cast<const ColumnArray *>(full_column.get());
+        if (!array || array->size() != num_rows)
+            continue;
+
+        current_offsets = array->getOffsetsPtr();
+        break;
+    }
+
+    if (!current_offsets)
+        return cached_offsets;
+
+    const auto & cached_data = assert_cast<const ColumnUInt64 &>(*cached_offsets.front()).getData();
+    const auto & current_data = assert_cast<const ColumnUInt64 &>(*current_offsets).getData();
+    if (cached_data.size() == current_data.size()
+        && std::equal(cached_data.begin(), cached_data.end(), current_data.begin()))
+        return cached_offsets;
+
+    /// The shared level moved, so the deeper levels cached along with it no longer describe the
+    /// same elements. Reconcile at the shared level only.
+    return Columns{current_offsets};
+}
+
 void IMergeTreeReader::filterSharedOffsetsOfMissingDefaults(const ColumnPtr & filter, size_t result_size) const
 {
     if (shared_offsets_of_missing_defaults.empty())
@@ -363,8 +431,29 @@ void IMergeTreeReader::filterSharedOffsetsOfMissingDefaults(const ColumnPtr & fi
     const auto & filter_data = assert_cast<const ColumnUInt8 &>(*filter).getData();
     for (auto & [_, offsets] : shared_offsets_of_missing_defaults)
     {
-        for (auto & offset : offsets)
-            offset = offset->filter(filter_data, result_size);
+        if (offsets.empty())
+            continue;
+
+        /// These are cumulative offsets, and only the outermost level is row-aligned: applying a row
+        /// filter to them directly would keep the wrong array lengths (a kept row would inherit the
+        /// cumulative offset of the rows dropped before it) and, at the inner levels, would not even
+        /// match the filter size. Rebuild the array shape the offsets describe, filter that shape,
+        /// and read the filtered offsets back off it.
+        const auto & innermost_offsets = assert_cast<const ColumnUInt64 &>(*offsets.back()).getData();
+        size_t data_size = innermost_offsets.empty() ? 0 : innermost_offsets.back();
+
+        ColumnPtr shape = ColumnUInt8::create(data_size, 0);
+        for (auto it = offsets.rbegin(); it != offsets.rend(); ++it)
+            shape = ColumnArray::create(shape, *it);
+
+        shape = shape->filter(filter_data, result_size);
+
+        for (auto & level_offsets : offsets)
+        {
+            const auto & array = assert_cast<const ColumnArray &>(*shape);
+            level_offsets = array.getOffsetsPtr();
+            shape = array.getDataPtr();
+        }
     }
 }
 
