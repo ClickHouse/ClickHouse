@@ -1,9 +1,12 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
+#include <Core/Defines.h>
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryResultCacheRedisKey.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
@@ -22,6 +25,12 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
@@ -30,6 +39,11 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
+#include <base/scope_guard.h>
+#include <Formats/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace ProfileEvents
@@ -66,11 +80,16 @@ namespace ErrorCodes
 {
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
+    extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
 {
 
+/// Detects non-deterministic functions (e.g. rand, now) in the AST.
+/// Queries containing such functions must not be cached because their
+/// results vary across invocations.
 struct HasNonDeterministicFunctionsMatcher
 {
     struct Data
@@ -124,6 +143,9 @@ struct HasNonDeterministicFunctionsMatcher
     }
 };
 
+/// Detects references to system tables (e.g. system.processes) in the AST.
+/// Queries reading from predefined databases must not be cached because
+/// their content changes frequently and caching would return stale data.
 struct HasSystemTablesMatcher
 {
     struct Data
@@ -291,6 +313,9 @@ bool isSettingIgnoredInQueryResultCache(const String & setting_name)
     return isQueryResultCacheRelatedSetting(setting_name) || settingDoesNotAffectQueryResultCache(setting_name) || isSubquerySpecificSetting(setting_name);
 }
 
+/// Strips cache-related SETTINGS and output format options from the
+/// AST before it is used as a cache key. This ensures that queries
+/// differing only in cache settings match the same cache entry.
 class RemoveQueryResultCacheSettingsMatcher
 {
 public:
@@ -566,6 +591,35 @@ QueryResultCache::Key::Key(
 {
 }
 
+QueryResultCache::Key::Key(
+    DeserializeTag,
+    IASTHash ast_hash_,
+    SharedHeader header_,
+    std::optional<UUID> user_id_,
+    std::vector<UUID> current_user_roles_,
+    bool is_shared_,
+    std::chrono::time_point<std::chrono::system_clock> created_at_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
+    bool is_compressed_,
+    bool is_subquery_,
+    String query_string_,
+    String query_id_,
+    String tag_)
+    : ast_hash(ast_hash_)
+    , header(std::move(header_))
+    , user_id(std::move(user_id_))
+    , current_user_roles(std::move(current_user_roles_))
+    , is_shared(is_shared_)
+    , created_at(created_at_)
+    , expires_at(expires_at_)
+    , is_compressed(is_compressed_)
+    , query_string(std::move(query_string_))
+    , query_id(std::move(query_id_))
+    , tag(std::move(tag_))
+    , is_subquery(is_subquery_)
+{
+}
+
 bool QueryResultCache::Key::operator==(const Key & other) const
 {
     return ast_hash == other.ast_hash && is_subquery == other.is_subquery;
@@ -594,38 +648,483 @@ bool QueryResultCache::IsStale::operator()(const Key & key) const
     return (key.expires_at < std::chrono::system_clock::now());
 };
 
+/// Key serialization
+namespace
+{
+
+String getAccessScopeSuffix(const QueryResultCache::Key & key, bool shared_lookup)
+{
+    if (shared_lookup)
+        return "shared";
+
+    SipHash hash;
+
+    if (key.user_id.has_value())
+    {
+        hash.update(key.user_id->toUnderType());
+    }
+    else
+    {
+        static constexpr UInt8 no_user = 0;
+        hash.update(no_user);
+    }
+
+    for (const auto & role : key.current_user_roles)
+        hash.update(role.toUnderType());
+
+    UInt64 low = 0;
+    UInt64 high = 0;
+    hash.get128(low, high);
+    return fmt::format("private:{:016x}{:016x}", high, low);
+}
+
+}
+
+String QueryResultCache::Key::encodeToRedisKey(const WriteContext & write_context, bool shared_lookup) const
+{
+    /// Format: ch:qcache:v{global_generation}:t{tag_generation}:{tag}:{scope}:{high64:016x}{low64:016x}
+    /// The generation prefix closes the gap between remote `SYSTEM CLEAR QUERY CACHE`
+    /// and in-flight writers by moving new writes into a fresh namespace immediately.
+    return fmt::format(
+        "{}v{}:t{}:{}:{}:{:016x}{:016x}",
+        QUERY_RESULT_CACHE_REDIS_KEY_PREFIX,
+        write_context.global_generation,
+        write_context.tag_generation,
+        tag,
+        getAccessScopeSuffix(*this, shared_lookup),
+        ast_hash.high64,
+        ast_hash.low64);
+}
+
+String QueryResultCache::Key::encodeToRedisKey(const WriteContext & write_context) const
+{
+    return encodeToRedisKey(write_context, is_shared);
+}
+
+String QueryResultCache::Key::encodeToRedisKey() const
+{
+    return encodeToRedisKey(WriteContext{});
+}
+
+void QueryResultCache::Key::serializeTo(WriteBuffer & buf) const
+{
+    /// Format version — allows backward-compatible decode during rolling upgrades.
+    const UInt8 format_version = 1;
+    writeIntBinary(format_version, buf);
+
+    /// ast_hash
+    writeIntBinary(ast_hash.high64, buf);
+    writeIntBinary(ast_hash.low64, buf);
+
+    /// header (column definitions, stored as an empty Block using NativeWriter)
+    {
+        NativeWriter writer(buf, /*client_revision=*/0, header);
+        /// Write an empty block to persist the schema only (zero rows).
+        writer.write(header->cloneEmpty());
+    }
+
+    /// user_id (optional UUID)
+    const UInt8 has_user_id = user_id.has_value() ? 1 : 0;
+    writeIntBinary(has_user_id, buf);
+    if (user_id.has_value())
+        writeUUIDBinary(*user_id, buf);
+
+    /// current_user_roles
+    const UInt64 roles_count = current_user_roles.size();
+    writeVarUInt(roles_count, buf);
+    for (const auto & role : current_user_roles)
+        writeUUIDBinary(role, buf);
+
+    /// flags
+    writeIntBinary(static_cast<UInt8>(is_shared), buf);
+    writeIntBinary(static_cast<UInt8>(is_compressed), buf);
+    writeIntBinary(static_cast<UInt8>(is_subquery), buf);
+
+    /// timestamps as Unix seconds (Int64)
+    const Int64 expires_at_sec = std::chrono::system_clock::to_time_t(expires_at);
+    const Int64 created_at_sec = std::chrono::system_clock::to_time_t(created_at);
+    writeIntBinary(expires_at_sec, buf);
+    writeIntBinary(created_at_sec, buf);
+
+    /// strings
+    writeStringBinary(query_string, buf);
+    writeStringBinary(query_id, buf);
+    writeStringBinary(tag, buf);
+}
+
+namespace
+{
+
+/// Reject a malformed schema block before it reaches `NativeReader`.
+///
+/// The schema block is always written as `header->cloneEmpty()`, so its row count is zero by
+/// construction. A planted value only has to change that varint to make `NativeReader` reserve
+/// capacity for an arbitrary row count while the key is still being reconstructed, therefore any
+/// non-zero count is rejected. Each column additionally costs at least a name and a type name, so
+/// the declared column count cannot exceed the bytes left in the value either.
+void checkSchemaBlockBoundsBeforeRead(ReadBuffer & buf)
+{
+    char * const saved_position = buf.position();
+
+    UInt64 columns = 0;
+    UInt64 rows = 0;
+    readVarUInt(columns, buf);
+    readVarUInt(rows, buf);
+
+    const size_t bytes_left = buf.buffer().end() - buf.position();
+    buf.position() = saved_position;
+
+    if (rows != 0)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "The schema block of a cached query key declares {} rows, it must be empty", rows);
+
+    /// A column contributes at least a one-byte name length and a one-byte type name length.
+    if (columns > bytes_left / 2)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "The schema block of a cached query key declares {} columns but only {} bytes are left in the value",
+            columns, bytes_left);
+}
+
+}
+
+QueryResultCache::Key QueryResultCache::Key::deserializeFrom(ReadBuffer & buf)
+{
+    /// Format version check — reject unknown versions as cache misses.
+    UInt8 format_version = 0;
+    readIntBinary(format_version, buf);
+    if (format_version != 1)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "Unknown query cache key format version: {}", static_cast<unsigned>(format_version));
+
+    /// ast_hash
+    UInt64 high64 = 0;
+    UInt64 low64 = 0;
+    readIntBinary(high64, buf);
+    readIntBinary(low64, buf);
+
+    /// header: read the empty Block that carries the schema
+    Block header_block;
+    {
+        checkSchemaBlockBoundsBeforeRead(buf);
+        NativeReader reader(buf, /*server_revision=*/0);
+        header_block = reader.read();
+    }
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    /// user_id
+    UInt8 has_user_id = 0;
+    readIntBinary(has_user_id, buf);
+    std::optional<UUID> user_id;
+    if (has_user_id)
+    {
+        UUID id;
+        readUUIDBinary(id, buf);
+        user_id = id;
+    }
+
+    /// current_user_roles
+    UInt64 roles_count = 0;
+    readVarUInt(roles_count, buf);
+    static constexpr UInt64 MAX_ROLES_COUNT = 1024;
+    if (roles_count > MAX_ROLES_COUNT)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too many roles in cached query key: {} (max {})", roles_count, MAX_ROLES_COUNT);
+    std::vector<UUID> current_user_roles;
+    current_user_roles.reserve(roles_count);
+    for (UInt64 i = 0; i < roles_count; ++i)
+    {
+        UUID role;
+        readUUIDBinary(role, buf);
+        current_user_roles.push_back(role);
+    }
+
+    /// flags
+    UInt8 is_shared_raw = 0;
+    UInt8 is_compressed_raw = 0;
+    UInt8 is_subquery_raw = 0;
+    readIntBinary(is_shared_raw, buf);
+    readIntBinary(is_compressed_raw, buf);
+    readIntBinary(is_subquery_raw, buf);
+
+    /// timestamps
+    Int64 expires_at_sec = 0;
+    Int64 created_at_sec = 0;
+    readIntBinary(expires_at_sec, buf);
+    readIntBinary(created_at_sec, buf);
+    auto expires_at = std::chrono::system_clock::from_time_t(expires_at_sec);
+    auto created_at = std::chrono::system_clock::from_time_t(created_at_sec);
+
+    /// strings
+    String query_string;
+    String query_id;
+    String tag;
+    readStringBinary(query_string, buf, DEFAULT_QUERY_RESULT_CACHE_MAX_QUERY_STRING_SIZE);
+    readStringBinary(query_id, buf, DEFAULT_QUERY_RESULT_CACHE_MAX_QUERY_ID_SIZE);
+    readStringBinary(tag, buf, DEFAULT_QUERY_RESULT_CACHE_MAX_TAG_SIZE);
+
+    /// Reconstruct the Key using the private DeserializeTag constructor — bypasses calculateASTHash.
+    return Key(
+        Key::DeserializeTag{},
+        IASTHash{low64, high64},
+        std::move(header),
+        std::move(user_id),
+        std::move(current_user_roles),
+        static_cast<bool>(is_shared_raw),
+        created_at,
+        expires_at,
+        static_cast<bool>(is_compressed_raw),
+        static_cast<bool>(is_subquery_raw),
+        std::move(query_string),
+        std::move(query_id),
+        std::move(tag));
+}
+
+/// Entry serialization
+namespace
+{
+
+/// Write a single Chunk as a Block to buf using NativeWriter.
+void writeChunkAsBlock(const Chunk & chunk, const std::shared_ptr<const Block> & header, WriteBuffer & buf)
+{
+    Block block = header->cloneEmpty();
+    block.setColumns(chunk.getColumns());
+    NativeWriter writer(buf, /*client_revision=*/0, header);
+    writer.write(block);
+}
+
+/// Read one Block from buf using NativeReader and convert to Chunk.
+Chunk readBlockAsChunk(const Block & header, ReadBuffer & buf)
+{
+    NativeReader reader(buf, header, /*server_revision=*/0);
+    Block block = reader.read();
+    return Chunk(block.getColumns(), block.rows());
+}
+
+/// A lower bound on the number of bytes one row of `type` occupies in the `Native` format.
+///
+/// Only used to reject impossible row counts before decoding, so it must never overestimate.
+/// Types whose per-row footprint cannot be bounded above zero contribute one byte, which is
+/// correct for every serialization that writes at least a discriminator, a size, or an index
+/// per row.
+size_t minNativeBytesPerRow(const IDataType & type)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return 1 + minNativeBytesPerRow(*nullable->getNestedType()); /// null map byte + nested value
+
+    if (typeid_cast<const DataTypeLowCardinality *>(&type))
+        return 1; /// the index is written per row and is at least one byte wide
+
+    if (typeid_cast<const DataTypeArray *>(&type) || typeid_cast<const DataTypeMap *>(&type))
+        return sizeof(ColumnArray::Offset); /// one offset per row; the nested column may be empty
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        size_t result = 0;
+        for (const auto & element : tuple->getElements())
+            result += minNativeBytesPerRow(*element);
+        return result;
+    }
+
+    if (type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return type.getSizeOfValueInMemory();
+
+    return 1;
+}
+
+/// A lower bound on the number of bytes one row of `header` occupies in the `Native` format.
+size_t minNativeBytesPerRow(const Block & header)
+{
+    size_t result = 0;
+    for (const auto & column : header)
+        result += minNativeBytesPerRow(*column.type);
+    return result;
+}
+
+/// Reject a Native block whose declared row count is impossible or exceeds the remaining row
+/// budget, without decoding it.
+///
+/// `NativeReader` reserves capacity for the declared row count before reading any data, so a
+/// malformed payload from an external store would allocate far beyond the configured bounds even
+/// though the check after the chunk is built would eventually reject it. `max_rows == 0` means the
+/// row budget is unbounded, otherwise at most `max_rows - rows_so_far` further rows are allowed.
+///
+/// The block starts with `columns` and `rows` as varints; both are peeked and the read position is
+/// restored, which is safe because the whole value is a single in-memory buffer.
+void checkBlockBoundsBeforeRead(ReadBuffer & buf, const Block & header, size_t rows_so_far, size_t max_rows)
+{
+    char * const saved_position = buf.position();
+
+    UInt64 columns = 0;
+    UInt64 rows = 0;
+    readVarUInt(columns, buf);
+    readVarUInt(rows, buf);
+
+    const size_t bytes_left = buf.buffer().end() - buf.position();
+    buf.position() = saved_position;
+
+    /// A row of the entry's schema cannot be encoded in fewer bytes than this, so the value has to
+    /// carry at least `rows * min_bytes_per_row` bytes. A blob that declares more is malformed and
+    /// must be rejected before `NativeReader` reserves capacity for the declared count.
+    const size_t min_bytes_per_row = std::max<size_t>(minNativeBytesPerRow(header), 1);
+    if (columns != 0 && rows > bytes_left / min_bytes_per_row)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Cached query result declares {} rows but only {} bytes are left in the value "
+            "and a row of its schema takes at least {} bytes", rows, bytes_left, min_bytes_per_row);
+
+    if (max_rows && (rows_so_far >= max_rows || rows > max_rows - rows_so_far))
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Cached query result exceeds max_entry_size_in_rows: a block declares {} rows on top of {} already read (max {})",
+            rows, rows_so_far, max_rows);
+}
+
+
+}
+
+void QueryResultCache::Entry::serializeTo(WriteBuffer & buf, const Block & header) const
+{
+    /// Format version — allows backward-compatible decode during rolling upgrades.
+    const UInt8 format_version = 1;
+    writeIntBinary(format_version, buf);
+
+    auto header_ptr = std::make_shared<const Block>(header);
+
+    const UInt32 chunks_count = static_cast<UInt32>(chunks.size());
+    writeIntBinary(chunks_count, buf);
+    for (const auto & chunk : chunks)
+        writeChunkAsBlock(chunk, header_ptr, buf);
+
+    const UInt8 has_totals = totals.has_value() ? 1 : 0;
+    writeIntBinary(has_totals, buf);
+    if (totals.has_value())
+        writeChunkAsBlock(*totals, header_ptr, buf);
+
+    const UInt8 has_extremes = extremes.has_value() ? 1 : 0;
+    writeIntBinary(has_extremes, buf);
+    if (extremes.has_value())
+        writeChunkAsBlock(*extremes, header_ptr, buf);
+}
+
+QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(
+    ReadBuffer & buf,
+    const Block & header,
+    size_t max_chunks,
+    size_t max_entry_size_in_bytes,
+    size_t max_entry_size_in_rows)
+{
+    /// Format version check — reject unknown versions as cache misses.
+    UInt8 format_version = 0;
+    readIntBinary(format_version, buf);
+    if (format_version != 1)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "Unknown query cache entry format version: {}", static_cast<unsigned>(format_version));
+
+    Entry entry;
+
+    size_t total_bytes = 0;
+    size_t total_rows = 0;
+    auto check_bounds = [&](const Chunk & chunk)
+    {
+        total_bytes += chunk.allocatedBytes();
+        total_rows += chunk.getNumRows();
+        if (max_entry_size_in_bytes && total_bytes > max_entry_size_in_bytes)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cached query result exceeds max_entry_size_in_bytes: {} > {}", total_bytes, max_entry_size_in_bytes);
+        if (max_entry_size_in_rows && total_rows > max_entry_size_in_rows)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cached query result exceeds max_entry_size_in_rows: {} > {}", total_rows, max_entry_size_in_rows);
+    };
+
+    UInt32 chunks_count = 0;
+    readIntBinary(chunks_count, buf);
+    if (chunks_count > max_chunks)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too many chunks in cached query entry: {} (max {})", chunks_count, max_chunks);
+    entry.chunks.reserve(chunks_count);
+    for (UInt32 i = 0; i < chunks_count; ++i)
+    {
+        checkBlockBoundsBeforeRead(buf, header, total_rows, max_entry_size_in_rows);
+        entry.chunks.push_back(readBlockAsChunk(header, buf));
+        check_bounds(entry.chunks.back());
+    }
+
+    UInt8 has_totals = 0;
+    readIntBinary(has_totals, buf);
+    if (has_totals)
+    {
+        checkBlockBoundsBeforeRead(buf, header, total_rows, max_entry_size_in_rows);
+        entry.totals = readBlockAsChunk(header, buf);
+        check_bounds(*entry.totals);
+    }
+
+    UInt8 has_extremes = 0;
+    readIntBinary(has_extremes, buf);
+    if (has_extremes)
+    {
+        checkBlockBoundsBeforeRead(buf, header, total_rows, max_entry_size_in_rows);
+        entry.extremes = readBlockAsChunk(header, buf);
+        check_bounds(*entry.extremes);
+    }
+
+    return entry;
+}
+
+
 QueryResultCacheWriter::QueryResultCacheWriter(
-    Cache & cache_,
+    IQueryResultCacheStorage & storage_,
     const QueryResultCache::Key & key_,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
     size_t max_block_size_)
-    : cache(cache_)
+    : storage(storage_)
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
     , min_query_runtime(min_query_runtime_)
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
+    , write_context(storage.getWriteContext(key_))
 {
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (storage.hasNonStaleEntry(key, write_context))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
+        entry_already_available = true; /// Caller may serve the existing result instead of executing
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
     }
 }
 
-QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & other)
-    : cache(other.cache)
+// NOLINTNEXTLINE(hicpp-noexcept-move,performance-noexcept-move-constructor)
+QueryResultCacheWriter::QueryResultCacheWriter(QueryResultCacheWriter && other)
+    : storage(other.storage)
     , key(other.key)
     , max_entry_size_in_bytes(other.max_entry_size_in_bytes)
     , max_entry_size_in_rows(other.max_entry_size_in_rows)
+    , query_start_time(other.query_start_time)
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
+    , write_context(other.write_context)
+    , query_result([&other]
+    {
+        std::lock_guard lock(other.mutex);
+        return std::move(other.query_result);
+    }())
+    , skip_insert(other.skip_insert.load(std::memory_order_relaxed))
+    , was_finalized(other.was_finalized.load(std::memory_order_relaxed))
+    , entry_already_available(other.entry_already_available)
 {
+    other.skip_insert.store(true, std::memory_order_relaxed);
+    other.was_finalized.store(true, std::memory_order_relaxed);
+}
+
+QueryResultCacheWriter::~QueryResultCacheWriter()
+{
+    /// If finalizeWrite was never called (e.g. the query threw an exception
+    /// or was cancelled), release any IN_PROGRESS lock held in the remote
+    /// cache. For the local cache this is a no-op.
+    if (!was_finalized)
+        storage.cancelWrite(key, write_context);
 }
 
 void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
@@ -689,6 +1188,15 @@ void QueryResultCacheWriter::finalizeWrite()
 
     std::lock_guard lock(mutex);
 
+    /// Until the entry is stored, ensure that any exception propagating out of this
+    /// function (or any early-exit) releases the remote IN_PROGRESS lock. Otherwise
+    /// other nodes would keep waiting on this key until the lock's TTL expires.
+    bool stored = false;
+    SCOPE_EXIT({
+        if (!stored)
+            storage.cancelWrite(key, write_context);
+    });
+
     /// Check some reasons why the entry must not be cached:
 
     if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)
@@ -698,7 +1206,15 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    const auto current_write_context = storage.getWriteContext(key);
+    if (current_write_context.global_generation != write_context.global_generation
+        || current_write_context.tag_generation != write_context.tag_generation)
+    {
+        LOG_TRACE(logger, "Skipped insert because the query cache was cleared while the query was running, query: {}", doubleQuoteString(key.query_string));
+        return;
+    }
+
+    if (storage.hasNonStaleEntry(key, write_context))
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -789,7 +1305,8 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    cache.set(key, query_result);
+    storage.setEntry(key, query_result, write_context);
+    stored = true;
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
 }
@@ -857,11 +1374,10 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
 
     if (!entry_key.is_compressed)
     {
-        // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
-        // extremes into shared_ptrs and assuming that the lifecycle of these shared_ptrs coincides with the lifecycle of the Entry
-        // shared_ptr. This is not done 1. to keep things simple 2. this case (uncompressed chunks) is the exceptional case, in the other
-        // case (the default case aka. compressed chunks) we need to decompress the entry anyways and couldn't apply the potential
-        // optimization.
+        /// Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
+        /// extremes into shared_ptrs and assuming that the lifecycle of these shared_ptrs coincides with the lifecycle of the Entry
+        /// shared_ptr. This is not done to keep things simple and because this case (uncompressed chunks) is the exceptional case; in the
+        /// default case (compressed chunks) we need to decompress the entry anyways and couldn't apply the potential optimization.
 
         Chunks cloned_chunks;
         for (const auto & chunk : entry_mapped->chunks)
@@ -893,6 +1409,48 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
     expires_at = entry_key.expires_at;
 
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
+}
+
+QueryResultCacheReader::QueryResultCacheReader(
+    const QueryResultCache::Key & stored_key,
+    std::shared_ptr<QueryResultCache::Entry> entry)
+{
+    if (!entry)
+    {
+        /// Cache miss path: leave source_from_chunks as nullptr (hasCacheEntryForKey == false).
+        return;
+    }
+
+    /// Access and staleness checks are performed by RemoteQueryResultCache::createReader before
+    /// constructing this reader. Here we only need to decompress and build sources.
+
+    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - stored_key.created_at).count();
+    ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
+
+    if (!stored_key.is_compressed)
+    {
+        /// The entry was just deserialized from the remote backend and is owned
+        /// exclusively by this reader — no need to clone, move is safe.
+        buildSourceFromChunks(stored_key.header, std::move(entry->chunks), entry->totals, entry->extremes);
+    }
+    else
+    {
+        Chunks decompressed_chunks;
+        for (const auto & chunk : entry->chunks)
+        {
+            const Columns & columns = chunk.getColumns();
+            Columns decompressed_columns;
+            for (const auto & column : columns)
+                decompressed_columns.push_back(column->decompress());
+            decompressed_chunks.emplace_back(std::move(decompressed_columns), chunk.getNumRows());
+        }
+        buildSourceFromChunks(stored_key.header, std::move(decompressed_chunks), entry->totals, entry->extremes);
+    }
+
+    created_at = stored_key.created_at;
+    expires_at = stored_key.expires_at;
+
+    LOG_TRACE(logger, "Query result found for query {} (remote cache)", doubleQuoteString(stored_key.query_string));
 }
 
 bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) const
@@ -938,14 +1496,16 @@ std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
     return std::move(source_from_chunks_extremes);
 }
 
-QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, EntryWeight, IsStale>>(
+LocalQueryResultCache::LocalQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+    : cache(std::make_unique<TTLCachePolicy<QueryResultCache::Key, QueryResultCache::Entry, QueryResultCache::KeyHasher, QueryResultCache::EntryWeight, QueryResultCache::IsStale>>(
             CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
-    updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
+    LocalQueryResultCache::updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_, /*max_entry_chunks_=*/0);
 }
 
-void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+/// `max_entry_chunks_` bounds the deserialization of an externally stored entry, so it is
+/// meaningless for the in-process cache, which never deserializes anything.
+void LocalQueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, size_t /*max_entry_chunks_*/)
 {
     std::lock_guard lock(mutex);
     cache.setMaxSizeInBytes(max_size_in_bytes);
@@ -954,13 +1514,13 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
     max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
-QueryResultCacheReader QueryResultCache::createReader(const Key & key)
+QueryResultCacheReader LocalQueryResultCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
     return QueryResultCacheReader(cache, key, lock);
 }
 
-QueryResultCacheWriter QueryResultCache::createWriter(
+QueryResultCacheWriter LocalQueryResultCache::createWriter(
     const Key & key,
     std::chrono::milliseconds min_query_runtime,
     bool squash_partial_results,
@@ -975,12 +1535,51 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     if (key.user_id.has_value())
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
-    std::lock_guard lock(mutex);
-    return QueryResultCacheWriter(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    size_t current_max_entry_size_in_bytes = 0;
+    size_t current_max_entry_size_in_rows = 0;
+    {
+        std::lock_guard lock(mutex);
+        current_max_entry_size_in_bytes = max_entry_size_in_bytes;
+        current_max_entry_size_in_rows = max_entry_size_in_rows;
+    }
+    return QueryResultCacheWriter(*this, key, current_max_entry_size_in_bytes, current_max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryResultCache::clear(const std::optional<String> & tag)
+void LocalQueryResultCache::setEntry(const Key & key, std::shared_ptr<Entry> entry, const QueryResultCache::WriteContext & write_context)
 {
+    std::lock_guard lock(mutex);
+    const UInt64 tag_generation = tag_generations.contains(key.tag) ? tag_generations.at(key.tag) : 0;
+    if (global_generation != write_context.global_generation || tag_generation != write_context.tag_generation)
+        return;
+    cache.set(key, entry);
+}
+
+bool LocalQueryResultCache::hasNonStaleEntry(const Key & key, const QueryResultCache::WriteContext &)
+{
+    auto existing = cache.getWithKey(key);
+    return existing.has_value() && !QueryResultCache::IsStale()(existing->key);
+}
+
+QueryResultCache::WriteContext LocalQueryResultCache::getWriteContext(const Key & key)
+{
+    std::lock_guard lock(mutex);
+    return
+    {
+        .global_generation = global_generation,
+        .tag_generation = tag_generations.contains(key.tag) ? tag_generations.at(key.tag) : 0,
+    };
+}
+
+void LocalQueryResultCache::clear(const std::optional<String> & tag)
+{
+    {
+        std::lock_guard lock(mutex);
+        if (tag)
+            ++tag_generations[*tag];
+        else
+            ++global_generation;
+    }
+
     if (tag)
     {
         auto predicate = [tag](const Key & key, const Cache::MappedPtr &) { return key.tag == tag.value(); };
@@ -993,35 +1592,37 @@ void QueryResultCache::clear(const std::optional<String> & tag)
 
     std::lock_guard lock(mutex);
     times_executed.clear();
+    if (!tag)
+        tag_generations.clear();
 }
 
-size_t QueryResultCache::maxSizeInBytes() const
+size_t LocalQueryResultCache::maxSizeInBytes() const
 {
     return cache.maxSizeInBytes();
 }
 
-size_t QueryResultCache::sizeInBytes() const
+size_t LocalQueryResultCache::sizeInBytes() const
 {
     return cache.sizeInBytes();
 }
 
-size_t QueryResultCache::count() const
+size_t LocalQueryResultCache::count() const
 {
     return cache.count();
 }
 
-size_t QueryResultCache::recordQueryRun(const Key & key)
+size_t LocalQueryResultCache::recordQueryRun(const Key & key)
 {
     std::lock_guard lock(mutex);
     size_t times = ++times_executed[key];
-    // Regularly drop times_executed to avoid DOS-by-unlimited-growth.
+    /// Regularly drop times_executed to avoid DOS-by-unlimited-growth.
     static constexpr auto TIMES_EXECUTED_MAX_SIZE = 10'000uz;
     if (times_executed.size() > TIMES_EXECUTED_MAX_SIZE)
         times_executed.clear();
     return times;
 }
 
-std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
+std::vector<QueryResultCache::Cache::KeyMapped> LocalQueryResultCache::dump() const
 {
     return cache.dump();
 }

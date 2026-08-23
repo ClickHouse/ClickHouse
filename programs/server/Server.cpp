@@ -106,6 +106,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
+#include <Interpreters/Cache/QueryResultCacheFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
@@ -1534,6 +1535,7 @@ try
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
+    registerQueryResultCaches(QueryResultCacheFactory::instance());
 
     QueryPlanStepRegistry::registerPlanSteps();
 
@@ -2533,16 +2535,27 @@ try
     }
     global_context->setEncryptionHeaderCache(encryption_header_cache_policy, encryption_header_cache_size, encryption_header_cache_size_ratio);
 
-    size_t query_result_cache_max_size_in_bytes = server_settings[ServerSetting::query_cache_max_size_in_bytes];
-    size_t query_result_cache_max_entries = server_settings[ServerSetting::query_cache_max_entries];
-    size_t query_result_cache_max_entry_size_in_bytes = server_settings[ServerSetting::query_cache_max_entry_size_in_bytes];
-    size_t query_result_cache_max_entry_size_in_rows = server_settings[ServerSetting::query_cache_max_entry_size_in_rows];
-    if (query_result_cache_max_size_in_bytes > max_cache_size)
     {
-        query_result_cache_max_size_in_bytes = max_cache_size;
-        LOG_INFO(log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes));
+        const String query_result_cache_type = config().getString("query_cache.type", "local");
+        size_t query_result_cache_max_size_in_bytes = server_settings[ServerSetting::query_cache_max_size_in_bytes];
+        if (query_result_cache_max_size_in_bytes > max_cache_size)
+        {
+            if (query_result_cache_type == "local")
+            {
+                query_result_cache_max_size_in_bytes = max_cache_size;
+                config().setString("query_cache.max_size_in_bytes", std::to_string(query_result_cache_max_size_in_bytes));
+                LOG_INFO(log, "Lowered query result cache size to {} because the system has limited RAM",
+                    formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes));
+            }
+            else
+            {
+                LOG_INFO(log, "Query result cache size ({}) exceeds available cache budget ({}). Consider lowering query_cache.max_size_in_bytes.",
+                    formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes),
+                    formatReadableSizeWithBinarySuffix(max_cache_size));
+            }
+        }
     }
-    global_context->setQueryResultCache(query_result_cache_max_size_in_bytes, query_result_cache_max_entries, query_result_cache_max_entry_size_in_bytes, query_result_cache_max_entry_size_in_rows);
+    global_context->setQueryResultCache(config());
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
