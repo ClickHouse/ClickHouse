@@ -2642,9 +2642,10 @@ function shapeUrlParams(tab) {
 /// statement (see `shapeQueryKey`) and re-binding the tab's shape to the statement now being run.
 /// `context` is the run's `shapeContextKey`; a shape whose recorded context is a DIFFERENT one belongs
 /// to another database/connection/parameter binding and is dropped too. A `null` recorded context
-/// means the shape was restored from a URL, a history entry or a stored snapshot, which carry no
-/// context of their own: it adopts the context of the run that re-applies it, and only a change AFTER
-/// that drops it.
+/// means the shape was restored from a URL, which carries no context of its own: it adopts the context
+/// of the run that re-applies it, and only a change AFTER that drops it. (A shape restored from a
+/// stored snapshot is NOT unbound: the snapshot records the context that produced its rows, and the
+/// restore re-binds the shape to it - see `snapshotShapeContext`.)
 function resolveShapeForRun(tab, query, context = null) {
     const bound_context = tab.shapeContext ?? null;
     if (shapeQueryKey(tab.shapeQuery) !== shapeQueryKey(query)
@@ -2654,6 +2655,21 @@ function resolveShapeForRun(tab, query, context = null) {
     }
     tab.shapeContext = context;
     return shapeUrlParams(tab);
+}
+
+/// The run context a result snapshot's shape is re-bound to when the snapshot is restored (a reload,
+/// a tab reopened from IndexedDB, Back/Forward). The snapshot records the database, the connection
+/// and the parameters its rows were produced with, and the restored shape names the columns of THAT
+/// result: binding it to the recorded context - rather than leaving it unbound to adopt the next
+/// run's - makes a run after a database/connection/parameter change drop it, exactly as it would have
+/// before the reload, instead of shaping a different result (`SELECT * FROM {tbl:Identifier}` sorted
+/// on a column of `hits` must not send that `ORDER BY` into `visits` after the parameter is edited).
+/// The unbound `null` context, which adopts the run that re-applies the shape, remains only for a
+/// shape restored from a URL, which records no context of its own; a snapshot that never recorded a
+/// producing query stays unbound too, but such a snapshot carries no shape either.
+function snapshotShapeContext(result) {
+    if (!result || result.query == null) { return null; }
+    return shapeContextKey(result.database ?? null, result.url ?? null, result.user ?? null, result.params || {});
 }
 
 /// Commit a result-shape change made in `el`'s result view - a sort, a filter, a page - by persisting
@@ -12497,9 +12513,10 @@ async function materializeResult(tab) {
     tab.pagination = sanitizePagination(result.pagination);
     tab.shapeQuery = result.query ?? null;
     /// A stored snapshot records the database, connection and parameters its rows were produced with,
-    /// but the restored shape is re-bound only to the statement: leave the context unbound so the run
-    /// that re-applies it adopts its own, and only a change after that drops the shape.
-    tab.shapeContext = null;
+    /// and the restored shape is re-bound to that context as well as to the statement (see
+    /// `snapshotShapeContext`): the first rerun after a database/connection/parameter change must
+    /// drop the shape, exactly as it would have before the reload, not adopt the changed context.
+    tab.shapeContext = snapshotShapeContext(result);
     el._sortColumns = tab.sortColumns;
     el._filters = tab.filters;
     el._pagination = tab.pagination;
@@ -12940,7 +12957,7 @@ function tabRuntimeDefaults() {
         filters: {},            /// per-column filters of this tab's result (shared with its element)
         pagination: { page: 0, size: 0 },  /// selected page of this tab's result; page 0 = not paginated
         shapeQuery: null,       /// statement the result shape was chosen on (see `shapeQueryKey`); null for none
-        shapeContext: null,     /// run context (database/connection/parameters) it was chosen in (see `shapeContextKey`); null adopts the next run's
+        shapeContext: null,     /// run context (database/connection/parameters) it was chosen in (see `shapeContextKey`); null (a URL-restored shape) adopts the next run's
         downloadQuery: '',      /// query the download button should re-run for this tab
         downloadParams: {},
         downloadShape: '',      /// construction-setting URL params the download reproduces the shown shape with
@@ -18115,6 +18132,9 @@ tabs[0].filters = url_filters;
 tabs[0].pagination = url_pagination;
 /// The shape belongs to the statement the link carries, which is what a `run=1` load auto-runs, so
 /// bind it to that text (`resolveShapeForRun` would otherwise drop it as belonging to another query).
+/// The context stays unbound: unlike a stored snapshot (see `snapshotShapeContext`) a URL records no
+/// producing context, so the shape adopts the context of the run that re-applies it - for a `run=1`
+/// load, the auto-run that follows reconciliation, before anything can be edited.
 tabs[0].shapeQuery = tabs[0].query;
 tabs[0].shapeContext = null;
 /// Build the active tab's panel now (synchronously), so the `resultEl` alias exists before any
@@ -18223,10 +18243,11 @@ async function reconcileStartup() {
                     sortColumns: sanitizeSortColumns(r.result && r.result.sort_columns),
                     filters: sanitizeFilters(r.result && r.result.filters),
                     pagination: sanitizePagination(r.result && r.result.pagination),
-                    /// The shape belongs to the statement that produced the stored result, so it is
-                    /// re-applied only by a run of that exact statement (see `resolveShapeForRun`).
+                    /// The shape belongs to the statement that produced the stored result, run in
+                    /// the context the snapshot records, so it is re-applied only by a run of that
+                    /// exact statement in that same context (see `resolveShapeForRun`).
                     shapeQuery: (r.result && r.result.query) ?? null,
-                    shapeContext: null,
+                    shapeContext: snapshotShapeContext(r.result),
                 });
             } else {
                 pruned_blank_ids.add(r.id);
@@ -18491,7 +18512,8 @@ async function reconcileStartup() {
                 Object.assign(t.pinnedColumns, url_pinned_columns);
                 /// The result shape likewise, bound to the URL's query (the one a `run=1` load
                 /// auto-runs) so the deferred run reproduces the link's shaped result. Written in
-                /// place for the same aliasing reason as above.
+                /// place for the same aliasing reason as above. The context stays unbound, a URL
+                /// recording no producing context (see the bootstrap seeding above).
                 t.sortColumns.length = 0;
                 t.sortColumns.push(...url_sort_columns);
                 for (const k of Object.keys(t.filters)) delete t.filters[k];

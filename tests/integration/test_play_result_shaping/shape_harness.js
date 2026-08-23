@@ -25,7 +25,9 @@
 ///    connection and the query parameters - which decides the columns just as much as the text does;
 ///  - `resolveShapeForRun` drops a shape belonging to a different statement, or to the same statement
 ///    run in a different context, in place, so the objects the tab shares with its result element(s)
-///    stay the same objects.
+///    stay the same objects;
+///  - `snapshotShapeContext` re-binds a shape restored from a stored snapshot to the context the
+///    snapshot recorded as producing its rows, so the first rerun after a context change drops it.
 ///
 /// Driven by `test.py` inside the `clickhouse/mysql-js-client` container (node:22-alpine),
 /// against the `/play` page served by a real ClickHouse server. Can also be run standalone
@@ -54,6 +56,7 @@ const HELPERS = [
     'sortOrderExpression', 'filterExpression', 'shapeQueryKey',
     'applySortToggle', 'resetPagination', 'clearResultShape',
     'shapeUrlParams', 'resolveShapeForRun', 'shapeContextKey',
+    'snapshotShapeContext',
 ];
 
 function extractShapeHelpers(js) {
@@ -362,16 +365,60 @@ async function main() {
             H.resolveShapeForRun(tab, 'SELECT * FROM events', db_b), '');
         check('context', 'the shape is re-bound to the context now running', tab.shapeContext, db_b);
 
-        /// A shape restored from a URL, a history entry or a stored snapshot carries no context of its
-        /// own: it adopts the one of the run that re-applies it, and a change AFTER that drops it.
+        /// A shape restored from a URL carries no context of its own (a link records no producing
+        /// database, connection or parameters): it adopts the one of the run that re-applies it -
+        /// for a `run=1` link, the auto-run that follows the load - and a change AFTER that drops it.
         const restored = makeTab('SELECT * FROM events', null);
         restored.filters.a = '> 1';
-        check('context', 'an unbound shape survives the run that adopts its context',
+        check('context', 'a URL-restored (unbound) shape survives the run that adopts its context',
             H.resolveShapeForRun(restored, 'SELECT * FROM events', db_a),
             '&filter=' + encodeURIComponent('(`a` > 1)'));
         check('context', 'the adopted context is recorded', restored.shapeContext, db_a);
         check('context', 'and a change after it drops the shape',
             H.resolveShapeForRun(restored, 'SELECT * FROM events', db_b), '');
+    }
+
+    /// Contract 13: a shape restored from a stored snapshot (a reload, a tab reopened from IndexedDB,
+    /// Back/Forward) is NOT unbound: the snapshot records the database, connection and parameters that
+    /// produced its rows, and the restored shape is re-bound to that context, so the FIRST rerun after
+    /// a context change already drops it instead of adopting the changed context and shaping a
+    /// different result.
+    {
+        const snapshot = {
+            query: 'SELECT * FROM events',
+            database: 'a', url: 'http://localhost:8123/', user: 'default', params: {},
+        };
+        const producing = H.shapeContextKey('a', 'http://localhost:8123/', 'default', {});
+        check('snapshot-context', 'a restored snapshot is bound to the context that produced it',
+            H.snapshotShapeContext(snapshot), producing);
+
+        const reloaded = makeTab(snapshot.query, H.snapshotShapeContext(snapshot));
+        reloaded.sortColumns.push({ name: 'EventTime', desc: false });
+        check('snapshot-context', 'rerunning the statement in the producing context keeps the shape',
+            H.resolveShapeForRun(reloaded, 'SELECT * FROM events', producing),
+            '&order=' + encodeURIComponent('`EventTime` ASC'));
+        check('snapshot-context', 'a database change before the first rerun drops the shape',
+            H.resolveShapeForRun(reloaded, 'SELECT * FROM events',
+                H.shapeContextKey('b', 'http://localhost:8123/', 'default', {})), '');
+
+        /// The trace that motivates the binding: `SELECT * FROM {tbl:Identifier}` snapshotted sorted
+        /// by a column of `hits`, restored, `tbl` edited to `visits`, rerun - the old `ORDER BY` must
+        /// not be sent into a different table's result.
+        const param_snapshot = {
+            query: 'SELECT * FROM {tbl:Identifier}',
+            database: 'a', url: 'u', user: 'd', params: { tbl: 'hits' },
+        };
+        const param_tab = makeTab(param_snapshot.query, H.snapshotShapeContext(param_snapshot));
+        param_tab.sortColumns.push({ name: 'EventTime', desc: true });
+        check('snapshot-context', 'a parameter edit before the first rerun drops the shape',
+            H.resolveShapeForRun(param_tab, 'SELECT * FROM {tbl:Identifier}',
+                H.shapeContextKey('a', 'u', 'd', { tbl: 'visits' })), '');
+
+        /// A snapshot that never recorded a producing query has nothing to bind to - and no shape
+        /// either, a shape being made on a produced result.
+        check('snapshot-context', 'a snapshot without a producing query stays unbound',
+            H.snapshotShapeContext({ data: '1' }), null);
+        check('snapshot-context', 'a missing snapshot stays unbound', H.snapshotShapeContext(null), null);
     }
 
     console.log(failures ? `${failures} check(s) failed` : 'All scenarios passed');
