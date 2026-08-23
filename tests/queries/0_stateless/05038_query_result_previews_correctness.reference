@@ -38,6 +38,21 @@
 0
 1
 2
+-- DISTINCT applies to previews standalone
+0
+1
+2
+0
+1
+2
+100000
+-- window functions apply to previews standalone
+0	250000	██████████
+1	250000	██████████
+2	250000	██████████
+3	250000	██████████
+0	1
+1	1
 -- shapes for which previews are not emitted
 0	50000
 1	50000
@@ -46,9 +61,6 @@
 0	50000
 0	100000
 1	50000
-0
-1
-2
 -- an aggregation feeding another consumer stays dormant
 5
 -- UNION of two aggregations

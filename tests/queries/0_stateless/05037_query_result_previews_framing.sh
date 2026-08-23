@@ -72,6 +72,39 @@ for line in sys.stdin:
 print('previews are cut to the limit' if ok else 'previews exceed the limit')
 "
 
+echo '--- DISTINCT deduplicates each preview standalone'
+DISTINCT_QUERY="SELECT DISTINCT c FROM (SELECT intDiv(number, 250000) AS k, count() AS c FROM numbers(1000000) GROUP BY k) ORDER BY c FORMAT JSONCompactEachRow"
+DISTINCT_RESPONSE=$(${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}${PREVIEWS}&framing_output_format=JSONEachPacketString" -d "${DISTINCT_QUERY}")
+DISTINCT_PREVIEWS=$(echo "${DISTINCT_RESPONSE}" | grep -c '"packet":"preview"')
+if [ "${DISTINCT_PREVIEWS}" -ge 1 ]; then echo "has previews"; else echo "no previews: ${DISTINCT_RESPONSE}"; fi
+echo "${DISTINCT_RESPONSE}" | grep '"packet":"preview"' | python3 -c "
+import json, sys
+ok = True
+for line in sys.stdin:
+    rows = json.loads(line)['data'].rstrip('\n').split('\n')
+    if len(rows) != len(set(rows)):
+        ok = False
+print('previews are deduplicated' if ok else 'duplicate rows in a preview')
+"
+echo "${DISTINCT_RESPONSE}" | grep '"packet":"data"'
+
+echo '--- window functions are computed over each preview standalone'
+WINDOW_QUERY="SELECT k, round(c / max(c) OVER (), 6) AS share FROM (SELECT intDiv(number, 250000) AS k, count() AS c FROM numbers(1000000) GROUP BY k) ORDER BY k FORMAT JSONCompactEachRow"
+WINDOW_RESPONSE=$(${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}${PREVIEWS}&framing_output_format=JSONEachPacketString" -d "${WINDOW_QUERY}")
+WINDOW_PREVIEWS=$(echo "${WINDOW_RESPONSE}" | grep -c '"packet":"preview"')
+if [ "${WINDOW_PREVIEWS}" -ge 1 ]; then echo "has previews"; else echo "no previews: ${WINDOW_RESPONSE}"; fi
+echo "${WINDOW_RESPONSE}" | grep '"packet":"preview"' | python3 -c "
+import json, sys
+ok = True
+for line in sys.stdin:
+    rows = [json.loads(r) for r in json.loads(line)['data'].rstrip('\n').split('\n')]
+    shares = [float(r[1]) for r in rows]
+    if abs(max(shares) - 1.0) > 1e-9 or any(not (0 < s <= 1) for s in shares):
+        ok = False
+print('previews carry their own window maximum' if ok else 'wrong window values in a preview')
+"
+echo "${WINDOW_RESPONSE}" | grep '"packet":"data"'
+
 echo '--- without framing, previews are not emitted into the plain output'
 PLAIN_WITH=$(${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}${PREVIEWS}" -d "${QUERY}")
 PLAIN_WITHOUT=$(${CLICKHOUSE_CURL} -sS "${URL}${BLOCKS}" -d "${QUERY}")

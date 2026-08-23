@@ -73,6 +73,11 @@ public:
         return "WindowTransform";
     }
 
+    /// Preview chunks are computed standalone by a fresh one-shot transform, out of band
+    /// (see `QueryResultPreview.h`): the window functions apply to the preview alone, so e.g.
+    /// `max(x) OVER ()` is the maximum of the intermediate result and converges to the final value.
+    bool supportsQueryResultPreviews() const override { return true; }
+
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
     /* (former) Implementation of ISimpleTransform.
@@ -236,6 +241,15 @@ public:
     Block input_header;
 
     WindowDescription window_description;
+
+    /// For the standalone evaluation of query result previews (see `QueryResultPreview.h`):
+    /// a copy of the constructor argument to build the fresh one-shot transform, the diverted
+    /// input chunk, and the computed preview waiting for the output port.
+    std::vector<WindowFunctionDescription> window_functions_for_preview;
+    Chunk query_result_preview_input;
+    Chunk pending_query_result_preview;
+
+    void computeQueryResultPreview();
 
     // Indices of the PARTITION BY columns in block.
     std::vector<size_t> partition_by_indices;

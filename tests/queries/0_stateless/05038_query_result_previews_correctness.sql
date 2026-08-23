@@ -36,10 +36,18 @@ SELECT number % 1000 AS k, count() AS c FROM numbers(1000000) GROUP BY k ORDER B
 SELECT '-- states above the thresholds stop previews but not the query';
 SELECT number AS k FROM numbers(1000000) GROUP BY k ORDER BY k LIMIT 3 SETTINGS query_result_previews_max_result_rows = 10;
 
+SELECT '-- DISTINCT applies to previews standalone';
+SELECT DISTINCT number % 3 AS k FROM numbers(1000000) ORDER BY k;
+SELECT DISTINCT intDiv(number, 100000) AS k FROM numbers(1000000) ORDER BY k LIMIT 3;
+SELECT DISTINCT c FROM (SELECT intDiv(number, 100000) AS k, count() AS c FROM numbers(1000000) GROUP BY k) ORDER BY c;
+
+SELECT '-- window functions apply to previews standalone';
+SELECT k, c, bar(c, 0, max(c) OVER (), 10) FROM (SELECT intDiv(number, 250000) AS k, count() AS c FROM numbers(1000000) GROUP BY k) ORDER BY k;
+SELECT k, round(c / max(c) OVER (), 2) AS share FROM (SELECT intDiv(number, 500000) AS k, count() AS c FROM numbers(1000000) GROUP BY k) ORDER BY k;
+
 SELECT '-- shapes for which previews are not emitted';
 SELECT number % 2 AS k, count() AS c FROM numbers(100000) GROUP BY k WITH TOTALS ORDER BY k;
 SELECT number % 2 AS k, count() AS c FROM numbers(100000) GROUP BY ROLLUP(k) ORDER BY k, c;
-SELECT DISTINCT number % 3 AS k FROM numbers(100000) ORDER BY k;
 
 SELECT '-- an aggregation feeding another consumer stays dormant';
 SELECT count() FROM numbers(10) WHERE number IN (SELECT number % 5 FROM numbers(100000) GROUP BY number % 5);
