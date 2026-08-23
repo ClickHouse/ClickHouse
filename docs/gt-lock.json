@@ -7,36 +7,36 @@
       "versionId": "6dce0a76f98100d4b4f03d277602f294b5ffc1afcac33c58718ad1c957cd17cd",
       "translations": {
         "zh": {
-          "updatedAt": "2026-08-22T21:29:41.407Z",
+          "updatedAt": "2026-08-23T06:45:53.766Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-22T21:29:41.882Z",
+          "updatedAt": "2026-08-23T06:45:54.303Z",
           "fileName": "docs.json",
           "postProcessHash": "833945fdd41a4f386cab5b3b33d934243dc3f6fed6dac29e8b050bb4ee0ae4d0"
         },
         "es": {
-          "updatedAt": "2026-08-22T21:29:40.127Z",
+          "updatedAt": "2026-08-23T06:45:52.452Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-22T21:29:40.403Z",
+          "updatedAt": "2026-08-23T06:45:52.716Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-08-22T21:29:41.167Z",
+          "updatedAt": "2026-08-23T06:45:53.508Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-22T21:29:40.669Z",
+          "updatedAt": "2026-08-23T06:45:52.952Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-22T21:29:41.653Z",
+          "updatedAt": "2026-08-23T06:45:54.040Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-22T21:29:40.910Z",
+          "updatedAt": "2026-08-23T06:45:53.230Z",
           "fileName": "docs.json"
         }
       },
@@ -66621,47 +66621,47 @@
     },
     {
       "fileId": "63174a876bc3d4566fdf9cc0006da2448dd5a5865abe69e98b9b67f7f4ecc8ba",
-      "versionId": "74fe1b11958733bae723fd54c374930eb2cc80e4bbe67565d57ab92e9a3dc6b6",
+      "versionId": "c36acd8c3ed01115216f8f768a078f6105e45a4fa347a003a548358f86bf7b54",
       "translations": {
-        "fr": {
-          "updatedAt": "2026-08-20T15:52:46.627Z",
-          "fileName": "fr/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "d168cbc7ca9fac44272398558fdc75448c7b354acac6b4e1aa80eb5fd395f127"
-        },
-        "ru": {
-          "updatedAt": "2026-08-20T15:52:46.668Z",
-          "fileName": "ru/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "72d4c4f677be08c094f90c6ec7401a4febc131e5bf39c0652b80bf010fa45a92"
+        "zh": {
+          "updatedAt": "2026-08-23T06:45:59.707Z",
+          "fileName": "zh/reference/interfaces/specs/NativeFormat.mdx",
+          "postProcessHash": "6bbace815854839523a28b9bedece1442b914591064e8233503c10785eb06203"
         },
         "ko": {
-          "updatedAt": "2026-08-20T15:52:46.671Z",
+          "updatedAt": "2026-08-23T06:45:59.709Z",
           "fileName": "ko/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "07a02b585d287aad901137873efa3461a014ad8fc0eddc77994cb9a51b52f3a6"
+          "postProcessHash": "72382f2b12cf2790864f5125769f3f49d51e4d15c8b73f2bafb75151331010f9"
         },
-        "es": {
-          "updatedAt": "2026-08-20T15:52:46.672Z",
-          "fileName": "es/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "f3c193b0bca1a7678f10ead3b36754f30ee3bb73158c2955451decb9f847cd82"
-        },
-        "zh": {
-          "updatedAt": "2026-08-20T15:52:46.675Z",
-          "fileName": "zh/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "526645c75fd7bff8adb7a2b62b6aef78cd348e784a68d1c6e51253f776168d5b"
+        "ru": {
+          "updatedAt": "2026-08-23T06:45:59.711Z",
+          "fileName": "ru/reference/interfaces/specs/NativeFormat.mdx",
+          "postProcessHash": "6e3db1386c7f3c2de6e16c1dc9560cb752df5b6c1c96d2578a9c977f962c8ec0"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-20T15:52:46.679Z",
+          "updatedAt": "2026-08-23T06:45:59.713Z",
           "fileName": "pt-BR/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "e179a841644eaa12ebe0eaf8fa4db09b1cc512e752bb4543597e8887b18aed67"
+          "postProcessHash": "1d944c09341c5305a7c28588b828ef2c8cb4701bf34a0b4ea11b76a83bb9f828"
+        },
+        "fr": {
+          "updatedAt": "2026-08-23T06:45:59.714Z",
+          "fileName": "fr/reference/interfaces/specs/NativeFormat.mdx",
+          "postProcessHash": "25ad031aa4d1525a050f68d45675b2fd04d2f6eb08587c747133b3152023e77d"
+        },
+        "es": {
+          "updatedAt": "2026-08-23T06:45:59.716Z",
+          "fileName": "es/reference/interfaces/specs/NativeFormat.mdx",
+          "postProcessHash": "b0f179ea9b5c6d28642b7534c8f1ee9ac5ea7548720aa375711b0f072883e6b4"
         },
         "ja": {
-          "updatedAt": "2026-08-20T15:52:46.682Z",
+          "updatedAt": "2026-08-23T06:45:59.717Z",
           "fileName": "ja/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "616297e67bb34a5dc4db60c751af005f3bd9095dadf25e740456e78ed5ed85c5"
+          "postProcessHash": "6101e43a6b10b8ec803135a93e49a722a84146cdf6cc62bf4b724ad80b2f84de"
         },
         "ar": {
-          "updatedAt": "2026-08-20T15:52:46.692Z",
+          "updatedAt": "2026-08-23T06:45:59.718Z",
           "fileName": "ar/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "01dc43cc5d7c7e13f2ebc3061714a42434ed631dace56f51a35046a1aeea6e3d"
+          "postProcessHash": "1d1c4af1e342d2e4c464c961d492c2400d03e7f8fe8edae222c126a15f00d50a"
         }
       },
       "fileName": "reference/interfaces/specs/NativeFormat.mdx",
