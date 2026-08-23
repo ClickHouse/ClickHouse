@@ -55,6 +55,7 @@
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
+#include <Poco/Exception.h>
 #include <Poco/Net/HTTPMessage.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -134,6 +135,25 @@ namespace
 bool requestDeclaresFormBody(const HTTPServerRequest & request)
 {
     return isUrlEncodedFormData(request) || isMultipartFormData(request);
+}
+
+void validateDynamicHandlerPath(const String & uri)
+{
+    String path = uri;
+    if (const auto query_start = path.find('?'); query_start != String::npos)
+        path.resize(query_start);
+
+    try
+    {
+        String decoded_path;
+        Poco::URI::decode(path, decoded_path);
+    }
+    catch (const Poco::Exception &)
+    {
+        /// HTMLForm constructs a Poco::URI before the dynamic handler gets to parse the path. Convert malformed
+        /// percent-encoding into the same client-facing error as the path parser instead of returning HTTP 500.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed percent-encoded component in HTTP URL path");
+    }
 }
 
 void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
@@ -1603,6 +1623,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// For keep-alive to work.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
+
+        if (parsesHTTPPath())
+            validateDynamicHandlerPath(request.getURI());
 
         HTMLForm params(default_settings, request);
 
