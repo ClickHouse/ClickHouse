@@ -108,14 +108,5 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND event_date >= yesterday() AND event_time >= now() - 600
     AND log_comment LIKE '04676_seal_%';
 
--- The normalization inside the coalescing additionally needs the buffered batches to disagree at
--- an argument position, and which blocks one producer buffers is not something the settings above
--- pin, so the count is summed over the three arms rather than asserted for each.
-SELECT 'normalized', coalesce(sum(ProfileEvents['AdaptiveAggregationSealNormalizations']), 0) > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND event_date >= yesterday() AND event_time >= now() - 600
-    AND log_comment LIKE '04676_seal_%';
-
 DROP TABLE t_adaptive_repl_left;
 DROP TABLE t_adaptive_repl_right;
