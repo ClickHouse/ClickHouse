@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
@@ -13,6 +15,9 @@ cluster = ClickHouseCluster(__file__)
 main_configs = [
     "configs/backups_disk.xml",
     "configs/cluster_different_versions.xml",
+    # The assertions below leave a backup that can never complete, and the server waits for
+    # unfinished backups on shutdown by default.
+    "configs/shutdown_cancel_backups.xml",
 ]
 
 user_configs = ["configs/user_config.xml"]
@@ -65,6 +70,23 @@ def new_backup_name():
     return f"Disk('backups', 'fsync_ver_{backup_id_counter}')"
 
 
+# How many times old_node has refused the setting. Counted rather than waited for as a log line,
+# because a wait for the text is satisfied by a line an earlier assertion produced.
+def count_rejections():
+    return int(
+        old_node.count_in_log("Setting fsync_backup_files is neither a builtin")
+    )
+
+
+def assert_eventually(predicate, message, timeout=60):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(1)
+    raise AssertionError(message)
+
+
 def test_fsync_backup_files_not_silently_dropped_on_old_host():
     new_node.query(
         "CREATE TABLE tbl"
@@ -84,33 +106,29 @@ def test_fsync_backup_files_not_silently_dropped_on_old_host():
     # dropped on the way to old_node. The value 1 also equals the default, which is precisely the
     # case a serializer that sends only non-default values drops.
     #
-    # The assertion is that old_node rejects the setting, read from old_node's own log. It is not
-    # that the user's query fails: an old host rejects the internal query before it joins the
-    # backup's coordination, so it never writes an error node and the initiator keeps waiting for a
-    # host that will never arrive. That unbounded wait is pre-existing and unrelated to this
-    # setting - it reproduces on an unpatched server with any backup setting the old host does not
-    # know - so it is not asserted here. What matters for durability is that the guarantee is not
-    # silently downgraded: old_node refuses the work instead of writing its share without fsync.
-    # async = 1 so the initiator returns instead of blocking on the wait described above.
+    # What is asserted is that old_node refuses the setting, not that the user's query fails: an old
+    # host rejects the internal query before it joins the backup's coordination, so it writes no
+    # error node and the initiator keeps waiting for a host that never arrives. That unbounded wait
+    # is pre-existing and independent of this setting, so async = 1 is used to step around it.
     for value in ["1", "0"]:
-        rejections_before = int(
-            old_node.count_in_log("Setting fsync_backup_files is neither a builtin")
-        )
+        rejections_before = count_rejections()
+        backup_id = f"fsync_ver_explicit_{value}"
         new_node.query(
             f"BACKUP TABLE tbl ON CLUSTER 'cluster_ver' TO {new_backup_name()}"
-            f" SETTINGS fsync_backup_files = {value}, async = 1"
+            f" SETTINGS fsync_backup_files = {value}, async = 1, id = '{backup_id}'"
         )
-        old_node.wait_for_log_line(
-            "Setting fsync_backup_files is neither a builtin",
-            timeout=60,
-            look_behind_lines=2000,
-        )
-        rejections_after = int(
-            old_node.count_in_log("Setting fsync_backup_files is neither a builtin")
-        )
-        assert rejections_after > rejections_before, (
+        assert_eventually(
+            lambda before=rejections_before: count_rejections() > before,
             f"old_node did not reject fsync_backup_files = {value}:"
-            f" rejection count stayed at {rejections_before}"
+            f" rejection count stayed at {rejections_before}",
+        )
+        # The backup can never finish: old_node refused the internal query before joining the
+        # coordination, so nothing will ever release the initiator's wait for it. Cancel it here so
+        # it does not outlive the test. Asynchronously, without SYNC: SYNC polls until the killed
+        # query is gone, which is the very thing that cannot happen here.
+        new_node.query(
+            "KILL QUERY WHERE (query_kind = 'Backup')"
+            f" AND (query LIKE '%{backup_id}%') ASYNC"
         )
 
     # Control for the two assertions above: a setting old_node does know must still work when named
