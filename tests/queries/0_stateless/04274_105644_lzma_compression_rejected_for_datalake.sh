@@ -24,8 +24,6 @@ TABLES=(
     "${TABLE_PREFIX}_auto"
     "${TABLE_PREFIX}_auto_upper"
     "${TABLE_PREFIX}_none_mixed"
-    "${TABLE_PREFIX}_attach_lzma"
-    "${TABLE_PREFIX}_attach_gzip"
     "${TABLE_PREFIX}_attach_full_def_lzma"
     "${TABLE_PREFIX}_kv_compression"
     "${TABLE_PREFIX}_kv_compression_method"
@@ -84,43 +82,11 @@ ${CLICKHOUSE_CLIENT} --query "
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_none_mixed', 'Parquet', 'None')
 " 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
-# 8 / 9. `ATTACH` path: existing tables persisted before this validation landed
-#        can carry a non-default `compression_method` in their metadata. The
-#        rejection above is gated on `LoadingStrictnessLevel == CREATE` so
-#        server restart and explicit `ATTACH` can still load such tables. We
-#        simulate this by creating without `compression_method`, detaching,
-#        injecting the forbidden value into the on-disk metadata, and
-#        reattaching. ATTACH must succeed without the rejection error
-#        (`grep -c` returns 0) AND the table must actually exist afterwards
-#        (`EXISTS` returns 1). The positive existence check guards against
-#        `ATTACH` failing for any unrelated reason where `grep` alone would
-#        still print 0.
-DEFAULT_DISK_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.disks WHERE name = 'default'")
-for forbidden in lzma gzip; do
-    ATTACH_TABLE="${TABLE_PREFIX}_attach_${forbidden}"
-    ${CLICKHOUSE_CLIENT} --query "
-        CREATE TABLE ${ATTACH_TABLE} (c0 Int)
-        ENGINE = IcebergLocal('${USER_FILES_PATH}/${ATTACH_TABLE}', 'Parquet')
-    "
-    METADATA_REL=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT metadata_path FROM system.tables WHERE database = currentDatabase() AND name = '${ATTACH_TABLE}'
-    ")
-    METADATA_ABS="${DEFAULT_DISK_PATH}${METADATA_REL}"
-    ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${ATTACH_TABLE}"
-    # Rewrite `ENGINE = IcebergLocal('...', 'Parquet')` to
-    # `ENGINE = IcebergLocal('...', 'Parquet', 'lzma'/'gzip')` to simulate
-    # pre-fix metadata carrying the forbidden value. Assert the rewrite
-    # actually fired before short ATTACH runs, otherwise this test would
-    # silently stop exercising the backward-compat path if the on-disk CREATE
-    # serialization ever changes formatting.
-    sed -i "s|, 'Parquet')|, 'Parquet', '${forbidden}')|" "${METADATA_ABS}"
-    grep -qF ", 'Parquet', '${forbidden}')" "${METADATA_ABS}" \
-        || { echo "REWRITE_FAILED: metadata at ${METADATA_ABS} did not gain the forbidden compression argument"; cat "${METADATA_ABS}"; }
-    ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${ATTACH_TABLE}" 2>&1 \
-        | grep -c "not supported by data lake engines" || true
-    ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${ATTACH_TABLE}"
-done
-
+# 9. Short `ATTACH TABLE name` of metadata that already carries the forbidden
+#    argument needs the server's on-disk metadata to be rewritten, which a
+#    stateless test must not do; it lives in the integration test
+#    `test_storage_iceberg_no_spark/test_datalake_compression_attach.py`.
+#
 # 9b. Full-definition `ATTACH TABLE name FROM 'path' (cols) ENGINE = ...` also
 #     skips the rejection: the gate fires only for `LoadingStrictnessLevel ==
 #     CREATE`, and every `ATTACH` form (short or full-definition) is
