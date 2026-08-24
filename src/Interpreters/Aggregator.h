@@ -1060,27 +1060,41 @@ private:
         bool final,
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+        std::atomic<int> * threshold_top_k_verdict = nullptr) const;
 
     /// The top-K threshold merge (see `Params::threshold_top_k`): merges and materializes only
     /// the groups that can rank among the bucket's k best by the ordering aggregate. Returns
-    /// nothing when it declines at run time (a method it does not serve, or a bucket too small
-    /// for the pruning to pay for the setup), and the caller falls back to the ordinary merge.
-    /// Defined in AggregatorThresholdTopK.cpp.
+    /// nothing when it declines at run time (a method it does not serve, a bucket too small
+    /// for the pruning to pay for the setup, or a value distribution the threshold cannot cut;
+    /// the latter verdict is shared across the buckets through `threshold_top_k_verdict`), and
+    /// the caller falls back to the ordinary merge. Defined in AggregatorThresholdTopK.cpp.
     std::optional<AggregatedChunk> tryMergeAndConvertOneBucketToChunkThresholdTopK(
-        ManyAggregatedDataVariants & variants, Arena * arena, Int32 bucket, std::atomic<bool> & is_cancelled) const;
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        std::atomic<int> * threshold_top_k_verdict) const;
 
     template <typename Method>
     requires MapAggregationMethod<Method>
     std::optional<AggregatedChunk> mergeAndConvertOneBucketToChunkThresholdTopKImpl(
-        ManyAggregatedDataVariants & variants, Arena * arena, Int32 bucket, std::atomic<bool> & is_cancelled) const;
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        std::atomic<int> * threshold_top_k_verdict) const;
 
     /// The threshold merge ranks groups by an aggregate's value, which a set method cannot have.
     /// This overload exists only because the call site tests it at run time.
     template <typename Method>
     requires SetAggregationMethod<Method>
     std::optional<AggregatedChunk> mergeAndConvertOneBucketToChunkThresholdTopKImpl(
-        ManyAggregatedDataVariants & variants, Arena * arena, Int32 bucket, std::atomic<bool> & is_cancelled) const;
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        std::atomic<int> * threshold_top_k_verdict) const;
 
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;

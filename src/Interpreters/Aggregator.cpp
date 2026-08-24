@@ -2735,7 +2735,8 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     bool final,
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater,
+    std::atomic<int> * threshold_top_k_verdict) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -2744,10 +2745,14 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     /// The top-K threshold merge produces the bucket's k best groups directly, merging only the
     /// groups that can rank among them. It must stand down when the dataflow statistics are
     /// being collected: the statistics must describe the untruncated merge of every group (see
-    /// `RuntimeDataflowStatistics.h`), which only the ordinary path performs. The updater is
-    /// attached per query, so all buckets take the same path.
-    if (final && params.threshold_top_k && !updater)
-        if (auto threshold_chunk = tryMergeAndConvertOneBucketToChunkThresholdTopK(variants, arena, bucket, is_cancelled))
+    /// `RuntimeDataflowStatistics.h`), which only the ordinary path performs (the updater is
+    /// attached per query, so all buckets take the same path). It also stands down for the lone
+    /// `count()` (`bucket_top_k`), whose conversion-stage selection reads the count straight
+    /// from the state during a single scan and is measurably cheaper than the value-peeking
+    /// walk; the threshold merge serves `count` when other aggregates ride along.
+    if (final && params.threshold_top_k && !params.bucket_top_k && !updater)
+        if (auto threshold_chunk
+            = tryMergeAndConvertOneBucketToChunkThresholdTopK(variants, arena, bucket, is_cancelled, threshold_top_k_verdict))
             return std::move(*threshold_chunk);
 
     /// Filled by the Top-K conversion (zero otherwise): the untruncated key bytes to account in

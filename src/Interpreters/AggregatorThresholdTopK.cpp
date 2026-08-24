@@ -39,9 +39,11 @@
   *    as that bound cannot strictly beat the worst kept candidate, no unseen group can enter the
   *    result, and the merge stops without touching the remaining groups.
   *
-  * For skewed distributions the merge and the materialization become sublinear in the number of
-  * groups; in the worst case (no skew) every group is visited, which costs about as much as the
-  * ordinary merge plus the peek/heap overhead.
+  * The merge and the materialization become sublinear in the number of groups. The extremum
+  * bounds of `min`/`max` converge right after the top k candidates are found for any number of
+  * tables; the summing bound of `count`/`uniqExact` serves the single-table case (a pure
+  * selection - see the commit gate below for why it is not worth committing to across several
+  * tables). A pop budget with a bucket-shared verdict backstops the walks that fail to converge.
   */
 
 namespace ProfileEvents
@@ -81,7 +83,11 @@ UInt64 saturatingAdd(UInt64 a, UInt64 b)
 }
 
 std::optional<Aggregator::AggregatedChunk> Aggregator::tryMergeAndConvertOneBucketToChunkThresholdTopK(
-    ManyAggregatedDataVariants & variants, Arena * arena, Int32 bucket, std::atomic<bool> & is_cancelled) const
+    ManyAggregatedDataVariants & variants,
+    Arena * arena,
+    Int32 bucket,
+    std::atomic<bool> & is_cancelled,
+    std::atomic<int> * threshold_top_k_verdict) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;
@@ -90,7 +96,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::tryMergeAndConvertOneBuck
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
         return mergeAndConvertOneBucketToChunkThresholdTopKImpl<decltype(merged_data.NAME)::element_type>( \
-            variants, arena, bucket, is_cancelled);
+            variants, arena, bucket, is_cancelled, threshold_top_k_verdict);
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
@@ -101,7 +107,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::tryMergeAndConvertOneBuck
 template <typename Method>
 requires SetAggregationMethod<Method>
 std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketToChunkThresholdTopKImpl(
-    ManyAggregatedDataVariants &, Arena *, Int32, std::atomic<bool> &) const
+    ManyAggregatedDataVariants &, Arena *, Int32, std::atomic<bool> &, std::atomic<int> *) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "The top-K threshold merge does not support set methods");
 }
@@ -109,7 +115,11 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
 template <typename Method>
 requires MapAggregationMethod<Method>
 std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketToChunkThresholdTopKImpl(
-    ManyAggregatedDataVariants & variants, Arena * arena, Int32 bucket, std::atomic<bool> & is_cancelled) const
+    ManyAggregatedDataVariants & variants,
+    Arena * arena,
+    Int32 bucket,
+    std::atomic<bool> & is_cancelled,
+    std::atomic<int> * threshold_top_k_verdict) const
 {
     /// The plan never requests the threshold merge for nullable or low-cardinality keys (their
     /// tables carry a special null-key cell the walk below does not visit), but the dispatch
@@ -150,6 +160,27 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         if (total_cells <= k * min_cells_per_k)
             return std::nullopt;
 
+        /// The summing bound serves only a dominant table (e.g. after the adaptive aggregator
+        /// drained the frozen tables into one, with at most stray leftovers elsewhere), where it
+        /// is nearly a pure selection that stops right after the top k groups. With the groups
+        /// truly split across the tables it is not worth committing to: with near-uniform values
+        /// the sum of the heads never lets the walk stop, and even when it converges, the groups
+        /// it prunes are exactly the ones whose states are the cheapest to merge (they lost the
+        /// ranking), so the measured outcome is parity at best. The extremum bounds converge
+        /// right after the candidate heap fills for any number of tables.
+        if (additive_descending)
+        {
+            size_t largest_table_cells = 0;
+            for (const Table * table : tables)
+                largest_table_cells = std::max(largest_table_cells, table->size());
+            if (largest_table_cells * 8 < total_cells * 7)
+                return std::nullopt;
+        }
+
+        /// An earlier bucket exhausted the walk budget: this value distribution does not converge.
+        if (threshold_top_k_verdict && threshold_top_k_verdict->load(std::memory_order_relaxed) == 0)
+            return std::nullopt;
+
         const IAggregateFunction * order_by_function = aggregate_functions[order_by_index];
         const size_t order_by_offset = offsets_of_aggregate_states[order_by_index];
 
@@ -177,6 +208,8 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         {
             Table * table = nullptr;
             std::vector<Entry> entries;
+            /// The cells' states in the entries' order, for the batch peek of their values.
+            PaddedPODArray<AggregateDataPtr> places;
             /// The peeked partial values: a column for the generic path, a plain array when the
             /// values are known to be UInt64 (the inline count has no state to peek from).
             MutableColumnPtr values_column;
@@ -187,68 +220,51 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
 
         std::vector<List> lists(tables.size());
 
-        /// The first pass peeks the partial values, so that a hopeless bucket can take the
-        /// ordinary merge before anything is committed; the second pass collects the cells.
+        /// One walk per table collects the cells; the values are peeked afterwards in batches.
         for (size_t i = 0; i < tables.size(); ++i)
         {
             List & list = lists[i];
             list.table = tables[i];
             const size_t cells = tables[i]->size();
+            list.entries.reserve(cells);
             if (is_simple_count)
             {
                 list.inline_counts.reserve(cells);
                 tables[i]->forEachValue(
-                    [&](const auto &, auto & mapped) { list.inline_counts.push_back(getInlineCountState(mapped)); });
+                    [&](const auto & key, auto & mapped)
+                    {
+                        list.inline_counts.push_back(getInlineCountState(mapped));
+                        list.entries.push_back(Entry{key, &mapped, static_cast<UInt32>(list.entries.size())});
+                    });
                 list.values_uint = list.inline_counts.data();
             }
             else
             {
-                list.values_column = order_by_function->getResultType()->createColumn();
-                list.values_column->reserve(cells);
+                list.places.reserve(cells);
                 tables[i]->forEachValue(
-                    [&](const auto &, auto & mapped)
-                    { order_by_function->insertResultInto(mapped + order_by_offset, *list.values_column, arena); });
-                if (values_are_uint64)
-                    list.values_uint = assert_cast<const ColumnUInt64 &>(*list.values_column).getData().data();
+                    [&](const auto & key, auto & mapped)
+                    {
+                        list.places.push_back(mapped);
+                        list.entries.push_back(Entry{key, &mapped, static_cast<UInt32>(list.entries.size())});
+                    });
             }
-        }
-
-        /// The convergence precheck of the summing threshold. The merge stops only once the sum
-        /// of the per-table heads drops below the worst kept candidate. The (k * m)-th largest
-        /// partial value V bounds the k-th best candidate from below (a group has at most m
-        /// partials, so the top k * m partials cover at least k groups), and the sum of m heads
-        /// falls under V roughly once the pop frontier passes the values above V / m. When the
-        /// majority of the cells lies above that level - e.g. near-uniform counts split across
-        /// every thread, where per-table partials say nothing about the merged order - the
-        /// threshold cannot stop the walk, and paying the setup would only slow the merge down.
-        /// The exact extremum bounds need no such check: they converge right after the candidate
-        /// heap fills.
-        if (additive_descending && tables.size() > 1)
-        {
-            PaddedPODArray<UInt64> all_values;
-            all_values.reserve(total_cells);
-            for (const List & list : lists)
-                all_values.insert(list.values_uint, list.values_uint + list.table->size());
-            const size_t rank = std::min(k * tables.size(), all_values.size()) - 1;
-            std::nth_element(all_values.begin(), all_values.begin() + rank, all_values.end(), std::greater<>());
-            const UInt64 head_bound = all_values[rank] / tables.size();
-            size_t cells_above = 0;
-            for (const UInt64 value : all_values)
-                cells_above += value > head_bound;
-            if (cells_above * 2 > all_values.size())
-                return std::nullopt;
+            list.heap_size = list.entries.size();
         }
 
         ProfileEvents::increment(ProfileEvents::AggregationThresholdTopKMerges);
 
-        for (size_t i = 0; i < tables.size(); ++i)
+        /// Peek the partial values of every cell (the inline count already collected them).
+        if (!is_simple_count)
         {
-            List & list = lists[i];
-            list.entries.reserve(tables[i]->size());
-            tables[i]->forEachValue(
-                [&](const auto & key, auto & mapped)
-                { list.entries.push_back(Entry{key, &mapped, static_cast<UInt32>(list.entries.size())}); });
-            list.heap_size = list.entries.size();
+            for (List & list : lists)
+            {
+                list.values_column = order_by_function->getResultType()->createColumn();
+                list.values_column->reserve(list.places.size());
+                order_by_function->insertResultIntoBatchWithoutDestroying(
+                    0, list.places.size(), list.places.data(), order_by_offset, *list.values_column, arena);
+                if (values_are_uint64)
+                    list.values_uint = assert_cast<const ColumnUInt64 &>(*list.values_column).getData().data();
+            }
         }
 
         /// `better(a, b)`: a ranks strictly before b in the requested order. The generic
@@ -359,6 +375,118 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         size_t consumed_cells = 0;
         size_t popped_cells = 0;
 
+        /// Fagin's random access for one cell: collect and merge the group's states from every
+        /// other table, zeroing the consumed cells so later encounters of the group are skipped,
+        /// and rank the exact merged value in the bounded candidate heap.
+        const auto process_cell = [&](const Entry & entry, Table * entry_table)
+        {
+            /// Consumed by an earlier random access for the same group.
+            if (is_simple_count ? (getInlineCountState(*entry.slot) == 0) : (*entry.slot == nullptr))
+                return;
+
+            ++consumed_cells;
+            ++merged_groups;
+            Candidate candidate{entry.key, nullptr, 0};
+
+            if (is_simple_count)
+            {
+                UInt64 count = getInlineCountState(*entry.slot);
+                getInlineCountState(*entry.slot) = 0;
+                for (Table * table : tables)
+                {
+                    if (table == entry_table)
+                        continue;
+                    auto it = find_in(*table, entry.key);
+                    if (!it)
+                        continue;
+                    ++consumed_cells;
+                    count += getInlineCountState(it->getMapped());
+                    getInlineCountState(it->getMapped()) = 0;
+                }
+                candidate.value = count;
+            }
+            else
+            {
+                AggregateDataPtr place = *entry.slot;
+                *entry.slot = nullptr;
+                try
+                {
+                    for (Table * table : tables)
+                    {
+                        if (table == entry_table)
+                            continue;
+                        auto it = find_in(*table, entry.key);
+                        if (!it)
+                            continue;
+                        AggregateDataPtr & other = it->getMapped();
+                        if (!other)
+                            continue;
+                        ++consumed_cells;
+                        /// Always the interpreted merge, even when the accumulation was
+                        /// JIT-compiled: the compiled and the interpreted code share the
+                        /// state layout by contract (spilling and distributed aggregation
+                        /// rely on the same interoperability), and only the few candidate
+                        /// groups pay for it. The per-pair batch entry point handles the
+                        /// functions whose merge may use the thread pool (e.g. `uniqExact`)
+                        /// and destroys the source state.
+                        for (size_t f = 0; f < params.aggregates_size; ++f)
+                            aggregate_functions[f]->mergeAndDestroyBatch(
+                                &place, &other, 1, offsets_of_aggregate_states[f], *thread_pool, is_cancelled, arena);
+                        other = nullptr;
+                    }
+
+                    /// The exact merged value of the group.
+                    if (values_are_uint64)
+                    {
+                        order_by_function->insertResultInto(place + order_by_offset, *exact_value_scratch, arena);
+                        candidate.value = assert_cast<const ColumnUInt64 &>(*exact_value_scratch).getData().back();
+                        exact_value_scratch->popBack(1);
+                    }
+                    else
+                    {
+                        order_by_function->insertResultInto(place + order_by_offset, *exact_values_column, arena);
+                        candidate.value = exact_values_column->size() - 1;
+                    }
+                }
+                catch (...)
+                {
+                    destroy_place(place);
+                    throw;
+                }
+                candidate.place = place;
+            }
+
+            if (candidates.size() < k)
+            {
+                candidates.push_back(candidate);
+                std::push_heap(candidates.begin(), candidates.end(), candidate_worse);
+            }
+            else if (candidate_worse(candidates.front(), candidate))
+            {
+                std::pop_heap(candidates.begin(), candidates.end(), candidate_worse);
+                if (candidates.back().place)
+                    destroy_place(candidates.back().place);
+                candidates.back() = candidate;
+                std::push_heap(candidates.begin(), candidates.end(), candidate_worse);
+            }
+            else
+            {
+                /// The group's exact value is final; once rejected it can never enter.
+                if (candidate.place)
+                    destroy_place(candidate.place);
+            }
+        };
+
+        /// A safety net for the walks that fail to converge - e.g. `ORDER BY min(x) DESC`, where
+        /// a group's per-table partial minima can all sit far above its merged minimum, keeping
+        /// the threshold open (the favorable directions stop within about k * m pops). Once half
+        /// of the cells are popped with the threshold still open, this bucket finishes with a
+        /// plain linear sweep - same processing, no heap traffic - and the verdict tells the
+        /// remaining buckets (which see the same hash-partitioned distribution) to take the
+        /// ordinary merge from the start.
+        const size_t pop_budget = total_cells / 2;
+        bool budget_exhausted = false;
+
         try
         {
             while (!lists.empty())
@@ -421,102 +549,32 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                     return AggregatedChunk{};
                 }
 
-                /// Consumed by an earlier random access for the same group.
-                if (is_simple_count ? (getInlineCountState(*entry.slot) == 0) : (*entry.slot == nullptr))
-                    continue;
+                process_cell(entry, entry_table);
 
-                /// Fagin's random access: collect and merge the group's states from every other
-                /// table, zeroing the consumed cells so later pops of this group are skipped.
-                ++consumed_cells;
-                ++merged_groups;
-                Candidate candidate{entry.key, nullptr, 0};
-
-                if (is_simple_count)
+                if (popped_cells > pop_budget)
                 {
-                    UInt64 count = getInlineCountState(*entry.slot);
-                    getInlineCountState(*entry.slot) = 0;
-                    for (Table * table : tables)
+                    if (threshold_top_k_verdict)
+                        threshold_top_k_verdict->store(0, std::memory_order_relaxed);
+                    budget_exhausted = true;
+                    break;
+                }
+            }
+
+            /// The budget ran out: no more sorted access, just process what remains (the first
+            /// `heap_size` entries of every surviving list are exactly the unpopped ones).
+            if (budget_exhausted)
+            {
+                for (List & list : lists)
+                {
+                    for (size_t j = 0; j < list.heap_size; ++j)
                     {
-                        if (table == entry_table)
-                            continue;
-                        auto it = find_in(*table, entry.key);
-                        if (!it)
-                            continue;
-                        ++consumed_cells;
-                        count += getInlineCountState(it->getMapped());
-                        getInlineCountState(it->getMapped()) = 0;
-                    }
-                    candidate.value = count;
-                }
-                else
-                {
-                    AggregateDataPtr place = *entry.slot;
-                    *entry.slot = nullptr;
-                    try
-                    {
-                        for (Table * table : tables)
+                        if ((++popped_cells % cancellation_check_period) == 0 && is_cancelled.load(std::memory_order_seq_cst))
                         {
-                            if (table == entry_table)
-                                continue;
-                            auto it = find_in(*table, entry.key);
-                            if (!it)
-                                continue;
-                            AggregateDataPtr & other = it->getMapped();
-                            if (!other)
-                                continue;
-                            ++consumed_cells;
-                            /// Always the interpreted merge, even when the accumulation was
-                            /// JIT-compiled: the compiled and the interpreted code share the
-                            /// state layout by contract (spilling and distributed aggregation
-                            /// rely on the same interoperability), and only the few candidate
-                            /// groups pay for it. The per-pair batch entry point handles the
-                            /// functions whose merge may use the thread pool (e.g. `uniqExact`)
-                            /// and destroys the source state.
-                            for (size_t f = 0; f < params.aggregates_size; ++f)
-                                aggregate_functions[f]->mergeAndDestroyBatch(
-                                    &place, &other, 1, offsets_of_aggregate_states[f], *thread_pool, is_cancelled, arena);
-                            other = nullptr;
+                            destroy_candidates();
+                            return AggregatedChunk{};
                         }
-
-                        /// The exact merged value of the group.
-                        if (values_are_uint64)
-                        {
-                            order_by_function->insertResultInto(place + order_by_offset, *exact_value_scratch, arena);
-                            candidate.value = assert_cast<const ColumnUInt64 &>(*exact_value_scratch).getData().back();
-                            exact_value_scratch->popBack(1);
-                        }
-                        else
-                        {
-                            order_by_function->insertResultInto(place + order_by_offset, *exact_values_column, arena);
-                            candidate.value = exact_values_column->size() - 1;
-                        }
+                        process_cell(list.entries[j], list.table);
                     }
-                    catch (...)
-                    {
-                        destroy_place(place);
-                        throw;
-                    }
-                    candidate.place = place;
-                }
-
-                if (candidates.size() < k)
-                {
-                    candidates.push_back(candidate);
-                    std::push_heap(candidates.begin(), candidates.end(), candidate_worse);
-                }
-                else if (candidate_worse(candidates.front(), candidate))
-                {
-                    std::pop_heap(candidates.begin(), candidates.end(), candidate_worse);
-                    if (candidates.back().place)
-                        destroy_place(candidates.back().place);
-                    candidates.back() = candidate;
-                    std::push_heap(candidates.begin(), candidates.end(), candidate_worse);
-                }
-                else
-                {
-                    /// The group's exact value is final; once rejected it can never enter.
-                    if (candidate.place)
-                        destroy_place(candidate.place);
                 }
             }
 

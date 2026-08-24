@@ -120,9 +120,10 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
             continue;
 
         /// The top-K threshold merge (see `Aggregator::Params::threshold_top_k`) serves any
-        /// aggregate with a declared merged-value bound. It stands down at run time in a few
-        /// cases (single-level tables, dataflow statistics collection), so for the lone `count`
-        /// the conversion-stage selection below is enabled as well, as a fallback.
+        /// aggregate with a declared merged-value bound; at run time it yields to the lone
+        /// count's conversion-stage selection below (a plain scan there beats the value-peeking
+        /// walk) and stands down in a few other cases (single-level tables, dataflow statistics
+        /// collection).
         if (settings.aggregation_top_k_threshold_merge && !description.front().collator)
         {
             const auto bound = aggregate.function->getMergedValueBound();

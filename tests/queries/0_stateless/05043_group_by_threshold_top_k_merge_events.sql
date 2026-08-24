@@ -7,6 +7,10 @@
 SET max_threads = 4;
 SET group_by_two_level_threshold = 1;
 SET group_by_two_level_threshold_bytes = 1;
+-- The summing bound of count/uniqExact serves a dominant per-thread table; the adaptive
+-- aggregator with an early freeze drains the frozen tables into one, producing exactly that.
+SET enable_adaptive_aggregator = 1;
+SET adaptive_aggregator_freeze_threshold = 1024;
 SET max_rows_to_group_by = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
@@ -22,10 +26,13 @@ INSERT INTO threshold_top_k_events SELECT intDiv(number, 4), number, number % 4 
 -- is dominated by the heavy keys and the threshold cuts the tail off after them.
 INSERT INTO threshold_top_k_events SELECT 500000 + number % 20, 1e9 + number, number FROM numbers(20000);
 
-SELECT k, count() AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
+-- A second aggregate rides along: for the lone count() the conversion-stage bucket selection
+-- serves the query instead of the threshold merge.
+SELECT k, count() AS c, max(u) FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_a_count' FORMAT Null;
 SELECT k, uniqExact(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_b_uniq_exact' FORMAT Null;
+-- The extremum bound serves any number of per-thread tables.
 SELECT k, max(u) AS m FROM threshold_top_k_events GROUP BY k ORDER BY m DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_c_max' FORMAT Null;
 

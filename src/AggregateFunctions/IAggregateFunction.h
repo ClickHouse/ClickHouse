@@ -427,6 +427,18 @@ public:
         IColumn & to,
         Arena * arena) const = 0;
 
+    /** The same devirtualized loop, but the states stay usable afterwards (`insertResultInto`
+      * guarantees it) - for peeking the values of live states, e.g. by the top-K threshold
+      * merge, which ranks partial states by value before deciding which ones to merge.
+      */
+    virtual void insertResultIntoBatchWithoutDestroying(
+        size_t row_begin,
+        size_t row_end,
+        const AggregateDataPtr * places,
+        size_t place_offset,
+        IColumn & to,
+        Arena * arena) const = 0;
+
     /** Destroy batch of aggregate places.
       */
     virtual void destroyBatch(
@@ -790,6 +802,18 @@ public:
                 init(place);
             static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
         }
+    }
+
+    void insertResultIntoBatchWithoutDestroying(
+        size_t row_begin,
+        size_t row_end,
+        const AggregateDataPtr * places,
+        size_t place_offset,
+        IColumn & to,
+        Arena * arena) const override
+    {
+        for (size_t i = row_begin; i < row_end; ++i)
+            static_cast<const Derived *>(this)->insertResultInto(places[i] + place_offset, to, arena);
     }
 
     void insertResultIntoBatch(
