@@ -506,7 +506,9 @@ void ReadBufferFromAzureBlobStorage::setMetadataFromResponse(const Azure::Storag
 {
     ObjectMetadata new_metadata;
     new_metadata.size_bytes = blob_size;
-    new_metadata.etag = details.ETag.ToString();
+    /// The remote endpoint is not obliged to answer with an `ETag` header, and `Azure::ETag::ToString`
+    /// aborts the process when the tag is absent, in release builds too.
+    new_metadata.etag = details.ETag.HasValue() ? details.ETag.ToString() : "";
     new_metadata.last_modified = static_cast<std::chrono::system_clock::time_point>(details.LastModified).time_since_epoch().count();
     if (!details.Metadata.empty())
     {

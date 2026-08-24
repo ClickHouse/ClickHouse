@@ -71,8 +71,8 @@ void assertCountsUpFromZero(const std::string & data)
 class FixedSizeResponseTransport : public Azure::Core::Http::HttpTransport
 {
 public:
-    FixedSizeResponseTransport(size_t response_size_, size_t blob_size_)
-        : response_size(response_size_), blob_size(blob_size_)
+    FixedSizeResponseTransport(size_t response_size_, size_t blob_size_, bool send_etag_)
+        : response_size(response_size_), blob_size(blob_size_), send_etag(send_etag_)
     {
     }
 
@@ -85,7 +85,8 @@ public:
         response->SetHeader(
             "Content-Range", "bytes 0-" + std::to_string(response_size - 1) + "/" + std::to_string(blob_size));
         response->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
-        response->SetHeader("ETag", "\"0x8DA000000000000\"");
+        if (send_etag)
+            response->SetHeader("ETag", "\"0x8DA000000000000\"");
         response->SetBodyStream(
             std::make_unique<LyingBodyStream>(countingUpFromZero(response_size), static_cast<int64_t>(response_size)));
 
@@ -95,15 +96,17 @@ public:
 private:
     size_t response_size;
     size_t blob_size;
+    bool send_etag;
 };
 
 /// Reads a blob from an endpoint that answers every ranged request with `response_size` bytes,
 /// with the right bound set to `read_until_position` and a `buffer_size`-byte reading buffer.
-std::string readWithRightBound(size_t response_size, size_t blob_size, size_t read_until_position, size_t buffer_size)
+std::string readWithRightBound(
+    size_t response_size, size_t blob_size, size_t read_until_position, size_t buffer_size, bool send_etag = true)
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
-    client_options.Transport.Transport = std::make_shared<FixedSizeResponseTransport>(response_size, blob_size);
+    client_options.Transport.Transport = std::make_shared<FixedSizeResponseTransport>(response_size, blob_size, send_etag);
 
     auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
         Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
@@ -208,6 +211,19 @@ TEST(AzureReadUntilPosition, ShortRangeResponse)
     ASSERT_NO_THROW(data = readWithRightBound(/* response_size */ 40, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64));
 
     ASSERT_EQ(data.size(), static_cast<size_t>(40));
+    assertCountsUpFromZero(data);
+}
+
+/// The `ETag` response header is optional, and `Azure::ETag::ToString` aborts the process when the
+/// tag is absent, so an endpoint that does not send one must not take the server down with it.
+TEST(AzureReadUntilPosition, ResponseWithoutETag)
+{
+    std::string data;
+    ASSERT_NO_THROW(
+        data = readWithRightBound(
+            /* response_size */ 100, /* blob_size */ 1000, /* read_until_position */ 100, /* buffer_size */ 64, /* send_etag */ false));
+
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
     assertCountsUpFromZero(data);
 }
 
