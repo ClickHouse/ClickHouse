@@ -46,6 +46,7 @@
               "pages": [
                 "products/cloud/features/large-single-replica-services",
                 "products/cloud/features/infrastructure/parallel-replicas",
+                "products/cloud/features/infrastructure/replica-aware-routing",
                 "products/cloud/features/infrastructure/shared-catalog",
                 "products/cloud/features/infrastructure/shared-merge-tree",
                 "products/cloud/features/infrastructure/warehouses"
@@ -126,7 +127,6 @@
                 "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
                 "products/cloud/reference/security/console-roles",
                 "products/cloud/guides/security/cloud-access-management/manage-custom-roles",
-                "products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
                 "products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
               ]
             },
@@ -146,7 +146,8 @@
                 "products/cloud/guides/security/cloud-access-management/saml-sso-setup",
                 "products/cloud/guides/security/saml-sso-removal",
                 "products/cloud/guides/security/cloud-access-management/scim-setup",
-                "products/cloud/guides/security/cloud-access-management/scim-setup-entra"
+                "products/cloud/guides/security/cloud-access-management/scim-setup-entra",
+                "products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
               ]
             }
           ]
@@ -252,6 +253,7 @@
           "group": "AI tools and agents",
           "pages": [
             "products/cloud/features/ai-ml/index",
+            "products/cloud/features/ai-ml/ask-ai",
             "products/cloud/features/ai-ml/aichat/using-ai-chat",
             "products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
             "products/cloud/features/ai-ml/langfuse",

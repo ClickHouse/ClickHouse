@@ -1,4 +1,4 @@
-const SessionSettingsExplorer = () => {
+const SessionSettingsExplorer = ({ href: baseRoute }) => {
   // Mintlify's production renderer evaluates the exported component without
   // preserving module-scope bindings. Lazy state keeps the generated data in
   // that evaluation scope while constructing it only once per mount.
@@ -7,8 +7,8 @@ const SessionSettingsExplorer = () => {
       label: "additional_*",
       count: 2,
       settings: [
-        { name: "additional_result_filter", href: "/zh/reference/settings/session-settings/additional#additional_result_filter" },
-        { name: "additional_table_filters", href: "/zh/reference/settings/session-settings/additional#additional_table_filters" }
+        { name: "additional_result_filter", path: "/additional#additional_result_filter", default: '""' },
+        { name: "additional_table_filters", path: "/additional#additional_table_filters", default: "{}" }
       ],
       children: []
     },
@@ -16,8 +16,8 @@ const SessionSettingsExplorer = () => {
       label: "aggregate_*",
       count: 2,
       settings: [
-        { name: "aggregate_function_input_format", href: "/zh/reference/settings/session-settings/aggregate#aggregate_function_input_format" },
-        { name: "aggregate_functions_null_for_empty", href: "/zh/reference/settings/session-settings/aggregate#aggregate_functions_null_for_empty" }
+        { name: "aggregate_function_input_format", path: "/aggregate#aggregate_function_input_format", default: "state" },
+        { name: "aggregate_functions_null_for_empty", path: "/aggregate#aggregate_functions_null_for_empty", default: "0" }
       ],
       children: []
     },
@@ -25,67 +25,72 @@ const SessionSettingsExplorer = () => {
       label: "aggregation_*",
       count: 2,
       settings: [
-        { name: "aggregation_in_order_max_block_bytes", href: "/zh/reference/settings/session-settings/aggregation#aggregation_in_order_max_block_bytes" },
-        { name: "aggregation_memory_efficient_merge_threads", href: "/zh/reference/settings/session-settings/aggregation#aggregation_memory_efficient_merge_threads" }
+        { name: "aggregation_in_order_max_block_bytes", path: "/aggregation#aggregation_in_order_max_block_bytes", default: "50000000" },
+        { name: "aggregation_memory_efficient_merge_threads", path: "/aggregation#aggregation_memory_efficient_merge_threads", default: "0" }
       ],
       children: []
     },
     {
       label: "ai_function_*",
-      count: 11,
+      count: 12,
       settings: [
-        { name: "ai_function_embedding_default_credentials", href: "/zh/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials" },
-        { name: "ai_function_embedding_max_batch_size", href: "/zh/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size" },
-        { name: "ai_function_max_api_calls_per_query", href: "/zh/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query" },
-        { name: "ai_function_max_input_tokens_per_query", href: "/zh/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query" },
-        { name: "ai_function_max_output_tokens_per_query", href: "/zh/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query" },
-        { name: "ai_function_max_retries", href: "/zh/reference/settings/session-settings/ai-function#ai_function_max_retries" },
-        { name: "ai_function_request_timeout_sec", href: "/zh/reference/settings/session-settings/ai-function#ai_function_request_timeout_sec" },
-        { name: "ai_function_retry_initial_delay_ms", href: "/zh/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms" },
-        { name: "ai_function_text_default_credentials", href: "/zh/reference/settings/session-settings/ai-function#ai_function_text_default_credentials" },
-        { name: "ai_function_throw_on_error", href: "/zh/reference/settings/session-settings/ai-function#ai_function_throw_on_error" },
-        { name: "ai_function_throw_on_quota_exceeded", href: "/zh/reference/settings/session-settings/ai-function#ai_function_throw_on_quota_exceeded" }
+        { name: "ai_function_allow_insecure_endpoint", path: "/ai-function#ai_function_allow_insecure_endpoint", default: "0" },
+        { name: "ai_function_embedding_default_credentials", path: "/ai-function#ai_function_embedding_default_credentials", default: '""' },
+        { name: "ai_function_embedding_max_batch_size", path: "/ai-function#ai_function_embedding_max_batch_size", default: "100" },
+        { name: "ai_function_max_api_calls_per_query", path: "/ai-function#ai_function_max_api_calls_per_query", default: "1000" },
+        { name: "ai_function_max_input_tokens_per_query", path: "/ai-function#ai_function_max_input_tokens_per_query", default: "1000000" },
+        { name: "ai_function_max_output_tokens_per_query", path: "/ai-function#ai_function_max_output_tokens_per_query", default: "500000" },
+        { name: "ai_function_max_retries", path: "/ai-function#ai_function_max_retries", default: "0" },
+        { name: "ai_function_request_timeout_sec", path: "/ai-function#ai_function_request_timeout_sec", default: "60" },
+        { name: "ai_function_retry_initial_delay_ms", path: "/ai-function#ai_function_retry_initial_delay_ms", default: "1000" },
+        { name: "ai_function_text_default_credentials", path: "/ai-function#ai_function_text_default_credentials", default: '""' },
+        { name: "ai_function_throw_on_error", path: "/ai-function#ai_function_throw_on_error", default: "1" },
+        { name: "ai_function_throw_on_quota_exceeded", path: "/ai-function#ai_function_throw_on_quota_exceeded", default: "1" }
       ],
       children: []
     },
     {
       label: "allow_*",
-      count: 34,
+      count: 38,
       settings: [
-        { name: "allow_aggregate_partitions_independently", href: "/zh/reference/settings/session-settings/allow#allow_aggregate_partitions_independently" },
-        { name: "allow_archive_path_syntax", href: "/zh/reference/settings/session-settings/allow#allow_archive_path_syntax" },
-        { name: "allow_asynchronous_read_from_io_pool_for_merge_tree", href: "/zh/reference/settings/session-settings/allow#allow_asynchronous_read_from_io_pool_for_merge_tree" },
-        { name: "allow_calculating_subcolumns_sizes_for_merge_tree_reading", href: "/zh/reference/settings/session-settings/allow#allow_calculating_subcolumns_sizes_for_merge_tree_reading" },
-        { name: "allow_changing_replica_until_first_data_packet", href: "/zh/reference/settings/session-settings/allow#allow_changing_replica_until_first_data_packet" },
-        { name: "allow_create_index_without_type", href: "/zh/reference/settings/session-settings/allow#allow_create_index_without_type" },
-        { name: "allow_custom_error_code_in_throwif", href: "/zh/reference/settings/session-settings/allow#allow_custom_error_code_in_throwif" },
-        { name: "allow_ddl", href: "/zh/reference/settings/session-settings/allow#allow_ddl" },
-        { name: "allow_distributed_ddl", href: "/zh/reference/settings/session-settings/allow#allow_distributed_ddl" },
-        { name: "allow_drop_detached", href: "/zh/reference/settings/session-settings/allow#allow_drop_detached" },
-        { name: "allow_dynamic_type_in_join_keys", href: "/zh/reference/settings/session-settings/allow#allow_dynamic_type_in_join_keys" },
-        { name: "allow_execute_multiif_columnar", href: "/zh/reference/settings/session-settings/allow#allow_execute_multiif_columnar" },
-        { name: "allow_fuzz_query_functions", href: "/zh/reference/settings/session-settings/allow#allow_fuzz_query_functions" },
-        { name: "allow_general_join_planning", href: "/zh/reference/settings/session-settings/allow#allow_general_join_planning" },
-        { name: "allow_get_client_http_header", href: "/zh/reference/settings/session-settings/allow#allow_get_client_http_header" },
-        { name: "allow_hyperscan", href: "/zh/reference/settings/session-settings/allow#allow_hyperscan" },
-        { name: "allow_iceberg_remove_orphan_files", href: "/zh/reference/settings/session-settings/allow#allow_iceberg_remove_orphan_files" },
-        { name: "allow_insert_into_iceberg", href: "/zh/reference/settings/session-settings/allow#allow_insert_into_iceberg" },
-        { name: "allow_introspection_functions", href: "/zh/reference/settings/session-settings/allow#allow_introspection_functions" },
-        { name: "allow_key_condition_coalesce_rewrite", href: "/zh/reference/settings/session-settings/allow#allow_key_condition_coalesce_rewrite" },
-        { name: "allow_limit_by_partitions_independently", href: "/zh/reference/settings/session-settings/allow#allow_limit_by_partitions_independently" },
-        { name: "allow_materialized_view_with_bad_select", href: "/zh/reference/settings/session-settings/allow#allow_materialized_view_with_bad_select" },
-        { name: "allow_minmax_index_for_json", href: "/zh/reference/settings/session-settings/allow#allow_minmax_index_for_json" },
-        { name: "allow_named_collection_override_by_default", href: "/zh/reference/settings/session-settings/allow#allow_named_collection_override_by_default" },
-        { name: "allow_non_metadata_alters", href: "/zh/reference/settings/session-settings/allow#allow_non_metadata_alters" },
-        { name: "allow_nonconst_timezone_arguments", href: "/zh/reference/settings/session-settings/allow#allow_nonconst_timezone_arguments" },
-        { name: "allow_nullable_tuple_in_extracted_subcolumns", href: "/zh/reference/settings/session-settings/allow#allow_nullable_tuple_in_extracted_subcolumns" },
-        { name: "allow_rank_dense_rank_arguments", href: "/zh/reference/settings/session-settings/allow#allow_rank_dense_rank_arguments" },
-        { name: "allow_reorder_prewhere_conditions", href: "/zh/reference/settings/session-settings/allow#allow_reorder_prewhere_conditions" },
-        { name: "allow_replace_partition_from_empty_source", href: "/zh/reference/settings/session-settings/allow#allow_replace_partition_from_empty_source" },
-        { name: "allow_settings_after_format_in_insert", href: "/zh/reference/settings/session-settings/allow#allow_settings_after_format_in_insert" },
-        { name: "allow_simdjson", href: "/zh/reference/settings/session-settings/allow#allow_simdjson" },
-        { name: "allow_special_serialization_kinds_in_output_formats", href: "/zh/reference/settings/session-settings/allow#allow_special_serialization_kinds_in_output_formats" },
-        { name: "allow_unrestricted_reads_from_keeper", href: "/zh/reference/settings/session-settings/allow#allow_unrestricted_reads_from_keeper" }
+        { name: "allow_aggregate_partitions_independently", path: "/allow#allow_aggregate_partitions_independently", default: "1" },
+        { name: "allow_archive_path_syntax", path: "/allow#allow_archive_path_syntax", default: "1" },
+        { name: "allow_asynchronous_read_from_io_pool_for_merge_tree", path: "/allow#allow_asynchronous_read_from_io_pool_for_merge_tree", default: "0" },
+        { name: "allow_calculating_subcolumns_sizes_for_merge_tree_reading", path: "/allow#allow_calculating_subcolumns_sizes_for_merge_tree_reading", default: "1" },
+        { name: "allow_changing_replica_until_first_data_packet", path: "/allow#allow_changing_replica_until_first_data_packet", default: "0" },
+        { name: "allow_create_index_without_type", path: "/allow#allow_create_index_without_type", default: "0" },
+        { name: "allow_custom_error_code_in_throwif", path: "/allow#allow_custom_error_code_in_throwif", default: "0" },
+        { name: "allow_ddl", path: "/allow#allow_ddl", default: "1" },
+        { name: "allow_delta_kernel_rs", path: "/allow#allow_delta_kernel_rs", default: "1" },
+        { name: "allow_distinct_partitions_independently", path: "/allow#allow_distinct_partitions_independently", default: "1" },
+        { name: "allow_distributed_ddl", path: "/allow#allow_distributed_ddl", default: "1" },
+        { name: "allow_drop_detached", path: "/allow#allow_drop_detached", default: "0" },
+        { name: "allow_dynamic_type_in_join_keys", path: "/allow#allow_dynamic_type_in_join_keys", default: "0" },
+        { name: "allow_execute_multiif_columnar", path: "/allow#allow_execute_multiif_columnar", default: "1" },
+        { name: "allow_fuzz_query_functions", path: "/allow#allow_fuzz_query_functions", default: "0" },
+        { name: "allow_general_join_planning", path: "/allow#allow_general_join_planning", default: "1" },
+        { name: "allow_get_client_http_header", path: "/allow#allow_get_client_http_header", default: "0" },
+        { name: "allow_hyperscan", path: "/allow#allow_hyperscan", default: "1" },
+        { name: "allow_iceberg_remove_orphan_files", path: "/allow#allow_iceberg_remove_orphan_files", default: "0" },
+        { name: "allow_insert_into_iceberg", path: "/allow#allow_insert_into_iceberg", default: "0" },
+        { name: "allow_introspection_functions", path: "/allow#allow_introspection_functions", default: "0" },
+        { name: "allow_key_condition_coalesce_rewrite", path: "/allow#allow_key_condition_coalesce_rewrite", default: "1" },
+        { name: "allow_limit_by_partitions_independently", path: "/allow#allow_limit_by_partitions_independently", default: "1" },
+        { name: "allow_lossy_numeric_supertype", path: "/allow#allow_lossy_numeric_supertype", default: "0" },
+        { name: "allow_materialized_view_with_bad_select", path: "/allow#allow_materialized_view_with_bad_select", default: "0" },
+        { name: "allow_metadata_only_named_tuple_alter", path: "/allow#allow_metadata_only_named_tuple_alter", default: "0" },
+        { name: "allow_minmax_index_for_json", path: "/allow#allow_minmax_index_for_json", default: "0" },
+        { name: "allow_named_collection_override_by_default", path: "/allow#allow_named_collection_override_by_default", default: "1" },
+        { name: "allow_non_metadata_alters", path: "/allow#allow_non_metadata_alters", default: "1" },
+        { name: "allow_nonconst_timezone_arguments", path: "/allow#allow_nonconst_timezone_arguments", default: "0" },
+        { name: "allow_nullable_tuple_in_extracted_subcolumns", path: "/allow#allow_nullable_tuple_in_extracted_subcolumns", default: "0" },
+        { name: "allow_rank_dense_rank_arguments", path: "/allow#allow_rank_dense_rank_arguments", default: "0" },
+        { name: "allow_reorder_prewhere_conditions", path: "/allow#allow_reorder_prewhere_conditions", default: "1" },
+        { name: "allow_replace_partition_from_empty_source", path: "/allow#allow_replace_partition_from_empty_source", default: "0" },
+        { name: "allow_settings_after_format_in_insert", path: "/allow#allow_settings_after_format_in_insert", default: "0" },
+        { name: "allow_simdjson", path: "/allow#allow_simdjson", default: "1" },
+        { name: "allow_special_serialization_kinds_in_output_formats", path: "/allow#allow_special_serialization_kinds_in_output_formats", default: "1" },
+        { name: "allow_unrestricted_reads_from_keeper", path: "/allow#allow_unrestricted_reads_from_keeper", default: "0" }
       ],
       children: []
     },
@@ -93,58 +98,54 @@ const SessionSettingsExplorer = () => {
       label: "allow_deprecated_*",
       count: 3,
       settings: [
-        { name: "allow_deprecated_database_ordinary", href: "/zh/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary" },
-        { name: "allow_deprecated_error_prone_window_functions", href: "/zh/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions" },
-        { name: "allow_deprecated_syntax_for_merge_tree", href: "/zh/reference/settings/session-settings/allow-deprecated#allow_deprecated_syntax_for_merge_tree" }
+        { name: "allow_deprecated_database_ordinary", path: "/allow-deprecated#allow_deprecated_database_ordinary", default: "0" },
+        { name: "allow_deprecated_error_prone_window_functions", path: "/allow-deprecated#allow_deprecated_error_prone_window_functions", default: "0" },
+        { name: "allow_deprecated_syntax_for_merge_tree", path: "/allow-deprecated#allow_deprecated_syntax_for_merge_tree", default: "0" }
       ],
       children: []
     },
     {
       label: "allow_experimental_*",
-      count: 39,
+      count: 38,
       settings: [
-        { name: "allow_experimental_ai_functions", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions" },
-        { name: "allow_experimental_analyzer", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer" },
-        { name: "allow_experimental_cleanup_old_data_files_compaction", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_cleanup_old_data_files_compaction" },
-        { name: "allow_experimental_codecs", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_codecs" },
-        { name: "allow_experimental_correlated_subqueries", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_correlated_subqueries" },
-        { name: "allow_experimental_database_glue_catalog", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_database_glue_catalog" },
-        { name: "allow_experimental_database_hms_catalog", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_database_hms_catalog" },
-        { name: "allow_experimental_database_iceberg", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_database_iceberg" },
-        { name: "allow_experimental_database_materialized_postgresql", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_database_materialized_postgresql" },
-        { name: "allow_experimental_database_paimon_rest_catalog", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_database_paimon_rest_catalog" },
-        { name: "allow_experimental_database_unity_catalog", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_database_unity_catalog" },
-        { name: "allow_experimental_delta_kernel_rs", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_delta_kernel_rs" },
-        { name: "allow_experimental_delta_lake_writes", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes" },
-        { name: "allow_experimental_eval_table_function", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_eval_table_function" },
-        { name: "allow_experimental_expire_snapshots", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_expire_snapshots" },
-        { name: "allow_experimental_funnel_functions", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_funnel_functions" },
-        { name: "allow_experimental_geo_types_in_iceberg", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_geo_types_in_iceberg" },
-        { name: "allow_experimental_hash_functions", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_hash_functions" },
-        { name: "allow_experimental_iceberg_compaction", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_iceberg_compaction" },
-        { name: "allow_experimental_join_right_table_sorting", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_join_right_table_sorting" },
-        { name: "allow_experimental_json_lazy_type_hints", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_json_lazy_type_hints" },
-        { name: "allow_experimental_kafka_offsets_storage_in_keeper", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_kafka_offsets_storage_in_keeper" },
-        { name: "allow_experimental_kusto_dialect", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_kusto_dialect" },
-        { name: "allow_experimental_materialized_postgresql_table", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_materialized_postgresql_table" },
-        { name: "allow_experimental_nlp_functions", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_nlp_functions" },
-        { name: "allow_experimental_nullable_tuple_type", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type" },
-        {
-          name: "allow_experimental_object_storage_queue_hive_partitioning",
-          href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_object_storage_queue_hive_partitioning"
-        },
-        { name: "allow_experimental_paimon_storage_engine", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_paimon_storage_engine" },
-        { name: "allow_experimental_parallel_reading_from_replicas", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_parallel_reading_from_replicas" },
-        { name: "allow_experimental_polyglot_dialect", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_polyglot_dialect" },
-        { name: "allow_experimental_prql_dialect", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_prql_dialect" },
-        { name: "allow_experimental_time_series_aggregate_functions", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_aggregate_functions" },
-        { name: "allow_experimental_time_series_table", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table" },
-        { name: "allow_experimental_unique_key", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_unique_key" },
-        { name: "allow_experimental_url_wildcard_from_index_pages", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages" },
-        { name: "allow_experimental_window_view", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_window_view" },
-        { name: "allow_experimental_ytsaurus_dictionary_source", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_dictionary_source" },
-        { name: "allow_experimental_ytsaurus_table_engine", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_engine" },
-        { name: "allow_experimental_ytsaurus_table_function", href: "/zh/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_function" }
+        { name: "allow_experimental_ai_functions", path: "/allow-experimental#allow_experimental_ai_functions", default: "0" },
+        { name: "allow_experimental_analyzer", path: "/allow-experimental#allow_experimental_analyzer", default: "1" },
+        { name: "allow_experimental_cleanup_old_data_files_compaction", path: "/allow-experimental#allow_experimental_cleanup_old_data_files_compaction", default: "0" },
+        { name: "allow_experimental_codecs", path: "/allow-experimental#allow_experimental_codecs", default: "0" },
+        { name: "allow_experimental_correlated_subqueries", path: "/allow-experimental#allow_experimental_correlated_subqueries", default: "1" },
+        { name: "allow_experimental_database_glue_catalog", path: "/allow-experimental#allow_experimental_database_glue_catalog", default: "0" },
+        { name: "allow_experimental_database_hms_catalog", path: "/allow-experimental#allow_experimental_database_hms_catalog", default: "0" },
+        { name: "allow_experimental_database_iceberg", path: "/allow-experimental#allow_experimental_database_iceberg", default: "0" },
+        { name: "allow_experimental_database_materialized_postgresql", path: "/allow-experimental#allow_experimental_database_materialized_postgresql", default: "0" },
+        { name: "allow_experimental_database_paimon_rest_catalog", path: "/allow-experimental#allow_experimental_database_paimon_rest_catalog", default: "0" },
+        { name: "allow_experimental_database_unity_catalog", path: "/allow-experimental#allow_experimental_database_unity_catalog", default: "0" },
+        { name: "allow_experimental_delta_lake_writes", path: "/allow-experimental#allow_experimental_delta_lake_writes", default: "0" },
+        { name: "allow_experimental_eval_table_function", path: "/allow-experimental#allow_experimental_eval_table_function", default: "0" },
+        { name: "allow_experimental_expire_snapshots", path: "/allow-experimental#allow_experimental_expire_snapshots", default: "0" },
+        { name: "allow_experimental_funnel_functions", path: "/allow-experimental#allow_experimental_funnel_functions", default: "0" },
+        { name: "allow_experimental_geo_types_in_iceberg", path: "/allow-experimental#allow_experimental_geo_types_in_iceberg", default: "0" },
+        { name: "allow_experimental_hash_functions", path: "/allow-experimental#allow_experimental_hash_functions", default: "0" },
+        { name: "allow_experimental_iceberg_compaction", path: "/allow-experimental#allow_experimental_iceberg_compaction", default: "0" },
+        { name: "allow_experimental_join_right_table_sorting", path: "/allow-experimental#allow_experimental_join_right_table_sorting", default: "0" },
+        { name: "allow_experimental_json_lazy_type_hints", path: "/allow-experimental#allow_experimental_json_lazy_type_hints", default: "0" },
+        { name: "allow_experimental_kafka_offsets_storage_in_keeper", path: "/allow-experimental#allow_experimental_kafka_offsets_storage_in_keeper", default: "0" },
+        { name: "allow_experimental_kusto_dialect", path: "/allow-experimental#allow_experimental_kusto_dialect", default: "0" },
+        { name: "allow_experimental_materialized_postgresql_table", path: "/allow-experimental#allow_experimental_materialized_postgresql_table", default: "0" },
+        { name: "allow_experimental_nlp_functions", path: "/allow-experimental#allow_experimental_nlp_functions", default: "0" },
+        { name: "allow_experimental_nullable_tuple_type", path: "/allow-experimental#allow_experimental_nullable_tuple_type", default: "0" },
+        { name: "allow_experimental_object_storage_queue_hive_partitioning", path: "/allow-experimental#allow_experimental_object_storage_queue_hive_partitioning", default: "0" },
+        { name: "allow_experimental_paimon_storage_engine", path: "/allow-experimental#allow_experimental_paimon_storage_engine", default: "0" },
+        { name: "allow_experimental_parallel_reading_from_replicas", path: "/allow-experimental#allow_experimental_parallel_reading_from_replicas", default: "0" },
+        { name: "allow_experimental_polyglot_dialect", path: "/allow-experimental#allow_experimental_polyglot_dialect", default: "0" },
+        { name: "allow_experimental_prql_dialect", path: "/allow-experimental#allow_experimental_prql_dialect", default: "0" },
+        { name: "allow_experimental_time_series_aggregate_functions", path: "/allow-experimental#allow_experimental_time_series_aggregate_functions", default: "0" },
+        { name: "allow_experimental_time_series_table", path: "/allow-experimental#allow_experimental_time_series_table", default: "0" },
+        { name: "allow_experimental_unique_key", path: "/allow-experimental#allow_experimental_unique_key", default: "0" },
+        { name: "allow_experimental_url_wildcard_from_index_pages", path: "/allow-experimental#allow_experimental_url_wildcard_from_index_pages", default: "0" },
+        { name: "allow_experimental_window_view", path: "/allow-experimental#allow_experimental_window_view", default: "0" },
+        { name: "allow_experimental_ytsaurus_dictionary_source", path: "/allow-experimental#allow_experimental_ytsaurus_dictionary_source", default: "0" },
+        { name: "allow_experimental_ytsaurus_table_engine", path: "/allow-experimental#allow_experimental_ytsaurus_table_engine", default: "0" },
+        { name: "allow_experimental_ytsaurus_table_function", path: "/allow-experimental#allow_experimental_ytsaurus_table_function", default: "0" }
       ],
       children: []
     },
@@ -152,8 +153,8 @@ const SessionSettingsExplorer = () => {
       label: "allow_nondeterministic_*",
       count: 2,
       settings: [
-        { name: "allow_nondeterministic_mutations", href: "/zh/reference/settings/session-settings/allow-nondeterministic#allow_nondeterministic_mutations" },
-        { name: "allow_nondeterministic_optimize_skip_unused_shards", href: "/zh/reference/settings/session-settings/allow-nondeterministic#allow_nondeterministic_optimize_skip_unused_shards" }
+        { name: "allow_nondeterministic_mutations", path: "/allow-nondeterministic#allow_nondeterministic_mutations", default: "0" },
+        { name: "allow_nondeterministic_optimize_skip_unused_shards", path: "/allow-nondeterministic#allow_nondeterministic_optimize_skip_unused_shards", default: "0" }
       ],
       children: []
     },
@@ -161,8 +162,8 @@ const SessionSettingsExplorer = () => {
       label: "allow_prefetched_*",
       count: 2,
       settings: [
-        { name: "allow_prefetched_read_pool_for_local_filesystem", href: "/zh/reference/settings/session-settings/allow-prefetched#allow_prefetched_read_pool_for_local_filesystem" },
-        { name: "allow_prefetched_read_pool_for_remote_filesystem", href: "/zh/reference/settings/session-settings/allow-prefetched#allow_prefetched_read_pool_for_remote_filesystem" }
+        { name: "allow_prefetched_read_pool_for_local_filesystem", path: "/allow-prefetched#allow_prefetched_read_pool_for_local_filesystem", default: "0" },
+        { name: "allow_prefetched_read_pool_for_remote_filesystem", path: "/allow-prefetched#allow_prefetched_read_pool_for_remote_filesystem", default: "1" }
       ],
       children: []
     },
@@ -170,8 +171,8 @@ const SessionSettingsExplorer = () => {
       label: "allow_push_*",
       count: 2,
       settings: [
-        { name: "allow_push_predicate_ast_for_distributed_subqueries", href: "/zh/reference/settings/session-settings/allow-push#allow_push_predicate_ast_for_distributed_subqueries" },
-        { name: "allow_push_predicate_when_subquery_contains_with", href: "/zh/reference/settings/session-settings/allow-push#allow_push_predicate_when_subquery_contains_with" }
+        { name: "allow_push_predicate_ast_for_distributed_subqueries", path: "/allow-push#allow_push_predicate_ast_for_distributed_subqueries", default: "1" },
+        { name: "allow_push_predicate_when_subquery_contains_with", path: "/allow-push#allow_push_predicate_when_subquery_contains_with", default: "1" }
       ],
       children: []
     },
@@ -179,8 +180,8 @@ const SessionSettingsExplorer = () => {
       label: "allow_statistics_*",
       count: 2,
       settings: [
-        { name: "allow_statistics", href: "/zh/reference/settings/session-settings/allow-statistics#allow_statistics" },
-        { name: "allow_statistics_optimize", href: "/zh/reference/settings/session-settings/allow-statistics#allow_statistics_optimize" }
+        { name: "allow_statistics", path: "/allow-statistics#allow_statistics", default: "1" },
+        { name: "allow_statistics_optimize", path: "/allow-statistics#allow_statistics_optimize", default: "1" }
       ],
       children: []
     },
@@ -188,15 +189,15 @@ const SessionSettingsExplorer = () => {
       label: "allow_suspicious_*",
       count: 9,
       settings: [
-        { name: "allow_suspicious_codecs", href: "/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_codecs" },
-        { name: "allow_suspicious_fixed_string_types", href: "/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_fixed_string_types" },
-        { name: "allow_suspicious_indices", href: "/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_indices" },
-        { name: "allow_suspicious_low_cardinality_types", href: "/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types" },
-        { name: "allow_suspicious_primary_key", href: "/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_primary_key" },
-        { name: "allow_suspicious_ttl_expressions", href: "/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_ttl_expressions" },
-        { name: "allow_suspicious_types_in_group_by", href: "/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_types_in_group_by" },
-        { name: "allow_suspicious_types_in_order_by", href: "/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_types_in_order_by" },
-        { name: "allow_suspicious_variant_types", href: "/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types" }
+        { name: "allow_suspicious_codecs", path: "/allow-suspicious#allow_suspicious_codecs", default: "0" },
+        { name: "allow_suspicious_fixed_string_types", path: "/allow-suspicious#allow_suspicious_fixed_string_types", default: "0" },
+        { name: "allow_suspicious_indices", path: "/allow-suspicious#allow_suspicious_indices", default: "0" },
+        { name: "allow_suspicious_low_cardinality_types", path: "/allow-suspicious#allow_suspicious_low_cardinality_types", default: "0" },
+        { name: "allow_suspicious_primary_key", path: "/allow-suspicious#allow_suspicious_primary_key", default: "0" },
+        { name: "allow_suspicious_ttl_expressions", path: "/allow-suspicious#allow_suspicious_ttl_expressions", default: "0" },
+        { name: "allow_suspicious_types_in_group_by", path: "/allow-suspicious#allow_suspicious_types_in_group_by", default: "0" },
+        { name: "allow_suspicious_types_in_order_by", path: "/allow-suspicious#allow_suspicious_types_in_order_by", default: "0" },
+        { name: "allow_suspicious_variant_types", path: "/allow-suspicious#allow_suspicious_variant_types", default: "0" }
       ],
       children: []
     },
@@ -204,24 +205,27 @@ const SessionSettingsExplorer = () => {
       label: "alter_*",
       count: 4,
       settings: [
-        { name: "alter_move_to_space_execute_async", href: "/zh/reference/settings/session-settings/alter#alter_move_to_space_execute_async" },
-        { name: "alter_partition_verbose_result", href: "/zh/reference/settings/session-settings/alter#alter_partition_verbose_result" },
-        { name: "alter_sync", href: "/zh/reference/settings/session-settings/alter#alter_sync" },
-        { name: "alter_update_mode", href: "/zh/reference/settings/session-settings/alter#alter_update_mode" }
+        { name: "alter_move_to_space_execute_async", path: "/alter#alter_move_to_space_execute_async", default: "0" },
+        { name: "alter_partition_verbose_result", path: "/alter#alter_partition_verbose_result", default: "0" },
+        { name: "alter_sync", path: "/alter#alter_sync", default: "1" },
+        { name: "alter_update_mode", path: "/alter#alter_update_mode", default: "heavy" }
       ],
       children: []
     },
     {
       label: "analyzer_compatibility_*",
-      count: 4,
+      count: 6,
       settings: [
         {
           name: "analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested",
-          href: "/zh/reference/settings/session-settings/analyzer-compatibility#analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested"
+          path: "/analyzer-compatibility#analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested",
+          default: "1"
         },
-        { name: "analyzer_compatibility_allow_non_aggregate_in_having", href: "/zh/reference/settings/session-settings/analyzer-compatibility#analyzer_compatibility_allow_non_aggregate_in_having" },
-        { name: "analyzer_compatibility_join_using_top_level_identifier", href: "/zh/reference/settings/session-settings/analyzer-compatibility#analyzer_compatibility_join_using_top_level_identifier" },
-        { name: "analyzer_compatibility_prefer_alias_over_subcolumn", href: "/zh/reference/settings/session-settings/analyzer-compatibility#analyzer_compatibility_prefer_alias_over_subcolumn" }
+        { name: "analyzer_compatibility_allow_non_aggregate_in_having", path: "/analyzer-compatibility#analyzer_compatibility_allow_non_aggregate_in_having", default: "0" },
+        { name: "analyzer_compatibility_apply_final_to_all_joined_tables", path: "/analyzer-compatibility#analyzer_compatibility_apply_final_to_all_joined_tables", default: "0" },
+        { name: "analyzer_compatibility_join_using_top_level_identifier", path: "/analyzer-compatibility#analyzer_compatibility_join_using_top_level_identifier", default: "0" },
+        { name: "analyzer_compatibility_multiple_joins_qualify_column_names", path: "/analyzer-compatibility#analyzer_compatibility_multiple_joins_qualify_column_names", default: "0" },
+        { name: "analyzer_compatibility_prefer_alias_over_subcolumn", path: "/analyzer-compatibility#analyzer_compatibility_prefer_alias_over_subcolumn", default: "0" }
       ],
       children: []
     },
@@ -229,11 +233,11 @@ const SessionSettingsExplorer = () => {
       label: "apply_*",
       count: 5,
       settings: [
-        { name: "apply_deleted_mask", href: "/zh/reference/settings/session-settings/apply#apply_deleted_mask" },
-        { name: "apply_mutations_on_fly", href: "/zh/reference/settings/session-settings/apply#apply_mutations_on_fly" },
-        { name: "apply_prewhere_after_final", href: "/zh/reference/settings/session-settings/apply#apply_prewhere_after_final" },
-        { name: "apply_row_policy_after_final", href: "/zh/reference/settings/session-settings/apply#apply_row_policy_after_final" },
-        { name: "apply_settings_from_server", href: "/zh/reference/settings/session-settings/apply#apply_settings_from_server" }
+        { name: "apply_deleted_mask", path: "/apply#apply_deleted_mask", default: "1" },
+        { name: "apply_mutations_on_fly", path: "/apply#apply_mutations_on_fly", default: "0" },
+        { name: "apply_prewhere_after_final", path: "/apply#apply_prewhere_after_final", default: "0" },
+        { name: "apply_row_policy_after_final", path: "/apply#apply_row_policy_after_final", default: "1" },
+        { name: "apply_settings_from_server", path: "/apply#apply_settings_from_server", default: "1" }
       ],
       children: []
     },
@@ -241,8 +245,8 @@ const SessionSettingsExplorer = () => {
       label: "apply_patch_parts_*",
       count: 2,
       settings: [
-        { name: "apply_patch_parts", href: "/zh/reference/settings/session-settings/apply-patch-parts#apply_patch_parts" },
-        { name: "apply_patch_parts_join_cache_buckets", href: "/zh/reference/settings/session-settings/apply-patch-parts#apply_patch_parts_join_cache_buckets" }
+        { name: "apply_patch_parts", path: "/apply-patch-parts#apply_patch_parts", default: "1" },
+        { name: "apply_patch_parts_join_cache_buckets", path: "/apply-patch-parts#apply_patch_parts_join_cache_buckets", default: "8" }
       ],
       children: []
     },
@@ -250,8 +254,8 @@ const SessionSettingsExplorer = () => {
       label: "ast_fuzzer_*",
       count: 2,
       settings: [
-        { name: "ast_fuzzer_any_query", href: "/zh/reference/settings/session-settings/ast-fuzzer#ast_fuzzer_any_query" },
-        { name: "ast_fuzzer_runs", href: "/zh/reference/settings/session-settings/ast-fuzzer#ast_fuzzer_runs" }
+        { name: "ast_fuzzer_any_query", path: "/ast-fuzzer#ast_fuzzer_any_query", default: "0" },
+        { name: "ast_fuzzer_runs", path: "/ast-fuzzer#ast_fuzzer_runs", default: "0" }
       ],
       children: []
     },
@@ -259,9 +263,9 @@ const SessionSettingsExplorer = () => {
       label: "asterisk_include_*",
       count: 3,
       settings: [
-        { name: "asterisk_include_alias_columns", href: "/zh/reference/settings/session-settings/asterisk-include#asterisk_include_alias_columns" },
-        { name: "asterisk_include_materialized_columns", href: "/zh/reference/settings/session-settings/asterisk-include#asterisk_include_materialized_columns" },
-        { name: "asterisk_include_virtual_columns", href: "/zh/reference/settings/session-settings/asterisk-include#asterisk_include_virtual_columns" }
+        { name: "asterisk_include_alias_columns", path: "/asterisk-include#asterisk_include_alias_columns", default: "0" },
+        { name: "asterisk_include_materialized_columns", path: "/asterisk-include#asterisk_include_materialized_columns", default: "0" },
+        { name: "asterisk_include_virtual_columns", path: "/asterisk-include#asterisk_include_virtual_columns", default: "0" }
       ],
       children: []
     },
@@ -269,8 +273,8 @@ const SessionSettingsExplorer = () => {
       label: "async_*",
       count: 2,
       settings: [
-        { name: "async_query_sending_for_remote", href: "/zh/reference/settings/session-settings/async#async_query_sending_for_remote" },
-        { name: "async_socket_for_remote", href: "/zh/reference/settings/session-settings/async#async_socket_for_remote" }
+        { name: "async_query_sending_for_remote", path: "/async#async_query_sending_for_remote", default: "1" },
+        { name: "async_socket_for_remote", path: "/async#async_socket_for_remote", default: "1" }
       ],
       children: []
     },
@@ -278,16 +282,16 @@ const SessionSettingsExplorer = () => {
       label: "async_insert_*",
       count: 10,
       settings: [
-        { name: "async_insert", href: "/zh/reference/settings/session-settings/async-insert#async_insert" },
-        { name: "async_insert_busy_timeout_decrease_rate", href: "/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_decrease_rate" },
-        { name: "async_insert_busy_timeout_increase_rate", href: "/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_increase_rate" },
-        { name: "async_insert_busy_timeout_max_ms", href: "/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms" },
-        { name: "async_insert_busy_timeout_min_ms", href: "/zh/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms" },
-        { name: "async_insert_deduplicate", href: "/zh/reference/settings/session-settings/async-insert#async_insert_deduplicate" },
-        { name: "async_insert_max_data_size", href: "/zh/reference/settings/session-settings/async-insert#async_insert_max_data_size" },
-        { name: "async_insert_max_query_number", href: "/zh/reference/settings/session-settings/async-insert#async_insert_max_query_number" },
-        { name: "async_insert_poll_timeout_ms", href: "/zh/reference/settings/session-settings/async-insert#async_insert_poll_timeout_ms" },
-        { name: "async_insert_use_adaptive_busy_timeout", href: "/zh/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout" }
+        { name: "async_insert", path: "/async-insert#async_insert", default: "1" },
+        { name: "async_insert_busy_timeout_decrease_rate", path: "/async-insert#async_insert_busy_timeout_decrease_rate", default: "0.2" },
+        { name: "async_insert_busy_timeout_increase_rate", path: "/async-insert#async_insert_busy_timeout_increase_rate", default: "0.2" },
+        { name: "async_insert_busy_timeout_max_ms", path: "/async-insert#async_insert_busy_timeout_max_ms", default: "200" },
+        { name: "async_insert_busy_timeout_min_ms", path: "/async-insert#async_insert_busy_timeout_min_ms", default: "50" },
+        { name: "async_insert_deduplicate", path: "/async-insert#async_insert_deduplicate", default: "0" },
+        { name: "async_insert_max_data_size", path: "/async-insert#async_insert_max_data_size", default: "10485760" },
+        { name: "async_insert_max_query_number", path: "/async-insert#async_insert_max_query_number", default: "450" },
+        { name: "async_insert_poll_timeout_ms", path: "/async-insert#async_insert_poll_timeout_ms", default: "10" },
+        { name: "async_insert_use_adaptive_busy_timeout", path: "/async-insert#async_insert_use_adaptive_busy_timeout", default: "1" }
       ],
       children: []
     },
@@ -295,8 +299,8 @@ const SessionSettingsExplorer = () => {
       label: "automatic_parallel_*",
       count: 2,
       settings: [
-        { name: "automatic_parallel_replicas_min_bytes_per_replica", href: "/zh/reference/settings/session-settings/automatic-parallel#automatic_parallel_replicas_min_bytes_per_replica" },
-        { name: "automatic_parallel_replicas_mode", href: "/zh/reference/settings/session-settings/automatic-parallel#automatic_parallel_replicas_mode" }
+        { name: "automatic_parallel_replicas_min_bytes_per_replica", path: "/automatic-parallel#automatic_parallel_replicas_min_bytes_per_replica", default: "1048576" },
+        { name: "automatic_parallel_replicas_mode", path: "/automatic-parallel#automatic_parallel_replicas_mode", default: "0" }
       ],
       children: []
     },
@@ -304,19 +308,19 @@ const SessionSettingsExplorer = () => {
       label: "azure_*",
       count: 13,
       settings: [
-        { name: "azure_allow_parallel_part_upload", href: "/zh/reference/settings/session-settings/azure#azure_allow_parallel_part_upload" },
-        { name: "azure_check_objects_after_upload", href: "/zh/reference/settings/session-settings/azure#azure_check_objects_after_upload" },
-        { name: "azure_connect_timeout_ms", href: "/zh/reference/settings/session-settings/azure#azure_connect_timeout_ms" },
-        { name: "azure_create_new_file_on_insert", href: "/zh/reference/settings/session-settings/azure#azure_create_new_file_on_insert" },
-        { name: "azure_ignore_file_doesnt_exist", href: "/zh/reference/settings/session-settings/azure#azure_ignore_file_doesnt_exist" },
-        { name: "azure_list_object_keys_size", href: "/zh/reference/settings/session-settings/azure#azure_list_object_keys_size" },
-        { name: "azure_min_upload_part_size", href: "/zh/reference/settings/session-settings/azure#azure_min_upload_part_size" },
-        { name: "azure_request_timeout_ms", href: "/zh/reference/settings/session-settings/azure#azure_request_timeout_ms" },
-        { name: "azure_skip_empty_files", href: "/zh/reference/settings/session-settings/azure#azure_skip_empty_files" },
-        { name: "azure_strict_upload_part_size", href: "/zh/reference/settings/session-settings/azure#azure_strict_upload_part_size" },
-        { name: "azure_throw_on_zero_files_match", href: "/zh/reference/settings/session-settings/azure#azure_throw_on_zero_files_match" },
-        { name: "azure_truncate_on_insert", href: "/zh/reference/settings/session-settings/azure#azure_truncate_on_insert" },
-        { name: "azure_use_adaptive_timeouts", href: "/zh/reference/settings/session-settings/azure#azure_use_adaptive_timeouts" }
+        { name: "azure_allow_parallel_part_upload", path: "/azure#azure_allow_parallel_part_upload", default: "1" },
+        { name: "azure_check_objects_after_upload", path: "/azure#azure_check_objects_after_upload", default: "0" },
+        { name: "azure_connect_timeout_ms", path: "/azure#azure_connect_timeout_ms", default: "1000" },
+        { name: "azure_create_new_file_on_insert", path: "/azure#azure_create_new_file_on_insert", default: "0" },
+        { name: "azure_ignore_file_doesnt_exist", path: "/azure#azure_ignore_file_doesnt_exist", default: "0" },
+        { name: "azure_list_object_keys_size", path: "/azure#azure_list_object_keys_size", default: "1000" },
+        { name: "azure_min_upload_part_size", path: "/azure#azure_min_upload_part_size", default: "16777216" },
+        { name: "azure_request_timeout_ms", path: "/azure#azure_request_timeout_ms", default: "30000" },
+        { name: "azure_skip_empty_files", path: "/azure#azure_skip_empty_files", default: "0" },
+        { name: "azure_strict_upload_part_size", path: "/azure#azure_strict_upload_part_size", default: "0" },
+        { name: "azure_throw_on_zero_files_match", path: "/azure#azure_throw_on_zero_files_match", default: "0" },
+        { name: "azure_truncate_on_insert", path: "/azure#azure_truncate_on_insert", default: "0" },
+        { name: "azure_use_adaptive_timeouts", path: "/azure#azure_use_adaptive_timeouts", default: "1" }
       ],
       children: []
     },
@@ -324,18 +328,18 @@ const SessionSettingsExplorer = () => {
       label: "azure_max_*",
       count: 12,
       settings: [
-        { name: "azure_max_blocks_in_multipart_upload", href: "/zh/reference/settings/session-settings/azure-max#azure_max_blocks_in_multipart_upload" },
-        { name: "azure_max_get_burst", href: "/zh/reference/settings/session-settings/azure-max#azure_max_get_burst" },
-        { name: "azure_max_get_rps", href: "/zh/reference/settings/session-settings/azure-max#azure_max_get_rps" },
-        { name: "azure_max_inflight_parts_for_one_file", href: "/zh/reference/settings/session-settings/azure-max#azure_max_inflight_parts_for_one_file" },
-        { name: "azure_max_put_burst", href: "/zh/reference/settings/session-settings/azure-max#azure_max_put_burst" },
-        { name: "azure_max_put_rps", href: "/zh/reference/settings/session-settings/azure-max#azure_max_put_rps" },
-        { name: "azure_max_redirects", href: "/zh/reference/settings/session-settings/azure-max#azure_max_redirects" },
-        { name: "azure_max_single_part_copy_size", href: "/zh/reference/settings/session-settings/azure-max#azure_max_single_part_copy_size" },
-        { name: "azure_max_single_part_upload_size", href: "/zh/reference/settings/session-settings/azure-max#azure_max_single_part_upload_size" },
-        { name: "azure_max_single_read_retries", href: "/zh/reference/settings/session-settings/azure-max#azure_max_single_read_retries" },
-        { name: "azure_max_unexpected_write_error_retries", href: "/zh/reference/settings/session-settings/azure-max#azure_max_unexpected_write_error_retries" },
-        { name: "azure_max_upload_part_size", href: "/zh/reference/settings/session-settings/azure-max#azure_max_upload_part_size" }
+        { name: "azure_max_blocks_in_multipart_upload", path: "/azure-max#azure_max_blocks_in_multipart_upload", default: "50000" },
+        { name: "azure_max_get_burst", path: "/azure-max#azure_max_get_burst", default: "0" },
+        { name: "azure_max_get_rps", path: "/azure-max#azure_max_get_rps", default: "0" },
+        { name: "azure_max_inflight_parts_for_one_file", path: "/azure-max#azure_max_inflight_parts_for_one_file", default: "20" },
+        { name: "azure_max_put_burst", path: "/azure-max#azure_max_put_burst", default: "0" },
+        { name: "azure_max_put_rps", path: "/azure-max#azure_max_put_rps", default: "0" },
+        { name: "azure_max_redirects", path: "/azure-max#azure_max_redirects", default: "10" },
+        { name: "azure_max_single_part_copy_size", path: "/azure-max#azure_max_single_part_copy_size", default: "268435456" },
+        { name: "azure_max_single_part_upload_size", path: "/azure-max#azure_max_single_part_upload_size", default: "33554432" },
+        { name: "azure_max_single_read_retries", path: "/azure-max#azure_max_single_read_retries", default: "4" },
+        { name: "azure_max_unexpected_write_error_retries", path: "/azure-max#azure_max_unexpected_write_error_retries", default: "4" },
+        { name: "azure_max_upload_part_size", path: "/azure-max#azure_max_upload_part_size", default: "5368709120" }
       ],
       children: []
     },
@@ -343,9 +347,9 @@ const SessionSettingsExplorer = () => {
       label: "azure_sdk_*",
       count: 3,
       settings: [
-        { name: "azure_sdk_max_retries", href: "/zh/reference/settings/session-settings/azure-sdk#azure_sdk_max_retries" },
-        { name: "azure_sdk_retry_initial_backoff_ms", href: "/zh/reference/settings/session-settings/azure-sdk#azure_sdk_retry_initial_backoff_ms" },
-        { name: "azure_sdk_retry_max_backoff_ms", href: "/zh/reference/settings/session-settings/azure-sdk#azure_sdk_retry_max_backoff_ms" }
+        { name: "azure_sdk_max_retries", path: "/azure-sdk#azure_sdk_max_retries", default: "10" },
+        { name: "azure_sdk_retry_initial_backoff_ms", path: "/azure-sdk#azure_sdk_retry_initial_backoff_ms", default: "10" },
+        { name: "azure_sdk_retry_max_backoff_ms", path: "/azure-sdk#azure_sdk_retry_max_backoff_ms", default: "1000" }
       ],
       children: []
     },
@@ -353,8 +357,8 @@ const SessionSettingsExplorer = () => {
       label: "azure_upload_*",
       count: 2,
       settings: [
-        { name: "azure_upload_part_size_multiply_factor", href: "/zh/reference/settings/session-settings/azure-upload#azure_upload_part_size_multiply_factor" },
-        { name: "azure_upload_part_size_multiply_parts_count_threshold", href: "/zh/reference/settings/session-settings/azure-upload#azure_upload_part_size_multiply_parts_count_threshold" }
+        { name: "azure_upload_part_size_multiply_factor", path: "/azure-upload#azure_upload_part_size_multiply_factor", default: "2" },
+        { name: "azure_upload_part_size_multiply_parts_count_threshold", path: "/azure-upload#azure_upload_part_size_multiply_parts_count_threshold", default: "500" }
       ],
       children: []
     },
@@ -362,22 +366,22 @@ const SessionSettingsExplorer = () => {
       label: "backup_restore_*",
       count: 16,
       settings: [
-        { name: "backup_restore_batch_size_for_keeper_multi", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_batch_size_for_keeper_multi" },
-        { name: "backup_restore_batch_size_for_keeper_multiread", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_batch_size_for_keeper_multiread" },
-        { name: "backup_restore_failure_after_host_disconnected_for_seconds", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_failure_after_host_disconnected_for_seconds" },
-        { name: "backup_restore_finish_timeout_after_error_sec", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_finish_timeout_after_error_sec" },
-        { name: "backup_restore_keeper_fault_injection_probability", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_keeper_fault_injection_probability" },
-        { name: "backup_restore_keeper_fault_injection_seed", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_keeper_fault_injection_seed" },
-        { name: "backup_restore_keeper_max_retries", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_keeper_max_retries" },
-        { name: "backup_restore_keeper_max_retries_while_handling_error", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_keeper_max_retries_while_handling_error" },
-        { name: "backup_restore_keeper_max_retries_while_initializing", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_keeper_max_retries_while_initializing" },
-        { name: "backup_restore_keeper_retry_initial_backoff_ms", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_keeper_retry_initial_backoff_ms" },
-        { name: "backup_restore_keeper_retry_max_backoff_ms", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_keeper_retry_max_backoff_ms" },
-        { name: "backup_restore_keeper_value_max_size", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_keeper_value_max_size" },
-        { name: "backup_restore_s3_retry_attempts", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_attempts" },
-        { name: "backup_restore_s3_retry_initial_backoff_ms", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_initial_backoff_ms" },
-        { name: "backup_restore_s3_retry_jitter_factor", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_jitter_factor" },
-        { name: "backup_restore_s3_retry_max_backoff_ms", href: "/zh/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_max_backoff_ms" }
+        { name: "backup_restore_batch_size_for_keeper_multi", path: "/backup-restore#backup_restore_batch_size_for_keeper_multi", default: "1000" },
+        { name: "backup_restore_batch_size_for_keeper_multiread", path: "/backup-restore#backup_restore_batch_size_for_keeper_multiread", default: "10000" },
+        { name: "backup_restore_failure_after_host_disconnected_for_seconds", path: "/backup-restore#backup_restore_failure_after_host_disconnected_for_seconds", default: "3600" },
+        { name: "backup_restore_finish_timeout_after_error_sec", path: "/backup-restore#backup_restore_finish_timeout_after_error_sec", default: "180" },
+        { name: "backup_restore_keeper_fault_injection_probability", path: "/backup-restore#backup_restore_keeper_fault_injection_probability", default: "0" },
+        { name: "backup_restore_keeper_fault_injection_seed", path: "/backup-restore#backup_restore_keeper_fault_injection_seed", default: "0" },
+        { name: "backup_restore_keeper_max_retries", path: "/backup-restore#backup_restore_keeper_max_retries", default: "1000" },
+        { name: "backup_restore_keeper_max_retries_while_handling_error", path: "/backup-restore#backup_restore_keeper_max_retries_while_handling_error", default: "20" },
+        { name: "backup_restore_keeper_max_retries_while_initializing", path: "/backup-restore#backup_restore_keeper_max_retries_while_initializing", default: "20" },
+        { name: "backup_restore_keeper_retry_initial_backoff_ms", path: "/backup-restore#backup_restore_keeper_retry_initial_backoff_ms", default: "100" },
+        { name: "backup_restore_keeper_retry_max_backoff_ms", path: "/backup-restore#backup_restore_keeper_retry_max_backoff_ms", default: "5000" },
+        { name: "backup_restore_keeper_value_max_size", path: "/backup-restore#backup_restore_keeper_value_max_size", default: "1048576" },
+        { name: "backup_restore_s3_retry_attempts", path: "/backup-restore#backup_restore_s3_retry_attempts", default: "1000" },
+        { name: "backup_restore_s3_retry_initial_backoff_ms", path: "/backup-restore#backup_restore_s3_retry_initial_backoff_ms", default: "25" },
+        { name: "backup_restore_s3_retry_jitter_factor", path: "/backup-restore#backup_restore_s3_retry_jitter_factor", default: "0.1" },
+        { name: "backup_restore_s3_retry_max_backoff_ms", path: "/backup-restore#backup_restore_s3_retry_max_backoff_ms", default: "5000" }
       ],
       children: []
     },
@@ -385,8 +389,8 @@ const SessionSettingsExplorer = () => {
       label: "cast_*",
       count: 2,
       settings: [
-        { name: "cast_ipv4_ipv6_default_on_conversion_error", href: "/zh/reference/settings/session-settings/cast#cast_ipv4_ipv6_default_on_conversion_error" },
-        { name: "cast_keep_nullable", href: "/zh/reference/settings/session-settings/cast#cast_keep_nullable" }
+        { name: "cast_ipv4_ipv6_default_on_conversion_error", path: "/cast#cast_ipv4_ipv6_default_on_conversion_error", default: "0" },
+        { name: "cast_keep_nullable", path: "/cast#cast_keep_nullable", default: "0" }
       ],
       children: []
     },
@@ -394,9 +398,9 @@ const SessionSettingsExplorer = () => {
       label: "cast_string_*",
       count: 3,
       settings: [
-        { name: "cast_string_to_date_time_mode", href: "/zh/reference/settings/session-settings/cast-string#cast_string_to_date_time_mode" },
-        { name: "cast_string_to_dynamic_use_inference", href: "/zh/reference/settings/session-settings/cast-string#cast_string_to_dynamic_use_inference" },
-        { name: "cast_string_to_variant_use_inference", href: "/zh/reference/settings/session-settings/cast-string#cast_string_to_variant_use_inference" }
+        { name: "cast_string_to_date_time_mode", path: "/cast-string#cast_string_to_date_time_mode", default: "best_effort" },
+        { name: "cast_string_to_dynamic_use_inference", path: "/cast-string#cast_string_to_dynamic_use_inference", default: "0" },
+        { name: "cast_string_to_variant_use_inference", path: "/cast-string#cast_string_to_variant_use_inference", default: "1" }
       ],
       children: []
     },
@@ -404,10 +408,10 @@ const SessionSettingsExplorer = () => {
       label: "check_*",
       count: 4,
       settings: [
-        { name: "check_named_collection_dependencies", href: "/zh/reference/settings/session-settings/check#check_named_collection_dependencies" },
-        { name: "check_query_single_value_result", href: "/zh/reference/settings/session-settings/check#check_query_single_value_result" },
-        { name: "check_referential_table_dependencies", href: "/zh/reference/settings/session-settings/check#check_referential_table_dependencies" },
-        { name: "check_table_dependencies", href: "/zh/reference/settings/session-settings/check#check_table_dependencies" }
+        { name: "check_named_collection_dependencies", path: "/check#check_named_collection_dependencies", default: "1" },
+        { name: "check_query_single_value_result", path: "/check#check_query_single_value_result", default: "0" },
+        { name: "check_referential_table_dependencies", path: "/check#check_referential_table_dependencies", default: "0" },
+        { name: "check_table_dependencies", path: "/check#check_table_dependencies", default: "1" }
       ],
       children: []
     },
@@ -415,8 +419,8 @@ const SessionSettingsExplorer = () => {
       label: "cloud_mode_*",
       count: 2,
       settings: [
-        { name: "cloud_mode", href: "/zh/reference/settings/session-settings/cloud-mode#cloud_mode" },
-        { name: "cloud_mode_engine", href: "/zh/reference/settings/session-settings/cloud-mode#cloud_mode_engine" }
+        { name: "cloud_mode", path: "/cloud-mode#cloud_mode", default: "0" },
+        { name: "cloud_mode_engine", path: "/cloud-mode#cloud_mode_engine", default: "1" }
       ],
       children: []
     },
@@ -424,8 +428,8 @@ const SessionSettingsExplorer = () => {
       label: "cluster_*",
       count: 2,
       settings: [
-        { name: "cluster_for_parallel_replicas", href: "/zh/reference/settings/session-settings/cluster#cluster_for_parallel_replicas" },
-        { name: "cluster_function_process_archive_on_multiple_nodes", href: "/zh/reference/settings/session-settings/cluster#cluster_function_process_archive_on_multiple_nodes" }
+        { name: "cluster_for_parallel_replicas", path: "/cluster#cluster_for_parallel_replicas", default: '""' },
+        { name: "cluster_function_process_archive_on_multiple_nodes", path: "/cluster#cluster_function_process_archive_on_multiple_nodes", default: "1" }
       ],
       children: []
     },
@@ -433,8 +437,8 @@ const SessionSettingsExplorer = () => {
       label: "cluster_table_*",
       count: 2,
       settings: [
-        { name: "cluster_table_function_buckets_batch_size", href: "/zh/reference/settings/session-settings/cluster-table#cluster_table_function_buckets_batch_size" },
-        { name: "cluster_table_function_split_granularity", href: "/zh/reference/settings/session-settings/cluster-table#cluster_table_function_split_granularity" }
+        { name: "cluster_table_function_buckets_batch_size", path: "/cluster-table#cluster_table_function_buckets_batch_size", default: "0" },
+        { name: "cluster_table_function_split_granularity", path: "/cluster-table#cluster_table_function_split_granularity", default: "file" }
       ],
       children: []
     },
@@ -442,8 +446,8 @@ const SessionSettingsExplorer = () => {
       label: "collect_hash_*",
       count: 2,
       settings: [
-        { name: "collect_hash_table_stats_during_aggregation", href: "/zh/reference/settings/session-settings/collect-hash#collect_hash_table_stats_during_aggregation" },
-        { name: "collect_hash_table_stats_during_joins", href: "/zh/reference/settings/session-settings/collect-hash#collect_hash_table_stats_during_joins" }
+        { name: "collect_hash_table_stats_during_aggregation", path: "/collect-hash#collect_hash_table_stats_during_aggregation", default: "1" },
+        { name: "collect_hash_table_stats_during_joins", path: "/collect-hash#collect_hash_table_stats_during_joins", default: "1" }
       ],
       children: []
     },
@@ -451,8 +455,8 @@ const SessionSettingsExplorer = () => {
       label: "compatibility_*",
       count: 2,
       settings: [
-        { name: "compatibility", href: "/zh/reference/settings/session-settings/compatibility#compatibility" },
-        { name: "compatibility_s3_presigned_url_query_in_path", href: "/zh/reference/settings/session-settings/compatibility#compatibility_s3_presigned_url_query_in_path" }
+        { name: "compatibility", path: "/compatibility#compatibility", default: '""' },
+        { name: "compatibility_s3_presigned_url_query_in_path", path: "/compatibility#compatibility_s3_presigned_url_query_in_path", default: "0" }
       ],
       children: []
     },
@@ -460,8 +464,8 @@ const SessionSettingsExplorer = () => {
       label: "compatibility_ignore_*",
       count: 2,
       settings: [
-        { name: "compatibility_ignore_auto_increment_in_create_table", href: "/zh/reference/settings/session-settings/compatibility-ignore#compatibility_ignore_auto_increment_in_create_table" },
-        { name: "compatibility_ignore_collation_in_create_table", href: "/zh/reference/settings/session-settings/compatibility-ignore#compatibility_ignore_collation_in_create_table" }
+        { name: "compatibility_ignore_auto_increment_in_create_table", path: "/compatibility-ignore#compatibility_ignore_auto_increment_in_create_table", default: "0" },
+        { name: "compatibility_ignore_collation_in_create_table", path: "/compatibility-ignore#compatibility_ignore_collation_in_create_table", default: "1" }
       ],
       children: []
     },
@@ -469,10 +473,10 @@ const SessionSettingsExplorer = () => {
       label: "compile_*",
       count: 4,
       settings: [
-        { name: "compile_aggregate_expressions", href: "/zh/reference/settings/session-settings/compile#compile_aggregate_expressions" },
-        { name: "compile_expressions", href: "/zh/reference/settings/session-settings/compile#compile_expressions" },
-        { name: "compile_regular_expressions", href: "/zh/reference/settings/session-settings/compile#compile_regular_expressions" },
-        { name: "compile_sort_description", href: "/zh/reference/settings/session-settings/compile#compile_sort_description" }
+        { name: "compile_aggregate_expressions", path: "/compile#compile_aggregate_expressions", default: "1" },
+        { name: "compile_expressions", path: "/compile#compile_expressions", default: "1" },
+        { name: "compile_regular_expressions", path: "/compile#compile_regular_expressions", default: "1" },
+        { name: "compile_sort_description", path: "/compile#compile_sort_description", default: "1" }
       ],
       children: []
     },
@@ -480,9 +484,9 @@ const SessionSettingsExplorer = () => {
       label: "connect_timeout_*",
       count: 3,
       settings: [
-        { name: "connect_timeout", href: "/zh/reference/settings/session-settings/connect-timeout#connect_timeout" },
-        { name: "connect_timeout_with_failover_ms", href: "/zh/reference/settings/session-settings/connect-timeout#connect_timeout_with_failover_ms" },
-        { name: "connect_timeout_with_failover_secure_ms", href: "/zh/reference/settings/session-settings/connect-timeout#connect_timeout_with_failover_secure_ms" }
+        { name: "connect_timeout", path: "/connect-timeout#connect_timeout", default: "10" },
+        { name: "connect_timeout_with_failover_ms", path: "/connect-timeout#connect_timeout_with_failover_ms", default: "1000" },
+        { name: "connect_timeout_with_failover_secure_ms", path: "/connect-timeout#connect_timeout_with_failover_secure_ms", default: "1000" }
       ],
       children: []
     },
@@ -490,9 +494,9 @@ const SessionSettingsExplorer = () => {
       label: "correlated_subqueries_*",
       count: 3,
       settings: [
-        { name: "correlated_subqueries_default_join_kind", href: "/zh/reference/settings/session-settings/correlated-subqueries#correlated_subqueries_default_join_kind" },
-        { name: "correlated_subqueries_substitute_equivalent_expressions", href: "/zh/reference/settings/session-settings/correlated-subqueries#correlated_subqueries_substitute_equivalent_expressions" },
-        { name: "correlated_subqueries_use_in_memory_buffer", href: "/zh/reference/settings/session-settings/correlated-subqueries#correlated_subqueries_use_in_memory_buffer" }
+        { name: "correlated_subqueries_default_join_kind", path: "/correlated-subqueries#correlated_subqueries_default_join_kind", default: "right" },
+        { name: "correlated_subqueries_substitute_equivalent_expressions", path: "/correlated-subqueries#correlated_subqueries_substitute_equivalent_expressions", default: "1" },
+        { name: "correlated_subqueries_use_in_memory_buffer", path: "/correlated-subqueries#correlated_subqueries_use_in_memory_buffer", default: "1" }
       ],
       children: []
     },
@@ -500,8 +504,8 @@ const SessionSettingsExplorer = () => {
       label: "count_distinct_*",
       count: 2,
       settings: [
-        { name: "count_distinct_implementation", href: "/zh/reference/settings/session-settings/count-distinct#count_distinct_implementation" },
-        { name: "count_distinct_optimization", href: "/zh/reference/settings/session-settings/count-distinct#count_distinct_optimization" }
+        { name: "count_distinct_implementation", path: "/count-distinct#count_distinct_implementation", default: "uniqExact" },
+        { name: "count_distinct_optimization", path: "/count-distinct#count_distinct_optimization", default: "0" }
       ],
       children: []
     },
@@ -509,10 +513,10 @@ const SessionSettingsExplorer = () => {
       label: "create_*",
       count: 4,
       settings: [
-        { name: "create_if_not_exists", href: "/zh/reference/settings/session-settings/create#create_if_not_exists" },
-        { name: "create_index_ignore_unique", href: "/zh/reference/settings/session-settings/create#create_index_ignore_unique" },
-        { name: "create_replicated_merge_tree_fault_injection_probability", href: "/zh/reference/settings/session-settings/create#create_replicated_merge_tree_fault_injection_probability" },
-        { name: "create_table_empty_primary_key_by_default", href: "/zh/reference/settings/session-settings/create#create_table_empty_primary_key_by_default" }
+        { name: "create_if_not_exists", path: "/create#create_if_not_exists", default: "0" },
+        { name: "create_index_ignore_unique", path: "/create#create_index_ignore_unique", default: "0" },
+        { name: "create_replicated_merge_tree_fault_injection_probability", path: "/create#create_replicated_merge_tree_fault_injection_probability", default: "0" },
+        { name: "create_table_empty_primary_key_by_default", path: "/create#create_table_empty_primary_key_by_default", default: "1" }
       ],
       children: []
     },
@@ -520,18 +524,19 @@ const SessionSettingsExplorer = () => {
       label: "cross_join_*",
       count: 2,
       settings: [
-        { name: "cross_join_min_bytes_to_compress", href: "/zh/reference/settings/session-settings/cross-join#cross_join_min_bytes_to_compress" },
-        { name: "cross_join_min_rows_to_compress", href: "/zh/reference/settings/session-settings/cross-join#cross_join_min_rows_to_compress" }
+        { name: "cross_join_min_bytes_to_compress", path: "/cross-join#cross_join_min_bytes_to_compress", default: "1073741824" },
+        { name: "cross_join_min_rows_to_compress", path: "/cross-join#cross_join_min_rows_to_compress", default: "10000000" }
       ],
       children: []
     },
     {
       label: "database_*",
-      count: 3,
+      count: 4,
       settings: [
-        { name: "database_atomic_wait_for_drop_and_detach_synchronously", href: "/zh/reference/settings/session-settings/database#database_atomic_wait_for_drop_and_detach_synchronously" },
-        { name: "database_datalake_require_metadata_access", href: "/zh/reference/settings/session-settings/database#database_datalake_require_metadata_access" },
-        { name: "database_shared_drop_table_delay_seconds", href: "/zh/reference/settings/session-settings/database#database_shared_drop_table_delay_seconds" }
+        { name: "database", path: "/database#database", default: '""' },
+        { name: "database_atomic_wait_for_drop_and_detach_synchronously", path: "/database#database_atomic_wait_for_drop_and_detach_synchronously", default: "0" },
+        { name: "database_datalake_require_metadata_access", path: "/database#database_datalake_require_metadata_access", default: "1" },
+        { name: "database_shared_drop_table_delay_seconds", path: "/database#database_shared_drop_table_delay_seconds", default: "28800" }
       ],
       children: []
     },
@@ -539,13 +544,13 @@ const SessionSettingsExplorer = () => {
       label: "database_replicated_*",
       count: 7,
       settings: [
-        { name: "database_replicated_allow_explicit_uuid", href: "/zh/reference/settings/session-settings/database-replicated#database_replicated_allow_explicit_uuid" },
-        { name: "database_replicated_allow_heavy_create", href: "/zh/reference/settings/session-settings/database-replicated#database_replicated_allow_heavy_create" },
-        { name: "database_replicated_allow_only_replicated_engine", href: "/zh/reference/settings/session-settings/database-replicated#database_replicated_allow_only_replicated_engine" },
-        { name: "database_replicated_allow_replicated_engine_arguments", href: "/zh/reference/settings/session-settings/database-replicated#database_replicated_allow_replicated_engine_arguments" },
-        { name: "database_replicated_always_detach_permanently", href: "/zh/reference/settings/session-settings/database-replicated#database_replicated_always_detach_permanently" },
-        { name: "database_replicated_enforce_synchronous_settings", href: "/zh/reference/settings/session-settings/database-replicated#database_replicated_enforce_synchronous_settings" },
-        { name: "database_replicated_initial_query_timeout_sec", href: "/zh/reference/settings/session-settings/database-replicated#database_replicated_initial_query_timeout_sec" }
+        { name: "database_replicated_allow_explicit_uuid", path: "/database-replicated#database_replicated_allow_explicit_uuid", default: "0" },
+        { name: "database_replicated_allow_heavy_create", path: "/database-replicated#database_replicated_allow_heavy_create", default: "0" },
+        { name: "database_replicated_allow_only_replicated_engine", path: "/database-replicated#database_replicated_allow_only_replicated_engine", default: "0" },
+        { name: "database_replicated_allow_replicated_engine_arguments", path: "/database-replicated#database_replicated_allow_replicated_engine_arguments", default: "0" },
+        { name: "database_replicated_always_detach_permanently", path: "/database-replicated#database_replicated_always_detach_permanently", default: "0" },
+        { name: "database_replicated_enforce_synchronous_settings", path: "/database-replicated#database_replicated_enforce_synchronous_settings", default: "0" },
+        { name: "database_replicated_initial_query_timeout_sec", path: "/database-replicated#database_replicated_initial_query_timeout_sec", default: "300" }
       ],
       children: []
     },
@@ -553,8 +558,8 @@ const SessionSettingsExplorer = () => {
       label: "dead_blobs_*",
       count: 2,
       settings: [
-        { name: "dead_blobs_to_delay_insert", href: "/zh/reference/settings/session-settings/dead-blobs#dead_blobs_to_delay_insert" },
-        { name: "dead_blobs_to_throw_insert", href: "/zh/reference/settings/session-settings/dead-blobs#dead_blobs_to_throw_insert" }
+        { name: "dead_blobs_to_delay_insert", path: "/dead-blobs#dead_blobs_to_delay_insert", default: "0" },
+        { name: "dead_blobs_to_throw_insert", path: "/dead-blobs#dead_blobs_to_throw_insert", default: "0" }
       ],
       children: []
     },
@@ -562,21 +567,22 @@ const SessionSettingsExplorer = () => {
       label: "deduplicate_insert_*",
       count: 2,
       settings: [
-        { name: "deduplicate_insert", href: "/zh/reference/settings/session-settings/deduplicate-insert#deduplicate_insert" },
-        { name: "deduplicate_insert_select", href: "/zh/reference/settings/session-settings/deduplicate-insert#deduplicate_insert_select" }
+        { name: "deduplicate_insert", path: "/deduplicate-insert#deduplicate_insert", default: "enable" },
+        { name: "deduplicate_insert_select", path: "/deduplicate-insert#deduplicate_insert_select", default: "enable_when_possible" }
       ],
       children: []
     },
     {
       label: "default_*",
-      count: 6,
+      count: 7,
       settings: [
-        { name: "default_materialized_view_sql_security", href: "/zh/reference/settings/session-settings/default#default_materialized_view_sql_security" },
-        { name: "default_max_bytes_in_join", href: "/zh/reference/settings/session-settings/default#default_max_bytes_in_join" },
-        { name: "default_normal_view_sql_security", href: "/zh/reference/settings/session-settings/default#default_normal_view_sql_security" },
-        { name: "default_table_engine", href: "/zh/reference/settings/session-settings/default#default_table_engine" },
-        { name: "default_temporary_table_engine", href: "/zh/reference/settings/session-settings/default#default_temporary_table_engine" },
-        { name: "default_view_definer", href: "/zh/reference/settings/session-settings/default#default_view_definer" }
+        { name: "default_format", path: "/default#default_format", default: '""' },
+        { name: "default_materialized_view_sql_security", path: "/default#default_materialized_view_sql_security", default: "DEFINER" },
+        { name: "default_max_bytes_in_join", path: "/default#default_max_bytes_in_join", default: "1000000000" },
+        { name: "default_normal_view_sql_security", path: "/default#default_normal_view_sql_security", default: "INVOKER" },
+        { name: "default_table_engine", path: "/default#default_table_engine", default: "MergeTree" },
+        { name: "default_temporary_table_engine", path: "/default#default_temporary_table_engine", default: "Memory" },
+        { name: "default_view_definer", path: "/default#default_view_definer", default: "CURRENT_USER" }
       ],
       children: []
     },
@@ -584,16 +590,16 @@ const SessionSettingsExplorer = () => {
       label: "delta_lake_*",
       count: 10,
       settings: [
-        { name: "delta_lake_enable_engine_predicate", href: "/zh/reference/settings/session-settings/delta-lake#delta_lake_enable_engine_predicate" },
-        { name: "delta_lake_enable_expression_visitor_logging", href: "/zh/reference/settings/session-settings/delta-lake#delta_lake_enable_expression_visitor_logging" },
-        { name: "delta_lake_insert_max_bytes_in_data_file", href: "/zh/reference/settings/session-settings/delta-lake#delta_lake_insert_max_bytes_in_data_file" },
-        { name: "delta_lake_insert_max_rows_in_data_file", href: "/zh/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file" },
-        { name: "delta_lake_log_metadata", href: "/zh/reference/settings/session-settings/delta-lake#delta_lake_log_metadata" },
-        { name: "delta_lake_reload_schema_for_consistency", href: "/zh/reference/settings/session-settings/delta-lake#delta_lake_reload_schema_for_consistency" },
-        { name: "delta_lake_snapshot_end_version", href: "/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_end_version" },
-        { name: "delta_lake_snapshot_start_version", href: "/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_start_version" },
-        { name: "delta_lake_snapshot_version", href: "/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_version" },
-        { name: "delta_lake_throw_on_engine_predicate_error", href: "/zh/reference/settings/session-settings/delta-lake#delta_lake_throw_on_engine_predicate_error" }
+        { name: "delta_lake_enable_engine_predicate", path: "/delta-lake#delta_lake_enable_engine_predicate", default: "1" },
+        { name: "delta_lake_enable_expression_visitor_logging", path: "/delta-lake#delta_lake_enable_expression_visitor_logging", default: "0" },
+        { name: "delta_lake_insert_max_bytes_in_data_file", path: "/delta-lake#delta_lake_insert_max_bytes_in_data_file", default: "1073741824" },
+        { name: "delta_lake_insert_max_rows_in_data_file", path: "/delta-lake#delta_lake_insert_max_rows_in_data_file", default: "1000000" },
+        { name: "delta_lake_log_metadata", path: "/delta-lake#delta_lake_log_metadata", default: "0" },
+        { name: "delta_lake_reload_schema_for_consistency", path: "/delta-lake#delta_lake_reload_schema_for_consistency", default: "0" },
+        { name: "delta_lake_snapshot_end_version", path: "/delta-lake#delta_lake_snapshot_end_version", default: "-1" },
+        { name: "delta_lake_snapshot_start_version", path: "/delta-lake#delta_lake_snapshot_start_version", default: "-1" },
+        { name: "delta_lake_snapshot_version", path: "/delta-lake#delta_lake_snapshot_version", default: "-1" },
+        { name: "delta_lake_throw_on_engine_predicate_error", path: "/delta-lake#delta_lake_throw_on_engine_predicate_error", default: "0" }
       ],
       children: []
     },
@@ -601,8 +607,8 @@ const SessionSettingsExplorer = () => {
       label: "describe_include_*",
       count: 2,
       settings: [
-        { name: "describe_include_subcolumns", href: "/zh/reference/settings/session-settings/describe-include#describe_include_subcolumns" },
-        { name: "describe_include_virtual_columns", href: "/zh/reference/settings/session-settings/describe-include#describe_include_virtual_columns" }
+        { name: "describe_include_subcolumns", path: "/describe-include#describe_include_subcolumns", default: "0" },
+        { name: "describe_include_virtual_columns", path: "/describe-include#describe_include_virtual_columns", default: "0" }
       ],
       children: []
     },
@@ -610,9 +616,9 @@ const SessionSettingsExplorer = () => {
       label: "dictionary_*",
       count: 3,
       settings: [
-        { name: "dictionary_lazy_load", href: "/zh/reference/settings/session-settings/dictionary#dictionary_lazy_load" },
-        { name: "dictionary_use_async_executor", href: "/zh/reference/settings/session-settings/dictionary#dictionary_use_async_executor" },
-        { name: "dictionary_validate_primary_key_type", href: "/zh/reference/settings/session-settings/dictionary#dictionary_validate_primary_key_type" }
+        { name: "dictionary_lazy_load", path: "/dictionary#dictionary_lazy_load", default: "auto" },
+        { name: "dictionary_use_async_executor", path: "/dictionary#dictionary_use_async_executor", default: "0" },
+        { name: "dictionary_validate_primary_key_type", path: "/dictionary#dictionary_validate_primary_key_type", default: "0" }
       ],
       children: []
     },
@@ -620,13 +626,13 @@ const SessionSettingsExplorer = () => {
       label: "distributed_*",
       count: 7,
       settings: [
-        { name: "distributed_aggregation_memory_efficient", href: "/zh/reference/settings/session-settings/distributed#distributed_aggregation_memory_efficient" },
-        { name: "distributed_connections_pool_size", href: "/zh/reference/settings/session-settings/distributed#distributed_connections_pool_size" },
-        { name: "distributed_foreground_insert", href: "/zh/reference/settings/session-settings/distributed#distributed_foreground_insert" },
-        { name: "distributed_group_by_no_merge", href: "/zh/reference/settings/session-settings/distributed#distributed_group_by_no_merge" },
-        { name: "distributed_insert_skip_read_only_replicas", href: "/zh/reference/settings/session-settings/distributed#distributed_insert_skip_read_only_replicas" },
-        { name: "distributed_product_mode", href: "/zh/reference/settings/session-settings/distributed#distributed_product_mode" },
-        { name: "distributed_push_down_limit", href: "/zh/reference/settings/session-settings/distributed#distributed_push_down_limit" }
+        { name: "distributed_aggregation_memory_efficient", path: "/distributed#distributed_aggregation_memory_efficient", default: "1" },
+        { name: "distributed_connections_pool_size", path: "/distributed#distributed_connections_pool_size", default: "1024" },
+        { name: "distributed_foreground_insert", path: "/distributed#distributed_foreground_insert", default: "0" },
+        { name: "distributed_group_by_no_merge", path: "/distributed#distributed_group_by_no_merge", default: "0" },
+        { name: "distributed_insert_skip_read_only_replicas", path: "/distributed#distributed_insert_skip_read_only_replicas", default: "0" },
+        { name: "distributed_product_mode", path: "/distributed#distributed_product_mode", default: "deny" },
+        { name: "distributed_push_down_limit", path: "/distributed#distributed_push_down_limit", default: "1" }
       ],
       children: []
     },
@@ -634,46 +640,51 @@ const SessionSettingsExplorer = () => {
       label: "distributed_background_*",
       count: 5,
       settings: [
-        { name: "distributed_background_insert_batch", href: "/zh/reference/settings/session-settings/distributed-background#distributed_background_insert_batch" },
-        { name: "distributed_background_insert_max_sleep_time_ms", href: "/zh/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms" },
-        { name: "distributed_background_insert_sleep_time_ms", href: "/zh/reference/settings/session-settings/distributed-background#distributed_background_insert_sleep_time_ms" },
-        { name: "distributed_background_insert_split_batch_on_failure", href: "/zh/reference/settings/session-settings/distributed-background#distributed_background_insert_split_batch_on_failure" },
-        { name: "distributed_background_insert_timeout", href: "/zh/reference/settings/session-settings/distributed-background#distributed_background_insert_timeout" }
+        { name: "distributed_background_insert_batch", path: "/distributed-background#distributed_background_insert_batch", default: "0" },
+        { name: "distributed_background_insert_max_sleep_time_ms", path: "/distributed-background#distributed_background_insert_max_sleep_time_ms", default: "30000" },
+        { name: "distributed_background_insert_sleep_time_ms", path: "/distributed-background#distributed_background_insert_sleep_time_ms", default: "100" },
+        { name: "distributed_background_insert_split_batch_on_failure", path: "/distributed-background#distributed_background_insert_split_batch_on_failure", default: "0" },
+        { name: "distributed_background_insert_timeout", path: "/distributed-background#distributed_background_insert_timeout", default: "0" }
       ],
       children: []
     },
     {
       label: "distributed_cache_*",
-      count: 28,
+      count: 29,
       settings: [
-        { name: "distributed_cache_alignment", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_alignment" },
-        { name: "distributed_cache_bypass_connection_pool", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_bypass_connection_pool" },
-        { name: "distributed_cache_connect_backoff_max_ms", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_connect_backoff_max_ms" },
-        { name: "distributed_cache_connect_backoff_min_ms", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_connect_backoff_min_ms" },
-        { name: "distributed_cache_connect_max_tries", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_connect_max_tries" },
-        { name: "distributed_cache_connect_timeout_ms", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_connect_timeout_ms" },
-        { name: "distributed_cache_credentials_refresh_period_seconds", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_credentials_refresh_period_seconds" },
-        { name: "distributed_cache_data_packet_ack_window", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_data_packet_ack_window" },
-        { name: "distributed_cache_discard_connection_if_unread_data", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_discard_connection_if_unread_data" },
-        { name: "distributed_cache_fetch_metrics_only_from_current_az", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_fetch_metrics_only_from_current_az" },
-        { name: "distributed_cache_file_cache_name", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_file_cache_name" },
-        { name: "distributed_cache_log_mode", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_log_mode" },
-        { name: "distributed_cache_max_unacked_inflight_packets", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_max_unacked_inflight_packets" },
-        { name: "distributed_cache_min_bytes_for_seek", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_min_bytes_for_seek" },
-        { name: "distributed_cache_pool_behaviour_on_limit", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_pool_behaviour_on_limit" },
-        { name: "distributed_cache_prefer_bigger_buffer_size", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_prefer_bigger_buffer_size" },
-        { name: "distributed_cache_read_only_from_current_az", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_read_only_from_current_az" },
-        { name: "distributed_cache_read_request_max_tries", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_read_request_max_tries" },
-        { name: "distributed_cache_receive_response_wait_milliseconds", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_receive_response_wait_milliseconds" },
-        { name: "distributed_cache_receive_timeout_milliseconds", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_receive_timeout_milliseconds" },
-        { name: "distributed_cache_receive_timeout_ms", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_receive_timeout_ms" },
-        { name: "distributed_cache_registry_show_certificate_and_signature", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_registry_show_certificate_and_signature" },
-        { name: "distributed_cache_send_timeout_ms", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_send_timeout_ms" },
-        { name: "distributed_cache_tcp_keep_alive_timeout_ms", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_tcp_keep_alive_timeout_ms" },
-        { name: "distributed_cache_throw_on_error", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_throw_on_error" },
-        { name: "distributed_cache_use_clients_cache_for_read", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_use_clients_cache_for_read" },
-        { name: "distributed_cache_wait_connection_from_pool_milliseconds", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_wait_connection_from_pool_milliseconds" },
-        { name: "distributed_cache_write_request_max_tries", href: "/zh/reference/settings/session-settings/distributed-cache#distributed_cache_write_request_max_tries" }
+        { name: "distributed_cache_alignment", path: "/distributed-cache#distributed_cache_alignment", default: "0" },
+        { name: "distributed_cache_bypass_connection_pool", path: "/distributed-cache#distributed_cache_bypass_connection_pool", default: "0" },
+        { name: "distributed_cache_connect_backoff_max_ms", path: "/distributed-cache#distributed_cache_connect_backoff_max_ms", default: "50" },
+        { name: "distributed_cache_connect_backoff_min_ms", path: "/distributed-cache#distributed_cache_connect_backoff_min_ms", default: "0" },
+        { name: "distributed_cache_connect_max_tries", path: "/distributed-cache#distributed_cache_connect_max_tries", default: "5" },
+        { name: "distributed_cache_connect_timeout_ms", path: "/distributed-cache#distributed_cache_connect_timeout_ms", default: "50" },
+        { name: "distributed_cache_credentials_refresh_period_seconds", path: "/distributed-cache#distributed_cache_credentials_refresh_period_seconds", default: "5" },
+        { name: "distributed_cache_data_packet_ack_window", path: "/distributed-cache#distributed_cache_data_packet_ack_window", default: "5" },
+        { name: "distributed_cache_discard_connection_if_unread_data", path: "/distributed-cache#distributed_cache_discard_connection_if_unread_data", default: "1" },
+        { name: "distributed_cache_fetch_metrics_only_from_current_az", path: "/distributed-cache#distributed_cache_fetch_metrics_only_from_current_az", default: "1" },
+        { name: "distributed_cache_file_cache_name", path: "/distributed-cache#distributed_cache_file_cache_name", default: '""' },
+        { name: "distributed_cache_log_mode", path: "/distributed-cache#distributed_cache_log_mode", default: "on_error" },
+        { name: "distributed_cache_max_unacked_inflight_packets", path: "/distributed-cache#distributed_cache_max_unacked_inflight_packets", default: "10" },
+        { name: "distributed_cache_min_bytes_for_seek", path: "/distributed-cache#distributed_cache_min_bytes_for_seek", default: "0" },
+        {
+          name: "distributed_cache_min_inflight_bytes_to_discard_connection_on_seek",
+          path: "/distributed-cache#distributed_cache_min_inflight_bytes_to_discard_connection_on_seek",
+          default: "4194304"
+        },
+        { name: "distributed_cache_pool_behaviour_on_limit", path: "/distributed-cache#distributed_cache_pool_behaviour_on_limit", default: "wait" },
+        { name: "distributed_cache_prefer_bigger_buffer_size", path: "/distributed-cache#distributed_cache_prefer_bigger_buffer_size", default: "0" },
+        { name: "distributed_cache_read_only_from_current_az", path: "/distributed-cache#distributed_cache_read_only_from_current_az", default: "1" },
+        { name: "distributed_cache_read_request_max_tries", path: "/distributed-cache#distributed_cache_read_request_max_tries", default: "10" },
+        { name: "distributed_cache_receive_response_wait_milliseconds", path: "/distributed-cache#distributed_cache_receive_response_wait_milliseconds", default: "60000" },
+        { name: "distributed_cache_receive_timeout_milliseconds", path: "/distributed-cache#distributed_cache_receive_timeout_milliseconds", default: "10000" },
+        { name: "distributed_cache_receive_timeout_ms", path: "/distributed-cache#distributed_cache_receive_timeout_ms", default: "3000" },
+        { name: "distributed_cache_registry_show_certificate_and_signature", path: "/distributed-cache#distributed_cache_registry_show_certificate_and_signature", default: "0" },
+        { name: "distributed_cache_send_timeout_ms", path: "/distributed-cache#distributed_cache_send_timeout_ms", default: "3000" },
+        { name: "distributed_cache_tcp_keep_alive_timeout_ms", path: "/distributed-cache#distributed_cache_tcp_keep_alive_timeout_ms", default: "2900" },
+        { name: "distributed_cache_throw_on_error", path: "/distributed-cache#distributed_cache_throw_on_error", default: "0" },
+        { name: "distributed_cache_use_clients_cache_for_read", path: "/distributed-cache#distributed_cache_use_clients_cache_for_read", default: "1" },
+        { name: "distributed_cache_wait_connection_from_pool_milliseconds", path: "/distributed-cache#distributed_cache_wait_connection_from_pool_milliseconds", default: "100" },
+        { name: "distributed_cache_write_request_max_tries", path: "/distributed-cache#distributed_cache_write_request_max_tries", default: "10" }
       ],
       children: []
     },
@@ -681,9 +692,9 @@ const SessionSettingsExplorer = () => {
       label: "distributed_ddl_*",
       count: 3,
       settings: [
-        { name: "distributed_ddl_entry_format_version", href: "/zh/reference/settings/session-settings/distributed-ddl#distributed_ddl_entry_format_version" },
-        { name: "distributed_ddl_output_mode", href: "/zh/reference/settings/session-settings/distributed-ddl#distributed_ddl_output_mode" },
-        { name: "distributed_ddl_task_timeout", href: "/zh/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout" }
+        { name: "distributed_ddl_entry_format_version", path: "/distributed-ddl#distributed_ddl_entry_format_version", default: "5" },
+        { name: "distributed_ddl_output_mode", path: "/distributed-ddl#distributed_ddl_output_mode", default: "throw" },
+        { name: "distributed_ddl_task_timeout", path: "/distributed-ddl#distributed_ddl_task_timeout", default: "180" }
       ],
       children: []
     },
@@ -691,9 +702,9 @@ const SessionSettingsExplorer = () => {
       label: "distributed_index_analysis_*",
       count: 3,
       settings: [
-        { name: "distributed_index_analysis", href: "/zh/reference/settings/session-settings/distributed-index-analysis#distributed_index_analysis" },
-        { name: "distributed_index_analysis_for_non_shared_merge_tree", href: "/zh/reference/settings/session-settings/distributed-index-analysis#distributed_index_analysis_for_non_shared_merge_tree" },
-        { name: "distributed_index_analysis_only_on_coordinator", href: "/zh/reference/settings/session-settings/distributed-index-analysis#distributed_index_analysis_only_on_coordinator" }
+        { name: "distributed_index_analysis", path: "/distributed-index-analysis#distributed_index_analysis", default: "0" },
+        { name: "distributed_index_analysis_for_non_shared_merge_tree", path: "/distributed-index-analysis#distributed_index_analysis_for_non_shared_merge_tree", default: "0" },
+        { name: "distributed_index_analysis_only_on_coordinator", path: "/distributed-index-analysis#distributed_index_analysis_only_on_coordinator", default: "0" }
       ],
       children: []
     },
@@ -701,15 +712,15 @@ const SessionSettingsExplorer = () => {
       label: "distributed_plan_*",
       count: 9,
       settings: [
-        { name: "distributed_plan_default_reader_bucket_count", href: "/zh/reference/settings/session-settings/distributed-plan#distributed_plan_default_reader_bucket_count" },
-        { name: "distributed_plan_default_shuffle_join_bucket_count", href: "/zh/reference/settings/session-settings/distributed-plan#distributed_plan_default_shuffle_join_bucket_count" },
-        { name: "distributed_plan_execute_locally", href: "/zh/reference/settings/session-settings/distributed-plan#distributed_plan_execute_locally" },
-        { name: "distributed_plan_force_exchange_kind", href: "/zh/reference/settings/session-settings/distributed-plan#distributed_plan_force_exchange_kind" },
-        { name: "distributed_plan_force_shuffle_aggregation", href: "/zh/reference/settings/session-settings/distributed-plan#distributed_plan_force_shuffle_aggregation" },
-        { name: "distributed_plan_max_rows_to_broadcast", href: "/zh/reference/settings/session-settings/distributed-plan#distributed_plan_max_rows_to_broadcast" },
-        { name: "distributed_plan_optimize_exchanges", href: "/zh/reference/settings/session-settings/distributed-plan#distributed_plan_optimize_exchanges" },
-        { name: "distributed_plan_prefer_replicas_over_workers", href: "/zh/reference/settings/session-settings/distributed-plan#distributed_plan_prefer_replicas_over_workers" },
-        { name: "distributed_plan_workers_num", href: "/zh/reference/settings/session-settings/distributed-plan#distributed_plan_workers_num" }
+        { name: "distributed_plan_default_reader_bucket_count", path: "/distributed-plan#distributed_plan_default_reader_bucket_count", default: "8" },
+        { name: "distributed_plan_default_shuffle_join_bucket_count", path: "/distributed-plan#distributed_plan_default_shuffle_join_bucket_count", default: "8" },
+        { name: "distributed_plan_execute_locally", path: "/distributed-plan#distributed_plan_execute_locally", default: "0" },
+        { name: "distributed_plan_force_exchange_kind", path: "/distributed-plan#distributed_plan_force_exchange_kind", default: '""' },
+        { name: "distributed_plan_force_shuffle_aggregation", path: "/distributed-plan#distributed_plan_force_shuffle_aggregation", default: "0" },
+        { name: "distributed_plan_max_rows_to_broadcast", path: "/distributed-plan#distributed_plan_max_rows_to_broadcast", default: "20000" },
+        { name: "distributed_plan_optimize_exchanges", path: "/distributed-plan#distributed_plan_optimize_exchanges", default: "1" },
+        { name: "distributed_plan_prefer_replicas_over_workers", path: "/distributed-plan#distributed_plan_prefer_replicas_over_workers", default: "0" },
+        { name: "distributed_plan_workers_num", path: "/distributed-plan#distributed_plan_workers_num", default: "0" }
       ],
       children: []
     },
@@ -717,9 +728,9 @@ const SessionSettingsExplorer = () => {
       label: "distributed_replica_*",
       count: 3,
       settings: [
-        { name: "distributed_replica_error_cap", href: "/zh/reference/settings/session-settings/distributed-replica#distributed_replica_error_cap" },
-        { name: "distributed_replica_error_half_life", href: "/zh/reference/settings/session-settings/distributed-replica#distributed_replica_error_half_life" },
-        { name: "distributed_replica_max_ignored_errors", href: "/zh/reference/settings/session-settings/distributed-replica#distributed_replica_max_ignored_errors" }
+        { name: "distributed_replica_error_cap", path: "/distributed-replica#distributed_replica_error_cap", default: "1000" },
+        { name: "distributed_replica_error_half_life", path: "/distributed-replica#distributed_replica_error_half_life", default: "60" },
+        { name: "distributed_replica_max_ignored_errors", path: "/distributed-replica#distributed_replica_max_ignored_errors", default: "0" }
       ],
       children: []
     },
@@ -727,9 +738,9 @@ const SessionSettingsExplorer = () => {
       label: "dynamic_disk_*",
       count: 3,
       settings: [
-        { name: "dynamic_disk_allow_from_env", href: "/zh/reference/settings/session-settings/dynamic-disk#dynamic_disk_allow_from_env" },
-        { name: "dynamic_disk_allow_from_zk", href: "/zh/reference/settings/session-settings/dynamic-disk#dynamic_disk_allow_from_zk" },
-        { name: "dynamic_disk_allow_include", href: "/zh/reference/settings/session-settings/dynamic-disk#dynamic_disk_allow_include" }
+        { name: "dynamic_disk_allow_from_env", path: "/dynamic-disk#dynamic_disk_allow_from_env", default: "0" },
+        { name: "dynamic_disk_allow_from_zk", path: "/dynamic-disk#dynamic_disk_allow_from_zk", default: "0" },
+        { name: "dynamic_disk_allow_include", path: "/dynamic-disk#dynamic_disk_allow_include", default: "0" }
       ],
       children: []
     },
@@ -737,51 +748,51 @@ const SessionSettingsExplorer = () => {
       label: "empty_result_*",
       count: 2,
       settings: [
-        { name: "empty_result_for_aggregation_by_constant_keys_on_empty_set", href: "/zh/reference/settings/session-settings/empty-result#empty_result_for_aggregation_by_constant_keys_on_empty_set" },
-        { name: "empty_result_for_aggregation_by_empty_set", href: "/zh/reference/settings/session-settings/empty-result#empty_result_for_aggregation_by_empty_set" }
+        { name: "empty_result_for_aggregation_by_constant_keys_on_empty_set", path: "/empty-result#empty_result_for_aggregation_by_constant_keys_on_empty_set", default: "1" },
+        { name: "empty_result_for_aggregation_by_empty_set", path: "/empty-result#empty_result_for_aggregation_by_empty_set", default: "0" }
       ],
       children: []
     },
     {
       label: "enable_*",
-      count: 33,
+      count: 36,
       settings: [
-        { name: "enable_adaptive_memory_spill_scheduler", href: "/zh/reference/settings/session-settings/enable#enable_adaptive_memory_spill_scheduler" },
-        { name: "enable_add_distinct_to_in_subqueries", href: "/zh/reference/settings/session-settings/enable#enable_add_distinct_to_in_subqueries" },
-        {
-          name: "enable_automatic_decision_for_merging_across_partitions_for_final",
-          href: "/zh/reference/settings/session-settings/enable#enable_automatic_decision_for_merging_across_partitions_for_final"
-        },
-        { name: "enable_early_constant_folding", href: "/zh/reference/settings/session-settings/enable#enable_early_constant_folding" },
-        { name: "enable_extended_results_for_datetime_functions", href: "/zh/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions" },
-        { name: "enable_full_text_index", href: "/zh/reference/settings/session-settings/enable#enable_full_text_index" },
-        { name: "enable_global_with_statement", href: "/zh/reference/settings/session-settings/enable#enable_global_with_statement" },
-        { name: "enable_hdfs_pread", href: "/zh/reference/settings/session-settings/enable#enable_hdfs_pread" },
-        { name: "enable_http_compression", href: "/zh/reference/settings/session-settings/enable#enable_http_compression" },
-        { name: "enable_identifier_resolve_cache", href: "/zh/reference/settings/session-settings/enable#enable_identifier_resolve_cache" },
-        { name: "enable_job_stack_trace", href: "/zh/reference/settings/session-settings/enable#enable_job_stack_trace" },
-        { name: "enable_lazy_columns_replication", href: "/zh/reference/settings/session-settings/enable#enable_lazy_columns_replication" },
-        { name: "enable_materialized_cte", href: "/zh/reference/settings/session-settings/enable#enable_materialized_cte" },
-        { name: "enable_memory_bound_merging_of_aggregation_results", href: "/zh/reference/settings/session-settings/enable#enable_memory_bound_merging_of_aggregation_results" },
-        { name: "enable_multiple_prewhere_read_steps", href: "/zh/reference/settings/session-settings/enable#enable_multiple_prewhere_read_steps" },
-        { name: "enable_named_columns_in_function_tuple", href: "/zh/reference/settings/session-settings/enable#enable_named_columns_in_function_tuple" },
-        { name: "enable_order_by_all", href: "/zh/reference/settings/session-settings/enable#enable_order_by_all" },
-        { name: "enable_parallel_blocks_marshalling", href: "/zh/reference/settings/session-settings/enable#enable_parallel_blocks_marshalling" },
-        { name: "enable_parsing_to_custom_serialization", href: "/zh/reference/settings/session-settings/enable#enable_parsing_to_custom_serialization" },
-        { name: "enable_producing_buckets_out_of_order_in_aggregation", href: "/zh/reference/settings/session-settings/enable#enable_producing_buckets_out_of_order_in_aggregation" },
-        { name: "enable_reads_from_query_cache", href: "/zh/reference/settings/session-settings/enable#enable_reads_from_query_cache" },
-        { name: "enable_s3_requests_logging", href: "/zh/reference/settings/session-settings/enable#enable_s3_requests_logging" },
-        { name: "enable_scalar_subquery_optimization", href: "/zh/reference/settings/session-settings/enable#enable_scalar_subquery_optimization" },
-        { name: "enable_scopes_for_with_statement", href: "/zh/reference/settings/session-settings/enable#enable_scopes_for_with_statement" },
-        { name: "enable_sharding_aggregator", href: "/zh/reference/settings/session-settings/enable#enable_sharding_aggregator" },
-        { name: "enable_shared_storage_snapshot_in_query", href: "/zh/reference/settings/session-settings/enable#enable_shared_storage_snapshot_in_query" },
-        { name: "enable_sharing_sets_for_mutations", href: "/zh/reference/settings/session-settings/enable#enable_sharing_sets_for_mutations" },
-        { name: "enable_streaming_queries", href: "/zh/reference/settings/session-settings/enable#enable_streaming_queries" },
-        { name: "enable_time_time64_type", href: "/zh/reference/settings/session-settings/enable#enable_time_time64_type" },
-        { name: "enable_unaligned_array_join", href: "/zh/reference/settings/session-settings/enable#enable_unaligned_array_join" },
-        { name: "enable_url_encoding", href: "/zh/reference/settings/session-settings/enable#enable_url_encoding" },
-        { name: "enable_vertical_final", href: "/zh/reference/settings/session-settings/enable#enable_vertical_final" },
-        { name: "enable_writes_to_query_cache", href: "/zh/reference/settings/session-settings/enable#enable_writes_to_query_cache" }
+        { name: "enable_adaptive_aggregator", path: "/enable#enable_adaptive_aggregator", default: "1" },
+        { name: "enable_adaptive_memory_spill_scheduler", path: "/enable#enable_adaptive_memory_spill_scheduler", default: "0" },
+        { name: "enable_add_distinct_to_in_subqueries", path: "/enable#enable_add_distinct_to_in_subqueries", default: "0" },
+        { name: "enable_automatic_decision_for_merging_across_partitions_for_final", path: "/enable#enable_automatic_decision_for_merging_across_partitions_for_final", default: "1" },
+        { name: "enable_cascades_optimizer", path: "/enable#enable_cascades_optimizer", default: "0" },
+        { name: "enable_early_constant_folding", path: "/enable#enable_early_constant_folding", default: "1" },
+        { name: "enable_extended_results_for_datetime_functions", path: "/enable#enable_extended_results_for_datetime_functions", default: "0" },
+        { name: "enable_full_text_index", path: "/enable#enable_full_text_index", default: "1" },
+        { name: "enable_global_with_statement", path: "/enable#enable_global_with_statement", default: "1" },
+        { name: "enable_hdfs_pread", path: "/enable#enable_hdfs_pread", default: "1" },
+        { name: "enable_http_compression", path: "/enable#enable_http_compression", default: "1" },
+        { name: "enable_identifier_resolve_cache", path: "/enable#enable_identifier_resolve_cache", default: "1" },
+        { name: "enable_job_stack_trace", path: "/enable#enable_job_stack_trace", default: "0" },
+        { name: "enable_json_ast_dialect", path: "/enable#enable_json_ast_dialect", default: "0" },
+        { name: "enable_lazy_columns_replication", path: "/enable#enable_lazy_columns_replication", default: "1" },
+        { name: "enable_materialized_cte", path: "/enable#enable_materialized_cte", default: "0" },
+        { name: "enable_memory_bound_merging_of_aggregation_results", path: "/enable#enable_memory_bound_merging_of_aggregation_results", default: "1" },
+        { name: "enable_multiple_prewhere_read_steps", path: "/enable#enable_multiple_prewhere_read_steps", default: "1" },
+        { name: "enable_named_columns_in_function_tuple", path: "/enable#enable_named_columns_in_function_tuple", default: "0" },
+        { name: "enable_order_by_all", path: "/enable#enable_order_by_all", default: "1" },
+        { name: "enable_packed_string_keys_in_aggregation", path: "/enable#enable_packed_string_keys_in_aggregation", default: "1" },
+        { name: "enable_parsing_to_custom_serialization", path: "/enable#enable_parsing_to_custom_serialization", default: "1" },
+        { name: "enable_producing_buckets_out_of_order_in_aggregation", path: "/enable#enable_producing_buckets_out_of_order_in_aggregation", default: "1" },
+        { name: "enable_reads_from_query_cache", path: "/enable#enable_reads_from_query_cache", default: "1" },
+        { name: "enable_s3_requests_logging", path: "/enable#enable_s3_requests_logging", default: "0" },
+        { name: "enable_scalar_subquery_optimization", path: "/enable#enable_scalar_subquery_optimization", default: "1" },
+        { name: "enable_scopes_for_with_statement", path: "/enable#enable_scopes_for_with_statement", default: "1" },
+        { name: "enable_sharding_aggregator", path: "/enable#enable_sharding_aggregator", default: "0" },
+        { name: "enable_shared_storage_snapshot_in_query", path: "/enable#enable_shared_storage_snapshot_in_query", default: "1" },
+        { name: "enable_sharing_sets_for_mutations", path: "/enable#enable_sharing_sets_for_mutations", default: "1" },
+        { name: "enable_streaming_queries", path: "/enable#enable_streaming_queries", default: "0" },
+        { name: "enable_time_time64_type", path: "/enable#enable_time_time64_type", default: "1" },
+        { name: "enable_unaligned_array_join", path: "/enable#enable_unaligned_array_join", default: "0" },
+        { name: "enable_url_encoding", path: "/enable#enable_url_encoding", default: "0" },
+        { name: "enable_vertical_final", path: "/enable#enable_vertical_final", default: "1" },
+        { name: "enable_writes_to_query_cache", path: "/enable#enable_writes_to_query_cache", default: "1" }
       ],
       children: []
     },
@@ -789,8 +800,8 @@ const SessionSettingsExplorer = () => {
       label: "enable_blob_storage_log_*",
       count: 2,
       settings: [
-        { name: "enable_blob_storage_log", href: "/zh/reference/settings/session-settings/enable-blob-storage-log#enable_blob_storage_log" },
-        { name: "enable_blob_storage_log_for_read_operations", href: "/zh/reference/settings/session-settings/enable-blob-storage-log#enable_blob_storage_log_for_read_operations" }
+        { name: "enable_blob_storage_log", path: "/enable-blob-storage-log#enable_blob_storage_log", default: "1" },
+        { name: "enable_blob_storage_log_for_read_operations", path: "/enable-blob-storage-log#enable_blob_storage_log_for_read_operations", default: "0" }
       ],
       children: []
     },
@@ -798,10 +809,10 @@ const SessionSettingsExplorer = () => {
       label: "enable_filesystem_*",
       count: 4,
       settings: [
-        { name: "enable_filesystem_cache", href: "/zh/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache" },
-        { name: "enable_filesystem_cache_log", href: "/zh/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache_log" },
-        { name: "enable_filesystem_cache_on_write_operations", href: "/zh/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache_on_write_operations" },
-        { name: "enable_filesystem_read_prefetches_log", href: "/zh/reference/settings/session-settings/enable-filesystem#enable_filesystem_read_prefetches_log" }
+        { name: "enable_filesystem_cache", path: "/enable-filesystem#enable_filesystem_cache", default: "1" },
+        { name: "enable_filesystem_cache_log", path: "/enable-filesystem#enable_filesystem_cache_log", default: "0" },
+        { name: "enable_filesystem_cache_on_write_operations", path: "/enable-filesystem#enable_filesystem_cache_on_write_operations", default: "0" },
+        { name: "enable_filesystem_read_prefetches_log", path: "/enable-filesystem#enable_filesystem_read_prefetches_log", default: "0" }
       ],
       children: []
     },
@@ -809,10 +820,10 @@ const SessionSettingsExplorer = () => {
       label: "enable_join_*",
       count: 4,
       settings: [
-        { name: "enable_join_fixed_hash_table_conversion", href: "/zh/reference/settings/session-settings/enable-join#enable_join_fixed_hash_table_conversion" },
-        { name: "enable_join_runtime_filters", href: "/zh/reference/settings/session-settings/enable-join#enable_join_runtime_filters" },
-        { name: "enable_join_runtime_filters_index_analysis", href: "/zh/reference/settings/session-settings/enable-join#enable_join_runtime_filters_index_analysis" },
-        { name: "enable_join_transitive_predicates", href: "/zh/reference/settings/session-settings/enable-join#enable_join_transitive_predicates" }
+        { name: "enable_join_fixed_hash_table_conversion", path: "/enable-join#enable_join_fixed_hash_table_conversion", default: "1" },
+        { name: "enable_join_runtime_filters", path: "/enable-join#enable_join_runtime_filters", default: "1" },
+        { name: "enable_join_runtime_filters_index_analysis", path: "/enable-join#enable_join_runtime_filters_index_analysis", default: "0" },
+        { name: "enable_join_transitive_predicates", path: "/enable-join#enable_join_transitive_predicates", default: "1" }
       ],
       children: []
     },
@@ -820,8 +831,8 @@ const SessionSettingsExplorer = () => {
       label: "enable_lightweight_*",
       count: 2,
       settings: [
-        { name: "enable_lightweight_delete", href: "/zh/reference/settings/session-settings/enable-lightweight#enable_lightweight_delete" },
-        { name: "enable_lightweight_update", href: "/zh/reference/settings/session-settings/enable-lightweight#enable_lightweight_update" }
+        { name: "enable_lightweight_delete", path: "/enable-lightweight#enable_lightweight_delete", default: "1" },
+        { name: "enable_lightweight_update", path: "/enable-lightweight#enable_lightweight_update", default: "1" }
       ],
       children: []
     },
@@ -829,11 +840,17 @@ const SessionSettingsExplorer = () => {
       label: "enable_optimize_predicate_expression_*",
       count: 2,
       settings: [
-        { name: "enable_optimize_predicate_expression", href: "/zh/reference/settings/session-settings/enable-optimize-predicate-expression#enable_optimize_predicate_expression" },
-        {
-          name: "enable_optimize_predicate_expression_to_final_subquery",
-          href: "/zh/reference/settings/session-settings/enable-optimize-predicate-expression#enable_optimize_predicate_expression_to_final_subquery"
-        }
+        { name: "enable_optimize_predicate_expression", path: "/enable-optimize-predicate-expression#enable_optimize_predicate_expression", default: "1" },
+        { name: "enable_optimize_predicate_expression_to_final_subquery", path: "/enable-optimize-predicate-expression#enable_optimize_predicate_expression_to_final_subquery", default: "1" }
+      ],
+      children: []
+    },
+    {
+      label: "enable_parallel_*",
+      count: 2,
+      settings: [
+        { name: "enable_parallel_blocks_marshalling", path: "/enable-parallel#enable_parallel_blocks_marshalling", default: "1" },
+        { name: "enable_parallel_single_level_merge", path: "/enable-parallel#enable_parallel_single_level_merge", default: "1" }
       ],
       children: []
     },
@@ -841,8 +858,8 @@ const SessionSettingsExplorer = () => {
       label: "enable_positional_arguments_*",
       count: 2,
       settings: [
-        { name: "enable_positional_arguments", href: "/zh/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments" },
-        { name: "enable_positional_arguments_for_projections", href: "/zh/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments_for_projections" }
+        { name: "enable_positional_arguments", path: "/enable-positional-arguments#enable_positional_arguments", default: "1" },
+        { name: "enable_positional_arguments_for_projections", path: "/enable-positional-arguments#enable_positional_arguments_for_projections", default: "0" }
       ],
       children: []
     },
@@ -850,8 +867,8 @@ const SessionSettingsExplorer = () => {
       label: "enable_software_*",
       count: 2,
       settings: [
-        { name: "enable_software_prefetch_in_aggregation", href: "/zh/reference/settings/session-settings/enable-software#enable_software_prefetch_in_aggregation" },
-        { name: "enable_software_prefetch_in_join", href: "/zh/reference/settings/session-settings/enable-software#enable_software_prefetch_in_join" }
+        { name: "enable_software_prefetch_in_aggregation", path: "/enable-software#enable_software_prefetch_in_aggregation", default: "1" },
+        { name: "enable_software_prefetch_in_join", path: "/enable-software#enable_software_prefetch_in_join", default: "1" }
       ],
       children: []
     },
@@ -859,10 +876,10 @@ const SessionSettingsExplorer = () => {
       label: "engine_file_*",
       count: 4,
       settings: [
-        { name: "engine_file_allow_create_multiple_files", href: "/zh/reference/settings/session-settings/engine-file#engine_file_allow_create_multiple_files" },
-        { name: "engine_file_empty_if_not_exists", href: "/zh/reference/settings/session-settings/engine-file#engine_file_empty_if_not_exists" },
-        { name: "engine_file_skip_empty_files", href: "/zh/reference/settings/session-settings/engine-file#engine_file_skip_empty_files" },
-        { name: "engine_file_truncate_on_insert", href: "/zh/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert" }
+        { name: "engine_file_allow_create_multiple_files", path: "/engine-file#engine_file_allow_create_multiple_files", default: "0" },
+        { name: "engine_file_empty_if_not_exists", path: "/engine-file#engine_file_empty_if_not_exists", default: "0" },
+        { name: "engine_file_skip_empty_files", path: "/engine-file#engine_file_skip_empty_files", default: "0" },
+        { name: "engine_file_truncate_on_insert", path: "/engine-file#engine_file_truncate_on_insert", default: "0" }
       ],
       children: []
     },
@@ -870,10 +887,10 @@ const SessionSettingsExplorer = () => {
       label: "external_storage_*",
       count: 4,
       settings: [
-        { name: "external_storage_connect_timeout_sec", href: "/zh/reference/settings/session-settings/external-storage#external_storage_connect_timeout_sec" },
-        { name: "external_storage_max_read_bytes", href: "/zh/reference/settings/session-settings/external-storage#external_storage_max_read_bytes" },
-        { name: "external_storage_max_read_rows", href: "/zh/reference/settings/session-settings/external-storage#external_storage_max_read_rows" },
-        { name: "external_storage_rw_timeout_sec", href: "/zh/reference/settings/session-settings/external-storage#external_storage_rw_timeout_sec" }
+        { name: "external_storage_connect_timeout_sec", path: "/external-storage#external_storage_connect_timeout_sec", default: "10" },
+        { name: "external_storage_max_read_bytes", path: "/external-storage#external_storage_max_read_bytes", default: "0" },
+        { name: "external_storage_max_read_rows", path: "/external-storage#external_storage_max_read_rows", default: "0" },
+        { name: "external_storage_rw_timeout_sec", path: "/external-storage#external_storage_rw_timeout_sec", default: "300" }
       ],
       children: []
     },
@@ -881,34 +898,35 @@ const SessionSettingsExplorer = () => {
       label: "external_table_*",
       count: 2,
       settings: [
-        { name: "external_table_functions_use_nulls", href: "/zh/reference/settings/session-settings/external-table#external_table_functions_use_nulls" },
-        { name: "external_table_strict_query", href: "/zh/reference/settings/session-settings/external-table#external_table_strict_query" }
+        { name: "external_table_functions_use_nulls", path: "/external-table#external_table_functions_use_nulls", default: "1" },
+        { name: "external_table_strict_query", path: "/external-table#external_table_strict_query", default: "0" }
       ],
       children: []
     },
     {
       label: "filesystem_cache_*",
-      count: 10,
+      count: 12,
       settings: [
-        { name: "filesystem_cache_allow_background_download", href: "/zh/reference/settings/session-settings/filesystem-cache#filesystem_cache_allow_background_download" },
-        { name: "filesystem_cache_boundary_alignment", href: "/zh/reference/settings/session-settings/filesystem-cache#filesystem_cache_boundary_alignment" },
-        { name: "filesystem_cache_enable_background_download_during_fetch", href: "/zh/reference/settings/session-settings/filesystem-cache#filesystem_cache_enable_background_download_during_fetch" },
+        { name: "filesystem_cache_allow_background_download", path: "/filesystem-cache#filesystem_cache_allow_background_download", default: "1" },
+        { name: "filesystem_cache_boundary_alignment", path: "/filesystem-cache#filesystem_cache_boundary_alignment", default: "0" },
+        { name: "filesystem_cache_enable_background_download_during_fetch", path: "/filesystem-cache#filesystem_cache_enable_background_download_during_fetch", default: "1" },
         {
           name: "filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage",
-          href: "/zh/reference/settings/session-settings/filesystem-cache#filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage"
+          path: "/filesystem-cache#filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage",
+          default: "1"
         },
-        { name: "filesystem_cache_max_download_size", href: "/zh/reference/settings/session-settings/filesystem-cache#filesystem_cache_max_download_size" },
-        { name: "filesystem_cache_name", href: "/zh/reference/settings/session-settings/filesystem-cache#filesystem_cache_name" },
-        { name: "filesystem_cache_prefer_bigger_buffer_size", href: "/zh/reference/settings/session-settings/filesystem-cache#filesystem_cache_prefer_bigger_buffer_size" },
-        {
-          name: "filesystem_cache_reserve_space_wait_lock_timeout_milliseconds",
-          href: "/zh/reference/settings/session-settings/filesystem-cache#filesystem_cache_reserve_space_wait_lock_timeout_milliseconds"
-        },
-        { name: "filesystem_cache_segments_batch_size", href: "/zh/reference/settings/session-settings/filesystem-cache#filesystem_cache_segments_batch_size" },
+        { name: "filesystem_cache_max_download_size", path: "/filesystem-cache#filesystem_cache_max_download_size", default: "137438953472" },
+        { name: "filesystem_cache_name", path: "/filesystem-cache#filesystem_cache_name", default: '""' },
+        { name: "filesystem_cache_prefer_bigger_buffer_size", path: "/filesystem-cache#filesystem_cache_prefer_bigger_buffer_size", default: "1" },
+        { name: "filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", path: "/filesystem-cache#filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", default: "1000" },
+        { name: "filesystem_cache_segments_batch_size", path: "/filesystem-cache#filesystem_cache_segments_batch_size", default: "20" },
         {
           name: "filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit",
-          href: "/zh/reference/settings/session-settings/filesystem-cache#filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit"
-        }
+          path: "/filesystem-cache#filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit",
+          default: "1"
+        },
+        { name: "filesystem_cache_verbose_logging", path: "/filesystem-cache#filesystem_cache_verbose_logging", default: "0" },
+        { name: "filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", path: "/filesystem-cache#filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", default: "1000" }
       ],
       children: []
     },
@@ -916,23 +934,24 @@ const SessionSettingsExplorer = () => {
       label: "filesystem_prefetch_*",
       count: 3,
       settings: [
-        { name: "filesystem_prefetch_max_memory_usage", href: "/zh/reference/settings/session-settings/filesystem-prefetch#filesystem_prefetch_max_memory_usage" },
-        { name: "filesystem_prefetch_step_bytes", href: "/zh/reference/settings/session-settings/filesystem-prefetch#filesystem_prefetch_step_bytes" },
-        { name: "filesystem_prefetch_step_marks", href: "/zh/reference/settings/session-settings/filesystem-prefetch#filesystem_prefetch_step_marks" }
+        { name: "filesystem_prefetch_max_memory_usage", path: "/filesystem-prefetch#filesystem_prefetch_max_memory_usage", default: "1073741824" },
+        { name: "filesystem_prefetch_step_bytes", path: "/filesystem-prefetch#filesystem_prefetch_step_bytes", default: "0" },
+        { name: "filesystem_prefetch_step_marks", path: "/filesystem-prefetch#filesystem_prefetch_step_marks", default: "0" }
       ],
       children: []
     },
     {
       label: "force_*",
-      count: 7,
+      count: 8,
       settings: [
-        { name: "force_aggregate_partitions_independently", href: "/zh/reference/settings/session-settings/force#force_aggregate_partitions_independently" },
-        { name: "force_aggregation_in_order", href: "/zh/reference/settings/session-settings/force#force_aggregation_in_order" },
-        { name: "force_data_skipping_indices", href: "/zh/reference/settings/session-settings/force#force_data_skipping_indices" },
-        { name: "force_grouping_standard_compatibility", href: "/zh/reference/settings/session-settings/force#force_grouping_standard_compatibility" },
-        { name: "force_index_by_date", href: "/zh/reference/settings/session-settings/force#force_index_by_date" },
-        { name: "force_primary_key", href: "/zh/reference/settings/session-settings/force#force_primary_key" },
-        { name: "force_remove_data_recursively_on_drop", href: "/zh/reference/settings/session-settings/force#force_remove_data_recursively_on_drop" }
+        { name: "force_aggregate_partitions_independently", path: "/force#force_aggregate_partitions_independently", default: "0" },
+        { name: "force_aggregation_in_order", path: "/force#force_aggregation_in_order", default: "0" },
+        { name: "force_data_skipping_indices", path: "/force#force_data_skipping_indices", default: '""' },
+        { name: "force_distinct_partitions_independently", path: "/force#force_distinct_partitions_independently", default: "0" },
+        { name: "force_grouping_standard_compatibility", path: "/force#force_grouping_standard_compatibility", default: "1" },
+        { name: "force_index_by_date", path: "/force#force_index_by_date", default: "0" },
+        { name: "force_primary_key", path: "/force#force_primary_key", default: "0" },
+        { name: "force_remove_data_recursively_on_drop", path: "/force#force_remove_data_recursively_on_drop", default: "0" }
       ],
       children: []
     },
@@ -940,10 +959,10 @@ const SessionSettingsExplorer = () => {
       label: "force_optimize_*",
       count: 4,
       settings: [
-        { name: "force_optimize_projection", href: "/zh/reference/settings/session-settings/force-optimize#force_optimize_projection" },
-        { name: "force_optimize_projection_name", href: "/zh/reference/settings/session-settings/force-optimize#force_optimize_projection_name" },
-        { name: "force_optimize_skip_unused_shards", href: "/zh/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards" },
-        { name: "force_optimize_skip_unused_shards_nesting", href: "/zh/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards_nesting" }
+        { name: "force_optimize_projection", path: "/force-optimize#force_optimize_projection", default: "0" },
+        { name: "force_optimize_projection_name", path: "/force-optimize#force_optimize_projection_name", default: '""' },
+        { name: "force_optimize_skip_unused_shards", path: "/force-optimize#force_optimize_skip_unused_shards", default: "0" },
+        { name: "force_optimize_skip_unused_shards_nesting", path: "/force-optimize#force_optimize_skip_unused_shards_nesting", default: "0" }
       ],
       children: []
     },
@@ -951,9 +970,9 @@ const SessionSettingsExplorer = () => {
       label: "formatdatetime_*",
       count: 3,
       settings: [
-        { name: "formatdatetime_e_with_space_padding", href: "/zh/reference/settings/session-settings/formatdatetime#formatdatetime_e_with_space_padding" },
-        { name: "formatdatetime_format_without_leading_zeros", href: "/zh/reference/settings/session-settings/formatdatetime#formatdatetime_format_without_leading_zeros" },
-        { name: "formatdatetime_parsedatetime_m_is_month_name", href: "/zh/reference/settings/session-settings/formatdatetime#formatdatetime_parsedatetime_m_is_month_name" }
+        { name: "formatdatetime_e_with_space_padding", path: "/formatdatetime#formatdatetime_e_with_space_padding", default: "0" },
+        { name: "formatdatetime_format_without_leading_zeros", path: "/formatdatetime#formatdatetime_format_without_leading_zeros", default: "0" },
+        { name: "formatdatetime_parsedatetime_m_is_month_name", path: "/formatdatetime#formatdatetime_parsedatetime_m_is_month_name", default: "1" }
       ],
       children: []
     },
@@ -961,8 +980,8 @@ const SessionSettingsExplorer = () => {
       label: "formatdatetime_f_*",
       count: 2,
       settings: [
-        { name: "formatdatetime_f_prints_scale_number_of_digits", href: "/zh/reference/settings/session-settings/formatdatetime-f#formatdatetime_f_prints_scale_number_of_digits" },
-        { name: "formatdatetime_f_prints_single_zero", href: "/zh/reference/settings/session-settings/formatdatetime-f#formatdatetime_f_prints_single_zero" }
+        { name: "formatdatetime_f_prints_scale_number_of_digits", path: "/formatdatetime-f#formatdatetime_f_prints_scale_number_of_digits", default: "0" },
+        { name: "formatdatetime_f_prints_single_zero", path: "/formatdatetime-f#formatdatetime_f_prints_single_zero", default: "0" }
       ],
       children: []
     },
@@ -970,13 +989,13 @@ const SessionSettingsExplorer = () => {
       label: "function_*",
       count: 7,
       settings: [
-        { name: "function_base58_max_input_size", href: "/zh/reference/settings/session-settings/function#function_base58_max_input_size" },
-        { name: "function_date_trunc_return_type_behavior", href: "/zh/reference/settings/session-settings/function#function_date_trunc_return_type_behavior" },
-        { name: "function_implementation", href: "/zh/reference/settings/session-settings/function#function_implementation" },
-        { name: "function_locate_has_mysql_compatible_argument_order", href: "/zh/reference/settings/session-settings/function#function_locate_has_mysql_compatible_argument_order" },
-        { name: "function_range_max_elements_in_block", href: "/zh/reference/settings/session-settings/function#function_range_max_elements_in_block" },
-        { name: "function_sleep_max_microseconds_per_block", href: "/zh/reference/settings/session-settings/function#function_sleep_max_microseconds_per_block" },
-        { name: "function_visible_width_behavior", href: "/zh/reference/settings/session-settings/function#function_visible_width_behavior" }
+        { name: "function_base58_max_input_size", path: "/function#function_base58_max_input_size", default: "10000" },
+        { name: "function_date_trunc_return_type_behavior", path: "/function#function_date_trunc_return_type_behavior", default: "0" },
+        { name: "function_implementation", path: "/function#function_implementation", default: '""' },
+        { name: "function_locate_has_mysql_compatible_argument_order", path: "/function#function_locate_has_mysql_compatible_argument_order", default: "1" },
+        { name: "function_range_max_elements_in_block", path: "/function#function_range_max_elements_in_block", default: "500000000" },
+        { name: "function_sleep_max_microseconds_per_block", path: "/function#function_sleep_max_microseconds_per_block", default: "3000000" },
+        { name: "function_visible_width_behavior", path: "/function#function_visible_width_behavior", default: "1" }
       ],
       children: []
     },
@@ -984,8 +1003,8 @@ const SessionSettingsExplorer = () => {
       label: "function_json_*",
       count: 2,
       settings: [
-        { name: "function_json_value_return_type_allow_complex", href: "/zh/reference/settings/session-settings/function-json#function_json_value_return_type_allow_complex" },
-        { name: "function_json_value_return_type_allow_nullable", href: "/zh/reference/settings/session-settings/function-json#function_json_value_return_type_allow_nullable" }
+        { name: "function_json_value_return_type_allow_complex", path: "/function-json#function_json_value_return_type_allow_complex", default: "0" },
+        { name: "function_json_value_return_type_allow_nullable", path: "/function-json#function_json_value_return_type_allow_nullable", default: "0" }
       ],
       children: []
     },
@@ -993,8 +1012,8 @@ const SessionSettingsExplorer = () => {
       label: "grace_hash_*",
       count: 2,
       settings: [
-        { name: "grace_hash_join_initial_buckets", href: "/zh/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets" },
-        { name: "grace_hash_join_max_buckets", href: "/zh/reference/settings/session-settings/grace-hash#grace_hash_join_max_buckets" }
+        { name: "grace_hash_join_initial_buckets", path: "/grace-hash#grace_hash_join_initial_buckets", default: "1" },
+        { name: "grace_hash_join_max_buckets", path: "/grace-hash#grace_hash_join_max_buckets", default: "1024" }
       ],
       children: []
     },
@@ -1002,10 +1021,10 @@ const SessionSettingsExplorer = () => {
       label: "group_by_*",
       count: 4,
       settings: [
-        { name: "group_by_overflow_mode", href: "/zh/reference/settings/session-settings/group-by#group_by_overflow_mode" },
-        { name: "group_by_two_level_threshold", href: "/zh/reference/settings/session-settings/group-by#group_by_two_level_threshold" },
-        { name: "group_by_two_level_threshold_bytes", href: "/zh/reference/settings/session-settings/group-by#group_by_two_level_threshold_bytes" },
-        { name: "group_by_use_nulls", href: "/zh/reference/settings/session-settings/group-by#group_by_use_nulls" }
+        { name: "group_by_overflow_mode", path: "/group-by#group_by_overflow_mode", default: "throw" },
+        { name: "group_by_two_level_threshold", path: "/group-by#group_by_two_level_threshold", default: "100000" },
+        { name: "group_by_two_level_threshold_bytes", path: "/group-by#group_by_two_level_threshold_bytes", default: "50000000" },
+        { name: "group_by_use_nulls", path: "/group-by#group_by_use_nulls", default: "0" }
       ],
       children: []
     },
@@ -1013,28 +1032,32 @@ const SessionSettingsExplorer = () => {
       label: "hdfs_*",
       count: 6,
       settings: [
-        { name: "hdfs_create_new_file_on_insert", href: "/zh/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert" },
-        { name: "hdfs_ignore_file_doesnt_exist", href: "/zh/reference/settings/session-settings/hdfs#hdfs_ignore_file_doesnt_exist" },
-        { name: "hdfs_replication", href: "/zh/reference/settings/session-settings/hdfs#hdfs_replication" },
-        { name: "hdfs_skip_empty_files", href: "/zh/reference/settings/session-settings/hdfs#hdfs_skip_empty_files" },
-        { name: "hdfs_throw_on_zero_files_match", href: "/zh/reference/settings/session-settings/hdfs#hdfs_throw_on_zero_files_match" },
-        { name: "hdfs_truncate_on_insert", href: "/zh/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert" }
+        { name: "hdfs_create_new_file_on_insert", path: "/hdfs#hdfs_create_new_file_on_insert", default: "0" },
+        { name: "hdfs_ignore_file_doesnt_exist", path: "/hdfs#hdfs_ignore_file_doesnt_exist", default: "0" },
+        { name: "hdfs_replication", path: "/hdfs#hdfs_replication", default: "0" },
+        { name: "hdfs_skip_empty_files", path: "/hdfs#hdfs_skip_empty_files", default: "0" },
+        { name: "hdfs_throw_on_zero_files_match", path: "/hdfs#hdfs_throw_on_zero_files_match", default: "0" },
+        { name: "hdfs_truncate_on_insert", path: "/hdfs#hdfs_truncate_on_insert", default: "0" }
       ],
       children: []
     },
     {
       label: "http_*",
-      count: 9,
+      count: 13,
       settings: [
-        { name: "http_connection_timeout", href: "/zh/reference/settings/session-settings/http#http_connection_timeout" },
-        { name: "http_make_head_request", href: "/zh/reference/settings/session-settings/http#http_make_head_request" },
-        { name: "http_native_compression_disable_checksumming_on_decompress", href: "/zh/reference/settings/session-settings/http#http_native_compression_disable_checksumming_on_decompress" },
-        { name: "http_receive_timeout", href: "/zh/reference/settings/session-settings/http#http_receive_timeout" },
-        { name: "http_send_timeout", href: "/zh/reference/settings/session-settings/http#http_send_timeout" },
-        { name: "http_skip_not_found_url_for_globs", href: "/zh/reference/settings/session-settings/http#http_skip_not_found_url_for_globs" },
-        { name: "http_wait_end_of_query", href: "/zh/reference/settings/session-settings/http#http_wait_end_of_query" },
-        { name: "http_write_exception_in_output_format", href: "/zh/reference/settings/session-settings/http#http_write_exception_in_output_format" },
-        { name: "http_zlib_compression_level", href: "/zh/reference/settings/session-settings/http#http_zlib_compression_level" }
+        { name: "http_allow_database_as_path", path: "/http#http_allow_database_as_path", default: "0" },
+        { name: "http_allow_filters_as_path", path: "/http#http_allow_filters_as_path", default: "0" },
+        { name: "http_allow_filters_as_unrecognized_url_parameters", path: "/http#http_allow_filters_as_unrecognized_url_parameters", default: "0" },
+        { name: "http_allow_table_as_file", path: "/http#http_allow_table_as_file", default: "0" },
+        { name: "http_connection_timeout", path: "/http#http_connection_timeout", default: "1" },
+        { name: "http_make_head_request", path: "/http#http_make_head_request", default: "1" },
+        { name: "http_native_compression_disable_checksumming_on_decompress", path: "/http#http_native_compression_disable_checksumming_on_decompress", default: "0" },
+        { name: "http_receive_timeout", path: "/http#http_receive_timeout", default: "30" },
+        { name: "http_send_timeout", path: "/http#http_send_timeout", default: "30" },
+        { name: "http_skip_not_found_url_for_globs", path: "/http#http_skip_not_found_url_for_globs", default: "1" },
+        { name: "http_wait_end_of_query", path: "/http#http_wait_end_of_query", default: "0" },
+        { name: "http_write_exception_in_output_format", path: "/http#http_write_exception_in_output_format", default: "0" },
+        { name: "http_zlib_compression_level", path: "/http#http_zlib_compression_level", default: "3" }
       ],
       children: []
     },
@@ -1042,8 +1065,8 @@ const SessionSettingsExplorer = () => {
       label: "http_headers_*",
       count: 2,
       settings: [
-        { name: "http_headers_progress_interval_ms", href: "/zh/reference/settings/session-settings/http-headers#http_headers_progress_interval_ms" },
-        { name: "http_headers_read_timeout", href: "/zh/reference/settings/session-settings/http-headers#http_headers_read_timeout" }
+        { name: "http_headers_progress_interval_ms", path: "/http-headers#http_headers_progress_interval_ms", default: "100" },
+        { name: "http_headers_read_timeout", path: "/http-headers#http_headers_read_timeout", default: "30" }
       ],
       children: []
     },
@@ -1051,14 +1074,14 @@ const SessionSettingsExplorer = () => {
       label: "http_max_*",
       count: 8,
       settings: [
-        { name: "http_max_field_name_size", href: "/zh/reference/settings/session-settings/http-max#http_max_field_name_size" },
-        { name: "http_max_field_value_size", href: "/zh/reference/settings/session-settings/http-max#http_max_field_value_size" },
-        { name: "http_max_fields", href: "/zh/reference/settings/session-settings/http-max#http_max_fields" },
-        { name: "http_max_multipart_form_data_size", href: "/zh/reference/settings/session-settings/http-max#http_max_multipart_form_data_size" },
-        { name: "http_max_request_header_size", href: "/zh/reference/settings/session-settings/http-max#http_max_request_header_size" },
-        { name: "http_max_request_param_data_size", href: "/zh/reference/settings/session-settings/http-max#http_max_request_param_data_size" },
-        { name: "http_max_tries", href: "/zh/reference/settings/session-settings/http-max#http_max_tries" },
-        { name: "http_max_uri_size", href: "/zh/reference/settings/session-settings/http-max#http_max_uri_size" }
+        { name: "http_max_field_name_size", path: "/http-max#http_max_field_name_size", default: "4096" },
+        { name: "http_max_field_value_size", path: "/http-max#http_max_field_value_size", default: "131072" },
+        { name: "http_max_fields", path: "/http-max#http_max_fields", default: "1000" },
+        { name: "http_max_multipart_form_data_size", path: "/http-max#http_max_multipart_form_data_size", default: "1073741824" },
+        { name: "http_max_request_header_size", path: "/http-max#http_max_request_header_size", default: "10485760" },
+        { name: "http_max_request_param_data_size", path: "/http-max#http_max_request_param_data_size", default: "10485760" },
+        { name: "http_max_tries", path: "/http-max#http_max_tries", default: "10" },
+        { name: "http_max_uri_size", path: "/http-max#http_max_uri_size", default: "1048576" }
       ],
       children: []
     },
@@ -1066,8 +1089,8 @@ const SessionSettingsExplorer = () => {
       label: "http_response_*",
       count: 2,
       settings: [
-        { name: "http_response_buffer_size", href: "/zh/reference/settings/session-settings/http-response#http_response_buffer_size" },
-        { name: "http_response_headers", href: "/zh/reference/settings/session-settings/http-response#http_response_headers" }
+        { name: "http_response_buffer_size", path: "/http-response#http_response_buffer_size", default: "0" },
+        { name: "http_response_headers", path: "/http-response#http_response_headers", default: "{}" }
       ],
       children: []
     },
@@ -1075,8 +1098,8 @@ const SessionSettingsExplorer = () => {
       label: "http_retry_*",
       count: 2,
       settings: [
-        { name: "http_retry_initial_backoff_ms", href: "/zh/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms" },
-        { name: "http_retry_max_backoff_ms", href: "/zh/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms" }
+        { name: "http_retry_initial_backoff_ms", path: "/http-retry#http_retry_initial_backoff_ms", default: "100" },
+        { name: "http_retry_max_backoff_ms", path: "/http-retry#http_retry_max_backoff_ms", default: "10000" }
       ],
       children: []
     },
@@ -1084,12 +1107,12 @@ const SessionSettingsExplorer = () => {
       label: "iceberg_*",
       count: 6,
       settings: [
-        { name: "iceberg_delete_data_on_drop", href: "/zh/reference/settings/session-settings/iceberg#iceberg_delete_data_on_drop" },
-        { name: "iceberg_manifest_min_count_to_compact", href: "/zh/reference/settings/session-settings/iceberg#iceberg_manifest_min_count_to_compact" },
-        { name: "iceberg_max_number_datafiles_to_compact", href: "/zh/reference/settings/session-settings/iceberg#iceberg_max_number_datafiles_to_compact" },
-        { name: "iceberg_orphan_files_older_than_seconds", href: "/zh/reference/settings/session-settings/iceberg#iceberg_orphan_files_older_than_seconds" },
-        { name: "iceberg_snapshot_id", href: "/zh/reference/settings/session-settings/iceberg#iceberg_snapshot_id" },
-        { name: "iceberg_timestamp_ms", href: "/zh/reference/settings/session-settings/iceberg#iceberg_timestamp_ms" }
+        { name: "iceberg_delete_data_on_drop", path: "/iceberg#iceberg_delete_data_on_drop", default: "0" },
+        { name: "iceberg_manifest_min_count_to_compact", path: "/iceberg#iceberg_manifest_min_count_to_compact", default: "30" },
+        { name: "iceberg_max_number_datafiles_to_compact", path: "/iceberg#iceberg_max_number_datafiles_to_compact", default: "1000" },
+        { name: "iceberg_orphan_files_older_than_seconds", path: "/iceberg#iceberg_orphan_files_older_than_seconds", default: "259200" },
+        { name: "iceberg_snapshot_id", path: "/iceberg#iceberg_snapshot_id", default: "0" },
+        { name: "iceberg_timestamp_ms", path: "/iceberg#iceberg_timestamp_ms", default: "0" }
       ],
       children: []
     },
@@ -1097,8 +1120,8 @@ const SessionSettingsExplorer = () => {
       label: "iceberg_compaction_*",
       count: 2,
       settings: [
-        { name: "iceberg_compaction_data_cleanup", href: "/zh/reference/settings/session-settings/iceberg-compaction#iceberg_compaction_data_cleanup" },
-        { name: "iceberg_compaction_delay_bias", href: "/zh/reference/settings/session-settings/iceberg-compaction#iceberg_compaction_delay_bias" }
+        { name: "iceberg_compaction_data_cleanup", path: "/iceberg-compaction#iceberg_compaction_data_cleanup", default: "10800" },
+        { name: "iceberg_compaction_delay_bias", path: "/iceberg-compaction#iceberg_compaction_delay_bias", default: "10800" }
       ],
       children: []
     },
@@ -1106,8 +1129,8 @@ const SessionSettingsExplorer = () => {
       label: "iceberg_data_*",
       count: 2,
       settings: [
-        { name: "iceberg_data_file_size_lower_threshold_compaction", href: "/zh/reference/settings/session-settings/iceberg-data#iceberg_data_file_size_lower_threshold_compaction" },
-        { name: "iceberg_data_file_size_upper_threshold_compaction", href: "/zh/reference/settings/session-settings/iceberg-data#iceberg_data_file_size_upper_threshold_compaction" }
+        { name: "iceberg_data_file_size_lower_threshold_compaction", path: "/iceberg-data#iceberg_data_file_size_lower_threshold_compaction", default: "10485760" },
+        { name: "iceberg_data_file_size_upper_threshold_compaction", path: "/iceberg-data#iceberg_data_file_size_upper_threshold_compaction", default: "10737418240" }
       ],
       children: []
     },
@@ -1115,9 +1138,9 @@ const SessionSettingsExplorer = () => {
       label: "iceberg_expire_*",
       count: 3,
       settings: [
-        { name: "iceberg_expire_default_max_ref_age_ms", href: "/zh/reference/settings/session-settings/iceberg-expire#iceberg_expire_default_max_ref_age_ms" },
-        { name: "iceberg_expire_default_max_snapshot_age_ms", href: "/zh/reference/settings/session-settings/iceberg-expire#iceberg_expire_default_max_snapshot_age_ms" },
-        { name: "iceberg_expire_default_min_snapshots_to_keep", href: "/zh/reference/settings/session-settings/iceberg-expire#iceberg_expire_default_min_snapshots_to_keep" }
+        { name: "iceberg_expire_default_max_ref_age_ms", path: "/iceberg-expire#iceberg_expire_default_max_ref_age_ms", default: "9223372036854775807" },
+        { name: "iceberg_expire_default_max_snapshot_age_ms", path: "/iceberg-expire#iceberg_expire_default_max_snapshot_age_ms", default: "432000000" },
+        { name: "iceberg_expire_default_min_snapshots_to_keep", path: "/iceberg-expire#iceberg_expire_default_min_snapshots_to_keep", default: "1" }
       ],
       children: []
     },
@@ -1125,9 +1148,9 @@ const SessionSettingsExplorer = () => {
       label: "iceberg_insert_*",
       count: 3,
       settings: [
-        { name: "iceberg_insert_max_bytes_in_data_file", href: "/zh/reference/settings/session-settings/iceberg-insert#iceberg_insert_max_bytes_in_data_file" },
-        { name: "iceberg_insert_max_partitions", href: "/zh/reference/settings/session-settings/iceberg-insert#iceberg_insert_max_partitions" },
-        { name: "iceberg_insert_max_rows_in_data_file", href: "/zh/reference/settings/session-settings/iceberg-insert#iceberg_insert_max_rows_in_data_file" }
+        { name: "iceberg_insert_max_bytes_in_data_file", path: "/iceberg-insert#iceberg_insert_max_bytes_in_data_file", default: "1073741824" },
+        { name: "iceberg_insert_max_partitions", path: "/iceberg-insert#iceberg_insert_max_partitions", default: "100" },
+        { name: "iceberg_insert_max_rows_in_data_file", path: "/iceberg-insert#iceberg_insert_max_rows_in_data_file", default: "1000000" }
       ],
       children: []
     },
@@ -1135,9 +1158,9 @@ const SessionSettingsExplorer = () => {
       label: "iceberg_metadata_*",
       count: 3,
       settings: [
-        { name: "iceberg_metadata_compression_method", href: "/zh/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_compression_method" },
-        { name: "iceberg_metadata_log_level", href: "/zh/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level" },
-        { name: "iceberg_metadata_staleness_ms", href: "/zh/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_staleness_ms" }
+        { name: "iceberg_metadata_compression_method", path: "/iceberg-metadata#iceberg_metadata_compression_method", default: '""' },
+        { name: "iceberg_metadata_log_level", path: "/iceberg-metadata#iceberg_metadata_log_level", default: "none" },
+        { name: "iceberg_metadata_staleness_ms", path: "/iceberg-metadata#iceberg_metadata_staleness_ms", default: "0" }
       ],
       children: []
     },
@@ -1145,22 +1168,23 @@ const SessionSettingsExplorer = () => {
       label: "ignore_*",
       count: 5,
       settings: [
-        { name: "ignore_cold_parts_seconds", href: "/zh/reference/settings/session-settings/ignore#ignore_cold_parts_seconds" },
-        { name: "ignore_data_skipping_indices", href: "/zh/reference/settings/session-settings/ignore#ignore_data_skipping_indices" },
-        { name: "ignore_drop_queries_probability", href: "/zh/reference/settings/session-settings/ignore#ignore_drop_queries_probability" },
-        { name: "ignore_format_null_for_explain", href: "/zh/reference/settings/session-settings/ignore#ignore_format_null_for_explain" },
-        { name: "ignore_materialized_views_with_dropped_target_table", href: "/zh/reference/settings/session-settings/ignore#ignore_materialized_views_with_dropped_target_table" }
+        { name: "ignore_cold_parts_seconds", path: "/ignore#ignore_cold_parts_seconds", default: "0" },
+        { name: "ignore_data_skipping_indices", path: "/ignore#ignore_data_skipping_indices", default: '""' },
+        { name: "ignore_drop_queries_probability", path: "/ignore#ignore_drop_queries_probability", default: "0" },
+        { name: "ignore_format_null_for_explain", path: "/ignore#ignore_format_null_for_explain", default: "1" },
+        { name: "ignore_materialized_views_with_dropped_target_table", path: "/ignore#ignore_materialized_views_with_dropped_target_table", default: "0" }
       ],
       children: []
     },
     {
       label: "ignore_on_*",
-      count: 4,
+      count: 5,
       settings: [
-        { name: "ignore_on_cluster_for_replicated_access_entities_queries", href: "/zh/reference/settings/session-settings/ignore-on#ignore_on_cluster_for_replicated_access_entities_queries" },
-        { name: "ignore_on_cluster_for_replicated_database", href: "/zh/reference/settings/session-settings/ignore-on#ignore_on_cluster_for_replicated_database" },
-        { name: "ignore_on_cluster_for_replicated_named_collections_queries", href: "/zh/reference/settings/session-settings/ignore-on#ignore_on_cluster_for_replicated_named_collections_queries" },
-        { name: "ignore_on_cluster_for_replicated_udf_queries", href: "/zh/reference/settings/session-settings/ignore-on#ignore_on_cluster_for_replicated_udf_queries" }
+        { name: "ignore_on_cluster_for_replicated_access_entities_queries", path: "/ignore-on#ignore_on_cluster_for_replicated_access_entities_queries", default: "0" },
+        { name: "ignore_on_cluster_for_replicated_database", path: "/ignore-on#ignore_on_cluster_for_replicated_database", default: "0" },
+        { name: "ignore_on_cluster_for_replicated_handler_queries", path: "/ignore-on#ignore_on_cluster_for_replicated_handler_queries", default: "0" },
+        { name: "ignore_on_cluster_for_replicated_named_collections_queries", path: "/ignore-on#ignore_on_cluster_for_replicated_named_collections_queries", default: "0" },
+        { name: "ignore_on_cluster_for_replicated_udf_queries", path: "/ignore-on#ignore_on_cluster_for_replicated_udf_queries", default: "0" }
       ],
       children: []
     },
@@ -1168,9 +1192,9 @@ const SessionSettingsExplorer = () => {
       label: "implicit_*",
       count: 3,
       settings: [
-        { name: "implicit_select", href: "/zh/reference/settings/session-settings/implicit#implicit_select" },
-        { name: "implicit_table_at_top_level", href: "/zh/reference/settings/session-settings/implicit#implicit_table_at_top_level" },
-        { name: "implicit_transaction", href: "/zh/reference/settings/session-settings/implicit#implicit_transaction" }
+        { name: "implicit_select", path: "/implicit#implicit_select", default: "0" },
+        { name: "implicit_table_at_top_level", path: "/implicit#implicit_table_at_top_level", default: '""' },
+        { name: "implicit_transaction", path: "/implicit#implicit_transaction", default: "0" }
       ],
       children: []
     },
@@ -1178,11 +1202,11 @@ const SessionSettingsExplorer = () => {
       label: "insert_*",
       count: 5,
       settings: [
-        { name: "insert_allow_materialized_columns", href: "/zh/reference/settings/session-settings/insert#insert_allow_materialized_columns" },
-        { name: "insert_deduplicate", href: "/zh/reference/settings/session-settings/insert#insert_deduplicate" },
-        { name: "insert_deduplication_token", href: "/zh/reference/settings/session-settings/insert#insert_deduplication_token" },
-        { name: "insert_null_as_default", href: "/zh/reference/settings/session-settings/insert#insert_null_as_default" },
-        { name: "insert_shard_id", href: "/zh/reference/settings/session-settings/insert#insert_shard_id" }
+        { name: "insert_allow_materialized_columns", path: "/insert#insert_allow_materialized_columns", default: "0" },
+        { name: "insert_deduplicate", path: "/insert#insert_deduplicate", default: "1" },
+        { name: "insert_deduplication_token", path: "/insert#insert_deduplication_token", default: '""' },
+        { name: "insert_null_as_default", path: "/insert#insert_null_as_default", default: "1" },
+        { name: "insert_shard_id", path: "/insert#insert_shard_id", default: "0" }
       ],
       children: []
     },
@@ -1190,11 +1214,11 @@ const SessionSettingsExplorer = () => {
       label: "insert_keeper_*",
       count: 5,
       settings: [
-        { name: "insert_keeper_fault_injection_probability", href: "/zh/reference/settings/session-settings/insert-keeper#insert_keeper_fault_injection_probability" },
-        { name: "insert_keeper_fault_injection_seed", href: "/zh/reference/settings/session-settings/insert-keeper#insert_keeper_fault_injection_seed" },
-        { name: "insert_keeper_max_retries", href: "/zh/reference/settings/session-settings/insert-keeper#insert_keeper_max_retries" },
-        { name: "insert_keeper_retry_initial_backoff_ms", href: "/zh/reference/settings/session-settings/insert-keeper#insert_keeper_retry_initial_backoff_ms" },
-        { name: "insert_keeper_retry_max_backoff_ms", href: "/zh/reference/settings/session-settings/insert-keeper#insert_keeper_retry_max_backoff_ms" }
+        { name: "insert_keeper_fault_injection_probability", path: "/insert-keeper#insert_keeper_fault_injection_probability", default: "0" },
+        { name: "insert_keeper_fault_injection_seed", path: "/insert-keeper#insert_keeper_fault_injection_seed", default: "0" },
+        { name: "insert_keeper_max_retries", path: "/insert-keeper#insert_keeper_max_retries", default: "20" },
+        { name: "insert_keeper_retry_initial_backoff_ms", path: "/insert-keeper#insert_keeper_retry_initial_backoff_ms", default: "100" },
+        { name: "insert_keeper_retry_max_backoff_ms", path: "/insert-keeper#insert_keeper_retry_max_backoff_ms", default: "10000" }
       ],
       children: []
     },
@@ -1202,9 +1226,9 @@ const SessionSettingsExplorer = () => {
       label: "insert_quorum_*",
       count: 3,
       settings: [
-        { name: "insert_quorum", href: "/zh/reference/settings/session-settings/insert-quorum#insert_quorum" },
-        { name: "insert_quorum_parallel", href: "/zh/reference/settings/session-settings/insert-quorum#insert_quorum_parallel" },
-        { name: "insert_quorum_timeout", href: "/zh/reference/settings/session-settings/insert-quorum#insert_quorum_timeout" }
+        { name: "insert_quorum", path: "/insert-quorum#insert_quorum", default: "0" },
+        { name: "insert_quorum_parallel", path: "/insert-quorum#insert_quorum_parallel", default: "1" },
+        { name: "insert_quorum_timeout", path: "/insert-quorum#insert_quorum_timeout", default: "600000" }
       ],
       children: []
     },
@@ -1212,8 +1236,8 @@ const SessionSettingsExplorer = () => {
       label: "jemalloc_*",
       count: 2,
       settings: [
-        { name: "jemalloc_collect_profile_samples_in_trace_log", href: "/zh/reference/settings/session-settings/jemalloc#jemalloc_collect_profile_samples_in_trace_log" },
-        { name: "jemalloc_enable_profiler", href: "/zh/reference/settings/session-settings/jemalloc#jemalloc_enable_profiler" }
+        { name: "jemalloc_collect_profile_samples_in_trace_log", path: "/jemalloc#jemalloc_collect_profile_samples_in_trace_log", default: "0" },
+        { name: "jemalloc_enable_profiler", path: "/jemalloc#jemalloc_enable_profiler", default: "0" }
       ],
       children: []
     },
@@ -1221,9 +1245,9 @@ const SessionSettingsExplorer = () => {
       label: "jemalloc_profile_*",
       count: 3,
       settings: [
-        { name: "jemalloc_profile_text_collapsed_use_count", href: "/zh/reference/settings/session-settings/jemalloc-profile#jemalloc_profile_text_collapsed_use_count" },
-        { name: "jemalloc_profile_text_output_format", href: "/zh/reference/settings/session-settings/jemalloc-profile#jemalloc_profile_text_output_format" },
-        { name: "jemalloc_profile_text_symbolize_with_inline", href: "/zh/reference/settings/session-settings/jemalloc-profile#jemalloc_profile_text_symbolize_with_inline" }
+        { name: "jemalloc_profile_text_collapsed_use_count", path: "/jemalloc-profile#jemalloc_profile_text_collapsed_use_count", default: "0" },
+        { name: "jemalloc_profile_text_output_format", path: "/jemalloc-profile#jemalloc_profile_text_output_format", default: "collapsed" },
+        { name: "jemalloc_profile_text_symbolize_with_inline", path: "/jemalloc-profile#jemalloc_profile_text_symbolize_with_inline", default: "1" }
       ],
       children: []
     },
@@ -1231,28 +1255,29 @@ const SessionSettingsExplorer = () => {
       label: "join_*",
       count: 7,
       settings: [
-        { name: "join_algorithm", href: "/zh/reference/settings/session-settings/join#join_algorithm" },
-        { name: "join_any_take_last_row", href: "/zh/reference/settings/session-settings/join#join_any_take_last_row" },
-        { name: "join_default_strictness", href: "/zh/reference/settings/session-settings/join#join_default_strictness" },
-        { name: "join_on_disk_max_files_to_merge", href: "/zh/reference/settings/session-settings/join#join_on_disk_max_files_to_merge" },
-        { name: "join_output_by_rowlist_perkey_rows_threshold", href: "/zh/reference/settings/session-settings/join#join_output_by_rowlist_perkey_rows_threshold" },
-        { name: "join_overflow_mode", href: "/zh/reference/settings/session-settings/join#join_overflow_mode" },
-        { name: "join_use_nulls", href: "/zh/reference/settings/session-settings/join#join_use_nulls" }
+        { name: "join_algorithm", path: "/join#join_algorithm", default: "direct,parallel_hash,hash" },
+        { name: "join_any_take_last_row", path: "/join#join_any_take_last_row", default: "0" },
+        { name: "join_default_strictness", path: "/join#join_default_strictness", default: "ALL" },
+        { name: "join_on_disk_max_files_to_merge", path: "/join#join_on_disk_max_files_to_merge", default: "64" },
+        { name: "join_output_by_rowlist_perkey_rows_threshold", path: "/join#join_output_by_rowlist_perkey_rows_threshold", default: "5" },
+        { name: "join_overflow_mode", path: "/join#join_overflow_mode", default: "throw" },
+        { name: "join_use_nulls", path: "/join#join_use_nulls", default: "0" }
       ],
       children: []
     },
     {
       label: "join_runtime_*",
-      count: 8,
+      count: 9,
       settings: [
-        { name: "join_runtime_bloom_filter_bytes", href: "/zh/reference/settings/session-settings/join-runtime#join_runtime_bloom_filter_bytes" },
-        { name: "join_runtime_bloom_filter_hash_functions", href: "/zh/reference/settings/session-settings/join-runtime#join_runtime_bloom_filter_hash_functions" },
-        { name: "join_runtime_bloom_filter_max_ratio_of_set_bits", href: "/zh/reference/settings/session-settings/join-runtime#join_runtime_bloom_filter_max_ratio_of_set_bits" },
-        { name: "join_runtime_filter_blocks_to_skip_before_reenabling", href: "/zh/reference/settings/session-settings/join-runtime#join_runtime_filter_blocks_to_skip_before_reenabling" },
-        { name: "join_runtime_filter_exact_values_limit", href: "/zh/reference/settings/session-settings/join-runtime#join_runtime_filter_exact_values_limit" },
-        { name: "join_runtime_filter_from_fixed_hash_table", href: "/zh/reference/settings/session-settings/join-runtime#join_runtime_filter_from_fixed_hash_table" },
-        { name: "join_runtime_filter_pass_ratio_threshold_for_disabling", href: "/zh/reference/settings/session-settings/join-runtime#join_runtime_filter_pass_ratio_threshold_for_disabling" },
-        { name: "join_runtime_filter_size_from_hash_table_stats", href: "/zh/reference/settings/session-settings/join-runtime#join_runtime_filter_size_from_hash_table_stats" }
+        { name: "join_runtime_bloom_filter_bytes", path: "/join-runtime#join_runtime_bloom_filter_bytes", default: "524288" },
+        { name: "join_runtime_bloom_filter_hash_functions", path: "/join-runtime#join_runtime_bloom_filter_hash_functions", default: "3" },
+        { name: "join_runtime_bloom_filter_max_ratio_of_set_bits", path: "/join-runtime#join_runtime_bloom_filter_max_ratio_of_set_bits", default: "0.7" },
+        { name: "join_runtime_filter_blocks_to_skip_before_reenabling", path: "/join-runtime#join_runtime_filter_blocks_to_skip_before_reenabling", default: "30" },
+        { name: "join_runtime_filter_exact_values_limit", path: "/join-runtime#join_runtime_filter_exact_values_limit", default: "10000" },
+        { name: "join_runtime_filter_from_fixed_hash_table", path: "/join-runtime#join_runtime_filter_from_fixed_hash_table", default: "1" },
+        { name: "join_runtime_filter_min_probe_rows", path: "/join-runtime#join_runtime_filter_min_probe_rows", default: "1000" },
+        { name: "join_runtime_filter_pass_ratio_threshold_for_disabling", path: "/join-runtime#join_runtime_filter_pass_ratio_threshold_for_disabling", default: "0.7" },
+        { name: "join_runtime_filter_size_from_hash_table_stats", path: "/join-runtime#join_runtime_filter_size_from_hash_table_stats", default: "1" }
       ],
       children: []
     },
@@ -1260,8 +1285,8 @@ const SessionSettingsExplorer = () => {
       label: "join_to_*",
       count: 2,
       settings: [
-        { name: "join_to_sort_maximum_table_rows", href: "/zh/reference/settings/session-settings/join-to#join_to_sort_maximum_table_rows" },
-        { name: "join_to_sort_minimum_perkey_rows", href: "/zh/reference/settings/session-settings/join-to#join_to_sort_minimum_perkey_rows" }
+        { name: "join_to_sort_maximum_table_rows", path: "/join-to#join_to_sort_maximum_table_rows", default: "10000" },
+        { name: "join_to_sort_minimum_perkey_rows", path: "/join-to#join_to_sort_minimum_perkey_rows", default: "40" }
       ],
       children: []
     },
@@ -1269,8 +1294,8 @@ const SessionSettingsExplorer = () => {
       label: "joined_*",
       count: 2,
       settings: [
-        { name: "joined_block_split_single_row", href: "/zh/reference/settings/session-settings/joined#joined_block_split_single_row" },
-        { name: "joined_subquery_requires_alias", href: "/zh/reference/settings/session-settings/joined#joined_subquery_requires_alias" }
+        { name: "joined_block_split_single_row", path: "/joined#joined_block_split_single_row", default: "0" },
+        { name: "joined_subquery_requires_alias", path: "/joined#joined_subquery_requires_alias", default: "1" }
       ],
       children: []
     },
@@ -1278,8 +1303,8 @@ const SessionSettingsExplorer = () => {
       label: "kafka_*",
       count: 2,
       settings: [
-        { name: "kafka_disable_num_consumers_limit", href: "/zh/reference/settings/session-settings/kafka#kafka_disable_num_consumers_limit" },
-        { name: "kafka_max_wait_ms", href: "/zh/reference/settings/session-settings/kafka#kafka_max_wait_ms" }
+        { name: "kafka_disable_num_consumers_limit", path: "/kafka#kafka_disable_num_consumers_limit", default: "0" },
+        { name: "kafka_max_wait_ms", path: "/kafka#kafka_max_wait_ms", default: "5000" }
       ],
       children: []
     },
@@ -1287,8 +1312,8 @@ const SessionSettingsExplorer = () => {
       label: "keeper_*",
       count: 2,
       settings: [
-        { name: "keeper_map_strict_mode", href: "/zh/reference/settings/session-settings/keeper#keeper_map_strict_mode" },
-        { name: "keeper_max_retries", href: "/zh/reference/settings/session-settings/keeper#keeper_max_retries" }
+        { name: "keeper_map_strict_mode", path: "/keeper#keeper_map_strict_mode", default: "0" },
+        { name: "keeper_max_retries", path: "/keeper#keeper_max_retries", default: "10" }
       ],
       children: []
     },
@@ -1296,8 +1321,8 @@ const SessionSettingsExplorer = () => {
       label: "keeper_retry_*",
       count: 2,
       settings: [
-        { name: "keeper_retry_initial_backoff_ms", href: "/zh/reference/settings/session-settings/keeper-retry#keeper_retry_initial_backoff_ms" },
-        { name: "keeper_retry_max_backoff_ms", href: "/zh/reference/settings/session-settings/keeper-retry#keeper_retry_max_backoff_ms" }
+        { name: "keeper_retry_initial_backoff_ms", path: "/keeper-retry#keeper_retry_initial_backoff_ms", default: "100" },
+        { name: "keeper_retry_max_backoff_ms", path: "/keeper-retry#keeper_retry_max_backoff_ms", default: "5000" }
       ],
       children: []
     },
@@ -1305,8 +1330,8 @@ const SessionSettingsExplorer = () => {
       label: "lightweight_*",
       count: 2,
       settings: [
-        { name: "lightweight_delete_mode", href: "/zh/reference/settings/session-settings/lightweight#lightweight_delete_mode" },
-        { name: "lightweight_deletes_sync", href: "/zh/reference/settings/session-settings/lightweight#lightweight_deletes_sync" }
+        { name: "lightweight_delete_mode", path: "/lightweight#lightweight_delete_mode", default: "alter_update" },
+        { name: "lightweight_deletes_sync", path: "/lightweight#lightweight_deletes_sync", default: "2" }
       ],
       children: []
     },
@@ -1314,8 +1339,8 @@ const SessionSettingsExplorer = () => {
       label: "load_balancing_*",
       count: 2,
       settings: [
-        { name: "load_balancing", href: "/zh/reference/settings/session-settings/load-balancing#load_balancing" },
-        { name: "load_balancing_first_offset", href: "/zh/reference/settings/session-settings/load-balancing#load_balancing_first_offset" }
+        { name: "load_balancing", path: "/load-balancing#load_balancing", default: "random" },
+        { name: "load_balancing_first_offset", path: "/load-balancing#load_balancing_first_offset", default: "0" }
       ],
       children: []
     },
@@ -1323,8 +1348,8 @@ const SessionSettingsExplorer = () => {
       label: "local_filesystem_*",
       count: 2,
       settings: [
-        { name: "local_filesystem_read_method", href: "/zh/reference/settings/session-settings/local-filesystem#local_filesystem_read_method" },
-        { name: "local_filesystem_read_prefetch", href: "/zh/reference/settings/session-settings/local-filesystem#local_filesystem_read_prefetch" }
+        { name: "local_filesystem_read_method", path: "/local-filesystem#local_filesystem_read_method", default: "pread_threadpool" },
+        { name: "local_filesystem_read_prefetch", path: "/local-filesystem#local_filesystem_read_prefetch", default: "0" }
       ],
       children: []
     },
@@ -1332,10 +1357,10 @@ const SessionSettingsExplorer = () => {
       label: "log_*",
       count: 4,
       settings: [
-        { name: "log_comment", href: "/zh/reference/settings/session-settings/log#log_comment" },
-        { name: "log_formatted_queries", href: "/zh/reference/settings/session-settings/log#log_formatted_queries" },
-        { name: "log_processors_profiles", href: "/zh/reference/settings/session-settings/log#log_processors_profiles" },
-        { name: "log_profile_events", href: "/zh/reference/settings/session-settings/log#log_profile_events" }
+        { name: "log_comment", path: "/log#log_comment", default: '""' },
+        { name: "log_formatted_queries", path: "/log#log_formatted_queries", default: "0" },
+        { name: "log_processors_profiles", path: "/log#log_processors_profiles", default: "1" },
+        { name: "log_profile_events", path: "/log#log_profile_events", default: "1" }
       ],
       children: []
     },
@@ -1343,11 +1368,11 @@ const SessionSettingsExplorer = () => {
       label: "log_queries_*",
       count: 5,
       settings: [
-        { name: "log_queries", href: "/zh/reference/settings/session-settings/log-queries#log_queries" },
-        { name: "log_queries_cut_to_length", href: "/zh/reference/settings/session-settings/log-queries#log_queries_cut_to_length" },
-        { name: "log_queries_min_query_duration_ms", href: "/zh/reference/settings/session-settings/log-queries#log_queries_min_query_duration_ms" },
-        { name: "log_queries_min_type", href: "/zh/reference/settings/session-settings/log-queries#log_queries_min_type" },
-        { name: "log_queries_probability", href: "/zh/reference/settings/session-settings/log-queries#log_queries_probability" }
+        { name: "log_queries", path: "/log-queries#log_queries", default: "1" },
+        { name: "log_queries_cut_to_length", path: "/log-queries#log_queries_cut_to_length", default: "100000" },
+        { name: "log_queries_min_query_duration_ms", path: "/log-queries#log_queries_min_query_duration_ms", default: "0" },
+        { name: "log_queries_min_type", path: "/log-queries#log_queries_min_type", default: "QUERY_START" },
+        { name: "log_queries_probability", path: "/log-queries#log_queries_probability", default: "1" }
       ],
       children: []
     },
@@ -1355,9 +1380,9 @@ const SessionSettingsExplorer = () => {
       label: "log_query_*",
       count: 3,
       settings: [
-        { name: "log_query_settings", href: "/zh/reference/settings/session-settings/log-query#log_query_settings" },
-        { name: "log_query_threads", href: "/zh/reference/settings/session-settings/log-query#log_query_threads" },
-        { name: "log_query_views", href: "/zh/reference/settings/session-settings/log-query#log_query_views" }
+        { name: "log_query_settings", path: "/log-query#log_query_settings", default: "1" },
+        { name: "log_query_threads", path: "/log-query#log_query_threads", default: "0" },
+        { name: "log_query_views", path: "/log-query#log_query_views", default: "1" }
       ],
       children: []
     },
@@ -1365,64 +1390,72 @@ const SessionSettingsExplorer = () => {
       label: "low_cardinality_*",
       count: 3,
       settings: [
-        { name: "low_cardinality_allow_in_native_format", href: "/zh/reference/settings/session-settings/low-cardinality#low_cardinality_allow_in_native_format" },
-        { name: "low_cardinality_max_dictionary_size", href: "/zh/reference/settings/session-settings/low-cardinality#low_cardinality_max_dictionary_size" },
-        { name: "low_cardinality_use_single_dictionary_for_part", href: "/zh/reference/settings/session-settings/low-cardinality#low_cardinality_use_single_dictionary_for_part" }
+        { name: "low_cardinality_allow_in_native_format", path: "/low-cardinality#low_cardinality_allow_in_native_format", default: "1" },
+        { name: "low_cardinality_max_dictionary_size", path: "/low-cardinality#low_cardinality_max_dictionary_size", default: "8192" },
+        { name: "low_cardinality_use_single_dictionary_for_part", path: "/low-cardinality#low_cardinality_use_single_dictionary_for_part", default: "0" }
       ],
       children: []
     },
     {
       label: "materialize_*",
-      count: 3,
+      count: 2,
       settings: [
-        { name: "materialize_skip_indexes_on_insert", href: "/zh/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert" },
-        { name: "materialize_statistics_on_insert", href: "/zh/reference/settings/session-settings/materialize#materialize_statistics_on_insert" },
-        { name: "materialize_ttl_after_modify", href: "/zh/reference/settings/session-settings/materialize#materialize_ttl_after_modify" }
+        { name: "materialize_skip_indexes_on_insert", path: "/materialize#materialize_skip_indexes_on_insert", default: "1" },
+        { name: "materialize_ttl_after_modify", path: "/materialize#materialize_ttl_after_modify", default: "1" }
+      ],
+      children: []
+    },
+    {
+      label: "materialize_statistics_on_insert_*",
+      count: 2,
+      settings: [
+        { name: "materialize_statistics_on_insert", path: "/materialize-statistics-on-insert#materialize_statistics_on_insert", default: "1" },
+        { name: "materialize_statistics_on_insert_max_table_size", path: "/materialize-statistics-on-insert#materialize_statistics_on_insert_max_table_size", default: "26843545600" }
       ],
       children: []
     },
     {
       label: "materialized_views_*",
-      count: 2,
+      count: 3,
       settings: [
-        { name: "materialized_views_ignore_errors", href: "/zh/reference/settings/session-settings/materialized-views#materialized_views_ignore_errors" },
-        { name: "materialized_views_squash_parallel_inserts", href: "/zh/reference/settings/session-settings/materialized-views#materialized_views_squash_parallel_inserts" }
+        { name: "materialized_views_ignore_errors", path: "/materialized-views#materialized_views_ignore_errors", default: "0" },
+        { name: "materialized_views_populate_atomically", path: "/materialized-views#materialized_views_populate_atomically", default: "1" },
+        { name: "materialized_views_squash_parallel_inserts", path: "/materialized-views#materialized_views_squash_parallel_inserts", default: "1" }
       ],
       children: []
     },
     {
       label: "max_*",
-      count: 29,
+      count: 28,
       settings: [
-        { name: "max_analyze_depth", href: "/zh/reference/settings/session-settings/max#max_analyze_depth" },
-        { name: "max_autoincrement_series", href: "/zh/reference/settings/session-settings/max#max_autoincrement_series" },
-        { name: "max_backup_bandwidth", href: "/zh/reference/settings/session-settings/max#max_backup_bandwidth" },
-        { name: "max_block_size", href: "/zh/reference/settings/session-settings/max#max_block_size" },
-        { name: "max_columns_to_read", href: "/zh/reference/settings/session-settings/max#max_columns_to_read" },
-        { name: "max_compress_block_size", href: "/zh/reference/settings/session-settings/max#max_compress_block_size" },
-        { name: "max_consume_snapshots", href: "/zh/reference/settings/session-settings/max#max_consume_snapshots" },
-        { name: "max_estimated_execution_time", href: "/zh/reference/settings/session-settings/max#max_estimated_execution_time" },
-        { name: "max_expanded_ast_elements", href: "/zh/reference/settings/session-settings/max#max_expanded_ast_elements" },
-        { name: "max_fetch_partition_retries_count", href: "/zh/reference/settings/session-settings/max#max_fetch_partition_retries_count" },
-        { name: "max_final_threads", href: "/zh/reference/settings/session-settings/max#max_final_threads" },
-        { name: "max_http_get_redirects", href: "/zh/reference/settings/session-settings/max#max_http_get_redirects" },
-        { name: "max_limit_for_vector_search_queries", href: "/zh/reference/settings/session-settings/max#max_limit_for_vector_search_queries" },
-        { name: "max_number_of_partitions_for_independent_aggregation", href: "/zh/reference/settings/session-settings/max#max_number_of_partitions_for_independent_aggregation" },
-        { name: "max_os_cpu_wait_time_ratio_to_throw", href: "/zh/reference/settings/session-settings/max#max_os_cpu_wait_time_ratio_to_throw" },
-        { name: "max_parallel_replicas", href: "/zh/reference/settings/session-settings/max#max_parallel_replicas" },
-        { name: "max_parsing_threads", href: "/zh/reference/settings/session-settings/max#max_parsing_threads" },
-        { name: "max_partition_size_to_drop", href: "/zh/reference/settings/session-settings/max#max_partition_size_to_drop" },
-        { name: "max_parts_to_move", href: "/zh/reference/settings/session-settings/max#max_parts_to_move" },
-        { name: "max_projection_rows_to_use_projection_index", href: "/zh/reference/settings/session-settings/max#max_projection_rows_to_use_projection_index" },
-        { name: "max_query_size", href: "/zh/reference/settings/session-settings/max#max_query_size" },
-        { name: "max_recursive_cte_evaluation_depth", href: "/zh/reference/settings/session-settings/max#max_recursive_cte_evaluation_depth" },
-        { name: "max_replica_delay_for_distributed_queries", href: "/zh/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries" },
-        { name: "max_reverse_dictionary_lookup_cache_size_bytes", href: "/zh/reference/settings/session-settings/max#max_reverse_dictionary_lookup_cache_size_bytes" },
-        { name: "max_sessions_for_user", href: "/zh/reference/settings/session-settings/max#max_sessions_for_user" },
-        { name: "max_subquery_depth", href: "/zh/reference/settings/session-settings/max#max_subquery_depth" },
-        { name: "max_table_size_to_drop", href: "/zh/reference/settings/session-settings/max#max_table_size_to_drop" },
-        { name: "max_untracked_memory", href: "/zh/reference/settings/session-settings/max#max_untracked_memory" },
-        { name: "max_wkb_geometry_elements", href: "/zh/reference/settings/session-settings/max#max_wkb_geometry_elements" }
+        { name: "max_analyze_depth", path: "/max#max_analyze_depth", default: "5000" },
+        { name: "max_autoincrement_series", path: "/max#max_autoincrement_series", default: "1000" },
+        { name: "max_backup_bandwidth", path: "/max#max_backup_bandwidth", default: "0" },
+        { name: "max_block_size", path: "/max#max_block_size", default: "65409" },
+        { name: "max_columns_to_read", path: "/max#max_columns_to_read", default: "0" },
+        { name: "max_compress_block_size", path: "/max#max_compress_block_size", default: "1048576" },
+        { name: "max_consume_snapshots", path: "/max#max_consume_snapshots", default: "0" },
+        { name: "max_estimated_execution_time", path: "/max#max_estimated_execution_time", default: "0" },
+        { name: "max_expanded_ast_elements", path: "/max#max_expanded_ast_elements", default: "500000" },
+        { name: "max_fetch_partition_retries_count", path: "/max#max_fetch_partition_retries_count", default: "5" },
+        { name: "max_final_threads", path: "/max#max_final_threads", default: "auto(N)" },
+        { name: "max_http_get_redirects", path: "/max#max_http_get_redirects", default: "0" },
+        { name: "max_limit_for_vector_search_queries", path: "/max#max_limit_for_vector_search_queries", default: "1000" },
+        { name: "max_os_cpu_wait_time_ratio_to_throw", path: "/max#max_os_cpu_wait_time_ratio_to_throw", default: "0" },
+        { name: "max_parallel_replicas", path: "/max#max_parallel_replicas", default: "1000" },
+        { name: "max_parsing_threads", path: "/max#max_parsing_threads", default: "auto(N)" },
+        { name: "max_partition_size_to_drop", path: "/max#max_partition_size_to_drop", default: "50000000000" },
+        { name: "max_parts_to_move", path: "/max#max_parts_to_move", default: "1000" },
+        { name: "max_projection_rows_to_use_projection_index", path: "/max#max_projection_rows_to_use_projection_index", default: "1000000" },
+        { name: "max_query_size", path: "/max#max_query_size", default: "262144" },
+        { name: "max_recursive_cte_evaluation_depth", path: "/max#max_recursive_cte_evaluation_depth", default: "1000" },
+        { name: "max_replica_delay_for_distributed_queries", path: "/max#max_replica_delay_for_distributed_queries", default: "300" },
+        { name: "max_reverse_dictionary_lookup_cache_size_bytes", path: "/max#max_reverse_dictionary_lookup_cache_size_bytes", default: "104857600" },
+        { name: "max_sessions_for_user", path: "/max#max_sessions_for_user", default: "0" },
+        { name: "max_subquery_depth", path: "/max#max_subquery_depth", default: "100" },
+        { name: "max_table_size_to_drop", path: "/max#max_table_size_to_drop", default: "50000000000" },
+        { name: "max_untracked_memory", path: "/max#max_untracked_memory", default: "4194304" },
+        { name: "max_wkb_geometry_elements", path: "/max#max_wkb_geometry_elements", default: "1000000" }
       ],
       children: []
     },
@@ -1430,154 +1463,163 @@ const SessionSettingsExplorer = () => {
       label: "max_ast_*",
       count: 2,
       settings: [
-        { name: "max_ast_depth", href: "/zh/reference/settings/session-settings/max-ast#max_ast_depth" },
-        { name: "max_ast_elements", href: "/zh/reference/settings/session-settings/max-ast#max_ast_elements" }
+        { name: "max_ast_depth", path: "/max-ast#max_ast_depth", default: "1000" },
+        { name: "max_ast_elements", path: "/max-ast#max_ast_elements", default: "50000" }
       ],
       children: []
     },
     {
-      label: "max_bytes_*",
-      count: 15,
-      settings: [
-        { name: "max_bytes_before_external_group_by", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by" },
-        { name: "max_bytes_before_external_join", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_join" },
-        { name: "max_bytes_before_external_sort", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort" },
-        { name: "max_bytes_before_remerge_sort", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_before_remerge_sort" },
-        { name: "max_bytes_for_lazy_final", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_for_lazy_final" },
-        { name: "max_bytes_in_distinct", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_in_distinct" },
-        { name: "max_bytes_in_join", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_in_join" },
-        { name: "max_bytes_in_set", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_in_set" },
-        { name: "max_bytes_ratio_before_external_group_by", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_group_by" },
-        { name: "max_bytes_ratio_before_external_join", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join" },
-        { name: "max_bytes_ratio_before_external_sort", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_sort" },
-        { name: "max_bytes_to_read", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_to_read" },
-        { name: "max_bytes_to_read_leaf", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_to_read_leaf" },
-        { name: "max_bytes_to_sort", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_to_sort" },
-        { name: "max_bytes_to_transfer", href: "/zh/reference/settings/session-settings/max-bytes#max_bytes_to_transfer" }
+      标签: "max_bytes_*",
+      计数: 15,
+      设置: [
+        { 名称: "max_bytes_before_external_group_by", 路径: "/max-bytes#max_bytes_before_external_group_by", 默认: "0" },
+        { 名称: "max_bytes_before_external_join", 路径: "/max-bytes#max_bytes_before_external_join", 默认: "0" },
+        { 名称: "max_bytes_before_external_sort", 路径: "/max-bytes#max_bytes_before_external_sort", 默认: "0" },
+        { 名称: "max_bytes_before_remerge_sort", 路径: "/max-bytes#max_bytes_before_remerge_sort", 默认: "1000000000" },
+        { 名称: "max_bytes_for_lazy_final", 路径: "/max-bytes#max_bytes_for_lazy_final", 默认: "256000000" },
+        { 名称: "max_bytes_in_distinct", 路径: "/max-bytes#max_bytes_in_distinct", 默认: "0" },
+        { 名称: "max_bytes_in_join", 路径: "/max-bytes#max_bytes_in_join", 默认: "0" },
+        { 名称: "max_bytes_in_set", 路径: "/max-bytes#max_bytes_in_set", 默认: "0" },
+        { 名称: "max_bytes_ratio_before_external_group_by", 路径: "/max-bytes#max_bytes_ratio_before_external_group_by", 默认: "0.5" },
+        { 名称: "max_bytes_ratio_before_external_join", 路径: "/max-bytes#max_bytes_ratio_before_external_join", 默认: "0.5" },
+        { 名称: "max_bytes_ratio_before_external_sort", 路径: "/max-bytes#max_bytes_ratio_before_external_sort", 默认: "0.5" },
+        { 名称: "max_bytes_to_read", 路径: "/max-bytes#max_bytes_to_read", 默认: "0" },
+        { 名称: "max_bytes_to_read_leaf", 路径: "/max-bytes#max_bytes_to_read_leaf", 默认: "0" },
+        { 名称: "max_bytes_to_sort", 路径: "/max-bytes#max_bytes_to_sort", 默认: "0" },
+        { 名称: "max_bytes_to_transfer", 路径: "/max-bytes#max_bytes_to_transfer", 默认: "0" }
       ],
       children: []
     },
     {
-      label: "max_concurrent_*",
-      count: 2,
-      settings: [
-        { name: "max_concurrent_queries_for_all_users", href: "/zh/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users" },
-        { name: "max_concurrent_queries_for_user", href: "/zh/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user" }
+      标签: "max_concurrent_*",
+      计数: 2,
+      设置: [
+        { 名称: "max_concurrent_queries_for_all_users", 路径: "/max-concurrent#max_concurrent_queries_for_all_users", 默认: "0" },
+        { 名称: "max_concurrent_queries_for_user", 路径: "/max-concurrent#max_concurrent_queries_for_user", 默认: "0" }
       ],
       children: []
     },
     {
-      label: "max_distributed_*",
-      count: 2,
-      settings: [
-        { name: "max_distributed_connections", href: "/zh/reference/settings/session-settings/max-distributed#max_distributed_connections" },
-        { name: "max_distributed_depth", href: "/zh/reference/settings/session-settings/max-distributed#max_distributed_depth" }
+      标签: "max_distributed_*",
+      计数: 2,
+      设置: [
+        { 名称: "max_distributed_connections", 路径: "/max-distributed#max_distributed_connections", 默认: "1024" },
+        { 名称: "max_distributed_depth", 路径: "/max-distributed#max_distributed_depth", 默认: "5" }
       ],
       children: []
     },
     {
-      label: "max_download_*",
-      count: 2,
-      settings: [
-        { name: "max_download_buffer_size", href: "/zh/reference/settings/session-settings/max-download#max_download_buffer_size" },
-        { name: "max_download_threads", href: "/zh/reference/settings/session-settings/max-download#max_download_threads" }
+      标签: "max_download_*",
+      计数: 2,
+      设置: [
+        { 名称: "max_download_buffer_size", 路径: "/max-download#max_download_buffer_size", 默认: "10485760" },
+        { 名称: "max_download_threads", 路径: "/max-download#max_download_threads", 默认: "4" }
       ],
       children: []
     },
     {
-      label: "max_execution_*",
-      count: 4,
-      settings: [
-        { name: "max_execution_speed", href: "/zh/reference/settings/session-settings/max-execution#max_execution_speed" },
-        { name: "max_execution_speed_bytes", href: "/zh/reference/settings/session-settings/max-execution#max_execution_speed_bytes" },
-        { name: "max_execution_time", href: "/zh/reference/settings/session-settings/max-execution#max_execution_time" },
-        { name: "max_execution_time_leaf", href: "/zh/reference/settings/session-settings/max-execution#max_execution_time_leaf" }
+      标签: "max_execution_*",
+      计数: 4,
+      设置: [
+        { 名称: "max_execution_speed", 路径: "/max-execution#max_execution_speed", 默认: "0" },
+        { 名称: "max_execution_speed_bytes", 路径: "/max-execution#max_execution_speed_bytes", 默认: "0" },
+        { 名称: "max_execution_time", 路径: "/max-execution#max_execution_time", 默认: "0" },
+        { 名称: "max_execution_time_leaf", 路径: "/max-execution#max_execution_time_leaf", 默认: "0" }
       ],
       children: []
     },
     {
-      label: "max_hyperscan_*",
-      count: 2,
-      settings: [
-        { name: "max_hyperscan_regexp_length", href: "/zh/reference/settings/session-settings/max-hyperscan#max_hyperscan_regexp_length" },
-        { name: "max_hyperscan_regexp_total_length", href: "/zh/reference/settings/session-settings/max-hyperscan#max_hyperscan_regexp_total_length" }
+      标签: "max_hyperscan_*",
+      计数: 2,
+      设置: [
+        { 名称: "max_hyperscan_regexp_length", 路径: "/max-hyperscan#max_hyperscan_regexp_length", 默认: "0" },
+        { 名称: "max_hyperscan_regexp_total_length", 路径: "/max-hyperscan#max_hyperscan_regexp_total_length", 默认: "0" }
       ],
       children: []
     },
     {
-      label: "max_insert_*",
-      count: 5,
-      settings: [
-        { name: "max_insert_block_size", href: "/zh/reference/settings/session-settings/max-insert#max_insert_block_size" },
-        { name: "max_insert_block_size_bytes", href: "/zh/reference/settings/session-settings/max-insert#max_insert_block_size_bytes" },
-        { name: "max_insert_delayed_streams_for_parallel_write", href: "/zh/reference/settings/session-settings/max-insert#max_insert_delayed_streams_for_parallel_write" },
-        { name: "max_insert_threads", href: "/zh/reference/settings/session-settings/max-insert#max_insert_threads" },
-        { name: "max_insert_threads_min_free_memory_per_thread", href: "/zh/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread" }
+      标签: "max_insert_*",
+      计数: 5,
+      设置: [
+        { 名称: "max_insert_block_size", 路径: "/max-insert#max_insert_block_size", 默认: "1048449" },
+        { 名称: "max_insert_block_size_bytes", 路径: "/max-insert#max_insert_block_size_bytes", 默认: "0" },
+        { 名称: "max_insert_delayed_streams_for_parallel_write", 路径: "/max-insert#max_insert_delayed_streams_for_parallel_write", 默认: "0" },
+        { 名称: "max_insert_threads", 路径: "/max-insert#max_insert_threads", 默认: "auto(N)" },
+        { 名称: "max_insert_threads_min_free_memory_per_thread", 路径: "/max-insert#max_insert_threads_min_free_memory_per_thread", 默认: "4294967296" }
       ],
       children: []
     },
     {
-      label: "max_joined_*",
-      count: 2,
-      settings: [
-        { name: "max_joined_block_size_bytes", href: "/zh/reference/settings/session-settings/max-joined#max_joined_block_size_bytes" },
-        { name: "max_joined_block_size_rows", href: "/zh/reference/settings/session-settings/max-joined#max_joined_block_size_rows" }
+      标签: "max_joined_*",
+      计数: 2,
+      设置: [
+        { 名称: "max_joined_block_size_bytes", 路径: "/max-joined#max_joined_block_size_bytes", 默认: "4194304" },
+        { 名称: "max_joined_block_size_rows", 路径: "/max-joined#max_joined_block_size_rows", 默认: "65409" }
       ],
       children: []
     },
     {
-      label: "max_local_*",
-      count: 2,
-      settings: [
-        { name: "max_local_read_bandwidth", href: "/zh/reference/settings/session-settings/max-local#max_local_read_bandwidth" },
-        { name: "max_local_write_bandwidth", href: "/zh/reference/settings/session-settings/max-local#max_local_write_bandwidth" }
+      标签: "max_local_*",
+      计数: 2,
+      设置: [
+        { 名称: "max_local_read_bandwidth", 路径: "/max-local#max_local_read_bandwidth", 默认: "0" },
+        { 名称: "max_local_write_bandwidth", 路径: "/max-local#max_local_write_bandwidth", 默认: "0" }
       ],
       children: []
     },
     {
-      label: "max_memory_usage_*",
-      count: 2,
-      settings: [
-        { name: "max_memory_usage", href: "/zh/reference/settings/session-settings/max-memory-usage#max_memory_usage" },
-        { name: "max_memory_usage_for_user", href: "/zh/reference/settings/session-settings/max-memory-usage#max_memory_usage_for_user" }
+      标签: "max_memory_usage_*",
+      计数: 2,
+      设置: [
+        { 名称: "max_memory_usage", 路径: "/max-memory-usage#max_memory_usage", 默认: "0" },
+        { 名称: "max_memory_usage_for_user", 路径: "/max-memory-usage#max_memory_usage_for_user", 默认: "0" }
       ],
       children: []
     },
     {
-      label: "max_network_*",
-      count: 4,
-      settings: [
-        { name: "max_network_bandwidth", href: "/zh/reference/settings/session-settings/max-network#max_network_bandwidth" },
-        { name: "max_network_bandwidth_for_all_users", href: "/zh/reference/settings/session-settings/max-network#max_network_bandwidth_for_all_users" },
-        { name: "max_network_bandwidth_for_user", href: "/zh/reference/settings/session-settings/max-network#max_network_bandwidth_for_user" },
-        { name: "max_network_bytes", href: "/zh/reference/settings/session-settings/max-network#max_network_bytes" }
+      标签: "max_network_*",
+      计数: 4,
+      设置: [
+        { 名称: "max_network_bandwidth", 路径: "/max-network#max_network_bandwidth", 默认: "0" },
+        { 名称: "max_network_bandwidth_for_all_users", 路径: "/max-network#max_network_bandwidth_for_all_users", 默认: "0" },
+        { 名称: "max_network_bandwidth_for_user", 路径: "/max-network#max_network_bandwidth_for_user", 默认: "0" },
+        { 名称: "max_network_bytes", 路径: "/max-network#max_network_bytes", 默认: "0" }
       ],
       children: []
     },
     {
-      label: "max_parser_*",
-      count: 2,
-      settings: [
-        { name: "max_parser_backtracks", href: "/zh/reference/settings/session-settings/max-parser#max_parser_backtracks" },
-        { name: "max_parser_depth", href: "/zh/reference/settings/session-settings/max-parser#max_parser_depth" }
+      标签: "max_number_*",
+      计数: 2,
+      设置: [
+        { 名称: "max_number_of_partitions_for_independent_aggregation", 路径: "/max-number#max_number_of_partitions_for_independent_aggregation", 默认: "128" },
+        { 名称: "max_number_of_partitions_for_independent_distinct", 路径: "/max-number#max_number_of_partitions_for_independent_distinct", 默认: "128" }
       ],
       children: []
     },
     {
-      label: "max_partitions_*",
-      count: 2,
-      settings: [
-        { name: "max_partitions_per_insert_block", href: "/zh/reference/settings/session-settings/max-partitions#max_partitions_per_insert_block" },
-        { name: "max_partitions_to_read", href: "/zh/reference/settings/session-settings/max-partitions#max_partitions_to_read" }
+      标签: "max_parser_*",
+      计数: 2,
+      设置: [
+        { 名称: "max_parser_backtracks", 路径: "/max-parser#max_parser_backtracks", 默认: "1000000" },
+        { 名称: "max_parser_depth", 路径: "/max-parser#max_parser_depth", 默认: "1000" }
       ],
       children: []
     },
     {
-      label: "max_rand_*",
-      count: 2,
+      标签: "max_partitions_*",
+      计数: 2,
+      设置: [
+        { 名称: "max_partitions_per_insert_block", 路径: "/max-partitions#max_partitions_per_insert_block", 默认: "100" },
+        { 名称: "max_partitions_to_read", 路径: "/max-partitions#max_partitions_to_read", 默认: "-1" }
+      ],
+      children: []
+    },
+    {
+      标签: "max_rand_*",
+      计数: 2,
       settings: [
-        { name: "max_rand_distribution_parameter", href: "/zh/reference/settings/session-settings/max-rand#max_rand_distribution_parameter" },
-        { name: "max_rand_distribution_trials", href: "/zh/reference/settings/session-settings/max-rand#max_rand_distribution_trials" }
+        { name: "max_rand_distribution_parameter", path: "/max-rand#max_rand_distribution_parameter", default: "1000000" },
+        { name: "max_rand_distribution_trials", path: "/max-rand#max_rand_distribution_trials", default: "1000000000" }
       ],
       children: []
     },
@@ -1585,9 +1627,9 @@ const SessionSettingsExplorer = () => {
       label: "max_read_buffer_size_*",
       count: 3,
       settings: [
-        { name: "max_read_buffer_size", href: "/zh/reference/settings/session-settings/max-read-buffer-size#max_read_buffer_size" },
-        { name: "max_read_buffer_size_local_fs", href: "/zh/reference/settings/session-settings/max-read-buffer-size#max_read_buffer_size_local_fs" },
-        { name: "max_read_buffer_size_remote_fs", href: "/zh/reference/settings/session-settings/max-read-buffer-size#max_read_buffer_size_remote_fs" }
+        { name: "max_read_buffer_size", path: "/max-read-buffer-size#max_read_buffer_size", default: "1048576" },
+        { name: "max_read_buffer_size_local_fs", path: "/max-read-buffer-size#max_read_buffer_size_local_fs", default: "131072" },
+        { name: "max_read_buffer_size_remote_fs", path: "/max-read-buffer-size#max_read_buffer_size_remote_fs", default: "0" }
       ],
       children: []
     },
@@ -1595,8 +1637,8 @@ const SessionSettingsExplorer = () => {
       label: "max_remote_*",
       count: 2,
       settings: [
-        { name: "max_remote_read_network_bandwidth", href: "/zh/reference/settings/session-settings/max-remote#max_remote_read_network_bandwidth" },
-        { name: "max_remote_write_network_bandwidth", href: "/zh/reference/settings/session-settings/max-remote#max_remote_write_network_bandwidth" }
+        { name: "max_remote_read_network_bandwidth", path: "/max-remote#max_remote_read_network_bandwidth", default: "0" },
+        { name: "max_remote_write_network_bandwidth", path: "/max-remote#max_remote_write_network_bandwidth", default: "0" }
       ],
       children: []
     },
@@ -1604,8 +1646,8 @@ const SessionSettingsExplorer = () => {
       label: "max_result_*",
       count: 2,
       settings: [
-        { name: "max_result_bytes", href: "/zh/reference/settings/session-settings/max-result#max_result_bytes" },
-        { name: "max_result_rows", href: "/zh/reference/settings/session-settings/max-result#max_result_rows" }
+        { name: "max_result_bytes", path: "/max-result#max_result_bytes", default: "0" },
+        { name: "max_result_rows", path: "/max-result#max_result_rows", default: "0" }
       ],
       children: []
     },
@@ -1613,16 +1655,16 @@ const SessionSettingsExplorer = () => {
       label: "max_rows_*",
       count: 10,
       settings: [
-        { name: "max_rows_for_lazy_final", href: "/zh/reference/settings/session-settings/max-rows#max_rows_for_lazy_final" },
-        { name: "max_rows_in_distinct", href: "/zh/reference/settings/session-settings/max-rows#max_rows_in_distinct" },
-        { name: "max_rows_in_join", href: "/zh/reference/settings/session-settings/max-rows#max_rows_in_join" },
-        { name: "max_rows_in_set", href: "/zh/reference/settings/session-settings/max-rows#max_rows_in_set" },
-        { name: "max_rows_in_set_to_optimize_join", href: "/zh/reference/settings/session-settings/max-rows#max_rows_in_set_to_optimize_join" },
-        { name: "max_rows_to_group_by", href: "/zh/reference/settings/session-settings/max-rows#max_rows_to_group_by" },
-        { name: "max_rows_to_read", href: "/zh/reference/settings/session-settings/max-rows#max_rows_to_read" },
-        { name: "max_rows_to_read_leaf", href: "/zh/reference/settings/session-settings/max-rows#max_rows_to_read_leaf" },
-        { name: "max_rows_to_sort", href: "/zh/reference/settings/session-settings/max-rows#max_rows_to_sort" },
-        { name: "max_rows_to_transfer", href: "/zh/reference/settings/session-settings/max-rows#max_rows_to_transfer" }
+        { name: "max_rows_for_lazy_final", path: "/max-rows#max_rows_for_lazy_final", default: "10000000" },
+        { name: "max_rows_in_distinct", path: "/max-rows#max_rows_in_distinct", default: "0" },
+        { name: "max_rows_in_join", path: "/max-rows#max_rows_in_join", default: "0" },
+        { name: "max_rows_in_set", path: "/max-rows#max_rows_in_set", default: "0" },
+        { name: "max_rows_in_set_to_optimize_join", path: "/max-rows#max_rows_in_set_to_optimize_join", default: "0" },
+        { name: "max_rows_to_group_by", path: "/max-rows#max_rows_to_group_by", default: "0" },
+        { name: "max_rows_to_read", path: "/max-rows#max_rows_to_read", default: "0" },
+        { name: "max_rows_to_read_leaf", path: "/max-rows#max_rows_to_read_leaf", default: "0" },
+        { name: "max_rows_to_sort", path: "/max-rows#max_rows_to_sort", default: "0" },
+        { name: "max_rows_to_transfer", path: "/max-rows#max_rows_to_transfer", default: "0" }
       ],
       children: []
     },
@@ -1630,8 +1672,8 @@ const SessionSettingsExplorer = () => {
       label: "max_size_*",
       count: 2,
       settings: [
-        { name: "max_size_to_preallocate_for_aggregation", href: "/zh/reference/settings/session-settings/max-size#max_size_to_preallocate_for_aggregation" },
-        { name: "max_size_to_preallocate_for_joins", href: "/zh/reference/settings/session-settings/max-size#max_size_to_preallocate_for_joins" }
+        { name: "max_size_to_preallocate_for_aggregation", path: "/max-size#max_size_to_preallocate_for_aggregation", default: "1000000000000" },
+        { name: "max_size_to_preallocate_for_joins", path: "/max-size#max_size_to_preallocate_for_joins", default: "1000000000000" }
       ],
       children: []
     },
@@ -1639,8 +1681,8 @@ const SessionSettingsExplorer = () => {
       label: "max_skip_*",
       count: 2,
       settings: [
-        { name: "max_skip_unavailable_shards_num", href: "/zh/reference/settings/session-settings/max-skip#max_skip_unavailable_shards_num" },
-        { name: "max_skip_unavailable_shards_ratio", href: "/zh/reference/settings/session-settings/max-skip#max_skip_unavailable_shards_ratio" }
+        { name: "max_skip_unavailable_shards_num", path: "/max-skip#max_skip_unavailable_shards_num", default: "0" },
+        { name: "max_skip_unavailable_shards_ratio", path: "/max-skip#max_skip_unavailable_shards_ratio", default: "0" }
       ],
       children: []
     },
@@ -1648,12 +1690,12 @@ const SessionSettingsExplorer = () => {
       label: "max_streams_*",
       count: 6,
       settings: [
-        { name: "max_streams_for_files_processing_in_cluster_functions", href: "/zh/reference/settings/session-settings/max-streams#max_streams_for_files_processing_in_cluster_functions" },
-        { name: "max_streams_for_merge_tree_reading", href: "/zh/reference/settings/session-settings/max-streams#max_streams_for_merge_tree_reading" },
-        { name: "max_streams_for_union_step", href: "/zh/reference/settings/session-settings/max-streams#max_streams_for_union_step" },
-        { name: "max_streams_for_union_step_to_max_threads_ratio", href: "/zh/reference/settings/session-settings/max-streams#max_streams_for_union_step_to_max_threads_ratio" },
-        { name: "max_streams_multiplier_for_merge_tables", href: "/zh/reference/settings/session-settings/max-streams#max_streams_multiplier_for_merge_tables" },
-        { name: "max_streams_to_max_threads_ratio", href: "/zh/reference/settings/session-settings/max-streams#max_streams_to_max_threads_ratio" }
+        { name: "max_streams_for_files_processing_in_cluster_functions", path: "/max-streams#max_streams_for_files_processing_in_cluster_functions", default: "0" },
+        { name: "max_streams_for_merge_tree_reading", path: "/max-streams#max_streams_for_merge_tree_reading", default: "0" },
+        { name: "max_streams_for_union_step", path: "/max-streams#max_streams_for_union_step", default: "0" },
+        { name: "max_streams_for_union_step_to_max_threads_ratio", path: "/max-streams#max_streams_for_union_step_to_max_threads_ratio", default: "8" },
+        { name: "max_streams_multiplier_for_merge_tables", path: "/max-streams#max_streams_multiplier_for_merge_tables", default: "5" },
+        { name: "max_streams_to_max_threads_ratio", path: "/max-streams#max_streams_to_max_threads_ratio", default: "1" }
       ],
       children: []
     },
@@ -1661,10 +1703,10 @@ const SessionSettingsExplorer = () => {
       label: "max_temporary_*",
       count: 4,
       settings: [
-        { name: "max_temporary_columns", href: "/zh/reference/settings/session-settings/max-temporary#max_temporary_columns" },
-        { name: "max_temporary_data_on_disk_size_for_query", href: "/zh/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query" },
-        { name: "max_temporary_data_on_disk_size_for_user", href: "/zh/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user" },
-        { name: "max_temporary_non_const_columns", href: "/zh/reference/settings/session-settings/max-temporary#max_temporary_non_const_columns" }
+        { name: "max_temporary_columns", path: "/max-temporary#max_temporary_columns", default: "0" },
+        { name: "max_temporary_data_on_disk_size_for_query", path: "/max-temporary#max_temporary_data_on_disk_size_for_query", default: "0" },
+        { name: "max_temporary_data_on_disk_size_for_user", path: "/max-temporary#max_temporary_data_on_disk_size_for_user", default: "0" },
+        { name: "max_temporary_non_const_columns", path: "/max-temporary#max_temporary_non_const_columns", default: "0" }
       ],
       children: []
     },
@@ -1672,9 +1714,9 @@ const SessionSettingsExplorer = () => {
       label: "max_threads_*",
       count: 3,
       settings: [
-        { name: "max_threads", href: "/zh/reference/settings/session-settings/max-threads#max_threads" },
-        { name: "max_threads_for_indexes", href: "/zh/reference/settings/session-settings/max-threads#max_threads_for_indexes" },
-        { name: "max_threads_min_free_memory_per_thread", href: "/zh/reference/settings/session-settings/max-threads#max_threads_min_free_memory_per_thread" }
+        { name: "max_threads", path: "/max-threads#max_threads", default: "auto(N)" },
+        { name: "max_threads_for_indexes", path: "/max-threads#max_threads_for_indexes", default: "0" },
+        { name: "max_threads_min_free_memory_per_thread", path: "/max-threads#max_threads_min_free_memory_per_thread", default: "1073741824" }
       ],
       children: []
     },
@@ -1682,8 +1724,8 @@ const SessionSettingsExplorer = () => {
       label: "memory_*",
       count: 2,
       settings: [
-        { name: "memory_tracker_fault_probability", href: "/zh/reference/settings/session-settings/memory#memory_tracker_fault_probability" },
-        { name: "memory_usage_overcommit_max_wait_microseconds", href: "/zh/reference/settings/session-settings/memory#memory_usage_overcommit_max_wait_microseconds" }
+        { name: "memory_tracker_fault_probability", path: "/memory#memory_tracker_fault_probability", default: "0" },
+        { name: "memory_usage_overcommit_max_wait_microseconds", path: "/memory#memory_usage_overcommit_max_wait_microseconds", default: "5000000" }
       ],
       children: []
     },
@@ -1691,8 +1733,8 @@ const SessionSettingsExplorer = () => {
       label: "memory_overcommit_ratio_denominator_*",
       count: 2,
       settings: [
-        { name: "memory_overcommit_ratio_denominator", href: "/zh/reference/settings/session-settings/memory-overcommit-ratio-denominator#memory_overcommit_ratio_denominator" },
-        { name: "memory_overcommit_ratio_denominator_for_user", href: "/zh/reference/settings/session-settings/memory-overcommit-ratio-denominator#memory_overcommit_ratio_denominator_for_user" }
+        { name: "memory_overcommit_ratio_denominator", path: "/memory-overcommit-ratio-denominator#memory_overcommit_ratio_denominator", default: "1073741824" },
+        { name: "memory_overcommit_ratio_denominator_for_user", path: "/memory-overcommit-ratio-denominator#memory_overcommit_ratio_denominator_for_user", default: "1073741824" }
       ],
       children: []
     },
@@ -1700,46 +1742,43 @@ const SessionSettingsExplorer = () => {
       label: "memory_profiler_*",
       count: 4,
       settings: [
-        { name: "memory_profiler_sample_max_allocation_size", href: "/zh/reference/settings/session-settings/memory-profiler#memory_profiler_sample_max_allocation_size" },
-        { name: "memory_profiler_sample_min_allocation_size", href: "/zh/reference/settings/session-settings/memory-profiler#memory_profiler_sample_min_allocation_size" },
-        { name: "memory_profiler_sample_probability", href: "/zh/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability" },
-        { name: "memory_profiler_step", href: "/zh/reference/settings/session-settings/memory-profiler#memory_profiler_step" }
+        { name: "memory_profiler_sample_max_allocation_size", path: "/memory-profiler#memory_profiler_sample_max_allocation_size", default: "0" },
+        { name: "memory_profiler_sample_min_allocation_size", path: "/memory-profiler#memory_profiler_sample_min_allocation_size", default: "0" },
+        { name: "memory_profiler_sample_probability", path: "/memory-profiler#memory_profiler_sample_probability", default: "0" },
+        { name: "memory_profiler_step", path: "/memory-profiler#memory_profiler_step", default: "4194304" }
       ],
       children: []
     },
     {
       label: "merge_tree_*",
-      count: 20,
+      count: 22,
       settings: [
-        { name: "merge_tree_coarse_index_granularity", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_coarse_index_granularity" },
-        { name: "merge_tree_compact_parts_min_granules_to_multibuffer_read", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_compact_parts_min_granules_to_multibuffer_read" },
-        { name: "merge_tree_determine_task_size_by_prewhere_columns", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_determine_task_size_by_prewhere_columns" },
-        { name: "merge_tree_generic_exclusion_search_max_steps", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_generic_exclusion_search_max_steps" },
-        { name: "merge_tree_max_bytes_to_use_cache", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_max_bytes_to_use_cache" },
-        { name: "merge_tree_max_rows_to_use_cache", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_max_rows_to_use_cache" },
-        { name: "merge_tree_min_bytes_for_concurrent_read", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read" },
-        {
-          name: "merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem",
-          href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem"
-        },
-        { name: "merge_tree_min_bytes_for_seek", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_for_seek" },
-        { name: "merge_tree_min_bytes_per_task_for_remote_reading", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_min_bytes_per_task_for_remote_reading" },
-        { name: "merge_tree_min_read_task_size", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_min_read_task_size" },
-        { name: "merge_tree_min_rows_for_concurrent_read", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read" },
-        {
-          name: "merge_tree_min_rows_for_concurrent_read_for_remote_filesystem",
-          href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem"
-        },
-        { name: "merge_tree_min_rows_for_seek", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_min_rows_for_seek" },
+        { name: "merge_tree_coarse_index_granularity", path: "/merge-tree#merge_tree_coarse_index_granularity", default: "8" },
+        { name: "merge_tree_compact_parts_min_granules_to_multibuffer_read", path: "/merge-tree#merge_tree_compact_parts_min_granules_to_multibuffer_read", default: "16" },
+        { name: "merge_tree_determine_task_size_by_prewhere_columns", path: "/merge-tree#merge_tree_determine_task_size_by_prewhere_columns", default: "1" },
+        { name: "merge_tree_generic_exclusion_search_max_steps", path: "/merge-tree#merge_tree_generic_exclusion_search_max_steps", default: "0" },
+        { name: "merge_tree_max_bytes_to_use_cache", path: "/merge-tree#merge_tree_max_bytes_to_use_cache", default: "2013265920" },
+        { name: "merge_tree_max_rows_to_use_cache", path: "/merge-tree#merge_tree_max_rows_to_use_cache", default: "1048576" },
+        { name: "merge_tree_min_bytes_for_concurrent_read", path: "/merge-tree#merge_tree_min_bytes_for_concurrent_read", default: "251658240" },
+        { name: "merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", path: "/merge-tree#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", default: "0" },
+        { name: "merge_tree_min_bytes_for_seek", path: "/merge-tree#merge_tree_min_bytes_for_seek", default: "0" },
+        { name: "merge_tree_min_bytes_per_read_stream", path: "/merge-tree#merge_tree_min_bytes_per_read_stream", default: "65536" },
+        { name: "merge_tree_min_bytes_per_task_for_remote_reading", path: "/merge-tree#merge_tree_min_bytes_per_task_for_remote_reading", default: "2097152" },
+        { name: "merge_tree_min_read_task_size", path: "/merge-tree#merge_tree_min_read_task_size", default: "8" },
+        { name: "merge_tree_min_rows_for_concurrent_read", path: "/merge-tree#merge_tree_min_rows_for_concurrent_read", default: "163840" },
+        { name: "merge_tree_min_rows_for_concurrent_read_for_remote_filesystem", path: "/merge-tree#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem", default: "0" },
+        { name: "merge_tree_min_rows_for_seek", path: "/merge-tree#merge_tree_min_rows_for_seek", default: "0" },
+        { name: "merge_tree_prefetch_json_shared_data_substreams", path: "/merge-tree#merge_tree_prefetch_json_shared_data_substreams", default: "1" },
         {
           name: "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability",
-          href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability"
+          path: "/merge-tree#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability",
+          default: "0"
         },
-        { name: "merge_tree_storage_snapshot_sleep_ms", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_storage_snapshot_sleep_ms" },
-        { name: "merge_tree_use_const_size_tasks_for_remote_reading", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_use_const_size_tasks_for_remote_reading" },
-        { name: "merge_tree_use_deserialization_prefixes_cache", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_use_deserialization_prefixes_cache" },
-        { name: "merge_tree_use_prefixes_deserialization_thread_pool", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_use_prefixes_deserialization_thread_pool" },
-        { name: "merge_tree_use_v1_object_and_dynamic_serialization", href: "/zh/reference/settings/session-settings/merge-tree#merge_tree_use_v1_object_and_dynamic_serialization" }
+        { name: "merge_tree_storage_snapshot_sleep_ms", path: "/merge-tree#merge_tree_storage_snapshot_sleep_ms", default: "0" },
+        { name: "merge_tree_use_const_size_tasks_for_remote_reading", path: "/merge-tree#merge_tree_use_const_size_tasks_for_remote_reading", default: "1" },
+        { name: "merge_tree_use_deserialization_prefixes_cache", path: "/merge-tree#merge_tree_use_deserialization_prefixes_cache", default: "1" },
+        { name: "merge_tree_use_prefixes_deserialization_thread_pool", path: "/merge-tree#merge_tree_use_prefixes_deserialization_thread_pool", default: "1" },
+        { name: "merge_tree_use_v1_object_and_dynamic_serialization", path: "/merge-tree#merge_tree_use_v1_object_and_dynamic_serialization", default: "0" }
       ],
       children: []
     },
@@ -1747,8 +1786,8 @@ const SessionSettingsExplorer = () => {
       label: "metrics_perf_*",
       count: 2,
       settings: [
-        { name: "metrics_perf_events_enabled", href: "/zh/reference/settings/session-settings/metrics-perf#metrics_perf_events_enabled" },
-        { name: "metrics_perf_events_list", href: "/zh/reference/settings/session-settings/metrics-perf#metrics_perf_events_list" }
+        { name: "metrics_perf_events_enabled", path: "/metrics-perf#metrics_perf_events_enabled", default: "0" },
+        { name: "metrics_perf_events_list", path: "/metrics-perf#metrics_perf_events_list", default: '""' }
       ],
       children: []
     },
@@ -1756,13 +1795,13 @@ const SessionSettingsExplorer = () => {
       label: "min_*",
       count: 7,
       settings: [
-        { name: "min_chunk_bytes_for_parallel_parsing", href: "/zh/reference/settings/session-settings/min#min_chunk_bytes_for_parallel_parsing" },
-        { name: "min_compress_block_size", href: "/zh/reference/settings/session-settings/min#min_compress_block_size" },
-        { name: "min_filtered_ratio_for_lazy_final", href: "/zh/reference/settings/session-settings/min#min_filtered_ratio_for_lazy_final" },
-        { name: "min_hit_rate_to_use_consecutive_keys_optimization", href: "/zh/reference/settings/session-settings/min#min_hit_rate_to_use_consecutive_keys_optimization" },
-        { name: "min_os_cpu_wait_time_ratio_to_throw", href: "/zh/reference/settings/session-settings/min#min_os_cpu_wait_time_ratio_to_throw" },
-        { name: "min_outstreams_per_resize_after_split", href: "/zh/reference/settings/session-settings/min#min_outstreams_per_resize_after_split" },
-        { name: "min_table_rows_to_use_projection_index", href: "/zh/reference/settings/session-settings/min#min_table_rows_to_use_projection_index" }
+        { name: "min_chunk_bytes_for_parallel_parsing", path: "/min#min_chunk_bytes_for_parallel_parsing", default: "10485760" },
+        { name: "min_compress_block_size", path: "/min#min_compress_block_size", default: "65536" },
+        { name: "min_filtered_ratio_for_lazy_final", path: "/min#min_filtered_ratio_for_lazy_final", default: "0.5" },
+        { name: "min_hit_rate_to_use_consecutive_keys_optimization", path: "/min#min_hit_rate_to_use_consecutive_keys_optimization", default: "0.5" },
+        { name: "min_os_cpu_wait_time_ratio_to_throw", path: "/min#min_os_cpu_wait_time_ratio_to_throw", default: "0" },
+        { name: "min_outstreams_per_resize_after_split", path: "/min#min_outstreams_per_resize_after_split", default: "24" },
+        { name: "min_table_rows_to_use_projection_index", path: "/min#min_table_rows_to_use_projection_index", default: "1000000" }
       ],
       children: []
     },
@@ -1770,8 +1809,8 @@ const SessionSettingsExplorer = () => {
       label: "min_bytes_*",
       count: 2,
       settings: [
-        { name: "min_bytes_to_use_direct_io", href: "/zh/reference/settings/session-settings/min-bytes#min_bytes_to_use_direct_io" },
-        { name: "min_bytes_to_use_mmap_io", href: "/zh/reference/settings/session-settings/min-bytes#min_bytes_to_use_mmap_io" }
+        { name: "min_bytes_to_use_direct_io", path: "/min-bytes#min_bytes_to_use_direct_io", default: "0" },
+        { name: "min_bytes_to_use_mmap_io", path: "/min-bytes#min_bytes_to_use_mmap_io", default: "0" }
       ],
       children: []
     },
@@ -1779,10 +1818,10 @@ const SessionSettingsExplorer = () => {
       label: "min_count_*",
       count: 4,
       settings: [
-        { name: "min_count_to_compile_aggregate_expression", href: "/zh/reference/settings/session-settings/min-count#min_count_to_compile_aggregate_expression" },
-        { name: "min_count_to_compile_expression", href: "/zh/reference/settings/session-settings/min-count#min_count_to_compile_expression" },
-        { name: "min_count_to_compile_regular_expression", href: "/zh/reference/settings/session-settings/min-count#min_count_to_compile_regular_expression" },
-        { name: "min_count_to_compile_sort_description", href: "/zh/reference/settings/session-settings/min-count#min_count_to_compile_sort_description" }
+        { name: "min_count_to_compile_aggregate_expression", path: "/min-count#min_count_to_compile_aggregate_expression", default: "3" },
+        { name: "min_count_to_compile_expression", path: "/min-count#min_count_to_compile_expression", default: "3" },
+        { name: "min_count_to_compile_regular_expression", path: "/min-count#min_count_to_compile_regular_expression", default: "3" },
+        { name: "min_count_to_compile_sort_description", path: "/min-count#min_count_to_compile_sort_description", default: "3" }
       ],
       children: []
     },
@@ -1790,8 +1829,8 @@ const SessionSettingsExplorer = () => {
       label: "min_execution_speed_*",
       count: 2,
       settings: [
-        { name: "min_execution_speed", href: "/zh/reference/settings/session-settings/min-execution-speed#min_execution_speed" },
-        { name: "min_execution_speed_bytes", href: "/zh/reference/settings/session-settings/min-execution-speed#min_execution_speed_bytes" }
+        { name: "min_execution_speed", path: "/min-execution-speed#min_execution_speed", default: "0" },
+        { name: "min_execution_speed_bytes", path: "/min-execution-speed#min_execution_speed_bytes", default: "0" }
       ],
       children: []
     },
@@ -1799,8 +1838,8 @@ const SessionSettingsExplorer = () => {
       label: "min_external_*",
       count: 2,
       settings: [
-        { name: "min_external_table_block_size_bytes", href: "/zh/reference/settings/session-settings/min-external#min_external_table_block_size_bytes" },
-        { name: "min_external_table_block_size_rows", href: "/zh/reference/settings/session-settings/min-external#min_external_table_block_size_rows" }
+        { name: "min_external_table_block_size_bytes", path: "/min-external#min_external_table_block_size_bytes", default: "268402944" },
+        { name: "min_external_table_block_size_rows", path: "/min-external#min_external_table_block_size_rows", default: "1048449" }
       ],
       children: []
     },
@@ -1808,9 +1847,9 @@ const SessionSettingsExplorer = () => {
       label: "min_free_*",
       count: 3,
       settings: [
-        { name: "min_free_disk_bytes_to_perform_insert", href: "/zh/reference/settings/session-settings/min-free#min_free_disk_bytes_to_perform_insert" },
-        { name: "min_free_disk_ratio_to_perform_insert", href: "/zh/reference/settings/session-settings/min-free#min_free_disk_ratio_to_perform_insert" },
-        { name: "min_free_disk_space_for_temporary_data", href: "/zh/reference/settings/session-settings/min-free#min_free_disk_space_for_temporary_data" }
+        { name: "min_free_disk_bytes_to_perform_insert", path: "/min-free#min_free_disk_bytes_to_perform_insert", default: "0" },
+        { name: "min_free_disk_ratio_to_perform_insert", path: "/min-free#min_free_disk_ratio_to_perform_insert", default: "0" },
+        { name: "min_free_disk_space_for_temporary_data", path: "/min-free#min_free_disk_space_for_temporary_data", default: "0" }
       ],
       children: []
     },
@@ -1818,10 +1857,10 @@ const SessionSettingsExplorer = () => {
       label: "min_insert_*",
       count: 4,
       settings: [
-        { name: "min_insert_block_size_bytes", href: "/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes" },
-        { name: "min_insert_block_size_bytes_for_materialized_views", href: "/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views" },
-        { name: "min_insert_block_size_rows", href: "/zh/reference/settings/session-settings/min-insert#min_insert_block_size_rows" },
-        { name: "min_insert_block_size_rows_for_materialized_views", href: "/zh/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views" }
+        { name: "min_insert_block_size_bytes", path: "/min-insert#min_insert_block_size_bytes", default: "268402944" },
+        { name: "min_insert_block_size_bytes_for_materialized_views", path: "/min-insert#min_insert_block_size_bytes_for_materialized_views", default: "0" },
+        { name: "min_insert_block_size_rows", path: "/min-insert#min_insert_block_size_rows", default: "1048449" },
+        { name: "min_insert_block_size_rows_for_materialized_views", path: "/min-insert#min_insert_block_size_rows_for_materialized_views", default: "0" }
       ],
       children: []
     },
@@ -1829,8 +1868,8 @@ const SessionSettingsExplorer = () => {
       label: "min_joined_*",
       count: 2,
       settings: [
-        { name: "min_joined_block_size_bytes", href: "/zh/reference/settings/session-settings/min-joined#min_joined_block_size_bytes" },
-        { name: "min_joined_block_size_rows", href: "/zh/reference/settings/session-settings/min-joined#min_joined_block_size_rows" }
+        { name: "min_joined_block_size_bytes", path: "/min-joined#min_joined_block_size_bytes", default: "524288" },
+        { name: "min_joined_block_size_rows", path: "/min-joined#min_joined_block_size_rows", default: "65409" }
       ],
       children: []
     },
@@ -1838,8 +1877,8 @@ const SessionSettingsExplorer = () => {
       label: "move_*",
       count: 2,
       settings: [
-        { name: "move_all_conditions_to_prewhere", href: "/zh/reference/settings/session-settings/move#move_all_conditions_to_prewhere" },
-        { name: "move_primary_key_columns_to_end_of_prewhere", href: "/zh/reference/settings/session-settings/move#move_primary_key_columns_to_end_of_prewhere" }
+        { name: "move_all_conditions_to_prewhere", path: "/move#move_all_conditions_to_prewhere", default: "1" },
+        { name: "move_primary_key_columns_to_end_of_prewhere", path: "/move#move_primary_key_columns_to_end_of_prewhere", default: "1" }
       ],
       children: []
     },
@@ -1847,8 +1886,8 @@ const SessionSettingsExplorer = () => {
       label: "mutations_*",
       count: 2,
       settings: [
-        { name: "mutations_max_literal_size_to_replace", href: "/zh/reference/settings/session-settings/mutations#mutations_max_literal_size_to_replace" },
-        { name: "mutations_sync", href: "/zh/reference/settings/session-settings/mutations#mutations_sync" }
+        { name: "mutations_max_literal_size_to_replace", path: "/mutations#mutations_max_literal_size_to_replace", default: "16384" },
+        { name: "mutations_sync", path: "/mutations#mutations_sync", default: "0" }
       ],
       children: []
     },
@@ -1856,8 +1895,8 @@ const SessionSettingsExplorer = () => {
       label: "mutations_execute_*",
       count: 2,
       settings: [
-        { name: "mutations_execute_nondeterministic_on_initiator", href: "/zh/reference/settings/session-settings/mutations-execute#mutations_execute_nondeterministic_on_initiator" },
-        { name: "mutations_execute_subqueries_on_initiator", href: "/zh/reference/settings/session-settings/mutations-execute#mutations_execute_subqueries_on_initiator" }
+        { name: "mutations_execute_nondeterministic_on_initiator", path: "/mutations-execute#mutations_execute_nondeterministic_on_initiator", default: "0" },
+        { name: "mutations_execute_subqueries_on_initiator", path: "/mutations-execute#mutations_execute_subqueries_on_initiator", default: "0" }
       ],
       children: []
     },
@@ -1865,8 +1904,8 @@ const SessionSettingsExplorer = () => {
       label: "mysql_*",
       count: 2,
       settings: [
-        { name: "mysql_datatypes_support_level", href: "/zh/reference/settings/session-settings/mysql#mysql_datatypes_support_level" },
-        { name: "mysql_max_rows_to_insert", href: "/zh/reference/settings/session-settings/mysql#mysql_max_rows_to_insert" }
+        { name: "mysql_datatypes_support_level", path: "/mysql#mysql_datatypes_support_level", default: "decimal,datetime64,date2Date32,geometry" },
+        { name: "mysql_max_rows_to_insert", path: "/mysql#mysql_max_rows_to_insert", default: "65536" }
       ],
       children: []
     },
@@ -1874,8 +1913,8 @@ const SessionSettingsExplorer = () => {
       label: "mysql_map_*",
       count: 2,
       settings: [
-        { name: "mysql_map_fixed_string_to_text_in_show_columns", href: "/zh/reference/settings/session-settings/mysql-map#mysql_map_fixed_string_to_text_in_show_columns" },
-        { name: "mysql_map_string_to_text_in_show_columns", href: "/zh/reference/settings/session-settings/mysql-map#mysql_map_string_to_text_in_show_columns" }
+        { name: "mysql_map_fixed_string_to_text_in_show_columns", path: "/mysql-map#mysql_map_fixed_string_to_text_in_show_columns", default: "1" },
+        { name: "mysql_map_string_to_text_in_show_columns", path: "/mysql-map#mysql_map_string_to_text_in_show_columns", default: "1" }
       ],
       children: []
     },
@@ -1883,8 +1922,8 @@ const SessionSettingsExplorer = () => {
       label: "network_*",
       count: 2,
       settings: [
-        { name: "network_compression_method", href: "/zh/reference/settings/session-settings/network#network_compression_method" },
-        { name: "network_zstd_compression_level", href: "/zh/reference/settings/session-settings/network#network_zstd_compression_level" }
+        { name: "network_compression_method", path: "/network#network_compression_method", default: "LZ4" },
+        { name: "network_zstd_compression_level", path: "/network#network_zstd_compression_level", default: "1" }
       ],
       children: []
     },
@@ -1892,8 +1931,8 @@ const SessionSettingsExplorer = () => {
       label: "number_of_*",
       count: 2,
       settings: [
-        { name: "number_of_mutations_to_delay", href: "/zh/reference/settings/session-settings/number-of#number_of_mutations_to_delay" },
-        { name: "number_of_mutations_to_throw", href: "/zh/reference/settings/session-settings/number-of#number_of_mutations_to_throw" }
+        { name: "number_of_mutations_to_delay", path: "/number-of#number_of_mutations_to_delay", default: "0" },
+        { name: "number_of_mutations_to_throw", path: "/number-of#number_of_mutations_to_throw", default: "0" }
       ],
       children: []
     },
@@ -1901,8 +1940,8 @@ const SessionSettingsExplorer = () => {
       label: "odbc_bridge_*",
       count: 2,
       settings: [
-        { name: "odbc_bridge_connection_pool_size", href: "/zh/reference/settings/session-settings/odbc-bridge#odbc_bridge_connection_pool_size" },
-        { name: "odbc_bridge_use_connection_pooling", href: "/zh/reference/settings/session-settings/odbc-bridge#odbc_bridge_use_connection_pooling" }
+        { name: "odbc_bridge_connection_pool_size", path: "/odbc-bridge#odbc_bridge_connection_pool_size", default: "16" },
+        { name: "odbc_bridge_use_connection_pooling", path: "/odbc-bridge#odbc_bridge_use_connection_pooling", default: "1" }
       ],
       children: []
     },
@@ -1910,8 +1949,8 @@ const SessionSettingsExplorer = () => {
       label: "opentelemetry_start_*",
       count: 2,
       settings: [
-        { name: "opentelemetry_start_keeper_trace_probability", href: "/zh/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_keeper_trace_probability" },
-        { name: "opentelemetry_start_trace_probability", href: "/zh/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability" }
+        { name: "opentelemetry_start_keeper_trace_probability", path: "/opentelemetry-start#opentelemetry_start_keeper_trace_probability", default: "auto" },
+        { name: "opentelemetry_start_trace_probability", path: "/opentelemetry-start#opentelemetry_start_trace_probability", default: "0" }
       ],
       children: []
     },
@@ -1919,8 +1958,8 @@ const SessionSettingsExplorer = () => {
       label: "opentelemetry_trace_*",
       count: 2,
       settings: [
-        { name: "opentelemetry_trace_cpu_scheduling", href: "/zh/reference/settings/session-settings/opentelemetry-trace#opentelemetry_trace_cpu_scheduling" },
-        { name: "opentelemetry_trace_processors", href: "/zh/reference/settings/session-settings/opentelemetry-trace#opentelemetry_trace_processors" }
+        { name: "opentelemetry_trace_cpu_scheduling", path: "/opentelemetry-trace#opentelemetry_trace_cpu_scheduling", default: "0" },
+        { name: "opentelemetry_trace_processors", path: "/opentelemetry-trace#opentelemetry_trace_processors", default: "0" }
       ],
       children: []
     },
@@ -1928,34 +1967,34 @@ const SessionSettingsExplorer = () => {
       label: "optimize_*",
       count: 28,
       settings: [
-        { name: "optimize_aggregators_of_group_by_keys", href: "/zh/reference/settings/session-settings/optimize#optimize_aggregators_of_group_by_keys" },
-        { name: "optimize_append_index", href: "/zh/reference/settings/session-settings/optimize#optimize_append_index" },
-        { name: "optimize_arithmetic_operations_in_aggregate_functions", href: "/zh/reference/settings/session-settings/optimize#optimize_arithmetic_operations_in_aggregate_functions" },
-        { name: "optimize_const_name_size", href: "/zh/reference/settings/session-settings/optimize#optimize_const_name_size" },
-        { name: "optimize_count_from_files", href: "/zh/reference/settings/session-settings/optimize#optimize_count_from_files" },
-        { name: "optimize_dictget_tuple_element", href: "/zh/reference/settings/session-settings/optimize#optimize_dictget_tuple_element" },
-        { name: "optimize_distinct_in_order", href: "/zh/reference/settings/session-settings/optimize#optimize_distinct_in_order" },
-        { name: "optimize_distributed_group_by_sharding_key", href: "/zh/reference/settings/session-settings/optimize#optimize_distributed_group_by_sharding_key" },
-        { name: "optimize_dry_run_check_part", href: "/zh/reference/settings/session-settings/optimize#optimize_dry_run_check_part" },
-        { name: "optimize_empty_string_comparisons", href: "/zh/reference/settings/session-settings/optimize#optimize_empty_string_comparisons" },
-        { name: "optimize_extract_common_expressions", href: "/zh/reference/settings/session-settings/optimize#optimize_extract_common_expressions" },
-        { name: "optimize_functions_to_subcolumns", href: "/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns" },
-        { name: "optimize_inverse_dictionary_lookup", href: "/zh/reference/settings/session-settings/optimize#optimize_inverse_dictionary_lookup" },
-        { name: "optimize_multiif_to_if", href: "/zh/reference/settings/session-settings/optimize#optimize_multiif_to_if" },
-        { name: "optimize_normalize_count_variants", href: "/zh/reference/settings/session-settings/optimize#optimize_normalize_count_variants" },
-        { name: "optimize_on_insert", href: "/zh/reference/settings/session-settings/optimize#optimize_on_insert" },
-        { name: "optimize_prewhere_after_pushdown", href: "/zh/reference/settings/session-settings/optimize#optimize_prewhere_after_pushdown" },
-        { name: "optimize_qbit_distance_function_reads", href: "/zh/reference/settings/session-settings/optimize#optimize_qbit_distance_function_reads" },
-        { name: "optimize_read_in_order", href: "/zh/reference/settings/session-settings/optimize#optimize_read_in_order" },
-        { name: "optimize_respect_aliases", href: "/zh/reference/settings/session-settings/optimize#optimize_respect_aliases" },
-        { name: "optimize_sorting_by_input_stream_properties", href: "/zh/reference/settings/session-settings/optimize#optimize_sorting_by_input_stream_properties" },
-        { name: "optimize_substitute_columns", href: "/zh/reference/settings/session-settings/optimize#optimize_substitute_columns" },
-        { name: "optimize_syntax_fuse_functions", href: "/zh/reference/settings/session-settings/optimize#optimize_syntax_fuse_functions" },
-        { name: "optimize_throw_if_noop", href: "/zh/reference/settings/session-settings/optimize#optimize_throw_if_noop" },
-        { name: "optimize_time_filter_with_preimage", href: "/zh/reference/settings/session-settings/optimize#optimize_time_filter_with_preimage" },
-        { name: "optimize_truncate_order_by_after_group_by_keys", href: "/zh/reference/settings/session-settings/optimize#optimize_truncate_order_by_after_group_by_keys" },
-        { name: "optimize_uniq_to_count", href: "/zh/reference/settings/session-settings/optimize#optimize_uniq_to_count" },
-        { name: "optimize_using_constraints", href: "/zh/reference/settings/session-settings/optimize#optimize_using_constraints" }
+        { name: "optimize_aggregators_of_group_by_keys", path: "/optimize#optimize_aggregators_of_group_by_keys", default: "1" },
+        { name: "optimize_append_index", path: "/optimize#optimize_append_index", default: "0" },
+        { name: "optimize_arithmetic_operations_in_aggregate_functions", path: "/optimize#optimize_arithmetic_operations_in_aggregate_functions", default: "1" },
+        { name: "optimize_const_name_size", path: "/optimize#optimize_const_name_size", default: "256" },
+        { name: "optimize_count_from_files", path: "/optimize#optimize_count_from_files", default: "1" },
+        { name: "optimize_dictget_tuple_element", path: "/optimize#optimize_dictget_tuple_element", default: "1" },
+        { name: "optimize_distinct_in_order", path: "/optimize#optimize_distinct_in_order", default: "1" },
+        { name: "optimize_distributed_group_by_sharding_key", path: "/optimize#optimize_distributed_group_by_sharding_key", default: "1" },
+        { name: "optimize_dry_run_check_part", path: "/optimize#optimize_dry_run_check_part", default: "1" },
+        { name: "optimize_empty_string_comparisons", path: "/optimize#optimize_empty_string_comparisons", default: "1" },
+        { name: "optimize_extract_common_expressions", path: "/optimize#optimize_extract_common_expressions", default: "1" },
+        { name: "optimize_functions_to_subcolumns", path: "/optimize#optimize_functions_to_subcolumns", default: "1" },
+        { name: "optimize_inverse_dictionary_lookup", path: "/optimize#optimize_inverse_dictionary_lookup", default: "1" },
+        { name: "optimize_multiif_to_if", path: "/optimize#optimize_multiif_to_if", default: "1" },
+        { name: "optimize_normalize_count_variants", path: "/optimize#optimize_normalize_count_variants", default: "1" },
+        { name: "optimize_on_insert", path: "/optimize#optimize_on_insert", default: "1" },
+        { name: "optimize_prewhere_after_pushdown", path: "/optimize#optimize_prewhere_after_pushdown", default: "0" },
+        { name: "optimize_qbit_distance_function_reads", path: "/optimize#optimize_qbit_distance_function_reads", default: "1" },
+        { name: "optimize_read_in_order", path: "/optimize#optimize_read_in_order", default: "1" },
+        { name: "optimize_respect_aliases", path: "/optimize#optimize_respect_aliases", default: "1" },
+        { name: "optimize_sorting_by_input_stream_properties", path: "/optimize#optimize_sorting_by_input_stream_properties", default: "1" },
+        { name: "optimize_substitute_columns", path: "/optimize#optimize_substitute_columns", default: "0" },
+        { name: "optimize_syntax_fuse_functions", path: "/optimize#optimize_syntax_fuse_functions", default: "1" },
+        { name: "optimize_throw_if_noop", path: "/optimize#optimize_throw_if_noop", default: "0" },
+        { name: "optimize_time_filter_with_preimage", path: "/optimize#optimize_time_filter_with_preimage", default: "1" },
+        { name: "optimize_truncate_order_by_after_group_by_keys", path: "/optimize#optimize_truncate_order_by_after_group_by_keys", default: "1" },
+        { name: "optimize_uniq_to_count", path: "/optimize#optimize_uniq_to_count", default: "1" },
+        { name: "optimize_using_constraints", path: "/optimize#optimize_using_constraints", default: "0" }
       ],
       children: []
     },
@@ -1963,8 +2002,8 @@ const SessionSettingsExplorer = () => {
       label: "optimize_aggregation_in_order_*",
       count: 2,
       settings: [
-        { name: "optimize_aggregation_in_order", href: "/zh/reference/settings/session-settings/optimize-aggregation-in-order#optimize_aggregation_in_order" },
-        { name: "optimize_aggregation_in_order_limit", href: "/zh/reference/settings/session-settings/optimize-aggregation-in-order#optimize_aggregation_in_order_limit" }
+        { name: "optimize_aggregation_in_order", path: "/optimize-aggregation-in-order#optimize_aggregation_in_order", default: "0" },
+        { name: "optimize_aggregation_in_order_limit", path: "/optimize-aggregation-in-order#optimize_aggregation_in_order_limit", default: "1" }
       ],
       children: []
     },
@@ -1972,8 +2011,8 @@ const SessionSettingsExplorer = () => {
       label: "optimize_and_compare_chain_*",
       count: 2,
       settings: [
-        { name: "optimize_and_compare_chain", href: "/zh/reference/settings/session-settings/optimize-and-compare-chain#optimize_and_compare_chain" },
-        { name: "optimize_and_compare_chain_max_hash_work", href: "/zh/reference/settings/session-settings/optimize-and-compare-chain#optimize_and_compare_chain_max_hash_work" }
+        { name: "optimize_and_compare_chain", path: "/optimize-and-compare-chain#optimize_and_compare_chain", default: "1" },
+        { name: "optimize_and_compare_chain_max_hash_work", path: "/optimize-and-compare-chain#optimize_and_compare_chain_max_hash_work", default: "5000000" }
       ],
       children: []
     },
@@ -1981,8 +2020,8 @@ const SessionSettingsExplorer = () => {
       label: "optimize_group_*",
       count: 2,
       settings: [
-        { name: "optimize_group_by_constant_keys", href: "/zh/reference/settings/session-settings/optimize-group#optimize_group_by_constant_keys" },
-        { name: "optimize_group_by_function_keys", href: "/zh/reference/settings/session-settings/optimize-group#optimize_group_by_function_keys" }
+        { name: "optimize_group_by_constant_keys", path: "/optimize-group#optimize_group_by_constant_keys", default: "1" },
+        { name: "optimize_group_by_function_keys", path: "/optimize-group#optimize_group_by_function_keys", default: "1" }
       ],
       children: []
     },
@@ -1990,8 +2029,8 @@ const SessionSettingsExplorer = () => {
       label: "optimize_if_*",
       count: 2,
       settings: [
-        { name: "optimize_if_chain_to_multiif", href: "/zh/reference/settings/session-settings/optimize-if#optimize_if_chain_to_multiif" },
-        { name: "optimize_if_transform_strings_to_enum", href: "/zh/reference/settings/session-settings/optimize-if#optimize_if_transform_strings_to_enum" }
+        { name: "optimize_if_chain_to_multiif", path: "/optimize-if#optimize_if_chain_to_multiif", default: "0" },
+        { name: "optimize_if_transform_strings_to_enum", path: "/optimize-if#optimize_if_transform_strings_to_enum", default: "0" }
       ],
       children: []
     },
@@ -1999,9 +2038,9 @@ const SessionSettingsExplorer = () => {
       label: "optimize_injective_*",
       count: 3,
       settings: [
-        { name: "optimize_injective_functions_in_group_by", href: "/zh/reference/settings/session-settings/optimize-injective#optimize_injective_functions_in_group_by" },
-        { name: "optimize_injective_functions_in_limit_by", href: "/zh/reference/settings/session-settings/optimize-injective#optimize_injective_functions_in_limit_by" },
-        { name: "optimize_injective_functions_inside_uniq", href: "/zh/reference/settings/session-settings/optimize-injective#optimize_injective_functions_inside_uniq" }
+        { name: "optimize_injective_functions_in_group_by", path: "/optimize-injective#optimize_injective_functions_in_group_by", default: "1" },
+        { name: "optimize_injective_functions_in_limit_by", path: "/optimize-injective#optimize_injective_functions_in_limit_by", default: "1" },
+        { name: "optimize_injective_functions_inside_uniq", path: "/optimize-injective#optimize_injective_functions_inside_uniq", default: "1" }
       ],
       children: []
     },
@@ -2009,8 +2048,8 @@ const SessionSettingsExplorer = () => {
       label: "optimize_limit_*",
       count: 2,
       settings: [
-        { name: "optimize_limit_by_function_keys", href: "/zh/reference/settings/session-settings/optimize-limit#optimize_limit_by_function_keys" },
-        { name: "optimize_limit_by_in_order", href: "/zh/reference/settings/session-settings/optimize-limit#optimize_limit_by_in_order" }
+        { name: "optimize_limit_by_function_keys", path: "/optimize-limit#optimize_limit_by_function_keys", default: "1" },
+        { name: "optimize_limit_by_in_order", path: "/optimize-limit#optimize_limit_by_in_order", default: "1" }
       ],
       children: []
     },
@@ -2018,8 +2057,8 @@ const SessionSettingsExplorer = () => {
       label: "optimize_min_*",
       count: 2,
       settings: [
-        { name: "optimize_min_equality_disjunction_chain_length", href: "/zh/reference/settings/session-settings/optimize-min#optimize_min_equality_disjunction_chain_length" },
-        { name: "optimize_min_inequality_conjunction_chain_length", href: "/zh/reference/settings/session-settings/optimize-min#optimize_min_inequality_conjunction_chain_length" }
+        { name: "optimize_min_equality_disjunction_chain_length", path: "/optimize-min#optimize_min_equality_disjunction_chain_length", default: "3" },
+        { name: "optimize_min_inequality_conjunction_chain_length", path: "/optimize-min#optimize_min_inequality_conjunction_chain_length", default: "3" }
       ],
       children: []
     },
@@ -2027,8 +2066,8 @@ const SessionSettingsExplorer = () => {
       label: "optimize_move_to_prewhere_*",
       count: 2,
       settings: [
-        { name: "optimize_move_to_prewhere", href: "/zh/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere" },
-        { name: "optimize_move_to_prewhere_if_final", href: "/zh/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final" }
+        { name: "optimize_move_to_prewhere", path: "/optimize-move-to-prewhere#optimize_move_to_prewhere", default: "1" },
+        { name: "optimize_move_to_prewhere_if_final", path: "/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final", default: "0" }
       ],
       children: []
     },
@@ -2036,9 +2075,9 @@ const SessionSettingsExplorer = () => {
       label: "optimize_or_like_chain_*",
       count: 3,
       settings: [
-        { name: "optimize_or_like_chain", href: "/zh/reference/settings/session-settings/optimize-or-like-chain#optimize_or_like_chain" },
-        { name: "optimize_or_like_chain_min_patterns", href: "/zh/reference/settings/session-settings/optimize-or-like-chain#optimize_or_like_chain_min_patterns" },
-        { name: "optimize_or_like_chain_min_substrings", href: "/zh/reference/settings/session-settings/optimize-or-like-chain#optimize_or_like_chain_min_substrings" }
+        { name: "optimize_or_like_chain", path: "/optimize-or-like-chain#optimize_or_like_chain", default: "1" },
+        { name: "optimize_or_like_chain_min_patterns", path: "/optimize-or-like-chain#optimize_or_like_chain_min_patterns", default: "10" },
+        { name: "optimize_or_like_chain_min_substrings", path: "/optimize-or-like-chain#optimize_or_like_chain_min_substrings", default: "4" }
       ],
       children: []
     },
@@ -2046,8 +2085,8 @@ const SessionSettingsExplorer = () => {
       label: "optimize_redundant_*",
       count: 2,
       settings: [
-        { name: "optimize_redundant_comparisons", href: "/zh/reference/settings/session-settings/optimize-redundant#optimize_redundant_comparisons" },
-        { name: "optimize_redundant_functions_in_order_by", href: "/zh/reference/settings/session-settings/optimize-redundant#optimize_redundant_functions_in_order_by" }
+        { name: "optimize_redundant_comparisons", path: "/optimize-redundant#optimize_redundant_comparisons", default: "1" },
+        { name: "optimize_redundant_functions_in_order_by", path: "/optimize-redundant#optimize_redundant_functions_in_order_by", default: "1" }
       ],
       children: []
     },
@@ -2055,12 +2094,12 @@ const SessionSettingsExplorer = () => {
       label: "optimize_rewrite_*",
       count: 6,
       settings: [
-        { name: "optimize_rewrite_aggregate_function_with_if", href: "/zh/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_aggregate_function_with_if" },
-        { name: "optimize_rewrite_array_exists_to_has", href: "/zh/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_array_exists_to_has" },
-        { name: "optimize_rewrite_has_to_in", href: "/zh/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_has_to_in" },
-        { name: "optimize_rewrite_like_perfect_affix", href: "/zh/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix" },
-        { name: "optimize_rewrite_regexp_functions", href: "/zh/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_regexp_functions" },
-        { name: "optimize_rewrite_sum_if_to_count_if", href: "/zh/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_sum_if_to_count_if" }
+        { name: "optimize_rewrite_aggregate_function_with_if", path: "/optimize-rewrite#optimize_rewrite_aggregate_function_with_if", default: "1" },
+        { name: "optimize_rewrite_array_exists_to_has", path: "/optimize-rewrite#optimize_rewrite_array_exists_to_has", default: "1" },
+        { name: "optimize_rewrite_has_to_in", path: "/optimize-rewrite#optimize_rewrite_has_to_in", default: "1" },
+        { name: "optimize_rewrite_like_perfect_affix", path: "/optimize-rewrite#optimize_rewrite_like_perfect_affix", default: "1" },
+        { name: "optimize_rewrite_regexp_functions", path: "/optimize-rewrite#optimize_rewrite_regexp_functions", default: "1" },
+        { name: "optimize_rewrite_sum_if_to_count_if", path: "/optimize-rewrite#optimize_rewrite_sum_if_to_count_if", default: "1" }
       ],
       children: []
     },
@@ -2068,23 +2107,24 @@ const SessionSettingsExplorer = () => {
       label: "optimize_skip_*",
       count: 5,
       settings: [
-        { name: "optimize_skip_merged_partitions", href: "/zh/reference/settings/session-settings/optimize-skip#optimize_skip_merged_partitions" },
-        { name: "optimize_skip_unused_shards", href: "/zh/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards" },
-        { name: "optimize_skip_unused_shards_limit", href: "/zh/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards_limit" },
-        { name: "optimize_skip_unused_shards_nesting", href: "/zh/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards_nesting" },
-        { name: "optimize_skip_unused_shards_rewrite_in", href: "/zh/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards_rewrite_in" }
+        { name: "optimize_skip_merged_partitions", path: "/optimize-skip#optimize_skip_merged_partitions", default: "0" },
+        { name: "optimize_skip_unused_shards", path: "/optimize-skip#optimize_skip_unused_shards", default: "0" },
+        { name: "optimize_skip_unused_shards_limit", path: "/optimize-skip#optimize_skip_unused_shards_limit", default: "1000" },
+        { name: "optimize_skip_unused_shards_nesting", path: "/optimize-skip#optimize_skip_unused_shards_nesting", default: "0" },
+        { name: "optimize_skip_unused_shards_rewrite_in", path: "/optimize-skip#optimize_skip_unused_shards_rewrite_in", default: "1" }
       ],
       children: []
     },
     {
       label: "optimize_trivial_*",
-      count: 5,
+      count: 6,
       settings: [
-        { name: "optimize_trivial_approximate_count_query", href: "/zh/reference/settings/session-settings/optimize-trivial#optimize_trivial_approximate_count_query" },
-        { name: "optimize_trivial_count_query", href: "/zh/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query" },
-        { name: "optimize_trivial_count_with_sparsity_filter", href: "/zh/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_with_sparsity_filter" },
-        { name: "optimize_trivial_group_by_limit_query", href: "/zh/reference/settings/session-settings/optimize-trivial#optimize_trivial_group_by_limit_query" },
-        { name: "optimize_trivial_insert_select", href: "/zh/reference/settings/session-settings/optimize-trivial#optimize_trivial_insert_select" }
+        { name: "optimize_trivial_approximate_count_query", path: "/optimize-trivial#optimize_trivial_approximate_count_query", default: "0" },
+        { name: "optimize_trivial_count_query", path: "/optimize-trivial#optimize_trivial_count_query", default: "1" },
+        { name: "optimize_trivial_count_with_sparsity_filter", path: "/optimize-trivial#optimize_trivial_count_with_sparsity_filter", default: "1" },
+        { name: "optimize_trivial_group_by_limit_query", path: "/optimize-trivial#optimize_trivial_group_by_limit_query", default: "1" },
+        { name: "optimize_trivial_insert_select", path: "/optimize-trivial#optimize_trivial_insert_select", default: "0" },
+        { name: "optimize_trivial_view_pushdown_to_distributed", path: "/optimize-trivial#optimize_trivial_view_pushdown_to_distributed", default: "1" }
       ],
       children: []
     },
@@ -2092,9 +2132,9 @@ const SessionSettingsExplorer = () => {
       label: "optimize_use_*",
       count: 3,
       settings: [
-        { name: "optimize_use_implicit_projections", href: "/zh/reference/settings/session-settings/optimize-use#optimize_use_implicit_projections" },
-        { name: "optimize_use_projection_filtering", href: "/zh/reference/settings/session-settings/optimize-use#optimize_use_projection_filtering" },
-        { name: "optimize_use_projections", href: "/zh/reference/settings/session-settings/optimize-use#optimize_use_projections" }
+        { name: "optimize_use_implicit_projections", path: "/optimize-use#optimize_use_implicit_projections", default: "1" },
+        { name: "optimize_use_projection_filtering", path: "/optimize-use#optimize_use_projection_filtering", default: "1" },
+        { name: "optimize_use_projections", path: "/optimize-use#optimize_use_projections", default: "1" }
       ],
       children: []
     },
@@ -2102,8 +2142,8 @@ const SessionSettingsExplorer = () => {
       label: "os_threads_*",
       count: 2,
       settings: [
-        { name: "os_threads_nice_value_materialized_view", href: "/zh/reference/settings/session-settings/os-threads#os_threads_nice_value_materialized_view" },
-        { name: "os_threads_nice_value_query", href: "/zh/reference/settings/session-settings/os-threads#os_threads_nice_value_query" }
+        { name: "os_threads_nice_value_materialized_view", path: "/os-threads#os_threads_nice_value_materialized_view", default: "0" },
+        { name: "os_threads_nice_value_query", path: "/os-threads#os_threads_nice_value_query", default: "0" }
       ],
       children: []
     },
@@ -2111,10 +2151,10 @@ const SessionSettingsExplorer = () => {
       label: "page_cache_*",
       count: 4,
       settings: [
-        { name: "page_cache_block_size", href: "/zh/reference/settings/session-settings/page-cache#page_cache_block_size" },
-        { name: "page_cache_inject_eviction", href: "/zh/reference/settings/session-settings/page-cache#page_cache_inject_eviction" },
-        { name: "page_cache_lookahead_blocks", href: "/zh/reference/settings/session-settings/page-cache#page_cache_lookahead_blocks" },
-        { name: "page_cache_max_coalesced_bytes", href: "/zh/reference/settings/session-settings/page-cache#page_cache_max_coalesced_bytes" }
+        { name: "page_cache_block_size", path: "/page-cache#page_cache_block_size", default: "1048576" },
+        { name: "page_cache_inject_eviction", path: "/page-cache#page_cache_inject_eviction", default: "0" },
+        { name: "page_cache_lookahead_blocks", path: "/page-cache#page_cache_lookahead_blocks", default: "16" },
+        { name: "page_cache_max_coalesced_bytes", path: "/page-cache#page_cache_max_coalesced_bytes", default: "16777216" }
       ],
       children: []
     },
@@ -2122,11 +2162,11 @@ const SessionSettingsExplorer = () => {
       label: "parallel_*",
       count: 5,
       settings: [
-        { name: "parallel_distributed_insert_select", href: "/zh/reference/settings/session-settings/parallel#parallel_distributed_insert_select" },
-        { name: "parallel_hash_join_threshold", href: "/zh/reference/settings/session-settings/parallel#parallel_hash_join_threshold" },
-        { name: "parallel_non_joined_rows_processing", href: "/zh/reference/settings/session-settings/parallel#parallel_non_joined_rows_processing" },
-        { name: "parallel_replica_offset", href: "/zh/reference/settings/session-settings/parallel#parallel_replica_offset" },
-        { name: "parallel_view_processing", href: "/zh/reference/settings/session-settings/parallel#parallel_view_processing" }
+        { name: "parallel_distributed_insert_select", path: "/parallel#parallel_distributed_insert_select", default: "2" },
+        { name: "parallel_hash_join_threshold", path: "/parallel#parallel_hash_join_threshold", default: "100000" },
+        { name: "parallel_non_joined_rows_processing", path: "/parallel#parallel_non_joined_rows_processing", default: "1" },
+        { name: "parallel_replica_offset", path: "/parallel#parallel_replica_offset", default: "0" },
+        { name: "parallel_view_processing", path: "/parallel#parallel_view_processing", default: "0" }
       ],
       children: []
     },
@@ -2134,28 +2174,28 @@ const SessionSettingsExplorer = () => {
       label: "parallel_replicas_*",
       count: 22,
       settings: [
-        { name: "parallel_replicas_allow_in_with_subquery", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_allow_in_with_subquery" },
-        { name: "parallel_replicas_allow_materialized_views", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_allow_materialized_views" },
-        { name: "parallel_replicas_allow_view_over_mergetree", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_allow_view_over_mergetree" },
-        { name: "parallel_replicas_connect_timeout_ms", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_connect_timeout_ms" },
-        { name: "parallel_replicas_count", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_count" },
-        { name: "parallel_replicas_custom_key", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key" },
-        { name: "parallel_replicas_custom_key_range_lower", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key_range_lower" },
-        { name: "parallel_replicas_custom_key_range_upper", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key_range_upper" },
-        { name: "parallel_replicas_filter_pushdown", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_filter_pushdown" },
-        { name: "parallel_replicas_for_cluster_engines", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines" },
-        { name: "parallel_replicas_for_non_replicated_merge_tree", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_non_replicated_merge_tree" },
-        { name: "parallel_replicas_index_analysis_only_on_coordinator", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_index_analysis_only_on_coordinator" },
-        { name: "parallel_replicas_insert_select_local_pipeline", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_insert_select_local_pipeline" },
-        { name: "parallel_replicas_local_plan", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_local_plan" },
-        { name: "parallel_replicas_mark_segment_size", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_mark_segment_size" },
-        { name: "parallel_replicas_min_number_of_rows_per_replica", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_min_number_of_rows_per_replica" },
-        { name: "parallel_replicas_mode", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_mode" },
-        { name: "parallel_replicas_only_with_analyzer", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_only_with_analyzer" },
-        { name: "parallel_replicas_plan_based", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based" },
-        { name: "parallel_replicas_prefer_local_join", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_prefer_local_join" },
-        { name: "parallel_replicas_prefer_local_replica", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_prefer_local_replica" },
-        { name: "parallel_replicas_support_projection", href: "/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_support_projection" }
+        { name: "parallel_replicas_allow_in_with_subquery", path: "/parallel-replicas#parallel_replicas_allow_in_with_subquery", default: "1" },
+        { name: "parallel_replicas_allow_materialized_views", path: "/parallel-replicas#parallel_replicas_allow_materialized_views", default: "1" },
+        { name: "parallel_replicas_allow_view_over_mergetree", path: "/parallel-replicas#parallel_replicas_allow_view_over_mergetree", default: "0" },
+        { name: "parallel_replicas_connect_timeout_ms", path: "/parallel-replicas#parallel_replicas_connect_timeout_ms", default: "300" },
+        { name: "parallel_replicas_count", path: "/parallel-replicas#parallel_replicas_count", default: "0" },
+        { name: "parallel_replicas_custom_key", path: "/parallel-replicas#parallel_replicas_custom_key", default: '""' },
+        { name: "parallel_replicas_custom_key_range_lower", path: "/parallel-replicas#parallel_replicas_custom_key_range_lower", default: "0" },
+        { name: "parallel_replicas_custom_key_range_upper", path: "/parallel-replicas#parallel_replicas_custom_key_range_upper", default: "0" },
+        { name: "parallel_replicas_filter_pushdown", path: "/parallel-replicas#parallel_replicas_filter_pushdown", default: "0" },
+        { name: "parallel_replicas_for_cluster_engines", path: "/parallel-replicas#parallel_replicas_for_cluster_engines", default: "1" },
+        { name: "parallel_replicas_for_non_replicated_merge_tree", path: "/parallel-replicas#parallel_replicas_for_non_replicated_merge_tree", default: "0" },
+        { name: "parallel_replicas_index_analysis_only_on_coordinator", path: "/parallel-replicas#parallel_replicas_index_analysis_only_on_coordinator", default: "1" },
+        { name: "parallel_replicas_insert_select_local_pipeline", path: "/parallel-replicas#parallel_replicas_insert_select_local_pipeline", default: "1" },
+        { name: "parallel_replicas_local_plan", path: "/parallel-replicas#parallel_replicas_local_plan", default: "1" },
+        { name: "parallel_replicas_mark_segment_size", path: "/parallel-replicas#parallel_replicas_mark_segment_size", default: "0" },
+        { name: "parallel_replicas_min_number_of_rows_per_replica", path: "/parallel-replicas#parallel_replicas_min_number_of_rows_per_replica", default: "0" },
+        { name: "parallel_replicas_mode", path: "/parallel-replicas#parallel_replicas_mode", default: "read_tasks" },
+        { name: "parallel_replicas_only_with_analyzer", path: "/parallel-replicas#parallel_replicas_only_with_analyzer", default: "1" },
+        { name: "parallel_replicas_plan_based", path: "/parallel-replicas#parallel_replicas_plan_based", default: "0" },
+        { name: "parallel_replicas_prefer_local_join", path: "/parallel-replicas#parallel_replicas_prefer_local_join", default: "1" },
+        { name: "parallel_replicas_prefer_local_replica", path: "/parallel-replicas#parallel_replicas_prefer_local_replica", default: "1" },
+        { name: "parallel_replicas_support_projection", path: "/parallel-replicas#parallel_replicas_support_projection", default: "1" }
       ],
       children: []
     },
@@ -2163,8 +2203,8 @@ const SessionSettingsExplorer = () => {
       label: "parsedatetime_*",
       count: 2,
       settings: [
-        { name: "parsedatetime_e_requires_space_padding", href: "/zh/reference/settings/session-settings/parsedatetime#parsedatetime_e_requires_space_padding" },
-        { name: "parsedatetime_parse_without_leading_zeros", href: "/zh/reference/settings/session-settings/parsedatetime#parsedatetime_parse_without_leading_zeros" }
+        { name: "parsedatetime_e_requires_space_padding", path: "/parsedatetime#parsedatetime_e_requires_space_padding", default: "0" },
+        { name: "parsedatetime_parse_without_leading_zeros", path: "/parsedatetime#parsedatetime_parse_without_leading_zeros", default: "1" }
       ],
       children: []
     },
@@ -2172,8 +2212,8 @@ const SessionSettingsExplorer = () => {
       label: "partial_merge_*",
       count: 2,
       settings: [
-        { name: "partial_merge_join_left_table_buffer_bytes", href: "/zh/reference/settings/session-settings/partial-merge#partial_merge_join_left_table_buffer_bytes" },
-        { name: "partial_merge_join_rows_in_right_blocks", href: "/zh/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks" }
+        { name: "partial_merge_join_left_table_buffer_bytes", path: "/partial-merge#partial_merge_join_left_table_buffer_bytes", default: "0" },
+        { name: "partial_merge_join_rows_in_right_blocks", path: "/partial-merge#partial_merge_join_rows_in_right_blocks", default: "65536" }
       ],
       children: []
     },
@@ -2181,8 +2221,8 @@ const SessionSettingsExplorer = () => {
       label: "parts_to_*",
       count: 2,
       settings: [
-        { name: "parts_to_delay_insert", href: "/zh/reference/settings/session-settings/parts-to#parts_to_delay_insert" },
-        { name: "parts_to_throw_insert", href: "/zh/reference/settings/session-settings/parts-to#parts_to_throw_insert" }
+        { name: "parts_to_delay_insert", path: "/parts-to#parts_to_delay_insert", default: "0" },
+        { name: "parts_to_throw_insert", path: "/parts-to#parts_to_throw_insert", default: "0" }
       ],
       children: []
     },
@@ -2190,11 +2230,11 @@ const SessionSettingsExplorer = () => {
       label: "postgresql_connection_*",
       count: 5,
       settings: [
-        { name: "postgresql_connection_attempt_timeout", href: "/zh/reference/settings/session-settings/postgresql-connection#postgresql_connection_attempt_timeout" },
-        { name: "postgresql_connection_pool_auto_close_connection", href: "/zh/reference/settings/session-settings/postgresql-connection#postgresql_connection_pool_auto_close_connection" },
-        { name: "postgresql_connection_pool_retries", href: "/zh/reference/settings/session-settings/postgresql-connection#postgresql_connection_pool_retries" },
-        { name: "postgresql_connection_pool_size", href: "/zh/reference/settings/session-settings/postgresql-connection#postgresql_connection_pool_size" },
-        { name: "postgresql_connection_pool_wait_timeout", href: "/zh/reference/settings/session-settings/postgresql-connection#postgresql_connection_pool_wait_timeout" }
+        { name: "postgresql_connection_attempt_timeout", path: "/postgresql-connection#postgresql_connection_attempt_timeout", default: "2" },
+        { name: "postgresql_connection_pool_auto_close_connection", path: "/postgresql-connection#postgresql_connection_pool_auto_close_connection", default: "0" },
+        { name: "postgresql_connection_pool_retries", path: "/postgresql-connection#postgresql_connection_pool_retries", default: "2" },
+        { name: "postgresql_connection_pool_size", path: "/postgresql-connection#postgresql_connection_pool_size", default: "16" },
+        { name: "postgresql_connection_pool_wait_timeout", path: "/postgresql-connection#postgresql_connection_pool_wait_timeout", default: "5000" }
       ],
       children: []
     },
@@ -2202,11 +2242,11 @@ const SessionSettingsExplorer = () => {
       label: "prefer_*",
       count: 5,
       settings: [
-        { name: "prefer_column_name_to_alias", href: "/zh/reference/settings/session-settings/prefer#prefer_column_name_to_alias" },
-        { name: "prefer_external_sort_block_bytes", href: "/zh/reference/settings/session-settings/prefer#prefer_external_sort_block_bytes" },
-        { name: "prefer_global_in_and_join", href: "/zh/reference/settings/session-settings/prefer#prefer_global_in_and_join" },
-        { name: "prefer_localhost_replica", href: "/zh/reference/settings/session-settings/prefer#prefer_localhost_replica" },
-        { name: "prefer_warmed_unmerged_parts_seconds", href: "/zh/reference/settings/session-settings/prefer#prefer_warmed_unmerged_parts_seconds" }
+        { name: "prefer_column_name_to_alias", path: "/prefer#prefer_column_name_to_alias", default: "0" },
+        { name: "prefer_external_sort_block_bytes", path: "/prefer#prefer_external_sort_block_bytes", default: "16744704" },
+        { name: "prefer_global_in_and_join", path: "/prefer#prefer_global_in_and_join", default: "0" },
+        { name: "prefer_localhost_replica", path: "/prefer#prefer_localhost_replica", default: "1" },
+        { name: "prefer_warmed_unmerged_parts_seconds", path: "/prefer#prefer_warmed_unmerged_parts_seconds", default: "0" }
       ],
       children: []
     },
@@ -2214,9 +2254,9 @@ const SessionSettingsExplorer = () => {
       label: "preferred_*",
       count: 3,
       settings: [
-        { name: "preferred_block_size_bytes", href: "/zh/reference/settings/session-settings/preferred#preferred_block_size_bytes" },
-        { name: "preferred_max_column_in_block_size_bytes", href: "/zh/reference/settings/session-settings/preferred#preferred_max_column_in_block_size_bytes" },
-        { name: "preferred_optimize_projection_name", href: "/zh/reference/settings/session-settings/preferred#preferred_optimize_projection_name" }
+        { name: "preferred_block_size_bytes", path: "/preferred#preferred_block_size_bytes", default: "1000000" },
+        { name: "preferred_max_column_in_block_size_bytes", path: "/preferred#preferred_max_column_in_block_size_bytes", default: "0" },
+        { name: "preferred_optimize_projection_name", path: "/preferred#preferred_optimize_projection_name", default: '""' }
       ],
       children: []
     },
@@ -2224,9 +2264,9 @@ const SessionSettingsExplorer = () => {
       label: "promql_*",
       count: 3,
       settings: [
-        { name: "promql_database", href: "/zh/reference/settings/session-settings/promql#promql_database" },
-        { name: "promql_evaluation_time", href: "/zh/reference/settings/session-settings/promql#promql_evaluation_time" },
-        { name: "promql_table", href: "/zh/reference/settings/session-settings/promql#promql_table" }
+        { name: "promql_database", path: "/promql#promql_database", default: '""' },
+        { name: "promql_evaluation_time", path: "/promql#promql_evaluation_time", default: "auto" },
+        { name: "promql_table", path: "/promql#promql_table", default: '""' }
       ],
       children: []
     },
@@ -2234,69 +2274,73 @@ const SessionSettingsExplorer = () => {
       label: "query_cache_*",
       count: 12,
       settings: [
-        { name: "query_cache_compress_entries", href: "/zh/reference/settings/session-settings/query-cache#query_cache_compress_entries" },
-        { name: "query_cache_for_subqueries", href: "/zh/reference/settings/session-settings/query-cache#query_cache_for_subqueries" },
-        { name: "query_cache_max_entries", href: "/zh/reference/settings/session-settings/query-cache#query_cache_max_entries" },
-        { name: "query_cache_max_size_in_bytes", href: "/zh/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes" },
-        { name: "query_cache_min_query_duration", href: "/zh/reference/settings/session-settings/query-cache#query_cache_min_query_duration" },
-        { name: "query_cache_min_query_runs", href: "/zh/reference/settings/session-settings/query-cache#query_cache_min_query_runs" },
-        { name: "query_cache_nondeterministic_function_handling", href: "/zh/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling" },
-        { name: "query_cache_share_between_users", href: "/zh/reference/settings/session-settings/query-cache#query_cache_share_between_users" },
-        { name: "query_cache_squash_partial_results", href: "/zh/reference/settings/session-settings/query-cache#query_cache_squash_partial_results" },
-        { name: "query_cache_system_table_handling", href: "/zh/reference/settings/session-settings/query-cache#query_cache_system_table_handling" },
-        { name: "query_cache_tag", href: "/zh/reference/settings/session-settings/query-cache#query_cache_tag" },
-        { name: "query_cache_ttl", href: "/zh/reference/settings/session-settings/query-cache#query_cache_ttl" }
+        { name: "query_cache_compress_entries", path: "/query-cache#query_cache_compress_entries", default: "1" },
+        { name: "query_cache_for_subqueries", path: "/query-cache#query_cache_for_subqueries", default: "0" },
+        { name: "query_cache_max_entries", path: "/query-cache#query_cache_max_entries", default: "0" },
+        { name: "query_cache_max_size_in_bytes", path: "/query-cache#query_cache_max_size_in_bytes", default: "0" },
+        { name: "query_cache_min_query_duration", path: "/query-cache#query_cache_min_query_duration", default: "0" },
+        { name: "query_cache_min_query_runs", path: "/query-cache#query_cache_min_query_runs", default: "0" },
+        { name: "query_cache_nondeterministic_function_handling", path: "/query-cache#query_cache_nondeterministic_function_handling", default: "throw" },
+        { name: "query_cache_share_between_users", path: "/query-cache#query_cache_share_between_users", default: "0" },
+        { name: "query_cache_squash_partial_results", path: "/query-cache#query_cache_squash_partial_results", default: "1" },
+        { name: "query_cache_system_table_handling", path: "/query-cache#query_cache_system_table_handling", default: "throw" },
+        { name: "query_cache_tag", path: "/query-cache#query_cache_tag", default: '""' },
+        { name: "query_cache_ttl", path: "/query-cache#query_cache_ttl", default: "60" }
       ],
       children: []
     },
     {
       label: "query_plan_*",
-      count: 44,
+      count: 48,
       settings: [
-        { name: "query_plan_aggregation_in_order", href: "/zh/reference/settings/session-settings/query-plan#query_plan_aggregation_in_order" },
-        { name: "query_plan_convert_any_join_to_semi_or_anti_join", href: "/zh/reference/settings/session-settings/query-plan#query_plan_convert_any_join_to_semi_or_anti_join" },
-        { name: "query_plan_convert_join_to_in", href: "/zh/reference/settings/session-settings/query-plan#query_plan_convert_join_to_in" },
-        { name: "query_plan_convert_outer_join_to_inner_join", href: "/zh/reference/settings/session-settings/query-plan#query_plan_convert_outer_join_to_inner_join" },
-        { name: "query_plan_direct_read_from_text_index", href: "/zh/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index" },
-        { name: "query_plan_display_internal_aliases", href: "/zh/reference/settings/session-settings/query-plan#query_plan_display_internal_aliases" },
-        { name: "query_plan_enable_multithreading_after_window_functions", href: "/zh/reference/settings/session-settings/query-plan#query_plan_enable_multithreading_after_window_functions" },
-        { name: "query_plan_enable_optimizations", href: "/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations" },
-        { name: "query_plan_execute_functions_after_sorting", href: "/zh/reference/settings/session-settings/query-plan#query_plan_execute_functions_after_sorting" },
-        { name: "query_plan_filter_push_down", href: "/zh/reference/settings/session-settings/query-plan#query_plan_filter_push_down" },
-        { name: "query_plan_join_shard_by_pk_ranges", href: "/zh/reference/settings/session-settings/query-plan#query_plan_join_shard_by_pk_ranges" },
-        { name: "query_plan_join_swap_table", href: "/zh/reference/settings/session-settings/query-plan#query_plan_join_swap_table" },
-        { name: "query_plan_lift_up_array_join", href: "/zh/reference/settings/session-settings/query-plan#query_plan_lift_up_array_join" },
-        { name: "query_plan_lift_up_union", href: "/zh/reference/settings/session-settings/query-plan#query_plan_lift_up_union" },
-        { name: "query_plan_max_limit_for_join_lazy_indexing", href: "/zh/reference/settings/session-settings/query-plan#query_plan_max_limit_for_join_lazy_indexing" },
-        { name: "query_plan_max_limit_for_lazy_materialization", href: "/zh/reference/settings/session-settings/query-plan#query_plan_max_limit_for_lazy_materialization" },
-        { name: "query_plan_max_limit_for_top_k_optimization", href: "/zh/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization" },
-        { name: "query_plan_max_optimizations_to_apply", href: "/zh/reference/settings/session-settings/query-plan#query_plan_max_optimizations_to_apply" },
-        { name: "query_plan_max_set_size_for_projection_match", href: "/zh/reference/settings/session-settings/query-plan#query_plan_max_set_size_for_projection_match" },
-        { name: "query_plan_max_step_description_length", href: "/zh/reference/settings/session-settings/query-plan#query_plan_max_step_description_length" },
-        { name: "query_plan_merge_expression_into_join", href: "/zh/reference/settings/session-settings/query-plan#query_plan_merge_expression_into_join" },
-        { name: "query_plan_merge_expressions", href: "/zh/reference/settings/session-settings/query-plan#query_plan_merge_expressions" },
-        { name: "query_plan_merge_filter_into_join_condition", href: "/zh/reference/settings/session-settings/query-plan#query_plan_merge_filter_into_join_condition" },
-        { name: "query_plan_merge_filters", href: "/zh/reference/settings/session-settings/query-plan#query_plan_merge_filters" },
-        { name: "query_plan_min_columns_for_join_lazy_indexing", href: "/zh/reference/settings/session-settings/query-plan#query_plan_min_columns_for_join_lazy_indexing" },
-        { name: "query_plan_optimize_join_order_algorithm", href: "/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_algorithm" },
-        { name: "query_plan_optimize_join_order_limit", href: "/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit" },
-        { name: "query_plan_optimize_join_order_max_searched_plans", href: "/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_max_searched_plans" },
-        { name: "query_plan_optimize_join_order_randomize", href: "/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_randomize" },
-        { name: "query_plan_optimize_lazy_final", href: "/zh/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_final" },
-        { name: "query_plan_optimize_lazy_materialization", href: "/zh/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization" },
-        { name: "query_plan_optimize_prewhere", href: "/zh/reference/settings/session-settings/query-plan#query_plan_optimize_prewhere" },
-        { name: "query_plan_push_down_limit", href: "/zh/reference/settings/session-settings/query-plan#query_plan_push_down_limit" },
-        { name: "query_plan_push_limit_by_into_sort", href: "/zh/reference/settings/session-settings/query-plan#query_plan_push_limit_by_into_sort" },
-        { name: "query_plan_read_in_order", href: "/zh/reference/settings/session-settings/query-plan#query_plan_read_in_order" },
-        { name: "query_plan_read_in_order_through_join", href: "/zh/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join" },
-        { name: "query_plan_remove_redundant_distinct", href: "/zh/reference/settings/session-settings/query-plan#query_plan_remove_redundant_distinct" },
-        { name: "query_plan_remove_redundant_sorting", href: "/zh/reference/settings/session-settings/query-plan#query_plan_remove_redundant_sorting" },
-        { name: "query_plan_remove_unused_columns", href: "/zh/reference/settings/session-settings/query-plan#query_plan_remove_unused_columns" },
-        { name: "query_plan_reuse_storage_ordering_for_window_functions", href: "/zh/reference/settings/session-settings/query-plan#query_plan_reuse_storage_ordering_for_window_functions" },
-        { name: "query_plan_split_filter", href: "/zh/reference/settings/session-settings/query-plan#query_plan_split_filter" },
-        { name: "query_plan_text_index_add_hint", href: "/zh/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint" },
-        { name: "query_plan_top_k_through_join", href: "/zh/reference/settings/session-settings/query-plan#query_plan_top_k_through_join" },
-        { name: "query_plan_try_use_vector_search", href: "/zh/reference/settings/session-settings/query-plan#query_plan_try_use_vector_search" }
+        { name: "query_plan_aggregation_in_order", path: "/query-plan#query_plan_aggregation_in_order", default: "1" },
+        { name: "query_plan_convert_any_join_to_semi_or_anti_join", path: "/query-plan#query_plan_convert_any_join_to_semi_or_anti_join", default: "1" },
+        { name: "query_plan_convert_join_to_in", path: "/query-plan#query_plan_convert_join_to_in", default: "0" },
+        { name: "query_plan_convert_outer_join_to_inner_join", path: "/query-plan#query_plan_convert_outer_join_to_inner_join", default: "1" },
+        { name: "query_plan_direct_read_from_text_index", path: "/query-plan#query_plan_direct_read_from_text_index", default: "1" },
+        { name: "query_plan_display_internal_aliases", path: "/query-plan#query_plan_display_internal_aliases", default: "0" },
+        { name: "query_plan_enable_multithreading_after_window_functions", path: "/query-plan#query_plan_enable_multithreading_after_window_functions", default: "1" },
+        { name: "query_plan_enable_optimizations", path: "/query-plan#query_plan_enable_optimizations", default: "1" },
+        { name: "query_plan_execute_functions_after_sorting", path: "/query-plan#query_plan_execute_functions_after_sorting", default: "1" },
+        { name: "query_plan_filter_push_down", path: "/query-plan#query_plan_filter_push_down", default: "1" },
+        { name: "query_plan_join_shard_by_pk_ranges", path: "/query-plan#query_plan_join_shard_by_pk_ranges", default: "0" },
+        { name: "query_plan_join_swap_table", path: "/query-plan#query_plan_join_swap_table", default: "auto" },
+        { name: "query_plan_lift_up_array_join", path: "/query-plan#query_plan_lift_up_array_join", default: "1" },
+        { name: "query_plan_lift_up_union", path: "/query-plan#query_plan_lift_up_union", default: "1" },
+        { name: "query_plan_max_limit_for_join_lazy_indexing", path: "/query-plan#query_plan_max_limit_for_join_lazy_indexing", default: "1000" },
+        { name: "query_plan_max_limit_for_lazy_materialization", path: "/query-plan#query_plan_max_limit_for_lazy_materialization", default: "10000" },
+        { name: "query_plan_max_limit_for_top_k_optimization", path: "/query-plan#query_plan_max_limit_for_top_k_optimization", default: "1000" },
+        { name: "query_plan_max_optimizations_to_apply", path: "/query-plan#query_plan_max_optimizations_to_apply", default: "10000" },
+        { name: "query_plan_max_set_size_for_projection_match", path: "/query-plan#query_plan_max_set_size_for_projection_match", default: "10000" },
+        { name: "query_plan_max_step_description_length", path: "/query-plan#query_plan_max_step_description_length", default: "500" },
+        { name: "query_plan_merge_expression_into_join", path: "/query-plan#query_plan_merge_expression_into_join", default: "1" },
+        { name: "query_plan_merge_expressions", path: "/query-plan#query_plan_merge_expressions", default: "1" },
+        { name: "query_plan_merge_filter_into_join_condition", path: "/query-plan#query_plan_merge_filter_into_join_condition", default: "1" },
+        { name: "query_plan_merge_filters", path: "/query-plan#query_plan_merge_filters", default: "1" },
+        { name: "query_plan_min_columns_for_join_lazy_indexing", path: "/query-plan#query_plan_min_columns_for_join_lazy_indexing", default: "3" },
+        { name: "query_plan_optimize_count_from_text_index", path: "/query-plan#query_plan_optimize_count_from_text_index", default: "1" },
+        { name: "query_plan_optimize_join_order_algorithm", path: "/query-plan#query_plan_optimize_join_order_algorithm", default: "greedy" },
+        { name: "query_plan_optimize_join_order_limit", path: "/query-plan#query_plan_optimize_join_order_limit", default: "10" },
+        { name: "query_plan_optimize_join_order_max_searched_plans", path: "/query-plan#query_plan_optimize_join_order_max_searched_plans", default: "100000" },
+        { name: "query_plan_optimize_join_order_randomize", path: "/query-plan#query_plan_optimize_join_order_randomize", default: "0" },
+        { name: "query_plan_optimize_lazy_final", path: "/query-plan#query_plan_optimize_lazy_final", default: "0" },
+        { name: "query_plan_optimize_lazy_materialization", path: "/query-plan#query_plan_optimize_lazy_materialization", default: "1" },
+        { name: "query_plan_optimize_lazy_materialization_for_object_storage", path: "/query-plan#query_plan_optimize_lazy_materialization_for_object_storage", default: "1" },
+        { name: "query_plan_optimize_prewhere", path: "/query-plan#query_plan_optimize_prewhere", default: "1" },
+        { name: "query_plan_push_down_limit", path: "/query-plan#query_plan_push_down_limit", default: "1" },
+        { name: "query_plan_push_limit_by_into_sort", path: "/query-plan#query_plan_push_limit_by_into_sort", default: "1" },
+        { name: "query_plan_read_in_order", path: "/query-plan#query_plan_read_in_order", default: "1" },
+        { name: "query_plan_read_in_order_through_join", path: "/query-plan#query_plan_read_in_order_through_join", default: "1" },
+        { name: "query_plan_read_in_order_through_spilling_join", path: "/query-plan#query_plan_read_in_order_through_spilling_join", default: "1" },
+        { name: "query_plan_remove_redundant_distinct", path: "/query-plan#query_plan_remove_redundant_distinct", default: "1" },
+        { name: "query_plan_remove_redundant_sorting", path: "/query-plan#query_plan_remove_redundant_sorting", default: "1" },
+        { name: "query_plan_remove_unused_columns", path: "/query-plan#query_plan_remove_unused_columns", default: "1" },
+        { name: "query_plan_reuse_storage_ordering_for_window_functions", path: "/query-plan#query_plan_reuse_storage_ordering_for_window_functions", default: "0" },
+        { name: "query_plan_short_circuit_constant_false_join", path: "/query-plan#query_plan_short_circuit_constant_false_join", default: "1" },
+        { name: "query_plan_split_filter", path: "/query-plan#query_plan_split_filter", default: "1" },
+        { name: "query_plan_text_index_add_hint", path: "/query-plan#query_plan_text_index_add_hint", default: "1" },
+        { name: "query_plan_top_k_through_join", path: "/query-plan#query_plan_top_k_through_join", default: "1" },
+        { name: "query_plan_try_use_vector_search", path: "/query-plan#query_plan_try_use_vector_search", default: "1" }
       ],
       children: []
     },
@@ -2304,8 +2348,8 @@ const SessionSettingsExplorer = () => {
       label: "query_profiler_*",
       count: 2,
       settings: [
-        { name: "query_profiler_cpu_time_period_ns", href: "/zh/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns" },
-        { name: "query_profiler_real_time_period_ns", href: "/zh/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns" }
+        { name: "query_profiler_cpu_time_period_ns", path: "/query-profiler#query_profiler_cpu_time_period_ns", default: "1000000000" },
+        { name: "query_profiler_real_time_period_ns", path: "/query-profiler#query_profiler_real_time_period_ns", default: "1000000000" }
       ],
       children: []
     },
@@ -2313,8 +2357,8 @@ const SessionSettingsExplorer = () => {
       label: "read_*",
       count: 2,
       settings: [
-        { name: "read_priority", href: "/zh/reference/settings/session-settings/read#read_priority" },
-        { name: "read_through_distributed_cache", href: "/zh/reference/settings/session-settings/read#read_through_distributed_cache" }
+        { name: "read_priority", path: "/read#read_priority", default: "0" },
+        { name: "read_through_distributed_cache", path: "/read#read_through_distributed_cache", default: "0" }
       ],
       children: []
     },
@@ -2322,11 +2366,11 @@ const SessionSettingsExplorer = () => {
       label: "read_backoff_*",
       count: 5,
       settings: [
-        { name: "read_backoff_max_throughput", href: "/zh/reference/settings/session-settings/read-backoff#read_backoff_max_throughput" },
-        { name: "read_backoff_min_concurrency", href: "/zh/reference/settings/session-settings/read-backoff#read_backoff_min_concurrency" },
-        { name: "read_backoff_min_events", href: "/zh/reference/settings/session-settings/read-backoff#read_backoff_min_events" },
-        { name: "read_backoff_min_interval_between_events_ms", href: "/zh/reference/settings/session-settings/read-backoff#read_backoff_min_interval_between_events_ms" },
-        { name: "read_backoff_min_latency_ms", href: "/zh/reference/settings/session-settings/read-backoff#read_backoff_min_latency_ms" }
+        { name: "read_backoff_max_throughput", path: "/read-backoff#read_backoff_max_throughput", default: "1048576" },
+        { name: "read_backoff_min_concurrency", path: "/read-backoff#read_backoff_min_concurrency", default: "1" },
+        { name: "read_backoff_min_events", path: "/read-backoff#read_backoff_min_events", default: "2" },
+        { name: "read_backoff_min_interval_between_events_ms", path: "/read-backoff#read_backoff_min_interval_between_events_ms", default: "1000" },
+        { name: "read_backoff_min_latency_ms", path: "/read-backoff#read_backoff_min_latency_ms", default: "1000" }
       ],
       children: []
     },
@@ -2334,9 +2378,9 @@ const SessionSettingsExplorer = () => {
       label: "read_from_*",
       count: 3,
       settings: [
-        { name: "read_from_distributed_cache_if_exists_otherwise_bypass_cache", href: "/zh/reference/settings/session-settings/read-from#read_from_distributed_cache_if_exists_otherwise_bypass_cache" },
-        { name: "read_from_filesystem_cache_if_exists_otherwise_bypass_cache", href: "/zh/reference/settings/session-settings/read-from#read_from_filesystem_cache_if_exists_otherwise_bypass_cache" },
-        { name: "read_from_page_cache_if_exists_otherwise_bypass_cache", href: "/zh/reference/settings/session-settings/read-from#read_from_page_cache_if_exists_otherwise_bypass_cache" }
+        { name: "read_from_distributed_cache_if_exists_otherwise_bypass_cache", path: "/read-from#read_from_distributed_cache_if_exists_otherwise_bypass_cache", default: "0" },
+        { name: "read_from_filesystem_cache_if_exists_otherwise_bypass_cache", path: "/read-from#read_from_filesystem_cache_if_exists_otherwise_bypass_cache", default: "0" },
+        { name: "read_from_page_cache_if_exists_otherwise_bypass_cache", path: "/read-from#read_from_page_cache_if_exists_otherwise_bypass_cache", default: "0" }
       ],
       children: []
     },
@@ -2344,10 +2388,10 @@ const SessionSettingsExplorer = () => {
       label: "read_in_*",
       count: 4,
       settings: [
-        { name: "read_in_order_two_level_merge_threshold", href: "/zh/reference/settings/session-settings/read-in#read_in_order_two_level_merge_threshold" },
-        { name: "read_in_order_use_buffering", href: "/zh/reference/settings/session-settings/read-in#read_in_order_use_buffering" },
-        { name: "read_in_order_use_virtual_row", href: "/zh/reference/settings/session-settings/read-in#read_in_order_use_virtual_row" },
-        { name: "read_in_order_use_virtual_row_per_block", href: "/zh/reference/settings/session-settings/read-in#read_in_order_use_virtual_row_per_block" }
+        { name: "read_in_order_two_level_merge_threshold", path: "/read-in#read_in_order_two_level_merge_threshold", default: "100" },
+        { name: "read_in_order_use_buffering", path: "/read-in#read_in_order_use_buffering", default: "1" },
+        { name: "read_in_order_use_virtual_row", path: "/read-in#read_in_order_use_virtual_row", default: "1" },
+        { name: "read_in_order_use_virtual_row_per_block", path: "/read-in#read_in_order_use_virtual_row_per_block", default: "0" }
       ],
       children: []
     },
@@ -2355,18 +2399,20 @@ const SessionSettingsExplorer = () => {
       label: "read_overflow_mode_*",
       count: 2,
       settings: [
-        { name: "read_overflow_mode", href: "/zh/reference/settings/session-settings/read-overflow-mode#read_overflow_mode" },
-        { name: "read_overflow_mode_leaf", href: "/zh/reference/settings/session-settings/read-overflow-mode#read_overflow_mode_leaf" }
+        { name: "read_overflow_mode", path: "/read-overflow-mode#read_overflow_mode", default: "throw" },
+        { name: "read_overflow_mode_leaf", path: "/read-overflow-mode#read_overflow_mode_leaf", default: "throw" }
       ],
       children: []
     },
     {
       label: "reader_executor_*",
-      count: 3,
+      count: 5,
       settings: [
-        { name: "reader_executor_max_tail_for_drain", href: "/zh/reference/settings/session-settings/reader-executor#reader_executor_max_tail_for_drain" },
-        { name: "reader_executor_min_bytes_for_seek", href: "/zh/reference/settings/session-settings/reader-executor#reader_executor_min_bytes_for_seek" },
-        { name: "reader_executor_use_long_connections", href: "/zh/reference/settings/session-settings/reader-executor#reader_executor_use_long_connections" }
+        { name: "reader_executor_block_size", path: "/reader-executor#reader_executor_block_size", default: "1048576" },
+        { name: "reader_executor_max_tail_for_drain", path: "/reader-executor#reader_executor_max_tail_for_drain", default: "1048576" },
+        { name: "reader_executor_min_bytes_for_seek", path: "/reader-executor#reader_executor_min_bytes_for_seek", default: "2097152" },
+        { name: "reader_executor_use_long_connections", path: "/reader-executor#reader_executor_use_long_connections", default: "0" },
+        { name: "reader_executor_window_size", path: "/reader-executor#reader_executor_window_size", default: "4194304" }
       ],
       children: []
     },
@@ -2374,8 +2420,8 @@ const SessionSettingsExplorer = () => {
       label: "receive_*",
       count: 2,
       settings: [
-        { name: "receive_data_timeout_ms", href: "/zh/reference/settings/session-settings/receive#receive_data_timeout_ms" },
-        { name: "receive_timeout", href: "/zh/reference/settings/session-settings/receive#receive_timeout" }
+        { name: "receive_data_timeout_ms", path: "/receive#receive_data_timeout_ms", default: "2000" },
+        { name: "receive_timeout", path: "/receive#receive_timeout", default: "300" }
       ],
       children: []
     },
@@ -2383,9 +2429,9 @@ const SessionSettingsExplorer = () => {
       label: "regexp_dict_*",
       count: 3,
       settings: [
-        { name: "regexp_dict_allow_hyperscan", href: "/zh/reference/settings/session-settings/regexp-dict#regexp_dict_allow_hyperscan" },
-        { name: "regexp_dict_flag_case_insensitive", href: "/zh/reference/settings/session-settings/regexp-dict#regexp_dict_flag_case_insensitive" },
-        { name: "regexp_dict_flag_dotall", href: "/zh/reference/settings/session-settings/regexp-dict#regexp_dict_flag_dotall" }
+        { name: "regexp_dict_allow_hyperscan", path: "/regexp-dict#regexp_dict_allow_hyperscan", default: "1" },
+        { name: "regexp_dict_flag_case_insensitive", path: "/regexp-dict#regexp_dict_flag_case_insensitive", default: "0" },
+        { name: "regexp_dict_flag_dotall", path: "/regexp-dict#regexp_dict_flag_dotall", default: "0" }
       ],
       children: []
     },
@@ -2393,8 +2439,8 @@ const SessionSettingsExplorer = () => {
       label: "remote_filesystem_*",
       count: 2,
       settings: [
-        { name: "remote_filesystem_read_method", href: "/zh/reference/settings/session-settings/remote-filesystem#remote_filesystem_read_method" },
-        { name: "remote_filesystem_read_prefetch", href: "/zh/reference/settings/session-settings/remote-filesystem#remote_filesystem_read_prefetch" }
+        { name: "remote_filesystem_read_method", path: "/remote-filesystem#remote_filesystem_read_method", default: "threadpool" },
+        { name: "remote_filesystem_read_prefetch", path: "/remote-filesystem#remote_filesystem_read_prefetch", default: "1" }
       ],
       children: []
     },
@@ -2402,8 +2448,8 @@ const SessionSettingsExplorer = () => {
       label: "remote_fs_*",
       count: 2,
       settings: [
-        { name: "remote_fs_read_backoff_max_tries", href: "/zh/reference/settings/session-settings/remote-fs#remote_fs_read_backoff_max_tries" },
-        { name: "remote_fs_read_max_backoff_ms", href: "/zh/reference/settings/session-settings/remote-fs#remote_fs_read_max_backoff_ms" }
+        { name: "remote_fs_read_backoff_max_tries", path: "/remote-fs#remote_fs_read_backoff_max_tries", default: "5" },
+        { name: "remote_fs_read_max_backoff_ms", path: "/remote-fs#remote_fs_read_max_backoff_ms", default: "10000" }
       ],
       children: []
     },
@@ -2411,8 +2457,8 @@ const SessionSettingsExplorer = () => {
       label: "replace_running_query_*",
       count: 2,
       settings: [
-        { name: "replace_running_query", href: "/zh/reference/settings/session-settings/replace-running-query#replace_running_query" },
-        { name: "replace_running_query_max_wait_ms", href: "/zh/reference/settings/session-settings/replace-running-query#replace_running_query_max_wait_ms" }
+        { name: "replace_running_query", path: "/replace-running-query#replace_running_query", default: "0" },
+        { name: "replace_running_query_max_wait_ms", path: "/replace-running-query#replace_running_query_max_wait_ms", default: "5000" }
       ],
       children: []
     },
@@ -2420,9 +2466,9 @@ const SessionSettingsExplorer = () => {
       label: "restore_replace_*",
       count: 3,
       settings: [
-        { name: "restore_replace_external_dictionary_source_to_null", href: "/zh/reference/settings/session-settings/restore-replace#restore_replace_external_dictionary_source_to_null" },
-        { name: "restore_replace_external_engines_to_null", href: "/zh/reference/settings/session-settings/restore-replace#restore_replace_external_engines_to_null" },
-        { name: "restore_replace_external_table_functions_to_null", href: "/zh/reference/settings/session-settings/restore-replace#restore_replace_external_table_functions_to_null" }
+        { name: "restore_replace_external_dictionary_source_to_null", path: "/restore-replace#restore_replace_external_dictionary_source_to_null", default: "0" },
+        { name: "restore_replace_external_engines_to_null", path: "/restore-replace#restore_replace_external_engines_to_null", default: "0" },
+        { name: "restore_replace_external_table_functions_to_null", path: "/restore-replace#restore_replace_external_table_functions_to_null", default: "0" }
       ],
       children: []
     },
@@ -2430,31 +2476,32 @@ const SessionSettingsExplorer = () => {
       label: "rewrite_*",
       count: 2,
       settings: [
-        { name: "rewrite_count_distinct_if_with_count_distinct_implementation", href: "/zh/reference/settings/session-settings/rewrite#rewrite_count_distinct_if_with_count_distinct_implementation" },
-        { name: "rewrite_in_to_join", href: "/zh/reference/settings/session-settings/rewrite#rewrite_in_to_join" }
+        { name: "rewrite_count_distinct_if_with_count_distinct_implementation", path: "/rewrite#rewrite_count_distinct_if_with_count_distinct_implementation", default: "0" },
+        { name: "rewrite_in_to_join", path: "/rewrite#rewrite_in_to_join", default: "0" }
       ],
       children: []
     },
     {
       label: "s3_*",
-      count: 16,
+      count: 17,
       settings: [
-        { name: "s3_check_objects_after_upload", href: "/zh/reference/settings/session-settings/s3#s3_check_objects_after_upload" },
-        { name: "s3_connect_timeout_ms", href: "/zh/reference/settings/session-settings/s3#s3_connect_timeout_ms" },
-        { name: "s3_create_new_file_on_insert", href: "/zh/reference/settings/session-settings/s3#s3_create_new_file_on_insert" },
-        { name: "s3_disable_checksum", href: "/zh/reference/settings/session-settings/s3#s3_disable_checksum" },
-        { name: "s3_ignore_file_doesnt_exist", href: "/zh/reference/settings/session-settings/s3#s3_ignore_file_doesnt_exist" },
-        { name: "s3_list_object_keys_size", href: "/zh/reference/settings/session-settings/s3#s3_list_object_keys_size" },
-        { name: "s3_min_upload_part_size", href: "/zh/reference/settings/session-settings/s3#s3_min_upload_part_size" },
-        { name: "s3_path_filter_limit", href: "/zh/reference/settings/session-settings/s3#s3_path_filter_limit" },
-        { name: "s3_request_timeout_ms", href: "/zh/reference/settings/session-settings/s3#s3_request_timeout_ms" },
-        { name: "s3_skip_empty_files", href: "/zh/reference/settings/session-settings/s3#s3_skip_empty_files" },
-        { name: "s3_slow_all_threads_after_network_error", href: "/zh/reference/settings/session-settings/s3#s3_slow_all_threads_after_network_error" },
-        { name: "s3_strict_upload_part_size", href: "/zh/reference/settings/session-settings/s3#s3_strict_upload_part_size" },
-        { name: "s3_throw_on_zero_files_match", href: "/zh/reference/settings/session-settings/s3#s3_throw_on_zero_files_match" },
-        { name: "s3_truncate_on_insert", href: "/zh/reference/settings/session-settings/s3#s3_truncate_on_insert" },
-        { name: "s3_uri_style", href: "/zh/reference/settings/session-settings/s3#s3_uri_style" },
-        { name: "s3_use_adaptive_timeouts", href: "/zh/reference/settings/session-settings/s3#s3_use_adaptive_timeouts" }
+        { name: "s3_base", path: "/s3#s3_base", default: '""' },
+        { name: "s3_check_objects_after_upload", path: "/s3#s3_check_objects_after_upload", default: "0" },
+        { name: "s3_connect_timeout_ms", path: "/s3#s3_connect_timeout_ms", default: "1000" },
+        { name: "s3_create_new_file_on_insert", path: "/s3#s3_create_new_file_on_insert", default: "0" },
+        { name: "s3_disable_checksum", path: "/s3#s3_disable_checksum", default: "0" },
+        { name: "s3_ignore_file_doesnt_exist", path: "/s3#s3_ignore_file_doesnt_exist", default: "0" },
+        { name: "s3_list_object_keys_size", path: "/s3#s3_list_object_keys_size", default: "1000" },
+        { name: "s3_min_upload_part_size", path: "/s3#s3_min_upload_part_size", default: "16777216" },
+        { name: "s3_path_filter_limit", path: "/s3#s3_path_filter_limit", default: "1000" },
+        { name: "s3_request_timeout_ms", path: "/s3#s3_request_timeout_ms", default: "30000" },
+        { name: "s3_skip_empty_files", path: "/s3#s3_skip_empty_files", default: "1" },
+        { name: "s3_slow_all_threads_after_network_error", path: "/s3#s3_slow_all_threads_after_network_error", default: "1" },
+        { name: "s3_strict_upload_part_size", path: "/s3#s3_strict_upload_part_size", default: "0" },
+        { name: "s3_throw_on_zero_files_match", path: "/s3#s3_throw_on_zero_files_match", default: "0" },
+        { name: "s3_truncate_on_insert", path: "/s3#s3_truncate_on_insert", default: "0" },
+        { name: "s3_uri_style", path: "/s3#s3_uri_style", default: "auto" },
+        { name: "s3_use_adaptive_timeouts", path: "/s3#s3_use_adaptive_timeouts", default: "1" }
       ],
       children: []
     },
@@ -2462,9 +2509,9 @@ const SessionSettingsExplorer = () => {
       label: "s3_allow_*",
       count: 3,
       settings: [
-        { name: "s3_allow_multipart_copy", href: "/zh/reference/settings/session-settings/s3-allow#s3_allow_multipart_copy" },
-        { name: "s3_allow_parallel_part_upload", href: "/zh/reference/settings/session-settings/s3-allow#s3_allow_parallel_part_upload" },
-        { name: "s3_allow_server_credentials_in_user_queries", href: "/zh/reference/settings/session-settings/s3-allow#s3_allow_server_credentials_in_user_queries" }
+        { name: "s3_allow_multipart_copy", path: "/s3-allow#s3_allow_multipart_copy", default: "1" },
+        { name: "s3_allow_parallel_part_upload", path: "/s3-allow#s3_allow_parallel_part_upload", default: "1" },
+        { name: "s3_allow_server_credentials_in_user_queries", path: "/s3-allow#s3_allow_server_credentials_in_user_queries", default: "0" }
       ],
       children: []
     },
@@ -2472,18 +2519,18 @@ const SessionSettingsExplorer = () => {
       label: "s3_max_*",
       count: 12,
       settings: [
-        { name: "s3_max_connections", href: "/zh/reference/settings/session-settings/s3-max#s3_max_connections" },
-        { name: "s3_max_get_burst", href: "/zh/reference/settings/session-settings/s3-max#s3_max_get_burst" },
-        { name: "s3_max_get_rps", href: "/zh/reference/settings/session-settings/s3-max#s3_max_get_rps" },
-        { name: "s3_max_inflight_parts_for_one_file", href: "/zh/reference/settings/session-settings/s3-max#s3_max_inflight_parts_for_one_file" },
-        { name: "s3_max_part_number", href: "/zh/reference/settings/session-settings/s3-max#s3_max_part_number" },
-        { name: "s3_max_put_burst", href: "/zh/reference/settings/session-settings/s3-max#s3_max_put_burst" },
-        { name: "s3_max_put_rps", href: "/zh/reference/settings/session-settings/s3-max#s3_max_put_rps" },
-        { name: "s3_max_single_operation_copy_size", href: "/zh/reference/settings/session-settings/s3-max#s3_max_single_operation_copy_size" },
-        { name: "s3_max_single_part_upload_size", href: "/zh/reference/settings/session-settings/s3-max#s3_max_single_part_upload_size" },
-        { name: "s3_max_single_read_retries", href: "/zh/reference/settings/session-settings/s3-max#s3_max_single_read_retries" },
-        { name: "s3_max_unexpected_write_error_retries", href: "/zh/reference/settings/session-settings/s3-max#s3_max_unexpected_write_error_retries" },
-        { name: "s3_max_upload_part_size", href: "/zh/reference/settings/session-settings/s3-max#s3_max_upload_part_size" }
+        { name: "s3_max_connections", path: "/s3-max#s3_max_connections", default: "1024" },
+        { name: "s3_max_get_burst", path: "/s3-max#s3_max_get_burst", default: "0" },
+        { name: "s3_max_get_rps", path: "/s3-max#s3_max_get_rps", default: "0" },
+        { name: "s3_max_inflight_parts_for_one_file", path: "/s3-max#s3_max_inflight_parts_for_one_file", default: "20" },
+        { name: "s3_max_part_number", path: "/s3-max#s3_max_part_number", default: "10000" },
+        { name: "s3_max_put_burst", path: "/s3-max#s3_max_put_burst", default: "0" },
+        { name: "s3_max_put_rps", path: "/s3-max#s3_max_put_rps", default: "0" },
+        { name: "s3_max_single_operation_copy_size", path: "/s3-max#s3_max_single_operation_copy_size", default: "33554432" },
+        { name: "s3_max_single_part_upload_size", path: "/s3-max#s3_max_single_part_upload_size", default: "33554432" },
+        { name: "s3_max_single_read_retries", path: "/s3-max#s3_max_single_read_retries", default: "4" },
+        { name: "s3_max_unexpected_write_error_retries", path: "/s3-max#s3_max_unexpected_write_error_retries", default: "4" },
+        { name: "s3_max_upload_part_size", path: "/s3-max#s3_max_upload_part_size", default: "5368709120" }
       ],
       children: []
     },
@@ -2491,8 +2538,8 @@ const SessionSettingsExplorer = () => {
       label: "s3_upload_*",
       count: 2,
       settings: [
-        { name: "s3_upload_part_size_multiply_factor", href: "/zh/reference/settings/session-settings/s3-upload#s3_upload_part_size_multiply_factor" },
-        { name: "s3_upload_part_size_multiply_parts_count_threshold", href: "/zh/reference/settings/session-settings/s3-upload#s3_upload_part_size_multiply_parts_count_threshold" }
+        { name: "s3_upload_part_size_multiply_factor", path: "/s3-upload#s3_upload_part_size_multiply_factor", default: "2" },
+        { name: "s3_upload_part_size_multiply_parts_count_threshold", path: "/s3-upload#s3_upload_part_size_multiply_parts_count_threshold", default: "500" }
       ],
       children: []
     },
@@ -2500,8 +2547,8 @@ const SessionSettingsExplorer = () => {
       label: "s3_validate_*",
       count: 2,
       settings: [
-        { name: "s3_validate_etag_on_read", href: "/zh/reference/settings/session-settings/s3-validate#s3_validate_etag_on_read" },
-        { name: "s3_validate_request_settings", href: "/zh/reference/settings/session-settings/s3-validate#s3_validate_request_settings" }
+        { name: "s3_validate_etag_on_read", path: "/s3-validate#s3_validate_etag_on_read", default: "1" },
+        { name: "s3_validate_request_settings", path: "/s3-validate#s3_validate_request_settings", default: "1" }
       ],
       children: []
     },
@@ -2509,10 +2556,10 @@ const SessionSettingsExplorer = () => {
       label: "s3queue_*",
       count: 4,
       settings: [
-        { name: "s3queue_default_zookeeper_path", href: "/zh/reference/settings/session-settings/s3queue#s3queue_default_zookeeper_path" },
-        { name: "s3queue_enable_logging_to_s3queue_log", href: "/zh/reference/settings/session-settings/s3queue#s3queue_enable_logging_to_s3queue_log" },
-        { name: "s3queue_keeper_fault_injection_probability", href: "/zh/reference/settings/session-settings/s3queue#s3queue_keeper_fault_injection_probability" },
-        { name: "s3queue_migrate_old_metadata_to_buckets", href: "/zh/reference/settings/session-settings/s3queue#s3queue_migrate_old_metadata_to_buckets" }
+        { name: "s3queue_default_zookeeper_path", path: "/s3queue#s3queue_default_zookeeper_path", default: "/clickhouse/s3queue/" },
+        { name: "s3queue_enable_logging_to_s3queue_log", path: "/s3queue#s3queue_enable_logging_to_s3queue_log", default: "0" },
+        { name: "s3queue_keeper_fault_injection_probability", path: "/s3queue#s3queue_keeper_fault_injection_probability", default: "0" },
+        { name: "s3queue_migrate_old_metadata_to_buckets", path: "/s3queue#s3queue_migrate_old_metadata_to_buckets", default: "0" }
       ],
       children: []
     },
@@ -2520,12 +2567,12 @@ const SessionSettingsExplorer = () => {
       label: "schema_inference_*",
       count: 6,
       settings: [
-        { name: "schema_inference_cache_require_modification_time_for_url", href: "/zh/reference/settings/session-settings/schema-inference#schema_inference_cache_require_modification_time_for_url" },
-        { name: "schema_inference_use_cache_for_azure", href: "/zh/reference/settings/session-settings/schema-inference#schema_inference_use_cache_for_azure" },
-        { name: "schema_inference_use_cache_for_file", href: "/zh/reference/settings/session-settings/schema-inference#schema_inference_use_cache_for_file" },
-        { name: "schema_inference_use_cache_for_hdfs", href: "/zh/reference/settings/session-settings/schema-inference#schema_inference_use_cache_for_hdfs" },
-        { name: "schema_inference_use_cache_for_s3", href: "/zh/reference/settings/session-settings/schema-inference#schema_inference_use_cache_for_s3" },
-        { name: "schema_inference_use_cache_for_url", href: "/zh/reference/settings/session-settings/schema-inference#schema_inference_use_cache_for_url" }
+        { name: "schema_inference_cache_require_modification_time_for_url", path: "/schema-inference#schema_inference_cache_require_modification_time_for_url", default: "1" },
+        { name: "schema_inference_use_cache_for_azure", path: "/schema-inference#schema_inference_use_cache_for_azure", default: "1" },
+        { name: "schema_inference_use_cache_for_file", path: "/schema-inference#schema_inference_use_cache_for_file", default: "1" },
+        { name: "schema_inference_use_cache_for_hdfs", path: "/schema-inference#schema_inference_use_cache_for_hdfs", default: "1" },
+        { name: "schema_inference_use_cache_for_s3", path: "/schema-inference#schema_inference_use_cache_for_s3", default: "1" },
+        { name: "schema_inference_use_cache_for_url", path: "/schema-inference#schema_inference_use_cache_for_url", default: "1" }
       ],
       children: []
     },
@@ -2533,10 +2580,10 @@ const SessionSettingsExplorer = () => {
       label: "send_*",
       count: 4,
       settings: [
-        { name: "send_profile_events", href: "/zh/reference/settings/session-settings/send#send_profile_events" },
-        { name: "send_progress_in_http_headers", href: "/zh/reference/settings/session-settings/send#send_progress_in_http_headers" },
-        { name: "send_table_structure_on_insert_with_inline_data", href: "/zh/reference/settings/session-settings/send#send_table_structure_on_insert_with_inline_data" },
-        { name: "send_timeout", href: "/zh/reference/settings/session-settings/send#send_timeout" }
+        { name: "send_profile_events", path: "/send#send_profile_events", default: "1" },
+        { name: "send_progress_in_http_headers", path: "/send#send_progress_in_http_headers", default: "0" },
+        { name: "send_table_structure_on_insert_with_inline_data", path: "/send#send_table_structure_on_insert_with_inline_data", default: "1" },
+        { name: "send_timeout", path: "/send#send_timeout", default: "300" }
       ],
       children: []
     },
@@ -2544,8 +2591,8 @@ const SessionSettingsExplorer = () => {
       label: "send_logs_*",
       count: 2,
       settings: [
-        { name: "send_logs_level", href: "/zh/reference/settings/session-settings/send-logs#send_logs_level" },
-        { name: "send_logs_source_regexp", href: "/zh/reference/settings/session-settings/send-logs#send_logs_source_regexp" }
+        { name: "send_logs_level", path: "/send-logs#send_logs_level", default: "fatal" },
+        { name: "send_logs_source_regexp", path: "/send-logs#send_logs_source_regexp", default: '""' }
       ],
       children: []
     },
@@ -2553,8 +2600,8 @@ const SessionSettingsExplorer = () => {
       label: "serialize_*",
       count: 2,
       settings: [
-        { name: "serialize_query_plan", href: "/zh/reference/settings/session-settings/serialize#serialize_query_plan" },
-        { name: "serialize_string_in_memory_with_zero_byte", href: "/zh/reference/settings/session-settings/serialize#serialize_string_in_memory_with_zero_byte" }
+        { name: "serialize_query_plan", path: "/serialize#serialize_query_plan", default: "0" },
+        { name: "serialize_string_in_memory_with_zero_byte", path: "/serialize#serialize_string_in_memory_with_zero_byte", default: "1" }
       ],
       children: []
     },
@@ -2564,17 +2611,12 @@ const SessionSettingsExplorer = () => {
       settings: [
         {
           name: "shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms",
-          href: "/zh/reference/settings/session-settings/shared-merge#shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms"
+          path: "/shared-merge#shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms",
+          default: "50"
         },
-        {
-          name: "shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms",
-          href: "/zh/reference/settings/session-settings/shared-merge#shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms"
-        },
-        {
-          name: "shared_merge_tree_sequential_consistency_parts_update_max_retries",
-          href: "/zh/reference/settings/session-settings/shared-merge#shared_merge_tree_sequential_consistency_parts_update_max_retries"
-        },
-        { name: "shared_merge_tree_sync_parts_on_partition_operations", href: "/zh/reference/settings/session-settings/shared-merge#shared_merge_tree_sync_parts_on_partition_operations" }
+        { name: "shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms", path: "/shared-merge#shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms", default: "1000" },
+        { name: "shared_merge_tree_sequential_consistency_parts_update_max_retries", path: "/shared-merge#shared_merge_tree_sequential_consistency_parts_update_max_retries", default: "10" },
+        { name: "shared_merge_tree_sync_parts_on_partition_operations", path: "/shared-merge#shared_merge_tree_sync_parts_on_partition_operations", default: "1" }
       ],
       children: []
     },
@@ -2582,12 +2624,9 @@ const SessionSettingsExplorer = () => {
       label: "short_circuit_function_evaluation_*",
       count: 3,
       settings: [
-        { name: "short_circuit_function_evaluation", href: "/zh/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation" },
-        { name: "short_circuit_function_evaluation_for_nulls", href: "/zh/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation_for_nulls" },
-        {
-          name: "short_circuit_function_evaluation_for_nulls_threshold",
-          href: "/zh/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation_for_nulls_threshold"
-        }
+        { name: "short_circuit_function_evaluation", path: "/short-circuit-function-evaluation#short_circuit_function_evaluation", default: "enable" },
+        { name: "short_circuit_function_evaluation_for_nulls", path: "/short-circuit-function-evaluation#short_circuit_function_evaluation_for_nulls", default: "1" },
+        { name: "short_circuit_function_evaluation_for_nulls_threshold", path: "/short-circuit-function-evaluation#short_circuit_function_evaluation_for_nulls_threshold", default: "1" }
       ],
       children: []
     },
@@ -2595,10 +2634,19 @@ const SessionSettingsExplorer = () => {
       label: "show_*",
       count: 4,
       settings: [
-        { name: "show_data_lake_catalogs_in_system_tables", href: "/zh/reference/settings/session-settings/show#show_data_lake_catalogs_in_system_tables" },
-        { name: "show_processlist_include_internal", href: "/zh/reference/settings/session-settings/show#show_processlist_include_internal" },
-        { name: "show_remote_databases_in_system_tables", href: "/zh/reference/settings/session-settings/show#show_remote_databases_in_system_tables" },
-        { name: "show_table_uuid_in_table_create_query_if_not_nil", href: "/zh/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil" }
+        { name: "show_data_lake_catalogs_in_system_tables", path: "/show#show_data_lake_catalogs_in_system_tables", default: "0" },
+        { name: "show_processlist_include_internal", path: "/show#show_processlist_include_internal", default: "1" },
+        { name: "show_remote_databases_in_system_tables", path: "/show#show_remote_databases_in_system_tables", default: "1" },
+        { name: "show_table_uuid_in_table_create_query_if_not_nil", path: "/show#show_table_uuid_in_table_create_query_if_not_nil", default: "0" }
+      ],
+      children: []
+    },
+    {
+      label: "shrink_over_*",
+      count: 2,
+      settings: [
+        { name: "shrink_over_allocated_columns_min_waste_bytes", path: "/shrink-over#shrink_over_allocated_columns_min_waste_bytes", default: "16777216" },
+        { name: "shrink_over_allocated_columns_min_waste_ratio", path: "/shrink-over#shrink_over_allocated_columns_min_waste_ratio", default: "1" }
       ],
       children: []
     },
@@ -2606,8 +2654,8 @@ const SessionSettingsExplorer = () => {
       label: "skip_unavailable_shards_*",
       count: 2,
       settings: [
-        { name: "skip_unavailable_shards", href: "/zh/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards" },
-        { name: "skip_unavailable_shards_mode", href: "/zh/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards_mode" }
+        { name: "skip_unavailable_shards", path: "/skip-unavailable-shards#skip_unavailable_shards", default: "0" },
+        { name: "skip_unavailable_shards_mode", path: "/skip-unavailable-shards#skip_unavailable_shards_mode", default: "unavailable_or_table_missing" }
       ],
       children: []
     },
@@ -2615,8 +2663,8 @@ const SessionSettingsExplorer = () => {
       label: "sleep_in_*",
       count: 2,
       settings: [
-        { name: "sleep_in_send_data_ms", href: "/zh/reference/settings/session-settings/sleep-in#sleep_in_send_data_ms" },
-        { name: "sleep_in_send_tables_status_ms", href: "/zh/reference/settings/session-settings/sleep-in#sleep_in_send_tables_status_ms" }
+        { name: "sleep_in_send_data_ms", path: "/sleep-in#sleep_in_send_data_ms", default: "0" },
+        { name: "sleep_in_send_tables_status_ms", path: "/sleep-in#sleep_in_send_tables_status_ms", default: "0" }
       ],
       children: []
     },
@@ -2624,8 +2672,8 @@ const SessionSettingsExplorer = () => {
       label: "split_*",
       count: 2,
       settings: [
-        { name: "split_intersecting_parts_ranges_into_layers_final", href: "/zh/reference/settings/session-settings/split#split_intersecting_parts_ranges_into_layers_final" },
-        { name: "split_parts_ranges_into_intersecting_and_non_intersecting_final", href: "/zh/reference/settings/session-settings/split#split_parts_ranges_into_intersecting_and_non_intersecting_final" }
+        { name: "split_intersecting_parts_ranges_into_layers_final", path: "/split#split_intersecting_parts_ranges_into_layers_final", default: "1" },
+        { name: "split_parts_ranges_into_intersecting_and_non_intersecting_final", path: "/split#split_parts_ranges_into_intersecting_and_non_intersecting_final", default: "1" }
       ],
       children: []
     },
@@ -2633,8 +2681,8 @@ const SessionSettingsExplorer = () => {
       label: "storage_*",
       count: 2,
       settings: [
-        { name: "storage_file_read_method", href: "/zh/reference/settings/session-settings/storage#storage_file_read_method" },
-        { name: "storage_system_stack_trace_pipe_read_timeout_ms", href: "/zh/reference/settings/session-settings/storage#storage_system_stack_trace_pipe_read_timeout_ms" }
+        { name: "storage_file_read_method", path: "/storage#storage_file_read_method", default: "pread" },
+        { name: "storage_system_stack_trace_pipe_read_timeout_ms", path: "/storage#storage_system_stack_trace_pipe_read_timeout_ms", default: "100" }
       ],
       children: []
     },
@@ -2642,8 +2690,8 @@ const SessionSettingsExplorer = () => {
       label: "stream_*",
       count: 2,
       settings: [
-        { name: "stream_flush_interval_ms", href: "/zh/reference/settings/session-settings/stream#stream_flush_interval_ms" },
-        { name: "stream_poll_timeout_ms", href: "/zh/reference/settings/session-settings/stream#stream_poll_timeout_ms" }
+        { name: "stream_flush_interval_ms", path: "/stream#stream_flush_interval_ms", default: "7500" },
+        { name: "stream_poll_timeout_ms", path: "/stream#stream_poll_timeout_ms", default: "500" }
       ],
       children: []
     },
@@ -2651,8 +2699,8 @@ const SessionSettingsExplorer = () => {
       label: "stream_like_*",
       count: 2,
       settings: [
-        { name: "stream_like_engine_allow_direct_select", href: "/zh/reference/settings/session-settings/stream-like#stream_like_engine_allow_direct_select" },
-        { name: "stream_like_engine_insert_queue", href: "/zh/reference/settings/session-settings/stream-like#stream_like_engine_insert_queue" }
+        { name: "stream_like_engine_allow_direct_select", path: "/stream-like#stream_like_engine_allow_direct_select", default: "0" },
+        { name: "stream_like_engine_insert_queue", path: "/stream-like#stream_like_engine_insert_queue", default: '""' }
       ],
       children: []
     },
@@ -2660,8 +2708,8 @@ const SessionSettingsExplorer = () => {
       label: "system_*",
       count: 2,
       settings: [
-        { name: "system_events_show_zero_values", href: "/zh/reference/settings/session-settings/system#system_events_show_zero_values" },
-        { name: "system_metric_log_show_zero_values_in_histograms", href: "/zh/reference/settings/session-settings/system#system_metric_log_show_zero_values_in_histograms" }
+        { name: "system_events_show_zero_values", path: "/system#system_events_show_zero_values", default: "0" },
+        { name: "system_metric_log_show_zero_values_in_histograms", path: "/system#system_metric_log_show_zero_values_in_histograms", default: "0" }
       ],
       children: []
     },
@@ -2669,8 +2717,8 @@ const SessionSettingsExplorer = () => {
       label: "table_*",
       count: 2,
       settings: [
-        { name: "table_engine_read_through_distributed_cache", href: "/zh/reference/settings/session-settings/table#table_engine_read_through_distributed_cache" },
-        { name: "table_function_remote_max_addresses", href: "/zh/reference/settings/session-settings/table#table_function_remote_max_addresses" }
+        { name: "table_engine_read_through_distributed_cache", path: "/table#table_engine_read_through_distributed_cache", default: "0" },
+        { name: "table_function_remote_max_addresses", path: "/table#table_function_remote_max_addresses", default: "1000" }
       ],
       children: []
     },
@@ -2678,8 +2726,8 @@ const SessionSettingsExplorer = () => {
       label: "temporary_files_*",
       count: 2,
       settings: [
-        { name: "temporary_files_buffer_size", href: "/zh/reference/settings/session-settings/temporary-files#temporary_files_buffer_size" },
-        { name: "temporary_files_codec", href: "/zh/reference/settings/session-settings/temporary-files#temporary_files_codec" }
+        { name: "temporary_files_buffer_size", path: "/temporary-files#temporary_files_buffer_size", default: "1048576" },
+        { name: "temporary_files_codec", path: "/temporary-files#temporary_files_codec", default: "LZ4" }
       ],
       children: []
     },
@@ -2687,21 +2735,22 @@ const SessionSettingsExplorer = () => {
       label: "text_index_*",
       count: 5,
       settings: [
-        { name: "text_index_hint_max_selectivity", href: "/zh/reference/settings/session-settings/text-index#text_index_hint_max_selectivity" },
-        { name: "text_index_lazy_intersection_density_threshold", href: "/zh/reference/settings/session-settings/text-index#text_index_lazy_intersection_density_threshold" },
-        { name: "text_index_like_max_postings_to_read", href: "/zh/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read" },
-        { name: "text_index_like_min_pattern_length", href: "/zh/reference/settings/session-settings/text-index#text_index_like_min_pattern_length" },
-        { name: "text_index_posting_list_apply_mode", href: "/zh/reference/settings/session-settings/text-index#text_index_posting_list_apply_mode" }
+        { name: "text_index_hint_max_selectivity", path: "/text-index#text_index_hint_max_selectivity", default: "0.2" },
+        { name: "text_index_lazy_intersection_density_threshold", path: "/text-index#text_index_lazy_intersection_density_threshold", default: "0.2" },
+        { name: "text_index_like_max_postings_to_read", path: "/text-index#text_index_like_max_postings_to_read", default: "50" },
+        { name: "text_index_like_min_pattern_length", path: "/text-index#text_index_like_min_pattern_length", default: "4" },
+        { name: "text_index_posting_list_apply_mode", path: "/text-index#text_index_posting_list_apply_mode", default: "lazy" }
       ],
       children: []
     },
     {
       label: "throw_on_*",
-      count: 3,
+      count: 4,
       settings: [
-        { name: "throw_on_error_from_cache_on_write_operations", href: "/zh/reference/settings/session-settings/throw-on#throw_on_error_from_cache_on_write_operations" },
-        { name: "throw_on_max_partitions_per_insert_block", href: "/zh/reference/settings/session-settings/throw-on#throw_on_max_partitions_per_insert_block" },
-        { name: "throw_on_unsupported_query_inside_transaction", href: "/zh/reference/settings/session-settings/throw-on#throw_on_unsupported_query_inside_transaction" }
+        { name: "throw_on_error_from_cache_on_write_operations", path: "/throw-on#throw_on_error_from_cache_on_write_operations", default: "0" },
+        { name: "throw_on_hive_partitioning_resolution_failure", path: "/throw-on#throw_on_hive_partitioning_resolution_failure", default: "1" },
+        { name: "throw_on_max_partitions_per_insert_block", path: "/throw-on#throw_on_max_partitions_per_insert_block", default: "1" },
+        { name: "throw_on_unsupported_query_inside_transaction", path: "/throw-on#throw_on_unsupported_query_inside_transaction", default: "1" }
       ],
       children: []
     },
@@ -2709,8 +2758,8 @@ const SessionSettingsExplorer = () => {
       label: "timeout_overflow_mode_*",
       count: 2,
       settings: [
-        { name: "timeout_overflow_mode", href: "/zh/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode" },
-        { name: "timeout_overflow_mode_leaf", href: "/zh/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode_leaf" }
+        { name: "timeout_overflow_mode", path: "/timeout-overflow-mode#timeout_overflow_mode", default: "throw" },
+        { name: "timeout_overflow_mode_leaf", path: "/timeout-overflow-mode#timeout_overflow_mode_leaf", default: "throw" }
       ],
       children: []
     },
@@ -2718,8 +2767,8 @@ const SessionSettingsExplorer = () => {
       label: "totals_*",
       count: 2,
       settings: [
-        { name: "totals_auto_threshold", href: "/zh/reference/settings/session-settings/totals#totals_auto_threshold" },
-        { name: "totals_mode", href: "/zh/reference/settings/session-settings/totals#totals_mode" }
+        { name: "totals_auto_threshold", path: "/totals#totals_auto_threshold", default: "0.5" },
+        { name: "totals_mode", path: "/totals#totals_mode", default: "after_having_exclusive" }
       ],
       children: []
     },
@@ -2727,8 +2776,17 @@ const SessionSettingsExplorer = () => {
       label: "trace_profile_events_*",
       count: 2,
       settings: [
-        { name: "trace_profile_events", href: "/zh/reference/settings/session-settings/trace-profile-events#trace_profile_events" },
-        { name: "trace_profile_events_list", href: "/zh/reference/settings/session-settings/trace-profile-events#trace_profile_events_list" }
+        { name: "trace_profile_events", path: "/trace-profile-events#trace_profile_events", default: "0" },
+        { name: "trace_profile_events_list", path: "/trace-profile-events#trace_profile_events_list", default: '""' }
+      ],
+      children: []
+    },
+    {
+      label: "unique_key_*",
+      count: 2,
+      settings: [
+        { name: "unique_key_max_encoded_size", path: "/unique-key#unique_key_max_encoded_size", default: "256" },
+        { name: "unique_key_probe_implementation", path: "/unique-key#unique_key_probe_implementation", default: "auto" }
       ],
       children: []
     },
@@ -2736,8 +2794,8 @@ const SessionSettingsExplorer = () => {
       label: "update_*",
       count: 2,
       settings: [
-        { name: "update_parallel_mode", href: "/zh/reference/settings/session-settings/update#update_parallel_mode" },
-        { name: "update_sequential_consistency", href: "/zh/reference/settings/session-settings/update#update_sequential_consistency" }
+        { name: "update_parallel_mode", path: "/update#update_parallel_mode", default: "auto" },
+        { name: "update_sequential_consistency", path: "/update#update_sequential_consistency", default: "1" }
       ],
       children: []
     },
@@ -2745,36 +2803,37 @@ const SessionSettingsExplorer = () => {
       label: "url_*",
       count: 2,
       settings: [
-        { name: "url_base", href: "/zh/reference/settings/session-settings/url#url_base" },
-        { name: "url_wildcard_max_directories_to_read", href: "/zh/reference/settings/session-settings/url#url_wildcard_max_directories_to_read" }
+        { name: "url_base", path: "/url#url_base", default: '""' },
+        { name: "url_wildcard_max_directories_to_read", path: "/url#url_wildcard_max_directories_to_read", default: "100000" }
       ],
       children: []
     },
     {
       label: "use_*",
-      count: 21,
+      count: 22,
       settings: [
-        { name: "use_async_executor_for_materialized_views", href: "/zh/reference/settings/session-settings/use#use_async_executor_for_materialized_views" },
-        { name: "use_cache_for_count_from_files", href: "/zh/reference/settings/session-settings/use#use_cache_for_count_from_files" },
-        { name: "use_client_time_zone", href: "/zh/reference/settings/session-settings/use#use_client_time_zone" },
-        { name: "use_compact_format_in_distributed_parts_names", href: "/zh/reference/settings/session-settings/use#use_compact_format_in_distributed_parts_names" },
-        { name: "use_concurrency_control", href: "/zh/reference/settings/session-settings/use#use_concurrency_control" },
-        { name: "use_constant_folding_in_index_analysis", href: "/zh/reference/settings/session-settings/use#use_constant_folding_in_index_analysis" },
-        { name: "use_hash_table_stats_for_join_reordering", href: "/zh/reference/settings/session-settings/use#use_hash_table_stats_for_join_reordering" },
-        { name: "use_hedged_requests", href: "/zh/reference/settings/session-settings/use#use_hedged_requests" },
-        { name: "use_hive_partitioning", href: "/zh/reference/settings/session-settings/use#use_hive_partitioning" },
-        { name: "use_join_disjunctions_push_down", href: "/zh/reference/settings/session-settings/use#use_join_disjunctions_push_down" },
-        { name: "use_legacy_to_time", href: "/zh/reference/settings/session-settings/use#use_legacy_to_time" },
-        { name: "use_lightweight_primary_key_index_analysis", href: "/zh/reference/settings/session-settings/use#use_lightweight_primary_key_index_analysis" },
-        { name: "use_parquet_metadata_cache", href: "/zh/reference/settings/session-settings/use#use_parquet_metadata_cache" },
-        { name: "use_primary_key", href: "/zh/reference/settings/session-settings/use#use_primary_key" },
-        { name: "use_reader_executor", href: "/zh/reference/settings/session-settings/use#use_reader_executor" },
-        { name: "use_roaring_bitmap_iceberg_positional_deletes", href: "/zh/reference/settings/session-settings/use#use_roaring_bitmap_iceberg_positional_deletes" },
-        { name: "use_streaming_marks_compression", href: "/zh/reference/settings/session-settings/use#use_streaming_marks_compression" },
-        { name: "use_strict_insert_block_limits", href: "/zh/reference/settings/session-settings/use#use_strict_insert_block_limits" },
-        { name: "use_structure_from_insertion_table_in_table_functions", href: "/zh/reference/settings/session-settings/use#use_structure_from_insertion_table_in_table_functions" },
-        { name: "use_uncompressed_cache", href: "/zh/reference/settings/session-settings/use#use_uncompressed_cache" },
-        { name: "use_with_fill_by_sorting_prefix", href: "/zh/reference/settings/session-settings/use#use_with_fill_by_sorting_prefix" }
+        { name: "use_async_executor_for_materialized_views", path: "/use#use_async_executor_for_materialized_views", default: "0" },
+        { name: "use_cache_for_count_from_files", path: "/use#use_cache_for_count_from_files", default: "1" },
+        { name: "use_client_time_zone", path: "/use#use_client_time_zone", default: "0" },
+        { name: "use_compact_format_in_distributed_parts_names", path: "/use#use_compact_format_in_distributed_parts_names", default: "1" },
+        { name: "use_concurrency_control", path: "/use#use_concurrency_control", default: "1" },
+        { name: "use_constant_folding_in_index_analysis", path: "/use#use_constant_folding_in_index_analysis", default: "0" },
+        { name: "use_hash_table_stats_for_join_reordering", path: "/use#use_hash_table_stats_for_join_reordering", default: "1" },
+        { name: "use_hedged_requests", path: "/use#use_hedged_requests", default: "1" },
+        { name: "use_hive_partitioning", path: "/use#use_hive_partitioning", default: "1" },
+        { name: "use_indexes_refiner_in_read_pools", path: "/use#use_indexes_refiner_in_read_pools", default: "0" },
+        { name: "use_join_disjunctions_push_down", path: "/use#use_join_disjunctions_push_down", default: "1" },
+        { name: "use_legacy_to_time", path: "/use#use_legacy_to_time", default: "0" },
+        { name: "use_lightweight_primary_key_index_analysis", path: "/use#use_lightweight_primary_key_index_analysis", default: "1" },
+        { name: "use_parquet_metadata_cache", path: "/use#use_parquet_metadata_cache", default: "1" },
+        { name: "use_primary_key", path: "/use#use_primary_key", default: "1" },
+        { name: "use_reader_executor", path: "/use#use_reader_executor", default: "0" },
+        { name: "use_roaring_bitmap_iceberg_positional_deletes", path: "/use#use_roaring_bitmap_iceberg_positional_deletes", default: "0" },
+        { name: "use_streaming_marks_compression", path: "/use#use_streaming_marks_compression", default: "0" },
+        { name: "use_strict_insert_block_limits", path: "/use#use_strict_insert_block_limits", default: "0" },
+        { name: "use_structure_from_insertion_table_in_table_functions", path: "/use#use_structure_from_insertion_table_in_table_functions", default: "2" },
+        { name: "use_uncompressed_cache", path: "/use#use_uncompressed_cache", default: "0" },
+        { name: "use_with_fill_by_sorting_prefix", path: "/use#use_with_fill_by_sorting_prefix", default: "1" }
       ],
       children: []
     },
@@ -2782,8 +2841,8 @@ const SessionSettingsExplorer = () => {
       label: "use_iceberg_*",
       count: 2,
       settings: [
-        { name: "use_iceberg_metadata_files_cache", href: "/zh/reference/settings/session-settings/use-iceberg#use_iceberg_metadata_files_cache" },
-        { name: "use_iceberg_partition_pruning", href: "/zh/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning" }
+        { name: "use_iceberg_metadata_files_cache", path: "/use-iceberg#use_iceberg_metadata_files_cache", default: "1" },
+        { name: "use_iceberg_partition_pruning", path: "/use-iceberg#use_iceberg_partition_pruning", default: "1" }
       ],
       children: []
     },
@@ -2791,8 +2850,8 @@ const SessionSettingsExplorer = () => {
       label: "use_index_for_in_with_subqueries_*",
       count: 2,
       settings: [
-        { name: "use_index_for_in_with_subqueries", href: "/zh/reference/settings/session-settings/use-index-for-in-with-subqueries#use_index_for_in_with_subqueries" },
-        { name: "use_index_for_in_with_subqueries_max_values", href: "/zh/reference/settings/session-settings/use-index-for-in-with-subqueries#use_index_for_in_with_subqueries_max_values" }
+        { name: "use_index_for_in_with_subqueries", path: "/use-index-for-in-with-subqueries#use_index_for_in_with_subqueries", default: "1" },
+        { name: "use_index_for_in_with_subqueries_max_values", path: "/use-index-for-in-with-subqueries#use_index_for_in_with_subqueries_max_values", default: "0" }
       ],
       children: []
     },
@@ -2800,10 +2859,10 @@ const SessionSettingsExplorer = () => {
       label: "use_page_*",
       count: 4,
       settings: [
-        { name: "use_page_cache_for_disks_without_file_cache", href: "/zh/reference/settings/session-settings/use-page#use_page_cache_for_disks_without_file_cache" },
-        { name: "use_page_cache_for_local_disks", href: "/zh/reference/settings/session-settings/use-page#use_page_cache_for_local_disks" },
-        { name: "use_page_cache_for_object_storage", href: "/zh/reference/settings/session-settings/use-page#use_page_cache_for_object_storage" },
-        { name: "use_page_cache_with_distributed_cache", href: "/zh/reference/settings/session-settings/use-page#use_page_cache_with_distributed_cache" }
+        { name: "use_page_cache_for_disks_without_file_cache", path: "/use-page#use_page_cache_for_disks_without_file_cache", default: "0" },
+        { name: "use_page_cache_for_local_disks", path: "/use-page#use_page_cache_for_local_disks", default: "0" },
+        { name: "use_page_cache_for_object_storage", path: "/use-page#use_page_cache_for_object_storage", default: "0" },
+        { name: "use_page_cache_with_distributed_cache", path: "/use-page#use_page_cache_with_distributed_cache", default: "0" }
       ],
       children: []
     },
@@ -2811,8 +2870,8 @@ const SessionSettingsExplorer = () => {
       label: "use_paimon_*",
       count: 2,
       settings: [
-        { name: "use_paimon_metadata_files_cache", href: "/zh/reference/settings/session-settings/use-paimon#use_paimon_metadata_files_cache" },
-        { name: "use_paimon_partition_pruning", href: "/zh/reference/settings/session-settings/use-paimon#use_paimon_partition_pruning" }
+        { name: "use_paimon_metadata_files_cache", path: "/use-paimon#use_paimon_metadata_files_cache", default: "0" },
+        { name: "use_paimon_partition_pruning", path: "/use-paimon#use_paimon_partition_pruning", default: "0" }
       ],
       children: []
     },
@@ -2820,17 +2879,18 @@ const SessionSettingsExplorer = () => {
       label: "use_partition_*",
       count: 2,
       settings: [
-        { name: "use_partition_minmax_for_primary_key_pruning", href: "/zh/reference/settings/session-settings/use-partition#use_partition_minmax_for_primary_key_pruning" },
-        { name: "use_partition_pruning", href: "/zh/reference/settings/session-settings/use-partition#use_partition_pruning" }
+        { name: "use_partition_minmax_for_primary_key_pruning", path: "/use-partition#use_partition_minmax_for_primary_key_pruning", default: "1" },
+        { name: "use_partition_pruning", path: "/use-partition#use_partition_pruning", default: "1" }
       ],
       children: []
     },
     {
       label: "use_query_*",
-      count: 2,
+      count: 3,
       settings: [
-        { name: "use_query_cache", href: "/zh/reference/settings/session-settings/use-query#use_query_cache" },
-        { name: "use_query_condition_cache", href: "/zh/reference/settings/session-settings/use-query#use_query_condition_cache" }
+        { name: "use_query_cache", path: "/use-query#use_query_cache", default: "0" },
+        { name: "use_query_condition_cache", path: "/use-query#use_query_condition_cache", default: "1" },
+        { name: "use_query_condition_cache_for_top_k", path: "/use-query#use_query_condition_cache_for_top_k", default: "1" }
       ],
       children: []
     },
@@ -2838,12 +2898,12 @@ const SessionSettingsExplorer = () => {
       label: "use_skip_indexes_*",
       count: 6,
       settings: [
-        { name: "use_skip_indexes", href: "/zh/reference/settings/session-settings/use-skip-indexes#use_skip_indexes" },
-        { name: "use_skip_indexes_for_disjunctions", href: "/zh/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_for_disjunctions" },
-        { name: "use_skip_indexes_for_top_k", href: "/zh/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_for_top_k" },
-        { name: "use_skip_indexes_if_final", href: "/zh/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_if_final" },
-        { name: "use_skip_indexes_if_final_exact_mode", href: "/zh/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_if_final_exact_mode" },
-        { name: "use_skip_indexes_on_data_read", href: "/zh/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read" }
+        { name: "use_skip_indexes", path: "/use-skip-indexes#use_skip_indexes", default: "1" },
+        { name: "use_skip_indexes_for_disjunctions", path: "/use-skip-indexes#use_skip_indexes_for_disjunctions", default: "1" },
+        { name: "use_skip_indexes_for_top_k", path: "/use-skip-indexes#use_skip_indexes_for_top_k", default: "1" },
+        { name: "use_skip_indexes_if_final", path: "/use-skip-indexes#use_skip_indexes_if_final", default: "1" },
+        { name: "use_skip_indexes_if_final_exact_mode", path: "/use-skip-indexes#use_skip_indexes_if_final_exact_mode", default: "1" },
+        { name: "use_skip_indexes_on_data_read", path: "/use-skip-indexes#use_skip_indexes_on_data_read", default: "1" }
       ],
       children: []
     },
@@ -2851,20 +2911,21 @@ const SessionSettingsExplorer = () => {
       label: "use_statistics_*",
       count: 3,
       settings: [
-        { name: "use_statistics", href: "/zh/reference/settings/session-settings/use-statistics#use_statistics" },
-        { name: "use_statistics_cache", href: "/zh/reference/settings/session-settings/use-statistics#use_statistics_cache" },
-        { name: "use_statistics_for_part_pruning", href: "/zh/reference/settings/session-settings/use-statistics#use_statistics_for_part_pruning" }
+        { name: "use_statistics", path: "/use-statistics#use_statistics", default: "1" },
+        { name: "use_statistics_cache", path: "/use-statistics#use_statistics_cache", default: "1" },
+        { name: "use_statistics_for_part_pruning", path: "/use-statistics#use_statistics_for_part_pruning", default: "1" }
       ],
       children: []
     },
     {
       label: "use_text_*",
-      count: 4,
+      count: 5,
       settings: [
-        { name: "use_text_index_header_cache", href: "/zh/reference/settings/session-settings/use-text#use_text_index_header_cache" },
-        { name: "use_text_index_like_evaluation_by_dictionary_scan", href: "/zh/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan" },
-        { name: "use_text_index_postings_cache", href: "/zh/reference/settings/session-settings/use-text#use_text_index_postings_cache" },
-        { name: "use_text_index_tokens_cache", href: "/zh/reference/settings/session-settings/use-text#use_text_index_tokens_cache" }
+        { name: "use_text_index_header_cache", path: "/use-text#use_text_index_header_cache", default: "1" },
+        { name: "use_text_index_like_evaluation_by_dictionary_scan", path: "/use-text#use_text_index_like_evaluation_by_dictionary_scan", default: "1" },
+        { name: "use_text_index_negative_tokens_cache", path: "/use-text#use_text_index_negative_tokens_cache", default: "1" },
+        { name: "use_text_index_postings_cache", path: "/use-text#use_text_index_postings_cache", default: "0" },
+        { name: "use_text_index_tokens_cache", path: "/use-text#use_text_index_tokens_cache", default: "1" }
       ],
       children: []
     },
@@ -2872,11 +2933,8 @@ const SessionSettingsExplorer = () => {
       label: "use_top_k_dynamic_filtering_*",
       count: 2,
       settings: [
-        { name: "use_top_k_dynamic_filtering", href: "/zh/reference/settings/session-settings/use-top-k-dynamic-filtering#use_top_k_dynamic_filtering" },
-        {
-          name: "use_top_k_dynamic_filtering_for_variable_length_types",
-          href: "/zh/reference/settings/session-settings/use-top-k-dynamic-filtering#use_top_k_dynamic_filtering_for_variable_length_types"
-        }
+        { name: "use_top_k_dynamic_filtering", path: "/use-top-k-dynamic-filtering#use_top_k_dynamic_filtering", default: "1" },
+        { name: "use_top_k_dynamic_filtering_for_variable_length_types", path: "/use-top-k-dynamic-filtering#use_top_k_dynamic_filtering_for_variable_length_types", default: "0" }
       ],
       children: []
     },
@@ -2884,8 +2942,8 @@ const SessionSettingsExplorer = () => {
       label: "use_variant_*",
       count: 2,
       settings: [
-        { name: "use_variant_as_common_type", href: "/zh/reference/settings/session-settings/use-variant#use_variant_as_common_type" },
-        { name: "use_variant_default_implementation_for_comparisons", href: "/zh/reference/settings/session-settings/use-variant#use_variant_default_implementation_for_comparisons" }
+        { name: "use_variant_as_common_type", path: "/use-variant#use_variant_as_common_type", default: "1" },
+        { name: "use_variant_default_implementation_for_comparisons", path: "/use-variant#use_variant_default_implementation_for_comparisons", default: "1" }
       ],
       children: []
     },
@@ -2893,9 +2951,9 @@ const SessionSettingsExplorer = () => {
       label: "validate_*",
       count: 3,
       settings: [
-        { name: "validate_enum_literals_in_operators", href: "/zh/reference/settings/session-settings/validate#validate_enum_literals_in_operators" },
-        { name: "validate_mutation_query", href: "/zh/reference/settings/session-settings/validate#validate_mutation_query" },
-        { name: "validate_polygons", href: "/zh/reference/settings/session-settings/validate#validate_polygons" }
+        { name: "validate_enum_literals_in_operators", path: "/validate#validate_enum_literals_in_operators", default: "0" },
+        { name: "validate_mutation_query", path: "/validate#validate_mutation_query", default: "1" },
+        { name: "validate_polygons", path: "/validate#validate_polygons", default: "1" }
       ],
       children: []
     },
@@ -2903,10 +2961,10 @@ const SessionSettingsExplorer = () => {
       label: "vector_search_*",
       count: 4,
       settings: [
-        { name: "vector_search_filter_strategy", href: "/zh/reference/settings/session-settings/vector-search#vector_search_filter_strategy" },
-        { name: "vector_search_index_fetch_multiplier", href: "/zh/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier" },
-        { name: "vector_search_use_quantized_codes", href: "/zh/reference/settings/session-settings/vector-search#vector_search_use_quantized_codes" },
-        { name: "vector_search_with_rescoring", href: "/zh/reference/settings/session-settings/vector-search#vector_search_with_rescoring" }
+        { name: "vector_search_filter_strategy", path: "/vector-search#vector_search_filter_strategy", default: "auto" },
+        { name: "vector_search_index_fetch_multiplier", path: "/vector-search#vector_search_index_fetch_multiplier", default: "1" },
+        { name: "vector_search_use_quantized_codes", path: "/vector-search#vector_search_use_quantized_codes", default: "0" },
+        { name: "vector_search_with_rescoring", path: "/vector-search#vector_search_with_rescoring", default: "0" }
       ],
       children: []
     },
@@ -2914,10 +2972,10 @@ const SessionSettingsExplorer = () => {
       label: "wait_for_*",
       count: 4,
       settings: [
-        { name: "wait_for_async_insert", href: "/zh/reference/settings/session-settings/wait-for#wait_for_async_insert" },
-        { name: "wait_for_async_insert_timeout", href: "/zh/reference/settings/session-settings/wait-for#wait_for_async_insert_timeout" },
-        { name: "wait_for_part_commit_in_dependent_materialized_views", href: "/zh/reference/settings/session-settings/wait-for#wait_for_part_commit_in_dependent_materialized_views" },
-        { name: "wait_for_window_view_fire_signal_timeout", href: "/zh/reference/settings/session-settings/wait-for#wait_for_window_view_fire_signal_timeout" }
+        { name: "wait_for_async_insert", path: "/wait-for#wait_for_async_insert", default: "1" },
+        { name: "wait_for_async_insert_timeout", path: "/wait-for#wait_for_async_insert_timeout", default: "120" },
+        { name: "wait_for_part_commit_in_dependent_materialized_views", path: "/wait-for#wait_for_part_commit_in_dependent_materialized_views", default: "0" },
+        { name: "wait_for_window_view_fire_signal_timeout", path: "/wait-for#wait_for_window_view_fire_signal_timeout", default: "10" }
       ],
       children: []
     },
@@ -2925,10 +2983,10 @@ const SessionSettingsExplorer = () => {
       label: "webassembly_udf_*",
       count: 4,
       settings: [
-        { name: "webassembly_udf_max_fuel", href: "/zh/reference/settings/session-settings/webassembly-udf#webassembly_udf_max_fuel" },
-        { name: "webassembly_udf_max_input_block_size", href: "/zh/reference/settings/session-settings/webassembly-udf#webassembly_udf_max_input_block_size" },
-        { name: "webassembly_udf_max_instances", href: "/zh/reference/settings/session-settings/webassembly-udf#webassembly_udf_max_instances" },
-        { name: "webassembly_udf_max_memory", href: "/zh/reference/settings/session-settings/webassembly-udf#webassembly_udf_max_memory" }
+        { name: "webassembly_udf_max_fuel", path: "/webassembly-udf#webassembly_udf_max_fuel", default: "100000" },
+        { name: "webassembly_udf_max_input_block_size", path: "/webassembly-udf#webassembly_udf_max_input_block_size", default: "0" },
+        { name: "webassembly_udf_max_instances", path: "/webassembly-udf#webassembly_udf_max_instances", default: "32" },
+        { name: "webassembly_udf_max_memory", path: "/webassembly-udf#webassembly_udf_max_memory", default: "134217728" }
       ],
       children: []
     },
@@ -2936,8 +2994,8 @@ const SessionSettingsExplorer = () => {
       label: "window_view_*",
       count: 2,
       settings: [
-        { name: "window_view_clean_interval", href: "/zh/reference/settings/session-settings/window-view#window_view_clean_interval" },
-        { name: "window_view_heartbeat_interval", href: "/zh/reference/settings/session-settings/window-view#window_view_heartbeat_interval" }
+        { name: "window_view_clean_interval", path: "/window-view#window_view_clean_interval", default: "60" },
+        { name: "window_view_heartbeat_interval", path: "/window-view#window_view_heartbeat_interval", default: "15" }
       ],
       children: []
     },
@@ -2945,1462 +3003,158 @@ const SessionSettingsExplorer = () => {
       label: "write_through_distributed_cache_*",
       count: 2,
       settings: [
-        { name: "write_through_distributed_cache", href: "/zh/reference/settings/session-settings/write-through-distributed-cache#write_through_distributed_cache" },
-        { name: "write_through_distributed_cache_buffer_size", href: "/zh/reference/settings/session-settings/write-through-distributed-cache#write_through_distributed_cache_buffer_size" }
+        { name: "write_through_distributed_cache", path: "/write-through-distributed-cache#write_through_distributed_cache", default: "0" },
+        { name: "write_through_distributed_cache_buffer_size", path: "/write-through-distributed-cache#write_through_distributed_cache_buffer_size", default: "0" }
       ],
       children: []
     },
     {
-      label: "Other",
-      count: 121,
+      label: "其他",
+      count: 131,
       settings: [
-        { name: "add_http_cors_header", href: "/zh/reference/settings/session-settings/other#add_http_cors_header" },
-        { name: "analyze_index_with_space_filling_curves", href: "/zh/reference/settings/session-settings/other#analyze_index_with_space_filling_curves" },
-        { name: "analyzer_inline_views", href: "/zh/reference/settings/session-settings/other#analyzer_inline_views" },
-        { name: "any_join_distinct_right_table_keys", href: "/zh/reference/settings/session-settings/other#any_join_distinct_right_table_keys" },
-        { name: "archive_adaptive_buffer_max_size_bytes", href: "/zh/reference/settings/session-settings/other#archive_adaptive_buffer_max_size_bytes" },
-        { name: "arrow_flight_request_descriptor_type", href: "/zh/reference/settings/session-settings/other#arrow_flight_request_descriptor_type" },
-        { name: "backup_slow_all_threads_after_retryable_s3_error", href: "/zh/reference/settings/session-settings/other#backup_slow_all_threads_after_retryable_s3_error" },
-        { name: "cache_warmer_threads", href: "/zh/reference/settings/session-settings/other#cache_warmer_threads" },
-        { name: "calculate_text_stack_trace", href: "/zh/reference/settings/session-settings/other#calculate_text_stack_trace" },
-        { name: "cancel_http_readonly_queries_on_client_close", href: "/zh/reference/settings/session-settings/other#cancel_http_readonly_queries_on_client_close" },
-        { name: "checksum_on_read", href: "/zh/reference/settings/session-settings/other#checksum_on_read" },
-        { name: "connection_pool_max_wait_ms", href: "/zh/reference/settings/session-settings/other#connection_pool_max_wait_ms" },
-        { name: "connections_with_failover_max_tries", href: "/zh/reference/settings/session-settings/other#connections_with_failover_max_tries" },
-        { name: "convert_query_to_cnf", href: "/zh/reference/settings/session-settings/other#convert_query_to_cnf" },
-        { name: "count_matches_stop_at_empty_match", href: "/zh/reference/settings/session-settings/other#count_matches_stop_at_empty_match" },
-        { name: "cross_to_inner_join_rewrite", href: "/zh/reference/settings/session-settings/other#cross_to_inner_join_rewrite" },
-        { name: "data_type_default_nullable", href: "/zh/reference/settings/session-settings/other#data_type_default_nullable" },
-        { name: "decimal_check_overflow", href: "/zh/reference/settings/session-settings/other#decimal_check_overflow" },
-        { name: "deduplicate_blocks_in_dependent_materialized_views", href: "/zh/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views" },
-        { name: "defer_partition_pruning_after_final", href: "/zh/reference/settings/session-settings/other#defer_partition_pruning_after_final" },
-        { name: "describe_compact_output", href: "/zh/reference/settings/session-settings/other#describe_compact_output" },
-        { name: "dialect", href: "/zh/reference/settings/session-settings/other#dialect" },
-        { name: "discard_query_data", href: "/zh/reference/settings/session-settings/other#discard_query_data" },
-        { name: "distinct_overflow_mode", href: "/zh/reference/settings/session-settings/other#distinct_overflow_mode" },
-        { name: "do_not_merge_across_partitions_select_final", href: "/zh/reference/settings/session-settings/other#do_not_merge_across_partitions_select_final" },
-        { name: "dynamic_throw_on_type_mismatch", href: "/zh/reference/settings/session-settings/other#dynamic_throw_on_type_mismatch" },
-        { name: "enforce_strict_identifier_format", href: "/zh/reference/settings/session-settings/other#enforce_strict_identifier_format" },
-        { name: "engine_url_skip_empty_files", href: "/zh/reference/settings/session-settings/other#engine_url_skip_empty_files" },
-        { name: "exact_rows_before_limit", href: "/zh/reference/settings/session-settings/other#exact_rows_before_limit" },
-        { name: "except_default_mode", href: "/zh/reference/settings/session-settings/other#except_default_mode" },
-        { name: "exclude_materialize_skip_indexes_on_insert", href: "/zh/reference/settings/session-settings/other#exclude_materialize_skip_indexes_on_insert" },
-        { name: "execute_exists_as_scalar_subquery", href: "/zh/reference/settings/session-settings/other#execute_exists_as_scalar_subquery" },
-        { name: "explain_query_plan_default", href: "/zh/reference/settings/session-settings/other#explain_query_plan_default" },
-        { name: "extract_key_value_pairs_max_pairs_per_row", href: "/zh/reference/settings/session-settings/other#extract_key_value_pairs_max_pairs_per_row" },
-        { name: "extremes", href: "/zh/reference/settings/session-settings/other#extremes" },
-        { name: "fallback_to_stale_replicas_for_distributed_queries", href: "/zh/reference/settings/session-settings/other#fallback_to_stale_replicas_for_distributed_queries" },
-        { name: "file_like_engine_default_partition_strategy", href: "/zh/reference/settings/session-settings/other#file_like_engine_default_partition_strategy" },
-        { name: "filesystem_prefetches_limit", href: "/zh/reference/settings/session-settings/other#filesystem_prefetches_limit" },
-        { name: "final", href: "/zh/reference/settings/session-settings/other#final" },
-        { name: "finalize_projection_parts_synchronously", href: "/zh/reference/settings/session-settings/other#finalize_projection_parts_synchronously" },
-        { name: "flatten_nested", href: "/zh/reference/settings/session-settings/other#flatten_nested" },
-        { name: "fsync_metadata", href: "/zh/reference/settings/session-settings/other#fsync_metadata" },
-        { name: "functions_h3_default_if_invalid", href: "/zh/reference/settings/session-settings/other#functions_h3_default_if_invalid" },
-        { name: "geo_distance_returns_float64_on_float64_arguments", href: "/zh/reference/settings/session-settings/other#geo_distance_returns_float64_on_float64_arguments" },
-        { name: "geotoh3_argument_order", href: "/zh/reference/settings/session-settings/other#geotoh3_argument_order" },
-        { name: "glob_expansion_max_elements", href: "/zh/reference/settings/session-settings/other#glob_expansion_max_elements" },
-        { name: "h3togeo_lon_lat_result_order", href: "/zh/reference/settings/session-settings/other#h3togeo_lon_lat_result_order" },
-        { name: "handshake_timeout_ms", href: "/zh/reference/settings/session-settings/other#handshake_timeout_ms" },
-        { name: "hedged_connection_timeout_ms", href: "/zh/reference/settings/session-settings/other#hedged_connection_timeout_ms" },
-        { name: "highlight_max_matches_per_row", href: "/zh/reference/settings/session-settings/other#highlight_max_matches_per_row" },
-        { name: "hnsw_candidate_list_size_for_search", href: "/zh/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search" },
-        { name: "hsts_max_age", href: "/zh/reference/settings/session-settings/other#hsts_max_age" },
-        { name: "idle_connection_timeout", href: "/zh/reference/settings/session-settings/other#idle_connection_timeout" },
-        { name: "inject_random_order_for_select_without_order_by", href: "/zh/reference/settings/session-settings/other#inject_random_order_for_select_without_order_by" },
-        { name: "interactive_delay", href: "/zh/reference/settings/session-settings/other#interactive_delay" },
-        { name: "intersect_default_mode", href: "/zh/reference/settings/session-settings/other#intersect_default_mode" },
-        { name: "least_greatest_legacy_null_behavior", href: "/zh/reference/settings/session-settings/other#least_greatest_legacy_null_behavior" },
-        { name: "legacy_column_name_of_tuple_literal", href: "/zh/reference/settings/session-settings/other#legacy_column_name_of_tuple_literal" },
-        { name: "limit", href: "/zh/reference/settings/session-settings/other#limit" },
-        { name: "load_marks_asynchronously", href: "/zh/reference/settings/session-settings/other#load_marks_asynchronously" },
-        { name: "lock_acquire_timeout", href: "/zh/reference/settings/session-settings/other#lock_acquire_timeout" },
-        { name: "low_priority_query_wait_time_ms", href: "/zh/reference/settings/session-settings/other#low_priority_query_wait_time_ms" },
-        { name: "make_distributed_plan", href: "/zh/reference/settings/session-settings/other#make_distributed_plan" },
-        { name: "merge_table_max_tables_to_look_for_schema_inference", href: "/zh/reference/settings/session-settings/other#merge_table_max_tables_to_look_for_schema_inference" },
-        { name: "mongodb_throw_on_unsupported_query", href: "/zh/reference/settings/session-settings/other#mongodb_throw_on_unsupported_query" },
-        { name: "multiple_joins_try_to_keep_original_names", href: "/zh/reference/settings/session-settings/other#multiple_joins_try_to_keep_original_names" },
-        { name: "normalize_function_names", href: "/zh/reference/settings/session-settings/other#normalize_function_names" },
-        { name: "offset", href: "/zh/reference/settings/session-settings/other#offset" },
-        { name: "paimon_target_snapshot_id", href: "/zh/reference/settings/session-settings/other#paimon_target_snapshot_id" },
-        { name: "parallelize_output_from_storages", href: "/zh/reference/settings/session-settings/other#parallelize_output_from_storages" },
-        { name: "partial_result_on_first_cancel", href: "/zh/reference/settings/session-settings/other#partial_result_on_first_cancel" },
-        { name: "per_part_index_stats", href: "/zh/reference/settings/session-settings/other#per_part_index_stats" },
-        { name: "poll_interval", href: "/zh/reference/settings/session-settings/other#poll_interval" },
-        { name: "polyglot_dialect", href: "/zh/reference/settings/session-settings/other#polyglot_dialect" },
-        { name: "postgresql_fault_injection_probability", href: "/zh/reference/settings/session-settings/other#postgresql_fault_injection_probability" },
-        { name: "predicate_statistics_sample_rate", href: "/zh/reference/settings/session-settings/other#predicate_statistics_sample_rate" },
-        { name: "prefetch_buffer_size", href: "/zh/reference/settings/session-settings/other#prefetch_buffer_size" },
-        { name: "print_pretty_type_names", href: "/zh/reference/settings/session-settings/other#print_pretty_type_names" },
-        { name: "priority", href: "/zh/reference/settings/session-settings/other#priority" },
-        { name: "push_external_roles_in_interserver_queries", href: "/zh/reference/settings/session-settings/other#push_external_roles_in_interserver_queries" },
-        { name: "query_metric_log_interval", href: "/zh/reference/settings/session-settings/other#query_metric_log_interval" },
-        { name: "queue_max_wait_ms", href: "/zh/reference/settings/session-settings/other#queue_max_wait_ms" },
-        { name: "rabbitmq_max_wait_ms", href: "/zh/reference/settings/session-settings/other#rabbitmq_max_wait_ms" },
-        { name: "readonly", href: "/zh/reference/settings/session-settings/other#readonly" },
-        { name: "recursive_cte_max_steps_in_type_inference", href: "/zh/reference/settings/session-settings/other#recursive_cte_max_steps_in_type_inference" },
-        { name: "regexp_max_matches_per_row", href: "/zh/reference/settings/session-settings/other#regexp_max_matches_per_row" },
-        { name: "reject_expensive_hyperscan_regexps", href: "/zh/reference/settings/session-settings/other#reject_expensive_hyperscan_regexps" },
-        { name: "remerge_sort_lowered_memory_bytes_ratio", href: "/zh/reference/settings/session-settings/other#remerge_sort_lowered_memory_bytes_ratio" },
-        { name: "remote_read_min_bytes_for_seek", href: "/zh/reference/settings/session-settings/other#remote_read_min_bytes_for_seek" },
-        { name: "rename_files_after_processing", href: "/zh/reference/settings/session-settings/other#rename_files_after_processing" },
-        { name: "replication_wait_for_inactive_replica_timeout", href: "/zh/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout" },
-        { name: "reserve_memory", href: "/zh/reference/settings/session-settings/other#reserve_memory" },
-        { name: "restore_replicated_merge_tree_to_shared_merge_tree", href: "/zh/reference/settings/session-settings/other#restore_replicated_merge_tree_to_shared_merge_tree" },
-        { name: "result_overflow_mode", href: "/zh/reference/settings/session-settings/other#result_overflow_mode" },
-        { name: "rows_before_aggregation", href: "/zh/reference/settings/session-settings/other#rows_before_aggregation" },
-        { name: "secondary_indices_enable_bulk_filtering", href: "/zh/reference/settings/session-settings/other#secondary_indices_enable_bulk_filtering" },
-        { name: "select_sequential_consistency", href: "/zh/reference/settings/session-settings/other#select_sequential_consistency" },
-        { name: "session_timezone", href: "/zh/reference/settings/session-settings/other#session_timezone" },
-        { name: "set_overflow_mode", href: "/zh/reference/settings/session-settings/other#set_overflow_mode" },
-        { name: "single_join_prefer_left_table", href: "/zh/reference/settings/session-settings/other#single_join_prefer_left_table" },
-        { name: "skip_redundant_aliases_in_udf", href: "/zh/reference/settings/session-settings/other#skip_redundant_aliases_in_udf" },
-        { name: "sleep_after_receiving_query_ms", href: "/zh/reference/settings/session-settings/other#sleep_after_receiving_query_ms" },
-        { name: "snappy_mode", href: "/zh/reference/settings/session-settings/other#snappy_mode" },
-        { name: "sort_overflow_mode", href: "/zh/reference/settings/session-settings/other#sort_overflow_mode" },
-        { name: "splitby_max_substrings_includes_remaining_string", href: "/zh/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string" },
-        { name: "stop_refreshable_materialized_views_on_startup", href: "/zh/reference/settings/session-settings/other#stop_refreshable_materialized_views_on_startup" },
-        { name: "tcp_keep_alive_timeout", href: "/zh/reference/settings/session-settings/other#tcp_keep_alive_timeout" },
-        {
-          name: "temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds",
-          href: "/zh/reference/settings/session-settings/other#temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds"
-        },
-        { name: "throw_if_no_data_to_insert", href: "/zh/reference/settings/session-settings/other#throw_if_no_data_to_insert" },
-        { name: "timeout_before_checking_execution_speed", href: "/zh/reference/settings/session-settings/other#timeout_before_checking_execution_speed" },
-        { name: "transfer_overflow_mode", href: "/zh/reference/settings/session-settings/other#transfer_overflow_mode" },
-        { name: "transform_null_in", href: "/zh/reference/settings/session-settings/other#transform_null_in" },
-        { name: "traverse_shadow_remote_data_paths", href: "/zh/reference/settings/session-settings/other#traverse_shadow_remote_data_paths" },
-        { name: "union_default_mode", href: "/zh/reference/settings/session-settings/other#union_default_mode" },
-        { name: "unique_key_max_encoded_size", href: "/zh/reference/settings/session-settings/other#unique_key_max_encoded_size" },
-        { name: "unknown_packet_in_send_data", href: "/zh/reference/settings/session-settings/other#unknown_packet_in_send_data" },
-        { name: "variant_throw_on_type_mismatch", href: "/zh/reference/settings/session-settings/other#variant_throw_on_type_mismatch" },
-        { name: "wait_changes_become_visible_after_commit_mode", href: "/zh/reference/settings/session-settings/other#wait_changes_become_visible_after_commit_mode" },
-        { name: "workload", href: "/zh/reference/settings/session-settings/other#workload" },
-        { name: "write_full_path_in_iceberg_metadata", href: "/zh/reference/settings/session-settings/other#write_full_path_in_iceberg_metadata" },
-        { name: "zstd_window_log_max", href: "/zh/reference/settings/session-settings/other#zstd_window_log_max" }
+        { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
+        { name: "add_http_cors_header", path: "/other#add_http_cors_header", default: "0" },
+        { name: "analyze_index_with_space_filling_curves", path: "/other#analyze_index_with_space_filling_curves", default: "1" },
+        { name: "analyzer_inline_views", path: "/other#analyzer_inline_views", default: "0" },
+        { name: "any_join_distinct_right_table_keys", path: "/other#any_join_distinct_right_table_keys", default: "0" },
+        { name: "archive_adaptive_buffer_max_size_bytes", path: "/other#archive_adaptive_buffer_max_size_bytes", default: "8388608" },
+        { name: "arrow_flight_request_descriptor_type", path: "/other#arrow_flight_request_descriptor_type", default: "path" },
+        { name: "backup_slow_all_threads_after_retryable_s3_error", path: "/other#backup_slow_all_threads_after_retryable_s3_error", default: "0" },
+        { name: "cache_warmer_threads", path: "/other#cache_warmer_threads", default: "4" },
+        { name: "calculate_text_stack_trace", path: "/other#calculate_text_stack_trace", default: "1" },
+        { name: "cancel_http_readonly_queries_on_client_close", path: "/other#cancel_http_readonly_queries_on_client_close", default: "0" },
+        { name: "checksum_on_read", path: "/other#checksum_on_read", default: "1" },
+        { name: "compression", path: "/other#compression", default: '""' },
+        { name: "connection_pool_max_wait_ms", path: "/other#connection_pool_max_wait_ms", default: "0" },
+        { name: "connections_with_failover_max_tries", path: "/other#connections_with_failover_max_tries", default: "3" },
+        { name: "convert_query_to_cnf", path: "/other#convert_query_to_cnf", default: "0" },
+        { name: "count_matches_stop_at_empty_match", path: "/other#count_matches_stop_at_empty_match", default: "0" },
+        { name: "cross_to_inner_join_rewrite", path: "/other#cross_to_inner_join_rewrite", default: "1" },
+        { name: "data_type_default_nullable", path: "/other#data_type_default_nullable", default: "0" },
+        { name: "decimal_check_overflow", path: "/other#decimal_check_overflow", default: "1" },
+        { name: "deduplicate_blocks_in_dependent_materialized_views", path: "/other#deduplicate_blocks_in_dependent_materialized_views", default: "1" },
+        { name: "defer_partition_pruning_after_final", path: "/other#defer_partition_pruning_after_final", default: "1" },
+        { name: "describe_compact_output", path: "/other#describe_compact_output", default: "0" },
+        { name: "dialect", path: "/other#dialect", default: "clickhouse" },
+        { name: "discard_query_data", path: "/other#discard_query_data", default: "0" },
+        { name: "distinct_overflow_mode", path: "/other#distinct_overflow_mode", default: "throw" },
+        { name: "do_not_merge_across_partitions_select_final", path: "/other#do_not_merge_across_partitions_select_final", default: "0" },
+        { name: "dynamic_throw_on_type_mismatch", path: "/other#dynamic_throw_on_type_mismatch", default: "1" },
+        { name: "enforce_strict_identifier_format", path: "/other#enforce_strict_identifier_format", default: "0" },
+        { name: "engine_url_skip_empty_files", path: "/other#engine_url_skip_empty_files", default: "0" },
+        { name: "exact_rows_before_limit", path: "/other#exact_rows_before_limit", default: "0" },
+        { name: "except_default_mode", path: "/other#except_default_mode", default: "ALL" },
+        { name: "exclude_materialize_skip_indexes_on_insert", path: "/other#exclude_materialize_skip_indexes_on_insert", default: '""' },
+        { name: "execute_exists_as_scalar_subquery", path: "/other#execute_exists_as_scalar_subquery", default: "1" },
+        { name: "explain_query_plan_default", path: "/other#explain_query_plan_default", default: "pretty" },
+        { name: "extract_key_value_pairs_max_pairs_per_row", path: "/other#extract_key_value_pairs_max_pairs_per_row", default: "1000" },
+        { name: "extremes", path: "/other#extremes", default: "0" },
+        { name: "fallback_to_stale_replicas_for_distributed_queries", path: "/other#fallback_to_stale_replicas_for_distributed_queries", default: "1" },
+        { name: "file_like_engine_default_partition_strategy", path: "/other#file_like_engine_default_partition_strategy", default: "hive" },
+        { name: "filesystem_prefetches_limit", path: "/other#filesystem_prefetches_limit", default: "200" },
+        { name: "filter", path: "/other#filter", default: '""' },
+        { name: "final", path: "/other#final", default: "0" },
+        { name: "finalize_projection_parts_synchronously", path: "/other#finalize_projection_parts_synchronously", default: "0" },
+        { name: "flatten_nested", path: "/other#flatten_nested", default: "1" },
+        { name: "format", path: "/other#format", default: '""' },
+        { name: "framing_output_format", path: "/other#framing_output_format", default: "None" },
+        { name: "fsync_metadata", path: "/other#fsync_metadata", default: "1" },
+        { name: "functions_h3_default_if_invalid", path: "/other#functions_h3_default_if_invalid", default: "0" },
+        { name: "geo_distance_returns_float64_on_float64_arguments", path: "/other#geo_distance_returns_float64_on_float64_arguments", default: "1" },
+        { name: "geotoh3_argument_order", path: "/other#geotoh3_argument_order", default: "lat_lon" },
+        { name: "glob_expansion_max_elements", path: "/other#glob_expansion_max_elements", default: "1000" },
+        { name: "h3togeo_lon_lat_result_order", path: "/other#h3togeo_lon_lat_result_order", default: "0" },
+        { name: "handshake_timeout_ms", path: "/other#handshake_timeout_ms", default: "10000" },
+        { name: "hedged_connection_timeout_ms", path: "/other#hedged_connection_timeout_ms", default: "50" },
+        { name: "highlight_max_matches_per_row", path: "/other#highlight_max_matches_per_row", default: "10000" },
+        { name: "hnsw_candidate_list_size_for_search", path: "/other#hnsw_candidate_list_size_for_search", default: "256" },
+        { name: "hsts_max_age", path: "/other#hsts_max_age", default: "0" },
+        { name: "idle_connection_timeout", path: "/other#idle_connection_timeout", default: "3600" },
+        { name: "inject_random_order_for_select_without_order_by", path: "/other#inject_random_order_for_select_without_order_by", default: "0" },
+        { name: "input_format", path: "/other#input_format", default: '""' },
+        { name: "interactive_delay", path: "/other#interactive_delay", default: "100000" },
+        { name: "intersect_default_mode", path: "/other#intersect_default_mode", default: "ALL" },
+        { name: "least_greatest_legacy_null_behavior", path: "/other#least_greatest_legacy_null_behavior", default: "0" },
+        { name: "legacy_column_name_of_tuple_literal", path: "/other#legacy_column_name_of_tuple_literal", default: "0" },
+        { name: "limit", path: "/other#limit", default: "0" },
+        { name: "load_marks_asynchronously", path: "/other#load_marks_asynchronously", default: "0" },
+        { name: "lock_acquire_timeout", path: "/other#lock_acquire_timeout", default: "120" },
+        { name: "low_priority_query_wait_time_ms", path: "/other#low_priority_query_wait_time_ms", default: "1000" },
+        { name: "make_distributed_plan", path: "/other#make_distributed_plan", default: "0" },
+        { name: "merge_table_max_tables_to_look_for_schema_inference", path: "/other#merge_table_max_tables_to_look_for_schema_inference", default: "1000" },
+        { name: "mongodb_throw_on_unsupported_query", path: "/other#mongodb_throw_on_unsupported_query", default: "1" },
+        { name: "multiple_joins_try_to_keep_original_names", path: "/other#multiple_joins_try_to_keep_original_names", default: "0" },
+        { name: "normalize_function_names", path: "/other#normalize_function_names", default: "1" },
+        { name: "offset", path: "/other#offset", default: "0" },
+        { name: "order", path: "/other#order", default: '""' },
+        { name: "output_format", path: "/other#output_format", default: '""' },
+        { name: "page", path: "/other#page", default: "0" },
+        { name: "paimon_target_snapshot_id", path: "/other#paimon_target_snapshot_id", default: "-1" },
+        { name: "parallelize_output_from_storages", path: "/other#parallelize_output_from_storages", default: "1" },
+        { name: "partial_result_on_first_cancel", path: "/other#partial_result_on_first_cancel", default: "0" },
+        { name: "per_part_index_stats", path: "/other#per_part_index_stats", default: "0" },
+        { name: "poll_interval", path: "/other#poll_interval", default: "10" },
+        { name: "polyglot_dialect", path: "/other#polyglot_dialect", default: '""' },
+        { name: "postgresql_fault_injection_probability", path: "/other#postgresql_fault_injection_probability", default: "0" },
+        { name: "predicate_statistics_sample_rate", path: "/other#predicate_statistics_sample_rate", default: "0" },
+        { name: "prefetch_buffer_size", path: "/other#prefetch_buffer_size", default: "1048576" },
+        { name: "print_pretty_type_names", path: "/other#print_pretty_type_names", default: "1" },
+        { name: "priority", path: "/other#priority", default: "0" },
+        { name: "push_external_roles_in_interserver_queries", path: "/other#push_external_roles_in_interserver_queries", default: "1" },
+        { name: "query_metric_log_interval", path: "/other#query_metric_log_interval", default: "-1" },
+        { name: "queue_max_wait_ms", path: "/other#queue_max_wait_ms", default: "0" },
+        { name: "rabbitmq_max_wait_ms", path: "/other#rabbitmq_max_wait_ms", default: "5000" },
+        { name: "readonly", path: "/other#readonly", default: "0" },
+        { name: "recursive_cte_max_steps_in_type_inference", path: "/other#recursive_cte_max_steps_in_type_inference", default: "10" },
+        { name: "regexp_max_matches_per_row", path: "/other#regexp_max_matches_per_row", default: "1000" },
+        { name: "reject_expensive_hyperscan_regexps", path: "/other#reject_expensive_hyperscan_regexps", default: "1" },
+        { name: "remerge_sort_lowered_memory_bytes_ratio", path: "/other#remerge_sort_lowered_memory_bytes_ratio", default: "2" },
+        { name: "remote_read_min_bytes_for_seek", path: "/other#remote_read_min_bytes_for_seek", default: "4194304" },
+        { name: "rename_files_after_processing", path: "/other#rename_files_after_processing", default: '""' },
+        { name: "replication_wait_for_inactive_replica_timeout", path: "/other#replication_wait_for_inactive_replica_timeout", default: "120" },
+        { name: "reserve_memory", path: "/other#reserve_memory", default: "0" },
+        { name: "restore_replicated_merge_tree_to_shared_merge_tree", path: "/other#restore_replicated_merge_tree_to_shared_merge_tree", default: "0" },
+        { name: "result_overflow_mode", path: "/other#result_overflow_mode", default: "throw" },
+        { name: "rows_before_aggregation", path: "/other#rows_before_aggregation", default: "0" },
+        { name: "secondary_indices_enable_bulk_filtering", path: "/other#secondary_indices_enable_bulk_filtering", default: "1" },
+        { name: "select", path: "/other#select", default: '""' },
+        { name: "select_sequential_consistency", path: "/other#select_sequential_consistency", default: "0" },
+        { name: "session_timezone", path: "/other#session_timezone", default: '""' },
+        { name: "set_overflow_mode", path: "/other#set_overflow_mode", default: "throw" },
+        { name: "single_join_prefer_left_table", path: "/other#single_join_prefer_left_table", default: "1" },
+        { name: "skip_redundant_aliases_in_udf", path: "/other#skip_redundant_aliases_in_udf", default: "0" },
+        { name: "sleep_after_receiving_query_ms", path: "/other#sleep_after_receiving_query_ms", default: "0" },
+        { name: "snappy_mode", path: "/other#snappy_mode", default: "basic" },
+        { name: "sort", path: "/other#sort", default: '""' },
+        { name: "sort_overflow_mode", path: "/other#sort_overflow_mode", default: "throw" },
+        { name: "splitby_max_substrings_includes_remaining_string", path: "/other#splitby_max_substrings_includes_remaining_string", default: "0" },
+        { name: "stop_refreshable_materialized_views_on_startup", path: "/other#stop_refreshable_materialized_views_on_startup", default: "0" },
+        { name: "tcp_keep_alive_timeout", path: "/other#tcp_keep_alive_timeout", default: "290" },
+        { name: "temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds", path: "/other#temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds", default: "600000" },
+        { name: "throw_if_no_data_to_insert", path: "/other#throw_if_no_data_to_insert", default: "1" },
+        { name: "timeout_before_checking_execution_speed", path: "/other#timeout_before_checking_execution_speed", default: "10" },
+        { name: "transfer_overflow_mode", path: "/other#transfer_overflow_mode", default: "throw" },
+        { name: "transform_null_in", path: "/other#transform_null_in", default: "0" },
+        { name: "traverse_shadow_remote_data_paths", path: "/other#traverse_shadow_remote_data_paths", default: "0" },
+        { name: "union_default_mode", path: "/other#union_default_mode", default: '""' },
+        { name: "unknown_packet_in_send_data", path: "/other#unknown_packet_in_send_data", default: "0" },
+        { name: "variant_throw_on_type_mismatch", path: "/other#variant_throw_on_type_mismatch", default: "1" },
+        { name: "wait_changes_become_visible_after_commit_mode", path: "/other#wait_changes_become_visible_after_commit_mode", default: "wait_unknown" },
+        { name: "workload", path: "/other#workload", default: "default" },
+        { name: "write_full_path_in_iceberg_metadata", path: "/other#write_full_path_in_iceberg_metadata", default: "0" },
+        { name: "zstd_window_log_max", path: "/other#zstd_window_log_max", default: "0" }
       ],
       children: []
     }
   ])
-  const [anchorRoutes] = useState(() => ({
-    add_http_cors_header: "/reference/settings/session-settings/other",
-    additional_result_filter: "/reference/settings/session-settings/additional",
-    additional_table_filters: "/reference/settings/session-settings/additional",
-    aggregate_function_input_format: "/reference/settings/session-settings/aggregate",
-    aggregate_functions_null_for_empty: "/reference/settings/session-settings/aggregate",
-    aggregation_in_order_max_block_bytes: "/reference/settings/session-settings/aggregation",
-    aggregation_memory_efficient_merge_threads: "/reference/settings/session-settings/aggregation",
-    ai_function_embedding_default_credentials: "/reference/settings/session-settings/ai-function",
-    ai_function_embedding_max_batch_size: "/reference/settings/session-settings/ai-function",
-    ai_function_max_api_calls_per_query: "/reference/settings/session-settings/ai-function",
-    ai_function_max_input_tokens_per_query: "/reference/settings/session-settings/ai-function",
-    ai_function_max_output_tokens_per_query: "/reference/settings/session-settings/ai-function",
-    ai_function_max_retries: "/reference/settings/session-settings/ai-function",
-    ai_function_request_timeout_sec: "/reference/settings/session-settings/ai-function",
-    ai_function_retry_initial_delay_ms: "/reference/settings/session-settings/ai-function",
-    ai_function_text_default_credentials: "/reference/settings/session-settings/ai-function",
-    ai_function_throw_on_error: "/reference/settings/session-settings/ai-function",
-    ai_function_throw_on_quota_exceeded: "/reference/settings/session-settings/ai-function",
-    allow_aggregate_partitions_independently: "/reference/settings/session-settings/allow",
-    allow_archive_path_syntax: "/reference/settings/session-settings/allow",
-    allow_asynchronous_read_from_io_pool_for_merge_tree: "/reference/settings/session-settings/allow",
-    allow_calculating_subcolumns_sizes_for_merge_tree_reading: "/reference/settings/session-settings/allow",
-    allow_changing_replica_until_first_data_packet: "/reference/settings/session-settings/allow",
-    allow_create_index_without_type: "/reference/settings/session-settings/allow",
-    allow_custom_error_code_in_throwif: "/reference/settings/session-settings/allow",
-    allow_ddl: "/reference/settings/session-settings/allow",
-    allow_deprecated_database_ordinary: "/reference/settings/session-settings/allow-deprecated",
-    allow_deprecated_error_prone_window_functions: "/reference/settings/session-settings/allow-deprecated",
-    allow_deprecated_syntax_for_merge_tree: "/reference/settings/session-settings/allow-deprecated",
-    allow_distributed_ddl: "/reference/settings/session-settings/allow",
-    allow_drop_detached: "/reference/settings/session-settings/allow",
-    allow_dynamic_type_in_join_keys: "/reference/settings/session-settings/allow",
-    allow_execute_multiif_columnar: "/reference/settings/session-settings/allow",
-    allow_experimental_ai_functions: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_analyzer: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_cleanup_old_data_files_compaction: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_codecs: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_correlated_subqueries: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_database_glue_catalog: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_database_hms_catalog: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_database_iceberg: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_database_materialized_postgresql: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_database_paimon_rest_catalog: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_database_unity_catalog: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_delta_kernel_rs: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_delta_lake_writes: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_eval_table_function: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_expire_snapshots: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_funnel_functions: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_geo_types_in_iceberg: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_hash_functions: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_iceberg_compaction: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_join_right_table_sorting: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_json_lazy_type_hints: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_kafka_offsets_storage_in_keeper: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_kusto_dialect: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_materialized_postgresql_table: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_nlp_functions: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_nullable_tuple_type: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_object_storage_queue_hive_partitioning: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_paimon_storage_engine: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_parallel_reading_from_replicas: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_polyglot_dialect: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_prql_dialect: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_time_series_aggregate_functions: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_time_series_table: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_unique_key: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_url_wildcard_from_index_pages: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_window_view: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_ytsaurus_dictionary_source: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_ytsaurus_table_engine: "/reference/settings/session-settings/allow-experimental",
-    allow_experimental_ytsaurus_table_function: "/reference/settings/session-settings/allow-experimental",
-    allow_fuzz_query_functions: "/reference/settings/session-settings/allow",
-    allow_general_join_planning: "/reference/settings/session-settings/allow",
-    allow_get_client_http_header: "/reference/settings/session-settings/allow",
-    allow_hyperscan: "/reference/settings/session-settings/allow",
-    allow_iceberg_remove_orphan_files: "/reference/settings/session-settings/allow",
-    allow_insert_into_iceberg: "/reference/settings/session-settings/allow",
-    allow_introspection_functions: "/reference/settings/session-settings/allow",
-    allow_key_condition_coalesce_rewrite: "/reference/settings/session-settings/allow",
-    allow_limit_by_partitions_independently: "/reference/settings/session-settings/allow",
-    allow_materialized_view_with_bad_select: "/reference/settings/session-settings/allow",
-    allow_minmax_index_for_json: "/reference/settings/session-settings/allow",
-    allow_named_collection_override_by_default: "/reference/settings/session-settings/allow",
-    allow_non_metadata_alters: "/reference/settings/session-settings/allow",
-    allow_nonconst_timezone_arguments: "/reference/settings/session-settings/allow",
-    allow_nondeterministic_mutations: "/reference/settings/session-settings/allow-nondeterministic",
-    allow_nondeterministic_optimize_skip_unused_shards: "/reference/settings/session-settings/allow-nondeterministic",
-    allow_nullable_tuple_in_extracted_subcolumns: "/reference/settings/session-settings/allow",
-    allow_prefetched_read_pool_for_local_filesystem: "/reference/settings/session-settings/allow-prefetched",
-    allow_prefetched_read_pool_for_remote_filesystem: "/reference/settings/session-settings/allow-prefetched",
-    allow_push_predicate_ast_for_distributed_subqueries: "/reference/settings/session-settings/allow-push",
-    allow_push_predicate_when_subquery_contains_with: "/reference/settings/session-settings/allow-push",
-    allow_rank_dense_rank_arguments: "/reference/settings/session-settings/allow",
-    allow_reorder_prewhere_conditions: "/reference/settings/session-settings/allow",
-    allow_replace_partition_from_empty_source: "/reference/settings/session-settings/allow",
-    allow_settings_after_format_in_insert: "/reference/settings/session-settings/allow",
-    allow_simdjson: "/reference/settings/session-settings/allow",
-    allow_special_serialization_kinds_in_output_formats: "/reference/settings/session-settings/allow",
-    allow_statistics: "/reference/settings/session-settings/allow-statistics",
-    allow_statistics_optimize: "/reference/settings/session-settings/allow-statistics",
-    allow_suspicious_codecs: "/reference/settings/session-settings/allow-suspicious",
-    allow_suspicious_fixed_string_types: "/reference/settings/session-settings/allow-suspicious",
-    allow_suspicious_indices: "/reference/settings/session-settings/allow-suspicious",
-    allow_suspicious_low_cardinality_types: "/reference/settings/session-settings/allow-suspicious",
-    allow_suspicious_primary_key: "/reference/settings/session-settings/allow-suspicious",
-    allow_suspicious_ttl_expressions: "/reference/settings/session-settings/allow-suspicious",
-    allow_suspicious_types_in_group_by: "/reference/settings/session-settings/allow-suspicious",
-    allow_suspicious_types_in_order_by: "/reference/settings/session-settings/allow-suspicious",
-    allow_suspicious_variant_types: "/reference/settings/session-settings/allow-suspicious",
-    allow_unrestricted_reads_from_keeper: "/reference/settings/session-settings/allow",
-    alter_move_to_space_execute_async: "/reference/settings/session-settings/alter",
-    alter_partition_verbose_result: "/reference/settings/session-settings/alter",
-    alter_sync: "/reference/settings/session-settings/alter",
-    alter_update_mode: "/reference/settings/session-settings/alter",
-    analyze_index_with_space_filling_curves: "/reference/settings/session-settings/other",
-    analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested: "/reference/settings/session-settings/analyzer-compatibility",
-    analyzer_compatibility_allow_non_aggregate_in_having: "/reference/settings/session-settings/analyzer-compatibility",
-    analyzer_compatibility_join_using_top_level_identifier: "/reference/settings/session-settings/analyzer-compatibility",
-    analyzer_compatibility_prefer_alias_over_subcolumn: "/reference/settings/session-settings/analyzer-compatibility",
-    analyzer_inline_views: "/reference/settings/session-settings/other",
-    any_join_distinct_right_table_keys: "/reference/settings/session-settings/other",
-    apply_deleted_mask: "/reference/settings/session-settings/apply",
-    apply_mutations_on_fly: "/reference/settings/session-settings/apply",
-    apply_patch_parts: "/reference/settings/session-settings/apply-patch-parts",
-    apply_patch_parts_join_cache_buckets: "/reference/settings/session-settings/apply-patch-parts",
-    apply_prewhere_after_final: "/reference/settings/session-settings/apply",
-    apply_row_policy_after_final: "/reference/settings/session-settings/apply",
-    apply_settings_from_server: "/reference/settings/session-settings/apply",
-    archive_adaptive_buffer_max_size_bytes: "/reference/settings/session-settings/other",
-    arrow_flight_request_descriptor_type: "/reference/settings/session-settings/other",
-    ast_fuzzer_any_query: "/reference/settings/session-settings/ast-fuzzer",
-    ast_fuzzer_runs: "/reference/settings/session-settings/ast-fuzzer",
-    asterisk_include_alias_columns: "/reference/settings/session-settings/asterisk-include",
-    asterisk_include_materialized_columns: "/reference/settings/session-settings/asterisk-include",
-    asterisk_include_virtual_columns: "/reference/settings/session-settings/asterisk-include",
-    async_insert: "/reference/settings/session-settings/async-insert",
-    async_insert_busy_timeout_decrease_rate: "/reference/settings/session-settings/async-insert",
-    async_insert_busy_timeout_increase_rate: "/reference/settings/session-settings/async-insert",
-    async_insert_busy_timeout_max_ms: "/reference/settings/session-settings/async-insert",
-    async_insert_busy_timeout_min_ms: "/reference/settings/session-settings/async-insert",
-    async_insert_deduplicate: "/reference/settings/session-settings/async-insert",
-    async_insert_max_data_size: "/reference/settings/session-settings/async-insert",
-    async_insert_max_query_number: "/reference/settings/session-settings/async-insert",
-    async_insert_poll_timeout_ms: "/reference/settings/session-settings/async-insert",
-    async_insert_use_adaptive_busy_timeout: "/reference/settings/session-settings/async-insert",
-    async_query_sending_for_remote: "/reference/settings/session-settings/async",
-    async_socket_for_remote: "/reference/settings/session-settings/async",
-    automatic_parallel_replicas_min_bytes_per_replica: "/reference/settings/session-settings/automatic-parallel",
-    automatic_parallel_replicas_mode: "/reference/settings/session-settings/automatic-parallel",
-    azure_allow_parallel_part_upload: "/reference/settings/session-settings/azure",
-    azure_check_objects_after_upload: "/reference/settings/session-settings/azure",
-    azure_connect_timeout_ms: "/reference/settings/session-settings/azure",
-    azure_create_new_file_on_insert: "/reference/settings/session-settings/azure",
-    azure_ignore_file_doesnt_exist: "/reference/settings/session-settings/azure",
-    azure_list_object_keys_size: "/reference/settings/session-settings/azure",
-    azure_max_blocks_in_multipart_upload: "/reference/settings/session-settings/azure-max",
-    azure_max_get_burst: "/reference/settings/session-settings/azure-max",
-    azure_max_get_rps: "/reference/settings/session-settings/azure-max",
-    azure_max_inflight_parts_for_one_file: "/reference/settings/session-settings/azure-max",
-    azure_max_put_burst: "/reference/settings/session-settings/azure-max",
-    azure_max_put_rps: "/reference/settings/session-settings/azure-max",
-    azure_max_redirects: "/reference/settings/session-settings/azure-max",
-    azure_max_single_part_copy_size: "/reference/settings/session-settings/azure-max",
-    azure_max_single_part_upload_size: "/reference/settings/session-settings/azure-max",
-    azure_max_single_read_retries: "/reference/settings/session-settings/azure-max",
-    azure_max_unexpected_write_error_retries: "/reference/settings/session-settings/azure-max",
-    azure_max_upload_part_size: "/reference/settings/session-settings/azure-max",
-    azure_min_upload_part_size: "/reference/settings/session-settings/azure",
-    azure_request_timeout_ms: "/reference/settings/session-settings/azure",
-    azure_sdk_max_retries: "/reference/settings/session-settings/azure-sdk",
-    azure_sdk_retry_initial_backoff_ms: "/reference/settings/session-settings/azure-sdk",
-    azure_sdk_retry_max_backoff_ms: "/reference/settings/session-settings/azure-sdk",
-    azure_skip_empty_files: "/reference/settings/session-settings/azure",
-    azure_strict_upload_part_size: "/reference/settings/session-settings/azure",
-    azure_throw_on_zero_files_match: "/reference/settings/session-settings/azure",
-    azure_truncate_on_insert: "/reference/settings/session-settings/azure",
-    azure_upload_part_size_multiply_factor: "/reference/settings/session-settings/azure-upload",
-    azure_upload_part_size_multiply_parts_count_threshold: "/reference/settings/session-settings/azure-upload",
-    azure_use_adaptive_timeouts: "/reference/settings/session-settings/azure",
-    backup_restore_batch_size_for_keeper_multi: "/reference/settings/session-settings/backup-restore",
-    backup_restore_batch_size_for_keeper_multiread: "/reference/settings/session-settings/backup-restore",
-    backup_restore_failure_after_host_disconnected_for_seconds: "/reference/settings/session-settings/backup-restore",
-    backup_restore_finish_timeout_after_error_sec: "/reference/settings/session-settings/backup-restore",
-    backup_restore_keeper_fault_injection_probability: "/reference/settings/session-settings/backup-restore",
-    backup_restore_keeper_fault_injection_seed: "/reference/settings/session-settings/backup-restore",
-    backup_restore_keeper_max_retries: "/reference/settings/session-settings/backup-restore",
-    backup_restore_keeper_max_retries_while_handling_error: "/reference/settings/session-settings/backup-restore",
-    backup_restore_keeper_max_retries_while_initializing: "/reference/settings/session-settings/backup-restore",
-    backup_restore_keeper_retry_initial_backoff_ms: "/reference/settings/session-settings/backup-restore",
-    backup_restore_keeper_retry_max_backoff_ms: "/reference/settings/session-settings/backup-restore",
-    backup_restore_keeper_value_max_size: "/reference/settings/session-settings/backup-restore",
-    backup_restore_s3_retry_attempts: "/reference/settings/session-settings/backup-restore",
-    backup_restore_s3_retry_initial_backoff_ms: "/reference/settings/session-settings/backup-restore",
-    backup_restore_s3_retry_jitter_factor: "/reference/settings/session-settings/backup-restore",
-    backup_restore_s3_retry_max_backoff_ms: "/reference/settings/session-settings/backup-restore",
-    backup_slow_all_threads_after_retryable_s3_error: "/reference/settings/session-settings/other",
-    cache_warmer_threads: "/reference/settings/session-settings/other",
-    calculate_text_stack_trace: "/reference/settings/session-settings/other",
-    cancel_http_readonly_queries_on_client_close: "/reference/settings/session-settings/other",
-    cast_ipv4_ipv6_default_on_conversion_error: "/reference/settings/session-settings/cast",
-    cast_keep_nullable: "/reference/settings/session-settings/cast",
-    cast_string_to_date_time_mode: "/reference/settings/session-settings/cast-string",
-    cast_string_to_dynamic_use_inference: "/reference/settings/session-settings/cast-string",
-    cast_string_to_variant_use_inference: "/reference/settings/session-settings/cast-string",
-    check_named_collection_dependencies: "/reference/settings/session-settings/check",
-    check_query_single_value_result: "/reference/settings/session-settings/check",
-    check_referential_table_dependencies: "/reference/settings/session-settings/check",
-    check_table_dependencies: "/reference/settings/session-settings/check",
-    checksum_on_read: "/reference/settings/session-settings/other",
-    cloud_mode: "/reference/settings/session-settings/cloud-mode",
-    cloud_mode_engine: "/reference/settings/session-settings/cloud-mode",
-    cluster_for_parallel_replicas: "/reference/settings/session-settings/cluster",
-    cluster_function_process_archive_on_multiple_nodes: "/reference/settings/session-settings/cluster",
-    cluster_table_function_buckets_batch_size: "/reference/settings/session-settings/cluster-table",
-    cluster_table_function_split_granularity: "/reference/settings/session-settings/cluster-table",
-    collect_hash_table_stats_during_aggregation: "/reference/settings/session-settings/collect-hash",
-    collect_hash_table_stats_during_joins: "/reference/settings/session-settings/collect-hash",
-    compatibility: "/reference/settings/session-settings/compatibility",
-    compatibility_ignore_auto_increment_in_create_table: "/reference/settings/session-settings/compatibility-ignore",
-    compatibility_ignore_collation_in_create_table: "/reference/settings/session-settings/compatibility-ignore",
-    compatibility_s3_presigned_url_query_in_path: "/reference/settings/session-settings/compatibility",
-    compile_aggregate_expressions: "/reference/settings/session-settings/compile",
-    compile_expressions: "/reference/settings/session-settings/compile",
-    compile_regular_expressions: "/reference/settings/session-settings/compile",
-    compile_sort_description: "/reference/settings/session-settings/compile",
-    connect_timeout: "/reference/settings/session-settings/connect-timeout",
-    connect_timeout_with_failover_ms: "/reference/settings/session-settings/connect-timeout",
-    connect_timeout_with_failover_secure_ms: "/reference/settings/session-settings/connect-timeout",
-    connection_pool_max_wait_ms: "/reference/settings/session-settings/other",
-    connections_with_failover_max_tries: "/reference/settings/session-settings/other",
-    convert_query_to_cnf: "/reference/settings/session-settings/other",
-    correlated_subqueries_default_join_kind: "/reference/settings/session-settings/correlated-subqueries",
-    correlated_subqueries_substitute_equivalent_expressions: "/reference/settings/session-settings/correlated-subqueries",
-    correlated_subqueries_use_in_memory_buffer: "/reference/settings/session-settings/correlated-subqueries",
-    count_distinct_implementation: "/reference/settings/session-settings/count-distinct",
-    count_distinct_optimization: "/reference/settings/session-settings/count-distinct",
-    count_matches_stop_at_empty_match: "/reference/settings/session-settings/other",
-    create_if_not_exists: "/reference/settings/session-settings/create",
-    create_index_ignore_unique: "/reference/settings/session-settings/create",
-    create_replicated_merge_tree_fault_injection_probability: "/reference/settings/session-settings/create",
-    create_table_empty_primary_key_by_default: "/reference/settings/session-settings/create",
-    cross_join_min_bytes_to_compress: "/reference/settings/session-settings/cross-join",
-    cross_join_min_rows_to_compress: "/reference/settings/session-settings/cross-join",
-    cross_to_inner_join_rewrite: "/reference/settings/session-settings/other",
-    data_type_default_nullable: "/reference/settings/session-settings/other",
-    database_atomic_wait_for_drop_and_detach_synchronously: "/reference/settings/session-settings/database",
-    database_datalake_require_metadata_access: "/reference/settings/session-settings/database",
-    database_replicated_allow_explicit_uuid: "/reference/settings/session-settings/database-replicated",
-    database_replicated_allow_heavy_create: "/reference/settings/session-settings/database-replicated",
-    database_replicated_allow_only_replicated_engine: "/reference/settings/session-settings/database-replicated",
-    database_replicated_allow_replicated_engine_arguments: "/reference/settings/session-settings/database-replicated",
-    database_replicated_always_detach_permanently: "/reference/settings/session-settings/database-replicated",
-    database_replicated_enforce_synchronous_settings: "/reference/settings/session-settings/database-replicated",
-    database_replicated_initial_query_timeout_sec: "/reference/settings/session-settings/database-replicated",
-    database_shared_drop_table_delay_seconds: "/reference/settings/session-settings/database",
-    dead_blobs_to_delay_insert: "/reference/settings/session-settings/dead-blobs",
-    dead_blobs_to_throw_insert: "/reference/settings/session-settings/dead-blobs",
-    decimal_check_overflow: "/reference/settings/session-settings/other",
-    deduplicate_blocks_in_dependent_materialized_views: "/reference/settings/session-settings/other",
-    deduplicate_insert: "/reference/settings/session-settings/deduplicate-insert",
-    deduplicate_insert_select: "/reference/settings/session-settings/deduplicate-insert",
-    default_materialized_view_sql_security: "/reference/settings/session-settings/default",
-    default_max_bytes_in_join: "/reference/settings/session-settings/default",
-    default_normal_view_sql_security: "/reference/settings/session-settings/default",
-    default_table_engine: "/reference/settings/session-settings/default",
-    default_temporary_table_engine: "/reference/settings/session-settings/default",
-    default_view_definer: "/reference/settings/session-settings/default",
-    defer_partition_pruning_after_final: "/reference/settings/session-settings/other",
-    delta_lake_enable_engine_predicate: "/reference/settings/session-settings/delta-lake",
-    delta_lake_enable_expression_visitor_logging: "/reference/settings/session-settings/delta-lake",
-    delta_lake_insert_max_bytes_in_data_file: "/reference/settings/session-settings/delta-lake",
-    delta_lake_insert_max_rows_in_data_file: "/reference/settings/session-settings/delta-lake",
-    delta_lake_log_metadata: "/reference/settings/session-settings/delta-lake",
-    delta_lake_reload_schema_for_consistency: "/reference/settings/session-settings/delta-lake",
-    delta_lake_snapshot_end_version: "/reference/settings/session-settings/delta-lake",
-    delta_lake_snapshot_start_version: "/reference/settings/session-settings/delta-lake",
-    delta_lake_snapshot_version: "/reference/settings/session-settings/delta-lake",
-    delta_lake_throw_on_engine_predicate_error: "/reference/settings/session-settings/delta-lake",
-    describe_compact_output: "/reference/settings/session-settings/other",
-    describe_include_subcolumns: "/reference/settings/session-settings/describe-include",
-    describe_include_virtual_columns: "/reference/settings/session-settings/describe-include",
-    dialect: "/reference/settings/session-settings/other",
-    dictionary_lazy_load: "/reference/settings/session-settings/dictionary",
-    dictionary_use_async_executor: "/reference/settings/session-settings/dictionary",
-    dictionary_validate_primary_key_type: "/reference/settings/session-settings/dictionary",
-    "disabling-the-setting": "/reference/settings/session-settings/min",
-    discard_query_data: "/reference/settings/session-settings/other",
-    distinct_overflow_mode: "/reference/settings/session-settings/other",
-    distributed_aggregation_memory_efficient: "/reference/settings/session-settings/distributed",
-    distributed_background_insert_batch: "/reference/settings/session-settings/distributed-background",
-    distributed_background_insert_max_sleep_time_ms: "/reference/settings/session-settings/distributed-background",
-    distributed_background_insert_sleep_time_ms: "/reference/settings/session-settings/distributed-background",
-    distributed_background_insert_split_batch_on_failure: "/reference/settings/session-settings/distributed-background",
-    distributed_background_insert_timeout: "/reference/settings/session-settings/distributed-background",
-    distributed_cache_alignment: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_bypass_connection_pool: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_connect_backoff_max_ms: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_connect_backoff_min_ms: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_connect_max_tries: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_connect_timeout_ms: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_credentials_refresh_period_seconds: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_data_packet_ack_window: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_discard_connection_if_unread_data: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_fetch_metrics_only_from_current_az: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_file_cache_name: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_log_mode: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_max_unacked_inflight_packets: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_min_bytes_for_seek: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_pool_behaviour_on_limit: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_prefer_bigger_buffer_size: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_read_only_from_current_az: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_read_request_max_tries: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_receive_response_wait_milliseconds: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_receive_timeout_milliseconds: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_receive_timeout_ms: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_registry_show_certificate_and_signature: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_send_timeout_ms: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_tcp_keep_alive_timeout_ms: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_throw_on_error: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_use_clients_cache_for_read: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_wait_connection_from_pool_milliseconds: "/reference/settings/session-settings/distributed-cache",
-    distributed_cache_write_request_max_tries: "/reference/settings/session-settings/distributed-cache",
-    distributed_connections_pool_size: "/reference/settings/session-settings/distributed",
-    distributed_ddl_entry_format_version: "/reference/settings/session-settings/distributed-ddl",
-    distributed_ddl_output_mode: "/reference/settings/session-settings/distributed-ddl",
-    distributed_ddl_task_timeout: "/reference/settings/session-settings/distributed-ddl",
-    distributed_foreground_insert: "/reference/settings/session-settings/distributed",
-    distributed_group_by_no_merge: "/reference/settings/session-settings/distributed",
-    distributed_index_analysis: "/reference/settings/session-settings/distributed-index-analysis",
-    distributed_index_analysis_for_non_shared_merge_tree: "/reference/settings/session-settings/distributed-index-analysis",
-    distributed_index_analysis_only_on_coordinator: "/reference/settings/session-settings/distributed-index-analysis",
-    distributed_insert_skip_read_only_replicas: "/reference/settings/session-settings/distributed",
-    distributed_plan_default_reader_bucket_count: "/reference/settings/session-settings/distributed-plan",
-    distributed_plan_default_shuffle_join_bucket_count: "/reference/settings/session-settings/distributed-plan",
-    distributed_plan_execute_locally: "/reference/settings/session-settings/distributed-plan",
-    distributed_plan_force_exchange_kind: "/reference/settings/session-settings/distributed-plan",
-    distributed_plan_force_shuffle_aggregation: "/reference/settings/session-settings/distributed-plan",
-    distributed_plan_max_rows_to_broadcast: "/reference/settings/session-settings/distributed-plan",
-    distributed_plan_optimize_exchanges: "/reference/settings/session-settings/distributed-plan",
-    distributed_plan_prefer_replicas_over_workers: "/reference/settings/session-settings/distributed-plan",
-    distributed_plan_workers_num: "/reference/settings/session-settings/distributed-plan",
-    distributed_product_mode: "/reference/settings/session-settings/distributed",
-    distributed_push_down_limit: "/reference/settings/session-settings/distributed",
-    distributed_replica_error_cap: "/reference/settings/session-settings/distributed-replica",
-    distributed_replica_error_half_life: "/reference/settings/session-settings/distributed-replica",
-    distributed_replica_max_ignored_errors: "/reference/settings/session-settings/distributed-replica",
-    do_not_merge_across_partitions_select_final: "/reference/settings/session-settings/other",
-    dynamic_disk_allow_from_env: "/reference/settings/session-settings/dynamic-disk",
-    dynamic_disk_allow_from_zk: "/reference/settings/session-settings/dynamic-disk",
-    dynamic_disk_allow_include: "/reference/settings/session-settings/dynamic-disk",
-    dynamic_throw_on_type_mismatch: "/reference/settings/session-settings/other",
-    empty_result_for_aggregation_by_constant_keys_on_empty_set: "/reference/settings/session-settings/empty-result",
-    empty_result_for_aggregation_by_empty_set: "/reference/settings/session-settings/empty-result",
-    enable_adaptive_memory_spill_scheduler: "/reference/settings/session-settings/enable",
-    enable_add_distinct_to_in_subqueries: "/reference/settings/session-settings/enable",
-    enable_automatic_decision_for_merging_across_partitions_for_final: "/reference/settings/session-settings/enable",
-    enable_blob_storage_log: "/reference/settings/session-settings/enable-blob-storage-log",
-    enable_blob_storage_log_for_read_operations: "/reference/settings/session-settings/enable-blob-storage-log",
-    enable_early_constant_folding: "/reference/settings/session-settings/enable",
-    enable_extended_results_for_datetime_functions: "/reference/settings/session-settings/enable",
-    enable_filesystem_cache: "/reference/settings/session-settings/enable-filesystem",
-    enable_filesystem_cache_log: "/reference/settings/session-settings/enable-filesystem",
-    enable_filesystem_cache_on_write_operations: "/reference/settings/session-settings/enable-filesystem",
-    enable_filesystem_read_prefetches_log: "/reference/settings/session-settings/enable-filesystem",
-    enable_full_text_index: "/reference/settings/session-settings/enable",
-    enable_global_with_statement: "/reference/settings/session-settings/enable",
-    enable_hdfs_pread: "/reference/settings/session-settings/enable",
-    enable_http_compression: "/reference/settings/session-settings/enable",
-    enable_identifier_resolve_cache: "/reference/settings/session-settings/enable",
-    enable_job_stack_trace: "/reference/settings/session-settings/enable",
-    enable_join_fixed_hash_table_conversion: "/reference/settings/session-settings/enable-join",
-    enable_join_runtime_filters: "/reference/settings/session-settings/enable-join",
-    enable_join_runtime_filters_index_analysis: "/reference/settings/session-settings/enable-join",
-    enable_join_transitive_predicates: "/reference/settings/session-settings/enable-join",
-    enable_lazy_columns_replication: "/reference/settings/session-settings/enable",
-    enable_lightweight_delete: "/reference/settings/session-settings/enable-lightweight",
-    enable_lightweight_update: "/reference/settings/session-settings/enable-lightweight",
-    enable_materialized_cte: "/reference/settings/session-settings/enable",
-    enable_memory_bound_merging_of_aggregation_results: "/reference/settings/session-settings/enable",
-    enable_multiple_prewhere_read_steps: "/reference/settings/session-settings/enable",
-    enable_named_columns_in_function_tuple: "/reference/settings/session-settings/enable",
-    enable_optimize_predicate_expression: "/reference/settings/session-settings/enable-optimize-predicate-expression",
-    enable_optimize_predicate_expression_to_final_subquery: "/reference/settings/session-settings/enable-optimize-predicate-expression",
-    enable_order_by_all: "/reference/settings/session-settings/enable",
-    enable_parallel_blocks_marshalling: "/reference/settings/session-settings/enable",
-    enable_parsing_to_custom_serialization: "/reference/settings/session-settings/enable",
-    enable_positional_arguments: "/reference/settings/session-settings/enable-positional-arguments",
-    enable_positional_arguments_for_projections: "/reference/settings/session-settings/enable-positional-arguments",
-    enable_producing_buckets_out_of_order_in_aggregation: "/reference/settings/session-settings/enable",
-    enable_reads_from_query_cache: "/reference/settings/session-settings/enable",
-    enable_s3_requests_logging: "/reference/settings/session-settings/enable",
-    enable_scalar_subquery_optimization: "/reference/settings/session-settings/enable",
-    enable_scopes_for_with_statement: "/reference/settings/session-settings/enable",
-    enable_sharding_aggregator: "/reference/settings/session-settings/enable",
-    enable_shared_storage_snapshot_in_query: "/reference/settings/session-settings/enable",
-    enable_sharing_sets_for_mutations: "/reference/settings/session-settings/enable",
-    enable_software_prefetch_in_aggregation: "/reference/settings/session-settings/enable-software",
-    enable_software_prefetch_in_join: "/reference/settings/session-settings/enable-software",
-    enable_streaming_queries: "/reference/settings/session-settings/enable",
-    enable_time_time64_type: "/reference/settings/session-settings/enable",
-    enable_unaligned_array_join: "/reference/settings/session-settings/enable",
-    enable_url_encoding: "/reference/settings/session-settings/enable",
-    enable_vertical_final: "/reference/settings/session-settings/enable",
-    enable_writes_to_query_cache: "/reference/settings/session-settings/enable",
-    enforce_strict_identifier_format: "/reference/settings/session-settings/other",
-    engine_file_allow_create_multiple_files: "/reference/settings/session-settings/engine-file",
-    engine_file_empty_if_not_exists: "/reference/settings/session-settings/engine-file",
-    engine_file_skip_empty_files: "/reference/settings/session-settings/engine-file",
-    engine_file_truncate_on_insert: "/reference/settings/session-settings/engine-file",
-    engine_url_skip_empty_files: "/reference/settings/session-settings/other",
-    exact_rows_before_limit: "/reference/settings/session-settings/other",
-    example: "/reference/settings/session-settings/other",
-    except_default_mode: "/reference/settings/session-settings/other",
-    exclude_materialize_skip_indexes_on_insert: "/reference/settings/session-settings/other",
-    execute_exists_as_scalar_subquery: "/reference/settings/session-settings/other",
-    explain_query_plan_default: "/reference/settings/session-settings/other",
-    external_storage_connect_timeout_sec: "/reference/settings/session-settings/external-storage",
-    external_storage_max_read_bytes: "/reference/settings/session-settings/external-storage",
-    external_storage_max_read_rows: "/reference/settings/session-settings/external-storage",
-    external_storage_rw_timeout_sec: "/reference/settings/session-settings/external-storage",
-    external_table_functions_use_nulls: "/reference/settings/session-settings/external-table",
-    external_table_strict_query: "/reference/settings/session-settings/external-table",
-    extract_key_value_pairs_max_pairs_per_row: "/reference/settings/session-settings/other",
-    extremes: "/reference/settings/session-settings/other",
-    fallback_to_stale_replicas_for_distributed_queries: "/reference/settings/session-settings/other",
-    file_like_engine_default_partition_strategy: "/reference/settings/session-settings/other",
-    filesystem_cache_allow_background_download: "/reference/settings/session-settings/filesystem-cache",
-    filesystem_cache_boundary_alignment: "/reference/settings/session-settings/filesystem-cache",
-    filesystem_cache_enable_background_download_during_fetch: "/reference/settings/session-settings/filesystem-cache",
-    filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage: "/reference/settings/session-settings/filesystem-cache",
-    filesystem_cache_max_download_size: "/reference/settings/session-settings/filesystem-cache",
-    filesystem_cache_name: "/reference/settings/session-settings/filesystem-cache",
-    filesystem_cache_prefer_bigger_buffer_size: "/reference/settings/session-settings/filesystem-cache",
-    filesystem_cache_reserve_space_wait_lock_timeout_milliseconds: "/reference/settings/session-settings/filesystem-cache",
-    filesystem_cache_segments_batch_size: "/reference/settings/session-settings/filesystem-cache",
-    filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit: "/reference/settings/session-settings/filesystem-cache",
-    filesystem_prefetch_max_memory_usage: "/reference/settings/session-settings/filesystem-prefetch",
-    filesystem_prefetch_step_bytes: "/reference/settings/session-settings/filesystem-prefetch",
-    filesystem_prefetch_step_marks: "/reference/settings/session-settings/filesystem-prefetch",
-    filesystem_prefetches_limit: "/reference/settings/session-settings/other",
-    final: "/reference/settings/session-settings/other",
-    finalize_projection_parts_synchronously: "/reference/settings/session-settings/other",
-    flatten_nested: "/reference/settings/session-settings/other",
-    force_aggregate_partitions_independently: "/reference/settings/session-settings/force",
-    force_aggregation_in_order: "/reference/settings/session-settings/force",
-    force_data_skipping_indices: "/reference/settings/session-settings/force",
-    force_grouping_standard_compatibility: "/reference/settings/session-settings/force",
-    force_index_by_date: "/reference/settings/session-settings/force",
-    force_optimize_projection: "/reference/settings/session-settings/force-optimize",
-    force_optimize_projection_name: "/reference/settings/session-settings/force-optimize",
-    force_optimize_skip_unused_shards: "/reference/settings/session-settings/force-optimize",
-    force_optimize_skip_unused_shards_nesting: "/reference/settings/session-settings/force-optimize",
-    force_primary_key: "/reference/settings/session-settings/force",
-    force_remove_data_recursively_on_drop: "/reference/settings/session-settings/force",
-    formatdatetime_e_with_space_padding: "/reference/settings/session-settings/formatdatetime",
-    formatdatetime_f_prints_scale_number_of_digits: "/reference/settings/session-settings/formatdatetime-f",
-    formatdatetime_f_prints_single_zero: "/reference/settings/session-settings/formatdatetime-f",
-    formatdatetime_format_without_leading_zeros: "/reference/settings/session-settings/formatdatetime",
-    formatdatetime_parsedatetime_m_is_month_name: "/reference/settings/session-settings/formatdatetime",
-    fsync_metadata: "/reference/settings/session-settings/other",
-    function_base58_max_input_size: "/reference/settings/session-settings/function",
-    function_date_trunc_return_type_behavior: "/reference/settings/session-settings/function",
-    function_implementation: "/reference/settings/session-settings/function",
-    function_json_value_return_type_allow_complex: "/reference/settings/session-settings/function-json",
-    function_json_value_return_type_allow_nullable: "/reference/settings/session-settings/function-json",
-    function_locate_has_mysql_compatible_argument_order: "/reference/settings/session-settings/function",
-    function_range_max_elements_in_block: "/reference/settings/session-settings/function",
-    function_sleep_max_microseconds_per_block: "/reference/settings/session-settings/function",
-    function_visible_width_behavior: "/reference/settings/session-settings/function",
-    functions_h3_default_if_invalid: "/reference/settings/session-settings/other",
-    geo_distance_returns_float64_on_float64_arguments: "/reference/settings/session-settings/other",
-    geotoh3_argument_order: "/reference/settings/session-settings/other",
-    glob_expansion_max_elements: "/reference/settings/session-settings/other",
-    grace_hash_join_initial_buckets: "/reference/settings/session-settings/grace-hash",
-    grace_hash_join_max_buckets: "/reference/settings/session-settings/grace-hash",
-    group_by_overflow_mode: "/reference/settings/session-settings/group-by",
-    group_by_two_level_threshold: "/reference/settings/session-settings/group-by",
-    group_by_two_level_threshold_bytes: "/reference/settings/session-settings/group-by",
-    group_by_use_nulls: "/reference/settings/session-settings/group-by",
-    h3togeo_lon_lat_result_order: "/reference/settings/session-settings/other",
-    handshake_timeout_ms: "/reference/settings/session-settings/other",
-    hdfs_create_new_file_on_insert: "/reference/settings/session-settings/hdfs",
-    hdfs_ignore_file_doesnt_exist: "/reference/settings/session-settings/hdfs",
-    hdfs_replication: "/reference/settings/session-settings/hdfs",
-    hdfs_skip_empty_files: "/reference/settings/session-settings/hdfs",
-    hdfs_throw_on_zero_files_match: "/reference/settings/session-settings/hdfs",
-    hdfs_truncate_on_insert: "/reference/settings/session-settings/hdfs",
-    hedged_connection_timeout_ms: "/reference/settings/session-settings/other",
-    highlight_max_matches_per_row: "/reference/settings/session-settings/other",
-    hnsw_candidate_list_size_for_search: "/reference/settings/session-settings/other",
-    "how-the-resize-node-gets-split": "/reference/settings/session-settings/min",
-    hsts_max_age: "/reference/settings/session-settings/other",
-    http_connection_timeout: "/reference/settings/session-settings/http",
-    http_headers_progress_interval_ms: "/reference/settings/session-settings/http-headers",
-    http_headers_read_timeout: "/reference/settings/session-settings/http-headers",
-    http_make_head_request: "/reference/settings/session-settings/http",
-    http_max_field_name_size: "/reference/settings/session-settings/http-max",
-    http_max_field_value_size: "/reference/settings/session-settings/http-max",
-    http_max_fields: "/reference/settings/session-settings/http-max",
-    http_max_multipart_form_data_size: "/reference/settings/session-settings/http-max",
-    http_max_request_header_size: "/reference/settings/session-settings/http-max",
-    http_max_request_param_data_size: "/reference/settings/session-settings/http-max",
-    http_max_tries: "/reference/settings/session-settings/http-max",
-    http_max_uri_size: "/reference/settings/session-settings/http-max",
-    http_native_compression_disable_checksumming_on_decompress: "/reference/settings/session-settings/http",
-    http_receive_timeout: "/reference/settings/session-settings/http",
-    http_response_buffer_size: "/reference/settings/session-settings/http-response",
-    http_response_headers: "/reference/settings/session-settings/http-response",
-    http_retry_initial_backoff_ms: "/reference/settings/session-settings/http-retry",
-    http_retry_max_backoff_ms: "/reference/settings/session-settings/http-retry",
-    http_send_timeout: "/reference/settings/session-settings/http",
-    http_skip_not_found_url_for_globs: "/reference/settings/session-settings/http",
-    http_wait_end_of_query: "/reference/settings/session-settings/http",
-    http_write_exception_in_output_format: "/reference/settings/session-settings/http",
-    http_zlib_compression_level: "/reference/settings/session-settings/http",
-    iceberg_compaction_data_cleanup: "/reference/settings/session-settings/iceberg-compaction",
-    iceberg_compaction_delay_bias: "/reference/settings/session-settings/iceberg-compaction",
-    iceberg_data_file_size_lower_threshold_compaction: "/reference/settings/session-settings/iceberg-data",
-    iceberg_data_file_size_upper_threshold_compaction: "/reference/settings/session-settings/iceberg-data",
-    iceberg_delete_data_on_drop: "/reference/settings/session-settings/iceberg",
-    iceberg_expire_default_max_ref_age_ms: "/reference/settings/session-settings/iceberg-expire",
-    iceberg_expire_default_max_snapshot_age_ms: "/reference/settings/session-settings/iceberg-expire",
-    iceberg_expire_default_min_snapshots_to_keep: "/reference/settings/session-settings/iceberg-expire",
-    iceberg_insert_max_bytes_in_data_file: "/reference/settings/session-settings/iceberg-insert",
-    iceberg_insert_max_partitions: "/reference/settings/session-settings/iceberg-insert",
-    iceberg_insert_max_rows_in_data_file: "/reference/settings/session-settings/iceberg-insert",
-    iceberg_manifest_min_count_to_compact: "/reference/settings/session-settings/iceberg",
-    iceberg_max_number_datafiles_to_compact: "/reference/settings/session-settings/iceberg",
-    iceberg_metadata_compression_method: "/reference/settings/session-settings/iceberg-metadata",
-    iceberg_metadata_log_level: "/reference/settings/session-settings/iceberg-metadata",
-    iceberg_metadata_staleness_ms: "/reference/settings/session-settings/iceberg-metadata",
-    iceberg_orphan_files_older_than_seconds: "/reference/settings/session-settings/iceberg",
-    iceberg_snapshot_id: "/reference/settings/session-settings/iceberg",
-    iceberg_timestamp_ms: "/reference/settings/session-settings/iceberg",
-    idle_connection_timeout: "/reference/settings/session-settings/other",
-    ignore_cold_parts_seconds: "/reference/settings/session-settings/ignore",
-    ignore_data_skipping_indices: "/reference/settings/session-settings/ignore",
-    ignore_drop_queries_probability: "/reference/settings/session-settings/ignore",
-    ignore_format_null_for_explain: "/reference/settings/session-settings/ignore",
-    ignore_materialized_views_with_dropped_target_table: "/reference/settings/session-settings/ignore",
-    ignore_on_cluster_for_replicated_access_entities_queries: "/reference/settings/session-settings/ignore-on",
-    ignore_on_cluster_for_replicated_database: "/reference/settings/session-settings/ignore-on",
-    ignore_on_cluster_for_replicated_named_collections_queries: "/reference/settings/session-settings/ignore-on",
-    ignore_on_cluster_for_replicated_udf_queries: "/reference/settings/session-settings/ignore-on",
-    implicit_select: "/reference/settings/session-settings/implicit",
-    implicit_table_at_top_level: "/reference/settings/session-settings/implicit",
-    implicit_transaction: "/reference/settings/session-settings/implicit",
-    inject_random_order_for_select_without_order_by: "/reference/settings/session-settings/other",
-    insert_allow_materialized_columns: "/reference/settings/session-settings/insert",
-    insert_deduplicate: "/reference/settings/session-settings/insert",
-    insert_deduplication_token: "/reference/settings/session-settings/insert",
-    insert_keeper_fault_injection_probability: "/reference/settings/session-settings/insert-keeper",
-    insert_keeper_fault_injection_seed: "/reference/settings/session-settings/insert-keeper",
-    insert_keeper_max_retries: "/reference/settings/session-settings/insert-keeper",
-    insert_keeper_retry_initial_backoff_ms: "/reference/settings/session-settings/insert-keeper",
-    insert_keeper_retry_max_backoff_ms: "/reference/settings/session-settings/insert-keeper",
-    insert_null_as_default: "/reference/settings/session-settings/insert",
-    insert_quorum: "/reference/settings/session-settings/insert-quorum",
-    insert_quorum_parallel: "/reference/settings/session-settings/insert-quorum",
-    insert_quorum_timeout: "/reference/settings/session-settings/insert-quorum",
-    insert_shard_id: "/reference/settings/session-settings/insert",
-    interactive_delay: "/reference/settings/session-settings/other",
-    intersect_default_mode: "/reference/settings/session-settings/other",
-    jemalloc_collect_profile_samples_in_trace_log: "/reference/settings/session-settings/jemalloc",
-    jemalloc_enable_profiler: "/reference/settings/session-settings/jemalloc",
-    jemalloc_profile_text_collapsed_use_count: "/reference/settings/session-settings/jemalloc-profile",
-    jemalloc_profile_text_output_format: "/reference/settings/session-settings/jemalloc-profile",
-    jemalloc_profile_text_symbolize_with_inline: "/reference/settings/session-settings/jemalloc-profile",
-    join_algorithm: "/reference/settings/session-settings/join",
-    join_any_take_last_row: "/reference/settings/session-settings/join",
-    join_default_strictness: "/reference/settings/session-settings/join",
-    join_on_disk_max_files_to_merge: "/reference/settings/session-settings/join",
-    join_output_by_rowlist_perkey_rows_threshold: "/reference/settings/session-settings/join",
-    join_overflow_mode: "/reference/settings/session-settings/join",
-    join_runtime_bloom_filter_bytes: "/reference/settings/session-settings/join-runtime",
-    join_runtime_bloom_filter_hash_functions: "/reference/settings/session-settings/join-runtime",
-    join_runtime_bloom_filter_max_ratio_of_set_bits: "/reference/settings/session-settings/join-runtime",
-    join_runtime_filter_blocks_to_skip_before_reenabling: "/reference/settings/session-settings/join-runtime",
-    join_runtime_filter_exact_values_limit: "/reference/settings/session-settings/join-runtime",
-    join_runtime_filter_from_fixed_hash_table: "/reference/settings/session-settings/join-runtime",
-    join_runtime_filter_pass_ratio_threshold_for_disabling: "/reference/settings/session-settings/join-runtime",
-    join_runtime_filter_size_from_hash_table_stats: "/reference/settings/session-settings/join-runtime",
-    join_to_sort_maximum_table_rows: "/reference/settings/session-settings/join-to",
-    join_to_sort_minimum_perkey_rows: "/reference/settings/session-settings/join-to",
-    join_use_nulls: "/reference/settings/session-settings/join",
-    joined_block_split_single_row: "/reference/settings/session-settings/joined",
-    joined_subquery_requires_alias: "/reference/settings/session-settings/joined",
-    kafka_disable_num_consumers_limit: "/reference/settings/session-settings/kafka",
-    kafka_max_wait_ms: "/reference/settings/session-settings/kafka",
-    keeper_map_strict_mode: "/reference/settings/session-settings/keeper",
-    keeper_max_retries: "/reference/settings/session-settings/keeper",
-    keeper_retry_initial_backoff_ms: "/reference/settings/session-settings/keeper-retry",
-    keeper_retry_max_backoff_ms: "/reference/settings/session-settings/keeper-retry",
-    least_greatest_legacy_null_behavior: "/reference/settings/session-settings/other",
-    legacy_column_name_of_tuple_literal: "/reference/settings/session-settings/other",
-    lightweight_delete_mode: "/reference/settings/session-settings/lightweight",
-    lightweight_deletes_sync: "/reference/settings/session-settings/lightweight",
-    limit: "/reference/settings/session-settings/other",
-    load_balancing: "/reference/settings/session-settings/load-balancing",
-    "load_balancing-first_or_random": "/reference/settings/session-settings/load-balancing",
-    "load_balancing-hostname_levenshtein_distance": "/reference/settings/session-settings/load-balancing",
-    "load_balancing-hostname_longest_common_prefix": "/reference/settings/session-settings/load-balancing",
-    "load_balancing-hostname_longest_common_suffix": "/reference/settings/session-settings/load-balancing",
-    "load_balancing-in_order": "/reference/settings/session-settings/load-balancing",
-    "load_balancing-nearest_hostname": "/reference/settings/session-settings/load-balancing",
-    "load_balancing-random": "/reference/settings/session-settings/load-balancing",
-    "load_balancing-round_robin": "/reference/settings/session-settings/load-balancing",
-    load_balancing_first_offset: "/reference/settings/session-settings/load-balancing",
-    load_marks_asynchronously: "/reference/settings/session-settings/other",
-    local_filesystem_read_method: "/reference/settings/session-settings/local-filesystem",
-    local_filesystem_read_prefetch: "/reference/settings/session-settings/local-filesystem",
-    lock_acquire_timeout: "/reference/settings/session-settings/other",
-    log_comment: "/reference/settings/session-settings/log",
-    log_formatted_queries: "/reference/settings/session-settings/log",
-    log_processors_profiles: "/reference/settings/session-settings/log",
-    log_profile_events: "/reference/settings/session-settings/log",
-    log_queries: "/reference/settings/session-settings/log-queries",
-    log_queries_cut_to_length: "/reference/settings/session-settings/log-queries",
-    log_queries_min_query_duration_ms: "/reference/settings/session-settings/log-queries",
-    log_queries_min_type: "/reference/settings/session-settings/log-queries",
-    log_queries_probability: "/reference/settings/session-settings/log-queries",
-    log_query_settings: "/reference/settings/session-settings/log-query",
-    log_query_threads: "/reference/settings/session-settings/log-query",
-    log_query_views: "/reference/settings/session-settings/log-query",
-    low_cardinality_allow_in_native_format: "/reference/settings/session-settings/low-cardinality",
-    low_cardinality_max_dictionary_size: "/reference/settings/session-settings/low-cardinality",
-    low_cardinality_use_single_dictionary_for_part: "/reference/settings/session-settings/low-cardinality",
-    low_priority_query_wait_time_ms: "/reference/settings/session-settings/other",
-    make_distributed_plan: "/reference/settings/session-settings/other",
-    materialize_skip_indexes_on_insert: "/reference/settings/session-settings/materialize",
-    materialize_statistics_on_insert: "/reference/settings/session-settings/materialize",
-    materialize_ttl_after_modify: "/reference/settings/session-settings/materialize",
-    materialized_views_ignore_errors: "/reference/settings/session-settings/materialized-views",
-    materialized_views_squash_parallel_inserts: "/reference/settings/session-settings/materialized-views",
-    max_analyze_depth: "/reference/settings/session-settings/max",
-    max_ast_depth: "/reference/settings/session-settings/max-ast",
-    max_ast_elements: "/reference/settings/session-settings/max-ast",
-    max_autoincrement_series: "/reference/settings/session-settings/max",
-    max_backup_bandwidth: "/reference/settings/session-settings/max",
-    max_block_size: "/reference/settings/session-settings/max",
-    max_bytes_before_external_group_by: "/reference/settings/session-settings/max-bytes",
-    max_bytes_before_external_join: "/reference/settings/session-settings/max-bytes",
-    max_bytes_before_external_sort: "/reference/settings/session-settings/max-bytes",
-    max_bytes_before_remerge_sort: "/reference/settings/session-settings/max-bytes",
-    max_bytes_for_lazy_final: "/reference/settings/session-settings/max-bytes",
-    max_bytes_in_distinct: "/reference/settings/session-settings/max-bytes",
-    max_bytes_in_join: "/reference/settings/session-settings/max-bytes",
-    max_bytes_in_set: "/reference/settings/session-settings/max-bytes",
-    max_bytes_ratio_before_external_group_by: "/reference/settings/session-settings/max-bytes",
-    max_bytes_ratio_before_external_join: "/reference/settings/session-settings/max-bytes",
-    max_bytes_ratio_before_external_sort: "/reference/settings/session-settings/max-bytes",
-    max_bytes_to_read: "/reference/settings/session-settings/max-bytes",
-    max_bytes_to_read_leaf: "/reference/settings/session-settings/max-bytes",
-    max_bytes_to_sort: "/reference/settings/session-settings/max-bytes",
-    max_bytes_to_transfer: "/reference/settings/session-settings/max-bytes",
-    max_columns_to_read: "/reference/settings/session-settings/max",
-    max_compress_block_size: "/reference/settings/session-settings/max",
-    max_concurrent_queries_for_all_users: "/reference/settings/session-settings/max-concurrent",
-    max_concurrent_queries_for_user: "/reference/settings/session-settings/max-concurrent",
-    max_consume_snapshots: "/reference/settings/session-settings/max",
-    max_distributed_connections: "/reference/settings/session-settings/max-distributed",
-    max_distributed_depth: "/reference/settings/session-settings/max-distributed",
-    max_download_buffer_size: "/reference/settings/session-settings/max-download",
-    max_download_threads: "/reference/settings/session-settings/max-download",
-    max_estimated_execution_time: "/reference/settings/session-settings/max",
-    max_execution_speed: "/reference/settings/session-settings/max-execution",
-    max_execution_speed_bytes: "/reference/settings/session-settings/max-execution",
-    max_execution_time: "/reference/settings/session-settings/max-execution",
-    max_execution_time_leaf: "/reference/settings/session-settings/max-execution",
-    max_expanded_ast_elements: "/reference/settings/session-settings/max",
-    max_fetch_partition_retries_count: "/reference/settings/session-settings/max",
-    max_final_threads: "/reference/settings/session-settings/max",
-    max_http_get_redirects: "/reference/settings/session-settings/max",
-    max_hyperscan_regexp_length: "/reference/settings/session-settings/max-hyperscan",
-    max_hyperscan_regexp_total_length: "/reference/settings/session-settings/max-hyperscan",
-    max_insert_block_size: "/reference/settings/session-settings/max-insert",
-    max_insert_block_size_bytes: "/reference/settings/session-settings/max-insert",
-    max_insert_delayed_streams_for_parallel_write: "/reference/settings/session-settings/max-insert",
-    max_insert_threads: "/reference/settings/session-settings/max-insert",
-    max_insert_threads_min_free_memory_per_thread: "/reference/settings/session-settings/max-insert",
-    max_joined_block_size_bytes: "/reference/settings/session-settings/max-joined",
-    max_joined_block_size_rows: "/reference/settings/session-settings/max-joined",
-    max_limit_for_vector_search_queries: "/reference/settings/session-settings/max",
-    max_local_read_bandwidth: "/reference/settings/session-settings/max-local",
-    max_local_write_bandwidth: "/reference/settings/session-settings/max-local",
-    max_memory_usage: "/reference/settings/session-settings/max-memory-usage",
-    max_memory_usage_for_user: "/reference/settings/session-settings/max-memory-usage",
-    max_network_bandwidth: "/reference/settings/session-settings/max-network",
-    max_network_bandwidth_for_all_users: "/reference/settings/session-settings/max-network",
-    max_network_bandwidth_for_user: "/reference/settings/session-settings/max-network",
-    max_network_bytes: "/reference/settings/session-settings/max-network",
-    max_number_of_partitions_for_independent_aggregation: "/reference/settings/session-settings/max",
-    max_os_cpu_wait_time_ratio_to_throw: "/reference/settings/session-settings/max",
-    max_parallel_replicas: "/reference/settings/session-settings/max",
-    max_parser_backtracks: "/reference/settings/session-settings/max-parser",
-    max_parser_depth: "/reference/settings/session-settings/max-parser",
-    max_parsing_threads: "/reference/settings/session-settings/max",
-    max_partition_size_to_drop: "/reference/settings/session-settings/max",
-    max_partitions_per_insert_block: "/reference/settings/session-settings/max-partitions",
-    max_partitions_to_read: "/reference/settings/session-settings/max-partitions",
-    max_parts_to_move: "/reference/settings/session-settings/max",
-    max_projection_rows_to_use_projection_index: "/reference/settings/session-settings/max",
-    max_query_size: "/reference/settings/session-settings/max",
-    max_rand_distribution_parameter: "/reference/settings/session-settings/max-rand",
-    max_rand_distribution_trials: "/reference/settings/session-settings/max-rand",
-    max_read_buffer_size: "/reference/settings/session-settings/max-read-buffer-size",
-    max_read_buffer_size_local_fs: "/reference/settings/session-settings/max-read-buffer-size",
-    max_read_buffer_size_remote_fs: "/reference/settings/session-settings/max-read-buffer-size",
-    max_recursive_cte_evaluation_depth: "/reference/settings/session-settings/max",
-    max_remote_read_network_bandwidth: "/reference/settings/session-settings/max-remote",
-    max_remote_write_network_bandwidth: "/reference/settings/session-settings/max-remote",
-    max_replica_delay_for_distributed_queries: "/reference/settings/session-settings/max",
-    max_result_bytes: "/reference/settings/session-settings/max-result",
-    max_result_rows: "/reference/settings/session-settings/max-result",
-    max_reverse_dictionary_lookup_cache_size_bytes: "/reference/settings/session-settings/max",
-    max_rows_for_lazy_final: "/reference/settings/session-settings/max-rows",
-    max_rows_in_distinct: "/reference/settings/session-settings/max-rows",
-    max_rows_in_join: "/reference/settings/session-settings/max-rows",
-    max_rows_in_set: "/reference/settings/session-settings/max-rows",
-    max_rows_in_set_to_optimize_join: "/reference/settings/session-settings/max-rows",
-    max_rows_to_group_by: "/reference/settings/session-settings/max-rows",
-    max_rows_to_read: "/reference/settings/session-settings/max-rows",
-    max_rows_to_read_leaf: "/reference/settings/session-settings/max-rows",
-    max_rows_to_sort: "/reference/settings/session-settings/max-rows",
-    max_rows_to_transfer: "/reference/settings/session-settings/max-rows",
-    max_sessions_for_user: "/reference/settings/session-settings/max",
-    max_size_to_preallocate_for_aggregation: "/reference/settings/session-settings/max-size",
-    max_size_to_preallocate_for_joins: "/reference/settings/session-settings/max-size",
-    max_skip_unavailable_shards_num: "/reference/settings/session-settings/max-skip",
-    max_skip_unavailable_shards_ratio: "/reference/settings/session-settings/max-skip",
-    max_streams_for_files_processing_in_cluster_functions: "/reference/settings/session-settings/max-streams",
-    max_streams_for_merge_tree_reading: "/reference/settings/session-settings/max-streams",
-    max_streams_for_union_step: "/reference/settings/session-settings/max-streams",
-    max_streams_for_union_step_to_max_threads_ratio: "/reference/settings/session-settings/max-streams",
-    max_streams_multiplier_for_merge_tables: "/reference/settings/session-settings/max-streams",
-    max_streams_to_max_threads_ratio: "/reference/settings/session-settings/max-streams",
-    max_subquery_depth: "/reference/settings/session-settings/max",
-    max_table_size_to_drop: "/reference/settings/session-settings/max",
-    max_temporary_columns: "/reference/settings/session-settings/max-temporary",
-    max_temporary_data_on_disk_size_for_query: "/reference/settings/session-settings/max-temporary",
-    max_temporary_data_on_disk_size_for_user: "/reference/settings/session-settings/max-temporary",
-    max_temporary_non_const_columns: "/reference/settings/session-settings/max-temporary",
-    max_threads: "/reference/settings/session-settings/max-threads",
-    max_threads_for_indexes: "/reference/settings/session-settings/max-threads",
-    max_threads_min_free_memory_per_thread: "/reference/settings/session-settings/max-threads",
-    max_untracked_memory: "/reference/settings/session-settings/max",
-    max_wkb_geometry_elements: "/reference/settings/session-settings/max",
-    memory_overcommit_ratio_denominator: "/reference/settings/session-settings/memory-overcommit-ratio-denominator",
-    memory_overcommit_ratio_denominator_for_user: "/reference/settings/session-settings/memory-overcommit-ratio-denominator",
-    memory_profiler_sample_max_allocation_size: "/reference/settings/session-settings/memory-profiler",
-    memory_profiler_sample_min_allocation_size: "/reference/settings/session-settings/memory-profiler",
-    memory_profiler_sample_probability: "/reference/settings/session-settings/memory-profiler",
-    memory_profiler_step: "/reference/settings/session-settings/memory-profiler",
-    memory_tracker_fault_probability: "/reference/settings/session-settings/memory",
-    memory_usage_overcommit_max_wait_microseconds: "/reference/settings/session-settings/memory",
-    merge_table_max_tables_to_look_for_schema_inference: "/reference/settings/session-settings/other",
-    merge_tree_coarse_index_granularity: "/reference/settings/session-settings/merge-tree",
-    merge_tree_compact_parts_min_granules_to_multibuffer_read: "/reference/settings/session-settings/merge-tree",
-    merge_tree_determine_task_size_by_prewhere_columns: "/reference/settings/session-settings/merge-tree",
-    merge_tree_generic_exclusion_search_max_steps: "/reference/settings/session-settings/merge-tree",
-    merge_tree_max_bytes_to_use_cache: "/reference/settings/session-settings/merge-tree",
-    merge_tree_max_rows_to_use_cache: "/reference/settings/session-settings/merge-tree",
-    merge_tree_min_bytes_for_concurrent_read: "/reference/settings/session-settings/merge-tree",
-    merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem: "/reference/settings/session-settings/merge-tree",
-    merge_tree_min_bytes_for_seek: "/reference/settings/session-settings/merge-tree",
-    merge_tree_min_bytes_per_task_for_remote_reading: "/reference/settings/session-settings/merge-tree",
-    merge_tree_min_read_task_size: "/reference/settings/session-settings/merge-tree",
-    merge_tree_min_rows_for_concurrent_read: "/reference/settings/session-settings/merge-tree",
-    merge_tree_min_rows_for_concurrent_read_for_remote_filesystem: "/reference/settings/session-settings/merge-tree",
-    merge_tree_min_rows_for_seek: "/reference/settings/session-settings/merge-tree",
-    merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability: "/reference/settings/session-settings/merge-tree",
-    merge_tree_storage_snapshot_sleep_ms: "/reference/settings/session-settings/merge-tree",
-    merge_tree_use_const_size_tasks_for_remote_reading: "/reference/settings/session-settings/merge-tree",
-    merge_tree_use_deserialization_prefixes_cache: "/reference/settings/session-settings/merge-tree",
-    merge_tree_use_prefixes_deserialization_thread_pool: "/reference/settings/session-settings/merge-tree",
-    merge_tree_use_v1_object_and_dynamic_serialization: "/reference/settings/session-settings/merge-tree",
-    metrics_perf_events_enabled: "/reference/settings/session-settings/metrics-perf",
-    metrics_perf_events_list: "/reference/settings/session-settings/metrics-perf",
-    min_bytes_to_use_direct_io: "/reference/settings/session-settings/min-bytes",
-    min_bytes_to_use_mmap_io: "/reference/settings/session-settings/min-bytes",
-    min_chunk_bytes_for_parallel_parsing: "/reference/settings/session-settings/min",
-    min_compress_block_size: "/reference/settings/session-settings/min",
-    min_count_to_compile_aggregate_expression: "/reference/settings/session-settings/min-count",
-    min_count_to_compile_expression: "/reference/settings/session-settings/min-count",
-    min_count_to_compile_regular_expression: "/reference/settings/session-settings/min-count",
-    min_count_to_compile_sort_description: "/reference/settings/session-settings/min-count",
-    min_execution_speed: "/reference/settings/session-settings/min-execution-speed",
-    min_execution_speed_bytes: "/reference/settings/session-settings/min-execution-speed",
-    min_external_table_block_size_bytes: "/reference/settings/session-settings/min-external",
-    min_external_table_block_size_rows: "/reference/settings/session-settings/min-external",
-    min_filtered_ratio_for_lazy_final: "/reference/settings/session-settings/min",
-    min_free_disk_bytes_to_perform_insert: "/reference/settings/session-settings/min-free",
-    min_free_disk_ratio_to_perform_insert: "/reference/settings/session-settings/min-free",
-    min_free_disk_space_for_temporary_data: "/reference/settings/session-settings/min-free",
-    min_hit_rate_to_use_consecutive_keys_optimization: "/reference/settings/session-settings/min",
-    min_insert_block_size_bytes: "/reference/settings/session-settings/min-insert",
-    min_insert_block_size_bytes_for_materialized_views: "/reference/settings/session-settings/min-insert",
-    min_insert_block_size_rows: "/reference/settings/session-settings/min-insert",
-    min_insert_block_size_rows_for_materialized_views: "/reference/settings/session-settings/min-insert",
-    min_joined_block_size_bytes: "/reference/settings/session-settings/min-joined",
-    min_joined_block_size_rows: "/reference/settings/session-settings/min-joined",
-    min_os_cpu_wait_time_ratio_to_throw: "/reference/settings/session-settings/min",
-    min_outstreams_per_resize_after_split: "/reference/settings/session-settings/min",
-    min_table_rows_to_use_projection_index: "/reference/settings/session-settings/min",
-    mongodb_throw_on_unsupported_query: "/reference/settings/session-settings/other",
-    move_all_conditions_to_prewhere: "/reference/settings/session-settings/move",
-    move_primary_key_columns_to_end_of_prewhere: "/reference/settings/session-settings/move",
-    multiple_joins_try_to_keep_original_names: "/reference/settings/session-settings/other",
-    mutations_execute_nondeterministic_on_initiator: "/reference/settings/session-settings/mutations-execute",
-    mutations_execute_subqueries_on_initiator: "/reference/settings/session-settings/mutations-execute",
-    mutations_max_literal_size_to_replace: "/reference/settings/session-settings/mutations",
-    mutations_sync: "/reference/settings/session-settings/mutations",
-    mysql_datatypes_support_level: "/reference/settings/session-settings/mysql",
-    mysql_map_fixed_string_to_text_in_show_columns: "/reference/settings/session-settings/mysql-map",
-    mysql_map_string_to_text_in_show_columns: "/reference/settings/session-settings/mysql-map",
-    mysql_max_rows_to_insert: "/reference/settings/session-settings/mysql",
-    network_compression_method: "/reference/settings/session-settings/network",
-    network_zstd_compression_level: "/reference/settings/session-settings/network",
-    normalize_function_names: "/reference/settings/session-settings/other",
-    number_of_mutations_to_delay: "/reference/settings/session-settings/number-of",
-    number_of_mutations_to_throw: "/reference/settings/session-settings/number-of",
-    odbc_bridge_connection_pool_size: "/reference/settings/session-settings/odbc-bridge",
-    odbc_bridge_use_connection_pooling: "/reference/settings/session-settings/odbc-bridge",
-    offset: "/reference/settings/session-settings/other",
-    opentelemetry_start_keeper_trace_probability: "/reference/settings/session-settings/opentelemetry-start",
-    opentelemetry_start_trace_probability: "/reference/settings/session-settings/opentelemetry-start",
-    opentelemetry_trace_cpu_scheduling: "/reference/settings/session-settings/opentelemetry-trace",
-    opentelemetry_trace_processors: "/reference/settings/session-settings/opentelemetry-trace",
-    optimize_aggregation_in_order: "/reference/settings/session-settings/optimize-aggregation-in-order",
-    optimize_aggregation_in_order_limit: "/reference/settings/session-settings/optimize-aggregation-in-order",
-    optimize_aggregators_of_group_by_keys: "/reference/settings/session-settings/optimize",
-    optimize_and_compare_chain: "/reference/settings/session-settings/optimize-and-compare-chain",
-    optimize_and_compare_chain_max_hash_work: "/reference/settings/session-settings/optimize-and-compare-chain",
-    optimize_append_index: "/reference/settings/session-settings/optimize",
-    optimize_arithmetic_operations_in_aggregate_functions: "/reference/settings/session-settings/optimize",
-    optimize_const_name_size: "/reference/settings/session-settings/optimize",
-    optimize_count_from_files: "/reference/settings/session-settings/optimize",
-    optimize_dictget_tuple_element: "/reference/settings/session-settings/optimize",
-    optimize_distinct_in_order: "/reference/settings/session-settings/optimize",
-    optimize_distributed_group_by_sharding_key: "/reference/settings/session-settings/optimize",
-    optimize_dry_run_check_part: "/reference/settings/session-settings/optimize",
-    optimize_empty_string_comparisons: "/reference/settings/session-settings/optimize",
-    optimize_extract_common_expressions: "/reference/settings/session-settings/optimize",
-    optimize_functions_to_subcolumns: "/reference/settings/session-settings/optimize",
-    optimize_group_by_constant_keys: "/reference/settings/session-settings/optimize-group",
-    optimize_group_by_function_keys: "/reference/settings/session-settings/optimize-group",
-    optimize_if_chain_to_multiif: "/reference/settings/session-settings/optimize-if",
-    optimize_if_transform_strings_to_enum: "/reference/settings/session-settings/optimize-if",
-    optimize_injective_functions_in_group_by: "/reference/settings/session-settings/optimize-injective",
-    optimize_injective_functions_in_limit_by: "/reference/settings/session-settings/optimize-injective",
-    optimize_injective_functions_inside_uniq: "/reference/settings/session-settings/optimize-injective",
-    optimize_inverse_dictionary_lookup: "/reference/settings/session-settings/optimize",
-    optimize_limit_by_function_keys: "/reference/settings/session-settings/optimize-limit",
-    optimize_limit_by_in_order: "/reference/settings/session-settings/optimize-limit",
-    optimize_min_equality_disjunction_chain_length: "/reference/settings/session-settings/optimize-min",
-    optimize_min_inequality_conjunction_chain_length: "/reference/settings/session-settings/optimize-min",
-    optimize_move_to_prewhere: "/reference/settings/session-settings/optimize-move-to-prewhere",
-    optimize_move_to_prewhere_if_final: "/reference/settings/session-settings/optimize-move-to-prewhere",
-    optimize_multiif_to_if: "/reference/settings/session-settings/optimize",
-    optimize_normalize_count_variants: "/reference/settings/session-settings/optimize",
-    optimize_on_insert: "/reference/settings/session-settings/optimize",
-    optimize_or_like_chain: "/reference/settings/session-settings/optimize-or-like-chain",
-    optimize_or_like_chain_min_patterns: "/reference/settings/session-settings/optimize-or-like-chain",
-    optimize_or_like_chain_min_substrings: "/reference/settings/session-settings/optimize-or-like-chain",
-    optimize_prewhere_after_pushdown: "/reference/settings/session-settings/optimize",
-    optimize_qbit_distance_function_reads: "/reference/settings/session-settings/optimize",
-    optimize_read_in_order: "/reference/settings/session-settings/optimize",
-    optimize_redundant_comparisons: "/reference/settings/session-settings/optimize-redundant",
-    optimize_redundant_functions_in_order_by: "/reference/settings/session-settings/optimize-redundant",
-    optimize_respect_aliases: "/reference/settings/session-settings/optimize",
-    optimize_rewrite_aggregate_function_with_if: "/reference/settings/session-settings/optimize-rewrite",
-    optimize_rewrite_array_exists_to_has: "/reference/settings/session-settings/optimize-rewrite",
-    optimize_rewrite_has_to_in: "/reference/settings/session-settings/optimize-rewrite",
-    optimize_rewrite_like_perfect_affix: "/reference/settings/session-settings/optimize-rewrite",
-    optimize_rewrite_regexp_functions: "/reference/settings/session-settings/optimize-rewrite",
-    optimize_rewrite_sum_if_to_count_if: "/reference/settings/session-settings/optimize-rewrite",
-    optimize_skip_merged_partitions: "/reference/settings/session-settings/optimize-skip",
-    optimize_skip_unused_shards: "/reference/settings/session-settings/optimize-skip",
-    optimize_skip_unused_shards_limit: "/reference/settings/session-settings/optimize-skip",
-    optimize_skip_unused_shards_nesting: "/reference/settings/session-settings/optimize-skip",
-    optimize_skip_unused_shards_rewrite_in: "/reference/settings/session-settings/optimize-skip",
-    optimize_sorting_by_input_stream_properties: "/reference/settings/session-settings/optimize",
-    optimize_substitute_columns: "/reference/settings/session-settings/optimize",
-    optimize_syntax_fuse_functions: "/reference/settings/session-settings/optimize",
-    optimize_throw_if_noop: "/reference/settings/session-settings/optimize",
-    optimize_time_filter_with_preimage: "/reference/settings/session-settings/optimize",
-    optimize_trivial_approximate_count_query: "/reference/settings/session-settings/optimize-trivial",
-    optimize_trivial_count_query: "/reference/settings/session-settings/optimize-trivial",
-    optimize_trivial_count_with_sparsity_filter: "/reference/settings/session-settings/optimize-trivial",
-    optimize_trivial_group_by_limit_query: "/reference/settings/session-settings/optimize-trivial",
-    optimize_trivial_insert_select: "/reference/settings/session-settings/optimize-trivial",
-    optimize_truncate_order_by_after_group_by_keys: "/reference/settings/session-settings/optimize",
-    optimize_uniq_to_count: "/reference/settings/session-settings/optimize",
-    optimize_use_implicit_projections: "/reference/settings/session-settings/optimize-use",
-    optimize_use_projection_filtering: "/reference/settings/session-settings/optimize-use",
-    optimize_use_projections: "/reference/settings/session-settings/optimize-use",
-    optimize_using_constraints: "/reference/settings/session-settings/optimize",
-    os_threads_nice_value_materialized_view: "/reference/settings/session-settings/os-threads",
-    os_threads_nice_value_query: "/reference/settings/session-settings/os-threads",
-    page_cache_block_size: "/reference/settings/session-settings/page-cache",
-    page_cache_inject_eviction: "/reference/settings/session-settings/page-cache",
-    page_cache_lookahead_blocks: "/reference/settings/session-settings/page-cache",
-    page_cache_max_coalesced_bytes: "/reference/settings/session-settings/page-cache",
-    paimon_target_snapshot_id: "/reference/settings/session-settings/other",
-    "parallel-processing-using-parallel_replicas_custom_key": "/reference/settings/session-settings/max",
-    "parallel-processing-using-sample-key": "/reference/settings/session-settings/max",
-    parallel_distributed_insert_select: "/reference/settings/session-settings/parallel",
-    parallel_hash_join_threshold: "/reference/settings/session-settings/parallel",
-    parallel_non_joined_rows_processing: "/reference/settings/session-settings/parallel",
-    parallel_replica_offset: "/reference/settings/session-settings/parallel",
-    parallel_replicas_allow_in_with_subquery: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_allow_materialized_views: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_allow_view_over_mergetree: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_connect_timeout_ms: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_count: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_custom_key: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_custom_key_range_lower: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_custom_key_range_upper: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_filter_pushdown: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_for_cluster_engines: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_for_non_replicated_merge_tree: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_index_analysis_only_on_coordinator: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_insert_select_local_pipeline: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_local_plan: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_mark_segment_size: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_min_number_of_rows_per_replica: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_mode: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_only_with_analyzer: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_plan_based: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_prefer_local_join: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_prefer_local_replica: "/reference/settings/session-settings/parallel-replicas",
-    parallel_replicas_support_projection: "/reference/settings/session-settings/parallel-replicas",
-    parallel_view_processing: "/reference/settings/session-settings/parallel",
-    parallelize_output_from_storages: "/reference/settings/session-settings/other",
-    parsedatetime_e_requires_space_padding: "/reference/settings/session-settings/parsedatetime",
-    parsedatetime_parse_without_leading_zeros: "/reference/settings/session-settings/parsedatetime",
-    partial_merge_join_left_table_buffer_bytes: "/reference/settings/session-settings/partial-merge",
-    partial_merge_join_rows_in_right_blocks: "/reference/settings/session-settings/partial-merge",
-    partial_result_on_first_cancel: "/reference/settings/session-settings/other",
-    parts_to_delay_insert: "/reference/settings/session-settings/parts-to",
-    parts_to_throw_insert: "/reference/settings/session-settings/parts-to",
-    per_part_index_stats: "/reference/settings/session-settings/other",
-    placeholders: "/reference/settings/session-settings/other",
-    poll_interval: "/reference/settings/session-settings/other",
-    polyglot_dialect: "/reference/settings/session-settings/other",
-    postgresql_connection_attempt_timeout: "/reference/settings/session-settings/postgresql-connection",
-    postgresql_connection_pool_auto_close_connection: "/reference/settings/session-settings/postgresql-connection",
-    postgresql_connection_pool_retries: "/reference/settings/session-settings/postgresql-connection",
-    postgresql_connection_pool_size: "/reference/settings/session-settings/postgresql-connection",
-    postgresql_connection_pool_wait_timeout: "/reference/settings/session-settings/postgresql-connection",
-    postgresql_fault_injection_probability: "/reference/settings/session-settings/other",
-    predicate_statistics_sample_rate: "/reference/settings/session-settings/other",
-    prefer_column_name_to_alias: "/reference/settings/session-settings/prefer",
-    prefer_external_sort_block_bytes: "/reference/settings/session-settings/prefer",
-    prefer_global_in_and_join: "/reference/settings/session-settings/prefer",
-    prefer_localhost_replica: "/reference/settings/session-settings/prefer",
-    prefer_warmed_unmerged_parts_seconds: "/reference/settings/session-settings/prefer",
-    preferred_block_size_bytes: "/reference/settings/session-settings/preferred",
-    preferred_max_column_in_block_size_bytes: "/reference/settings/session-settings/preferred",
-    preferred_optimize_projection_name: "/reference/settings/session-settings/preferred",
-    prefetch_buffer_size: "/reference/settings/session-settings/other",
-    print_pretty_type_names: "/reference/settings/session-settings/other",
-    priority: "/reference/settings/session-settings/other",
-    promql_database: "/reference/settings/session-settings/promql",
-    promql_evaluation_time: "/reference/settings/session-settings/promql",
-    promql_table: "/reference/settings/session-settings/promql",
-    "purpose-of-the-setting": "/reference/settings/session-settings/min",
-    push_external_roles_in_interserver_queries: "/reference/settings/session-settings/other",
-    query_cache_compress_entries: "/reference/settings/session-settings/query-cache",
-    query_cache_for_subqueries: "/reference/settings/session-settings/query-cache",
-    query_cache_max_entries: "/reference/settings/session-settings/query-cache",
-    query_cache_max_size_in_bytes: "/reference/settings/session-settings/query-cache",
-    query_cache_min_query_duration: "/reference/settings/session-settings/query-cache",
-    query_cache_min_query_runs: "/reference/settings/session-settings/query-cache",
-    query_cache_nondeterministic_function_handling: "/reference/settings/session-settings/query-cache",
-    query_cache_share_between_users: "/reference/settings/session-settings/query-cache",
-    query_cache_squash_partial_results: "/reference/settings/session-settings/query-cache",
-    query_cache_system_table_handling: "/reference/settings/session-settings/query-cache",
-    query_cache_tag: "/reference/settings/session-settings/query-cache",
-    query_cache_ttl: "/reference/settings/session-settings/query-cache",
-    query_metric_log_interval: "/reference/settings/session-settings/other",
-    query_plan_aggregation_in_order: "/reference/settings/session-settings/query-plan",
-    query_plan_convert_any_join_to_semi_or_anti_join: "/reference/settings/session-settings/query-plan",
-    query_plan_convert_join_to_in: "/reference/settings/session-settings/query-plan",
-    query_plan_convert_outer_join_to_inner_join: "/reference/settings/session-settings/query-plan",
-    query_plan_direct_read_from_text_index: "/reference/settings/session-settings/query-plan",
-    query_plan_display_internal_aliases: "/reference/settings/session-settings/query-plan",
-    query_plan_enable_multithreading_after_window_functions: "/reference/settings/session-settings/query-plan",
-    query_plan_enable_optimizations: "/reference/settings/session-settings/query-plan",
-    query_plan_execute_functions_after_sorting: "/reference/settings/session-settings/query-plan",
-    query_plan_filter_push_down: "/reference/settings/session-settings/query-plan",
-    query_plan_join_shard_by_pk_ranges: "/reference/settings/session-settings/query-plan",
-    query_plan_join_swap_table: "/reference/settings/session-settings/query-plan",
-    query_plan_lift_up_array_join: "/reference/settings/session-settings/query-plan",
-    query_plan_lift_up_union: "/reference/settings/session-settings/query-plan",
-    query_plan_max_limit_for_join_lazy_indexing: "/reference/settings/session-settings/query-plan",
-    query_plan_max_limit_for_lazy_materialization: "/reference/settings/session-settings/query-plan",
-    query_plan_max_limit_for_top_k_optimization: "/reference/settings/session-settings/query-plan",
-    query_plan_max_optimizations_to_apply: "/reference/settings/session-settings/query-plan",
-    query_plan_max_set_size_for_projection_match: "/reference/settings/session-settings/query-plan",
-    query_plan_max_step_description_length: "/reference/settings/session-settings/query-plan",
-    query_plan_merge_expression_into_join: "/reference/settings/session-settings/query-plan",
-    query_plan_merge_expressions: "/reference/settings/session-settings/query-plan",
-    query_plan_merge_filter_into_join_condition: "/reference/settings/session-settings/query-plan",
-    query_plan_merge_filters: "/reference/settings/session-settings/query-plan",
-    query_plan_min_columns_for_join_lazy_indexing: "/reference/settings/session-settings/query-plan",
-    query_plan_optimize_join_order_algorithm: "/reference/settings/session-settings/query-plan",
-    query_plan_optimize_join_order_limit: "/reference/settings/session-settings/query-plan",
-    query_plan_optimize_join_order_max_searched_plans: "/reference/settings/session-settings/query-plan",
-    query_plan_optimize_join_order_randomize: "/reference/settings/session-settings/query-plan",
-    query_plan_optimize_lazy_final: "/reference/settings/session-settings/query-plan",
-    query_plan_optimize_lazy_materialization: "/reference/settings/session-settings/query-plan",
-    query_plan_optimize_prewhere: "/reference/settings/session-settings/query-plan",
-    query_plan_push_down_limit: "/reference/settings/session-settings/query-plan",
-    query_plan_push_limit_by_into_sort: "/reference/settings/session-settings/query-plan",
-    query_plan_read_in_order: "/reference/settings/session-settings/query-plan",
-    query_plan_read_in_order_through_join: "/reference/settings/session-settings/query-plan",
-    query_plan_remove_redundant_distinct: "/reference/settings/session-settings/query-plan",
-    query_plan_remove_redundant_sorting: "/reference/settings/session-settings/query-plan",
-    query_plan_remove_unused_columns: "/reference/settings/session-settings/query-plan",
-    query_plan_reuse_storage_ordering_for_window_functions: "/reference/settings/session-settings/query-plan",
-    query_plan_split_filter: "/reference/settings/session-settings/query-plan",
-    query_plan_text_index_add_hint: "/reference/settings/session-settings/query-plan",
-    query_plan_top_k_through_join: "/reference/settings/session-settings/query-plan",
-    query_plan_try_use_vector_search: "/reference/settings/session-settings/query-plan",
-    query_profiler_cpu_time_period_ns: "/reference/settings/session-settings/query-profiler",
-    query_profiler_real_time_period_ns: "/reference/settings/session-settings/query-profiler",
-    queue_max_wait_ms: "/reference/settings/session-settings/other",
-    rabbitmq_max_wait_ms: "/reference/settings/session-settings/other",
-    read_backoff_max_throughput: "/reference/settings/session-settings/read-backoff",
-    read_backoff_min_concurrency: "/reference/settings/session-settings/read-backoff",
-    read_backoff_min_events: "/reference/settings/session-settings/read-backoff",
-    read_backoff_min_interval_between_events_ms: "/reference/settings/session-settings/read-backoff",
-    read_backoff_min_latency_ms: "/reference/settings/session-settings/read-backoff",
-    read_from_distributed_cache_if_exists_otherwise_bypass_cache: "/reference/settings/session-settings/read-from",
-    read_from_filesystem_cache_if_exists_otherwise_bypass_cache: "/reference/settings/session-settings/read-from",
-    read_from_page_cache_if_exists_otherwise_bypass_cache: "/reference/settings/session-settings/read-from",
-    read_in_order_two_level_merge_threshold: "/reference/settings/session-settings/read-in",
-    read_in_order_use_buffering: "/reference/settings/session-settings/read-in",
-    read_in_order_use_virtual_row: "/reference/settings/session-settings/read-in",
-    read_in_order_use_virtual_row_per_block: "/reference/settings/session-settings/read-in",
-    read_overflow_mode: "/reference/settings/session-settings/read-overflow-mode",
-    read_overflow_mode_leaf: "/reference/settings/session-settings/read-overflow-mode",
-    read_priority: "/reference/settings/session-settings/read",
-    read_through_distributed_cache: "/reference/settings/session-settings/read",
-    reader_executor_max_tail_for_drain: "/reference/settings/session-settings/reader-executor",
-    reader_executor_min_bytes_for_seek: "/reference/settings/session-settings/reader-executor",
-    reader_executor_use_long_connections: "/reference/settings/session-settings/reader-executor",
-    readonly: "/reference/settings/session-settings/other",
-    receive_data_timeout_ms: "/reference/settings/session-settings/receive",
-    receive_timeout: "/reference/settings/session-settings/receive",
-    recursive_cte_max_steps_in_type_inference: "/reference/settings/session-settings/other",
-    regexp_dict_allow_hyperscan: "/reference/settings/session-settings/regexp-dict",
-    regexp_dict_flag_case_insensitive: "/reference/settings/session-settings/regexp-dict",
-    regexp_dict_flag_dotall: "/reference/settings/session-settings/regexp-dict",
-    regexp_max_matches_per_row: "/reference/settings/session-settings/other",
-    reject_expensive_hyperscan_regexps: "/reference/settings/session-settings/other",
-    remerge_sort_lowered_memory_bytes_ratio: "/reference/settings/session-settings/other",
-    remote_filesystem_read_method: "/reference/settings/session-settings/remote-filesystem",
-    remote_filesystem_read_prefetch: "/reference/settings/session-settings/remote-filesystem",
-    remote_fs_read_backoff_max_tries: "/reference/settings/session-settings/remote-fs",
-    remote_fs_read_max_backoff_ms: "/reference/settings/session-settings/remote-fs",
-    remote_read_min_bytes_for_seek: "/reference/settings/session-settings/other",
-    rename_files_after_processing: "/reference/settings/session-settings/other",
-    replace_running_query: "/reference/settings/session-settings/replace-running-query",
-    replace_running_query_max_wait_ms: "/reference/settings/session-settings/replace-running-query",
-    replication_wait_for_inactive_replica_timeout: "/reference/settings/session-settings/other",
-    reserve_memory: "/reference/settings/session-settings/other",
-    restore_replace_external_dictionary_source_to_null: "/reference/settings/session-settings/restore-replace",
-    restore_replace_external_engines_to_null: "/reference/settings/session-settings/restore-replace",
-    restore_replace_external_table_functions_to_null: "/reference/settings/session-settings/restore-replace",
-    restore_replicated_merge_tree_to_shared_merge_tree: "/reference/settings/session-settings/other",
-    result_overflow_mode: "/reference/settings/session-settings/other",
-    rewrite_count_distinct_if_with_count_distinct_implementation: "/reference/settings/session-settings/rewrite",
-    rewrite_in_to_join: "/reference/settings/session-settings/rewrite",
-    rows_before_aggregation: "/reference/settings/session-settings/other",
-    s3_allow_multipart_copy: "/reference/settings/session-settings/s3-allow",
-    s3_allow_parallel_part_upload: "/reference/settings/session-settings/s3-allow",
-    s3_allow_server_credentials_in_user_queries: "/reference/settings/session-settings/s3-allow",
-    s3_check_objects_after_upload: "/reference/settings/session-settings/s3",
-    s3_connect_timeout_ms: "/reference/settings/session-settings/s3",
-    s3_create_new_file_on_insert: "/reference/settings/session-settings/s3",
-    s3_disable_checksum: "/reference/settings/session-settings/s3",
-    s3_ignore_file_doesnt_exist: "/reference/settings/session-settings/s3",
-    s3_list_object_keys_size: "/reference/settings/session-settings/s3",
-    s3_max_connections: "/reference/settings/session-settings/s3-max",
-    s3_max_get_burst: "/reference/settings/session-settings/s3-max",
-    s3_max_get_rps: "/reference/settings/session-settings/s3-max",
-    s3_max_inflight_parts_for_one_file: "/reference/settings/session-settings/s3-max",
-    s3_max_part_number: "/reference/settings/session-settings/s3-max",
-    s3_max_put_burst: "/reference/settings/session-settings/s3-max",
-    s3_max_put_rps: "/reference/settings/session-settings/s3-max",
-    s3_max_single_operation_copy_size: "/reference/settings/session-settings/s3-max",
-    s3_max_single_part_upload_size: "/reference/settings/session-settings/s3-max",
-    s3_max_single_read_retries: "/reference/settings/session-settings/s3-max",
-    s3_max_unexpected_write_error_retries: "/reference/settings/session-settings/s3-max",
-    s3_max_upload_part_size: "/reference/settings/session-settings/s3-max",
-    s3_min_upload_part_size: "/reference/settings/session-settings/s3",
-    s3_path_filter_limit: "/reference/settings/session-settings/s3",
-    s3_request_timeout_ms: "/reference/settings/session-settings/s3",
-    s3_skip_empty_files: "/reference/settings/session-settings/s3",
-    s3_slow_all_threads_after_network_error: "/reference/settings/session-settings/s3",
-    s3_strict_upload_part_size: "/reference/settings/session-settings/s3",
-    s3_throw_on_zero_files_match: "/reference/settings/session-settings/s3",
-    s3_truncate_on_insert: "/reference/settings/session-settings/s3",
-    s3_upload_part_size_multiply_factor: "/reference/settings/session-settings/s3-upload",
-    s3_upload_part_size_multiply_parts_count_threshold: "/reference/settings/session-settings/s3-upload",
-    s3_uri_style: "/reference/settings/session-settings/s3",
-    s3_use_adaptive_timeouts: "/reference/settings/session-settings/s3",
-    s3_validate_etag_on_read: "/reference/settings/session-settings/s3-validate",
-    s3_validate_request_settings: "/reference/settings/session-settings/s3-validate",
-    s3queue_default_zookeeper_path: "/reference/settings/session-settings/s3queue",
-    s3queue_enable_logging_to_s3queue_log: "/reference/settings/session-settings/s3queue",
-    s3queue_keeper_fault_injection_probability: "/reference/settings/session-settings/s3queue",
-    s3queue_migrate_old_metadata_to_buckets: "/reference/settings/session-settings/s3queue",
-    schema_inference_cache_require_modification_time_for_url: "/reference/settings/session-settings/schema-inference",
-    schema_inference_use_cache_for_azure: "/reference/settings/session-settings/schema-inference",
-    schema_inference_use_cache_for_file: "/reference/settings/session-settings/schema-inference",
-    schema_inference_use_cache_for_hdfs: "/reference/settings/session-settings/schema-inference",
-    schema_inference_use_cache_for_s3: "/reference/settings/session-settings/schema-inference",
-    schema_inference_use_cache_for_url: "/reference/settings/session-settings/schema-inference",
-    secondary_indices_enable_bulk_filtering: "/reference/settings/session-settings/other",
-    select_sequential_consistency: "/reference/settings/session-settings/other",
-    send_logs_level: "/reference/settings/session-settings/send-logs",
-    send_logs_source_regexp: "/reference/settings/session-settings/send-logs",
-    send_profile_events: "/reference/settings/session-settings/send",
-    send_progress_in_http_headers: "/reference/settings/session-settings/send",
-    send_table_structure_on_insert_with_inline_data: "/reference/settings/session-settings/send",
-    send_timeout: "/reference/settings/session-settings/send",
-    serialize_query_plan: "/reference/settings/session-settings/serialize",
-    serialize_string_in_memory_with_zero_byte: "/reference/settings/session-settings/serialize",
-    session_timezone: "/reference/settings/session-settings/other",
-    set_overflow_mode: "/reference/settings/session-settings/other",
-    shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms: "/reference/settings/session-settings/shared-merge",
-    shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms: "/reference/settings/session-settings/shared-merge",
-    shared_merge_tree_sequential_consistency_parts_update_max_retries: "/reference/settings/session-settings/shared-merge",
-    shared_merge_tree_sync_parts_on_partition_operations: "/reference/settings/session-settings/shared-merge",
-    short_circuit_function_evaluation: "/reference/settings/session-settings/short-circuit-function-evaluation",
-    short_circuit_function_evaluation_for_nulls: "/reference/settings/session-settings/short-circuit-function-evaluation",
-    short_circuit_function_evaluation_for_nulls_threshold: "/reference/settings/session-settings/short-circuit-function-evaluation",
-    show_data_lake_catalogs_in_system_tables: "/reference/settings/session-settings/show",
-    show_processlist_include_internal: "/reference/settings/session-settings/show",
-    show_remote_databases_in_system_tables: "/reference/settings/session-settings/show",
-    show_table_uuid_in_table_create_query_if_not_nil: "/reference/settings/session-settings/show",
-    single_join_prefer_left_table: "/reference/settings/session-settings/other",
-    skip_redundant_aliases_in_udf: "/reference/settings/session-settings/other",
-    skip_unavailable_shards: "/reference/settings/session-settings/skip-unavailable-shards",
-    skip_unavailable_shards_mode: "/reference/settings/session-settings/skip-unavailable-shards",
-    sleep_after_receiving_query_ms: "/reference/settings/session-settings/other",
-    sleep_in_send_data_ms: "/reference/settings/session-settings/sleep-in",
-    sleep_in_send_tables_status_ms: "/reference/settings/session-settings/sleep-in",
-    snappy_mode: "/reference/settings/session-settings/other",
-    sort_overflow_mode: "/reference/settings/session-settings/other",
-    split_intersecting_parts_ranges_into_layers_final: "/reference/settings/session-settings/split",
-    split_parts_ranges_into_intersecting_and_non_intersecting_final: "/reference/settings/session-settings/split",
-    splitby_max_substrings_includes_remaining_string: "/reference/settings/session-settings/other",
-    "splitting-resize-node-with-arbitrary-inputs/outputs": "/reference/settings/session-settings/min",
-    stop_refreshable_materialized_views_on_startup: "/reference/settings/session-settings/other",
-    storage_file_read_method: "/reference/settings/session-settings/storage",
-    storage_system_stack_trace_pipe_read_timeout_ms: "/reference/settings/session-settings/storage",
-    stream_flush_interval_ms: "/reference/settings/session-settings/stream",
-    stream_like_engine_allow_direct_select: "/reference/settings/session-settings/stream-like",
-    stream_like_engine_insert_queue: "/reference/settings/session-settings/stream-like",
-    stream_poll_timeout_ms: "/reference/settings/session-settings/stream",
-    system_events_show_zero_values: "/reference/settings/session-settings/system",
-    system_metric_log_show_zero_values_in_histograms: "/reference/settings/session-settings/system",
-    table_engine_read_through_distributed_cache: "/reference/settings/session-settings/table",
-    table_function_remote_max_addresses: "/reference/settings/session-settings/table",
-    tcp_keep_alive_timeout: "/reference/settings/session-settings/other",
-    temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds: "/reference/settings/session-settings/other",
-    temporary_files_buffer_size: "/reference/settings/session-settings/temporary-files",
-    temporary_files_codec: "/reference/settings/session-settings/temporary-files",
-    text_index_hint_max_selectivity: "/reference/settings/session-settings/text-index",
-    text_index_lazy_intersection_density_threshold: "/reference/settings/session-settings/text-index",
-    text_index_like_max_postings_to_read: "/reference/settings/session-settings/text-index",
-    text_index_like_min_pattern_length: "/reference/settings/session-settings/text-index",
-    text_index_posting_list_apply_mode: "/reference/settings/session-settings/text-index",
-    throw_if_no_data_to_insert: "/reference/settings/session-settings/other",
-    throw_on_error_from_cache_on_write_operations: "/reference/settings/session-settings/throw-on",
-    throw_on_max_partitions_per_insert_block: "/reference/settings/session-settings/throw-on",
-    throw_on_unsupported_query_inside_transaction: "/reference/settings/session-settings/throw-on",
-    timeout_before_checking_execution_speed: "/reference/settings/session-settings/other",
-    timeout_overflow_mode: "/reference/settings/session-settings/timeout-overflow-mode",
-    timeout_overflow_mode_leaf: "/reference/settings/session-settings/timeout-overflow-mode",
-    totals_auto_threshold: "/reference/settings/session-settings/totals",
-    totals_mode: "/reference/settings/session-settings/totals",
-    trace_profile_events: "/reference/settings/session-settings/trace-profile-events",
-    trace_profile_events_list: "/reference/settings/session-settings/trace-profile-events",
-    transfer_overflow_mode: "/reference/settings/session-settings/other",
-    transform_null_in: "/reference/settings/session-settings/other",
-    traverse_shadow_remote_data_paths: "/reference/settings/session-settings/other",
-    union_default_mode: "/reference/settings/session-settings/other",
-    unique_key_max_encoded_size: "/reference/settings/session-settings/other",
-    unknown_packet_in_send_data: "/reference/settings/session-settings/other",
-    update_parallel_mode: "/reference/settings/session-settings/update",
-    update_sequential_consistency: "/reference/settings/session-settings/update",
-    url_base: "/reference/settings/session-settings/url",
-    url_wildcard_max_directories_to_read: "/reference/settings/session-settings/url",
-    use_async_executor_for_materialized_views: "/reference/settings/session-settings/use",
-    use_cache_for_count_from_files: "/reference/settings/session-settings/use",
-    use_client_time_zone: "/reference/settings/session-settings/use",
-    use_compact_format_in_distributed_parts_names: "/reference/settings/session-settings/use",
-    use_concurrency_control: "/reference/settings/session-settings/use",
-    use_constant_folding_in_index_analysis: "/reference/settings/session-settings/use",
-    use_hash_table_stats_for_join_reordering: "/reference/settings/session-settings/use",
-    use_hedged_requests: "/reference/settings/session-settings/use",
-    use_hive_partitioning: "/reference/settings/session-settings/use",
-    use_iceberg_metadata_files_cache: "/reference/settings/session-settings/use-iceberg",
-    use_iceberg_partition_pruning: "/reference/settings/session-settings/use-iceberg",
-    use_index_for_in_with_subqueries: "/reference/settings/session-settings/use-index-for-in-with-subqueries",
-    use_index_for_in_with_subqueries_max_values: "/reference/settings/session-settings/use-index-for-in-with-subqueries",
-    use_join_disjunctions_push_down: "/reference/settings/session-settings/use",
-    use_legacy_to_time: "/reference/settings/session-settings/use",
-    use_lightweight_primary_key_index_analysis: "/reference/settings/session-settings/use",
-    use_page_cache_for_disks_without_file_cache: "/reference/settings/session-settings/use-page",
-    use_page_cache_for_local_disks: "/reference/settings/session-settings/use-page",
-    use_page_cache_for_object_storage: "/reference/settings/session-settings/use-page",
-    use_page_cache_with_distributed_cache: "/reference/settings/session-settings/use-page",
-    use_paimon_metadata_files_cache: "/reference/settings/session-settings/use-paimon",
-    use_paimon_partition_pruning: "/reference/settings/session-settings/use-paimon",
-    use_parquet_metadata_cache: "/reference/settings/session-settings/use",
-    use_partition_minmax_for_primary_key_pruning: "/reference/settings/session-settings/use-partition",
-    use_partition_pruning: "/reference/settings/session-settings/use-partition",
-    use_primary_key: "/reference/settings/session-settings/use",
-    use_query_cache: "/reference/settings/session-settings/use-query",
-    use_query_condition_cache: "/reference/settings/session-settings/use-query",
-    use_reader_executor: "/reference/settings/session-settings/use",
-    use_roaring_bitmap_iceberg_positional_deletes: "/reference/settings/session-settings/use",
-    use_skip_indexes: "/reference/settings/session-settings/use-skip-indexes",
-    use_skip_indexes_for_disjunctions: "/reference/settings/session-settings/use-skip-indexes",
-    use_skip_indexes_for_top_k: "/reference/settings/session-settings/use-skip-indexes",
-    use_skip_indexes_if_final: "/reference/settings/session-settings/use-skip-indexes",
-    use_skip_indexes_if_final_exact_mode: "/reference/settings/session-settings/use-skip-indexes",
-    use_skip_indexes_on_data_read: "/reference/settings/session-settings/use-skip-indexes",
-    use_statistics: "/reference/settings/session-settings/use-statistics",
-    use_statistics_cache: "/reference/settings/session-settings/use-statistics",
-    use_statistics_for_part_pruning: "/reference/settings/session-settings/use-statistics",
-    use_streaming_marks_compression: "/reference/settings/session-settings/use",
-    use_strict_insert_block_limits: "/reference/settings/session-settings/use",
-    use_structure_from_insertion_table_in_table_functions: "/reference/settings/session-settings/use",
-    use_text_index_header_cache: "/reference/settings/session-settings/use-text",
-    use_text_index_like_evaluation_by_dictionary_scan: "/reference/settings/session-settings/use-text",
-    use_text_index_postings_cache: "/reference/settings/session-settings/use-text",
-    use_text_index_tokens_cache: "/reference/settings/session-settings/use-text",
-    use_top_k_dynamic_filtering: "/reference/settings/session-settings/use-top-k-dynamic-filtering",
-    use_top_k_dynamic_filtering_for_variable_length_types: "/reference/settings/session-settings/use-top-k-dynamic-filtering",
-    use_uncompressed_cache: "/reference/settings/session-settings/use",
-    use_variant_as_common_type: "/reference/settings/session-settings/use-variant",
-    use_variant_default_implementation_for_comparisons: "/reference/settings/session-settings/use-variant",
-    use_with_fill_by_sorting_prefix: "/reference/settings/session-settings/use",
-    validate_enum_literals_in_operators: "/reference/settings/session-settings/validate",
-    validate_mutation_query: "/reference/settings/session-settings/validate",
-    validate_polygons: "/reference/settings/session-settings/validate",
-    variant_throw_on_type_mismatch: "/reference/settings/session-settings/other",
-    vector_search_filter_strategy: "/reference/settings/session-settings/vector-search",
-    vector_search_index_fetch_multiplier: "/reference/settings/session-settings/vector-search",
-    vector_search_use_quantized_codes: "/reference/settings/session-settings/vector-search",
-    vector_search_with_rescoring: "/reference/settings/session-settings/vector-search",
-    wait_changes_become_visible_after_commit_mode: "/reference/settings/session-settings/other",
-    wait_for_async_insert: "/reference/settings/session-settings/wait-for",
-    wait_for_async_insert_timeout: "/reference/settings/session-settings/wait-for",
-    wait_for_part_commit_in_dependent_materialized_views: "/reference/settings/session-settings/wait-for",
-    wait_for_window_view_fire_signal_timeout: "/reference/settings/session-settings/wait-for",
-    webassembly_udf_max_fuel: "/reference/settings/session-settings/webassembly-udf",
-    webassembly_udf_max_input_block_size: "/reference/settings/session-settings/webassembly-udf",
-    webassembly_udf_max_instances: "/reference/settings/session-settings/webassembly-udf",
-    webassembly_udf_max_memory: "/reference/settings/session-settings/webassembly-udf",
-    "what-is-a-resize-node": "/reference/settings/session-settings/min",
-    "why-the-resize-node-needs-to-be-split": "/reference/settings/session-settings/min",
-    window_view_clean_interval: "/reference/settings/session-settings/window-view",
-    window_view_heartbeat_interval: "/reference/settings/session-settings/window-view",
-    workload: "/reference/settings/session-settings/other",
-    write_full_path_in_iceberg_metadata: "/reference/settings/session-settings/other",
-    write_through_distributed_cache: "/reference/settings/session-settings/write-through-distributed-cache",
-    write_through_distributed_cache_buffer_size: "/reference/settings/session-settings/write-through-distributed-cache",
-    zstd_window_log_max: "/reference/settings/session-settings/other"
-  }))
-
-  useEffect(() => {
-    const rawHash = window.location.hash.slice(1)
-    if (!rawHash) return
-
-    let decodedHash
-    try {
-      decodedHash = decodeURIComponent(rawHash)
-    } catch {
-      return
-    }
-
-    const canonicalAnchor = (value) => {
-      const candidates = [value, value.replace(/[?,;:!'"()[\]{}]/g, "")]
-      for (const candidate of candidates) {
-        if (anchorRoutes[candidate]) return candidate
-        const lowerValue = candidate.toLowerCase()
-        if (anchorRoutes[lowerValue]) return lowerValue
-      }
-      return null
-    }
-
-    const directAnchor = canonicalAnchor(decodedHash)
-    const baseAnchor = directAnchor || canonicalAnchor(decodedHash.split("-", 1)[0])
-    if (!baseAnchor) return
-    const target = anchorRoutes[baseAnchor]
-    const targetHash = directAnchor || rawHash
-
-    const marker = "/reference/settings/session-settings"
-    const markerIndex = window.location.pathname.indexOf(marker)
-    let basePath = ""
-    if (markerIndex >= 0) {
-      basePath = window.location.pathname.slice(0, markerIndex)
-    } else if (window.location.pathname.startsWith("/docs/")) {
-      basePath = "/docs"
-    }
-
-    window.location.replace(`${basePath}${target}${window.location.search}#${targetHash}`)
-  }, [])
-
+  const [allGroupKeys] = useState(() => {
+    const collectGroupKeys = (items, path = []) =>
+      items.flatMap((entry) => {
+        const key = [...path, entry.label].join("/")
+        return [key, ...collectGroupKeys(entry.children, [...path, entry.label])]
+      })
+    return collectGroupKeys(entries)
+  })
   const [expandedGroups, setExpandedGroups] = useState(() => new Set())
   const [searchTerm, setSearchTerm] = useState("")
   const normalizedSearch = searchTerm.trim().toLowerCase()
@@ -4450,6 +3204,7 @@ const SessionSettingsExplorer = () => {
 
   const filteredEntries = isSearching ? entries.map(filterEntry).filter(Boolean) : entries
   const matchingCount = filteredEntries.reduce((total, entry) => total + entry.count, 0)
+  const allGroupsExpanded = allGroupKeys.length > 0 && allGroupKeys.every((key) => expandedGroups.has(key))
 
   const toggleGroup = (key) => {
     setExpandedGroups((current) => {
@@ -4460,13 +3215,20 @@ const SessionSettingsExplorer = () => {
     })
   }
 
+  const toggleAllGroups = () => {
+    setExpandedGroups((current) => {
+      const shouldCollapse = allGroupKeys.every((key) => current.has(key))
+      return shouldCollapse ? new Set() : new Set(allGroupKeys)
+    })
+  }
+
   const branchPrefix = (continuations, isLast) => {
     const prefix = continuations.map((continued) => (continued ? "│  " : "   ")).join("")
     return `${prefix}${isLast ? "└─ " : "├─ "}`
   }
 
   const branch = (value) => (
-    <span aria-hidden="true" className="select-none text-gray-400 dark:text-gray-600" style={{ whiteSpace: "pre" }}>
+    <span aria-hidden="true" className="shrink-0 select-none text-gray-400 dark:text-gray-600" style={{ whiteSpace: "pre" }}>
       {value}
     </span>
   )
@@ -4475,7 +3237,7 @@ const SessionSettingsExplorer = () => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "个设置" : "个设置"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "设置" : "设置"}`
 
     return (
       <div key={key} className="min-w-max">
@@ -4511,12 +3273,25 @@ const SessionSettingsExplorer = () => {
               return renderGroup(item.value, childContinuations, itemIsLast, [...path, entry.label])
             }
             return (
-              <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
-                <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
-                {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={`/docs${item.value.href}`} className="no-underline hover:underline">
-                  {item.value.name}
-                </a>
+              <div key={item.value.name} className="grid min-w-max items-start gap-x-3 whitespace-nowrap" style={{ gridTemplateColumns: "44ch max-content" }}>
+                <span className="flex min-w-0 items-start">
+                  <span aria-hidden="true" className="w-4 shrink-0" />
+                  {branch(branchPrefix(childContinuations, itemIsLast))}
+                  <a href={`https://clickhouse.com/docs${baseRoute}${item.value.path}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
+                    {item.value.name.split("_").map((part, index, parts) => (
+                      <span key={`${part}-${index}`}>
+                        {part}
+                        {index < parts.length - 1 ? "_" : ""}
+                        {index < parts.length - 1 && <wbr />}
+                      </span>
+                    ))}
+                  </a>
+                </span>
+                {item.value.default !== undefined && (
+                  <span title="默认值" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                    （默认值：{item.value.default}）
+                  </span>
+                )}
               </div>
             )
           })}
@@ -4526,27 +3301,58 @@ const SessionSettingsExplorer = () => {
 
   return (
     <div className="not-prose my-6 w-full">
-      <input
-        aria-label="搜索设置"
-        type="search"
-        value={searchTerm}
-        onChange={(event) => setSearchTerm(event.target.value)}
-        placeholder="搜索设置，例如 parallel replicas 或 %materialized%"
-        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none placeholder:text-gray-500 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20 dark:border-white/10 dark:bg-transparent dark:text-white dark:placeholder:text-gray-500"
-      />
+      <div className="relative w-full">
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="pointer-events-none absolute left-3 h-4 w-4 text-gray-500 dark:text-gray-400"
+          style={{ top: "50%", transform: "translateY(-50%)" }}
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <input
+          aria-label="搜索设置"
+          type="search"
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+          placeholder="搜索设置，例如 parallel replicas 或 %materialized%"
+          className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
+        />
+      </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            找到 {matchingCount} 个匹配的设置
+            匹配到 {matchingCount} 项{matchingCount === 1 ? "设置" : "设置"}
           </span>
         </div>
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
-        <div className="min-w-max font-semibold">/session-settings</div>
+        <div className="flex min-w-full items-center justify-between gap-4">
+          <div className="min-w-max font-semibold">/session-settings</div>
+          <button
+            type="button"
+            aria-label={allGroupsExpanded ? "全部折叠" : "全部展开"}
+            aria-pressed={allGroupsExpanded}
+            disabled={isSearching}
+            onClick={toggleAllGroups}
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border-0 bg-transparent px-1 py-0.5 font-sans text-xs font-medium text-gray-600 hover:text-gray-900 focus:outline-0 focus-visible:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:text-[#fdff75] dark:focus-visible:text-[#fdff75]"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+              {allGroupsExpanded ? <path d="m6 9 6 6 6-6" /> : <path d="m9 18 6-6-6-6" />}
+            </svg>
+            <span>{allGroupsExpanded ? "全部折叠" : "全部展开"}</span>
+          </button>
+        </div>
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">未找到匹配的设置</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">没有匹配的设置</div>
         )}
       </div>
     </div>

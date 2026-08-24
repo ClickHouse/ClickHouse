@@ -1,0 +1,3 @@
+--- the original exception is framed despite a non-DB secondary failure on the exception path
+"packet":"exception"
+UNKNOWN_TABLE

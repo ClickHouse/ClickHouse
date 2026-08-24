@@ -255,7 +255,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 {
     insertRowToLogTable(
         context_,
-        manifest_file_deserializer_->getMetadataContent(),
+        [&] { return manifest_file_deserializer_->getMetadataContent(); },
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
         path_resolver_.getTableRoot(),
         path_to_manifest_file_,
@@ -407,7 +407,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     {
         insertRowToLogTable(
             context,
-            manifest_file_deserializer->getContent(row_index),
+            [&] { return manifest_file_deserializer->getContent(row_index); },
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
             path_resolver.getTableRoot(),
             path_to_manifest_file,
@@ -520,7 +520,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
     insertRowToLogTable(
         context,
-        manifest_file_deserializer->getContent(row_index),
+        [&] { return manifest_file_deserializer->getContent(row_index); },
         DB::IcebergMetadataLogLevel::ManifestFileEntry,
         path_resolver.getTableRoot(),
         path_to_manifest_file,

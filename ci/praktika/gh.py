@@ -811,16 +811,7 @@ class GH:
             os.unlink(temp_file_path)
 
     @classmethod
-    def request_team_reviews(cls, team_slugs, pr=None, repo=None):
-        requested = set(team_slugs)
-        if not requested:
-            return True
-
-        if not repo:
-            repo = _Environment.get().REPOSITORY
-        if not pr:
-            pr = _Environment.get().PR_NUMBER
-
+    def _get_requested_team_reviews(cls, pr, repo):
         cmd = (
             f'gh api -H "Accept: application/vnd.github.v3+json" '
             f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
@@ -845,9 +836,32 @@ class GH:
                 f"Unexpected team review request response for pull request [{pr}]"
             )
 
-        teams_to_request = sorted(requested - set(requested_teams))
+        return set(requested_teams)
+
+    @classmethod
+    def request_team_reviews(cls, team_slugs, pr=None, repo=None):
+        requested = set(team_slugs)
+        if not requested:
+            return True
+
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        teams_to_request = sorted(
+            requested - cls._get_requested_team_reviews(pr, repo)
+        )
         if teams_to_request:
             cls._submit_team_review_requests(teams_to_request, pr, repo)
+            missing_teams = set(teams_to_request) - cls._get_requested_team_reviews(
+                pr, repo
+            )
+            if missing_teams:
+                raise RuntimeError(
+                    "Failed to verify team review requests for pull request "
+                    f"[{pr}], missing teams [{', '.join(sorted(missing_teams))}]"
+                )
 
         return True
 
