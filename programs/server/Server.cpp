@@ -1266,7 +1266,9 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 Context::WarningType::LINUX_RENAMEAT2_UNAVAILABLE,
                 PreformattedMessage::create(
                     "The kernel does not support the renameat2 system call ({})."
-                    " Atomic operations such as EXCHANGE TABLES will not work.", renameat2_message));
+                    " Atomic operations such as EXCHANGE TABLES will not work."
+                    " This check reads the kernel version only: EXCHANGE TABLES can also fail on a filesystem"
+                    " without RENAME_EXCHANGE support, which is not detected here.", renameat2_message));
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
