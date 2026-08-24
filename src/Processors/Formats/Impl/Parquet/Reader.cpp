@@ -1650,9 +1650,36 @@ struct DictionaryValueHashes
     std::vector<UInt64> hashes;
     std::optional<UInt64> default_value_hash;
 
-    bool contains(UInt64 hash) const
+    /// Whether any of `probes` is among the dictionary's values.
+    ///
+    /// For a sorted probe sequence - which is what `KeyCondition::prepareBloomFilterData` produces -
+    /// this is an intersection of two sorted sequences rather than a sequence of independent binary
+    /// searches: every probe continues where the previous one stopped. A handful of query constants
+    /// then costs a binary search each, while a large probe set degrades to a linear merge of the two
+    /// sequences instead of `probes.size()` full-height searches over the whole vector. That matters
+    /// because a probe set is not always small: `prepareBloomFilterCondition` deliberately keeps
+    /// hashing `IN` sets that are over the bloom filter's cap, so that the exact dictionary filter can
+    /// still prune them, which means `findAnyHash` can be called with thousands of probes for one
+    /// column chunk. An out-of-order probe merely restarts the window, so the result does not depend
+    /// on the probes being sorted.
+    bool containsAny(const std::vector<UInt64> & probes) const
     {
-        return hash == default_value_hash || std::binary_search(hashes.begin(), hashes.end(), hash);
+        auto it = hashes.begin();
+        UInt64 previous_probe = 0;
+        for (UInt64 probe : probes)
+        {
+            if (probe == default_value_hash)
+                return true;
+            if (probe < previous_probe)
+                it = hashes.begin();
+            previous_probe = probe;
+            it = std::lower_bound(it, hashes.end(), probe);
+            /// `it` at the end means no dictionary value is >= this probe: every later probe that is
+            /// not smaller searches an empty range, and a smaller one restarts from the beginning.
+            if (it != hashes.end() && *it == probe)
+                return true;
+        }
+        return false;
     }
 };
 
@@ -1803,6 +1830,11 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     /// elements); the grow branch is a defensive backstop (mirroring `decodeDictionaryPage`) in case
     /// the two ever drift apart, falling back to a full scan if the correction no longer fits the
     /// budget.
+    /// The vector must be exactly what `parquetTryHashColumn` allocated: the default value hash above
+    /// is kept in a separate field precisely so that nothing is appended here, which would grow the
+    /// vector geometrically past the reservation (and, for a dictionary whose reservation is nothing
+    /// but the vector - the `Mode::Column` path - past the whole budget).
+    chassert(value_hashes.hashes.size() == count);
     size_t persistent_bytes = value_hashes.hashes.capacity() * sizeof(UInt64);
     if (persistent_bytes > estimated_value_set_bytes)
     {
@@ -1866,10 +1898,7 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
     /// fall back to the column chunk's bloom filter if it has one; otherwise we can't rule out a match.
     if (!value_hashes.has_value())
         return bloom_fallback ? bloom_fallback->findAnyHash(hashes) : true;
-    for (UInt64 h : hashes)
-        if (value_hashes->contains(h))
-            return true;
-    return false;
+    return value_hashes->containsAny(hashes);
 }
 
 bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation)

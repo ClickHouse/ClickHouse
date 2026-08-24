@@ -61,10 +61,9 @@ diff \
     <(${CH} --input_format_parquet_memory_high_watermark=6000000 --query="select category, count(), sum(n) from file('${DATA_FILE}', Parquet) where category in (5, 100007, 100, 116383) group by category order by category") \
     && echo "OK"
 
-# The extra default-value hash inserted under `input_format_null_as_default`: row group 0 holds
-# exactly 4096 distinct non-null values (precisely the 0.5 max fill of the reserved table, so the
-# late extra insert would rehash if it were not reserved up front) plus 256 nulls; row group 1 holds
-# 4352 distinct non-null values and no nulls. Values start at 1, so the type default 0 matches only
+# The extra default-value hash added under `input_format_null_as_default`: row group 0 holds 4096
+# distinct non-null values plus 256 nulls; row group 1 holds 4352 distinct non-null values and no
+# nulls. Values start at 1, so the type default 0 matches only
 # the nulls of row group 0: querying it must read row group 0 (its nulls decode to 0) while still
 # pruning the null-free row group 1, and querying a value that exists only in row group 1 must prune
 # row group 0 even though its value set was extended with the default.
@@ -84,6 +83,20 @@ run 4000000000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, ca
 
 echo "null_as_default: a value only in row group 1 prunes row group 0 despite its default-extended value set"
 run 4000000000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category = 100005" --input_format_null_as_default=1
+
+# The nullable file gets the same both-sides watermark check as the non-null one above, so the
+# accounting of the nullable path (where the value set is extended with the default value hash) is
+# pinned too, not just its results: a watermark that affords the hash vectors must keep pruning, and
+# one below what they need must fall back to a full scan. Note that the "the default value hash stays
+# out of the vector" invariant itself cannot be pinned by a watermark: for this `FixedSize` dictionary
+# the reservation also covers the materialization terms, which leave enough headroom for a doubled
+# vector, so appending would not change the behavior here. It is pinned by a `chassert` in
+# `hashDictionaryValues` instead, which every debug and sanitizer build checks on this very query.
+echo "null_as_default, watermark that affords the hash vectors: the null-free row group is still pruned"
+run 1100000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category = 0" --input_format_null_as_default=1
+
+echo "null_as_default, watermark just below what the value set needs: pruning is skipped, all 8704 rows are read"
+run 975000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category = 0" --input_format_null_as_default=1
 
 echo "null_as_default results are identical regardless of the memory budget"
 diff \
