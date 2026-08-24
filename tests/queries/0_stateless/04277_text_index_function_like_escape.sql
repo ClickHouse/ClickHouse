@@ -19,10 +19,10 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY (id)
 -- A moderate index_granularity keeps the text index small (few granules) so the
--- flaky check stays well under its per-run time limit; the five single-value parts
+-- flaky check stays well under its per-run time limit; the six single-value parts
 -- still demonstrate that a `LIKE ... ESCAPE` predicate prunes to the matching part.
 -- The granule counts below hold only for this exact layout: index_granularity_bytes = 0 keeps
--- granularity row-based, and max_bytes_to_merge_at_max_space_in_pool = 1 keeps the five parts separate.
+-- granularity row-based, and max_bytes_to_merge_at_max_space_in_pool = 1 keeps the six parts separate.
 SETTINGS index_granularity = 128, index_granularity_bytes = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
@@ -30,6 +30,10 @@ INSERT INTO tab SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1
 INSERT INTO tab SELECT number, 'Hallo xClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'ClickHousez rocks' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'literal 50%off token' FROM numbers(1024);
+-- Holds `50` and `token` but not `off`, so the folded pattern prunes this part while the
+-- same pattern read without its ESCAPE clause keeps it. That difference is what makes the
+-- plan assertions below fail if the escape argument is ever dropped during index analysis.
+INSERT INTO tab SELECT number, 'literal 50 discount token' FROM numbers(1024);
 
 SELECT 'Results are the same with and without an ESCAPE clause when the escape character is not used in the pattern';
 
@@ -56,7 +60,7 @@ SELECT count() FROM tab WHERE message LIKE '%literal 50#%off token%' ESCAPE '#';
 SELECT count() FROM tab WHERE message LIKE '%literal 50#%off token%';
 SELECT count() FROM tab WHERE message LIKE '%literal 50\\%off token%';
 
-SELECT 'The index still prunes for that folded pattern, to the same 8 of 40 granules as the equivalent standard-escape pattern';
+SELECT 'The index prunes for that folded pattern to 8 of 48 granules, the same as the equivalent standard-escape pattern';
 
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
@@ -68,7 +72,14 @@ SELECT trimLeft(explain) AS explain FROM (
     SELECT count() FROM tab WHERE message LIKE '%literal 50\\%off token%'
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 
-SELECT 'Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 5 parts / 40 granules';
+SELECT 'Reading the same pattern without its ESCAPE clause selects 16 of 48 granules, so the two plans above cannot agree unless the escape argument reached index analysis';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE message LIKE '%literal 50#%off token%'
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+
+SELECT 'Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 6 parts / 48 granules';
 
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1

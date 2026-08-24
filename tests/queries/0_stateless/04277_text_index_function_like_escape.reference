@@ -4,8 +4,8 @@ Results are the same with and without an ESCAPE clause when the escape character
 1024
 1024
 1024
-4096
-4096
+5120
+5120
 ESCAPE used to match a literal LIKE wildcard returns the expected zero rows
 0
 0
@@ -13,37 +13,42 @@ A consumed escape character is folded before matching: the escaped % is a litera
 1024
 0
 1024
-The index still prunes for that folded pattern, to the same 8 of 40 granules as the equivalent standard-escape pattern
+The index prunes for that folded pattern to 8 of 48 granules, the same as the equivalent standard-escape pattern
 Parts: 1 | Granules: 8
-Granules: 40/40
+Granules: 48/48
 Name: idx
-Granules: 8/40
+Granules: 8/48
 Parts: 1 | Granules: 8
-Granules: 40/40
+Granules: 48/48
 Name: idx
-Granules: 8/40
-Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 5 parts / 40 granules
+Granules: 8/48
+Reading the same pattern without its ESCAPE clause selects 16 of 48 granules, so the two plans above cannot agree unless the escape argument reached index analysis
+Parts: 2 | Granules: 16
+Granules: 48/48
+Name: idx
+Granules: 16/48
+Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 6 parts / 48 granules
 Name: idx
 Description: text GRANULARITY 100000000
-Parts: 1/5
-Granules: 8/40
+Parts: 1/6
+Granules: 8/48
 Text index analysis with LIKE ESCAPE on a non-existent token: 0 parts and 0 granules selected
 Name: idx
 Description: text GRANULARITY 100000000
-Parts: 0/5
-Granules: 0/40
+Parts: 0/6
+Granules: 0/48
 Text index analysis with ILIKE ESCAPE: index narrows correctly
 Name: idx
 Description: text GRANULARITY 100000000
-Parts: 1/5
-Granules: 8/40
+Parts: 1/6
+Granules: 8/48
 Functional 3-argument form like(haystack, needle, escape) is equivalent to the operator form
 1024
 1024
 Name: idx
 Description: text GRANULARITY 100000000
-Parts: 1/5
-Granules: 8/40
+Parts: 1/6
+Granules: 8/48
 Text index with array tokenizer also uses the index with LIKE ESCAPE
 1024
 1024
