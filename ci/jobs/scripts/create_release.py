@@ -489,6 +489,8 @@ class ReleaseInfo:
                     dry_run=dry_run,
                     strict=True,
                     retries=3,  # transient workflow-scope timeout (see push_release_tag)
+                    rebase_retries=5,  # heal a backport landing during the push
+                    git_prefix=GIT_PREFIX,
                 )
             if dry_run:
                 Shell.check(

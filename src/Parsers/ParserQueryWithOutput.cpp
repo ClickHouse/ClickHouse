@@ -31,6 +31,8 @@
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ParserShowGrantsQuery.h>
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -258,6 +260,57 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     node = std::move(query);
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementQueryWithOutput(StatementFactory & factory)
+{
+    factory.registerStatement("FORMAT",
+    {
+        .description = R"(
+Specifies the format in which the result of the query is serialized. See `system.formats` for the list of the
+supported formats. The format can also be specified by the setting `output_format`, or by the client.
+
+**Examples**
+
+**Return the result as JSON**
+
+```sql title="Query"
+SELECT * FROM numbers(3) FORMAT JSONEachRow;
+```
+)",
+        .syntax = R"(
+SELECT ... FORMAT format
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "INTO OUTFILE", "INSERT INTO"},
+    });
+
+    factory.registerStatement("INTO OUTFILE",
+    {
+        .description = R"(
+Redirects the result of the query to a file on the client side. Compressed files are supported; the compression type is
+detected by the extension of the file name, or specified explicitly in a `COMPRESSION` clause. `AND STDOUT`
+additionally prints the result to the standard output, and `APPEND` appends to an existing file instead of failing.
+
+**Examples**
+
+**Write the result to a compressed file**
+
+```sql title="Query"
+SELECT * FROM numbers(3) INTO OUTFILE 'result.tsv.gz';
+```
+)",
+        .syntax = R"(
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "FORMAT", "INSERT INTO"},
+    });
 }
 
 }
