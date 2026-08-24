@@ -87,6 +87,14 @@ const { entries, currentRoute, stableId, featureStateByRoute = {} } = Astro.prop
   <VersionSelector stableId={stableId} />
 
   <button class="language-selector" type="button">
+    <svg class="language-selector-icon" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="240 216 184 104 128 216"></polyline>
+      <line x1="144" y1="184" x2="224" y2="184"></line>
+      <line x1="96" y1="32" x2="96" y2="56"></line>
+      <line x1="32" y1="56" x2="160" y2="56"></line>
+      <path d="M128 56A96 96 0 0 1 32 152"></path>
+      <path d="M69.47 88A96 96 0 0 0 160 152"></path>
+    </svg>
     <span>English</span>
     <svg class="language-selector-chevron" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M6.5 2.75L12.75 9L6.5 15.25"></path>

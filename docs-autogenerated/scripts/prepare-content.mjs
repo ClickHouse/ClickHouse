@@ -228,7 +228,13 @@ async function headerNavigationConfig(sourceSiteConfig) {
       }
 
       if (rawEntry.href === '#') {
-        items.push({ kind: 'heading', label: rawEntry.item });
+        items.push({
+          kind: 'heading',
+          label: rawEntry.item,
+          icon: '/images/icons/section-header.svg',
+          href: 'https://clickhouse.com/docs',
+          external: true,
+        });
         continue;
       }
 

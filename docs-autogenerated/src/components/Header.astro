@@ -64,7 +64,10 @@ const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationIt
           hidden
         >
           {tab.items.map((item) => item.kind === 'heading' ? (
-            <div class="nav-dropdown-heading" role="presentation">{item.label}</div>
+            <a class="nav-dropdown-heading" href={item.href} role="menuitem">
+              {item.icon && <img src={item.icon} alt="" aria-hidden="true" />}
+              <span>{item.label}</span>
+            </a>
           ) : (
             <a
               class:list={['nav-dropdown-item', { active: isActiveDropdownItem(tab, item) }]}
