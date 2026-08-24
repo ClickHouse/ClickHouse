@@ -11,6 +11,11 @@
 #include <morton-nd/mortonND_BMI2.h>
 #endif
 
+#include <array>
+#include <cstddef>
+#include <tuple>
+#include <utility>
+
 namespace DB
 {
 
@@ -172,13 +177,113 @@ namespace DB
             } \
         }
 
-constexpr auto MortonND_2D_Dec = mortonnd::MortonNDLutDecoder<2, 32, 8>();
-constexpr auto MortonND_3D_Dec = mortonnd::MortonNDLutDecoder<3, 21, 8>();
-constexpr auto MortonND_4D_Dec = mortonnd::MortonNDLutDecoder<4, 16, 8>();
-constexpr auto MortonND_5D_Dec = mortonnd::MortonNDLutDecoder<5, 12, 8>();
-constexpr auto MortonND_6D_Dec = mortonnd::MortonNDLutDecoder<6, 10, 8>();
-constexpr auto MortonND_7D_Dec = mortonnd::MortonNDLutDecoder<7, 9, 8>();
-constexpr auto MortonND_8D_Dec = mortonnd::MortonNDLutDecoder<8, 8, 8>();
+namespace morton_compress
+{
+
+/// The bits of a morton code that belong to field 0 of an ND-dimensional code. Every bit
+/// position congruent to 0 mod ND counts, including positions at or above ND*FieldBits:
+/// MortonNDLutDecoder folds those into the low fields too, so stopping at FieldBits would
+/// decode codes with the top bits set differently from the decoder this one stands in for.
+constexpr UInt64 fieldMask(size_t dimensions)
+{
+    UInt64 m = 0;
+    for (size_t i = 0; i * dimensions < 64; ++i)
+        m |= UInt64(1) << (i * dimensions);
+    return m;
+}
+
+/// Per-step "bits to move" masks of a parallel-suffix bit compress over fieldMask().
+/// A zero mask marks a step that moves nothing, so a narrow field costs fewer steps.
+constexpr std::array<UInt64, 6> moveMasks(size_t dimensions)
+{
+    std::array<UInt64, 6> mv{};
+    UInt64 m = fieldMask(dimensions);
+    UInt64 mk = ~m << 1;
+    for (size_t i = 0; i < 6; ++i)
+    {
+        UInt64 mp = mk ^ (mk << 1);
+        mp ^= mp << 2;
+        mp ^= mp << 4;
+        mp ^= mp << 8;
+        mp ^= mp << 16;
+        mp ^= mp << 32;
+        mv[i] = mp & m;
+        m = (m ^ mv[i]) | (mv[i] >> (1u << i));
+        mk = mk & ~mp;
+    }
+    return mv;
+}
+
+}
+
+/// Gathers one field of a morton code with shifts and masks instead of table lookups: the
+/// "sheep and goats" compress of Hacker's Delight 7-4, with every mask folded by constexpr.
+template <size_t Dimensions>
+struct MortonNDCompressDecoder
+{
+    static constexpr UInt64 field_mask = morton_compress::fieldMask(Dimensions);
+    static constexpr std::array<UInt64, 6> move_masks = morton_compress::moveMasks(Dimensions);
+
+    template <size_t Step>
+    static constexpr UInt64 compressStep(UInt64 x)
+    {
+        if constexpr (move_masks[Step] == 0)
+            return x;
+        else
+        {
+            const UInt64 t = x & move_masks[Step];
+            return (x ^ t) | (t >> (1u << Step));
+        }
+    }
+
+    static constexpr UInt64 extractField(UInt64 code)
+    {
+        UInt64 x = code & field_mask;
+        x = compressStep<0>(x);
+        x = compressStep<1>(x);
+        x = compressStep<2>(x);
+        x = compressStep<3>(x);
+        x = compressStep<4>(x);
+        x = compressStep<5>(x);
+        return x;
+    }
+
+    template <size_t... I>
+    static constexpr auto decodeImpl(UInt64 code, std::index_sequence<I...>)
+    {
+        return std::make_tuple(extractField(code >> I)...);
+    }
+
+    constexpr auto Decode(UInt64 code) const { return decodeImpl(code, std::make_index_sequence<Dimensions>{}); }
+};
+
+/// AArch64 has no pdep/pext, so it reaches this arm rather than the BMI2 one below. The
+/// compress decoder wins there at every dimension except 4 and 8, where the lookup table's
+/// one shared load amortises over enough output fields to stay ahead.
+template <size_t Dimensions>
+constexpr bool use_compress_decoder =
+#if defined(__aarch64__)
+    Dimensions != 4 && Dimensions != 8;
+#else
+    false;
+#endif
+
+template <size_t Dimensions, size_t FieldBits>
+constexpr auto makeMortonDecoder()
+{
+    if constexpr (use_compress_decoder<Dimensions>)
+        return MortonNDCompressDecoder<Dimensions>();
+    else
+        return mortonnd::MortonNDLutDecoder<Dimensions, FieldBits, 8>();
+}
+
+constexpr auto MortonND_2D_Dec = makeMortonDecoder<2, 32>();
+constexpr auto MortonND_3D_Dec = makeMortonDecoder<3, 21>();
+constexpr auto MortonND_4D_Dec = makeMortonDecoder<4, 16>();
+constexpr auto MortonND_5D_Dec = makeMortonDecoder<5, 12>();
+constexpr auto MortonND_6D_Dec = makeMortonDecoder<6, 10>();
+constexpr auto MortonND_7D_Dec = makeMortonDecoder<7, 9>();
+constexpr auto MortonND_8D_Dec = makeMortonDecoder<8, 8>();
 class FunctionMortonDecode : public FunctionSpaceFillingCurveDecode<8, 1, 8>
 {
 public:
