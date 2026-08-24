@@ -35,7 +35,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
+            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
             {"instruction_or_schema", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -133,7 +133,7 @@ private:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "aiExtract: 'instruction_or_schema' must be a JSON object mapping field names to descriptions");
 
-                Strings keys;
+                std::vector<String> keys;
                 user_obj->getNames(keys);
                 for (const auto & key : keys)
                 {
@@ -236,7 +236,7 @@ are taken from the `credentials` key of the optional parameter map, or from the
         .arguments = {
             {"text", "Text to extract information from.", {"String"}},
             {"instruction_or_schema", "Free-form extraction instruction, or a constant JSON object describing the fields to extract.", {"const String"}},
-            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
         },
         .returned_value = {"A single extracted value (instruction mode) or a JSON object string (schema mode). Returns the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {

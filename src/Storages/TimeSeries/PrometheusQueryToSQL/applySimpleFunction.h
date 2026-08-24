@@ -16,7 +16,7 @@ namespace DB::PrometheusQueryToSQL
 ///
 /// applySimpleFunction() doesn't check argument types and doesn't drop the metric name.
 SQLQueryPiece applySimpleFunction(
-    const PrometheusQueryTree::Node * node,
+    const PQT::Node * node,
     ConverterContext & context,
     const std::function<ASTPtr(ASTs)> & apply_function_to_ast,
     std::vector<SQLQueryPiece> && arguments);

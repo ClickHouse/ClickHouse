@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 SET optimize_use_projections = 1;
 
 -- { echoOn }
@@ -31,6 +30,10 @@ INSERT INTO visits_order SELECT 2, 'yet_another_user2', number*3 from numbers(1,
 OPTIMIZE TABLE visits_order FINAL;
 
 ALTER TABLE visits_order_dst ATTACH PARTITION ID '2' FROM visits_order;
+
+SET enable_analyzer=0;
+
+EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';
 
 SET enable_analyzer=1, enable_parallel_replicas=0;
 

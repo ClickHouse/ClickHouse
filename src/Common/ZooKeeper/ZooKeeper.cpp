@@ -45,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
@@ -116,7 +117,7 @@ static void check(Coordination::Error code, const std::string & path)
         throw KeeperException::fromPath(code, path);
 }
 
-static UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
+UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
 {
     std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
         {
@@ -241,7 +242,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                            " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
                       impl->getConnectedHostPort(), *node_idx, reconnect_timeout_sec);
 
-            auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool()->createTask(DB::StorageID::createEmpty(), "ZKReconnect", [this, optimal_host = shuffled_hosts[0]]()
+            auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool().createTask(DB::StorageID::createEmpty(), "ZKReconnect", [this, optimal_host = shuffled_hosts[0]]()
             {
                 auto component_guard = Coordination::setCurrentComponent("ZooKeeper::reconnect");
                 try
@@ -1383,7 +1384,7 @@ namespace
     using WaitForDisappearStatePtr = std::shared_ptr<WaitForDisappearState>;
 }
 
-bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition, ProfileEvents::Event triggered_event)
+bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition)
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
@@ -1407,7 +1408,6 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
             }
         };
     });
-    watch.setTriggeredEvent(triggered_event);
 
     /// do-while control structure to allow using this function in non-blocking
     /// fashion with a wait condition which returns false by the time this
@@ -2134,30 +2134,34 @@ Coordination::RequestPtr makeGetRequest(const std::string & path, Coordination::
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
-    auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
+    // Keeper server that support MultiRead also support FilteredList
+    auto request = std::make_shared<Coordination::ZooKeeperFilteredListRequest>();
     request->path = path;
+    request->list_request_type = list_request_type;
     request->watch_callback = watch;
     request->has_watch = static_cast<bool>(watch);
-
-    if (list_request_type != Coordination::ListRequestType::ALL)
-        request->list_request_type = list_request_type;
-
     return request;
 }
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, bool with_stat, bool with_data, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
-    if (!with_stat && !with_data)
+    // Use the derived request class when stats or data are requested
+    if (with_stat || with_data)
+    {
+        auto request = std::make_shared<Coordination::ZooKeeperFilteredListWithStatsAndDataRequest>();
+        request->path = path;
+        request->list_request_type = list_request_type;
+        request->with_stat = with_stat;
+        request->with_data = with_data;
+        request->watch_callback = watch;
+        request->has_watch = static_cast<bool>(watch);
+        return request;
+    }
+    else
+    {
+        // Fall back to base request if no extra data needed
         return makeListRequest(path, list_request_type, watch);
-
-    auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
-    request->path = path;
-    request->list_request_type = list_request_type;
-    request->with_stat = with_stat;
-    request->with_data = with_data;
-    request->watch_callback = watch;
-    request->has_watch = static_cast<bool>(watch);
-    return request;
+    }
 }
 
 Coordination::RequestPtr makeSimpleListRequest(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch)
@@ -2178,10 +2182,59 @@ Coordination::RequestPtr makeExistsRequest(const std::string & path, Coordinatio
     return request;
 }
 
+std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, LoggerPtr log)
+{
+    if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
+        zookeeper_path.resize(zookeeper_path.size() - 1);
+    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
+    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
+    {
+        /// Do not allow this for new tables, print warning for tables created in old versions
+        if (check_starts_with_slash)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must starts with '/', got '{}'", zookeeper_path);
+        if (log)
+            LOG_WARNING(log, "ZooKeeper path ('{}') does not start with '/'. It will not be supported in future releases", zookeeper_path);
+        zookeeper_path = "/" + zookeeper_path;
+    }
+
+    return zookeeper_path;
+}
+
+String extractZooKeeperName(const String & path)
+{
+    if (path.empty())
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");
+    if (path[0] == '/')
+        return String(DEFAULT_ZOOKEEPER_NAME);
+    auto pos = path.find(":/");
+    if (pos != String::npos && pos < path.find('/'))
+    {
+        auto zookeeper_name = path.substr(0, pos);
+        if (zookeeper_name.empty())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'");
+        return zookeeper_name;
+    }
+    return String(DEFAULT_ZOOKEEPER_NAME);
+}
+
+String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log)
+{
+    if (path.empty())
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");
+    if (path[0] == '/')
+        return normalizeZooKeeperPath(path, check_starts_with_slash, log);
+    auto pos = path.find(":/");
+    if (pos != String::npos && pos < path.find('/'))
+    {
+        return normalizeZooKeeperPath(path.substr(pos + 1, String::npos), check_starts_with_slash, log);
+    }
+    return normalizeZooKeeperPath(path, check_starts_with_slash, log);
+}
+
 String getSequentialNodeName(const String & prefix, UInt64 number)
 {
     /// NOTE Sequential counter in ZooKeeper is Int32.
-    chassert(number < std::numeric_limits<Int32>::max());
+    assert(number < std::numeric_limits<Int32>::max());
     constexpr size_t seq_node_digits = 10;
     String num_str = std::to_string(number);
     String name = prefix + String(seq_node_digits - num_str.size(), '0') + num_str;

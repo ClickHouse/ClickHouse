@@ -1,9 +1,0 @@
-analyzer using hash	Nullable(String)	a	1	10
-analyzer using hash_fsm	Nullable(String)	a	1	10
-analyzer using hash_pfsm	Nullable(String)	a	1	10
-analyzer lc hash	String	a	1	10
-analyzer lc hash_fsm	String	a	1	10
-analyzer lc hash_pfsm	String	a	1	10
-analyzer storage_join hash	a	1	10
-analyzer storage_join hash_fsm	a	1	10
-analyzer storage_join hash_pfsm	a	1	10

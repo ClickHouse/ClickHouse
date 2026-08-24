@@ -10,10 +10,8 @@ struct VirtualColumnDescription : public ColumnDescription
     VirtualsKind kind = VirtualsKind::None;
     VirtualsMaterializationPlace place = VirtualsMaterializationPlace::Reader;
 
-    bool deterministic = true;
-
     VirtualColumnDescription() = default;
-    VirtualColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_, VirtualsMaterializationPlace place_, bool deterministic_);
+    VirtualColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_, VirtualsMaterializationPlace place_);
 
     bool isEphemeral() const { return kind == VirtualsKind::Ephemeral; }
     bool isPersistent() const { return kind == VirtualsKind::Persistent; }
@@ -40,7 +38,7 @@ public:
     VirtualColumnsDescription() = default;
 
     void add(VirtualColumnDescription desc);
-    void addEphemeral(String name, DataTypePtr type, String comment, VirtualsMaterializationPlace place, bool deterministic = true);
+    void addEphemeral(String name, DataTypePtr type, String comment, VirtualsMaterializationPlace place);
     void addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment);
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
@@ -56,10 +54,6 @@ public:
 
     Block getSampleBlock(VirtualsKind kind, VirtualsMaterializationPlace place) const;
     ColumnsDescription toColumnsDescription(VirtualsKind kind, VirtualsMaterializationPlace place) const;
-
-    /// Like `getSampleBlock`, but skips the per-column `IDataType::createColumn()` allocation
-    /// and the `Block` round-trip. Hot in `StorageSnapshot::getColumns`.
-    NamesAndTypesList getNamesAndTypes(VirtualsKind kind, VirtualsMaterializationPlace place) const;
 
 private:
     Container container;
