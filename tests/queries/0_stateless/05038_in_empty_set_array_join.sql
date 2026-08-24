@@ -1,6 +1,9 @@
+-- Random settings limits: optimize_move_to_prewhere=(1, 1); query_plan_optimize_prewhere=(1, 1)
+
 DROP TABLE IF EXISTS t_in_empty_set;
 DROP TABLE IF EXISTS t_in_empty_set_nullable;
 DROP TABLE IF EXISTS t_in_empty_set_lc;
+DROP TABLE IF EXISTS t_in_empty_set_storage;
 
 CREATE TABLE t_in_empty_set (a Int, b Int) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_in_empty_set VALUES (1, 2);
@@ -35,6 +38,19 @@ SELECT count() FROM t_in_empty_set_lc ARRAY JOIN [b] AS x WHERE a IN ();
 SELECT count() FROM t_in_empty_set_lc ARRAY JOIN [b] AS x WHERE a NOT IN ();
 SELECT toTypeName(a IN ()) FROM t_in_empty_set_lc;
 
+CREATE TABLE t_in_empty_set_storage (x Int) ENGINE = Set;
+
+-- A `Set` table can be filled after a query referencing it is planned, so its emptiness must not
+-- be folded into a constant. The plan keeps the function while a literal empty list becomes one.
+SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN ()) WHERE explain ILIKE '%Filter column: 0%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%Filter column: 0%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT sum(b) FROM t_in_empty_set WHERE a IN t_in_empty_set_storage) WHERE explain ILIKE '%t_in_empty_set_storage%';
+
+SELECT count() FROM t_in_empty_set WHERE a IN t_in_empty_set_storage;
+INSERT INTO t_in_empty_set_storage VALUES (1);
+SELECT count() FROM t_in_empty_set WHERE a IN t_in_empty_set_storage;
+
 DROP TABLE t_in_empty_set;
 DROP TABLE t_in_empty_set_nullable;
 DROP TABLE t_in_empty_set_lc;
+DROP TABLE t_in_empty_set_storage;

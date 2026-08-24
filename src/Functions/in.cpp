@@ -110,6 +110,13 @@ public:
         if (!future_set)
             return nullptr;
 
+        /// A storage-backed set is the live set of an `ENGINE = Set` table and can grow before
+        /// execution, so its current emptiness is not a property to fold on. A tuple set is complete
+        /// once constructed and a subquery set is frozen once created; treat any other kind as mutable.
+        if (!typeid_cast<const FutureSetFromTuple *>(future_set.get())
+            && !typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+            return nullptr;
+
         /// A set that is not built yet may still turn out to be non-empty.
         auto set = future_set->get();
         if (!set || set->getTotalRowCount() != 0)
