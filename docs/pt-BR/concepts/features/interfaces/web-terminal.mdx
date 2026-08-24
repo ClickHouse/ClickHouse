@@ -61,6 +61,16 @@ O terminal usa [xterm.js](https://xtermjs.org/) para renderização. Todos os re
 
 A interface Web SQL [`/play`](/pt-BR/concepts/features/interfaces/http) incorpora o terminal web como um painel acoplável. Ative-o pelo ícone de terminal na barra lateral ou pressione a tecla `~` quando o editor de consulta estiver vazio. A página `/play` detecta a disponibilidade de `/webterminal` ao carregar e oculta os controles do terminal quando o endpoint não está disponível (por exemplo, quando `enable_webterminal` está definido como `false`).
 
+<div id="docs-integration">
+  ## Integração com o site de documentação
+</div>
+
+Este site de documentação incorpora o mesmo terminal em uma barra estreita para desenvolvedores na parte inferior da página, conectado ao [ClickHouse playground](https://play.clickhouse.com) como o usuário `play`, somente leitura, para que seja possível testar os exemplos de qualquer página sem sair dela. A barra fixa reserva um espaço correspondente no fim da página para não ocultar os controles do rodapé. Enquanto o terminal está aberto, a página de documentação fica bloqueada e sua barra de rolagem é ocultada. A rolagem sobre o terminal fica restrita ao seu histórico e não move a página de documentação por trás dele. Clique na barra &quot;ClickHouse terminal&quot; ou pressione a tecla `~` para abrir o painel com preenchimento acima da barra. Clique novamente na barra, use o chevron, pressione `~` ou `Escape`, ou arraste a borda superior do painel para baixo para recolhê-lo; essa borda também permite redimensioná-lo. Encerrar a sessão — `exit` ou `Ctrl+D` — também recolhe o painel.
+
+Ao fechar o painel, a sessão e seu histórico são mantidos: ao reabrir o terminal, você retorna ao mesmo prompt. A sessão permanece na página e, portanto, é preservada ao navegar entre páginas da documentação, mas não ao recarregar a aba do navegador — após recarregá-la, o painel retorna com uma nova sessão.
+
+A barra do terminal faz parte do layout para desktop do site e não está disponível em viewports estreitos.
+
 <div id="security">
   ## Considerações de segurança
 </div>
