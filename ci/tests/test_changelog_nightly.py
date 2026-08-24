@@ -158,7 +158,9 @@ class _FakeInfo:
 
 def test_push_branch_uses_app_token_without_verbose_logging(monkeypatch):
     checks = []
+    refreshed = []
     monkeypatch.setattr(m, "Info", _FakeInfo)
+    monkeypatch.setattr(m, "refresh_gh_token", lambda: refreshed.append(True))
     monkeypatch.setattr(m.Shell, "get_output", lambda *_a, **_k: "abc123 commit")
     monkeypatch.setattr(
         m.Shell,
@@ -166,6 +168,10 @@ def test_push_branch_uses_app_token_without_verbose_logging(monkeypatch):
         lambda command, verbose=False, **_k: checks.append((command, verbose)) or True,
     )
     assert m.push_branch("auto/changelog-26.7", True) == "Pushed auto/changelog-26.7"
+    # The token the push authenticates with is minted right before it: the
+    # editing step that precedes the push outlives the one-hour lifetime of
+    # the token the job started with.
+    assert refreshed == [True]
     assert len(checks) == 1
     command, verbose = checks[0]
     assert verbose is False
@@ -176,11 +182,54 @@ def test_push_branch_uses_app_token_without_verbose_logging(monkeypatch):
 
 
 def test_push_branch_nothing_to_push(monkeypatch):
+    monkeypatch.setattr(
+        m, "refresh_gh_token", lambda: pytest.fail("must not mint a token")
+    )
     monkeypatch.setattr(m.Shell, "get_output", lambda *_a, **_k: "")
     monkeypatch.setattr(
         m.Shell, "check", lambda *_a, **_k: pytest.fail("must not push")
     )
     assert m.push_branch("auto/changelog-26.7", True) == "Nothing to push"
+
+
+def test_refresh_gh_token_forces_a_new_token(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        m.GHAuth, "auth", classmethod(lambda _cls, **kwargs: calls.append(kwargs))
+    )
+    m.refresh_gh_token()
+    # Without force, GHAuth.auth returns the token minted at job start, which
+    # is what let the job run into `Bad credentials` an hour in.
+    assert calls == [{"force": True, "no_strict": True}]
+
+
+def test_prepare_repo_fetches_the_commit_graph_only(monkeypatch):
+    commands = []
+    monkeypatch.setattr(m.Shell, "get_output", lambda *_a, **_k: "true")
+    monkeypatch.setattr(
+        m.Shell, "check", lambda command, **_k: commands.append(command) or True
+    )
+    assert m.prepare_repo() == "Fetched master and tags"
+    fetches = [c for c in commands if c.startswith("git fetch")]
+    assert len(fetches) == 2
+    for command in fetches:
+        # Trees and blobs of the whole history are never needed, and fetching
+        # them cost ~35 minutes of every run.
+        assert "--filter=tree:0" in command
+        assert "'+refs/heads/master:refs/remotes/origin/master'" in command
+    assert "--unshallow" in fetches[0]
+    assert "--tags" in fetches[1]
+
+
+def test_prepare_repo_skips_unshallow_on_a_complete_repository(monkeypatch):
+    commands = []
+    monkeypatch.setattr(m.Shell, "get_output", lambda *_a, **_k: "false")
+    monkeypatch.setattr(
+        m.Shell, "check", lambda command, **_k: commands.append(command) or True
+    )
+    m.prepare_repo()
+    # `git fetch --unshallow` on a complete repository is an error.
+    assert not [c for c in commands if "--unshallow" in c]
 
 
 def test_get_pr_states_scopes_repo_and_filters_fork_prs(monkeypatch):
