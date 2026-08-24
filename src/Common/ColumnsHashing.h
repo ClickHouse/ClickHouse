@@ -17,6 +17,7 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/Defines.h>
+#include <algorithm>
 #include <memory>
 #include <Common/HashTable/Hash.h>
 
@@ -91,7 +92,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     };
 
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
-    using EmplaceResult = columns_hashing_impl::EmplaceResultImpl<Mapped>;
+    using EmplaceResult = typename Base::EmplaceResult;
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
     static constexpr bool has_cheap_key_calculation = Base::has_cheap_key_calculation;
@@ -116,6 +117,15 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     /// Cache AggregateDataPtr for current column in order to decrease the number of hash table usages.
     columns_hashing_impl::MappedCache<Mapped> mapped_cache;
     PaddedPODArray<VisitValue> visit_cache;
+
+    PaddedPODArray<UInt64> filled_visit_cache_indexes;
+
+    ALWAYS_INLINE void setVisited(size_t index, VisitValue value)
+    {
+        if (visit_cache[index] == VisitValue::Empty)
+            filled_visit_cache_indexes.push_back(index);
+        visit_cache[index] = value;
+    }
 
     /// If initialized column is nullable.
     bool is_nullable = false;
@@ -191,11 +201,23 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if constexpr (has_mapped)
             mapped_cache.resize(key_columns[0]->size());
 
-        VisitValue empty(VisitValue::Empty);
-        visit_cache.assign(key_columns[0]->size(), empty);
+        visit_cache.assign(key_columns[0]->size(), VisitValue::Empty);
 
         size_of_index_type = column->getSizeOfIndexType();
         positions = column->getIndexesPtr().get();
+    }
+
+    ALWAYS_INLINE void resetCache()
+    {
+        Base::resetCache();
+
+        if (filled_visit_cache_indexes.size() > visit_cache.size() / 4)
+            std::fill(visit_cache.begin(), visit_cache.end(), VisitValue::Empty);
+        else
+            for (UInt64 index : filled_visit_cache_indexes)
+                visit_cache[index] = VisitValue::Empty;
+
+        filled_visit_cache_indexes.clear();
     }
 
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
@@ -223,7 +245,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if (is_nullable && row == 0)
         {
-            visit_cache[row] = VisitValue::Found;
+            setVisited(row, VisitValue::Found);
             bool has_null_key = data.hasNullKeyData();
             data.hasNullKeyData() = true;
 
@@ -242,6 +264,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         }
 
         auto key_holder = getKeyHolder(row_, pool);
+        auto key = keyHolderGetKey(key_holder);
 
         bool inserted = false;
         typename Data::LookupResult it;
@@ -250,7 +273,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         else
             data.emplace(key_holder, it, inserted);
 
-        visit_cache[row] = VisitValue::Found;
+        setVisited(row, VisitValue::Found);
 
         if constexpr (has_mapped)
         {
@@ -260,7 +283,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 new (&mapped) Mapped();
             }
             mapped_cache[row] = mapped;
-            return EmplaceResult(mapped, mapped_cache[row], inserted);
+            return EmplaceResult(mapped, mapped_cache[row], inserted, std::move(key));
         }
         else
             return EmplaceResult(inserted);
@@ -304,7 +327,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             it = data.find(keyHolderGetKey(key_holder));
 
         bool found = it;
-        visit_cache[row] = found ? VisitValue::Found : VisitValue::NotFound;
+        setVisited(row, found ? VisitValue::Found : VisitValue::NotFound);
 
         if constexpr (has_mapped)
         {
@@ -619,9 +642,10 @@ struct HashMethodSerialized
     /// Closes the hole a duplicate row left behind, right after the row that follows it was
     /// inserted: its key moves down onto the hole and its cell - still hot, and safe from a resize
     /// that has not happened yet - is repointed. A key keeps its bytes, so its hash and its slot do
-    /// not change.
-    template <typename Data, typename LookupResult>
-    void ALWAYS_INLINE onEmplaced(size_t row, Data &, LookupResult cell, bool inserted)
+    /// not change. The snapshot the caller took before the emplace is re-pointed along with the
+    /// cell, because the move can overwrite the bytes it was reading.
+    template <typename Data, typename LookupResult, typename Key>
+    void ALWAYS_INLINE onEmplaced(size_t row, Data &, LookupResult cell, bool inserted, Key & snapshot)
     {
         if (!use_key_region || use_chunk_scratch || !inserted)
             return;
@@ -633,6 +657,8 @@ struct HashMethodSerialized
             {
                 memmove(region_free, key.data(), key.size());
                 cell->relocateKey(typename Data::key_type(region_free, key.size()));
+                serialized_keys[row] = std::string_view(region_free, key.size());
+                snapshot = Key(region_free, key.size());
             }
             region_free += key.size();
         }
@@ -646,12 +672,13 @@ struct HashMethodSerialized
             if (row < chunk_begin || row >= chunk_end) [[unlikely]]
                 prepareKeyChunk(row, pool);
             return ArenaKeyHolder{
-                serialized_keys[row], pool, {}, use_chunk_scratch ? ArenaKeyPlacement::NeedsCopy : ArenaKeyPlacement::InArena};
+                serialized_keys[row], pool, use_chunk_scratch ? ArenaKeyPlacement::NeedsCopy : ArenaKeyPlacement::InArena};
         }
 
         /// One buffer for the whole block instead of one allocation per row. The key stays valid
-        /// only until the next call for this state, which is all its callers need: they persist it
-        /// into the arena or discard it before asking for the next row.
+        /// until the next call for this state, which is what its callers need: they persist it into
+        /// the arena or discard it before asking for the next row, and the key snapshot that
+        /// `EmplaceResult` carries is read once `emplaceKey` has returned (the top-K heap keeps it).
         key_scratch.resize(row_sizes[row]);
         char * memory = key_scratch.data();
         std::string_view key(memory, row_sizes[row]);
