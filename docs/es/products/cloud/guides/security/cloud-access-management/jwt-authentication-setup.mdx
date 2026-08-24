@@ -19,7 +19,7 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <VersionBadge minVersion="26.4" />
 
-<EnterprisePlanFeatureBadge feature="Autenticación con JWT mediante un proveedor de identidad personalizado" support="true" />
+<EnterprisePlanFeatureBadge feature="Autenticación con JWT mediante un proveedor de identidad personalizado" />
 
 <Tip>
   Esta guía explica cómo configurar proveedores de JWKS en la consola de Cloud. Para saber cómo generar un JWT y cuál es su estructura —incluidos los claims obligatorios, los claims de roles y grants, y el funcionamiento de los usuarios efímeros—, consulte la referencia sobre [autenticación con JWT](/es/operations/external-authenticators/jwt).
@@ -27,11 +27,7 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse Cloud permite autenticar las conexiones a un servicio mediante JSON Web Tokens (JWT) validados con sus propios endpoints de JSON Web Key Set (JWKS). En lugar de gestionar credenciales de base de datos, su proveedor de identidad emite tokens de corta duración que ClickHouse verifica con las claves públicas publicadas en una URL de JWKS que usted configure.
 
-Una vez habilitada la funcionalidad para su organización, puede configurar estos proveedores de JWKS para cada servicio desde **Configuración → Seguridad** en la consola de ClickHouse Cloud.
-
-<Note>
-  Para habilitar proveedores de JWT para su organización, póngase en contacto con [soporte](https://clickhouse.com/support/program).
-</Note>
+Puede configurar estos proveedores de JWKS para cada servicio desde **Configuración → Seguridad** en la consola de ClickHouse Cloud.
 
 <div id="before-you-begin">
   ## Antes de empezar
@@ -42,10 +38,10 @@ Para configurar proveedores de JWT para un servicio, necesita:
 * Una organización con el plan **Enterprise**.
 * Un servicio que ejecute **ClickHouse versión 26.4 o posterior**.
 * Un rol con el permiso `control-plane:service:manage` en el servicio (por ejemplo, **Admin** o **Service admin**). Los miembros que no cuenten con él verán la sección en modo de solo lectura.
-* Una URL de JWKS **HTTPS** accesible públicamente que publique al menos una clave **RSA** (los tokens deben estar firmados con **RS256**).
+* Una URL de JWKS **HTTPS** accesible públicamente que publique al menos una clave **RSA** (`RS256`) o, para servicios con versión 26.8 o posterior, una clave **EC** (`ES256`, `ES384`, `ES512`).
 
 <Note>
-  Los proveedores basados en JWKS aceptan **únicamente claves RSA**. Los tokens firmados con claves HMAC (`HS256`) o EC (`ES256`) no se pueden verificar mediante un endpoint de JWKS y se rechazan. Un documento JWKS puede contener otros tipos de claves, pero debe incluir al menos una clave RSA utilizable.
+  Los proveedores basados en JWKS aceptan claves **RSA** y, a partir de la versión 26.8, claves **EC** en las curvas P-256, P-384 y P-521. Un documento JWKS puede contener otros tipos de claves, pero debe incluir al menos una clave utilizable.
 </Note>
 
 <div id="how-it-works">
@@ -55,7 +51,7 @@ Para configurar proveedores de JWT para un servicio, necesita:
 El Client (su proveedor de identidad o aplicación) genera un JWT y lo firma con su **clave privada**. El token debe seguir el [formato de token](/es/operations/external-authenticators/jwt#token-claims) previsto. A continuación, ClickHouse lo verifica con las claves **públicas** publicadas en su URL de JWKS:
 
 1. ClickHouse lee el encabezado `kid` (ID de clave) del token y selecciona la clave correspondiente de su documento JWKS.
-2. Verifica la firma del token con esa clave pública RSA y comprueba las claims `iss` (emisor) y `aud` (audiencia) con la configuración de su proveedor.
+2. Verifica la firma del token con esa clave pública y comprueba las claims `iss` (emisor) y `aud` (audiencia) con la configuración de su proveedor.
 3. Si la verificación se realiza correctamente, la conexión se establece como un usuario efímero cuyos derechos de acceso proceden de las claims `clickhouse:grants` y `clickhouse:roles` del token, limitados por el límite de permisos (el usuario `default`). Consulte [Derechos de acceso](/es/operations/external-authenticators/jwt#access-rights) para obtener más información.
 
 ClickHouse valida y obtiene la URL de JWKS al añadir o actualizar un proveedor, por lo que las URL mal configuradas o inaccesibles se rechazan de inmediato.
@@ -83,7 +79,7 @@ ClickHouse valida y obtiene la URL de JWKS al añadir o actualizar un proveedor,
     | **Name**                   | Un nombre único para este proveedor en el servicio. No se puede modificar después de crearlo.                                                                                                                          |
     | **Issuer**                 | El claim `iss` esperado de los tokens entrantes.                                                                                                                                                                       |
     | **Audience**               | El claim `aud` esperado de los tokens entrantes.                                                                                                                                                                       |
-    | **URL de JWKS**            | La URL HTTPS pública que publica las claves públicas RSA utilizadas para verificar las firmas de los tokens.                                                                                                           |
+    | **URL de JWKS**            | La URL HTTPS pública que publica las claves públicas utilizadas para verificar las firmas de los tokens.                                                                                                               |
     | **Roles claim** (opcional) | El claim del token del que se leen los roles de ClickHouse. Déjelo en blanco para usar el nombre de claim predeterminado `clickhouse:roles`. Los roles indicados en el token deben existir previamente en el servicio. |
   </Step>
 
@@ -101,7 +97,7 @@ ClickHouse valida y obtiene la URL de JWKS al añadir o actualizar un proveedor,
 </div>
 
 * Se permite un máximo de **cinco** proveedores de JWT por servicio.
-* Los proveedores de JWKS solo aceptan claves **RSA / RS256**.
+* Los proveedores de JWKS aceptan claves **RSA** (`RS256`) y, a partir de la versión 26.8, claves **EC** (`ES256`, `ES384`, `ES512`).
 * La URL de JWKS debe ser un endpoint HTTPS público. Se rechazan las direcciones privadas, internas o de enlace local.
 
 <div id="related">

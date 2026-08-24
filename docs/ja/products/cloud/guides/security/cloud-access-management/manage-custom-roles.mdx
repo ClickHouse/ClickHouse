@@ -86,6 +86,14 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   データベースで手動で割り当てられた、[`sql-console-role:<email>` 命名規則](/ja/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)を使用するロールは、コンソールを通じて割り当てられたロールよりも優先されます。
 </Info>
 
+<div id="manage-database-roles-prerequisites">
+  ### 前提条件
+</div>
+
+サービス上のカスタムデータベースロールは、[JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)に依存しており、無効になっている間は適用されません。ロールにデータ権限を追加する前に、サービスに移動し、`Settings` を開き、`Security` セクションで `JWT authentication` カードを見つけます。`SQL Console` トグルが有効になっていることを確認してください。
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="SQL Consoleトグルが有効になっているJWT認証カード" size="lg" force />
+
 <Steps>
   <Step title="ロールにデータ権限を追加する" id="add-data-permissions">
     [カスタムロールを作成](#create-custom-role)するか、既存のロールを編集します。ロールダイアログで、`Allow permissions` ボタンをクリックし、`Data` を選択します。

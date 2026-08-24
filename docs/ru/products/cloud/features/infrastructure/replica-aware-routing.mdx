@@ -7,8 +7,11 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <PrivatePreviewBadge />
+
+<EnterprisePlanFeatureBadge feature="Маршрутизация с учетом реплик" support="true" />
 
 Маршрутизация с учетом реплик (также известная как липкие сеансы, липкая маршрутизация или привязка сеанса) направляет связанные запросы на одну и ту же реплику ClickHouse. Используйте ее, если [временные таблицы](/ru/reference/statements/create/table/temporary-table) или [именованное состояние сеанса](/ru/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) должны оставаться доступными между запросами, если связанные запросы должны повторно использовать локальный кэш одной и той же реплики или если требуется [согласованность чтения после записи](#read-after-write-consistency) между записью и последующими операциями чтения.
 

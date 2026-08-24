@@ -7,8 +7,11 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <PrivatePreviewBadge />
+
+<EnterprisePlanFeatureBadge feature="Enrutamiento con reconocimiento de réplicas" support="true" />
 
 El enrutamiento con reconocimiento de réplicas (también conocido como sesiones persistentes, enrutamiento con afinidad o afinidad de sesión) dirige las solicitudes relacionadas a la misma réplica de ClickHouse. Úselo cuando necesite que las [tablas temporales](/es/reference/statements/create/table/temporary-table) o el [estado de sesión con nombre](/es/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) sigan estando disponibles entre consultas, cuando quiera que las consultas relacionadas reutilicen las cachés locales de la misma réplica o cuando necesite [consistencia de lectura después de la escritura](#read-after-write-consistency) entre una escritura y las lecturas posteriores.
 

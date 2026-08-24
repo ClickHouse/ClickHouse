@@ -86,6 +86,14 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
   Роли, вручную назначенные в базе данных с использованием [соглашения об именовании `sql-console-role:<email>`](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles), имеют приоритет над ролями, назначенными через консоль.
 </Info>
 
+<div id="manage-database-roles-prerequisites">
+  ### Предварительные требования
+</div>
+
+Пользовательские роли базы данных в сервисе зависят от [JWT-аутентификации](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) и не применяются, пока она отключена. Прежде чем добавлять разрешения на доступ к данным в роль, перейдите к сервису, откройте `Settings` и найдите карточку `JWT authentication` в разделе `Security`. Убедитесь, что переключатель `SQL Console` включен.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="Карточка JWT-аутентификации с включенным переключателем SQL Console" size="lg" force />
+
 <Steps>
   <Step title="Добавьте разрешения на доступ к данным в роль" id="add-data-permissions">
     [Создайте пользовательскую роль](#create-custom-role) или отредактируйте существующую. В диалоговом окне роли нажмите кнопку `Allow permissions` и выберите `Data`.

@@ -19,7 +19,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 <VersionBadge minVersion="26.4" />
 
-<EnterprisePlanFeatureBadge feature="Authentification JWT avec un fournisseur d'identité personnalisé" support="true" />
+<EnterprisePlanFeatureBadge feature="Authentification JWT avec un fournisseur d'identité personnalisé" />
 
 <Tip>
   Ce guide explique comment configurer des fournisseurs JWKS dans la console Cloud. Pour savoir comment générer un JWT et à quoi ressemble sa structure — les claims obligatoires, les claims de rôles et de grants, ainsi que le fonctionnement des utilisateurs éphémères — consultez la référence [Authentification JWT](/fr/operations/external-authenticators/jwt).
@@ -27,11 +27,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse Cloud vous permet d&#39;authentifier les connexions à un service à l&#39;aide de JSON Web Tokens (JWT) validés par rapport à vos propres endpoints JSON Web Key Set (JWKS). Au lieu de gérer des identifiants de base de données, votre fournisseur d&#39;identité émet des jetons de courte durée que ClickHouse vérifie à l&#39;aide des clés publiques publiées à l&#39;URL JWKS que vous configurez.
 
-Une fois cette fonctionnalité activée pour votre organisation, vous pouvez configurer vous-même ces fournisseurs JWKS pour chaque service, depuis **Paramètres → Sécurité** dans la console ClickHouse Cloud.
-
-<Note>
-  Pour activer les fournisseurs JWT pour votre organisation, contactez le [support](https://clickhouse.com/support/program).
-</Note>
+Vous pouvez configurer vous-même ces fournisseurs JWKS pour chaque service, depuis **Paramètres → Sécurité** dans la console ClickHouse Cloud.
 
 <div id="before-you-begin">
   ## Avant de commencer
@@ -42,10 +38,10 @@ Pour configurer des fournisseurs JWT pour un service, vous devez disposer des é
 * Une organisation avec le plan **Enterprise**.
 * Un service exécutant **ClickHouse version 26.4 ou une version ultérieure**.
 * Un rôle disposant de l&#39;autorisation `control-plane:service:manage` sur le service (par exemple, **Admin** ou **Service admin**). Les membres qui ne disposent pas de cette autorisation voient la section en lecture seule.
-* Une URL JWKS **HTTPS** accessible publiquement, publiant au moins une clé **RSA** (les jetons doivent être signés avec **RS256**).
+* Une URL JWKS **HTTPS** accessible publiquement, publiant au moins une clé **RSA** (`RS256`) ou, pour les services exécutant la version 26.8 ou une version ultérieure, une clé **EC** (`ES256`, `ES384`, `ES512`).
 
 <Note>
-  Les fournisseurs basés sur JWKS n&#39;acceptent que les **clés RSA**. Les jetons signés avec des clés HMAC (`HS256`) ou EC (`ES256`) ne peuvent pas être vérifiés auprès d&#39;un endpoint JWKS et sont rejetés. Un document JWKS peut contenir d&#39;autres types de clés, mais il doit contenir au moins une clé RSA utilisable.
+  Les fournisseurs basés sur JWKS acceptent les clés **RSA** et, à partir de la version 26.8, les clés **EC** sur les courbes P-256, P-384 et P-521. Un document JWKS peut contenir d&#39;autres types de clés, mais il doit contenir au moins une clé utilisable.
 </Note>
 
 <div id="how-it-works">
@@ -55,7 +51,7 @@ Pour configurer des fournisseurs JWT pour un service, vous devez disposer des é
 Le client (votre fournisseur d’identité ou votre application) génère un JWT et le signe avec sa **clé privée**. Le jeton doit respecter le [format de jeton](/fr/operations/external-authenticators/jwt#token-claims) attendu. ClickHouse le vérifie ensuite à l’aide des clés **publiques** publiées à l’URL de votre JWKS :
 
 1. ClickHouse lit l’en-tête `kid` (ID de clé) du jeton et sélectionne la clé correspondante dans votre document JWKS.
-2. Il vérifie la signature du jeton à l’aide de cette clé publique RSA et contrôle les claims `iss` (émetteur) et `aud` (audience) par rapport à la configuration de votre fournisseur.
+2. Il vérifie la signature du jeton à l’aide de cette clé publique et contrôle les claims `iss` (émetteur) et `aud` (audience) par rapport à la configuration de votre fournisseur.
 3. Si la vérification réussit, la connexion s’exécute sous la forme d’un utilisateur éphémère dont les droits d’accès proviennent des claims `clickhouse:grants` et `clickhouse:roles` du jeton, dans la limite des autorisations de l’utilisateur `default`. Consultez [Droits d’accès](/fr/operations/external-authenticators/jwt#access-rights) pour plus de détails.
 
 ClickHouse valide et récupère l’URL JWKS lorsque vous ajoutez ou mettez à jour un fournisseur ; une URL mal configurée ou inaccessible est donc rejetée immédiatement.
@@ -78,12 +74,12 @@ ClickHouse valide et récupère l’URL JWKS lorsque vous ajoutez ou mettez à j
   <Step title="Renseigner les informations du fournisseur" id="fill-provider-details">
     Remplissez le formulaire du fournisseur et sélectionnez **Enregistrer**.
 
-    | Champ                                    | Description                                                                                                                                                                                                                             |
-    | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-    | **Nom**                                  | Nom unique de ce fournisseur pour le service. Il ne peut pas être modifié après sa création.                                                                                                                                            |
-    | **Émetteur**                             | Claim `iss` attendue des jetons entrants.                                                                                                                                                                                       |
-    | **Audience**                             | Claim `aud` attendue des jetons entrants.                                                                                                                                                                                       |
-    | **URL JWKS**                             | URL HTTPS publique qui publie vos clés publiques RSA utilisées pour vérifier les signatures des jetons.                                                                                                                                 |
+    | Champ                            | Description                                                                                                                                                                                                             |
+    | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **Nom**                          | Nom unique de ce fournisseur pour le service. Il ne peut pas être modifié après sa création.                                                                                                                            |
+    | **Émetteur**                     | Claim `iss` attendue des jetons entrants.                                                                                                                                                                               |
+    | **Audience**                     | Claim `aud` attendue des jetons entrants.                                                                                                                                                                               |
+    | **URL JWKS**                     | URL HTTPS publique qui publie les clés publiques utilisées pour vérifier les signatures des jetons.                                                                                                                     |
     | **Claim des rôles** (facultatif) | Claim du jeton à partir de laquelle lire les rôles ClickHouse. Laissez ce champ vide pour utiliser le nom de claim par défaut `clickhouse:roles`. Les rôles indiqués dans le jeton doivent déjà exister sur le service. |
   </Step>
 
@@ -101,7 +97,7 @@ ClickHouse valide et récupère l’URL JWKS lorsque vous ajoutez ou mettez à j
 </div>
 
 * Au maximum **cinq** fournisseurs JWT par service.
-* Les fournisseurs JWKS n’acceptent que les clés **RSA / RS256**.
+* Les fournisseurs JWKS acceptent les clés **RSA** (`RS256`) et, à partir de la version 26.8, les clés **EC** (`ES256`, `ES384`, `ES512`).
 * L’URL JWKS doit être un endpoint HTTPS public. Les adresses privées, internes ou link-local sont rejetées.
 
 <div id="related">

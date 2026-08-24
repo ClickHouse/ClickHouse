@@ -86,6 +86,14 @@ ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 
   [`sql-console-role:<email>` 명명 규칙](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)을 사용해 데이터베이스에서 수동으로 할당한 역할은 콘솔을 통해 할당한 역할보다 우선합니다.
 </Info>
 
+<div id="manage-database-roles-prerequisites">
+  ### 사전 요구 사항
+</div>
+
+서비스에서 사용자 지정 데이터베이스 역할을 사용하려면 [JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)이 필요하며, JWT 인증이 비활성화되어 있으면 적용되지 않습니다. 역할에 데이터 권한을 추가하기 전에 서비스로 이동하여 `설정`를 열고 `Security` 섹션에서 `JWT authentication` 카드를 찾습니다. `SQL 콘솔` 토글이 활성화되어 있는지 확인합니다.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="SQL 콘솔 토글이 활성화된 JWT 인증 카드" size="lg" force />
+
 <Steps>
   <Step title="역할에 데이터 권한 추가" id="add-data-permissions">
     [사용자 지정 역할을 생성](#create-custom-role)하거나 기존 역할을 편집합니다. 역할 대화 상자에서 `Allow permissions` 버튼을 클릭한 후 `Data`를 선택합니다.

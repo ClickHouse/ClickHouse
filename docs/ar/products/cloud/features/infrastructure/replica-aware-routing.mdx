@@ -2,15 +2,18 @@
 title: 'Replica-aware routing'
 slug: /manage/replica-aware-routing
 description: 'وجّه الطلبات ذات الصلة إلى النسخة المتماثلة نفسها في ClickHouse Cloud لاستخدام الجداول المؤقتة والجلسات وإعادة استخدام ذاكرة التخزين المؤقت واتساق القراءة بعد الكتابة'
-keywords: ['cloud', 'نقاط نهاية ثابتة', 'ثابت', 'نقاط النهاية', 'التوجيه الثابت', 'التوجيه', 'التوجيه مع مراعاة النسخ المتماثلة', 'X-ClickHouse-Replica-Tag', 'تقارب الجلسة', 'الجداول المؤقتة', 'اتساق القراءة بعد الكتابة']
+keywords: ['cloud', 'نقاط نهاية مثبتة', 'مثبت', 'نقاط النهاية', 'التوجيه المثبت', 'التوجيه', 'التوجيه مع مراعاة النسخ المتماثلة', 'X-ClickHouse-Replica-Tag', 'تقارب الجلسة', 'الجداول المؤقتة', 'اتساق القراءة بعد الكتابة']
 doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <PrivatePreviewBadge />
 
-يوجّه التوجيه المراعي للنسخ المتماثلة، المعروف أيضًا باسم الجلسات اللاصقة أو التوجيه اللاصق أو تقارب الجلسة، الطلبات ذات الصلة إلى النسخة المتماثلة نفسها من ClickHouse. استخدمه عندما تحتاج إلى أن تظل [الجداول المؤقتة](/ar/reference/statements/create/table/temporary-table) أو [حالة الجلسة المسمّاة](/ar/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) متاحة عبر الاستعلامات، أو عندما تريد أن تعيد الاستعلامات ذات الصلة استخدام الذاكرات المؤقتة المحلية للنسخة المتماثلة نفسها، أو عندما تحتاج إلى [اتساق القراءة بعد الكتابة](#read-after-write-consistency) بين عملية كتابة وعمليات القراءة التي تليها.
+<EnterprisePlanFeatureBadge feature="التوجيه المراعي للنسخ المتماثلة" support="true" />
+
+يوجّه التوجيه المراعي للنسخ المتماثلة، المعروف أيضًا باسم الجلسات المثبتة أو التوجيه المثبت أو تقارب الجلسة، الطلبات ذات الصلة إلى النسخة المتماثلة نفسها من ClickHouse. استخدمه عندما تحتاج إلى أن تظل [الجداول المؤقتة](/ar/reference/statements/create/table/temporary-table) أو [حالة الجلسة المسمّاة](/ar/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) متاحة عبر الاستعلامات، أو عندما تريد أن تعيد الاستعلامات ذات الصلة استخدام ذاكرات التخزين المؤقت المحلية للنسخة المتماثلة نفسها، أو عندما تحتاج إلى [اتساق القراءة بعد الكتابة](#read-after-write-consistency) بين عملية كتابة وعمليات القراءة التي تليها.
 
 هذه الميزة تعمل وفق أفضل جهد ولا تضمن العزل. يربط الوكيل كل قيمة توجيه بنسخة متماثلة واحدة. ويظل هذا الربط ثابتًا ما دام عدد النسخ المتماثلة دون تغيير؛ لكن التحجيم الخدمة قد يربط القيمة بنسخة متماثلة مختلفة.
 

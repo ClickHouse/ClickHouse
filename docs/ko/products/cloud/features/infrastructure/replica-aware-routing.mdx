@@ -7,8 +7,11 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <PrivatePreviewBadge />
+
+<EnterprisePlanFeatureBadge feature="Replica-aware 라우팅" support="true" />
 
 Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 세션 어피니티라고도 함)은 관련 요청을 동일한 ClickHouse 레플리카로 라우팅합니다. 쿼리 간에도 [임시 테이블](/ko/reference/statements/create/table/temporary-table) 또는 [이름이 지정된 세션 상태](/ko/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)에 계속 액세스해야 하거나, 관련 쿼리에서 동일한 레플리카의 로컬 캐시를 재사용하려는 경우 또는 쓰기 후 후속 읽기에서 [쓰기 후 읽기 일관성](#read-after-write-consistency)이 필요한 경우 사용하십시오.
 

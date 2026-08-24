@@ -7,8 +7,11 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <PrivatePreviewBadge />
+
+<EnterprisePlanFeatureBadge feature="Routage tenant compte des répliques" support="true" />
 
 Le routage tenant compte des répliques (également appelé sessions sticky, routage sticky ou affinité de session) achemine les requêtes liées vers la même réplique ClickHouse. Utilisez-le lorsque des [tables temporaires](/fr/reference/statements/create/table/temporary-table) ou un [état de session nommé](/fr/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) doivent rester accessibles d’une requête à l’autre, lorsque vous souhaitez que des requêtes liées réutilisent les caches locaux d’une même réplique, ou lorsque vous avez besoin d’une [cohérence lecture après écriture](#read-after-write-consistency) entre une écriture et les lectures qui suivent.
 

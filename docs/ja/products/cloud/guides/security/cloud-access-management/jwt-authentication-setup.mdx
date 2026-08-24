@@ -19,7 +19,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <VersionBadge minVersion="26.4" />
 
-<EnterprisePlanFeatureBadge feature="カスタムアイデンティティプロバイダを使用したJWT認証" support="true" />
+<EnterprisePlanFeatureBadge feature="カスタムアイデンティティプロバイダを使用したJWT認証" />
 
 <Tip>
   このガイドでは、Cloud Console で JWKS プロバイダを設定する方法を説明します。JWT の生成方法や構造 (必須のクレーム、ロールおよび権限付与のクレーム、一時ユーザーの仕組みを含む) については、[JWT Authentication](/ja/operations/external-authenticators/jwt) リファレンスを参照してください。
@@ -27,11 +27,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse Cloud では、独自の JSON Web Key Set (JWKS) エンドポイントに対して検証された JSON Web Token (JWT) を使用して、サービスへの接続を認証できます。データベース認証情報を管理する代わりに、アイデンティティプロバイダが短期間有効なトークンを発行し、ClickHouse は設定した JWKS URL で公開されている公開鍵を使用してそのトークンを検証します。
 
-この機能を組織で有効にすると、ClickHouse Cloud Console の **Settings → Security** から、サービスごとにこれらの JWKS プロバイダを設定できます。
-
-<Note>
-  組織で JWT プロバイダを有効にするには、[サポート](https://clickhouse.com/support/program) までお問い合わせください。
-</Note>
+ClickHouse Cloud Console の **Settings → Security** から、サービスごとにこれらの JWKS プロバイダを設定できます。
 
 <div id="before-you-begin">
   ## 始める前に
@@ -42,10 +38,10 @@ ClickHouse Cloud では、独自の JSON Web Key Set (JWKS) エンドポイン�
 * **Enterprise** プランの組織。
 * **ClickHouse バージョン 26.4 以降**を実行しているサービス。
 * サービスに対する `control-plane:service:manage` 権限を持つロール (例: **Admin** または **Service admin**) 。この権限を持たないメンバーには、このセクションは閲覧専用として表示されます。
-* 少なくとも 1 つの **RSA** 鍵をパブリッシュする、パブリックから到達可能な **HTTPS** JWKS URL (トークンは **RS256** で署名されている必要があります) 。
+* 少なくとも 1 つの **RSA** 鍵 (`RS256`) 、またはバージョン 26.8 以降のサービスでは **EC** 鍵 (`ES256`、`ES384`、`ES512`) をパブリッシュする、パブリックから到達可能な **HTTPS** JWKS URL。
 
 <Note>
-  JWKS ベースのプロバイダで使用できるのは **RSA 鍵のみ**です。HMAC (`HS256`) または EC (`ES256`) 鍵で署名されたトークンは JWKS エンドポイントで検証できないため、拒否されます。JWKS ドキュメントには他の種類の鍵を含めることができますが、使用可能な RSA 鍵が少なくとも 1 つ必要です。
+  JWKS ベースのプロバイダは **RSA** 鍵、およびバージョン 26.8 以降では P-256、P-384、P-521 曲線上の **EC** 鍵を受け入れます。JWKS ドキュメントには他の種類の鍵を含めることができますが、使用可能な鍵が少なくとも 1 つ必要です。
 </Note>
 
 <div id="how-it-works">
@@ -55,7 +51,7 @@ ClickHouse Cloud では、独自の JSON Web Key Set (JWKS) エンドポイン�
 クライアント (アイデンティティプロバイダまたはアプリケーション) は JWT を生成し、**秘密鍵**で署名します。トークンは、想定される[トークン形式](/ja/operations/external-authenticators/jwt#token-claims)に従う必要があります。ClickHouse は、JWKS URL で公開されている**公開鍵**を使用してトークンを検証します。
 
 1. ClickHouse はトークンの `kid` (鍵 ID) ヘッダーを読み取り、JWKS ドキュメントから一致する鍵を選択します。
-2. その RSA 公開鍵を使用してトークンの署名を検証し、`iss` (発行者) および `aud` (オーディエンス) クレーム をプロバイダー設定と照合します。
+2. その公開鍵を使用してトークンの署名を検証し、`iss` (発行者) および `aud` (オーディエンス) クレーム をプロバイダー設定と照合します。
 3. 検証に成功すると、接続は一時ユーザーとして実行されます。アクセス権はトークンの `clickhouse:grants` および `clickhouse:roles` クレーム から取得され、権限上限 (`default` ユーザー) によって制限されます。詳細は[アクセス権](/ja/operations/external-authenticators/jwt#access-rights)を参照してください。
 
 ClickHouse はプロバイダーの追加または更新時に JWKS URL を検証して取得するため、設定が不適切な URL や到達できない URL は事前に拒否されます。
@@ -78,12 +74,12 @@ ClickHouse はプロバイダーの追加または更新時に JWKS URL を検�
   <Step title="プロバイダの詳細を入力する" id="fill-provider-details">
     プロバイダのフォームに入力し、**Save** を選択します。
 
-    | フィールド                | 説明                                                                                                                          |
-    | -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-    | **Name**             | このサービス上で一意となるプロバイダ名です。作成後は変更できません。                                                                                          |
-    | **Issuer**           | 受信トークンに期待される `iss` クレーム。                                                                                                   |
-    | **Audience**         | 受信トークンに期待される `aud` クレーム。                                                                                                   |
-    | **JWKS URL**         | トークン署名の検証に使用する RSA 公開鍵を公開する HTTPS 公開 URL。                                                                                   |
+    | フィールド                | 説明                                                                                                                        |
+    | -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+    | **Name**             | このサービス上で一意となるプロバイダ名です。作成後は変更できません。                                                                                        |
+    | **Issuer**           | 受信トークンに期待される `iss` クレーム。                                                                                                  |
+    | **Audience**         | 受信トークンに期待される `aud` クレーム。                                                                                                  |
+    | **JWKS URL**         | トークン署名の検証に使用する公開鍵を公開する HTTPS 公開 URL。                                                                                      |
     | **Roles claim** (任意) | ClickHouse ロールの取得元となるトークン クレーム。デフォルトの クレーム 名 `clickhouse:roles` を使用する場合は空欄のままにします。トークンで指定するロールは、あらかじめサービス上に存在している必要があります。 |
   </Step>
 
@@ -101,7 +97,7 @@ ClickHouse はプロバイダーの追加または更新時に JWKS URL を検�
 </div>
 
 * 1サービスあたり最大**5つ**のJWTプロバイダを設定できます。
-* JWKSプロバイダで使用できるのは **RSA / RS256** 鍵のみです。
+* JWKSプロバイダでは、**RSA** 鍵 (`RS256`) に加え、バージョン26.8以降は **EC** 鍵 (`ES256`、`ES384`、`ES512`) も使用できます。
 * JWKS URLはPublic HTTPSエンドポイントである必要があります。Private、内部、またはリンクローカルアドレスは拒否されます。
 
 <div id="related">

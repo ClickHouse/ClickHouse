@@ -7,8 +7,11 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <PrivatePreviewBadge />
+
+<EnterprisePlanFeatureBadge feature="副本感知路由" support="true" />
 
 副本感知路由 (也称为粘性会话、粘性路由或会话亲和性) 会将相关请求路由到同一个 ClickHouse 副本。当您需要让[临时表](/zh/reference/statements/create/table/temporary-table)或[命名会话状态](/zh/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)在多个查询间保持可用、希望相关查询复用同一副本的本地缓存，或需要在写入及后续读取之间实现[写后读一致性](#read-after-write-consistency)时，请使用此功能。
 
