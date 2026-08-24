@@ -75,7 +75,7 @@ time_t buildNextIndexClearTTL(StorageMetadataPtr metadata_snapshot, MergeTreeDat
     for (const auto & ttl : metadata_snapshot->getIndexClearTTLs())
     {
         const auto ttl_info_it = part->ttl_infos.index_clear_ttl.find(ttl.result_column);
-        if (ttl_info_it == part->ttl_infos.index_clear_ttl.end() || ttl_info_it->second.finished())
+        if (ttl_info_it == part->ttl_infos.index_clear_ttl.end())
             continue;
 
         const time_t max_ttl = ttl_info_it->second.max;
