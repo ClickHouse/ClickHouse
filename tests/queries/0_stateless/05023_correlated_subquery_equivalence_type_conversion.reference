@@ -99,3 +99,11 @@ true	2
 plan: cross_joins=0 substituted=1 null_prefiltered=0
 0
 1
+-- Case 27: guarded, outer Float64 with an exact-type member reached through a numeric bridge (i.a = o.x AND i.a = i.b); the float correlated column must not be reconstructed even from the exact-type member i.b, because the fallback\'s equals keeps -0.0 matching the inner 0 while a substituted bitwise join would drop it
+plan: substituted=0
+-0
+1
+-- Case 28: outer Bool vs inner Nullable(Bool); the wrapper-only difference is faithful for Bool (isNotNull + assumeNotNull, canonical 0/1 values), so it is substituted; inner NULL never counts
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+false	\N
+true	2

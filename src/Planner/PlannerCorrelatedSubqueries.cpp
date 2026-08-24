@@ -194,29 +194,31 @@ struct SubstitutionConversion
 std::optional<SubstitutionConversion> classifySubstitutionConversion(const DataTypePtr & member_type, const DataTypePtr & correlated_type)
 {
     SubstitutionConversion conversion;
-    if (member_type->equals(*correlated_type))
-        return conversion;
 
     auto member_base = removeNullable(removeLowCardinality(member_type));
     auto correlated_base = removeNullable(removeLowCardinality(correlated_type));
 
-    /// Any non-exact substitution reconstructs the correlated column, and a floating-point
-    /// column cannot be reconstructed faithfully: `equals` merges `+0.0` and `-0.0`, while hash
-    /// joins and aggregation compare floats bitwise, so matches and aggregate counts would
-    /// diverge from the non-substituted plan. Only exact-type float substitution (above) is
-    /// consistent - there the fallback also compares bitwise. Integer and string bases have
-    /// unique value representations, so they are unaffected. Float member bases with an integer
-    /// correlated base stay allowed - accurateCastOrNull canonicalizes `-0.0` to `0`.
-    /// `Bool` is excluded for a different reason: `accurateCastOrNull` to `Bool` maps every
-    /// non-zero value to `true` instead of checking exactness, so the reconstruction would rely
-    /// solely on the retained recorded equality dropping the mismatched rows - a defense-in-depth
-    /// mechanism, not the invariant conversions are built on.
-    if (isFloat(correlated_base) || isBool(correlated_base))
+    /// A float correlated column is unusable for ANY substitution, exact-type members included.
+    /// Float representations are not unique (`equals` merges `-0.0` and `+0.0`, hash joins and
+    /// aggregation compare bitwise), and an exact-type float member may be linked to the correlated
+    /// column through cross-type equalities that the non-substituted plan evaluates with `equals`
+    /// semantics (e.g. `i.a = o.x AND i.a = i.b` with an `Int32` bridge: the fallback keeps the
+    /// outer `-0.0`, the reconstructed `+0.0` does not hash-join with it). The equivalence classes
+    /// are flat, so a bridged member cannot be told apart from a direct one.
+    if (isFloat(correlated_base))
         return std::nullopt;
+
+    if (member_type->equals(*correlated_type))
+        return conversion;
 
     if (!member_base->equals(*correlated_base))
     {
         if (!isNativeNumber(member_base) || !isNativeNumber(correlated_base))
+            return std::nullopt;
+        /// Only the cast INTO `Bool` is unfaithful (`accurateCastOrNull` maps every non-zero value
+        /// to `true` instead of checking exactness); wrapper-only and exact `Bool` conversions
+        /// preserve the canonical 0/1 values and stay allowed.
+        if (isBool(correlated_base))
             return std::nullopt;
         auto supertype = tryGetLeastSupertype(DataTypes{member_base, correlated_base});
         if (!supertype)
@@ -596,8 +598,9 @@ QueryPlan decorrelateQueryPlan(
                 /// exactness-checking. `LowCardinality` and `Nullable` are value-transparent wrappers,
                 /// so only the base types decide. Anything else (Decimal vs Float, String vs
                 /// FixedString, ...) has comparison semantics that are not consistent with CAST, so it
-                /// is not recorded. Non-exact substitution is additionally restricted to non-float,
-                /// non-`Bool` correlated bases in `classifySubstitutionConversion` (signed zero, inexact `Bool` cast).
+                /// is not recorded. Substitution is additionally restricted in `classifySubstitutionConversion`:
+                /// float correlated bases are never substituted (signed zero), and `Bool` correlated
+                /// bases only with an equal base (inexact `Bool` cast).
                 auto lhs_base = removeNullable(removeLowCardinality(lhs_type));
                 auto rhs_base = removeNullable(removeLowCardinality(rhs_type));
                 bool equal_bases = lhs_base->equals(*rhs_base);

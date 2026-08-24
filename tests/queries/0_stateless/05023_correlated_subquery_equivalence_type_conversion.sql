@@ -380,3 +380,28 @@ SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
               toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_26 AS o WHERE EXISTS (SELECT 1 FROM t_inner_26 AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_26 AS o WHERE EXISTS (SELECT 1 FROM t_inner_26 AS i WHERE i.x = o.x) ORDER BY x;
+
+SELECT '-- Case 27: guarded, outer Float64 with an exact-type member reached through a numeric bridge (i.a = o.x AND i.a = i.b); the float correlated column must not be reconstructed even from the exact-type member i.b, because the fallback''s equals keeps -0.0 matching the inner 0 while a substituted bitwise join would drop it';
+CREATE TABLE t_outer_27 (x Float64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_27 (a Int32, b Float64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_27 VALUES (-0.), (1.);
+INSERT INTO t_inner_27 VALUES (0, 0.), (1, 1.);
+
+SELECT format('plan: substituted={}',
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_27 AS o WHERE EXISTS (SELECT 1 FROM t_inner_27 AS i WHERE i.a = o.x AND i.a = i.b));
+-- Ordered by the string form: the relative order of -0.0 and 0.0 under a float ORDER BY is comparator-dependent.
+SELECT x FROM t_outer_27 AS o WHERE EXISTS (SELECT 1 FROM t_inner_27 AS i WHERE i.a = o.x AND i.a = i.b) ORDER BY toString(x);
+
+SELECT '-- Case 28: outer Bool vs inner Nullable(Bool); the wrapper-only difference is faithful for Bool (isNotNull + assumeNotNull, canonical 0/1 values), so it is substituted; inner NULL never counts';
+CREATE TABLE t_outer_28 (x Bool) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_28 (x Nullable(Bool)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_28 VALUES (true), (false);
+INSERT INTO t_inner_28 VALUES (NULL), (true), (true);
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_28 AS i WHERE i.x = o.x) FROM t_outer_28 AS o);
+SELECT x, (SELECT count() FROM t_inner_28 AS i WHERE i.x = o.x) FROM t_outer_28 AS o ORDER BY x;
