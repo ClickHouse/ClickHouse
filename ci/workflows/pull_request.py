@@ -96,6 +96,13 @@ workflow = Workflow.Config(
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
+        # Gated like the regular builds rather than like the special ones: it is the only job
+        # that compiles the standalone parser at all, and it needs no build artifact, so there
+        # is nothing to gain by deferring it behind the functional tests.
+        *[
+            job.set_run_after(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.wasm_parser_build_jobs
+        ],
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
@@ -239,6 +246,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.clickhouse_wasm,
+        ArtifactConfigs.wasm_parser,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.clickhouse_examples,
