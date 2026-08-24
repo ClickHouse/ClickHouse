@@ -2,6 +2,7 @@
 
 #include <Core/ServerUUID.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
