@@ -64,10 +64,15 @@ void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
         array_join_actions->element_filter = std::make_shared<ExpressionActions>(element_filter->clone(), settings.getActionsSettings());
         array_join_actions->element_filter_column_name = element_filter_column_name;
     }
+    /// A standalone FilterStep is a pass-through on the totals stream, so the fused filter must be too -
+    /// run the totals stream through an action without the element filter.
+    auto totals_actions = element_filter
+        ? std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication)
+        : array_join_actions;
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<ArrayJoinTransform>(header, array_join_actions, on_totals);
+        return std::make_shared<ArrayJoinTransform>(header, on_totals ? totals_actions : array_join_actions, on_totals);
     });
 }
 
