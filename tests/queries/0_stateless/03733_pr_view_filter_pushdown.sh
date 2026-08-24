@@ -7,11 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 CLICKHOUSE_CLIENT_TRACE=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"/"--send_logs_level=trace"}
 
-# The checks that grep the log for the query sent to the replicas pin `parallel_replicas_plan_based=0`:
-# they assert that the filter ends up in the *text* of that query, and the plan-based implementation
-# sends a serialized plan fragment instead. The `Prewhere` checks below are not pinned - they read the
-# local plan and hold for both implementations.
-PARALLEL_REPLICAS_SETTINGS="enable_parallel_replicas=1, automatic_parallel_replicas_mode = 0, max_parallel_replicas=2, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1, parallel_replicas_filter_pushdown=1, optimize_move_to_prewhere=1, query_plan_optimize_prewhere=1, parallel_replicas_allow_view_over_mergetree=0"
+# This test covers the query-based implementation of parallel replicas: it greps the log for the
+# filter in the *text* of the query sent to the replicas. The plan-based implementation sends a
+# serialized plan fragment instead.
+PARALLEL_REPLICAS_SETTINGS="enable_parallel_replicas=1, automatic_parallel_replicas_mode = 0, max_parallel_replicas=2, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1, parallel_replicas_filter_pushdown=1, optimize_move_to_prewhere=1, query_plan_optimize_prewhere=1, parallel_replicas_allow_view_over_mergetree=0, parallel_replicas_plan_based=0"
 
 $CLICKHOUSE_CLIENT --query "
 drop table if exists t_03733;
@@ -24,7 +23,7 @@ insert into t_03733 select number, toString(number) from numbers(10);
 # check filter push down for remote
 $CLICKHOUSE_CLIENT_TRACE --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
-SELECT * FROM v_03733 WHERE a = 0 SETTINGS parallel_replicas_local_plan=0, parallel_replicas_plan_based=0;
+SELECT * FROM v_03733 WHERE a = 0 SETTINGS parallel_replicas_local_plan=0;
 " |& grep 'executeQuery' | grep -q 'HAVING' && echo "filter pushed down for remote nodes";
 # check filter pushdown for local replica
 $CLICKHOUSE_CLIENT --query "
@@ -41,7 +40,7 @@ create view vv_03733 as select * from v_03733 order by a desc;
 # check filter push down for remote
 $CLICKHOUSE_CLIENT_TRACE --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
-SELECT * FROM vv_03733 WHERE a = 0 SETTINGS parallel_replicas_local_plan=0, parallel_replicas_plan_based=0;
+SELECT * FROM vv_03733 WHERE a = 0 SETTINGS parallel_replicas_local_plan=0;
 " |& grep 'executeQuery' | grep -q 'HAVING' && echo "filter pushed down for remote nodes";
 # check filter pushdown for local replica
 $CLICKHOUSE_CLIENT --query "
@@ -58,7 +57,7 @@ create view v1_03733 as select a as c, b as d from t_03733;
 # check filter push down for remote
 $CLICKHOUSE_CLIENT_TRACE --query "
 SET ${PARALLEL_REPLICAS_SETTINGS};
-SELECT * FROM v1_03733 WHERE c = 0 SETTINGS parallel_replicas_local_plan=0, parallel_replicas_plan_based=0;
+SELECT * FROM v1_03733 WHERE c = 0 SETTINGS parallel_replicas_local_plan=0;
 " |& grep 'executeQuery' | grep -q 'HAVING' && echo "filter pushed down for remote nodes";
 # check filter pushdown for local replica
 $CLICKHOUSE_CLIENT --query "
