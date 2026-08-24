@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},
+            {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
             {"enable_alp_codec", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."},
             {"enable_quantized_codec", false, false, "New setting to enable the experimental `Quantized` compression codec individually, without the `allow_experimental_codecs`."},
             {"enable_sz3_codec", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."},

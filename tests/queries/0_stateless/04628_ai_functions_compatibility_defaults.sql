@@ -13,8 +13,6 @@
 -- call. All tests run without a real AI provider.
 -- =============================================================================
 
-SET allow_experimental_ai_functions = 1;
-
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (x String) ENGINE = Memory;
 

@@ -39,7 +39,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ai_functions;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
@@ -51,7 +50,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -64,12 +62,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiEmbed>(context); }
 
-    explicit FunctionAiEmbed(ContextPtr context_) : context(context_)
-    {
-        if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
-    }
+    explicit FunctionAiEmbed(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
