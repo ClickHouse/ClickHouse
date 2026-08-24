@@ -4,5 +4,7 @@ fragment spans on both shards: OK	fragment span attributes: OK
 fragment spans on both shards: OK	fragment span attributes: OK
 === async_socket_for_remote=0 async_query_sending_for_remote=0 ===
 fragment spans on both shards: OK	fragment span attributes: OK
+=== synchronous span covers the remote read ===
+sync span covers the remote sleep: OK
 === cancellation ===
 buffered attributes flushed on cancellation: OK

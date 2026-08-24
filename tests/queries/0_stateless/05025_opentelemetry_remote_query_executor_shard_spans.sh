@@ -5,9 +5,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Every remote read of a distributed SELECT is covered by a per-shard span:
-# `RemoteQueryExecutor::execute` (the read context fiber, asynchronous paths) or
-# `RemoteQueryExecutor::sendQuery` (the synchronous sending path). The spans carry
+# Every remote read of a distributed SELECT is covered by a per-shard
+# `RemoteQueryExecutor::execute` span: the read context fiber on the asynchronous
+# paths, a span kept alive by the executor itself on the fully synchronous path.
+# The spans carry
 # attributes identifying the fragment: `clickhouse.cluster`, `clickhouse.shard_num`,
 # `clickhouse.processed_stage`, `clickhouse.query_id`, `clickhouse.initial_query_id`
 # and, once the connections are established, `clickhouse.target_host`.
@@ -49,7 +50,7 @@ function fragment_counts_query
             countIf(attribute['clickhouse.processed_stage'] != '')
         from system.opentelemetry_span_log
         where finish_date >= yesterday() and trace_id = t
-          and operation_name in ('RemoteQueryExecutor::execute', 'RemoteQueryExecutor::sendQuery')
+          and operation_name = 'RemoteQueryExecutor::execute'
     "
 }
 
@@ -94,10 +95,49 @@ for async_settings in "1 1" "1 0" "0 0"; do
                'fragment span attributes: OK', 'fragment span attributes: FAIL')
         from system.opentelemetry_span_log
         where finish_date >= yesterday() and trace_id = t
-          and operation_name in ('RemoteQueryExecutor::execute', 'RemoteQueryExecutor::sendQuery')
+          and operation_name = 'RemoteQueryExecutor::execute'
         format TSV
     "
 done
+
+# The synchronous path has no fiber: the span is kept alive by the executor itself and
+# finished on EndOfStream. It must cover the whole remote read, not only connection
+# establishing and query sending: with a remote sleep(1) the span must last at least
+# one second. (Only a lower bound is asserted, so the check cannot flake under load.)
+echo "=== synchronous span covers the remote read ==="
+
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
+sync_query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-sync"
+
+${CLICKHOUSE_CLIENT} \
+    --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
+    --async_socket_for_remote=0 \
+    --prefer_localhost_replica=0 \
+    --query_id "$sync_query_id" \
+    --query "select * from remote('127.0.0.2', view(select sleep(1) from system.one)) format Null"
+
+poll_spans "
+    with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
+    select count()
+    from system.opentelemetry_span_log
+    where finish_date >= yesterday() and trace_id = t
+      and operation_name = 'RemoteQueryExecutor::execute'
+      and attribute['clickhouse.initial_query_id'] = '$sync_query_id'" "1" \
+|| exit 1
+
+# max, not min: the query also produces a short span for the auxiliary structure
+# inference query of remote() over a view; the span of the data read must cover the sleep.
+${CLICKHOUSE_CLIENT} -q "
+    with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
+    select if(max(finish_time_us - start_time_us) >= 1000000,
+              'sync span covers the remote sleep: OK',
+              'sync span covers the remote sleep: FAIL, lasted ' || toString(max(finish_time_us - start_time_us)) || ' us')
+    from system.opentelemetry_span_log
+    where finish_date >= yesterday() and trace_id = t
+      and operation_name = 'RemoteQueryExecutor::execute'
+      and attribute['clickhouse.initial_query_id'] = '$sync_query_id'
+    format TSV
+"
 
 # Cancellation: killing the query destroys the suspended fiber and unwinds its stack.
 # The attributes buffered inside the fiber (`clickhouse.target_host` is added after the

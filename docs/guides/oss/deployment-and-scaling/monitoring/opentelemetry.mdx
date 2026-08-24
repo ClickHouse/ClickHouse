@@ -25,7 +25,7 @@ The trace context is propagated to downstream services in the following cases:
 
 ## Spans of distributed queries {#spans-of-distributed-queries}
 
-For a distributed `SELECT`, every read from a remote shard is covered by a span: `RemoteQueryExecutor::execute` on the asynchronous connection paths (the default) or `RemoteQueryExecutor::sendQuery` on the synchronous path. These spans carry attributes identifying the query fragment:
+For a distributed `SELECT`, every read from a remote shard is covered by a `RemoteQueryExecutor::execute` span, on both the asynchronous connection paths (the default) and the synchronous path (`async_socket_for_remote = 0`). The span covers the whole fragment execution: establishing the connections, sending the query and reading the data until the end of stream, an exception or a cancellation. These spans carry attributes identifying the query fragment:
 
 * `clickhouse.cluster` and `clickhouse.shard_num` — the cluster and the shard the executor reads from (when the query goes through a cluster);
 * `clickhouse.processed_stage` — the query processing stage requested from the shard;

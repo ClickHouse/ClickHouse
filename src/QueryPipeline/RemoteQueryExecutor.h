@@ -289,6 +289,14 @@ private:
     /// Shard identification for the OpenTelemetry span covering this executor.
     ShardScope shard_scope;
 
+    /// Span covering the whole fragment execution on the synchronous path (no read context
+    /// fiber): connection establishing, query sending and packet reading until `EndOfStream`,
+    /// an exception or a cancel.
+    std::unique_ptr<OpenTelemetry::Span> sync_fragment_span;
+    /// Captured when the span is created: the thread finishing the span may have no
+    /// tracing context of its own.
+    std::weak_ptr<OpenTelemetrySpanLog> sync_fragment_span_log;
+
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
@@ -394,8 +402,12 @@ private:
     ReadResult processPacket(Packet packet);
 
     /// Attributes identifying the query fragment this executor runs, for the OpenTelemetry span
-    /// covering it (the read context fiber span or the synchronous sendQuery span).
+    /// covering it (the read context fiber span or the synchronous-path fragment span).
     OpenTelemetry::SpanAttributes getFragmentSpanAttributes() const;
+
+    /// Write the synchronous-path fragment span to the span log. At most one call takes
+    /// effect; all callers except the destructor must hold `was_cancelled_mutex`.
+    void finishSyncFragmentSpan(OpenTelemetry::SpanStatus status, const String & status_message = {}) noexcept;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);
