@@ -354,6 +354,11 @@ public:
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
+    /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
+    /// see filters whose value can change while that key stays the same: non-deterministic virtual
+    /// columns (query-wide part numbering, catalog names, disk placement).
+    static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
+
     /// Returns `false` if requested reading cannot be performed.
     /// `query_limit` is the SQL `LIMIT` value (0 if the query has no `LIMIT`). It is used both for
     /// sizing the first read task (smaller first task when there is a `LIMIT` combined with a
@@ -392,8 +397,15 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
     void requestOutputEachPartitionThroughSeparatePortForDistinct();
+    void requestOutputEachPartitionThroughSeparatePortForWindow();
+    bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
+
+    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
+    /// window functions.
+    enum class ProcessorKind : uint8_t { Aggregation, Distinct, Window };
+    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
@@ -713,10 +725,6 @@ private:
     ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
     void logPredicateStatistics(const AnalysisResult & result) const;
-
-    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY and DISTINCT.
-    enum class ProcessorKind : uint8_t { Aggregation, Distinct };
-    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     int getSortDirection() const;
     void updateSortDescription();

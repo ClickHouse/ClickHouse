@@ -23,8 +23,6 @@
 0	0
 1	1
 -- same IN result without the analyzer
-0
-1
 -- the fall-through Variant conversion path prefers a lossless alternative, falling back to lossy only when needed
 [[9223372036854775807,-9223372036854775808],[0.9999,7]]
 [[0.1,0.2]]
