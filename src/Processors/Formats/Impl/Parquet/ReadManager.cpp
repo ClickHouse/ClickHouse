@@ -882,8 +882,16 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
     /// E.g. main data read task's memory estimate consists of the input page sizes and the output
     /// column size; the run time is also roughly proportional to these sizes.
     /// Hope it's a good enough proxy in all cases.
+    ///
+    /// Exception: ColumnDataPrefetch tasks do all their work (startPrefetch) synchronously here and
+    /// have an empty runTask, so their run time is ~0 regardless of how many compressed bytes they
+    /// charge. Reporting the (large) charged bytes as the cost would make the batching split them
+    /// across many batches - i.e. many thread-pool dispatches for tasks that do nothing on the
+    /// thread. Report cost 0 so they collapse into a single batch.
     ssize_t memory_after = diff.by_stage[size_t(diff.cur_stage)];
-    task.cost_estimate_bytes = size_t(std::max(0l, memory_after - memory_before));
+    task.cost_estimate_bytes = task.stage == ReadStage::ColumnDataPrefetch
+        ? 0
+        : size_t(std::max(0l, memory_after - memory_before));
 
     out_tasks.push_back(task);
 }
