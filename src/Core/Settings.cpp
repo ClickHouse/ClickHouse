@@ -1987,7 +1987,7 @@ Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Bool, use_top_k_dynamic_filtering_for_variable_length_types, false, R"(
 Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable-length data type (e.g. `String`, `Array`, `Map`, `Tuple` containing variable-length elements).
 

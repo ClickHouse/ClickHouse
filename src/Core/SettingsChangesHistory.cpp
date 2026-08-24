@@ -43,7 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
-            {"group_by_top_k_optimization_shared_boundary", false, true, "New experimental setting: share the tightest top-K skip boundary between aggregation threads, so threads whose local keys rank poorly can skip rows against a boundary published by another thread. previous_value=false so `compatibility` with versions before 26.9 restores per-thread boundaries."},
+            {"group_by_top_k_optimization_shared_boundary", false, true, "New setting: share the tightest top-K skip boundary between aggregation threads, so threads whose local keys rank poorly can skip rows against a boundary published by another thread. previous_value=false so `compatibility` with versions before 26.9 restores per-thread boundaries."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
