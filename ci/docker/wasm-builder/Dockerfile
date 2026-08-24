@@ -1,17 +1,24 @@
 # docker build -t clickhouse/wasm-builder .
 # Toolchain for the standalone WebAssembly build of the SQL parser - see utils/wasm-parser.
-# Used by tests/integration/test_wasm_parser, which builds the module inside this image and then
-# drives it with the Node.js that the base image already provides.
+# Used by the `Build (wasm_parser)` job, which builds the module inside this image, drives it with
+# the Node.js that the base image already provides, and publishes the result as an artifact.
 
 FROM node:22-bookworm-slim
 
+# `python3` is here because praktika runs the job script (ci/jobs/build_wasm_parser.py) inside this
+# image; `python3-minimal` would not do, since the praktika modules it imports reach across the
+# standard library that the minimal package leaves out. `git` is here because that same script
+# populates the parser's contrib submodule working trees before configuring - the CI checkout
+# arrives without them.
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates \
         cmake \
         curl \
+        git \
         gzip \
         ninja-build \
+        python3 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -31,7 +38,7 @@ RUN arch="$(dpkg --print-architecture)" \
 
 # Two thirds of the SDK is sysroots and libraries for targets this build never names, plus tooling
 # (clang-tidy, lldb, libclang) that a compile and a link do not go through. Dropping them takes the
-# SDK from 653 MB to 233 MB, which every integration-test shard that runs this test has to pull.
+# SDK from 653 MB to 233 MB, which is what the job has to pull before it can start.
 RUN cd /opt/wasi-sdk/share/wasi-sysroot \
     && find include lib -mindepth 1 -maxdepth 1 \
         ! -name wasm32-wasip1 ! -name 'c++' -exec rm -rf {} + \
