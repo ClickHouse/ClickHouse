@@ -290,7 +290,7 @@ Estimates the compression ratio of a given column without compressing it.
 
 :::note
 For the examples below, the result will differ based on the default compression codec of the server.
-See [Column Compression Codecs](/sql-reference/statements/create/table#column_compression_codec).
+See [Column Compression Codecs](/reference/statements/create/table#column_compression_codec).
 :::
     )";
     FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec, block_size_bytes])(column)";

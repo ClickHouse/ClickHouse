@@ -1,0 +1,144 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-31
+title: 'ClickStack demo days - 2026-07-31'
+sidebarTitle: '2026-07-31'
+description: 'ClickStack demo days del 2026-07-31'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="exponential-histogram-metrics">
+  ## Métricas de histogramas exponenciales
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/w45v3IMcXTY" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Se ha añadido compatibilidad inicial con consultas para las métricas de histogramas exponenciales de OpenTelemetry. Ya era posible registrar una de estas métricas en una fuente, pero no había forma de consultarla. Los recuentos y los cuantiles ya funcionan mediante el constructor de consultas.
+
+Los histogramas exponenciales son similares a los histogramas con buckets explícitos, pero los límites de sus buckets se calculan a partir de potencias de dos en lugar de almacenarse para cada bucket. La escala controla qué potencia de dos se utiliza. Una escala mayor produce buckets más pequeños, mientras que el desplazamiento mueve los límites hacia múltiplos mayores o menores. El recuento de cada bucket indica cuántas observaciones se encuentran dentro de ese rango.
+
+Max, min, sum y avg siguen sin ser compatibles, en línea con la implementación existente de histogramas explícitos. Estos campos son opcionales en el modelo de datos de OpenTelemetry, por lo que no dependemos de su presencia.
+
+Como muestra la demo, el SQL generado es largo y no especialmente elegante. Su rendimiento es aceptable y no agota la memoria, pero se trata únicamente de compatibilidad funcional inicial. El rendimiento es la siguiente tarea, y ya está en marcha un esquema actualizado que debería hacer estas consultas considerablemente más rápidas.
+
+Por ahora, solo el tipo de visualización de series temporales se representa correctamente. Esto es coherente con el tipo de métrica de histograma existente.
+
+**PR relacionados:** [#2687](https://github.com/hyperdxio/hyperdx/pull/2687) feat: Mostrar métricas de histogramas exponenciales en el menú desplegable de nombres de métricas, [#2697](https://github.com/hyperdxio/hyperdx/pull/2697) feat: Implementar cuantiles+sum para métricas de histogramas exponenciales, [#2705](https://github.com/hyperdxio/hyperdx/pull/2705) feat: Admitir histogramas exponenciales en MCP, [#2707](https://github.com/hyperdxio/hyperdx/pull/2707) fix: Admitir la agrupación de agregaciones de cuantiles de histogramas en columnas que no sean Attribute
+
+<div id="validation-for-raw-sql-charts">
+  ## Validación de gráficos de SQL sin procesar
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/zfZsehTqeCQ" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Los gráficos de SQL sin procesar ahora muestran una advertencia cuando faltan macros esperadas. Este cambio surgió a raíz de un caso de soporte en el que una persona que creaba un gran número de gráficos de SQL sin procesar obtenía resultados confusos.
+
+Las consultas de los dashboards deben incluir las macros de filtros y tabla de origen. Los gráficos de series temporales también deben incluir las macros de rango de tiempo e intervalo. Anteriormente, estas comprobaciones solo se realizaban después de asociar una alerta al tile. Ahora se ejecutan para todos los gráficos de SQL sin procesar, por lo que al eliminar una macro se muestra una advertencia en el editor, en lugar de generar más adelante un gráfico desconcertante.
+
+La validación también tiene en cuenta las dependencias de cada macro. Las macros de tabla de origen y filtros requieren que se haya seleccionado una fuente, aunque los gráficos de SQL sin procesar no la necesiten de otro modo. Por lo tanto, usar cualquiera de estas macros sin seleccionar una fuente genera un error en lugar de una advertencia.
+
+Es un cambio pequeño, pero debería facilitar la detección de problemas con SQL sin procesar sin necesidad de recurrir al soporte.
+
+**PR relacionados:** [#2742](https://github.com/hyperdxio/hyperdx/pull/2742) feat: Advertir sobre params/macros faltantes en SQL Editor
+
+<div id="link-to-sources-by-name-not-id">
+  ## Enlazar fuentes por nombre, no por ID
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/r2uNmcJXGSM" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+El equipo de LogHouse solicitó una forma más estable de enlazar con las fuentes. Gestionan el entorno de logging de ClickHouse Cloud y aprovisionan fuentes mediante programación con infraestructura como código. Los ID de las fuentes cambian cuando se vuelve a crear una fuente y difieren entre los entornos de desarrollo, staging y producción, por lo que cualquier enlace basado en un ID resulta poco fiable. Como enlazan a ClickStack desde sistemas de alertas y Grafana, mantener un conjunto independiente de ID de fuentes para cada entorno no era práctico.
+
+El parámetro de URL `source` ahora acepta tanto un nombre de fuente como un ID. Los nombres se controlan al aprovisionar las fuentes, por lo que el mismo enlace puede funcionar en todos los entornos. Inicialmente, se añadió compatibilidad en la página de Búsqueda. Un PR posterior la extiende a todas las páginas con un parámetro de fuente, incluidos el explorador de gráficos, el mapa de servicios, las sesiones, el dashboard de servicios y el dashboard de Kubernetes.
+
+Gran parte del debate posterior se centró en la facilidad de descubrimiento. En la práctica, se trata de una API de URL, y es poco probable que alguien la encuentre por casualidad. Una opción es usar nombres en lugar de ID de forma predeterminada, aunque las colisiones de nombres hacen que no sea seguro. Otras sugerencias incluyeron exponer enlaces mediante un botón para compartir, hacer que los agentes los generen a través de MCP y documentar correctamente la API de URL. Los intervalos de tiempo relativos se beneficiarían de la misma documentación.
+
+Las referencias basadas en nombres también podrían ampliarse a los dashboards. Un workflow de infraestructura como código podría aprovisionar fuentes, importar dashboards y conectarlo todo automáticamente. Las importaciones de dashboards mediante la UI ya relacionan las fuentes por nombre, por lo que la principal carencia restante está en los workflows programáticos.
+
+**PR relacionados:** [#2746](https://github.com/hyperdxio/hyperdx/pull/2746) feat: Aceptar nombres de fuentes además de ID en los parámetros de URL, [#2758](https://github.com/hyperdxio/hyperdx/pull/2758) feat: Admitir enlaces profundos mediante nombres de fuentes en páginas adicionales
+
+<div id="chart-display-settings-redesign">
+  ## Rediseño de la configuración de visualización de gráficos
+</div>
+
+*Demo de [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tO5yFKR-MLQ" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Se está trabajando en la ubicación de la configuración de visualización de gráficos. El cambio original la trasladaba integrada a la derecha del editor de tiles, en lugar de abrirla en un drawer independiente. Anteriormente, el editor de tiles era un modal y Display Settings se abría en un drawer encima de él. Al pulsar Escape una vez se cerraban ambos, y un drawer sobre un modal nunca pareció adecuado.
+
+El PR se volvió más complicado cuando también era necesario superponer la configuración de series, así que dimos un paso atrás y empezamos a analizar la página de forma más general. El trabajo sigue en la etapa de wireframes. El diseño actual coloca la configuración en un panel acoplado y aplica los cambios automáticamente, lo que permite ver el resultado en tiempo real sin pulsar el botón Aplicar.
+
+El plan es terminar el rediseño antes de volver a incorporarlo al PR existente. Lo que hay ahora se considera un prototipo, especialmente porque el nuevo diseño también modifica partes de la página de dashboards.
+
+**PR relacionados:** [#2721](https://github.com/hyperdxio/hyperdx/pull/2721) feat(dashboards): trasladar el editor de tiles a un drawer con un panel de configuración acoplado
+
+<div id="new-explore-page">
+  ## Nueva página Explore
+</div>
+
+*Demo de [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/E1vEjJBw1gs" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Esta es una exploración inicial de una página Explore unificada que, con el tiempo, podría sustituir Búsqueda, búsquedas guardadas y Chart Explorer por un único punto de entrada.
+
+El despliegue se basa en lo aprendido con el rediseño del visor de trazas. En lugar de cambiar la experiencia para todos de una vez, la nueva página se lanzaría mediante un indicador de funcionalidad para un pequeño grupo de usuarios. Aprovecharíamos ese periodo para detectar y corregir problemas antes de extender su implementación. Si la idea no funciona, seguirá siendo un experimento y no se lanzará. Es un resultado perfectamente válido.
+
+La página comienza con un tipo de señal. Al elegir trazas, registros o métricas, el resto de la experiencia se adapta en consecuencia. Al seleccionar registros, por ejemplo, se muestran la vista de lista, los patrones de eventos, las series temporales y las demás visualizaciones disponibles actualmente en Chart Explorer.
+
+Una investigación debería poder continuar sin cambiar de página. Podrías empezar con una lista, pasar a un número o una tabla agrupada, añadir el resultado a un panel y, después, escribir una consulta personalizada si necesitas más control.
+
+Se incluyen varias ideas menores, la mayoría surgidas de los comentarios de los usuarios. El editor de consultas funcionaría más como el editor SQL, eliminando las diferencias actuales en el comportamiento del autocompletado. Los errores y las advertencias aparecerían mientras editas, en lugar de esperar a que se ejecute la consulta.
+
+Las columnas contarían con un selector específico. Al menos un usuario no se dio cuenta de que cambiar la cláusula `SELECT` determinaba qué columnas aparecían en la tabla. Con el selector, al hacer clic en un campo se actualiza el SQL y se permite ordenar por ese campo. La cláusula `SELECT` seguiría estando disponible para usuarios avanzados.
+
+Las vistas guardadas también estarían en la página, de modo que podrías explorar sin guardar y, después, guardar la vista actual directamente desde allí. El SQL generado se mostraría en línea.
+
+Aún faltan bastantes elementos, incluidas algunas de las visualizaciones disponibles actualmente en Chart Explorer. El diseño seguirá evolucionando a medida que se añadan esos elementos.
+
+**PR relacionadas:** todavía ninguna; se trata de una exploración, no de una funcionalidad ya lanzada
+
+<div id="dashboard-filter-linking">
+  ## Vinculación de filtros del dashboard
+</div>
+
+*Demo a cargo de [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/IQ4WtnNYS5s" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Se ha integrado la vinculación de filtros del dashboard. La presentamos por primera vez como borrador hace varios meses y luego la pausamos mientras evaluábamos sus implicaciones de rendimiento. La vinculación cambia la estructura de las consultas del dashboard y no siempre aprovecha de forma óptima las vistas materializadas, por lo que se lanzará como un toggle opcional en lugar de estar habilitada de forma predeterminada.
+
+Cuando la vinculación está habilitada, elegir un valor en un filtro restringe los valores disponibles en los demás. Seleccionar un servicio deja solo los valores de gravedad correspondientes a ese servicio. Seleccionar un ID de traza deja solo los ID de trazas principales relacionados. Esto evita que los usuarios elijan combinaciones que no devuelven datos.
+
+Un PR posterior hace que la vinculación tenga en cuenta la fuente. Los filtros se agrupan por fuente, con iconos de cadena entre filtros adyacentes que pueden restringirse mutuamente. En un dashboard con dos filtros de logs y dos filtros de trazas, debería quedar claro qué filtros interactúan.
+
+El caso de uso original era el dashboard de Kubernetes. Seleccionar un pod de Kubernetes debería dejar solo las implementaciones y los nodos que contienen ese pod. Los valores restringidos se recuperan de forma diferida al abrir un menú desplegable, lo que limita el coste de las consultas adicionales.
+
+La discusión dejó dos preguntas abiertas. Actualmente, la configuración se almacena por usuario en el almacenamiento del navegador. La expectativa durante la llamada era que, con el tiempo, se querrá guardarla a nivel del dashboard. De ser así, quizá convenga mantener temporalmente la preferencia a nivel de usuario en lugar de que compita más adelante con el comportamiento a nivel de dashboard.
+
+La otra pregunta es cómo se comportan los filtros dependientes mientras se cargan sus valores. Actualmente, seleccionar un valor muestra un estado de carga dentro del menú desplegable dependiente en lugar de bloquearlo, aunque aún debe verificarse el comportamiento con un segundo filtro dependiente. Se prefirió mantener los filtros utilizables mientras se aplica la restricción e indicar que la lista aún no ha terminado de actualizarse. Quien ya sabe qué valor quiere no debería tener que esperar a que se carguen los metadatos.
+
+**PR relacionados:** [#2423](https://github.com/hyperdxio/hyperdx/pull/2423) feat(dashboards): valores de filtro en cascada (por facetas), [#2760](https://github.com/hyperdxio/hyperdx/pull/2760) feat(dashboards): persistir el toggle de vinculación de filtros y aclarar la vinculación dentro de la fuente
+
+<div id="remember-the-last-side-panel-tab">
+  ## Recordar la última pestaña del panel lateral
+</div>
+
+*Demo de [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/FlDWN7sGHMo" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+El PR más pequeño de la semana también es un buen ejemplo de una pequeña molestia que merece la pena corregir.
+
+El panel lateral de filas siempre se abría en la pestaña Overview, diseñada en torno a los campos de logs de OpenTelemetry. Para los logs que no tienen formato OTel, la pestaña muestra muy poca información útil. Acabas cambiando a Column Values cada vez que abres una fila.
+
+Ahora, el panel recuerda la última pestaña que usaste y la vuelve a abrir la próxima vez. No hay nada que configurar. Los usuarios que no usan OTel y cambian a Column Values permanecerán en ella, mientras que quienes usan Overview mantendrán el comportamiento actual.
+
+**PR relacionados:** [#2752](https://github.com/hyperdxio/hyperdx/pull/2752) feat(app): recordar la última pestaña usada del panel lateral al abrirlo

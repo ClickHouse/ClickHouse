@@ -3,6 +3,8 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -83,4 +85,33 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     return true;
 }
+}
+
+namespace DB
+{
+
+void registerStatementSetRole(StatementFactory & factory)
+{
+    factory.registerStatement("SET ROLE",
+    {
+        .description = R"(
+Activates roles for the current user. `SET DEFAULT ROLE` sets the roles which are activated by default when a user
+logs in. The currently active roles are shown in `system.current_roles`.
+
+**Examples**
+
+**Activate a role**
+
+```sql title="Query"
+SET ROLE accountant;
+```
+)",
+        .syntax = R"(
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+)",
+        .related = {"CREATE ROLE", "GRANT", "SET", "SHOW"},
+    });
+}
+
 }

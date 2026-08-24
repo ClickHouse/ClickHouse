@@ -273,3 +273,111 @@ FROM
 (
     SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
 );  -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+
+SELECT '';
+SELECT 'timeSeriesThrowDuplicateSeriesIf vectorized all-zero:';
+
+SELECT timeSeriesThrowDuplicateSeriesIf(materialize(toUInt8(0)), group)
+FROM
+(
+    SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
+    FROM numbers(4)
+);
+
+SELECT '';
+SELECT 'timeSeriesThrowDuplicateSeriesIf negative zero:';
+
+SELECT timeSeriesThrowDuplicateSeriesIf(materialize(CAST('-0.0', 'Float64')), group)
+FROM
+(
+    SELECT timeSeriesTagsToGroup([('__name__', 'up')]) AS group
+    FROM numbers(2)
+);
+
+SELECT '';
+SELECT 'timeSeriesThrowDuplicateSeriesIf vectorized nonzero:';
+
+SELECT timeSeriesThrowDuplicateSeriesIf(number = 2, group)
+FROM
+(
+    SELECT number,
+           timeSeriesTagsToGroup([('__name__', 'up'), ('instance', toString(number))]) AS group
+    FROM numbers(4)
+);  -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+
+SELECT '';
+SELECT 'timeSeriesRemoveTag vectorized dense groups:';
+
+SELECT timeSeriesGroupToTags(new_group)
+FROM
+(
+    SELECT number,
+           timeSeriesTagsToGroup([('__name__', 'metric'), ('instance', toString(number))]) AS old_group,
+           timeSeriesRemoveTag(old_group, '__name__') AS new_group
+    FROM numbers(6)
+)
+ORDER BY number;
+
+SELECT '';
+SELECT 'timeSeriesRemoveTag vectorized sparse groups:';
+
+WITH
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('__name__', 'metric'), ('instance', toString(number))]) AS group
+            FROM numbers(32)
+            ORDER BY number
+        )
+    ) AS groups
+SELECT timeSeriesGroupToTags(timeSeriesRemoveTag(groups[number * 8 + 1], '__name__'))
+FROM numbers(4)
+ORDER BY number;
+
+SELECT '';
+SELECT 'timeSeriesRemoveAllTagsExcept vectorized repeated dense groups:';
+
+WITH
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('shared', 'value'), ('unique', toString(number))]) AS group
+            FROM numbers(3)
+            ORDER BY number
+        )
+    ) AS groups
+SELECT count(),
+       uniqExact(new_group),
+       groupUniqArray(timeSeriesGroupToTags(new_group))
+FROM
+(
+    SELECT timeSeriesRemoveAllTagsExcept(groups[[1, 2, 1, 3, 2, 1][number + 1]], ['shared']) AS new_group
+    FROM numbers(6)
+);
+
+SELECT '';
+SELECT 'timeSeriesRemoveAllTagsExcept vectorized repeated sparse groups:';
+
+WITH
+    (
+        SELECT groupArray(group)
+        FROM
+        (
+            SELECT number,
+                   timeSeriesTagsToGroup([('shared', 'value'), ('unique', toString(number))]) AS group
+            FROM numbers(32)
+            ORDER BY number
+        )
+    ) AS groups
+SELECT count(),
+       uniqExact(new_group),
+       groupUniqArray(timeSeriesGroupToTags(new_group))
+FROM
+(
+    SELECT timeSeriesRemoveAllTagsExcept(groups[[1, 25, 1, 25, 1][number + 1]], ['shared']) AS new_group
+    FROM numbers(5)
+);
