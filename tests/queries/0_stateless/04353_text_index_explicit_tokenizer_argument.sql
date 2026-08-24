@@ -102,13 +102,25 @@ SETTINGS index_granularity = 2;
 INSERT INTO tab VALUES (1, 'see the cat'), (2, 'see a cat'), (3, 'see cat'), (4, 'the cat see'), (5, 'cat see');
 
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
--- The two forms agree in every combination of the settings that select the index.
+
+-- The two forms agree for the same setting, for each function and each value of use_skip_indexes.
+-- A row prints only if they disagree, so the expected output is empty.
+SELECT 'hasAnyTokens', 1, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAnyTokens(doc, ['the']) ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 1;
+SELECT 'hasAnyTokens', 0, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAnyTokens(doc, ['the']) ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 0;
+SELECT 'hasAllTokens', 1, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAllTokens(doc, ['the', 'cat'], 'splitByNonAlpha') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAllTokens(doc, ['the', 'cat']) ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 1;
+
+-- The rows themselves, so a change of behaviour is visible and not only a parity assertion.
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasAnyTokens(doc, ['the']) ORDER BY id SETTINGS use_skip_indexes = 1;
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['the'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
-SELECT id FROM tab WHERE hasAnyTokens(doc, ['the']) ORDER BY id SETTINGS use_skip_indexes = 0;
-SELECT id FROM tab WHERE hasAllTokens(doc, ['the', 'cat'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasAllTokens(doc, ['the', 'cat']) ORDER BY id SETTINGS use_skip_indexes = 1;
 
 DROP TABLE tab;
 
@@ -127,12 +139,27 @@ SETTINGS index_granularity = 2;
 INSERT INTO tab VALUES (1, 'Hello World'), (2, 'hello there'), (3, 'goodbye');
 
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+-- Same parity assertion as for the postprocessor above, for all three functions. Expected output is empty.
+SELECT 'hasAnyTokens', 1, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello']) ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 1;
+SELECT 'hasAnyTokens', 0, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello']) ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 0;
+SELECT 'hasAllTokens', 1, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAllTokens(doc, ['hello', 'world'], 'splitByNonAlpha') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasAllTokens(doc, ['hello', 'world']) ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 1;
+SELECT 'hasPhrase', 1, three, two FROM (
+    SELECT (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'hello world', 'splitByNonAlpha') ORDER BY id)) AS three,
+           (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'hello world') ORDER BY id)) AS two
+) WHERE three != two SETTINGS use_skip_indexes = 1;
+
 SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello']) ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasAllTokens(doc, ['hello', 'world'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasAllTokens(doc, ['hello', 'world']) ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasPhrase(doc, 'hello world', 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 1;
-SELECT id FROM tab WHERE hasPhrase(doc, 'hello world') ORDER BY id SETTINGS use_skip_indexes = 1;
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['hello'], 'splitByNonAlpha') ORDER BY id SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 
