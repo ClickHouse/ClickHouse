@@ -766,6 +766,15 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
 /// query initiator. `shard_num` is 1-based, so 0 means that no shard is specified.
 static UInt64 getParallelReplicasShardNum(const ContextPtr & context)
 {
+    /// The shard number arrives through two carriers. The remote fan-out ships it as a regular scalar
+    /// (`ReadFromRemote` adds it to the scalars sent over the wire), so on the receiving replica it lives in
+    /// the query context. A local shard plan never crosses the wire: `createLocalPlan` passes the shard
+    /// number in `SelectQueryOptions`, and the interpreter injects it into its context copy with
+    /// `addSpecialScalar`, from where context copies inherit it. The special scalar is set by the innermost
+    /// interpreter, so when both are present it is the more specific scope and takes precedence.
+    if (const auto shard_num_block = context->tryGetSpecialScalar("_shard_num"))
+        return shard_num_block->safeGetByPosition(0).column->getUInt(0);
+
     auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
     const auto it = scalars.find("_shard_num");
@@ -1446,15 +1455,7 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
         return cluster->getShardsInfo()[0].getAllNodeCount() > 1;
 
     /// parallel replicas with distributed table
-    auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
-    UInt64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
-    const auto it = scalars.find("_shard_num");
-    if (it != scalars.end())
-    {
-        const Block & block = it->second;
-        const auto & column = block.safeGetByPosition(0).column;
-        shard_num = column->getUInt(0);
-    }
+    const UInt64 shard_num = getParallelReplicasShardNum(context);
     if (shard_num > 0)
     {
         const auto shard_count = cluster->getShardCount();
@@ -1488,13 +1489,8 @@ bool canUseLocalPlanForParallelReplicas(const ContextPtr & context)
 
     /// Inside a Distributed sub-query the initiator can't use local plan (see comment in
     /// `executeQueryWithParallelReplicas`).
-    auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
-    if (auto it = scalars.find("_shard_num"); it != scalars.end())
-    {
-        const auto & column = it->second.safeGetByPosition(0).column;
-        if (column->getUInt(0) > 0)
-            return false;
-    }
+    if (getParallelReplicasShardNum(context) > 0)
+        return false;
 
     return true;
 }

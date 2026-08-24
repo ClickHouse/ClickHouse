@@ -1,0 +1,36 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+    </logger>
+
+    <remote_servers>
+        <!-- Shard 1 has a single replica on purpose: a single-replica local shard is the one carrier where a
+             `Distributed` read dispatches the shard as a local plan (`createLocalPlan`) while task-based
+             parallel replicas stay enabled for the query, so `_shard_num` travels as a special scalar instead
+             of a regular one. Shard 2 has 3 replicas so it still runs a shard-scoped parallel-replicas read. -->
+        <test_local_shard_plan>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n4</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_local_shard_plan>
+    </remote_servers>
+</clickhouse>
