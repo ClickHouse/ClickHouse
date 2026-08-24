@@ -5,14 +5,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Patterns are expanded before anything is fetched, so nothing here reaches the network.
+# Parallel replicas may rewrite `url` into its cluster counterpart, which legitimately changes the
+# surface named in the message, so pin the plain code path where the naming is asserted.
 
 # A single range that is larger than the limit.
-$CLICKHOUSE_CLIENT --query "SELECT * FROM url('http://localhost:1/data-{0..2000}.tsv', TSV, 'x UInt8')" 2>&1 \
+$CLICKHOUSE_CLIENT --query "SELECT * FROM url('http://localhost:1/data-{0..2000}.tsv', TSV, 'x UInt8') SETTINGS enable_parallel_replicas = 0" 2>&1 \
     | grep -oF -e "Table function 'url'" -e "too many result addresses: 2001, while at most 1000 are allowed" -e "'glob_expansion_max_elements' setting" \
     | head -n 3
 
 # A direct product of two ranges: neither of them alone exceeds the limit.
-$CLICKHOUSE_CLIENT --query "SELECT * FROM url('http://localhost:1/data-{0..99}-{0..99}.tsv', TSV, 'x UInt8')" 2>&1 \
+$CLICKHOUSE_CLIENT --query "SELECT * FROM url('http://localhost:1/data-{0..99}-{0..99}.tsv', TSV, 'x UInt8') SETTINGS enable_parallel_replicas = 0" 2>&1 \
     | grep -oF -e "Table function 'url'" -e "too many result addresses: 10000, while at most 1000 are allowed" -e "'glob_expansion_max_elements' setting" \
     | head -n 3
 
