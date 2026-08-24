@@ -61,7 +61,8 @@ public:
         return table_metadata.getTableFormat();
     }
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
 
 private:
     const std::string base_url_str;
@@ -113,10 +114,8 @@ private:
         const Poco::JSON::Object::Ptr & table_json,
         TableMetadata & result) const;
 
-    void getDeltaCredentials(const std::string & table_id, TableMetadata & metadata) const;
-
-    /// Asks the catalog for temporary read credentials for a table.
-    Poco::JSON::Object::Ptr requestReadCredentials(const std::string & table_id) const;
+    /// Asks the catalog for temporary read credentials for Delta tables.
+    std::shared_ptr<IStorageCredentials> getDeltaCredentials(const std::string & table_id, StorageType storage_type) const;
 
     /// Return `nullptr` when the response carries no credentials of that kind.
     std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;

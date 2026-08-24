@@ -91,7 +91,8 @@ public:
 
     void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
 
     struct Config
     {

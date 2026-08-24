@@ -300,7 +300,8 @@ public:
     /// The Glue catalog does not support such operation.
     virtual bool isTransactional() const { return false; }
 
-    virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
+    virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & /*storage_id*/, const TableMetadata & /*table_metadata*/)
     {
         return std::nullopt;
     }

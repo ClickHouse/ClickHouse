@@ -455,39 +455,22 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
         result.setTableUUID(object->get("table_id").extract<String>());
 
     if (result.isDefaultReadableTable() && result.requiresCredentials())
-        getDeltaCredentials(object->get("table_id"), result);
+    {
+        const auto storage_type = parseStorageTypeFromLocation(result.getLocation());
+        if (auto credentials = getDeltaCredentials(object->get("table_id"), storage_type))
+            result.setStorageCredentials(credentials);
+    }
 
     return true;
 }
 
-void UnityV2Catalog::getDeltaCredentials(const std::string & table_id, TableMetadata & metadata) const
+std::shared_ptr<IStorageCredentials> UnityV2Catalog::getDeltaCredentials(
+    const std::string & table_id, StorageType storage_type) const
 {
     LOG_DEBUG(log, "Getting credentials for table {}", table_id);
-    auto storage_type = parseStorageTypeFromLocation(metadata.getLocation());
     if (storage_type != StorageType::S3 && storage_type != StorageType::Azure)
-        return;
+        return nullptr;
 
-    const Poco::JSON::Object::Ptr & response = requestReadCredentials(table_id);
-
-    std::shared_ptr<IStorageCredentials> creds;
-    switch (storage_type)
-    {
-        case StorageType::S3:
-            creds = parseS3Credentials(response);
-            break;
-        case StorageType::Azure:
-            creds = parseAzureCredentials(response);
-            break;
-        default:
-            break;
-    }
-
-    if (creds)
-        metadata.setStorageCredentials(creds);
-}
-
-Poco::JSON::Object::Ptr UnityV2Catalog::requestReadCredentials(const std::string & table_id) const
-{
     Poco::JSON::Object request_body;
     request_body.set("table_id", table_id);
     request_body.set("operation", "READ");
@@ -495,7 +478,17 @@ Poco::JSON::Object::Ptr UnityV2Catalog::requestReadCredentials(const std::string
     auto callback = [&request_body](std::ostream & os) { request_body.stringify(os); };
 
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
-    return json.extract<Poco::JSON::Object::Ptr>();
+    const Poco::JSON::Object::Ptr & response = json.extract<Poco::JSON::Object::Ptr>();
+
+    switch (storage_type)
+    {
+        case StorageType::S3:
+            return parseS3Credentials(response);
+        case StorageType::Azure:
+            return parseAzureCredentials(response);
+        default:
+            return nullptr;
+    }
 }
 
 std::shared_ptr<IStorageCredentials> UnityV2Catalog::parseS3Credentials(const Poco::JSON::Object::Ptr & response) const
@@ -520,21 +513,37 @@ std::shared_ptr<IStorageCredentials> UnityV2Catalog::parseAzureCredentials(const
 }
 
 /// Only S3 refreshes credentials: `StorageAzureConfiguration::createObjectStorage` discards the callback.
-ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfigurationCallback(const DB::StorageID & table_id)
+ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfigurationCallback(
+    const DB::StorageID & table_id, const TableMetadata & table_metadata)
 {
-    if (!table_id.hasUUID())
+    /// Iceberg credentials are vended by the Iceberg REST catalog.
+    if (table_metadata.getTableFormat() == DataLakeTableFormat::ICEBERG)
+    {
+        return [this, table_id, table_metadata]() -> std::shared_ptr<IStorageCredentials>
+        {
+            /// Resolved per call, because refreshing the token replaces `iceberg_rest_catalog`.
+            return requestWithRetry([&](bool force_refresh) -> std::shared_ptr<IStorageCredentials>
+            {
+                auto rest_catalog = getIcebergRestCatalog(force_refresh);
+                auto refresh = rest_catalog->getCredentialsConfigurationCallback(table_id, table_metadata);
+                return refresh ? (*refresh)() : nullptr;
+            });
+        };
+    }
+
+    /// Delta tables refresh using table_uuid and the TEMPORARY_TABLE_CREDENTIALS endpoint.
+    const auto table_uuid = table_metadata.getTableUUID();
+    if (!table_uuid)
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
-            "Cannot build a Unity credentials refresh callback for `{}`: StorageID has no UUID",
+            "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    const String unity_table_id = toString(table_id.uuid);
-
-    return [this, unity_table_id]() -> std::shared_ptr<IStorageCredentials>
+    return [this, unity_table_id = *table_uuid]() -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
-        return parseS3Credentials(requestReadCredentials(unity_table_id));
+        return getDeltaCredentials(unity_table_id, StorageType::S3);
     };
 }
 

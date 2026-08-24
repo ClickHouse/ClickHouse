@@ -958,7 +958,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             return std::nullopt;
         if (!with_vended_credentials && !catalog_manages_provider_chain)
             return std::nullopt;
-        return catalog->getCredentialsConfigurationCallback(storage_id);
+        return catalog->getCredentialsConfigurationCallback(storage_id, table_metadata);
     };
 
     const auto catalog_uuid = table_metadata.getTableUUID();
