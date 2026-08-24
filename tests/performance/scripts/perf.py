@@ -564,14 +564,37 @@ if not args.long:
 # options, fail closed: reject the test up front rather than benchmark the wrong
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
-if any(q["kind"] == "shell" for q in test_queries) and (
-    args.user != "default" or args.password != "" or args.secure
-):
+has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
+if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
         "--user / --password / --secure connection options yet: the shell "
         "environment always connects without authentication over plaintext HTTP. "
         "Remove these options, or run this test without shell-script queries."
+    )
+
+# Setup queries (create_query/fill_query) paired with their check_reference flag value.
+# If `check_reference="0"`, the query is not checked on the reference server. Useful for newly added features.
+# findall("./*") + tag filter, not one findall per tag, to keep the document order of the queries.
+create_query_templates = []
+for e in root.findall("./*"):
+    if e.tag not in ("create_query", "fill_query"):
+        continue
+    check_reference = e.get("check_reference", "1")
+    if check_reference not in ("0", "1"):
+        raise Exception(
+            f'Invalid check_reference="{check_reference}" on <{e.tag}> '
+            'in the test file: must be "0" or "1"'
+        )
+    create_query_templates.append((e.text, check_reference == "1"))
+
+# Statements extracted from <query file=...> have no element to carry the attribute.
+create_query_templates += [(template, True) for template in extra_create_queries]
+
+if has_shell_queries and any(not checked for _, checked in create_query_templates):
+    raise Exception(
+        'check_reference="0" is not compatible with shell queries: a shell '
+        "performance test must run on every server to be comparable"
     )
 
 # Print report threshold for the test if it is set.
@@ -726,15 +749,13 @@ for conn_index, c in enumerate(all_connections):
 reportStageEnd("settings")
 
 if not args.use_existing_tables:
-    # Run create and fill queries. We will run them simultaneously for both
-    # servers, to save time. The weird XML search + filter is because we want to
-    # keep the relative order of elements, and etree doesn't support the
-    # appropriate xpath query.
-    create_query_templates = [
-        q.text for q in root.findall("./*") if q.tag in ("create_query", "fill_query")
-    ]
-    create_query_templates += extra_create_queries
-    create_queries = substitute_parameters(create_query_templates)
+    # Run create and fill queries. We will run them simultaneously for both servers, to save time.
+    create_queries = []
+    create_queries_check_reference = []
+    for template, check_reference in create_query_templates:
+        expanded = substitute_parameters([template])
+        create_queries += expanded
+        create_queries_check_reference += [check_reference] * len(expanded)
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
     # errors, and temporary tables are destroyed. We want to be able to continue
