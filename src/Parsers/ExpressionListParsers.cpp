@@ -36,6 +36,8 @@
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <fmt/core.h>
 
@@ -4091,6 +4093,56 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         ++layers.back()->between_counter;
 
     return Action::OPERAND;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementIn(StatementFactory & factory)
+{
+    factory.registerStatement("IN",
+    {
+        .description = R"(
+Checks whether the left side of the operator is contained in the right side. The left side is either a single column or
+a tuple, the right side is a set of literals, a table, a subquery, or a table function.
+
+The `GLOBAL IN` and `GLOBAL NOT IN` variants change how the right side is evaluated in a distributed query: the set is
+calculated once on the initiator server and sent to the remote servers, instead of being calculated on every remote
+server.
+
+**Examples**
+
+**Check a single column against a set of literals**
+
+```sql title="Query"
+SELECT number IN (1, 2) FROM numbers(3);
+```
+
+```response title="Response"
+0
+1
+1
+```
+
+**Check a tuple against a subquery**
+
+```sql title="Query"
+SELECT (1, 2) IN (SELECT 1, 2);
+```
+
+```response title="Response"
+1
+```
+)",
+        .syntax = R"(
+expr IN (literal [, ...])
+expr IN table | (subquery) | table_function(...)
+expr [GLOBAL] [NOT] IN ...
+)",
+        .related = {"SELECT", "WHERE", "JOIN", "INTERSECT"},
+    });
 }
 
 }

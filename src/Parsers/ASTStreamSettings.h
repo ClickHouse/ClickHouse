@@ -8,7 +8,9 @@ namespace DB
 {
 
 /// Streaming query settings attached to a table expression:
-///   FROM t STREAM [CURSOR '{...}']
+///   FROM t STREAM [BOUNDED]
+///                 [UNORDERED]
+///                 [CURSOR '{...}']
 ///                 [WATERMARK FOR <col> AS <expr> [IDLE TIMEOUT INTERVAL N SECOND]]
 ///
 struct ASTStreamSettings : public IAST

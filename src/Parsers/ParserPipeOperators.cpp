@@ -16,6 +16,8 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <optional>
 
@@ -572,6 +574,42 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
 
     pos.depth = current_depth;
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementPipeOperators(StatementFactory & factory)
+{
+    factory.registerStatement("PIPE OPERATORS",
+    {
+        .description = R"(
+Allow writing a query as a linear chain of transformations which reads from top to bottom. Any `SELECT` query can be
+followed by a chain of pipe operators; each operator starts with the `|>` token, takes the result of the query before
+it as input, and applies one more transformation to it.
+
+**Examples**
+
+**Write a query as a chain of transformations**
+
+```sql title="Query"
+FROM orders
+|> WHERE cancelled = 0
+|> AGGREGATE sum(amount) AS total GROUP BY customer
+|> ORDER BY total DESC
+|> LIMIT 3
+```
+)",
+        .syntax = R"(
+FROM table
+|> SELECT ... | WHERE ... | ORDER BY ... | LIMIT ... | AGGREGATE ... [GROUP BY ...] | EXTEND ... | SET ... | DROP ... | RENAME ... | DISTINCT | UNION ... | INTERSECT ... | EXCEPT ... | JOIN ... | ARRAY JOIN ... | CALL ...
+[|> ...]
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "FROM", "WHERE", "ORDER BY", "LIMIT"},
+    });
 }
 
 }

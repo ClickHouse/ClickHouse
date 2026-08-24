@@ -52,7 +52,7 @@ configure_file ("${CH}/src/Common/config.h.in" "${CMAKE_BINARY_DIR}/gen/Common/c
 # The transitive closure the parser actually needs. Everything not listed here is either
 # unreachable or replaced by wasm_runtime.cpp - see the comments in that file. A source that goes
 # missing from this list surfaces as an undefined symbol at link time, which is what the
-# `Standalone parser` CI job is for.
+# `Build (wasm_parser)` CI job is for.
 file (GLOB PARSER_SOURCES CONFIGURE_DEPENDS
     "${CH}/src/Parsers/*.cpp"
     "${CH}/src/Parsers/Access/*.cpp"
