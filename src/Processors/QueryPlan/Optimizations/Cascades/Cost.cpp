@@ -290,8 +290,11 @@ static Cost sortCost(const CostInputs & inputs, const SortingStep & sorting_step
         : rows;
     Cost cost;
     cost.work += rows * std::max(1.0, std::log2(sorted_rows)) / inputs.parallelism;
-    /// N-way merge is single-threaded and sees only the rows the sort emits.
-    cost.sequential += inputs.config.merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count / inputs.parallelism;
+    /// N-way merge is single-threaded and sees only the rows the sort emits. A partitioned
+    /// sort keeps its per-partition streams instead of merging them into one, so it pays no
+    /// merge.
+    if (!sorting_step.hasPartitions())
+        cost.sequential += inputs.config.merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count / inputs.parallelism;
     return cost;
 }
 

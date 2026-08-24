@@ -124,7 +124,17 @@ Each physical expression has **properties** describing what it produces:
   - `{4 nodes, by custkey}` — data hash-partitioned by `custkey` across 4 nodes
   - `{4 nodes, replicated}` — full copy on every node
 
-- **Sorting**: Whether the output is sorted and by which columns.
+- **Sorting**: Whether the output is sorted and by which columns. The sorting describes
+  each stream on its own; with one stream per node it is the node's total order.
+
+- **Stream layout**: How one node's streams relate to each other. `Unknown` — several
+  streams with no relation (reads, joins, exchange receive sides). `Single` — one stream
+  per node (a plain full sort, a sorted gather). `Disjoint` on a column set — rows equal
+  on those columns share a stream (a sort partitioned by the columns), so an operator
+  that works per group, such as a `PARTITION BY` window, can run on every stream at once.
+  One stream keeps every group whole, so `Single` satisfies every requirement; `Disjoint`
+  on a subset of the required columns satisfies a `Disjoint` requirement (a coarser split
+  never tears a required group apart).
 
 A parent step **requires** specific properties from its child. For example, a
 `ShuffleHashJoin` on `custkey` requires both inputs to be distributed `{4 nodes, by custkey}`.
@@ -453,9 +463,10 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   kept row depends on the parallel build order, so nodes could produce different rows
 - `TopNImplementation` — bounded sort at one node, or per node for the top-N partial
 - `WindowImplementation` — a window on a single node, or on each node for a `PARTITION BY`
-  window: the input is required hashed by the partition keys and sorted on each node, so
-  the enforcers add the keyed shuffle and the per-node sort, and each node holds its
-  partitions completely
+  window: the input is required hashed by the partition keys, sorted on each node, and
+  with streams disjoint on the partition keys, so the enforcers add the keyed shuffle and
+  a per-node sort partitioned by the keys, and every node runs the window on several
+  streams at once with each partition whole in one stream
 - `DefaultImplementation` — wraps otherwise-unhandled steps at `{1 node}`; operators
   with dedicated rules above are excluded
 - `DistributionPassthrough` — propagates distribution through stateless per-row steps
@@ -468,7 +479,10 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   `ShuffleExchange`, `ScatterExchange` (keyed, or column-less round-robin for a
   multi-node requirement with no partitioning constraint). Produces both regular
   and sorted-merge gather variants.
-- `SortingEnforcer` — adds `SortingStep` with required sort description.
+- `SortingEnforcer` — adds `SortingStep` with the required sort description. It also
+  closes stream-layout gaps: for a `Disjoint` requirement whose columns cover a prefix of
+  the sort it builds the sort partitioned by those columns (streams stay split per
+  partition), otherwise a plain sort whose single merged stream satisfies every layout.
 
 **Key files**: `Rules/*.cpp`, `DagNameTranslation.h/cpp`
 

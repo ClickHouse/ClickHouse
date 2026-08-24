@@ -13,7 +13,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
@@ -26,6 +25,7 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <fmt/format.h>
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -48,63 +48,29 @@ namespace QueryPlanOptimizations
     bool keyTypeBreaksHashSharding(const IDataType & type);
 }
 
-/// The sorting enforcer builds plain full sorts, and the executor merges their output into
-/// one stream per node. A sort that directly feeds a `PARTITION BY` window can carry the
-/// partition keys instead, like the sorts the planner builds for windows: the executor then
-/// splits the streams by a hash of the keys, each partition stays within one stream, the
-/// window computes its partitions in parallel, and `applyStreamDisjointness` passes the
-/// disjointness to the operators above (an aggregation on the partition keys skips its
-/// merge phase). Keys whose hash disagrees with `compareAt` (floats, `JSON`, `Dynamic`)
-/// are left alone - the split would tear one partition apart.
-static void addPartitionsToWindowSorts(QueryPlan & query_plan)
+/// The partition keys of a partitioned sort as stream-disjointness columns, or empty when
+/// the split cannot be reproduced safely: the keys must be a prefix of the sort (so a
+/// rebuilt sort can split by them), be columns of the sort's input, and hash in agreement
+/// with `compareAt` (floats, `JSON`, `Dynamic` hash `-0.` and `0.` differently while they
+/// compare equal, so a hash split would tear one group apart).
+static DistributionColumns streamSplitColumns(const SortingStep & sorting_step)
 {
-    std::vector<QueryPlan::Node *> stack = {query_plan.getRootNode()};
-    while (!stack.empty())
+    const auto & partition_by = sorting_step.getPartitionByDescription();
+    const auto & sort_description = sorting_step.getSortDescription();
+    if (sort_description.size() < partition_by.size()
+        || !std::equal(partition_by.begin(), partition_by.end(), sort_description.begin()))
+        return {};
+
+    const auto & input_header = sorting_step.getInputHeaders().front();
+    DistributionColumns columns;
+    for (const auto & partition_column : partition_by)
     {
-        QueryPlan::Node * node = stack.back();
-        stack.pop_back();
-        for (auto * child : node->children)
-            stack.push_back(child);
-
-        if (node->children.size() != 1)
-            continue;
-        const auto * window_step = typeid_cast<const WindowStep *>(node->step.get());
-        if (!window_step)
-            continue;
-        const auto & partition_by = window_step->getWindowDescription().partition_by;
-        if (partition_by.empty())
-            continue;
-
-        auto * sorting_step = typeid_cast<SortingStep *>(node->children[0]->step.get());
-        if (!sorting_step || sorting_step->getType() != SortingStep::Type::Full
-            || sorting_step->getLimit() != 0 || sorting_step->hasPartitions())
-            continue;
-
-        /// Only the sort made for this window: the partition keys are its prefix.
-        const auto & sort_description = sorting_step->getSortDescription();
-        if (sort_description.size() < partition_by.size()
-            || !std::equal(partition_by.begin(), partition_by.end(), sort_description.begin()))
-            continue;
-
-        const auto & input_header = sorting_step->getInputHeaders().front();
-        bool keys_split_partitions = false;
-        for (const auto & partition_column : partition_by)
-        {
-            if (!input_header->has(partition_column.column_name)
-                || QueryPlanOptimizations::keyTypeBreaksHashSharding(*input_header->getByName(partition_column.column_name).type))
-            {
-                keys_split_partitions = true;
-                break;
-            }
-        }
-        if (keys_split_partitions)
-            continue;
-
-        auto partitioned_sort = std::make_unique<SortingStep>(
-            input_header, sort_description, partition_by, /*limit_=*/0, sorting_step->getSettings());
-        partitioned_sort->setStepDescription(*sorting_step);
-        node->children[0]->step = std::move(partitioned_sort);
+        if (!input_header->has(partition_column.column_name)
+            || QueryPlanOptimizations::keyTypeBreaksHashSharding(*input_header->getByName(partition_column.column_name).type))
+            return {};
+        columns.push_back(NameSet{partition_column.column_name});
     }
+    return columns;
 }
 
 static String dumpQueryPlanShort(const QueryPlan & query_plan)
@@ -231,6 +197,17 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
         auto [child_group_id, _] = addGroup(*node.children.front());
         ExpressionProperties stripped_props;
         stripped_props.sorting = sorting_step->getSortDescription();
+        /// The stream layout the sort produced is part of the requirement: a plain sort
+        /// merges each node's streams into one, a partitioned sort (the planner builds them
+        /// for windows) keeps streams disjoint on the partition keys. A partitioned sort
+        /// whose keys cannot split safely demands one stream, which keeps every group whole.
+        DistributionColumns disjoint_columns;
+        if (sorting_step->hasPartitions())
+            disjoint_columns = streamSplitColumns(*sorting_step);
+        if (!disjoint_columns.empty())
+            stripped_props.setDisjointStreams(std::move(disjoint_columns));
+        else
+            stripped_props.stream_layout = StreamLayout::Single;
         return {child_group_id, stripped_props};
     }
 
@@ -396,8 +373,6 @@ void CascadesOptimizer::optimize()
 
     /// Update the original plan in-place because there might be references to the root node of the original plan
     query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*best_plan));
-
-    addPartitionsToWindowSorts(query_plan);
 
     LOG_TRACE(log, "Optimization took {} ms", optimizer_timer.elapsedMilliseconds());
 }

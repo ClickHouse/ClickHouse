@@ -836,11 +836,18 @@ QueryPlanStepPtr SortingStep::clone() const
     /// Reconstructing another type as Full would silently drop its ordered-input contract.
     if (type != Type::Full)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of SortingStep is implemented only for Full sorting");
-    if (!partition_by_description.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of partitioned sorting is not implemented for SortingStep");
+    /// The merge-join scattered sort carries extra state (`scatter_partitions`, the skip
+    /// flag) this reconstruction would drop.
+    if (!partition_by_description.empty() && (is_sorting_for_merge_join || scatter_partitions > 0 || skip_scatter_by_partition))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of a partitioned sorting with scatter state is not implemented for SortingStep");
 
-    auto cloned = std::make_unique<SortingStep>(
-        input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+    std::unique_ptr<SortingStep> cloned;
+    if (partition_by_description.empty())
+        cloned = std::make_unique<SortingStep>(
+            input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+    else
+        cloned = std::make_unique<SortingStep>(
+            input_headers.front(), result_description, partition_by_description, limit, sort_settings);
     cloned->always_read_till_end = always_read_till_end;
     cloned->is_partial_top_n = is_partial_top_n;
     cloned->use_buffering = use_buffering;

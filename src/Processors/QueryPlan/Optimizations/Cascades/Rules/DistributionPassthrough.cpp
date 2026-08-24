@@ -89,6 +89,19 @@ protected:
             SortDescription input_sorting = required_properties.sorting;
             bool can_translate = !dag || translateSortDescription(*dag, input_sorting);
 
+            /// The step keeps rows within their stream, so a required stream layout is also
+            /// delegated: the input delivers it and the output claims it. Disjoint columns
+            /// that do not map through the DAG degrade to a `Single` demand, which delivers
+            /// every layout.
+            StreamLayout input_layout = required_properties.stream_layout;
+            DistributionColumns input_disjoint_columns = required_properties.stream_disjoint_columns;
+            if (input_layout == StreamLayout::Disjoint
+                && dag && !translateDistributionColumns(*dag, input_disjoint_columns))
+            {
+                input_layout = StreamLayout::Single;
+                input_disjoint_columns.clear();
+            }
+
             if (can_translate)
             {
                 auto create_sorted_variant = [&](const DistributionDescription & dist)
@@ -100,9 +113,21 @@ protected:
 
                     sorted_input_props.distribution = dist;
                     sorted_input_props.sorting = input_sorting;
+                    /// Translation renames columns, so the canonical set order must be rebuilt.
+                    if (input_layout == StreamLayout::Disjoint)
+                    {
+                        sorted_input_props.setDisjointStreams(input_disjoint_columns);
+                    }
+                    else
+                    {
+                        sorted_input_props.stream_layout = input_layout;
+                        sorted_input_props.stream_disjoint_columns.clear();
+                    }
 
                     sorted_impl->properties.distribution = dist;
                     sorted_impl->properties.sorting = required_properties.sorting;
+                    sorted_impl->properties.stream_layout = required_properties.stream_layout;
+                    sorted_impl->properties.stream_disjoint_columns = required_properties.stream_disjoint_columns;
 
                     addPhysicalToMemo(sorted_impl, required_properties, memo, result);
                 };

@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
 using namespace DB;
@@ -174,4 +175,18 @@ TEST(CascadesUnbuildableExpression, UnsatisfiableInputMarksCostUnbuildable)
     buildable->group_id = group_id;
 
     EXPECT_TRUE(estimator.estimateCost(buildable).buildable);
+}
+
+/// A bounded partitioned sort keeps one stream per hash partition instead of merging to a
+/// global top-N, so the top-N rules (which promise one sorted stream) must not take it.
+TEST(CascadesTopNSort, PartitionedBoundedSortIsNotTopN)
+{
+    auto header = makeHeader();
+
+    SortingStep plain_bounded(header, makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65000));
+    EXPECT_TRUE(isTopNSort(plain_bounded));
+
+    SortingStep partitioned_bounded(
+        header, makeSortDescription(), /*partition_by_description_=*/makeSortDescription(), /*limit_=*/10, SortingStep::Settings(65000));
+    EXPECT_FALSE(isTopNSort(partitioned_bounded));
 }

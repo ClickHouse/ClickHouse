@@ -41,7 +41,14 @@ protected:
 
 bool SortingEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
 {
-    return !ExpressionProperties::isSortingSatisfiedBy(required_properties.sorting, expression->properties.sorting);
+    /// Without a required sort description there is nothing this enforcer can build.
+    if (required_properties.sorting.empty())
+        return false;
+    /// The stream layout is also this enforcer's axis: a layout gap can exist alone (e.g.
+    /// streams disjoint on more columns than required), and the sort it builds closes both
+    /// gaps at once.
+    return !ExpressionProperties::isSortingSatisfiedBy(required_properties.sorting, expression->properties.sorting)
+        || !ExpressionProperties::isStreamLayoutSatisfiedBy(required_properties, expression->properties);
 }
 
 std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
@@ -55,17 +62,60 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     const SortingStep::Settings & sort_settings = *captured_settings;
     const auto & input_header = expression->getQueryPlanStep()->getOutputHeader();
 
+    /// A disjointness requirement is met by splitting the streams by the required columns
+    /// before sorting. The columns must form a prefix of the sort, so that every partition
+    /// lands whole in one stream and each stream stays sorted. When they do not, the plain
+    /// sort below still satisfies the requirement: one stream keeps every group whole.
+    SortDescription partition_by;
+    if (required_properties.stream_layout == StreamLayout::Disjoint)
+    {
+        for (const auto & sort_column : sort_desc)
+        {
+            if (partition_by.size() == required_properties.stream_disjoint_columns.size())
+                break;
+            bool is_disjoint_column = false;
+            for (const auto & column_set : required_properties.stream_disjoint_columns)
+            {
+                if (column_set.contains(sort_column.column_name))
+                {
+                    is_disjoint_column = true;
+                    break;
+                }
+            }
+            if (!is_disjoint_column)
+                break;
+            partition_by.push_back(sort_column);
+        }
+        if (partition_by.size() != required_properties.stream_disjoint_columns.size())
+            partition_by.clear();
+    }
+
     /// Create a full SortingStep expression whose input requires the same distribution
-    /// as the source expression but with sorting relaxed to empty.  Any row limit is owned
+    /// as the source expression but with sorting and layout relaxed.  Any row limit is owned
     /// by a separate Limit/top-N operator, not by the sorting property.
     ExpressionProperties input_required = expression->properties;
     input_required.sorting = {};
+    input_required.stream_layout = StreamLayout::Unknown;
+    input_required.stream_disjoint_columns.clear();
 
+    /// The sort makes the stream layout itself: one merged stream, or streams split by the
+    /// partition columns.
     ExpressionProperties output_properties = expression->properties;
     output_properties.sorting = sort_desc;
+    if (partition_by.empty())
+    {
+        output_properties.stream_layout = StreamLayout::Single;
+        output_properties.stream_disjoint_columns.clear();
+    }
+    else
+        output_properties.setDisjointStreams(required_properties.stream_disjoint_columns);
+
+    auto sorting_step = partition_by.empty()
+        ? std::make_unique<SortingStep>(input_header, sort_desc, /*limit=*/0, sort_settings)
+        : std::make_unique<SortingStep>(input_header, sort_desc, partition_by, /*limit=*/0, sort_settings);
     auto sort_expr = makeEnforcerExpression(
         expression,
-        std::make_unique<SortingStep>(input_header, sort_desc, /*limit=*/0, sort_settings),
+        std::move(sorting_step),
         input_required,
         std::move(output_properties),
         EnforcedProperty::Sorting);
