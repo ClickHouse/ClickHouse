@@ -53,7 +53,7 @@ The [`/play`](/concepts/features/interfaces/http) Web SQL UI embeds the web term
 
 ## Integration with the documentation website {#docs-integration}
 
-This documentation website embeds the same terminal as a drop-down panel, connected to the [ClickHouse playground](https://play.clickhouse.com) as the read-only `play` user, so that the examples on any page can be tried out without leaving it. Open and close it with the terminal icon at the left of the top navigation, or with the `~` key; pressing `Escape` inside the terminal closes the panel as well. Drag the bottom edge of the panel to resize it, and drag it all the way up to close it.
+This documentation website embeds the same terminal as a panel that drops down from the top of the page, connected to the [ClickHouse playground](https://play.clickhouse.com) as the read-only `play` user, so that the examples on any page can be tried out without leaving it. Open it with the terminal icon at the left of the top navigation, or with the `~` key. The panel covers the navigation bar while it is open, so it closes with the `~` key, with `Escape`, with the close button in its top-right corner, or by dragging its bottom edge all the way up; that bottom edge also resizes it. Ending the session — `exit` or `Ctrl+D` — closes the panel too.
 
 Closing the panel keeps the session and its scrollback: reopening the terminal returns to the same prompt. The session lives in the page, so it survives navigation between documentation pages, but not a reload of the browser tab — after a reload the panel comes back with a new session.
 

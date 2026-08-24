@@ -14,6 +14,7 @@
   var PANEL_ID = 'ch-webterminal-panel';
   var IFRAME_ID = 'ch-webterminal-iframe';
   var RESIZER_ID = 'ch-webterminal-resizer';
+  var CLOSE_ID = 'ch-webterminal-close';
   var OVERLAY_ID = 'ch-webterminal-overlay';
   var ICON_ID = 'ch-webterminal-icon';
   var STYLE_ID = 'ch-webterminal-styles';
@@ -51,11 +52,21 @@
     var style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = ''
-      // Panel: full width, pinned below the navbar, above everything else on the page.
-      + '#' + PANEL_ID + ' { position: fixed; left: 0; right: 0; display: none; background: #000;'
-      + ' z-index: 2147483646; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }'
+      // Panel: full width, dropping down from the very top of the page over everything else,
+      // including the navigation bar, the way the terminal on clickhouse.com does.
+      + '#' + PANEL_ID + ' { position: fixed; top: 0; left: 0; right: 0; display: none;'
+      + ' background: #000; z-index: 2147483646; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }'
       + '#' + PANEL_ID + '.ch-webterminal-open { display: block; }'
       + '#' + IFRAME_ID + ' { display: block; width: 100%; height: 100%; border: none; }'
+      // Close button: the navigation bar with the terminal icon is behind the panel while it is
+      // open, so the panel carries its own way out for the pointer. Dim until hovered, to keep
+      // it from competing with the terminal's own output.
+      + '#' + CLOSE_ID + ' { position: absolute; top: 6px; right: 10px; width: 22px; height: 22px;'
+      + ' display: flex; align-items: center; justify-content: center; padding: 0; border: none;'
+      + ' border-radius: 4px; background: rgba(255, 255, 255, 0.06); color: #d4d4d4; opacity: 0.45;'
+      + ' cursor: pointer; line-height: 1; transition: opacity 0.15s, background-color 0.15s; }'
+      + '#' + CLOSE_ID + ':hover { opacity: 1; background: rgba(255, 255, 255, 0.16); }'
+      + '#' + CLOSE_ID + ' svg { width: 12px; height: 12px; }'
       // Drag handle along the bottom edge of the panel.
       + '#' + RESIZER_ID + ' { position: absolute; left: 0; right: 0; bottom: 0; height: 8px;'
       + ' cursor: row-resize; user-select: none; border-bottom: 1px solid #3a3a3a;'
@@ -74,27 +85,12 @@
     document.head.appendChild(style);
   }
 
-  // The panel drops down from just below the top navigation bar, so the terminal icon stays
-  // visible and can close the panel again. The navbar is `position: fixed` and its height is a
-  // layout detail of the theme, so measure it rather than hardcoding it. Until the navbar is
-  // mounted it measures as a zero-height box, and the panel drops from the very top of the
-  // viewport; the observer below re-anchors the panel once the navbar appears.
-  function panelTop() {
-    var navbar = document.getElementById('navbar-transition-maple');
-    if (!navbar) return 0;
-    var rect = navbar.getBoundingClientRect();
-    if (rect.height === 0) return 0;
-    return Math.round(rect.bottom);
-  }
-
   function maxPanelHeight() {
-    return Math.max(MIN_HEIGHT, window.innerHeight - panelTop() - BOTTOM_MARGIN);
+    return Math.max(MIN_HEIGHT, window.innerHeight - BOTTOM_MARGIN);
   }
 
   function applyPanelGeometry() {
     if (!panel) return;
-    var top = panelTop();
-    panel.style.top = top + 'px';
     panel.style.height = Math.min(panelHeight, maxPanelHeight()) + 'px';
   }
 
@@ -149,6 +145,17 @@
       if (restoringPanel && document.activeElement === iframe) iframe.blur();
     });
     panel.appendChild(iframe);
+
+    var close = document.createElement('button');
+    close.id = CLOSE_ID;
+    close.type = 'button';
+    close.title = 'Close the terminal (~)';
+    close.setAttribute('aria-label', 'Close the terminal');
+    close.innerHTML = '<svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"'
+      + ' focusable="false"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.6"'
+      + ' stroke-linecap="round"/></svg>';
+    close.addEventListener('click', hideTerminal);
+    panel.appendChild(close);
 
     resizer = document.createElement('div');
     resizer.id = RESIZER_ID;
@@ -371,9 +378,6 @@
       requestAnimationFrame(function () {
         scheduled = false;
         injectIcon();
-        // The navbar mounts and changes height while the page settles (and the terminal may be
-        // restored before it exists at all), so keep the panel anchored to it.
-        if (terminalOpen) applyPanelGeometry();
       });
     });
     observer.observe(document.documentElement, {childList: true, subtree: true});
