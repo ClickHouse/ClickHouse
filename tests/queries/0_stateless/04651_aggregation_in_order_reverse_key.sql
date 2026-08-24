@@ -13,6 +13,8 @@ DROP TABLE IF EXISTS aio_three;
 DROP TABLE IF EXISTS aio_desc_lead;
 DROP TABLE IF EXISTS aio_asc;
 DROP TABLE IF EXISTS aio_mono;
+DROP TABLE IF EXISTS aio_mono_float;
+DROP TABLE IF EXISTS aio_mono_float_asc;
 DROP TABLE IF EXISTS aio_repl;
 DROP TABLE IF EXISTS aio_agree_1;
 DROP TABLE IF EXISTS aio_agree_2;
@@ -55,6 +57,22 @@ CREATE TABLE aio_mono (x Int32, y Int32) ENGINE = MergeTree ORDER BY (x DESC, y 
 SYSTEM STOP MERGES aio_mono;
 INSERT INTO aio_mono SELECT number % 4, number % 8 FROM numbers(40);
 INSERT INTO aio_mono SELECT number % 4, number % 8 + 3 FROM numbers(40);
+
+-- NaN is a fixed point of negate(), so it keeps its physical position while the advertised
+-- direction flips, which is what nulls_direction has to describe.
+CREATE TABLE aio_mono_float (x Float64, v UInt64) ENGINE = MergeTree ORDER BY x DESC
+SETTINGS allow_experimental_reverse_key = 1;
+SYSTEM STOP MERGES aio_mono_float;
+INSERT INTO aio_mono_float SELECT if(number % 7 = 0, nan, toFloat64(number % 5)), number FROM numbers(20);
+INSERT INTO aio_mono_float SELECT if(number % 3 = 0, nan, toFloat64(number % 5)), number + 7 FROM numbers(20);
+INSERT INTO aio_mono_float SELECT if(number % 5 = 0, nan, toFloat64(number % 5)), number + 13 FROM numbers(20);
+
+-- Same shape on a forward key: the null placement is wrong there too, without any reverse flag.
+CREATE TABLE aio_mono_float_asc (x Float64, v UInt64) ENGINE = MergeTree ORDER BY x;
+SYSTEM STOP MERGES aio_mono_float_asc;
+INSERT INTO aio_mono_float_asc SELECT if(number % 7 = 0, nan, toFloat64(number % 5)), number FROM numbers(20);
+INSERT INTO aio_mono_float_asc SELECT if(number % 3 = 0, nan, toFloat64(number % 5)), number + 7 FROM numbers(20);
+INSERT INTO aio_mono_float_asc SELECT if(number % 5 = 0, nan, toFloat64(number % 5)), number + 13 FROM numbers(20);
 
 CREATE TABLE aio_repl (a UInt32, b UInt32) ENGINE = ReplacingMergeTree ORDER BY (a, b DESC);
 SYSTEM STOP MERGES aio_repl;
@@ -138,6 +156,25 @@ SELECT
     (SELECT groupArray((ny, nx, c)) FROM (SELECT negate(y) AS ny, negate(x) AS nx, count() AS c FROM aio_mono GROUP BY negate(y), negate(x) ORDER BY ny, nx) SETTINGS optimize_aggregation_in_order = 1, optimize_injective_functions_in_group_by = 0)
   = (SELECT groupArray((ny, nx, c)) FROM (SELECT negate(y) AS ny, negate(x) AS nx, count() AS c FROM aio_mono GROUP BY negate(y), negate(x) ORDER BY ny, nx) SETTINGS optimize_aggregation_in_order = 0, optimize_injective_functions_in_group_by = 0);
 SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT negate(y), negate(x), count() FROM aio_mono GROUP BY negate(y), negate(x) SETTINGS optimize_aggregation_in_order = 1, optimize_injective_functions_in_group_by = 0);
+
+-- 5b. Same over a Float reversed key, where NaN plays the role of NULL.
+SELECT
+    (SELECT groupArray((n, c, s)) FROM (SELECT negate(x) AS n, count() AS c, sum(v) AS s FROM aio_mono_float GROUP BY n ORDER BY isNaN(n) DESC, n) SETTINGS optimize_aggregation_in_order = 1, optimize_injective_functions_in_group_by = 0)
+  = (SELECT groupArray((n, c, s)) FROM (SELECT negate(x) AS n, count() AS c, sum(v) AS s FROM aio_mono_float GROUP BY n ORDER BY isNaN(n) DESC, n) SETTINGS optimize_aggregation_in_order = 0, optimize_injective_functions_in_group_by = 0);
+SELECT
+    (SELECT count() FROM (SELECT negate(x) AS n FROM aio_mono_float GROUP BY n) SETTINGS optimize_aggregation_in_order = 1, optimize_injective_functions_in_group_by = 0)
+  = (SELECT count() FROM (SELECT negate(x) AS n FROM aio_mono_float GROUP BY n) SETTINGS optimize_aggregation_in_order = 0, optimize_injective_functions_in_group_by = 0);
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT negate(x), count() FROM aio_mono_float GROUP BY negate(x) SETTINGS optimize_aggregation_in_order = 1, optimize_injective_functions_in_group_by = 0);
+
+-- 5c. Forward key, no reverse flag: the same null placement is required, so this case fails on
+-- master as well as on the reverse-flag fix alone.
+SELECT
+    (SELECT groupArray((n, c, s)) FROM (SELECT negate(x) AS n, count() AS c, sum(v) AS s FROM aio_mono_float_asc GROUP BY n ORDER BY isNaN(n) DESC, n) SETTINGS optimize_aggregation_in_order = 1, optimize_injective_functions_in_group_by = 0)
+  = (SELECT groupArray((n, c, s)) FROM (SELECT negate(x) AS n, count() AS c, sum(v) AS s FROM aio_mono_float_asc GROUP BY n ORDER BY isNaN(n) DESC, n) SETTINGS optimize_aggregation_in_order = 0, optimize_injective_functions_in_group_by = 0);
+SELECT
+    (SELECT count() FROM (SELECT negate(x) AS n FROM aio_mono_float_asc GROUP BY n) SETTINGS optimize_aggregation_in_order = 1, optimize_injective_functions_in_group_by = 0)
+  = (SELECT count() FROM (SELECT negate(x) AS n FROM aio_mono_float_asc GROUP BY n) SETTINGS optimize_aggregation_in_order = 0, optimize_injective_functions_in_group_by = 0);
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT negate(x), count() FROM aio_mono_float_asc GROUP BY negate(x) SETTINGS optimize_aggregation_in_order = 1, optimize_injective_functions_in_group_by = 0);
 
 -- 6a. Merge whose children agree on the direction: fixed, and the optimization is KEPT.
 SELECT
@@ -249,6 +286,8 @@ DROP TABLE aio_three;
 DROP TABLE aio_desc_lead;
 DROP TABLE aio_asc;
 DROP TABLE aio_mono;
+DROP TABLE aio_mono_float;
+DROP TABLE aio_mono_float_asc;
 DROP TABLE aio_repl;
 DROP TABLE aio_agree;
 DROP TABLE aio_agree_1;

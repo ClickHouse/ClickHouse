@@ -907,7 +907,11 @@ InputOrder buildInputOrderFromUnorderedKeys(
             /// Prefix sort description for reading will be (negate(y) DESC, negate(x) DESC),
             /// Sort description for GROUP BY will be (negate(y) DESC, negate(x) DESC, z).
             //std::cerr << "---- adding " << std::string(*group_by_key_it) << std::endl;
-            sort_description.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction * reverse_indicator));
+            /// A sorting-key column is stored ASC NULLS LAST forward and DESC NULLS FIRST reversed,
+            /// and NULL/NaN are fixed points of a monotonic match, so relative to the advertised
+            /// direction the nulls are last exactly when reverse_indicator is 1.
+            sort_description.emplace_back(SortColumnDescription(
+                std::string(*group_by_key_it), current_direction * reverse_indicator, current_direction));
             order_key_prefix_descr.emplace_back(SortColumnDescription(std::string(*group_by_key_it), current_direction));
             not_matched_keys.erase(group_by_key_it);
         }
