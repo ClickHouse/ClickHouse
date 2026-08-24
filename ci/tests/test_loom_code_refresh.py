@@ -1,16 +1,18 @@
 """
-Tests for the loom code.refresh master pre_hook.
+Tests for the loom code.refresh push pre_hook (master + release branches).
 
-Only the master workflow runs this hook, so PR CI never exercises it end to
-end; these tests pin the two things a silent regression would break: the
-request carries the *resolved* SSM values (not `Secret.Config` handles), and
-a secret-resolution failure degrades to a workflow warning instead of failing
-master.
+Only the push workflows run this hook, so PR CI never exercises it end to
+end; these tests pin the things a silent regression would break: the request
+carries the *resolved* SSM values (not `Secret.Config` handles) and the
+namespace derived from the pushed branch, an unindexed branch's 404 is a
+quiet skip, and a secret-resolution failure degrades to a workflow warning
+instead of failing the workflow.
 """
 
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -21,12 +23,13 @@ from ci.praktika.secret import Secret
 
 
 class _FakeInfo:
-    def __init__(self, secrets):
-        self._secrets = secrets
+    def __init__(self):
         self.warnings = []
 
     def get_secret(self, name):
-        return self._secrets[name]
+        return Secret.Config(
+            name=name, type=Secret.Type.AWS_SSM_PARAMETER, region="us-east-1"
+        )
 
     def add_workflow_warning(self, message):
         self.warnings.append(message)
@@ -42,25 +45,21 @@ class _FakeResponse:
         return False
 
 
-def _ssm_config(name):
-    return Secret.Config(
-        name=name, type=Secret.Type.AWS_SSM_PARAMETER, region="us-east-1"
-    )
-
-
-def test_request_carries_resolved_secrets_and_push_head(monkeypatch, tmp_path):
+def _setup(monkeypatch, tmp_path, ref):
     event = tmp_path / "event.json"
-    event.write_text(json.dumps({"after": "deadbeef" * 5}))
+    event.write_text(json.dumps({"after": "deadbeef" * 5, "ref": ref}))
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
-
-    info = _FakeInfo(
-        {"loom-url": _ssm_config("loom-url"), "loom-ci-token": _ssm_config("loom-ci-token")}
-    )
+    info = _FakeInfo()
     monkeypatch.setattr(loom_code_refresh, "Info", lambda: info)
     # Resolve the batched SSM fetch without AWS: values in request order.
     monkeypatch.setattr(
         Secret.Config, "get_value", lambda self: ["https://loom.example/", "tok123"]
     )
+    return info
+
+
+def test_master_push_sends_resolved_secrets_and_push_head(monkeypatch, tmp_path):
+    info = _setup(monkeypatch, tmp_path, "refs/heads/master")
 
     sent = {}
 
@@ -85,12 +84,42 @@ def test_request_carries_resolved_secrets_and_push_head(monkeypatch, tmp_path):
     assert info.warnings == []
 
 
+def test_unindexed_release_branch_404_is_a_quiet_skip(monkeypatch, tmp_path):
+    info = _setup(monkeypatch, tmp_path, "refs/heads/25.8")
+
+    sent = {}
+
+    def fake_urlopen(req, timeout=None):
+        sent["body"] = json.loads(req.data)
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    loom_code_refresh.refresh()
+
+    assert sent["body"]["namespace"] == "code-clickhouse-25-8"
+    assert info.warnings == []
+
+
+def test_non_branch_push_sends_no_request(monkeypatch, tmp_path):
+    info = _setup(monkeypatch, tmp_path, "refs/tags/v26.9.1.1")
+
+    def fail_urlopen(*args, **kwargs):
+        raise AssertionError("no request may be sent without a pushed branch")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fail_urlopen)
+
+    loom_code_refresh.refresh()
+
+    assert info.warnings == []
+
+
 def test_secret_failure_degrades_to_warning_without_request(monkeypatch):
     class _BrokenInfo(_FakeInfo):
         def get_secret(self, name):
             raise RuntimeError(f"no secret [{name}]")
 
-    info = _BrokenInfo({})
+    info = _BrokenInfo()
     monkeypatch.setattr(loom_code_refresh, "Info", lambda: info)
 
     def fail_urlopen(*args, **kwargs):

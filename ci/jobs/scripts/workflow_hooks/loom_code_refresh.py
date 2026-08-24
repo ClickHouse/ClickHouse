@@ -1,10 +1,19 @@
 import json
 import os
 import traceback
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 from praktika.info import Info
+
+
+def namespace_for(branch):
+    # Naming convention only. WHICH branches are indexed is loom-side
+    # config; a refresh for anything unconfigured 404s and is skipped.
+    if branch == "master":
+        return "code-clickhouse"
+    return "code-clickhouse-" + branch.replace(".", "-")
 
 
 def refresh():
@@ -25,14 +34,22 @@ def refresh():
         )
         return
 
-    # Advisory: the push head. The merge queue batches 1..N PRs per
-    # push; loom ingests to the branch tip regardless, so no per-PR
-    # handling is needed.
+    # Push event: ref names the branch; "after" is the push head
+    # (advisory - the merge queue batches 1..N PRs per push; loom
+    # ingests to the branch tip regardless).
+    branch = ""
     expected_head = ""
     event_path = os.getenv("GITHUB_EVENT_PATH", "")
     if event_path and Path(event_path).is_file():
         with open(event_path, encoding="utf-8") as f:
-            expected_head = json.load(f).get("after", "")
+            event = json.load(f)
+        expected_head = event.get("after", "")
+        ref = event.get("ref", "")
+        if ref.startswith("refs/heads/"):
+            branch = ref[len("refs/heads/") :]
+    if not branch:
+        print("loom code.refresh: no pushed branch in event - skipped")
+        return
 
     # org/namespace are REQUIRED in the body: the token is
     # namespace-scoped (no global roles), and a body without a
@@ -41,7 +58,7 @@ def refresh():
     body = json.dumps(
         {
             "org": "clickhouse",
-            "namespace": "code-clickhouse",
+            "namespace": namespace_for(branch),
             "consumer": "clickhouse-ci",
             "expected_head": expected_head,
         }
@@ -54,8 +71,20 @@ def refresh():
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=10) as r:
-        print(f"loom code.refresh: HTTP {r.status}")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            print(f"loom code.refresh[{branch}]: HTTP {r.status}")
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 404):
+            # loom doesn't index this branch (404), or the token doesn't
+            # cover its namespace (403). Expected for most release
+            # branches - not a warning.
+            print(
+                f"loom code.refresh[{branch}]: HTTP {e.code}"
+                " - branch not indexed, skipped"
+            )
+            return
+        raise
 
 
 if __name__ == "__main__":
