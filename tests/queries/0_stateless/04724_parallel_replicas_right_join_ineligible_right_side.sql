@@ -356,6 +356,44 @@ RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1,
          parallel_replicas_allow_view_over_mergetree = 1;
 
+-- The same View with an outer FINAL is not eligible, so the JOIN is not offloaded at all and only
+-- the right subquery is read with replicas. Unwrapping the View re-applies the eligibility check to
+-- the outer table node, which is what rejects the FINAL there as it is rejected for a bare table and
+-- for a MaterializedView; a whole-query FINAL check in the planner reaches the same verdict first, so
+-- these arms pin the behaviour rather than a single decision point. FINAL on a plain View is dropped
+-- by StorageView::readImpl anyway, hence the same rows as the arms above.
+
+SELECT '-- view left with FINAL: the JOIN is not offloaded';
+SELECT count() FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM v_left FINAL) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0,
+             parallel_replicas_allow_view_over_mergetree = 1
+) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%' AND explain ILIKE '%RIGHT JOIN%';
+
+SELECT '-- view left with FINAL: the right side is still read with replicas';
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT * FROM (SELECT key FROM v_left FINAL) AS l
+    RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+    SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0,
+             parallel_replicas_prefer_local_join = 1, query_plan_join_swap_table = 0,
+             parallel_replicas_allow_view_over_mergetree = 1
+) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
+
+SELECT '-- view left with FINAL: results are correct';
+SELECT r.key, ifNull(l.key = r.key, 0) AS matched FROM (SELECT key FROM v_left FINAL WHERE key < 5) AS l
+RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+ORDER BY r.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1,
+         parallel_replicas_allow_view_over_mergetree = 1;
+
+SELECT '-- view left with FINAL: the wrapper contributes matched rows';
+SELECT countIf(ifNull(l.key = r.key, 0) AND r.key > 0) FROM (SELECT key FROM v_left FINAL WHERE key < 5) AS l
+RIGHT JOIN (SELECT key FROM t_replicated_right) AS r ON l.key = r.key
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, parallel_replicas_prefer_local_join = 1,
+         parallel_replicas_allow_view_over_mergetree = 1;
+
 -- The side read with replicas can itself hold a join whose own materialized side no replica may
 -- read alone. That nested join is marked global too, so it must reach a temporary table: the
 -- collector decides which child to descend and has to skip the same side that is materialized,

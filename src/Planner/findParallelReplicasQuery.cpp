@@ -73,7 +73,9 @@ bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextP
             if (!underlying_storage)
                 return false;
 
-            return true;
+            /// The eligibility of the inner table node is checked while unwrapping, but the modifiers of
+            /// the outer node - a FINAL on the view itself - are only visible here.
+            return isTableNodeEligibleForParallelReplicas(table_node, underlying_storage, context);
         }
     }
 
