@@ -1,9 +1,15 @@
 #pragma once
 
+#include <Columns/ColumnsNumber.h>
 #include <Formats/FormatSettings.h>
+#include <IO/SeekableReadBuffer.h>
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+
+#include <optional>
+#include <string_view>
+#include <vector>
 
 namespace DB
 {
@@ -25,6 +31,20 @@ struct PuffinFooter
     std::vector<PuffinBlob> blobs;
     std::vector<UInt8> data;
 };
+
+/// Shared with the Iceberg deletion-vector loader (seekable object-storage path).
+std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size);
+
+/// Shared deletion-vector-v1 payload helpers (also used by `PuffinDeletionVectorReader`).
+std::string_view extractDeletionVectorPayload(std::string_view blob);
+std::vector<UInt64> deserializeRoaringPositionBitmap(
+    std::string_view bytes, std::optional<UInt64> expected_cardinality = std::nullopt);
+void deserializeDeletionVectorV1(std::string_view blob, UInt64 expected_cardinality, ColumnUInt64 & positions);
+
+/// Validate deletion-vector-v1 footer identity (`snapshot-id` / `sequence-number` / `fields` /
+/// required string properties). Returns parsed `cardinality`. Used by the SQL `Puffin` path and
+/// by `bindDeletionVectorBlob`.
+UInt64 requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index);
 
 class PuffinMetadataInputFormat : public IInputFormat
 {

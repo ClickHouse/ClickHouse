@@ -3,6 +3,7 @@
 #if USE_AVRO
 
 #include <compare>
+#include <limits>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
@@ -13,6 +14,7 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 namespace DB::Iceberg
@@ -30,6 +32,69 @@ String FileContentTypeToString(FileContentType type)
             return "equality_deletes";
     }
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported content type: {}", static_cast<int>(type));
+}
+
+std::optional<Int64> getRecordCountInAllFilesExcludingDeleted(
+    const std::vector<ProcessedManifestFileEntryPtr> & files)
+{
+    Int64 result = 0;
+    for (const auto & file : files)
+    {
+        const Int64 record_count = file->parsed_entry->record_count;
+        if (record_count < 0)
+            return std::nullopt;
+
+        const UInt64 record_count_u = static_cast<UInt64>(record_count);
+        const UInt64 result_u = static_cast<UInt64>(result);
+        if (result_u > static_cast<UInt64>(std::numeric_limits<Int64>::max()) - record_count_u)
+            return std::nullopt;
+
+        result += record_count;
+    }
+    return result;
+}
+
+std::optional<Int64> getBytesSizeInAllDataFilesExcludingDeleted(
+    const std::vector<ProcessedManifestFileEntryPtr> & files)
+{
+    Int64 result = 0;
+    for (const auto & file : files)
+    {
+        std::optional<Int64> file_bytes;
+        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
+        {
+            if (column_info.bytes_size.has_value())
+            {
+                file_bytes = *column_info.bytes_size;
+                break;
+            }
+        }
+
+        if (!file_bytes.has_value() || *file_bytes < 0)
+            return std::nullopt;
+
+        const UInt64 file_bytes_u = static_cast<UInt64>(*file_bytes);
+        const UInt64 result_u = static_cast<UInt64>(result);
+        if (result_u > static_cast<UInt64>(std::numeric_limits<Int64>::max()) - file_bytes_u)
+            return std::nullopt;
+
+        result += *file_bytes;
+    }
+    return result;
+}
+
+void requireDirectReferencedDataFileForPuffinDeletionVector(
+    bool set_from_referenced_data_file_field,
+    const std::optional<IcebergPathFromMetadata> & referenced_path,
+    const IcebergPathFromMetadata & manifest_file_path)
+{
+    if (!set_from_referenced_data_file_field || !referenced_path.has_value() || referenced_path->empty())
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Puffin deletion vector entry in manifest file '{}' is missing referenced_data_file",
+            manifest_file_path);
+    }
 }
 
 static std::strong_ordering operator<=>(const PartitionSpecsEntry & lhs, const PartitionSpecsEntry & rhs)
