@@ -76,6 +76,11 @@ private:
     void initialize(size_t attempt);
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
+    /// The offset just past the last byte that the current download is allowed to deliver.
+    /// `reported_length` is the length of the response body as reported by the remote endpoint,
+    /// and is not trusted: it is bounded by `read_until_position_`, which is set locally.
+    static size_t getTotalSizeOfCurrentDownload(int64_t reported_length, off_t offset_, off_t read_until_position_);
+
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
     BlobClientPtr blob_client;
