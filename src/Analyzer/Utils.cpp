@@ -1713,18 +1713,36 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             auto global_discr = variant_column.globalDiscriminatorAt(row);
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
                 return make_intrusive<ASTLiteral>(Null());
-            return columnConstantToExactLiteralASTImpl(
-                variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
-                variant_types[global_discr]);
+            const auto & member_type = variant_types[global_discr];
+            auto member_ast = columnConstantToExactLiteralASTImpl(
+                variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type);
+            /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
+            /// literal does not keep the member type (a `Point` is inferred back as `Tuple(Float64, Float64)`,
+            /// an `Array(UInt64)` as `Array(UInt8)`), so name the member type explicitly. This mirrors the
+            /// `Variant` branch of `ConstantNode::toASTImpl`, which the exact path bypasses. The wrapping is
+            /// skipped for a scalar decimal member, which already casts itself to its own type.
+            return makeCastToTypeNameAST(std::move(member_ast), member_type->getName());
         }
         case TypeIndex::Dynamic:
         {
             const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*column);
             const auto & variant_column = dynamic_column.getVariantColumn();
             auto global_discr = variant_column.globalDiscriminatorAt(row);
+            if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                return make_intrusive<ASTLiteral>(Null());
+
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
+            {
+                /// Recurse into the active member itself rather than through the `Variant` branch above:
+                /// `Dynamic` accepts a value of any type, so its member type must not be named, and doing so
+                /// would change the stored subtype of values whose literal is inferred back as a wider or
+                /// narrower type than the initiator's.
+                const auto & variant_types
+                    = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants();
                 return columnConstantToExactLiteralASTImpl(
-                    dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type);
+                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
+                    variant_types[global_discr]);
+            }
 
             /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
             /// and value and recurse, so a decimal-backed shared value is still serialized exactly.

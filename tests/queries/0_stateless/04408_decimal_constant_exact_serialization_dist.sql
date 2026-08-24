@@ -87,6 +87,17 @@ FROM (SELECT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)::Varia
 SELECT DISTINCT dynamicType(d)
 FROM (SELECT materialize(toDecimal64('999999999.123456789', 9)::Time64(9)::Dynamic) AS d FROM remote('127.0.0.{1,2}', system.one));
 
+-- A Variant that has a decimal member takes the exact serialization path even when it currently holds
+-- a value of another member. Conversion to Variant is allowed only from a type equal by name to one of
+-- its members, and a bare literal does not keep the member type (an Array(UInt64) is inferred back as
+-- Array(UInt8), a Point as Tuple(Float64, Float64)), so the member type has to be named or the shard
+-- fails with CANNOT_CONVERT_TYPE.
+SELECT DISTINCT v, variantType(v)
+FROM (SELECT materialize([1, 2]::Array(UInt64)::Variant(Array(UInt64), Decimal64(5))) AS v FROM remote('127.0.0.{1,2}', system.one));
+
+SELECT DISTINCT v, variantType(v)
+FROM (SELECT materialize((1.0, 2.0)::Point::Variant(Decimal64(5), Point)) AS v FROM remote('127.0.0.{1,2}', system.one));
+
 -- A decimal stored in a shared Dynamic variant (Dynamic(max_types=0) keeps every value in the shared
 -- binary payload) must also keep its exact value and Decimal subtype on every shard.
 SELECT DISTINCT d, dynamicType(d)
