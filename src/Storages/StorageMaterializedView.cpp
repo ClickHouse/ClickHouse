@@ -118,9 +118,7 @@ namespace
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", column.name);
     }
 
-    /// Attach `STREAM BOUNDED UNORDERED [CURSOR {...}]` to the single source table of an incremental refresh's
-    /// SELECT, so each refresh reads only the safe snapshot committed since `stream_cursor` (null on the first refresh).
-    void injectIncrementalStreamModifier(const ASTPtr & select_with_union, const CursorTreeNodePtr & stream_cursor)
+    ASTTableExpression & getIncrementalSourceTableExpression(const ASTPtr & select_with_union)
     {
         auto * union_query = select_with_union->as<ASTSelectWithUnionQuery>();
         if (!union_query || !union_query->list_of_selects || union_query->list_of_selects->children.size() != 1)
@@ -142,14 +140,23 @@ namespace
         if (!table_expr || !table_expr->database_and_table_name)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh source must be a table, not a subquery or table function");
 
+        return *table_expr;
+    }
+
+    /// Attach `STREAM BOUNDED UNORDERED [CURSOR {...}]` to the single source table of an incremental refresh's
+    /// SELECT, so each refresh reads only the safe snapshot committed since `stream_cursor` (null on the first refresh).
+    void injectIncrementalStreamModifier(const ASTPtr & select_with_union, const CursorTreeNodePtr & stream_cursor)
+    {
+        auto & table_expr = getIncrementalSourceTableExpression(select_with_union);
+
         auto stream_settings = make_intrusive<ASTStreamSettings>();
         stream_settings->setSubscribeForUpdates(false);   /// BOUNDED: read the first safe snapshot and finish.
         stream_settings->setUnordered(true);              /// UNORDERED: skip the commit-order sort.
         if (stream_cursor)
             stream_settings->setCursor(stream_cursor);
 
-        table_expr->stream_settings = stream_settings;
-        table_expr->children.push_back(stream_settings);
+        table_expr.stream_settings = stream_settings;
+        table_expr.children.push_back(stream_settings);
     }
 }
 
@@ -209,6 +216,9 @@ StorageMaterializedView::StorageMaterializedView(
             throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
                             "Too many materialized views, maximum: {}", max_materialized_views_count_for_table.value);
     }
+
+    if (query.refresh_strategy && query.refresh_strategy->incremental)
+        getIncrementalSourceTableExpression(select.select_query);
 
     storage_metadata.setSelectQuery(select);
     if (!comment.empty())

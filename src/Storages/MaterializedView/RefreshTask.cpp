@@ -1224,7 +1224,7 @@ void RefreshTask::executeRefresh()
     Stopwatch stopwatch;
     int32_t root_znode_version = execution.znode.version;
     String error_message;
-    String cursor_after_refresh;
+    CursorTreeNodePtr cursor_after_refresh;
     std::optional<UUID> new_table_uuid;
 
     String log_comment = fmt::format("refresh of {}", view->getStorageID().getFullTableName());
@@ -1288,7 +1288,7 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, String & out_cursor)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1331,11 +1331,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
             refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
 
-            if (!execution.znode.cursor.empty())
-            {
-                ReadBufferFromString cursor_buf(execution.znode.cursor);
-                stream_cursor = buildCursorTree(readFieldBinary(cursor_buf).safeGet<Map>());
-            }
+            stream_cursor = execution.znode.cursor;
             refresh_context->enableStreamingCursor();
         }
 
@@ -1516,12 +1512,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
 
     /// Incremental refresh: read the cursor the streaming source advanced to and persist it (Part C).
-    if (auto streaming_cursor = refresh_context->getStreamingCursor())
-    {
-        WriteBufferFromOwnString cursor_buf;
-        writeFieldBinary(Field(cursorTreeToMap(streaming_cursor)), cursor_buf);
-        out_cursor = cursor_buf.str();
-    }
+    out_cursor = refresh_context->getStreamingCursor();
 
     return new_table_id.uuid;
 }
@@ -2143,7 +2134,14 @@ String RefreshTask::CoordinationZnode::toString() const
     last_success_dependencies.writeText(out);
     out << "\n";
 
-    out << "cursor: " << escape << cursor << "\n";
+    String cursor_serialized;
+    if (cursor)
+    {
+        WriteBufferFromOwnString cursor_buf;
+        writeFieldBinary(Field(cursorTreeToMap(cursor)), cursor_buf);
+        cursor_serialized = cursor_buf.str();
+    }
+    out << "cursor: " << escape << cursor_serialized << "\n";
 
     return out.str();
 }
@@ -2234,7 +2232,13 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
 
     optional_field("last_success_end_time_ns", last_success_end_time);
     optional_field("last_success_dependencies", last_success_dependencies);
-    optional_field("cursor", cursor);
+    String cursor_serialized;
+    optional_field("cursor", cursor_serialized);
+    if (!cursor_serialized.empty())
+    {
+        ReadBufferFromString cursor_buf(cursor_serialized);
+        cursor = buildCursorTree(readFieldBinary(cursor_buf).safeGet<Map>());
+    }
 
     if (!next_field_name.empty())
     {
