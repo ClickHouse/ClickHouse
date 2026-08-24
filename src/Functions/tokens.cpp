@@ -269,6 +269,11 @@ public:
                     optional_args.emplace_back("locale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
 #endif
             }
+            else if (arguments.size() == 4 && arguments[arg_tokenizer].column->getDataAt(0) == SplitByRegexpTokenizer::getExternalName())
+            {
+                optional_args.emplace_back("regexp", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
+                optional_args.emplace_back("extract", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+            }
             else if (arguments.size() == 4 || arguments.size() == 5)
             {
                 const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0);

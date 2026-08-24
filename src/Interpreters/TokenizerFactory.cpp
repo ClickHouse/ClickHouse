@@ -219,7 +219,7 @@ static void registerTokenizers(TokenizerFactory & factory)
     auto split_by_regexp_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
         const auto * tokenizer_name = SplitByRegexpTokenizer::getExternalName();
-        assertParamsCount(args.size(), 1, tokenizer_name);
+        assertParamsCount(args.size(), 2, tokenizer_name);
 
         if (args.empty())
             throw Exception(
@@ -234,7 +234,19 @@ static void registerTokenizers(TokenizerFactory & factory)
                 "Incorrect parameter of tokenizer '{}': the regular expression cannot be empty",
                 tokenizer_name);
 
-        return std::make_unique<SplitByRegexpTokenizer>(regexp);
+        bool extract = false;
+        if (args.size() > 1)
+        {
+            auto extract_arg = castAs<UInt64>(args[1], "extract");
+            if (extract_arg > 1)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Incorrect parameter of tokenizer '{}': the 'extract' argument must be 0 or 1, but got {}",
+                    tokenizer_name, extract_arg);
+            extract = extract_arg == 1;
+        }
+
+        return std::make_unique<SplitByRegexpTokenizer>(regexp, extract);
     };
 
     factory.registerTokenizer(SplitByRegexpTokenizer::getName(), ITokenizer::Type::SplitByRegexp, split_by_regexp_creator);

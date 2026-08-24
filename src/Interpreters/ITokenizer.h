@@ -339,13 +339,20 @@ private:
     std::vector<String> separators;
 };
 
-/// Parser extracting tokens which are separated by a regular expression.
-/// The regexp plays the role of the separator (like `splitByRegexp`): tokens are the pieces of text
-/// between successive matches. Empty pieces (produced by leading, trailing or consecutive separators) are
-/// not emitted, since empty tokens are useless for a text index.
+/// Parser extracting tokens which are separated by a regular expression, or - in `extract` mode -
+/// tokens which are the regexp's capture group matches themselves.
+/// In the default mode (`extract = false`), the regexp plays the role of the separator (like
+/// `splitByRegexp`): tokens are the pieces of text between successive matches. Empty pieces (produced
+/// by leading, trailing or consecutive separators) are not emitted, since empty tokens are useless for
+/// a text index.
+/// In `extract` mode, each match contributes at most one token: capture group 1 of the match (or, if
+/// the pattern has no capture groups, the whole match - i.e. `std::regex_iterator` semantics). A match
+/// whose group 1 did not participate, or captured an empty string, contributes no token. Either way,
+/// scanning resumes after the whole match (not just after the captured span), so consecutive matches
+/// never overlap.
 struct SplitByRegexpTokenizer final : public ITokenizerHelper<SplitByRegexpTokenizer>
 {
-    explicit SplitByRegexpTokenizer(const String & regexp_);
+    explicit SplitByRegexpTokenizer(const String & regexp_, bool extract_ = false);
 
     static const char * getName() { return "splitByRegexp"; }
     static const char * getExternalName() { return getName(); }
@@ -381,6 +388,7 @@ private:
         const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const;
 
     String regexp_str;
+    bool extract;
     /// `shared_ptr` (rather than a plain member) so that the tokenizer stays copyable for `clone`, since
     /// `OptimizedRegularExpression` is non-copyable. The compiled regexp is immutable and safe to share.
     std::shared_ptr<OptimizedRegularExpression> regexp;
