@@ -48,13 +48,15 @@ CREATE TABLE merge_over_param_view (`a` Int32) ENGINE = Merge(currentDatabase(),
 SELECT * FROM merge_over_param_view; -- { serverError STORAGE_REQUIRES_PARAMETER }
 
 SELECT '-- a longer Alias chain to the parameterized view reports an unsupported read';
--- The outer alias names a target that does not exist yet, so the chain only exists while the read
--- below runs. A Memory database keeps it out of the stored metadata a restart would re-attach.
+-- The chain exists only for the read below, and the outer alias is dropped immediately after it, so
+-- no point in between is reachable by a restart. A Memory database additionally keeps the pair out
+-- of stored metadata.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.outer_alias_to_inner_alias ENGINE = Alias({CLICKHOUSE_DATABASE_1:Identifier}, inner_alias_to_param_view);
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.inner_alias_to_param_view ENGINE = Alias(currentDatabase(), param_view_for_alias);
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.merge_over_alias_chain (`a` Int32) ENGINE = Merge({CLICKHOUSE_DATABASE_1:Identifier}, '^outer_alias_to_inner_alias$');
 SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.merge_over_alias_chain; -- { serverError UNSUPPORTED_METHOD }
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.outer_alias_to_inner_alias;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SELECT '-- an Alias to an ordinary table is still readable through a Merge table';

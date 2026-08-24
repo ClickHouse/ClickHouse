@@ -506,7 +506,6 @@ void registerStorageAlias(StorageFactory & factory)
             if (args.table_id == target_id)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
 
-            // Disallow target is also an alias
             auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, local_context);
             if (target_storage && target_storage->getName() == "Alias")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
