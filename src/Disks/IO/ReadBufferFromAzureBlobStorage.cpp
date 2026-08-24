@@ -486,8 +486,12 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
     if (n > 0)
     {
         /// The endpoint kept returning short responses. Report how much was actually copied:
-        /// the caller must not treat the tail of its buffer as initialized.
-        LOG_DEBUG(log, "AzureBlobStorage readBigAt for file {} got only {} bytes out of {} requested after {} attempts",
+        /// the caller must not treat the tail of its buffer as initialized. `readBigAt` is
+        /// documented to stop at the end of the file and return the number of bytes read, and the
+        /// callers that cannot accept a short read already turn it into `UNEXPECTED_END_OF_FILE`,
+        /// so this is not thrown here - but exhausting the retry budget is not normal, hence the
+        /// warning.
+        LOG_WARNING(log, "AzureBlobStorage readBigAt for file {} got only {} bytes out of {} requested after {} attempts",
             path, initial_n - n, initial_n, max_single_download_retries);
     }
 
@@ -506,9 +510,7 @@ void ReadBufferFromAzureBlobStorage::setMetadataFromResponse(const Azure::Storag
 {
     ObjectMetadata new_metadata;
     new_metadata.size_bytes = blob_size;
-    /// The remote endpoint is not obliged to answer with an `ETag` header, and `Azure::ETag::ToString`
-    /// aborts the process when the tag is absent, in release builds too.
-    new_metadata.etag = details.ETag.HasValue() ? details.ETag.ToString() : "";
+    new_metadata.etag = AzureBlobStorage::getETagOrEmpty(details.ETag);
     new_metadata.last_modified = static_cast<std::chrono::system_clock::time_point>(details.LastModified).time_since_epoch().count();
     if (!details.Metadata.empty())
     {

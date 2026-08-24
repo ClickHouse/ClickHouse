@@ -4,6 +4,7 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <azure/storage/blobs.hpp>
+#include <azure/core/etag.hpp>
 #include <azure/core/response.hpp>
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -164,6 +165,15 @@ BlobClientOptions getClientOptions(
     bool for_disk);
 
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the
+/// tag is absent - in release builds too, because `AZURE_ASSERT_MSG` is not compiled out with
+/// `NDEBUG`. Never call it directly on a value that comes from a remote endpoint: the endpoint is
+/// under no obligation to send the header, and one that does not must not take the server down.
+inline String getETagOrEmpty(const Azure::ETag & etag)
+{
+    return etag.HasValue() ? etag.ToString() : "";
+}
 
 #endif
 
