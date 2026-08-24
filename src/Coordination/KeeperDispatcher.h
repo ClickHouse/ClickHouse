@@ -25,9 +25,6 @@
 
 #include <future>
 
-class KeeperSaturatedWaitTest_InterruptibleSleepKeepsHugePeriod_Test;
-class KeeperSaturatedWaitTest_InterruptibleSleepReturnsAtOnceForNonPositivePeriod_Test;
-
 namespace DB
 {
 
@@ -99,10 +96,6 @@ private:
     /// Sleep for `period`, returning early if `shutting_down` becomes true.
     /// Useful for containerGarbageCollectorThread that sleeps for a minute by default.
     void interruptibleSleep(std::chrono::milliseconds period);
-
-    /// Covers all three callers of interruptibleSleep at once.
-    friend class ::KeeperSaturatedWaitTest_InterruptibleSleepKeepsHugePeriod_Test;
-    friend class ::KeeperSaturatedWaitTest_InterruptibleSleepReturnsAtOnceForNonPositivePeriod_Test;
 
     /// Thread clean disconnected sessions from memory
     void sessionCleanerTask();
