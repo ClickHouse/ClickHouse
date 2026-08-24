@@ -21,7 +21,7 @@ select round(x, 2) from test_04004_hash_write2 order by x;
 select a, b from test_04004_hash_write order by a;
 
 -- Test 3: Combined {_schema_hash} and {_partition_id} — write via table, read via s3() glob
-create table test_04004_hash_partitioned (a UInt64, b String) engine = S3(s3_conn, filename='test_04004/{_schema_hash}/{_partition_id}/data.parquet', format=Parquet) partition by a;
+create table test_04004_hash_partitioned (a UInt64, b String) engine = S3(s3_conn, filename='test_04004/{_schema_hash}/{_partition_id}/data.parquet', format=Parquet, partition_strategy='wildcard') partition by a;
 insert into test_04004_hash_partitioned values (1, 'foo'), (2, 'bar'), (3, 'baz');
 select a, b from s3(s3_conn, filename='test_04004/*/*/data.parquet', format=Parquet) order by a;
 

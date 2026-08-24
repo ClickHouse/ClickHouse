@@ -20,6 +20,7 @@ Positions: 3 0 1
     Positions: 0 3 1
       ReadFromMergeTree (default.tab)
       ReadType: InOrder
+      FINAL: 1
       Parts: 3
       Granules: 3
       Prewhere info
@@ -61,6 +62,7 @@ Positions: 3 0 1
     Positions: 0 3 1
       ReadFromMergeTree (default.tab)
       ReadType: InOrder
+      FINAL: 1
       Parts: 3
       Granules: 3
       Prewhere info

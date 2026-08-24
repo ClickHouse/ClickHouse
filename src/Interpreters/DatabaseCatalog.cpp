@@ -24,7 +24,6 @@
 #include <Storages/StorageMemory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/UniqueLock.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
@@ -103,11 +102,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
 }
 
-namespace FailPoints
-{
-    extern const char database_catalog_drop_finally_before_id_erase[];
-}
-
 class DatabaseNameHints : public IHints<>
 {
 public:
@@ -117,7 +111,7 @@ public:
         : database_catalog(database_catalog_)
     {}
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    Names getAllRegisteredNames() const override
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (!context)
@@ -126,7 +120,7 @@ public:
         const auto access = context->getAccess();
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
-        VectorWithMemoryTracking<String> result;
+        Names result;
         auto databases_list = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
@@ -146,7 +140,7 @@ private:
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
     : WithContext(context_->getGlobalContext())
-    , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
+    , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables())
 {
     ASTPtr original_create;
     ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
@@ -169,7 +163,7 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
     DatabaseCatalog::instance().addUUIDMapping(id);
-    temporary_tables->createTable(getContext(), global_name, table, original_create);
+    getDatabase()->createTable(getContext(), global_name, table, original_create);
     table->startup();
 }
 
@@ -196,7 +190,7 @@ TemporaryTableHolder::TemporaryTableHolder(
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
-        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id), future_set(std::move(rhs.future_set))
+        : WithContext(rhs.context), temporary_tables(std::move(rhs.temporary_tables)), id(rhs.id), future_set(std::move(rhs.future_set))
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -216,7 +210,7 @@ TemporaryTableHolder::~TemporaryTableHolder()
         {
             auto table = getTable();
             table->flushAndShutdown(/*is_drop=*/ true);
-            temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+            getDatabase()->dropTable(getContext(), "_tmp_" + toString(id));
         }
         catch (...)
         {
@@ -230,9 +224,19 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
     return StorageID{DatabaseCatalog::TEMPORARY_DATABASE, "_tmp_" + toString(id), id};
 }
 
+std::shared_ptr<IDatabase> TemporaryTableHolder::getDatabase() const
+{
+    auto database = temporary_tables.lock();
+    if (!database)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Database for temporary tables is already destroyed, but TemporaryTableHolder for {} is still alive",
+            getGlobalTableID().getNameForLogs());
+    return database;
+}
+
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), getContext());
+    auto table = getDatabase()->tryGetTable("_tmp_" + toString(id), getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary table {} not found", getGlobalTableID().getNameForLogs());
     return table;
@@ -306,13 +310,6 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     /// Because some databases might use them until their shutdown is called, but calling shutdown
     /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
     std::vector<DatabasePtr> databases_with_delayed_shutdown;
-    /// A database shutdown() can throw (e.g. a table flushAndShutdown hitting a ZooKeeper timeout).
-    /// It must not skip the steps below: shutdown_system_logs() joins the system log flush threads,
-    /// and if one stays alive into the static thread pool teardown in `main` its lazy backing-table
-    /// (re)creation hits an already-reset pool and aborts. So log and continue, keeping the ordering
-    /// user databases -> system logs -> system / temporary databases. The throwing shutdown() still
-    /// releases that database's table references (see DatabaseWithOwnTablesBase::shutdown), so the
-    /// UUID mappings below are emptied as usual.
     for (auto & database : current_databases)
     {
         if (database.first == TEMPORARY_DATABASE || database.first == SYSTEM_DATABASE)
@@ -321,14 +318,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             continue;
         }
         LOG_TRACE(log, "Shutting down database {}", database.first);
-        try
-        {
-            database.second->shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("Failed to shut down database {}", backQuoteIfNeed(database.first)));
-        }
+        database.second->shutdown();
     }
 
     LOG_TRACE(log, "Shutting down system logs");
@@ -500,7 +490,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         if (exception)
         {
             DatabaseNameHints hints(*this);
-            auto names = hints.getHints(table_id.getDatabaseName());
+            std::vector<String> names = hints.getHints(table_id.getDatabaseName());
             if (names.empty())
             {
                 exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(table_id.getDatabaseName())));
@@ -605,7 +595,7 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        auto names = hints.getHints(database_name);
+        std::vector<String> names = hints.getHints(database_name);
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -700,7 +690,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        auto names = hints.getHints(database_name);
+        std::vector<String> names = hints.getHints(database_name);
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -869,7 +859,7 @@ DatabasePtr DatabaseCatalog::getDatabase(std::string_view database_name) const
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        auto names = hints.getHints(std::string{database_name});
+        std::vector<String> names = hints.getHints(std::string{database_name});
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -1500,14 +1490,8 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         if (first_async_drop_in_queue == it_dropped_table)
             ++first_async_drop_in_queue;
         tables_marked_dropped.erase(it_dropped_table);
-        /// Erase a single occurrence: the same UUID may be present more than once (CREATE OR REPLACE with a fixed UUID).
-        auto id_it = tables_marked_dropped_ids.find(dropped_table.table_id.uuid);
-        chassert(id_it != tables_marked_dropped_ids.end());
-        if (id_it != tables_marked_dropped_ids.end())
-            tables_marked_dropped_ids.erase(id_it);
-        else
-            LOG_ERROR(log, "Table {} is missing from tables_marked_dropped_ids while being undropped, it's a bug",
-                      dropped_table.table_id.getNameForLogs());
+        [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(dropped_table.table_id.uuid);
+        chassert(removed);
         CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
     }
 
@@ -1630,22 +1614,12 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
             {
                 dropTableFinally(*table_iterator);
 
-                /// The UUID mapping is gone (dropTableFinally above) but the id is still in
-                /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
-                FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
-
                 TableMarkedAsDropped table_to_delete_without_lock;
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
 
-                    /// Erase a single occurrence: the same UUID may be present more than once (CREATE OR REPLACE with a fixed UUID).
-                    auto id_it = tables_marked_dropped_ids.find(table_iterator->table_id.uuid);
-                    chassert(id_it != tables_marked_dropped_ids.end());
-                    if (id_it != tables_marked_dropped_ids.end())
-                        tables_marked_dropped_ids.erase(id_it);
-                    else
-                        LOG_ERROR(log, "Table {} is missing from tables_marked_dropped_ids while being dropped, it's a bug",
-                                  table_iterator->table_id.getNameForLogs());
+                    [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table_iterator->table_id.uuid);
+                    chassert(removed);
 
                     table_to_delete_without_lock = std::move(*table_iterator);
 
@@ -2396,7 +2370,7 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
     return best_match;
 }
 
-VectorWithMemoryTracking<String> TableNameHints::getAllRegisteredNames() const
+Names TableNameHints::getAllRegisteredNames() const
 {
     if (!database)
         return {};

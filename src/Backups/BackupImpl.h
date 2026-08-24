@@ -6,7 +6,6 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
 #include <Common/Logger_fwd.h>
-#include <atomic>
 #include <map>
 #include <mutex>
 
@@ -62,7 +61,6 @@ public:
 
     const String & getNameForLogging() const override { return backup_name_for_logging; }
     OpenMode getOpenMode() const override { return open_mode; }
-    std::map<String, String> getEngineSettings() const override;
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
     BackupPtr getBaseBackup() const override;
@@ -91,6 +89,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
+    void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept override;
 
 private:
     void open();

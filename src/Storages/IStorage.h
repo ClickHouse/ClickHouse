@@ -196,6 +196,10 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+    /// Same as parameterless overload but also includes sizes for requested subcolumns
+    /// The default implementation falls back to the parameterless version.
+    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/) const { return getColumnSizes(); }
+
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
 
@@ -222,7 +226,7 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    Names getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
@@ -649,17 +653,6 @@ public:
     virtual void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const {}
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
-
-    /// Size-only drop gate used by `CREATE OR REPLACE` to enforce
-    /// `max_table_size_to_drop` before EXCHANGE. Narrower than
-    /// `checkTableCanBeDropped` (no dictionary/view-dependency throws), so it
-    /// can run on any storage engine. NOT a pure dry-run: the `MergeTreeData`
-    /// override reaches `Context::checkCanBeDropped`, which removes the
-    /// `force_drop_table` flag when it authorizes an over-limit drop. Callers
-    /// must invoke it exactly once; a second call after the flag was consumed
-    /// throws TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT.
-    /// Default: no-op (engine has no on-disk data the size guard would care about).
-    virtual void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const {}
 
     /// Returns true if Storage may store some data on disk.
     /// NOTE: may not be equivalent to !getDataPaths().empty()

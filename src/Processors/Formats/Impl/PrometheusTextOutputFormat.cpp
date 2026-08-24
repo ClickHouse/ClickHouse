@@ -83,7 +83,7 @@ Float64 tryParseFloat(const String & s)
 {
     Float64 t = 0;
     ReadBufferFromString buf(s);
-    tryReadFloatTextPrecise(t, buf);
+    tryReadFloatText(t, buf);
     return t;
 }
 

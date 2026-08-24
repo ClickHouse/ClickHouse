@@ -28,21 +28,10 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsMilliseconds async_block_ids_cache_update_wait_ms;
-    extern const MergeTreeSettingsMilliseconds deduplication_hashes_cache_update_wait_ms;
+    extern const MergeTreeSettingsBool use_async_block_ids_cache;
 }
 
 static constexpr int FAILURE_RETRY_MS = 3000;
-
-/// `deduplication_hashes_cache_update_wait_ms` is the current name of this knob; the legacy
-/// `async_block_ids_cache_update_wait_ms` is still honored for one release when the new setting is left
-/// at its default, so existing configs keep working. The legacy name will be removed afterwards.
-static std::chrono::milliseconds getCacheUpdateWaitMs(const MergeTreeSettings & settings)
-{
-    if (settings[MergeTreeSetting::deduplication_hashes_cache_update_wait_ms].changed
-        || !settings[MergeTreeSetting::async_block_ids_cache_update_wait_ms].changed)
-        return std::chrono::milliseconds(settings[MergeTreeSetting::deduplication_hashes_cache_update_wait_ms].totalMilliseconds());
-    return std::chrono::milliseconds(settings[MergeTreeSetting::async_block_ids_cache_update_wait_ms].totalMilliseconds());
-}
 
 template <typename TStorage>
 struct AsyncBlockIDsCache<TStorage>::Cache : public std::unordered_set<String>
@@ -82,7 +71,7 @@ catch (...)
 template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std::string & dir_name)
     : storage(storage_)
-    , update_wait(getCacheUpdateWaitMs(*storage.getSettings()))
+    , update_wait(std::chrono::milliseconds((*storage.getSettings())[MergeTreeSetting::async_block_ids_cache_update_wait_ms].totalMilliseconds()))
     , path(fs::path(storage.getZooKeeperPath()) / dir_name)
     , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
     , log(getLogger(log_name))
@@ -93,7 +82,8 @@ AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_, const std:
 template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::start()
 {
-    task->activateAndSchedule();
+    if ((*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
+        task->activateAndSchedule();
 }
 
 template <typename TStorage>
@@ -124,6 +114,9 @@ void AsyncBlockIDsCache<TStorage>::truncate()
 template <typename TStorage>
 std::vector<DeduplicationHash> AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 & last_version)
 {
+    if (!(*storage.getSettings())[MergeTreeSetting::use_async_block_ids_cache])
+        return {};
+
     CachePtr cur_cache;
     {
         std::unique_lock lk(mu);

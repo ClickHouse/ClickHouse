@@ -5,6 +5,7 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
     PostgresManager,
     assert_nested_table_is_created,
@@ -295,7 +296,6 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
 
     time.sleep(2)
 
-
     with started_cluster.pause_container_using_signal("postgres1"):
         # for i in range(NUM_TABLES):
         #     result = instance.query(f"SELECT count() FROM test_database.postgresql_replica_{i}")
@@ -436,6 +436,55 @@ def test_user_managed_slots(started_cluster):
     pg_manager.drop_materialized_db()
     drop_replication_slot(replication_connection, slot_name)
     replication_connection.close()
+
+
+def test_merge_table_over_materialized_postgresql(started_cluster):
+    """
+    Reading a MaterializedPostgreSQL table through Merge forces FINAL on the child read
+    """
+    table_name = "postgresql_replica_final"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(3)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table_name}', 'postgres', '{pg_pass}') ORDER BY key
+        """
+    )
+
+    try:
+        check_tables_are_synchronized(
+            instance, table_name, materialized_database="default"
+        )
+
+        # Stop merges so the nested ReplacingMergeTree keeps both versions of the
+        # updated row and the read has to deduplicate them with FINAL.
+        instance.query(f"SYSTEM STOP MERGES {table_name}")
+        pg_manager.execute(f"UPDATE {table_name} SET value = 42 WHERE key = 1")
+
+        check_tables_are_synchronized(
+            instance, table_name, materialized_database="default"
+        )
+
+        expected = "0\t0\n1\t42\n2\t2\n"
+        direct_query = f"SELECT key, value FROM {table_name} ORDER BY key, value"
+        merge_query = (
+            f"SELECT key, value FROM merge('default', '^{table_name}$')"
+            " ORDER BY key, value"
+        )
+
+        for query in [direct_query, merge_query]:
+            explain = instance.query(f"EXPLAIN actions=1 {query}")
+            assert "FINAL: 1" in explain, explain
+
+        assert instance.query(direct_query) == expected
+        assert instance.query(merge_query) == expected
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemTables.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
 #include <Core/UUID.h>
@@ -357,7 +356,6 @@ protected:
 
             ++count;
         }
-        ++database_idx;
         return count;
     }
 
@@ -376,8 +374,12 @@ protected:
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
+            /// Consume the exhausted iterator, otherwise it could advance `database_idx` twice.
             if (tables_it && !tables_it->isValid())
+            {
                 ++database_idx;
+                tables_it.reset();
+            }
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
@@ -533,6 +535,7 @@ protected:
             {
                 size_t rows_added = fillTableNamesOnly(res_columns);
                 rows_count += rows_added;
+                ++database_idx;
                 continue;
             }
 
@@ -1055,6 +1058,3 @@ void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, c
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTables) }

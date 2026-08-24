@@ -4,8 +4,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
-#include <Common/BitPackedStringArray.h>
-#include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -18,7 +16,6 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
-#include <variant>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -237,47 +234,35 @@ struct TokenPostingsInfo
 using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
 using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfoPtr>;
 
-struct DictionaryBlock
+struct DictionaryBlockBase
+{
+    ColumnPtr tokens;
+
+    DictionaryBlockBase() = default;
+    explicit DictionaryBlockBase(ColumnPtr tokens_) : tokens(std::move(tokens_)) {}
+
+    bool empty() const;
+    size_t size() const;
+    size_t upperBound(std::string_view token) const;
+};
+
+struct DictionaryBlock : public DictionaryBlockBase
 {
     DictionaryBlock() = default;
     DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_);
 
-    bool empty() const;
-    size_t size() const;
-
-    ColumnPtr tokens;
     std::vector<TokenPostingsInfo> token_infos;
     UInt64 tokens_format = 0;
 };
 
-class DictionarySparseIndex
+struct DictionarySparseIndex : public DictionaryBlockBase
 {
-public:
     DictionarySparseIndex() = default;
     DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
-
-    bool empty() const { return size() == 0; }
-    size_t size() const;
-    size_t upperBound(std::string_view token) const;
-
-    std::string_view getToken(size_t idx) const;
     UInt64 getOffsetInFile(size_t idx) const;
     size_t memoryUsageBytes() const;
 
-    /// Returns the raw tokens column. Throws if tokens were bit-packed by optimize.
-    ColumnPtr getTokensColumn() const;
-    /// Returns the raw offsets column. Throws if offsets were bit-packed by optimize.
-    ColumnPtr getOffsetsColumn() const;
-
-    /// Decomposes the tokens column into chars and bit-packed offsets
-    /// and bit-packs the offsets in file to reduce memory usage.
-    void optimize();
-
-private:
-    /// Tokens and offsets in the dictionary file to the beginning of each block.
-    /// Stored as raw columns after creation and bit-packed after optimize.
-    std::variant<ColumnPtr, BitPackedStringArray> tokens;
-    std::variant<ColumnPtr, BitPackedUInt64Array> offsets_in_file;
+    ColumnPtr offsets_in_file;
 };
 
 using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;

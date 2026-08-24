@@ -384,21 +384,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    if (command_ast->type == ASTAlterCommand::MODIFY_CONSTRAINT)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.constraint_decl = command_ast->constraint_decl->clone();
-        command.type = AlterCommand::MODIFY_CONSTRAINT;
-
-        const auto & ast_constraint_decl = command_ast->constraint_decl->as<ASTConstraintDeclaration &>();
-
-        command.constraint_name = ast_constraint_decl.name;
-
-        command.if_exists = command_ast->if_exists;
-
-        return command;
-    }
     if (command_ast->type == ASTAlterCommand::ADD_PROJECTION)
     {
         AlterCommand command;
@@ -920,26 +905,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         constraints.erase(erase_it);
         metadata.constraints = ConstraintsDescription(constraints);
     }
-    else if (type == MODIFY_CONSTRAINT)
-    {
-        auto constraints = metadata.constraints.getConstraints();
-        auto modify_it = std::find_if(
-            constraints.begin(),
-            constraints.end(),
-            [this](const ASTPtr & constraint_ast) { return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name; });
-
-        if (modify_it == constraints.end())
-        {
-            if (if_exists)
-                return;
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong constraint name. Cannot find constraint `{}` to modify",
-                    constraint_name);
-        }
-
-        /// Replace the declaration in place so the constraint keeps its position.
-        *modify_it = constraint_decl;
-        metadata.constraints = ConstraintsDescription(constraints);
-    }
     else if (type == ADD_PROJECTION)
     {
         auto projection = ProjectionDescription::getProjectionFromAST(
@@ -1021,7 +986,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (MergeTreeSettings::hasBuiltin(change.name))
             {
-                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
+                effective_settings.applyChange(change);
                 any_mt_setting = true;
             }
         }
@@ -1288,7 +1253,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
         if (!metadata.table_ttl.definition_ast)
             return true;
         /// If TTL had not been changed, do not require mutations
-        return metadata.table_ttl.definition_ast->formatWithSecretsOneLine() != ttl->formatWithSecretsOneLine();
+        return metadata.table_ttl.definition_ast->formatIgnoringRedundantParentheses() != ttl->formatIgnoringRedundantParentheses();
     }
 
     if (!ttl || type != MODIFY_COLUMN)
@@ -1297,7 +1262,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     bool column_ttl_changed = true;
     for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
     {
-        if (name == column_name && ttl->formatWithSecretsOneLine() == ttl_ast->formatWithSecretsOneLine())
+        if (name == column_name && ttl->formatIgnoringRedundantParentheses() == ttl_ast->formatIgnoringRedundantParentheses())
         {
             column_ttl_changed = false;
             break;
@@ -1421,7 +1386,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
-        metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.primary_key = KeyDescription::getPrimaryKeyFromAST(
+            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, context);
     }
     else
     {
@@ -1450,13 +1416,12 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
     /// Changes in columns may lead to changes in secondary indices
-    const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
     for (auto & index : metadata_copy.secondary_indices)
     {
         try
         {
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
+                index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), index.escape_filenames, context);
         }
         catch (const Exception & exception)
         {
@@ -1514,11 +1479,13 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
 
+    /// Used to tell whether a command restates the definition the table already has, so it must not
+    /// depend on whether the redundant parentheses were written on one side and not on the other.
     auto ast_to_str = [](const ASTPtr & query) -> String
     {
         if (!query)
             return "";
-        return query->formatWithSecretsOneLine();
+        return query->formatIgnoringRedundantParentheses();
     };
 
     for (size_t i = 0; i < size(); ++i)
@@ -1868,7 +1835,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                 analyzer.resolve(expression, fake_table_expression, execution_context);
                                 GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
                                 auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
-                                collectSourceColumns(expression, planner_context);
+                                collectSetsAndSourceColumns(expression, planner_context);
                                 if (const auto * table_expression = planner_context->getTableExpressionDataOrNull(fake_table_expression))
                                 {
                                     for (const auto & selected_column : table_expression->getSelectedColumnsNames())

@@ -253,9 +253,10 @@ private:
         bool allow_lambda_expression,
         bool allow_table_expression,
         bool ignore_alias = false,
-        bool allow_niladic_functions = true);
+        bool allow_niladic_functions = true,
+        bool is_top_level_projection = false);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -291,13 +292,7 @@ private:
 
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
 
-    /// Lambdas that are currently in resolve process.
-    /// Keyed by the structural tree hash: a recursive reference to a lambda resolves to a fresh
-    /// clone of the alias node (see tryResolveIdentifierFromAliases), so the guard must detect
-    /// re-entry by structure, not by pointer identity -- otherwise genuine recursion would not be
-    /// caught and would instead run until TOO_DEEP_RECURSION. To keep this cheap, resolveLambda
-    /// computes the hash once per call (a single QueryTreeNodePtrWithHash reused for the
-    /// contains/insert/erase) instead of recomputing the lambda body's full getTreeHash three times.
+    /// Lambdas that are currently in resolve process
     QueryTreeNodePtrWithHashSet lambdas_in_resolve_process;
 
     /// CTEs that are currently in resolve process

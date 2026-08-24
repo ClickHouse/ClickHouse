@@ -1159,20 +1159,18 @@ toTypeName(value): Date32
     /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/sql-reference/data-types/time).
-Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
+Supports conversion from String, FixedString, DateTime, or numeric types representing seconds since midnight.
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "(U)Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
     FunctionDocumentation::Examples examples_toTime = {
     {
-        "DateTime64 to Time conversion",
+        "String to Time conversion",
         R"(
-SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
-SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
+SELECT toTime('14:30:25')
         )",
         R"(
 14:30:25
@@ -1181,8 +1179,6 @@ SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
     {
         "DateTime to Time conversion",
         R"(
-SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )",
         R"(
@@ -1190,11 +1186,9 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )"
     },
     {
-        "Integer (seconds since epoch) to Time conversion",
+        "Integer to Time conversion",
         R"(
-SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
-SELECT toTime(toDateTime(52225, 'UTC'))
+SELECT toTime(52225)
         )",
         R"(
 14:30:25
@@ -1209,21 +1203,19 @@ SELECT toTime(toDateTime(52225, 'UTC'))
 
     FunctionDocumentation::Description description_toTime64 = R"(
 Converts an input value to type [Time64](/sql-reference/data-types/time64).
-Supports conversion from String, FixedString, DateTime64, or numeric types representing seconds since midnight.
-Provides sub-second precision for time values, up to `scale` fractional digits.
+Supports conversion from String, FixedString, DateTime64, or numeric types representing microseconds since midnight.
+Provides microsecond precision for time values.
     )";
-    FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x, scale)";
+    FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x)";
     FunctionDocumentation::Arguments arguments_toTime64 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}},
-        {"scale", "Precision (number of fractional digits, `0`–`9`) of the resulting `Time64`.", {"(U)Int*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted value with the requested `scale`.", {"Time64"}};
+    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted input value with microsecond precision.", {"Time64(6)"}};
     FunctionDocumentation::Examples examples_toTime64 = {
     {
         "String to Time64 conversion",
         R"(
-SET enable_time_time64_type = 1;
-SELECT toTime64('14:30:25.123456', 6)
+SELECT toTime64('14:30:25.123456')
         )",
         R"(
 14:30:25.123456
@@ -1232,18 +1224,16 @@ SELECT toTime64('14:30:25.123456', 6)
     {
         "DateTime64 to Time64 conversion",
         R"(
-SET enable_time_time64_type = 1;
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
         )",
         R"(
 14:30:25.123456
         )"
     },
     {
-        "Float (seconds since midnight) to Time64 conversion",
+        "Integer to Time64 conversion",
         R"(
-SET enable_time_time64_type = 1;
-SELECT toTime64(52225.123456, 6)
+SELECT toTime64(52225123456)
         )",
         R"(
 14:30:25.123456

@@ -228,7 +228,7 @@ String IndicesDescription::explicitToString() const
             list.children.push_back(index.definition_ast);
     }
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 String IndicesDescription::allToString() const
@@ -240,7 +240,7 @@ String IndicesDescription::allToString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 
@@ -273,9 +273,9 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
-VectorWithMemoryTracking<String> IndicesDescription::getAllRegisteredNames() const
+Names IndicesDescription::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> result;
+    Names result;
     for (const auto & index : *this)
     {
         result.emplace_back(index.name);

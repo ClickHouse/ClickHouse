@@ -1584,7 +1584,7 @@ ExternalLoader::LoadableMutablePtr ExternalLoader::createOrCloneObject(
     if (previous_version)
         return previous_version->clone();
 
-    return createObject(name, *config.config, config.key_in_config, config.repository_name, config.path);
+    return createObject(name, *config.config, config.key_in_config, config.repository_name);
 }
 
 template ExternalLoader::LoadablePtr ExternalLoader::getLoadResult<ExternalLoader::LoadablePtr>(const String &) const;
