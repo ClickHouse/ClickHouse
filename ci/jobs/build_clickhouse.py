@@ -487,7 +487,8 @@ def main():
                 results.append(retry_cmake)
 
         run_shell("sccache stats", "sccache --show-stats")
-        if not cache_warmup:
+        # wasm64 disables the cache (emcc is uncacheable), so sccache sees zero compilations on a healthy build
+        if not cache_warmup and "-DCOMPILER_CACHE=disabled" not in cmake_cmd:
             warn_on_low_sccache_hit_rate(info)
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
